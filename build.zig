@@ -136,4 +136,15 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&b.addRunArtifact(unit_tests).step);
     test_step.dependOn(&b.addRunArtifact(integ_tests).step);
+
+    // ── Selfhost bootstrap check ──────────────────────────────────────────────
+    //
+    // `zig build bootstrap` runs tools/bootstrap_check.sh, which verifies that
+    // the selfhost compiler reaches a level-2 fixed point: A rebuilds itself
+    // into B, and B emits output byte-identical to A. Kept out of the default
+    // `test` step because it rebuilds selfhost-A and -B and takes ~1 minute.
+    const bootstrap_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh" });
+    bootstrap_run.step.dependOn(b.getInstallStep());
+    const bootstrap_step = b.step("bootstrap", "Verify selfhost round-trip + level-2 fixed point");
+    bootstrap_step.dependOn(&bootstrap_run.step);
 }

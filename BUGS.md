@@ -324,7 +324,19 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-12*
+### BUG-028: Zebra (Zig-backend) emits pointer addresses into identifier names
+- **Severity:** Low (cosmetic; causes noisy diffs, not miscompiles)
+- **Status:** Open
+- **Target:** Deferred — subsumed by TypeChecker port
+- **Symptom:** Generated `.zig` from the Zig-backed `zebra` compiler contains identifiers like `_box_2376b6287c0` and `_bp_2376b6287c0` where the hex suffix is a live pointer address from the compiler's own heap. Every run produces different names, so `zebra --emit-zig` output is non-deterministic and dirties the working tree on every invocation.
+- **Impact:** `tools/bootstrap_check.sh` cannot restore to a zebra-emitted canonical form without leaving the tree diff-dirty on each run. The script instead leaves the tree in selfhost-emitted form, which *is* deterministic. Also inflates apparent diffs when reviewing compiler backend changes.
+- **Note:** Selfhost's emit (codegen.zbr) does NOT exhibit this bug — A→B→B' is byte-identical. Only the Zig-side compiler has the issue.
+- **Fix direction:** Replace address-based unique name generator with a monotonic counter seeded at 0 per compilation.
+- **Found by:** Bootstrap round-trip stabilization, 2026-04-16.
+
+---
+
+*Last updated: 2026-04-16*
 
 ---
 
