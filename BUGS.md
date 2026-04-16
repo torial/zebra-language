@@ -360,6 +360,26 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-031: Selfhost `except` codegen emits `.*` on value-typed subject
+- **Severity:** Medium (silent divergence between Zig-compiled compiler and selfhost; only surfaces at level-2 bootstrap)
+- **Status:** Open
+- **Target:** Phase 17 — fix on Zig side (selfhost codegen), then round-trip
+- **Symptom:** `x except { f = v }` where `x` is a local value (not a pointer) compiles fine on the Zig-compiled Zebra compiler but fails on selfhost-emitted Zig with `error: cannot dereference non-pointer type 'T'`. The selfhost codegen unconditionally emits `var _except_tmp = x.*;` for the `except` subject; `.*` is only legal when the subject is a pointer.
+- **Reproducer:** Phase 16c plumbing attempt in `selfhost/codegen.zbr::generateModuleWith`:
+  ```
+  var g = Generator(...)          # g is a value-typed local
+  g = g except
+      module_types = buildModuleTypes(m)
+      dep_types = deps_mt
+  ```
+  Zig-compiled compiler emitted valid code in bootstrap step 1; selfhost-A's step-3 re-emit produced `g = blk: { var _except_tmp = g.*; ... }` which failed at step 4 build with `selfhost/codegen.zig:2423:35: error: cannot dereference non-pointer type 'codegen.Generator'`.
+- **Why the Zig-compiled compiler is correct:** existing uses of `except` in codegen.zbr are all on `this` inside methods where `this` is lowered to `self: *Generator` (pointer), so `self.*` is valid. Value-typed subjects require `_except_tmp = x;` (no deref).
+- **Root cause (suspected):** `src/CodeGen.zig`'s `except` lowering assumes the subject is pointer-shaped; selfhost's port of the same logic inherited the assumption but lacks the pointer-vs-value discrimination the Zig backend does upstream.
+- **Workaround:** Avoid `except` on value-typed locals — use init params or mutable `var` field assignment. Phase 16c plumbing switched to init params instead.
+- **Found by:** Phase 16c plumbing, 2026-04-16.
+
+---
+
 *Last updated: 2026-04-16*
 
 ---
