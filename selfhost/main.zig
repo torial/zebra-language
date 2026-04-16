@@ -1482,6 +1482,7 @@ const generateDep = codegen.generateDep;
 const generateDepWith = codegen.generateDepWith;
 const typechecker = @import("typechecker.zig");
 const ModuleTypes = typechecker.ModuleTypes;
+const populateModuleTypes = typechecker.populateModuleTypes;
 pub const MultiCompiler = struct {
     _type_tag: u64 = _ttag_MultiCompiler,
     visited: std.ArrayList([]const u8),
@@ -1557,6 +1558,9 @@ pub const MultiCompiler = struct {
                 const zig_path: []const u8 = self.zbrToZig(zbr_path);
                 (std.fs.cwd().writeFile(.{ .sub_path = zig_path, .data = zig_src }) catch @panic("File.write error"));
                 std.debug.print("{s}\n", .{_str_concat("wrote ", zig_path, _allocator)});
+                if ((!is_root)) {
+                    populateModuleTypes(self.dep_types, module);
+                }
             },
             else => |_| {
                 { _error_ctx = .{ .message = "expected module" }; return error.ZebraError; }

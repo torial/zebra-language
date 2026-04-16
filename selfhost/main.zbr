@@ -38,7 +38,7 @@ use Parser exposing PNode, PUse
 use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateEntryPoint, generateDep, generateDepWith
-use typechecker exposing ModuleTypes
+use typechecker exposing ModuleTypes, populateModuleTypes
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -112,6 +112,14 @@ class MultiCompiler
                 var zig_path as str = .zbrToZig(zbr_path)
                 File.write(zig_path, zig_src)
                 sys.errln("wrote " + zig_path)
+
+                # Step 7: Contribute this module's types to dep_types so
+                # subsequent deps (and the root) can resolve cross-module
+                # class/struct symbols. Root's own types are built fresh by
+                # generateModuleWith (module_types); root additions here
+                # are harmless but unused.
+                if not is_root
+                    populateModuleTypes(dep_types, module)
             else
                 raise "expected module"
 

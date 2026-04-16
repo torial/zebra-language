@@ -239,8 +239,7 @@ def addClassMembers(ct as ClassTypes, members as List(Decl))
             else
                 pass
 
-def buildModuleTypes(m as Module) as ModuleTypes
-    var mt = ModuleTypes()
+def populateModuleTypes(mt as ModuleTypes, m as Module)
     for decl in m.decls
         branch decl
             on Decl.class_ as c
@@ -253,6 +252,10 @@ def buildModuleTypes(m as Module) as ModuleTypes
                 mt.addClass(ct2)
             else
                 pass
+
+def buildModuleTypes(m as Module) as ModuleTypes
+    var mt = ModuleTypes()
+    populateModuleTypes(mt, m)
     return mt
 
 # ── Expression-level inference ───────────────────────────────────────────────
