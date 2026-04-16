@@ -1,0 +1,202 @@
+# typechecker.zbr -- Phase 16a: TypeChecker skeleton for self-hosted compiler.
+#
+# Mirrors src/TypeChecker.zig. Phase 16a ships only the data model: a `Type_`
+# union, a per-class `ClassTypes` record, and a module-level `ModuleTypes`
+# lookup table. No AST walking yet — that is Phase 16b (`inferExpr`).
+#
+# Usage (intended; not yet wired into codegen):
+#   var mt = ModuleTypes()
+#   var ct = ClassTypes("Foo")
+#   ct.setField("name", Type_.string_)
+#   ct.setMethodReturn("greet", Type_.string_)
+#   ct.addCtorParam(Type_.int_)
+#   mt.addClass(ct)
+#   ...
+#   var ft = mt.fieldType("Foo", "name")          # Type_?
+#   var rt = mt.methodReturn("Foo", "greet")      # Type_?
+#   var pt = mt.ctorParamAt("Foo", 0)             # Type_?
+#
+# Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
+
+# ── Cross-module type reference ──────────────────────────────────────────────
+# An instance of a user-defined type from an imported module, stored as
+# (module_alias, type_name) — no Symbol pointers, safe across compilation
+# boundaries. Phase 18 will add symmetric equality with `named`.
+
+struct CrossModuleType
+    var module as str
+    var type_name as str
+
+    cue init(module as str, type_name as str)
+        this.module = module
+        this.type_name = type_name
+
+# ── Type representation ──────────────────────────────────────────────────────
+# Skeleton variant set for Phase 16a. Phases 17–19 add:
+#   generic_named, tuple, fn_ref, fn_sig, http_request, http_response,
+#   tcp_conn, udp_socket, gui_context, shell, file, sys_run_result,
+#   json_value, json_array, date_time, calendar_view, csv_*, arg_result,
+#   uri_result, timer_handle.
+#
+# Keyword-collision rule: Zebra keywords get `_` suffix on variants.
+# int/uint/float/bool/char are keywords; string/regex/named/optional are not,
+# but `void_` matches the existing convention in ast.zbr::TypeRef.
+
+union Type_
+    # Primitives
+    int_
+    uint_
+    float_
+    bool_
+    char_
+    string_
+    void_
+
+    # Explicit-width numerics (payload = bit width)
+    int_n as int
+    uint_n as int
+    float_n as int
+
+    # User-defined class/struct/enum/union, referenced by name
+    named as str
+
+    # Optional wrapper: ?T. Phase 17 may extend to nested optionals.
+    optional as ^Type_
+
+    # Cross-module instance — fully qualified
+    cross_module as CrossModuleType
+
+    # Stdlib (partial — rest in Phase 19)
+    str_slice
+    string_builder
+    regex
+
+    # Unrecoverable: upstream error or unsupported construct.
+    # Suppresses further cascading errors (matches src/TypeChecker.zig).
+    unknown_
+
+# ── Per-class type info ──────────────────────────────────────────────────────
+# Holds the subset of a class declaration's typing surface that
+# codegen.zbr's heuristics currently approximate:
+#   - field types   (replaces isKnownStrSetField name list)
+#   - method return types (future: method-chain inference)
+#   - positional ctor param types (replaces shouldBoxCtorArg / isUnboxedCtorArg)
+
+class ClassTypes
+    var name as str
+    var field_types as HashMap(str, Type_)
+    var method_returns as HashMap(str, Type_)
+    var ctor_params as List(Type_)
+
+    cue init(name as str)
+        this.name = name
+        field_types = HashMap()
+        method_returns = HashMap()
+        ctor_params = List(Type_)()
+
+    def setField(field_name as str, t as Type_)
+        this.field_types.put(field_name, t)
+
+    def setMethodReturn(method_name as str, t as Type_)
+        this.method_returns.put(method_name, t)
+
+    def addCtorParam(t as Type_)
+        this.ctor_params.add(t)
+
+    def fieldType(field_name as str) as Type_?
+        if this.field_types.contains(field_name)
+            return this.field_types.fetch(field_name)
+        return nil
+
+    def methodReturn(method_name as str) as Type_?
+        if this.method_returns.contains(method_name)
+            return this.method_returns.fetch(method_name)
+        return nil
+
+    def ctorParamAt(idx as int) as Type_?
+        if idx < 0
+            return nil
+        if idx >= this.ctor_params.len
+            return nil
+        return this.ctor_params.at(idx)
+
+    def ctorParamCount() as int
+        return this.ctor_params.len
+
+# ── Module-level type table ──────────────────────────────────────────────────
+# Aggregates ClassTypes for every user-defined class/struct in a module.
+# Phase 16b adds a builder that walks an ast.Module to populate this.
+
+class ModuleTypes
+    var classes as HashMap(str, ClassTypes)
+
+    cue init()
+        classes = HashMap()
+
+    def addClass(c as ClassTypes)
+        this.classes.put(c.name, c)
+
+    def hasClass(class_name as str) as bool
+        return this.classes.contains(class_name)
+
+    def classOf(class_name as str) as ClassTypes?
+        if this.classes.contains(class_name)
+            return this.classes.fetch(class_name)
+        return nil
+
+    def fieldType(class_name as str, field_name as str) as Type_?
+        if not this.classes.contains(class_name)
+            return nil
+        var c as ClassTypes = this.classes.fetch(class_name)
+        return c.fieldType(field_name)
+
+    def methodReturn(class_name as str, method_name as str) as Type_?
+        if not this.classes.contains(class_name)
+            return nil
+        var c as ClassTypes = this.classes.fetch(class_name)
+        return c.methodReturn(method_name)
+
+    def ctorParamAt(class_name as str, idx as int) as Type_?
+        if not this.classes.contains(class_name)
+            return nil
+        var c as ClassTypes = this.classes.fetch(class_name)
+        return c.ctorParamAt(idx)
+
+# ── Built-in name → Type_ mapping ────────────────────────────────────────────
+# Maps the plain type-name strings used in AST TypeRef.named nodes to Type_.
+# Unknown names fall through to Type_.named(n) — callers can then check
+# ModuleTypes.hasClass to confirm it is a user-defined type in this module.
+
+def typeFromName(n as str) as Type_
+    if n == "int"
+        return Type_.int_
+    if n == "uint"
+        return Type_.uint_
+    if n == "float"
+        return Type_.float_
+    if n == "bool"
+        return Type_.bool_
+    if n == "char"
+        return Type_.char_
+    if n == "str"
+        return Type_.string_
+    if n == "String"
+        return Type_.string_
+    if n == "StringBuilder"
+        return Type_.string_builder
+    if n == "Regex"
+        return Type_.regex
+    return Type_.named(n)
+
+class Main
+    shared def main()
+        # Smoke-test entry point so this file compiles/runs standalone.
+        # Real tests live in typechecker_test.zbr.
+        var mt as ModuleTypes = ModuleTypes()
+        var ct as ClassTypes = ClassTypes("Foo")
+        ct.setField("name", Type_.string_)
+        mt.addClass(ct)
+        if mt.hasClass("Foo")
+            print "ok"
+        else
+            print "fail"

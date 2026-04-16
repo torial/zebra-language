@@ -1,0 +1,183 @@
+# typechecker_test.zbr -- Phase 16a smoke tests for typechecker.zbr.
+#
+# Exercises the Type_ / ClassTypes / ModuleTypes surface. No AST coupling
+# yet — tests construct types and look them up directly.
+
+use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName
+
+def check(ok as bool, label as str)
+    if ok
+        print "PASS " + label
+    else
+        print "FAIL " + label
+
+# ── Type_ construction and equality ──────────────────────────────────────────
+# Equality at the variant level is by-shape (branch match); structural equality
+# lands in Phase 18. For Phase 16a we verify variants construct without error
+# and that `typeFromName` maps the expected primitive names.
+
+def typeIsInt(t as Type_) as bool
+    branch t
+        on Type_.int_
+            return true
+        else
+            return false
+
+def typeIsString(t as Type_) as bool
+    branch t
+        on Type_.string_
+            return true
+        else
+            return false
+
+def typeIsNamed(t as Type_) as bool
+    branch t
+        on Type_.named as _
+            return true
+        else
+            return false
+
+def typeIsUnknown(t as Type_) as bool
+    branch t
+        on Type_.unknown_
+            return true
+        else
+            return false
+
+def testTypeFromName()
+    check(typeIsInt(typeFromName("int")), "typeFromName(int)")
+    check(typeIsString(typeFromName("str")), "typeFromName(str)")
+    check(typeIsString(typeFromName("String")), "typeFromName(String)")
+    check(typeIsNamed(typeFromName("Foo")), "typeFromName(Foo) → named")
+    # Type_.unknown_ constructed directly
+    check(typeIsUnknown(Type_.unknown_), "Type_.unknown_")
+
+# ── ClassTypes lookups ───────────────────────────────────────────────────────
+
+def testClassTypesFields()
+    var ct as ClassTypes = ClassTypes("Foo")
+    ct.setField("name", Type_.string_)
+    ct.setField("count", Type_.int_)
+
+    var ft as Type_? = ct.fieldType("name")
+    check(ft != nil, "ClassTypes.fieldType(name) found")
+    if ft != nil
+        check(typeIsString(ft to!), "ClassTypes.fieldType(name) is string")
+
+    var ft2 as Type_? = ct.fieldType("count")
+    if ft2 != nil
+        check(typeIsInt(ft2 to!), "ClassTypes.fieldType(count) is int")
+
+    var miss as Type_? = ct.fieldType("absent")
+    check(miss == nil, "ClassTypes.fieldType(absent) is nil")
+
+def testClassTypesMethods()
+    var ct as ClassTypes = ClassTypes("Bar")
+    ct.setMethodReturn("greet", Type_.string_)
+    var rt as Type_? = ct.methodReturn("greet")
+    check(rt != nil, "ClassTypes.methodReturn(greet) found")
+    if rt != nil
+        check(typeIsString(rt to!), "ClassTypes.methodReturn(greet) is string")
+
+def testClassTypesCtorParams()
+    var ct as ClassTypes = ClassTypes("Baz")
+    ct.addCtorParam(Type_.int_)
+    ct.addCtorParam(Type_.string_)
+    check(ct.ctorParamCount() == 2, "ClassTypes.ctorParamCount() == 2")
+
+    var p0 as Type_? = ct.ctorParamAt(0)
+    if p0 != nil
+        check(typeIsInt(p0 to!), "ctorParamAt(0) is int")
+
+    var p1 as Type_? = ct.ctorParamAt(1)
+    if p1 != nil
+        check(typeIsString(p1 to!), "ctorParamAt(1) is string")
+
+    var pn as Type_? = ct.ctorParamAt(2)
+    check(pn == nil, "ctorParamAt(2) is nil (out of range)")
+
+    var pneg as Type_? = ct.ctorParamAt(-1)
+    check(pneg == nil, "ctorParamAt(-1) is nil")
+
+# ── ModuleTypes lookups ──────────────────────────────────────────────────────
+
+def testModuleTypesFields()
+    var mt as ModuleTypes = ModuleTypes()
+    var ct as ClassTypes = ClassTypes("Foo")
+    ct.setField("name", Type_.string_)
+    mt.addClass(ct)
+
+    check(mt.hasClass("Foo"), "ModuleTypes.hasClass(Foo)")
+    check(not mt.hasClass("Missing"), "ModuleTypes.hasClass(Missing) is false")
+
+    var ft as Type_? = mt.fieldType("Foo", "name")
+    check(ft != nil, "ModuleTypes.fieldType(Foo, name) found")
+    if ft != nil
+        check(typeIsString(ft to!), "ModuleTypes.fieldType(Foo, name) is string")
+
+    var miss_cls as Type_? = mt.fieldType("Missing", "name")
+    check(miss_cls == nil, "ModuleTypes.fieldType(Missing, name) is nil")
+
+    var miss_fld as Type_? = mt.fieldType("Foo", "absent")
+    check(miss_fld == nil, "ModuleTypes.fieldType(Foo, absent) is nil")
+
+def testModuleTypesMethods()
+    var mt as ModuleTypes = ModuleTypes()
+    var ct as ClassTypes = ClassTypes("Bar")
+    ct.setMethodReturn("go", Type_.int_)
+    mt.addClass(ct)
+
+    var rt as Type_? = mt.methodReturn("Bar", "go")
+    check(rt != nil, "ModuleTypes.methodReturn(Bar, go) found")
+    if rt != nil
+        check(typeIsInt(rt to!), "ModuleTypes.methodReturn(Bar, go) is int")
+
+    var miss as Type_? = mt.methodReturn("Bar", "absent")
+    check(miss == nil, "ModuleTypes.methodReturn(Bar, absent) is nil")
+
+def testModuleTypesCtorParams()
+    var mt as ModuleTypes = ModuleTypes()
+    var ct as ClassTypes = ClassTypes("Baz")
+    ct.addCtorParam(Type_.string_)
+    ct.addCtorParam(Type_.int_)
+    mt.addClass(ct)
+
+    var p0 as Type_? = mt.ctorParamAt("Baz", 0)
+    if p0 != nil
+        check(typeIsString(p0 to!), "ModuleTypes.ctorParamAt(Baz, 0) is string")
+
+    var p1 as Type_? = mt.ctorParamAt("Baz", 1)
+    if p1 != nil
+        check(typeIsInt(p1 to!), "ModuleTypes.ctorParamAt(Baz, 1) is int")
+
+    var miss as Type_? = mt.ctorParamAt("Missing", 0)
+    check(miss == nil, "ModuleTypes.ctorParamAt(Missing, 0) is nil")
+
+# ── CrossModuleType smoke ───────────────────────────────────────────────────
+# Phase 16a: just construct. Symmetric equality with named ships in Phase 18.
+
+def testCrossModuleType()
+    var cm as CrossModuleType = CrossModuleType("parser", "PNode")
+    check(cm.module == "parser", "CrossModuleType.module")
+    check(cm.type_name == "PNode", "CrossModuleType.type_name")
+    var t as Type_ = Type_.cross_module(cm)
+    branch t
+        on Type_.cross_module as c
+            check(c.module == "parser", "Type_.cross_module.module")
+            check(c.type_name == "PNode", "Type_.cross_module.type_name")
+        else
+            check(false, "Type_.cross_module branch")
+
+# ── Main ────────────────────────────────────────────────────────────────────
+
+class Main
+    shared def main()
+        testTypeFromName()
+        testClassTypesFields()
+        testClassTypesMethods()
+        testClassTypesCtorParams()
+        testModuleTypesFields()
+        testModuleTypesMethods()
+        testModuleTypesCtorParams()
+        testCrossModuleType()
+        print "typechecker_test: done"

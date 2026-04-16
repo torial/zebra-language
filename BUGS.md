@@ -336,6 +336,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-029: Class field init with non-int-valued HashMap defaults to i64
+- **Severity:** Medium (blocks several TypeChecker port idioms until worked around)
+- **Status:** Open
+- **Target:** Phase 16c or Phase 17 — fix on Zig side, then port to selfhost
+- **Symptom:** In a `cue init` body, `this.field = HashMap()` on a field declared `HashMap(str, T)` for non-int `T` emits `std.StringHashMap(i64).init(_allocator)`, producing a type mismatch. `this.field = HashMap(str, T)()` emits `HashMap([]const u8, T).init()` (not valid Zig). Only bare `field = HashMap()` (implicit self) works.
+- **Root cause:** `src/CodeGen.zig::genAssign` generic-RHS field-type resolver (lines ~6901–6923) accepts only target `.ident` or `.member` with `.ident{name="self"}`. Zebra's `this.` parses as `.member` with `.object.* == .this` (a distinct AST variant), so the resolver bails out and falls through to the untyped default `std.StringHashMap(i64).init(_allocator)`.
+- **Workaround:** Use implicit-self form (`field_types = HashMap()`) in class cue/init bodies for non-int-valued HashMap fields. Example in selfhost/typechecker.zbr.
+- **Fix direction:** Add a `.this` object case alongside the `"self"` ident case in the switch at line 6909–6916.
+- **Found by:** Phase 16a TypeChecker port, 2026-04-16.
+
+---
+
 *Last updated: 2026-04-16*
 
 ---
