@@ -71,6 +71,7 @@ union Type_
     str_slice
     string_builder
     regex
+    str_set
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -187,6 +188,8 @@ def typeFromName(n as str) as Type_
         return Type_.string_builder
     if n == "Regex"
         return Type_.regex
+    if n == "StrSet"
+        return Type_.str_set
     return Type_.named(n)
 
 # ── TypeRef → Type_ mapping ──────────────────────────────────────────────────

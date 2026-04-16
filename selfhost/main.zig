@@ -1480,10 +1480,13 @@ const generateFullWith = codegen.generateFullWith;
 const generateEntryPoint = codegen.generateEntryPoint;
 const generateDep = codegen.generateDep;
 const generateDepWith = codegen.generateDepWith;
+const typechecker = @import("typechecker.zig");
+const ModuleTypes = typechecker.ModuleTypes;
 pub const MultiCompiler = struct {
     _type_tag: u64 = _ttag_MultiCompiler,
     visited: std.ArrayList([]const u8),
     dep_class_names: std.ArrayList([]const u8),
+    dep_types: *ModuleTypes,
     preamble_path: []const u8,
     output_dir: []const u8,
     pub fn init(preamble_path: []const u8, output_dir: []const u8) *MultiCompiler {
@@ -1491,6 +1494,7 @@ pub const MultiCompiler = struct {
         _self._type_tag = _zbr_hash("MultiCompiler");
             _self.visited = std.ArrayList([]const u8){};
             _self.dep_class_names = std.ArrayList([]const u8){};
+            _self.dep_types = ModuleTypes.init();
             _self.preamble_path = preamble_path;
             _self.output_dir = output_dir;
         return _self;
@@ -1546,9 +1550,9 @@ pub const MultiCompiler = struct {
                 const module = try ASTBuilder.build(pm, zbr_path);
                 var zig_src: []const u8 = "";
                 if (is_root) {
-                    zig_src = try generateFullWith(module, zbr_path, self.preamble_path, self.dep_class_names);
+                    zig_src = try generateFullWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types);
                 } else {
-                    zig_src = try generateDepWith(module, zbr_path, self.preamble_path, self.dep_class_names);
+                    zig_src = try generateDepWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types);
                 }
                 const zig_path: []const u8 = self.zbrToZig(zbr_path);
                 (std.fs.cwd().writeFile(.{ .sub_path = zig_path, .data = zig_src }) catch @panic("File.write error"));
@@ -1629,8 +1633,8 @@ pub const MultiCompiler = struct {
 };
 const _ttag_MultiCompiler: u64 = _zbr_hash("MultiCompiler");
 const _reflect_MultiCompiler_name: []const u8 = "MultiCompiler";
-const _reflect_MultiCompiler_fields: []const []const u8 = &.{"visited", "dep_class_names", "preamble_path", "output_dir"};
-const _reflect_MultiCompiler_field_types: []const []const u8 = &.{"List(str)", "List(str)", "str", "str"};
+const _reflect_MultiCompiler_fields: []const []const u8 = &.{"visited", "dep_class_names", "dep_types", "preamble_path", "output_dir"};
+const _reflect_MultiCompiler_field_types: []const []const u8 = &.{"List(str)", "List(str)", "ModuleTypes", "str", "str"};
 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
@@ -1778,6 +1782,7 @@ fn _zbr_error_msg() []const u8 {
     if (@import("Resolver.zig")._error_ctx.message.len > 0) return @import("Resolver.zig")._error_ctx.message;
     if (@import("astbuilder.zig")._error_ctx.message.len > 0) return @import("astbuilder.zig")._error_ctx.message;
     if (@import("codegen.zig")._error_ctx.message.len > 0) return @import("codegen.zig")._error_ctx.message;
+    if (@import("typechecker.zig")._error_ctx.message.len > 0) return @import("typechecker.zig")._error_ctx.message;
     return "";
 }
 

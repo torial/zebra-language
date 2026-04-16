@@ -38,18 +38,21 @@ use Parser exposing PNode, PUse
 use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateEntryPoint, generateDep, generateDepWith
+use typechecker exposing ModuleTypes
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
 class MultiCompiler
     var visited as List(str)
     var dep_class_names as List(str)
+    var dep_types as ModuleTypes
     var preamble_path as str
     var output_dir as str
 
     cue init(preamble_path as str, output_dir as str)
         this.visited = List(str)()
         this.dep_class_names = List(str)()
+        this.dep_types = ModuleTypes()
         this.preamble_path = preamble_path
         this.output_dir = output_dir
 
@@ -101,9 +104,9 @@ class MultiCompiler
                 # Step 5: Generate Zig
                 var zig_src as str = ""
                 if is_root
-                    zig_src = generateFullWith(module, zbr_path, preamble_path, dep_class_names)?
+                    zig_src = generateFullWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
                 else
-                    zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names)?
+                    zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
 
                 # Step 6: Write .zig file
                 var zig_path as str = .zbrToZig(zbr_path)
