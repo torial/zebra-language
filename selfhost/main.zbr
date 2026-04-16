@@ -22,7 +22,7 @@
 #   --selfhost-compile: full selfhost pipeline; writes .zig file and invokes zig run/build-exe
 #   compile/run:        delegates to Zig backend via sys.run (trusted, produces correct output)
 #
-# Usage (run from zig-compiler/ where build.zig lives):
+# Usage (run from repo root where build.zig lives):
 #   zebra-selfhost <source.zbr>                 compile and run (Zig backend)
 #   zebra-selfhost -c <source.zbr>              compile only (Zig backend)
 #   zebra-selfhost --emit-zig <source.zbr>      print complete Zig source (selfhost pipeline)
@@ -257,7 +257,7 @@ class Main
         # -- Zig backend delegation --------------------------------------------
         # Compile and/or run via the Zig-compiled backend.
         # Produces correct complete programs.
-        # Requires running from zig-compiler/ (where build.zig lives).
+        # Requires running from repo root (where build.zig lives).
 
         var argv = List(str)()
         argv.add("zig")

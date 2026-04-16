@@ -1,5 +1,5 @@
 # Zebra Abstract Syntax Tree node types — self-hosted compiler Phase 2.
-# Mirrors zig-compiler/src/Ast.zig.
+# Mirrors src/Ast.zig.
 #
 # Allocation model: arena-per-compilation-unit; no deinit on nodes.
 # Recursive types use ^T (heap-indirection pointer) to break size cycles.

@@ -644,7 +644,7 @@ def rawMemset(ptr as uint, size as uint)
 ## 25. Build and run
 
 ```bash
-# From zig-compiler/ directory:
+# From repo root:
 zig build run -- path/to/file.zbr    # compile and run
 zig build test                        # run test suite
 

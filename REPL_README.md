@@ -124,7 +124,7 @@ zig build
 ## Troubleshooting
 
 ### "zebra binary not found"
-- Run `zig build` from the `zig-compiler/` directory
+- Run `zig build` from the repo root
 - Or add the binary to your PATH
 
 ### "internal compiler error"

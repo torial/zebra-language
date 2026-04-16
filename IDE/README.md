@@ -24,7 +24,7 @@ ProxyIDE is a complete, functional IDE that works **today** with current Zebra c
 ### Run ProxyIDE
 
 ```bash
-cd zig-compiler
+cd <repo-root>
 zebra --gui-backend=glfw IDE/ProxyIDE.zbr
 ```
 
@@ -84,7 +84,7 @@ See `_ide_stubs.zbr` for detailed implementation specifications for each stub.
 ### Try ZebraIDE (With Stubs)
 
 ```bash
-cd zig-compiler
+cd <repo-root>
 zebra --gui-backend=glfw IDE/ZebraIDE.zbr
 ```
 
@@ -250,8 +250,8 @@ Capture blocks allow IDE state (filepath, editor content, diagnostics) to persis
 
 ## References
 
-- Compiler diagnostic format: `zig-compiler/main.zig` (search for `printDiag`)
-- Zebra keywords: `zig-compiler/src/Token.zig` (keyword map)
-- Current `sys` module: `zig-compiler/src/Builtins.zig` (SYS section)
-- Gui API reference: `zig-compiler/test/gui_test.zbr`
-- Capture block examples: Multiple test files in `zig-compiler/test/`
+- Compiler diagnostic format: `src/main.zig` (search for `printDiag`)
+- Zebra keywords: `src/Token.zig` (keyword map)
+- Current `sys` module: `src/Builtins.zig` (SYS section)
+- Gui API reference: `test/gui_test.zbr`
+- Capture block examples: Multiple test files in `test/`

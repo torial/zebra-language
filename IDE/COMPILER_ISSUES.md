@@ -217,9 +217,9 @@ Despite compiler issues, the IDE code itself is production-ready:
 
 ## Compiler Location
 
-**Executable:** `C:\Projects\cobra-language\zig-compiler\.zig-cache\o\b8780f1b520cd278a0913048b9ed6571\zebra.exe`
+**Executable:** `C:\Projects\zebra-language\.zig-cache\o\b8780f1b520cd278a0913048b9ed6571\zebra.exe`
 
-**Source:** `C:\Projects\cobra-language\zig-compiler\src\`
+**Source:** `C:\Projects\zebra-language\src\`
 
 **Key Files to Fix:**
 - `CodeGen.zig` — function pointer code gen, list iteration, `capture` handling
