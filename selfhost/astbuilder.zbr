@@ -466,7 +466,7 @@ class ASTBuilder
         if pl.return_type != ""
             ret_type = .parseTypeRef(pl.return_type)
         var lbody as LambdaBody
-        if pl.body_expr.len > 0
+        if pl.body_expr.count() > 0
             const bexpr = .buildExpr(pl.body_expr.at(0))?
             lbody = LambdaBody.expr_(bexpr)
         else
@@ -479,8 +479,8 @@ class ASTBuilder
             var cv_tr as TypeRef? = nil
             if cv.type_name != ""
                 cv_tr = .parseTypeRef(cv.type_name)
-            var cv_init = Expr.ident(ExprIdent(zspan(), cv.init_name))
-            var dv = DeclVar(zspan(), zmods(), cv.name, cv_tr, cv_init, not cv.is_const)
+            var cv_init_expr = Expr.ident(ExprIdent(zspan(), cv.init_name))
+            var dv = DeclVar(zspan(), zmods(), cv.name, cv_tr, cv_init_expr, not cv.is_const)
             captures.add(dv)
         return Expr.lambda(ExprLambda(zspan(), params, ret_type, lbody, captures))
 

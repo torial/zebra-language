@@ -71,7 +71,7 @@ union PNode
     expr_to_bang as ^PNode
     expr_except as ^PExcept
     expr_string_interp as ^PStringInterp
-    expr_lambda as ^PLambda
+    expr_lambda as PLambda
 
     # Branch statement
     stmt_branch as ^PBranch

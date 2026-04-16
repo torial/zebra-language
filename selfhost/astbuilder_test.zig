@@ -2586,7 +2586,7 @@ pub const Main = struct {
 // zbr:selfhost/astbuilder_test.zbr:430
             const t = ASTBuilderTest.init();
 // zbr:selfhost/astbuilder_test.zbr:431
-            t.run() catch |_tc_1a29cca4cd0| { _try_err_4d10 = _tc_1a29cca4cd0; break :_try_blk_4d10; };
+            t.run() catch |_tc_16853794cd0| { _try_err_4d10 = _tc_16853794cd0; break :_try_blk_4d10; };
             break :_try_blk_4d10;
         }
         if (_try_err_4d10 != null) {

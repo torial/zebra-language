@@ -258,6 +258,8 @@ def isKnownStrSetField(name as str) as bool
         return true
     if name == "for_loop_deref" or name == "for_loop_vars"
         return true
+    if name == "closure_vars" or name == "capture_fields"
+        return true
     return false
 
 def isAstStructWithPtrParams(name as str) as bool
@@ -285,6 +287,17 @@ def isAstStructWithPtrParams(name as str) as bool
     if name == "DeclVar" or name == "EnumMember" or name == "Param"
         return true
     if name == "DictEntry"
+        return true
+    return false
+
+# Specific (struct, arg-position) pairs that are plain T (not ^T) despite the struct
+# being in isAstStructWithPtrParams. Selfhost lacks TypeChecker info, so these cases
+# that don't follow the "all union-valued args are boxed" heuristic are hand-listed.
+# TypeChecker port will subsume this.
+def isUnboxedCtorArg(name as str, idx as int) as bool
+    if name == "DeclVar" and idx == 3        # type_ as TypeRef?  (not ^TypeRef?)
+        return true
+    if name == "ExprExcept" and idx == 1     # base as Expr       (not ^Expr)
         return true
     return false
 
@@ -643,7 +656,7 @@ def typeRefStr(tr as TypeRef) as str
         on TypeRef.generic as g
             var s = g.name + "("
             var i = 0
-            while i < g.args.len
+            while i < g.args.count()
                 if i > 0
                     s = s + ", "
                 s = s + typeRefStr(g.args.at(i))
@@ -742,12 +755,12 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str))
                 reflect_classes.add(rc.name)
             else
                 pass
-    if reflect_classes.len > 0
+    if reflect_classes.count() > 0
         # Emit a wrapper struct so that reflect slices work with .items.len and .items[i]
         w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };\n")
         w.emit("fn _reflect_lookup_name(tag: u64) []const u8 {\n")
         var ri2 = 0
-        while ri2 < reflect_classes.len
+        while ri2 < reflect_classes.count()
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return _reflect_")
@@ -757,7 +770,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str))
         w.emit("    return \"unknown\";\n}\n")
         w.emit("fn _reflect_lookup_fields(tag: u64) _ReflectStrSlice {\n")
         ri2 = 0
-        while ri2 < reflect_classes.len
+        while ri2 < reflect_classes.count()
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return .{ .items = _reflect_")
@@ -767,7 +780,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str))
         w.emit("    return .{ .items = &.{} };\n}\n")
         w.emit("fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {\n")
         ri2 = 0
-        while ri2 < reflect_classes.len
+        while ri2 < reflect_classes.count()
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return .{ .items = _reflect_")
@@ -1495,7 +1508,7 @@ struct Generator
         w.emit(n.name)
         w.emit("_fields: []const []const u8 = &.{")
         var ri = 0
-        while ri < rf_names.len
+        while ri < rf_names.count()
             if ri > 0
                 w.emit(", ")
             w.emit("\"")
@@ -1507,7 +1520,7 @@ struct Generator
         w.emit(n.name)
         w.emit("_field_types: []const []const u8 = &.{")
         ri = 0
-        while ri < rf_types.len
+        while ri < rf_types.count()
             if ri > 0
                 w.emit(", ")
             w.emit("\"")
@@ -1656,7 +1669,7 @@ struct Generator
 
     # ── genNamespace ─────────────────────────────────────────────────────────
     # namespace Foo → pub const Foo = struct { ... };
-    def genNamespace(ns as ^DeclNamespace)
+    def genNamespace(ns as DeclNamespace)
         writeIndent()
         w.emit("pub const ")
         w.emit(ns.name)
@@ -1681,7 +1694,7 @@ struct Generator
 
     # ── genInterface ─────────────────────────────────────────────────────────
     # interface Shape → comptime validation fn: checks @hasDecl on each member
-    def genInterface(ifc as ^DeclInterface)
+    def genInterface(ifc as DeclInterface)
         writeIndent()
         w.emit("pub fn ")
         w.emit(ifc.name)
@@ -1719,7 +1732,7 @@ struct Generator
 
     # ── genExtend ────────────────────────────────────────────────────────────
     # extend Type → standalone functions prefixed with _ext_Type_
-    def genExtend(ext as ^DeclExtend)
+    def genExtend(ext as DeclExtend)
         var tname = ""
         branch ext.target
             on TypeRef.named as n
@@ -1738,7 +1751,7 @@ struct Generator
                     pass
         w.emit("\n")
 
-    def genExtMethod(tname as str, mth as ^DeclMethod)
+    def genExtMethod(tname as str, mth as DeclMethod)
         writeIndent()
         w.emit("fn _ext_")
         w.emit(tname)
@@ -3333,6 +3346,11 @@ struct Generator
             on Expr.to_non_nil as tnn
                 # x to! where x is a string? → still a string
                 return isStringExpr(tnn.expr)
+            on Expr.binary as bin
+                # s + "x" or s + typeRefStr(...) — concat is a string if either side is
+                if bin.op == BinaryOp.add
+                    if isStringExpr(bin.left) or isStringExpr(bin.right)
+                        return true
             else
                 pass
         return false
@@ -3533,11 +3551,12 @@ struct Generator
                     box_labels.add("_bx4")
                     box_labels.add("_bx5")
                     var box_idx as int = 0
+                    var arg_idx as int = 0
                     for a in c.args
                         if not first2
                             w.emit(", ")
                         first2 = false
-                        if is_ast_struct and shouldBoxCtorArg(a.value)
+                        if is_ast_struct and shouldBoxCtorArg(a.value) and not isUnboxedCtorArg(id.name, arg_idx)
                             # Box: heap-allocate for ^T parameter
                             var lbl = box_labels.at(box_idx)
                             w.emit(lbl)
@@ -3549,6 +3568,7 @@ struct Generator
                             box_idx = box_idx + 1
                         else
                             genExpr(a.value)
+                        arg_idx = arg_idx + 1
                     w.emit(")")
                     return
             else
@@ -4219,7 +4239,7 @@ struct Generator
     # ── genLambda ────────────────────────────────────────────────────────────
     # Emit anonymous struct with a call method.
     # Without capture:   struct { fn call(params) RetT { body } }.call
-    def genLambda(lam as ^ExprLambda)
+    def genLambda(lam as ExprLambda)
         var has_capture = lam.captures.count() > 0
         if has_capture
             w.emit("(")

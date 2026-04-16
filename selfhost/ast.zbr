@@ -982,7 +982,7 @@ struct ExprIf
 # 'body' is a keyword; use 'body_' for the LambdaBody field.
 
 union LambdaBody
-    expr_ as ^Expr
+    expr_ as Expr
     stmts as List(Stmt)
 
 struct ExprLambda

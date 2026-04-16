@@ -1599,7 +1599,7 @@ pub const AstTest = struct {
 // zbr:selfhost/ast_test.zbr:78
         const inner = ast.TypeRef{ .named = nr };
 // zbr:selfhost/ast_test.zbr:79
-        const tr = ast.TypeRef{ .nilable = _box_1ee80ef0a78: { const _bp_1ee80ef0a78 = _allocator.create(ast.TypeRef) catch @panic("OOM"); _bp_1ee80ef0a78.* = inner; break :_box_1ee80ef0a78 _bp_1ee80ef0a78; } };
+        const tr = ast.TypeRef{ .nilable = _box_23b24d60a78: { const _bp_23b24d60a78 = _allocator.create(ast.TypeRef) catch @panic("OOM"); _bp_23b24d60a78.* = inner; break :_box_23b24d60a78 _bp_23b24d60a78; } };
 // zbr:selfhost/ast_test.zbr:80
         switch (tr) {
             .nilable => {

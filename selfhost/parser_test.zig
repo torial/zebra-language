@@ -2210,7 +2210,7 @@ pub const Main = struct {
 // zbr:selfhost/parser_test.zbr:260
             const t = ParserTest.init();
 // zbr:selfhost/parser_test.zbr:261
-            t.run() catch |_tc_20b80a75d98| { _try_err_5dd8 = _tc_20b80a75d98; break :_try_blk_5dd8; };
+            t.run() catch |_tc_21a457e5d98| { _try_err_5dd8 = _tc_21a457e5d98; break :_try_blk_5dd8; };
             break :_try_blk_5dd8;
         }
         if (_try_err_5dd8 != null) {
