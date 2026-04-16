@@ -348,6 +348,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-030: `.contains()` on param-of-class HashMap field emits List.contains
+- **Severity:** Medium (blocks natural idiom for InferCtx-style types in TypeChecker port)
+- **Status:** Open
+- **Target:** Phase 17 — fix on Zig side, then port to selfhost
+- **Symptom:** `param.field.contains(key)` where `param` is typed as a class and `field` is declared `HashMap(K, V)` generates `std.mem.indexOfScalar(@TypeOf(param.field.items[0]), param.field.items, key)` (the List/array `in` idiom) instead of calling `param.field.contains(key)`. The same expression on `this.field.contains()` works correctly. Compile-time failure: HashMap has no field `items`.
+- **Reproducer:** In selfhost/typechecker.zbr Phase 16b, `ctx.scope.contains(nm)` where `ctx as InferCtx` and `scope as HashMap(str, Type_)`. Identical method body through a `this.` receiver compiled fine in ClassTypes/ModuleTypes.
+- **Root cause (suspected):** `src/CodeGen.zig::genCall` dispatch for `.contains` on a member-access target looks only at the direct field or bare-ident type; when the leftmost receiver is a parameter of a user class, the HashMap-vs-List discriminator falls through to the List code path.
+- **Workaround:** Add a wrapper method on the containing class (e.g. `def hasLocal(name) as bool; return scope.contains(name)`) and call that. Used in selfhost/typechecker.zbr Phase 16b (`InferCtx.hasLocal`/`localType`).
+- **Found by:** Phase 16b TypeChecker port, 2026-04-16.
+
+---
+
 *Last updated: 2026-04-16*
 
 ---

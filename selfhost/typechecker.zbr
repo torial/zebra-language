@@ -1,22 +1,17 @@
-# typechecker.zbr -- Phase 16a: TypeChecker skeleton for self-hosted compiler.
+# typechecker.zbr -- Phases 16a–b: TypeChecker for self-hosted compiler.
 #
-# Mirrors src/TypeChecker.zig. Phase 16a ships only the data model: a `Type_`
-# union, a per-class `ClassTypes` record, and a module-level `ModuleTypes`
-# lookup table. No AST walking yet — that is Phase 16b (`inferExpr`).
+# Mirrors src/TypeChecker.zig. Phase 16a shipped the data model: `Type_`,
+# `ClassTypes`, `ModuleTypes`. Phase 16b adds:
+#   - typeFromRef(TypeRef) → Type_
+#   - buildModuleTypes(Module) → ModuleTypes        (walks AST, populates)
+#   - InferCtx / inferExpr(Expr, InferCtx) → Type_   (expr-level inference)
 #
-# Usage (intended; not yet wired into codegen):
-#   var mt = ModuleTypes()
-#   var ct = ClassTypes("Foo")
-#   ct.setField("name", Type_.string_)
-#   ct.setMethodReturn("greet", Type_.string_)
-#   ct.addCtorParam(Type_.int_)
-#   mt.addClass(ct)
-#   ...
-#   var ft = mt.fieldType("Foo", "name")          # Type_?
-#   var rt = mt.methodReturn("Foo", "greet")      # Type_?
-#   var pt = mt.ctorParamAt("Foo", 0)             # Type_?
+# These are advisory only: codegen.zbr still uses its heuristics. Phase 16c
+# wires codegen to prefer ModuleTypes over the heuristics, one at a time.
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
+
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, Arg, BinaryOp
 
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
@@ -62,6 +57,12 @@ union Type_
 
     # Optional wrapper: ?T. Phase 17 may extend to nested optionals.
     optional as ^Type_
+
+    # Heap-indirection pointer: ^T (matches ast.TypeRef.ref_to).
+    # src/TypeChecker.zig lacks this variant — it tracks ref_to-ness via a
+    # side table (struct_init_ref_params). The selfhost port carries it in
+    # Type_ directly; Phase 18 may refactor to match the Zig compiler.
+    ref_to as ^Type_
 
     # Cross-module instance — fully qualified
     cross_module as CrossModuleType
@@ -187,6 +188,265 @@ def typeFromName(n as str) as Type_
     if n == "Regex"
         return Type_.regex
     return Type_.named(n)
+
+# ── TypeRef → Type_ mapping ──────────────────────────────────────────────────
+# Maps a parsed ast.TypeRef into the Type_ domain. Phase 16b handles
+# primitive named, nilable, ref_to, void; 17+ extend to generics and tuples.
+
+def typeFromRef(tr as TypeRef) as Type_
+    branch tr
+        on TypeRef.named as n
+            return typeFromName(n.name)
+        on TypeRef.nilable as inner
+            return Type_.optional(typeFromRef(inner))
+        on TypeRef.ref_to as inner
+            return Type_.ref_to(typeFromRef(inner))
+        on TypeRef.void_
+            return Type_.void_
+        else
+            # error_union, stream, generic, same_, tuple — Phase 17 handles these.
+            return Type_.unknown_
+
+# ── ModuleTypes builder ──────────────────────────────────────────────────────
+# Walks an ast.Module and populates ModuleTypes. Phase 16b covers class and
+# struct declarations. Unions and enums are added in Phase 17 when inferExpr
+# needs to infer union-variant / enum-member types.
+
+def addClassMembers(ct as ClassTypes, members as List(Decl))
+    for member in members
+        branch member
+            on Decl.var_ as v
+                if v.type_ != nil
+                    ct.setField("" + v.name, typeFromRef(v.type_ to!))
+                else
+                    ct.setField("" + v.name, Type_.unknown_)
+            on Decl.method as m
+                if m.return_type != nil
+                    ct.setMethodReturn("" + m.name, typeFromRef(m.return_type to!))
+                else
+                    ct.setMethodReturn("" + m.name, Type_.void_)
+            on Decl.init as ini
+                # Ctor params — first init wins (Zebra supports only one cue init per class).
+                if ct.ctorParamCount() == 0
+                    for p in ini.params
+                        if p.type_ != nil
+                            ct.addCtorParam(typeFromRef(p.type_ to!))
+                        else
+                            ct.addCtorParam(Type_.unknown_)
+            else
+                pass
+
+def buildModuleTypes(m as Module) as ModuleTypes
+    var mt = ModuleTypes()
+    for decl in m.decls
+        branch decl
+            on Decl.class_ as c
+                var ct = ClassTypes("" + c.name)
+                addClassMembers(ct, c.members)
+                mt.addClass(ct)
+            on Decl.struct_ as s
+                var ct2 = ClassTypes("" + s.name)
+                addClassMembers(ct2, s.members)
+                mt.addClass(ct2)
+            else
+                pass
+    return mt
+
+# ── Expression-level inference ───────────────────────────────────────────────
+# InferCtx holds the module's type table and the current class (for `this.x`).
+# A scope map is intentionally absent in Phase 16b — local variable tracking
+# lands in Phase 17. Callers may still seed the scope HashMap when useful.
+
+class InferCtx
+    var module_types as ModuleTypes
+    var current_class as str
+    var scope as HashMap(str, Type_)
+
+    cue init(module_types as ModuleTypes, current_class as str)
+        this.module_types = module_types
+        this.current_class = current_class
+        scope = HashMap()
+
+    def bind(name as str, t as Type_)
+        scope.put(name, t)
+
+    def hasLocal(name as str) as bool
+        return scope.contains(name)
+
+    def localType(name as str) as Type_
+        return scope.fetch(name)
+
+# Helper: true iff t is Type_.string_.
+def isString(t as Type_) as bool
+    branch t
+        on Type_.string_
+            return true
+        else
+            return false
+
+# Helper: true iff t is a numeric type (int/uint/float or their sized forms).
+def isNumeric(t as Type_) as bool
+    branch t
+        on Type_.int_
+            return true
+        on Type_.uint_
+            return true
+        on Type_.float_
+            return true
+        on Type_.int_n as _
+            return true
+        on Type_.uint_n as _
+            return true
+        on Type_.float_n as _
+            return true
+        else
+            return false
+
+def inferExpr(e as Expr, ctx as InferCtx) as Type_
+    branch e
+        on Expr.int_lit as _
+            return Type_.int_
+        on Expr.float_lit as _
+            return Type_.float_
+        on Expr.bool_lit as _
+            return Type_.bool_
+        on Expr.char_lit as _
+            return Type_.char_
+        on Expr.string_lit as _
+            return Type_.string_
+        on Expr.string_interp
+            return Type_.string_
+        on Expr.nil_ as _
+            # Represents untyped nil — wraps unknown_ for optional compatibility.
+            return Type_.optional(Type_.unknown_)
+        on Expr.this_ as _
+            if ctx.current_class == ""
+                return Type_.unknown_
+            return Type_.named(ctx.current_class)
+        on Expr.ident as id
+            var nm as str = "" + id.name
+            if ctx.hasLocal(nm)
+                return ctx.localType(nm)
+            # Ident referencing a class name — treat as the class type so a
+            # bare `Foo` in `Foo(...)` can be resolved by the caller of
+            # inferExpr for the outer call.
+            if ctx.module_types.hasClass(nm)
+                return Type_.named(nm)
+            return Type_.unknown_
+        on Expr.member as m
+            # Only self-/this-rooted member access is resolved here in 16b.
+            # Arbitrary object member access lands in Phase 17 with proper scope.
+            branch m.object
+                on Expr.this_ as _
+                    if ctx.current_class == ""
+                        return Type_.unknown_
+                    var ft as Type_? = ctx.module_types.fieldType(ctx.current_class, "" + m.member)
+                    if ft != nil
+                        return ft to!
+                    return Type_.unknown_
+                on Expr.ident as id2
+                    var cname as str = "" + id2.name
+                    if ctx.hasLocal(cname)
+                        var obj_t as Type_ = ctx.localType(cname)
+                        branch obj_t
+                            on Type_.named as tn
+                                var ft2 as Type_? = ctx.module_types.fieldType(tn, "" + m.member)
+                                if ft2 != nil
+                                    return ft2 to!
+                            else
+                                pass
+                    return Type_.unknown_
+                else
+                    return Type_.unknown_
+        on Expr.call as c
+            # Constructor or class name used as callee: `Foo(args)` → named("Foo").
+            branch c.callee
+                on Expr.ident as id
+                    var cname as str = "" + id.name
+                    if ctx.module_types.hasClass(cname)
+                        return Type_.named(cname)
+                    # Primitive-name ctors like `int(x)` cast to that primitive.
+                    var as_name as Type_ = typeFromName(cname)
+                    branch as_name
+                        on Type_.named as _
+                            return Type_.unknown_
+                        else
+                            return as_name
+                on Expr.member as mem
+                    # Method call: infer receiver type, look up method return.
+                    var recv as Type_ = Type_.unknown_
+                    branch mem.object
+                        on Expr.this_ as _
+                            if ctx.current_class != ""
+                                recv = Type_.named(ctx.current_class)
+                        on Expr.ident as rid
+                            var rname as str = "" + rid.name
+                            if ctx.hasLocal(rname)
+                                recv = ctx.localType(rname)
+                            else
+                                if ctx.module_types.hasClass(rname)
+                                    recv = Type_.named(rname)
+                        else
+                            pass
+                    branch recv
+                        on Type_.named as tn
+                            var rt as Type_? = ctx.module_types.methodReturn(tn, "" + mem.member)
+                            if rt != nil
+                                return rt to!
+                        else
+                            pass
+                    return Type_.unknown_
+                else
+                    return Type_.unknown_
+        on Expr.binary as b
+            var lt as Type_ = inferExpr(b.left, ctx)
+            var rt as Type_ = inferExpr(b.right, ctx)
+            branch b.op
+                on BinaryOp.add
+                    # String concatenation: if either side is a string, result is string.
+                    if isString(lt)
+                        return Type_.string_
+                    if isString(rt)
+                        return Type_.string_
+                    if isNumeric(lt)
+                        return lt
+                    if isNumeric(rt)
+                        return rt
+                    return Type_.unknown_
+                on BinaryOp.sub
+                    if isNumeric(lt)
+                        return lt
+                    return rt
+                on BinaryOp.mul
+                    if isNumeric(lt)
+                        return lt
+                    return rt
+                on BinaryOp.div
+                    if isNumeric(lt)
+                        return lt
+                    return rt
+                on BinaryOp.eq
+                    return Type_.bool_
+                on BinaryOp.ne
+                    return Type_.bool_
+                on BinaryOp.lt
+                    return Type_.bool_
+                on BinaryOp.le
+                    return Type_.bool_
+                on BinaryOp.gt
+                    return Type_.bool_
+                on BinaryOp.ge
+                    return Type_.bool_
+                on BinaryOp.and_
+                    return Type_.bool_
+                on BinaryOp.or_
+                    return Type_.bool_
+                on BinaryOp.in_
+                    return Type_.bool_
+                else
+                    return Type_.unknown_
+        else
+            return Type_.unknown_
 
 class Main
     shared def main()

@@ -1,9 +1,11 @@
-# typechecker_test.zbr -- Phase 16a smoke tests for typechecker.zbr.
+# typechecker_test.zbr -- Phase 16a/16b smoke tests for typechecker.zbr.
 #
-# Exercises the Type_ / ClassTypes / ModuleTypes surface. No AST coupling
-# yet — tests construct types and look them up directly.
+# Phase 16a exercises Type_ / ClassTypes / ModuleTypes construction & lookup.
+# Phase 16b adds typeFromRef, buildModuleTypes, and inferExpr tests — AST is
+# hand-constructed (no Parser dependency) to keep the test file self-contained.
 
-use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName
+use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
 def check(ok as bool, label as str)
     if ok
@@ -168,6 +170,215 @@ def testCrossModuleType()
         else
             check(false, "Type_.cross_module branch")
 
+# ── Phase 16b: typeFromRef ──────────────────────────────────────────────────
+# Hand-build TypeRef variants and verify the mapping to Type_.
+
+def mkSpan() as Span
+    return Span(1, 1, 1, 1)
+
+def isOptional(t as Type_) as bool
+    branch t
+        on Type_.optional
+            return true
+        else
+            return false
+
+def isRefTo(t as Type_) as bool
+    branch t
+        on Type_.ref_to
+            return true
+        else
+            return false
+
+def namedRef(n as str) as TypeRef
+    return TypeRef.named(NamedTypeRef(mkSpan(), n))
+
+def testTypeFromRef()
+    check(typeIsInt(typeFromRef(namedRef("int"))), "typeFromRef(named int)")
+    check(typeIsString(typeFromRef(namedRef("str"))), "typeFromRef(named str)")
+    check(typeIsNamed(typeFromRef(namedRef("Foo"))), "typeFromRef(named Foo)")
+
+    # nilable wraps Type_.optional.
+    check(isOptional(typeFromRef(TypeRef.nilable(namedRef("int")))), "typeFromRef(nilable) → optional")
+
+    # void_ maps to Type_.void_.
+    var t_void as Type_ = typeFromRef(TypeRef.void_)
+    branch t_void
+        on Type_.void_
+            check(true, "typeFromRef(void_) → void_")
+        else
+            check(false, "typeFromRef(void_) → void_")
+
+    # ref_to wraps Type_.ref_to.
+    check(isRefTo(typeFromRef(TypeRef.ref_to(namedRef("Foo")))), "typeFromRef(ref_to) → ref_to")
+
+    # same_ is not mapped in 16b — falls to unknown_.
+    check(typeIsUnknown(typeFromRef(TypeRef.same_)), "typeFromRef(same_) → unknown_")
+
+# ── Phase 16b: buildModuleTypes on a hand-built Module ──────────────────────
+# Construct a tiny Module with one class:  class Foo { var name as str }
+
+def emptyMods() as Modifiers
+    return Modifiers(false, false, false, false, false, false)
+
+def varDecl(name as str, t as TypeRef) as Decl
+    return Decl.var_(DeclVar(mkSpan(), emptyMods(), name, t, nil, false))
+
+def classDecl(name as str, members as List(Decl)) as Decl
+    return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members))
+
+def testBuildModuleTypesClass()
+    var members as List(Decl) = List(Decl)()
+    members.add(varDecl("name", namedRef("str")))
+    members.add(varDecl("count", namedRef("int")))
+    var decls as List(Decl) = List(Decl)()
+    decls.add(classDecl("Foo", members))
+    var m as Module = Module("" + "<test>", decls)
+    var mt as ModuleTypes = buildModuleTypes(m)
+
+    check(mt.hasClass("Foo"), "buildModuleTypes: hasClass(Foo)")
+    var ft as Type_? = mt.fieldType("Foo", "name")
+    check(ft != nil, "buildModuleTypes: field `name` present")
+    if ft != nil
+        check(typeIsString(ft to!), "buildModuleTypes: field `name` is string")
+    var ft2 as Type_? = mt.fieldType("Foo", "count")
+    if ft2 != nil
+        check(typeIsInt(ft2 to!), "buildModuleTypes: field `count` is int")
+
+def testBuildModuleTypesInit()
+    # class Bar { cue init(x as int, y as str) { ... } }
+    var params as List(Param) = List(Param)()
+    params.add(Param(mkSpan(), ParamMode.normal, "x", namedRef("int"), nil))
+    params.add(Param(mkSpan(), ParamMode.normal, "y", namedRef("str"), nil))
+    var members as List(Decl) = List(Decl)()
+    members.add(Decl.init(DeclInit(mkSpan(), emptyMods(), params, nil)))
+    var decls as List(Decl) = List(Decl)()
+    decls.add(classDecl("Bar", members))
+    var m as Module = Module("" + "<test>", decls)
+    var mt as ModuleTypes = buildModuleTypes(m)
+
+    var p0 as Type_? = mt.ctorParamAt("Bar", 0)
+    if p0 != nil
+        check(typeIsInt(p0 to!), "buildModuleTypes: ctor param 0 is int")
+    var p1 as Type_? = mt.ctorParamAt("Bar", 1)
+    if p1 != nil
+        check(typeIsString(p1 to!), "buildModuleTypes: ctor param 1 is string")
+
+# ── Phase 16b: inferExpr ────────────────────────────────────────────────────
+# Construct Expr literals directly; module_types is an empty ModuleTypes.
+
+def mkInt(x as str) as Expr
+    return Expr.int_lit(ExprIntLit(mkSpan(), x, IntBase.decimal))
+
+def mkStr(x as str) as Expr
+    return Expr.string_lit(ExprStringLit(mkSpan(), StringKind.plain, x))
+
+def mkBool(v as bool) as Expr
+    return Expr.bool_lit(ExprBoolLit(mkSpan(), v))
+
+def mkFloat(x as str) as Expr
+    return Expr.float_lit(ExprFloatLit(mkSpan(), x))
+
+def mkChar(x as str) as Expr
+    return Expr.char_lit(ExprCharLit(mkSpan(), x))
+
+def testInferLiterals()
+    var mt as ModuleTypes = ModuleTypes()
+    var ctx as InferCtx = InferCtx(mt, "")
+    check(typeIsInt(inferExpr(mkInt("42"), ctx)), "inferExpr(int_lit) → int")
+    check(typeIsString(inferExpr(mkStr("hi"), ctx)), "inferExpr(string_lit) → string")
+
+    branch inferExpr(mkBool(true), ctx)
+        on Type_.bool_
+            check(true, "inferExpr(bool_lit) → bool")
+        else
+            check(false, "inferExpr(bool_lit) → bool")
+
+    branch inferExpr(mkFloat("3.14"), ctx)
+        on Type_.float_
+            check(true, "inferExpr(float_lit) → float")
+        else
+            check(false, "inferExpr(float_lit) → float")
+
+    branch inferExpr(mkChar("a"), ctx)
+        on Type_.char_
+            check(true, "inferExpr(char_lit) → char")
+        else
+            check(false, "inferExpr(char_lit) → char")
+
+def testInferBinaryAdd()
+    var mt as ModuleTypes = ModuleTypes()
+    var ctx as InferCtx = InferCtx(mt, "")
+    # "foo" + "bar" → string
+    var e as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("foo"), mkStr("bar")))
+    check(typeIsString(inferExpr(e, ctx)), "inferExpr(str + str) → string")
+    # 1 + 2 → int
+    var e2 as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkInt("1"), mkInt("2")))
+    check(typeIsInt(inferExpr(e2, ctx)), "inferExpr(int + int) → int")
+    # "x" + 1 → string (string-concat wins)
+    var e3 as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("x"), mkInt("1")))
+    check(typeIsString(inferExpr(e3, ctx)), "inferExpr(str + int) → string")
+
+def testInferBinaryCompare()
+    var mt as ModuleTypes = ModuleTypes()
+    var ctx as InferCtx = InferCtx(mt, "")
+    var e as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.eq, mkInt("1"), mkInt("2")))
+    branch inferExpr(e, ctx)
+        on Type_.bool_
+            check(true, "inferExpr(int == int) → bool")
+        else
+            check(false, "inferExpr(int == int) → bool")
+
+def testInferThisField()
+    # module_types for `class Foo { var name as str }` + ctx.current_class = "Foo"
+    var mt as ModuleTypes = ModuleTypes()
+    var ct as ClassTypes = ClassTypes("Foo")
+    ct.setField("name", Type_.string_)
+    mt.addClass(ct)
+    var ctx as InferCtx = InferCtx(mt, "Foo")
+    # this.name
+    var this_expr as Expr = Expr.this_(mkSpan())
+    var mem as Expr = Expr.member(ExprMember(mkSpan(), this_expr, "name"))
+    check(typeIsString(inferExpr(mem, ctx)), "inferExpr(this.name) → string")
+    # this.missing → unknown_
+    var mem2 as Expr = Expr.member(ExprMember(mkSpan(), this_expr, "missing"))
+    check(typeIsUnknown(inferExpr(mem2, ctx)), "inferExpr(this.missing) → unknown_")
+
+def testInferCtorCall()
+    # Foo() with ModuleTypes containing Foo → Type_.named("Foo")
+    var mt as ModuleTypes = ModuleTypes()
+    mt.addClass(ClassTypes("Foo"))
+    var ctx as InferCtx = InferCtx(mt, "")
+    var callee as Expr = Expr.ident(ExprIdent(mkSpan(), "Foo"))
+    var call as Expr = Expr.call(ExprCall(mkSpan(), callee, List(Arg)()))
+    check(typeIsNamed(inferExpr(call, ctx)), "inferExpr(Foo()) → named")
+    # int(x) primitive cast → int
+    var callee_int as Expr = Expr.ident(ExprIdent(mkSpan(), "int"))
+    var call_int as Expr = Expr.call(ExprCall(mkSpan(), callee_int, List(Arg)()))
+    check(typeIsInt(inferExpr(call_int, ctx)), "inferExpr(int(x)) → int")
+
+def testInferIdentScope()
+    var mt as ModuleTypes = ModuleTypes()
+    var ctx as InferCtx = InferCtx(mt, "")
+    ctx.bind("x", Type_.int_)
+    var e as Expr = Expr.ident(ExprIdent(mkSpan(), "x"))
+    check(typeIsInt(inferExpr(e, ctx)), "inferExpr(bound ident x) → int")
+    var e2 as Expr = Expr.ident(ExprIdent(mkSpan(), "unbound"))
+    check(typeIsUnknown(inferExpr(e2, ctx)), "inferExpr(unbound ident) → unknown_")
+
+def testInferMethodCall()
+    # Bar.go() where Bar has method go returning int.
+    var mt as ModuleTypes = ModuleTypes()
+    var ct as ClassTypes = ClassTypes("Bar")
+    ct.setMethodReturn("go", Type_.int_)
+    mt.addClass(ct)
+    var ctx as InferCtx = InferCtx(mt, "")
+    ctx.bind("b", Type_.named("Bar"))
+    var recv as Expr = Expr.ident(ExprIdent(mkSpan(), "b"))
+    var mem as Expr = Expr.member(ExprMember(mkSpan(), recv, "go"))
+    var call as Expr = Expr.call(ExprCall(mkSpan(), mem, List(Arg)()))
+    check(typeIsInt(inferExpr(call, ctx)), "inferExpr(b.go()) → int")
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 class Main
@@ -180,4 +391,14 @@ class Main
         testModuleTypesMethods()
         testModuleTypesCtorParams()
         testCrossModuleType()
+        testTypeFromRef()
+        testBuildModuleTypesClass()
+        testBuildModuleTypesInit()
+        testInferLiterals()
+        testInferBinaryAdd()
+        testInferBinaryCompare()
+        testInferThisField()
+        testInferCtorCall()
+        testInferIdentScope()
+        testInferMethodCall()
         print "typechecker_test: done"
