@@ -529,7 +529,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - `same` type (recursive self-type in interface method) (`test/generic_constrained_test.zbr`)
 
 **Generic diagnostics gap (surfaced in 47/47 silent fails):**
-Every parser-level failure prints `zebra: selfhost pipeline error: ` with an **empty message** (the parser raises without setting `e.message`).  This is a direct diagnostics failure — user cannot tell *what* the parser choked on without adding instrumentation.  Already flagged as a breadcrumb in BUG-035; promoted here as a first-class Phase 20 item.  Minimum viable fix: parser raise sites must set a message even if only `unexpected token <kind>` at `<line:col>`.
+~~Every parser-level failure prints `zebra: selfhost pipeline error: ` with an **empty message** (the parser raises without setting `e.message`).~~ **FIXED by Phase 20a (commits 9e83d49 + 8b59606, 2026-04-17).** Root cause was not unset raise sites — all parser raise sites did set messages — but cross-module `_error_ctx` isolation: each `.zig` file had a private threadlocal `_error_ctx`; the root module's catch only saw main's own (empty) context, never the dep module (Parser/Lexer) that actually raised. Fix: recursive `_zbr_error_msg()` helper that walks every transitive module, applied to both the Zig backend (`src/CodeGen.zig`) and the selfhost codegen (`selfhost/codegen.zbr`). Post-fix corpus re-triage: **SILENT=0** — all 57 failures now report specific messages (e.g. `unexpected expression token: 'zig"Greeter{}"' at line 8`), cleanly mapping to the feature buckets below.
 
 **Action items (derived from triage):**
 - **Phase 17e grammar wave:** with, raise-details, lambda, zig"..." expr, orelse, guard stmt, trailing `?`, tuples, arena, extend, range `:`, top-level union/enum/interface/namespace, computed properties, constrained generics `T where`, `shared var`, `while var`, `c'…'`, `same` type.  Closes ~50 of 57 failures.
@@ -539,6 +539,36 @@ Every parser-level failure prints `zebra: selfhost pipeline error: ` with an **e
 
 - **Risk:** This inventory is a planning instrument, not a fix.  Addressing individual buckets requires the standard sprint gate (bootstrap_check + tc tests + corpus diff per commit).  Do not bundle buckets in one commit.
 - **Found by:** Phase 17.5 stability-sprint task #40 corpus triage, 2026-04-17.  Inventory scripts live in `/tmp/sweep_triage3.sh` and `/tmp/cross_oracle.sh` for re-running.
+
+---
+
+### BUG-038: Selfhost emits `int.toString()` as codepoint-to-UTF8 encode, not integer-to-decimal
+
+- **Severity:** Medium (produces truncated/garbage output for any line-number / integer embedded in error messages emitted by selfhost-B; selfhost-A is unaffected because Zig backend emits `std.fmt.allocPrint` correctly)
+- **Status:** Open — discovered during Phase 20a investigation (2026-04-17)
+- **Target:** selfhost-edit wave (same as BUG-036)
+
+**Symptom:** In selfhost-emitted `.zig` files, `int.toString()` expands to
+
+```zig
+(blk: { var _cpbuf: [4]u8 = undefined;
+        const _cplen = std.unicode.utf8Encode(@intCast(self.peek().line), &_cpbuf) catch 1;
+        break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })
+```
+
+That is `std.unicode.utf8Encode` — encode-a-codepoint-as-UTF-8, not integer-to-string. For line 1 it returns byte `\x01`; for line ≥ 128 it returns multi-byte non-printable garbage; for line ≥ 0x110000 it `catch 1`s back to the first byte of `undefined`.
+
+**Cross-oracle:** Zig backend emits the correct form:
+```zig
+std.fmt.allocPrint(_allocator, "{}", .{self.peek().line}) catch unreachable
+```
+The selfhost codegen path diverges.
+
+**Root cause direction:** `selfhost/codegen.zbr` has a branch for `.toString()` on `int` receivers that wires to a codepoint emitter rather than `std.fmt.allocPrint`. Likely a copy-paste from the `int.toChar()` / `int` → `char` codepoint path during Phase 7b. Two known call sites in `parser.zbr` raise messages use `line.toString()`; the corruption was masked for the 47 silent fails because the WHOLE message was swallowed by BUG-037 — once BUG-037 was fixed by Phase 20a, the int→garbage truncation became visible.
+
+**Impact:** Every selfhost-emitted program that calls `int.toString()` produces wrong output — most visibly parser error line numbers, but also any user program that formats an int.
+
+- **Found by:** Phase 20a verification, 2026-04-17 — observed `" at line "` with truncated/empty tail in selfhost-B output even though selfhost-A shows correct decimal line numbers.
 
 ---
 
