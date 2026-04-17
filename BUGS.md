@@ -71,6 +71,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Symptom:** `zig"some_stmt;"` inside a method body emitted `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appended another `;`.
 - **Zig-side fix:** `src/CodeGen.zig::genStmt` `.expr` case (lines ~4290-4300) detects trailing `;` on `zig_lit` content and skips the appended `;`.
 - **Selfhost residue:** `selfhost/codegen.zbr::genStmt` `on Stmt.expr` (line 1938) unconditionally emits `;\n`. Double `;;` is syntactically valid Zig (empty stmt), so round-trip is still clean. Port when selfhost is next touched.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug006.zbr`): Zig-side emit clean — no `;;` in output. **Selfhost divergence surfaced:** the selfhost parser rejects `zig"..."` even in statement position with `unexpected expression token: 'zig"..."'`. This contradicts BUG-037's aside that "stmt form works (BUG-006 fixed it)" — the Zig-side fix is real, but selfhost can't actually parse it at all. Roll into BUG-037 grammar wave (expression-form and stmt-form share a parser path).
 
 ---
 
@@ -150,6 +151,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `scanMutationsInto` handled `.var_`, `.expr`, `.print`, etc. but had no `.assert` case. Method calls on user-defined types inside `assert` conditions (e.g., `assert d.show() == "x"`) were never scanned. The mutation scanner's conservative rule ("any method call on a `.named` type marks the receiver as `var`") never fired for assert conditions, so the receiver was emitted `const`. Then Zig rejected passing `*const Diag` to a method taking `*Diag`.
 - **Fix:** Added `.assert => |s| try scanMutationsInExpr(s.cond, set, tc_opt)` to `scanMutationsInto`.
 - **Found by:** Self-hosting probe (`test/selfhost_probe.zbr`) — `assert d.show() == "..."` triggered it.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug015.zbr`): `var d = Diag.init()` emitted on both zebra.exe and zebra-selfhost.exe; `assert d.show() == "x"` routes through `scanMutationsInto.assert` and marks `d` mutable.
 
 ---
 
@@ -238,6 +240,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Fix:** Added `else if (v.* == .call and v.call.callee.* == .member)` branch in `genBranch`'s union pattern path, extracting `v.call.callee.member.member` as the variant name and emitting `.variant_name`.
 - **Also fixed:** Non-union `on PlainEnum.member` (no parens, `is_union = false`) was calling `genExpr(v)` for a `.member` node. Added `else if (v.* == .member)` in the non-union path to emit `.member_name` — correct Zig enum switch syntax.
 - **Found by:** Self-hosting Phase 2 (`selfhost/ast_test.zbr`) — `on ast.TypeRef.nilable() as inner_ref` and `on ast.BinaryOp.add`.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug020.zbr`): Both compilers emit correct `.circle => |r| {...}` / `.square => |side| {...}` / `.empty => {...}` switch prongs. **Ticket stale-reproducer note:** the original surface form `on Union.variant() as name` no longer parses — the grammar now accepts only `on Union.variant as name` (no parens). The underlying fix still holds; re-writing future probes must use the current syntax. Union-variant multi-field payloads are likewise declared `variant as Type` (single-field), not `variant(name as Type)`.
 
 ---
 
@@ -262,6 +265,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** The tokenizer's `processIndentation` function checked indentation on EVERY new line, including continuation lines inside open parentheses. A `cue init(a as int, b as int)` spanning two lines would trigger "SpaceIndentNotMultipleOfFour" because the continuation line's alignment indentation wasn't a multiple of 4. All `cue init` signatures had to fit on one line regardless of parameter count.
 - **Fix:** Added `paren_depth: u32 = 0` tracking to Tokenizer. Incremented in `scanOperator` on `(` and decremented on `)`. Also incremented in `scanIdentOrKeyword`'s `open_call` path (which consumed `(` without going through `scanOperator`). `processIndentation` returns early when `paren_depth > 0`. EOL tokens suppressed when `paren_depth > 0` to prevent parser syntax errors on continuation lines.
 - **Found by:** Self-hosting Phase 2 (`selfhost/ast.zbr`) — forced all `cue init` signatures onto single lines.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug023.zbr`): 4-arg `cue init` split across 4 lines parses and emits on both compilers.
 
 ---
 
@@ -275,6 +279,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **`suppress_auto_try` flag:** The `.try_` codegen path (Zebra `expr?`) already emits `try ` before calling `genExpr`. Without suppression, genCall would add a second `try`, producing `try try self.foo()`. `suppress_auto_try` is set via a `g2 = g; g2.suppress_auto_try = true` local copy before delegating.
 - **`owner_members` field:** Added to Generator (set by `withClass` and `genStruct`). Enables `exprCallIsThrows` to detect `this.method()` calls that throw — needed so `genTryCatch` declares the tracking variable as `var` (not `const`) when the try body contains bare self-method calls.
 - **Found by:** Self-hosting Phase 2 planning + throws_autoprop_test.zbr.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug024.zbr`): `Worker.outer` emits `return try self.inner(x);` — throws auto-propagation still wires up on both compilers.
 
 ---
 
@@ -283,6 +288,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `scanMutationsInExpr` handled `.call`, `.binary`, `.member`, `.unary`, `.orelse_`, `.catch_`, `.tuple_lit`, `.type_check` — but not `.try_` (the Zebra `expr?` propagation node). When a variable's method was called via `localVar.method()?`, the `?` wraps the call in a `.try_` node. `scanMutationsInExpr` hit the `else => {}` branch and didn't recurse into the inner call expression, so the receiver `localVar` was never added to the `mutated` set. Result: the variable was emitted as `const`, and Zig rejected the mutable method call with "cast discards const qualifier".
 - **Fix:** Added `.try_ => |e| try scanMutationsInExpr(e.expr, set, tc_opt)` to `scanMutationsInExpr`.
 - **Found by:** `throws_nested_test.zbr` and `selfhost/ast_test.zbr` — using `localVar.method()?` inside a try block.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug025.zbr`): `var c = Counter.init()` emitted on both compilers where `c.inc()?` mutates.
 
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design
@@ -366,6 +372,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-17
 - **Target:** Phase 17 — fix on Zig side (selfhost codegen), then round-trip
 - **Fix:** `selfhost/codegen.zbr` gen path for `Expr.except_` now emits `.*` only when the base is `Expr.this_` and we are in a method body (where `this` lowers to `self: *Owner` — `genMethod` always uses pointer receivers for both class and struct owners). Value-typed locals (`local except {...}`) no longer get a spurious deref. Bootstrap round-trip byte-identical; corpus sweep 114/61 unchanged vs baseline (173/173 byte-identical).
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug031.zbr`): Both compilers emit `_except_tmp = p;` (no `.*`) for a value-typed local `p` passed to `except`.
 - **Symptom:** `x except { f = v }` where `x` is a local value (not a pointer) compiles fine on the Zig-compiled Zebra compiler but fails on selfhost-emitted Zig with `error: cannot dereference non-pointer type 'T'`. The selfhost codegen unconditionally emits `var _except_tmp = x.*;` for the `except` subject; `.*` is only legal when the subject is a pointer.
 - **Reproducer:** Phase 16c plumbing attempt in `selfhost/codegen.zbr::generateModuleWith`:
   ```
