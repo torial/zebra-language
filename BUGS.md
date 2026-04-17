@@ -478,7 +478,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ### BUG-037: Selfhost corpus-failure triage (57/160 .zbr files fail under selfhost)
-- **Severity:** High (headline self-hosting gap; every failure is selfhost-side — the Zig-compiled compiler passes all 57)
+- **Severity:** High (headline self-hosting gap; every failure is a selfhost-emit gap — the Zig-compiled compiler parses and emits valid-looking Zig for all 57, though downstream `zig build` parity across the 57 has not been audited)
 - **Status:** Open — meta-ticket for the Phase 17e/17f selfhost-edit wave
 - **Target:** Phase 17e (grammar features) and 17f (diagnostics)
 
