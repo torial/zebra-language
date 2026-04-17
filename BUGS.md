@@ -383,7 +383,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-032: Selfhost codegen.zbr emits `.remove` unconditionally as `.orderedRemove` (List form)
 - **Severity:** Medium (silently corrupts HashMap mutation in every selfhost-emitted program)
-- **Status:** Open
+- **Status:** Fixed 2026-04-17 (commit ff87add) — `.remove` dispatch now discriminates HashMap vs List receiver via new `hashmap_locals` + `fieldIsHashMap` infrastructure in typechecker.zbr/codegen.zbr. HashMap emits `_ = obj.remove(key)`; List keeps `_ = obj.orderedRemove(@intCast(idx))`.
 - **Target:** Phase 17f+ (after Zig-side sprint items).  Pairs with BUG-030.
 - **Symptom:** In `selfhost/codegen.zbr::genMemberCall` around line 3745, `if mname == "remove"` unconditionally emits `_ = obj.orderedRemove(@intCast(key))` regardless of whether the receiver is a `List` or `HashMap`.  HashMaps don't have `orderedRemove`; they have `.remove(key)` which returns `bool`.
 - **Evidence:** `selfhost/typechecker.zbr::InferCtx.unbind` (lines 388-394) has a workaround comment: "selfhost mis-emits HashMap.remove as orderedRemove. Until that bug is fixed, 'unbind' by rebinding to Type_.unknown_."  The workaround means any future HashMap-holding class in selfhost has to remember to avoid `.remove`.
@@ -409,7 +409,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-034: Selfhost emits cross-module union construction as struct call (hard-coded `isUnionLikeName` allow-list)
 - **Severity:** High (blocks running any selfhost-emitted module whose union types aren't in the hard-coded list — `typechecker_test.zbr` currently only runs through `zebra.exe`, not the selfhost binary).
-- **Status:** Open
+- **Status:** Fixed 2026-04-17 (commit ff87add) — `generateModuleWith` now consults `deps_mt.hasUnion(exposed_name)` before the hard-coded heuristics.  The allow-list stays as a fallback for the single-file emit path where `deps_mt` is empty.
 - **Target:** Phase 17f or with BUG-030/031/032/033 selfhost-edit wave.
 - **Symptom:** `UnionName.variant(value)` on a **cross-module** union emits `UnionName.init(value)` (or `UnionName{}` struct call) instead of `UnionName{ .variant = value }`.  Example: in `typechecker_test.zbr`, `Type_.named("Bar")` falls through to the "Class/struct constructor" branch at `selfhost/codegen.zbr:3598` because `Type_` isn't recognised as a union.
 - **Root cause:** `selfhost/codegen.zbr::isUnionLikeName` (lines 409-417) is a hard-coded allow-list of 8 names (`PNode`, `PParam`, `Decl`, `TypeRef`, `Stmt`, `Expr`, `StringPart`, `LambdaBody`).  `Type_`, `ClassTypes`, `ModuleTypes`, `CrossModuleType`, etc. are absent, so `generateModuleWith` at line 695-701 classifies them as struct/class names.  Then `genCall` at line 3520-3558 misses the union-construction path because `union_names.contains_(oname)` is false.
