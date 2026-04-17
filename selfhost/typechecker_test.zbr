@@ -4,7 +4,7 @@
 # Phase 16b adds typeFromRef, buildModuleTypes, and inferExpr tests — AST is
 # hand-constructed (no Parser dependency) to keep the test file self-contained.
 
-use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr
+use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
 use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
 def check(ok as bool, label as str)
@@ -416,6 +416,44 @@ def testUnionVariantIndex()
     var p_missing as Type_? = mt.variantPayload("Shape", "missing")
     check(p_missing == nil, "variantPayload(Shape.missing) is nil")
 
+# ── Phase 17b: narrowPayloadFromOnValue ─────────────────────────────────────
+# Build `union Shape { circle as int, dot }` and verify the narrowing
+# helper returns the payload for `Shape.circle`, nil for `Shape.dot`
+# (payload-less), and nil for shapes not matching the expected form.
+
+def testNarrowPayloadFromOnValue()
+    # Build Shape with circle(int) and dot (no payload).
+    var variants as List(UnionVariant) = List(UnionVariant)()
+    variants.add(UnionVariant(mkSpan(), "circle", namedRef("int")))
+    variants.add(UnionVariant(mkSpan(), "dot", nil))
+    var decls as List(Decl) = List(Decl)()
+    decls.add(unionDecl("Shape", variants))
+    var m as Module = Module("" + "<test>", decls)
+    var mt as ModuleTypes = buildModuleTypes(m)
+
+    # Construct `Shape.circle` as Expr.member(ident("Shape"), "circle").
+    var shape_ident as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var circle_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident, "circle"))
+    var nt as Type_? = narrowPayloadFromOnValue(mt, circle_val)
+    check(nt != nil, "narrowPayloadFromOnValue(Shape.circle) is not nil")
+    if nt != nil
+        check(typeIsInt(nt to!), "narrowPayloadFromOnValue(Shape.circle) is int")
+
+    # `Shape.dot` — payload-less → nil (not bound).
+    var shape_ident2 as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var dot_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident2, "dot"))
+    var nt_dot as Type_? = narrowPayloadFromOnValue(mt, dot_val)
+    check(nt_dot == nil, "narrowPayloadFromOnValue(Shape.dot) is nil (payload-less)")
+
+    # `Shape.missing` — variant doesn't exist → nil.
+    var shape_ident3 as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var miss_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident3, "missing"))
+    check(narrowPayloadFromOnValue(mt, miss_val) == nil, "narrowPayloadFromOnValue(Shape.missing) is nil")
+
+    # Non-member expression → nil (e.g., a bare ident).
+    var bare as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    check(narrowPayloadFromOnValue(mt, bare) == nil, "narrowPayloadFromOnValue(bare ident) is nil")
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 class Main
@@ -439,4 +477,5 @@ class Main
         testInferIdentScope()
         testInferMethodCall()
         testUnionVariantIndex()
+        testNarrowPayloadFromOnValue()
         print "typechecker_test: done"

@@ -340,6 +340,10 @@ class InferCtx
     def bind(name as str, t as Type_)
         scope.put(name, t)
 
+    def unbind(name as str)
+        if scope.contains(name)
+            scope.remove(name)
+
     def hasLocal(name as str) as bool
         return scope.contains(name)
 
@@ -518,6 +522,34 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
         else
             return Type_.unknown_
 
+# ── Branch-on narrowing helper ───────────────────────────────────────────────
+# Given an on-case value like `Foo.bar` (parsed as Expr.member with object =
+# Expr.ident("Foo"), member = "bar"), look up the variant's payload type in
+# mt. Returns nil when the expression shape doesn't match, the union isn't
+# known, or the variant is payload-less (Type_.unknown_ in the index is the
+# sentinel for "no payload" vs. "missing").
+
+def narrowPayloadFromOnValue(mt as ModuleTypes, v as Expr) as Type_?
+    branch v
+        on Expr.member as em
+            branch em.object
+                on Expr.ident as oid
+                    var unam as str = "" + oid.name
+                    var vnam as str = "" + em.member
+                    var pt as Type_? = mt.variantPayload(unam, vnam)
+                    if pt != nil
+                        var pt_val as Type_ = pt to!
+                        branch pt_val
+                            on Type_.unknown_
+                                return nil
+                            else
+                                return pt_val
+                else
+                    pass
+        else
+            pass
+    return nil
+
 # ── Statement walker ─────────────────────────────────────────────────────────
 # Phase 17a: structural walker over all 22 ast.Stmt variants. Populates
 # InferCtx scope bindings on var/const decls and (basic) for-in loop vars
@@ -563,13 +595,34 @@ def walkStmt(s as Stmt, ctx as InferCtx)
             walkStmts(fnum.stmts, ctx)
         on Stmt.branch_ as sb
             inferExpr(sb.expr, ctx)
-            # 17a: recurse into each case without narrowing the binding.
-            # 17b will introduce narrowed binding lookup via
-            # ModuleTypes.variantPayload.
+            # 17b: narrow `as name` bindings to the variant's payload type
+            # when the on-case is `on UnionName.variant as name` and
+            # UnionName is a known union in this module. Cross-module
+            # unions and Result(T,E) are handled in Phase 18 (needs
+            # generic_named + dep_types threading into InferCtx).
             for c in sb.cases
                 for v in c.values
                     inferExpr(v, ctx)
+                var had_narrow as bool = false
+                var narrow_name as str = ""
+                var prior_had as bool = false
+                var prior_type as Type_ = Type_.unknown_
+                if c.binding != nil and c.values.len == 1
+                    var val as Expr = c.values.at(0)
+                    var payload as Type_? = narrowPayloadFromOnValue(ctx.module_types, val)
+                    if payload != nil
+                        narrow_name = "" + c.binding to!
+                        prior_had = ctx.hasLocal(narrow_name)
+                        if prior_had
+                            prior_type = ctx.localType(narrow_name)
+                        ctx.bind(narrow_name, payload to!)
+                        had_narrow = true
                 walkStmts(c.stmts, ctx)
+                if had_narrow
+                    if prior_had
+                        ctx.bind(narrow_name, prior_type)
+                    else
+                        ctx.unbind(narrow_name)
             if sb.else_ != nil
                 walkStmts(sb.else_ to!, ctx)
         on Stmt.return_ as sr
