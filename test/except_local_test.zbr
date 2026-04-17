@@ -1,0 +1,42 @@
+# except_local_test.zbr — verification probe for BUG-031
+#
+# Confirms the fix for BUG-031: `local except {...}` inside a method
+# body must NOT get a `.*` deref (selfhost previously emitted
+# `_except_tmp = local.*` unconditionally in methods, which fails to
+# compile on any value-typed local).  Adjacent regression check:
+# `this except {...}` in a method still works (needs `.*` because
+# `this` lowers to `self: *Owner`).
+
+struct Box
+    var v as int
+
+    cue init(v as int)
+        this.v = v
+
+    def bumped(delta as int) as Box
+        # this except — base is this, needs .* under new gate
+        var b = this except
+            v = v + delta
+        return b
+
+    def viaLocal(delta as int) as Box
+        # local except — base is a value-typed local, must NOT get .*
+        var tmp as Box = this except
+            v = v + 0
+        var out = tmp except
+            v = tmp.v + delta
+        return out
+
+class Main
+    shared
+        def main
+            var b = Box(10)
+            var b2 = b.bumped(5)
+            assert b.v == 10     # original unchanged
+            assert b2.v == 15    # this except produced copy
+
+            var b3 = b.viaLocal(7)
+            assert b.v == 10     # original still unchanged
+            assert b3.v == 17    # local except produced copy
+
+            print 'BUG-031 verification: OK'
