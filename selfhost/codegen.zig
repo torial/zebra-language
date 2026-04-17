@@ -1785,6 +1785,16 @@ pub fn fieldIsStrSet(mt: *ModuleTypes, dep_mt: *ModuleTypes, field_name: []const
     return false;
 }
 
+pub fn fieldIsHashMap(mt: *ModuleTypes, dep_mt: *ModuleTypes, field_name: []const u8) bool {
+    if (mt.hasHashMapField(field_name)) {
+        return true;
+    }
+    if (dep_mt.hasHashMapField(field_name)) {
+        return true;
+    }
+    return false;
+}
+
 pub fn ctorParamAtIsRefTo(mt: *ModuleTypes, dep_mt: *ModuleTypes, class_name: []const u8, idx: i64) bool {
     var t: ?Type_ = mt.ctorParamAt(class_name, idx);
     if ((t == null)) {
@@ -2404,14 +2414,18 @@ pub fn generateModuleWith(m: Module, file: []const u8, extra_class_names: std.Ar
                 addCrossModuleBoxedVariants(g.boxed_variants, imp.path);
                 addCrossModuleRefFields(g.ref_fields, g.opt_ref_fields, imp.path);
                 for (imp.exposed.items) |exposed_name| {
-                    if (isEnumLikeName(exposed_name)) {
-                        g.enum_names.add(exposed_name);
+                    if (deps_mt.hasUnion(exposed_name)) {
+                        g.union_names.add(exposed_name);
                     } else {
-                        if (isUnionLikeName(exposed_name)) {
-                            g.union_names.add(exposed_name);
+                        if (isEnumLikeName(exposed_name)) {
+                            g.enum_names.add(exposed_name);
                         } else {
-                            if (isUpperCase(exposed_name)) {
-                                g.struct_names.add(exposed_name);
+                            if (isUnionLikeName(exposed_name)) {
+                                g.union_names.add(exposed_name);
+                            } else {
+                                if (isUpperCase(exposed_name)) {
+                                    g.struct_names.add(exposed_name);
+                                }
                             }
                         }
                     }
@@ -2711,6 +2725,7 @@ pub const Generator = struct {
     str_params: *StrSet,
     list_locals: *StrSet,
     strset_locals: *StrSet,
+    hashmap_locals: *StrSet,
     ptr_field_bindings: *StrSet,
     opt_ptr_field_bindings: *StrSet,
     for_loop_deref: *StrSet,
@@ -2751,6 +2766,7 @@ pub const Generator = struct {
             _self.str_params = StrSet.init();
             _self.list_locals = StrSet.init();
             _self.strset_locals = StrSet.init();
+            _self.hashmap_locals = StrSet.init();
             _self.ptr_field_bindings = StrSet.init();
             _self.opt_ptr_field_bindings = StrSet.init();
             _self.for_loop_deref = StrSet.init();
@@ -3479,6 +3495,9 @@ pub const Generator = struct {
                             if (std.mem.eql(u8, gt.name, "List")) {
                                 bg.list_locals.add(p2.name);
                             }
+                            if (std.mem.eql(u8, gt.name, "HashMap")) {
+                                bg.hashmap_locals.add(p2.name);
+                            }
                         },
                         .named => |nt2| {
                             if (std.mem.eql(u8, nt2.name, "StrSet")) {
@@ -3921,6 +3940,9 @@ pub const Generator = struct {
                 .generic => |gtn| {
                     if (std.mem.eql(u8, gtn.name, "List")) {
                         self.list_locals.add(n.name);
+                    }
+                    if (std.mem.eql(u8, gtn.name, "HashMap")) {
+                        self.hashmap_locals.add(n.name);
                     }
                 },
                 else => |_| {
@@ -6114,13 +6136,29 @@ pub const Generator = struct {
             return;
         }
         if (std.mem.eql(u8, mname, "remove")) {
-            self.w.emit("_ = ");
-            self.genExpr(m.object.*);
-            self.w.emit(".orderedRemove(@intCast(");
-            if ((@as(i64, @intCast(args.items.len)) > 0)) {
-                self.genExpr(args.items[@intCast(0)].value);
+            const rem_obj_name = getMemberFieldName(m.object.*);
+            var is_hashmap_rem = false;
+            if ((rem_obj_name != null)) {
+                const rem_nm = rem_obj_name.?;
+                is_hashmap_rem = (self.hashmap_locals.contains_(rem_nm) or fieldIsHashMap(self.module_types, self.dep_types, rem_nm));
             }
-            self.w.emit("))");
+            if (is_hashmap_rem) {
+                self.w.emit("_ = ");
+                self.genExpr(m.object.*);
+                self.w.emit(".remove(");
+                if ((@as(i64, @intCast(args.items.len)) > 0)) {
+                    self.genExpr(args.items[@intCast(0)].value);
+                }
+                self.w.emit(")");
+            } else {
+                self.w.emit("_ = ");
+                self.genExpr(m.object.*);
+                self.w.emit(".orderedRemove(@intCast(");
+                if ((@as(i64, @intCast(args.items.len)) > 0)) {
+                    self.genExpr(args.items[@intCast(0)].value);
+                }
+                self.w.emit("))");
+            }
             return;
         }
         if (std.mem.eql(u8, mname, "clear")) {

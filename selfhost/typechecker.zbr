@@ -153,6 +153,11 @@ class ModuleTypes
     # whether `obj.name.add(s)` is set-add or list-append without doing
     # full receiver-type inference. Populated by addClassMembers.
     var strset_field_names as HashMap(str, bool)
+    # Reverse index: field names whose declared type is HashMap(K,V).
+    # Parallel to strset_field_names; used by codegen to discriminate
+    # HashMap vs List receivers at .remove / .contains dispatch sites
+    # (BUG-032 et al). Populated by addClassMembers.
+    var hashmap_field_names as HashMap(str, bool)
     # Union variant payload index — key "UnionName.variantName", value is
     # the payload's Type_ (or Type_.unknown_ for payload-less variants).
     # Drives Phase 17b branch-on narrowing: `branch x on Foo.bar as n`
@@ -167,6 +172,7 @@ class ModuleTypes
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
+        hashmap_field_names = HashMap()
         variant_payloads = HashMap()
         union_names = HashMap()
 
@@ -178,6 +184,12 @@ class ModuleTypes
 
     def hasStrSetField(field_name as str) as bool
         return this.strset_field_names.contains(field_name)
+
+    def addHashMapField(field_name as str)
+        this.hashmap_field_names.put(internString(field_name), true)
+
+    def hasHashMapField(field_name as str) as bool
+        return this.hashmap_field_names.contains(field_name)
 
     def addUnion(name as str)
         this.union_names.put(internString(name), true)
@@ -297,6 +309,20 @@ def isStrSetOrWrapped(t as Type_) as bool
         else
             return false
 
+# Helper: true if tr is HashMap(K,V), or a nilable/ref_to wrapping one.
+# typeFromRef maps TypeRef.generic to Type_.unknown_, so HashMap-ness is
+# detected from the raw TypeRef before it loses generic-arg fidelity.
+def isHashMapTypeRef(tr as TypeRef) as bool
+    branch tr
+        on TypeRef.generic as gtr
+            return gtr.name == "HashMap"
+        on TypeRef.nilable as inner
+            return isHashMapTypeRef(inner)
+        on TypeRef.ref_to as inner
+            return isHashMapTypeRef(inner)
+        else
+            return false
+
 def addClassMembers(mt as ModuleTypes, ct as ClassTypes, members as List(Decl))
     for member in members
         branch member
@@ -306,6 +332,8 @@ def addClassMembers(mt as ModuleTypes, ct as ClassTypes, members as List(Decl))
                     ct.setField("" + v.name, ft)
                     if isStrSetOrWrapped(ft)
                         mt.addStrSetField("" + v.name)
+                    if isHashMapTypeRef(v.type_ to!)
+                        mt.addHashMapField("" + v.name)
                 else
                     ct.setField("" + v.name, Type_.unknown_)
             on Decl.method as m

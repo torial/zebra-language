@@ -267,6 +267,18 @@ def fieldIsStrSet(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) a
         return true
     return false
 
+# BUG-032 infrastructure. "Is there a field by this name with HashMap(K,V)
+# type anywhere in the current-module or dep-module type tables?" Mirrors
+# fieldIsStrSet; populated at class-build time in typechecker.addClassMembers
+# via isHashMapTypeRef on the raw TypeRef (since typeFromRef maps generics to
+# Type_.unknown_ and would lose the HashMap signal).
+def fieldIsHashMap(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) as bool
+    if mt.hasHashMapField(field_name)
+        return true
+    if dep_mt.hasHashMapField(field_name)
+        return true
+    return false
+
 def ctorParamAtIsRefTo(mt as ModuleTypes, dep_mt as ModuleTypes, class_name as str, idx as int) as bool
     var t as Type_? = mt.ctorParamAt(class_name, idx)
     if t == nil
@@ -689,8 +701,15 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str),
                 addCrossModuleBoxedVariants(g.boxed_variants, imp.path)
                 addCrossModuleRefFields(g.ref_fields, g.opt_ref_fields, imp.path)
                 for exposed_name in imp.exposed
-                    # Exposed names ending in Kind/Mode/Op are typically enums
-                    if isEnumLikeName(exposed_name)
+                    # BUG-034: prefer the dep-module's authoritative type table
+                    # over name heuristics. deps_mt.hasUnion covers any exposed
+                    # cross-module union declared in a dep (e.g. Type_ from
+                    # typechecker.zbr); the hardcoded isUnionLikeName /
+                    # isEnumLikeName lists remain as a fallback for the
+                    # generate-single-file path where deps_mt is empty.
+                    if deps_mt.hasUnion(exposed_name)
+                        g.union_names.add(exposed_name)
+                    else if isEnumLikeName(exposed_name)
                         g.enum_names.add(exposed_name)
                     else if isUnionLikeName(exposed_name)
                         g.union_names.add(exposed_name)
@@ -943,6 +962,7 @@ struct Generator
     var str_params            as StrSet   # param names with type str
     var list_locals           as StrSet   # local/param names with type List(*)
     var strset_locals         as StrSet   # local/param names with type StrSet
+    var hashmap_locals        as StrSet   # local/param names with type HashMap(K,V)
     var ptr_field_bindings    as StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
     var opt_ptr_field_bindings as StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref        as StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
@@ -992,6 +1012,7 @@ struct Generator
         this.str_params            = StrSet()
         this.list_locals           = StrSet()
         this.strset_locals         = StrSet()
+        this.hashmap_locals        = StrSet()
         this.ptr_field_bindings    = StrSet()
         this.opt_ptr_field_bindings = StrSet()
         this.for_loop_deref        = StrSet()
@@ -1617,13 +1638,15 @@ struct Generator
                     ctx17c.bind(pp.name, Type_.unknown_)
             walkStmts(mstmts, ctx17c)
             bg = bg.withInferCtx(ctx17c)
-            # Track List/StrSet params for type-aware codegen
+            # Track List/StrSet/HashMap params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
                     branch p2.type_ to!
                         on TypeRef.generic as gt
                             if gt.name == "List"
                                 bg.list_locals.add(p2.name)
+                            if gt.name == "HashMap"
+                                bg.hashmap_locals.add(p2.name)
                         on TypeRef.named as nt2
                             if nt2.name == "StrSet"
                                 bg.strset_locals.add(p2.name)
@@ -1971,6 +1994,8 @@ struct Generator
                 on TypeRef.generic as gtn
                     if gtn.name == "List"
                         list_locals.add(n.name)
+                    if gtn.name == "HashMap"
+                        hashmap_locals.add(n.name)
                 else
                     pass
         # Detect StrSet from init expression (StrSet() has no type annotation)
@@ -3743,12 +3768,27 @@ struct Generator
             w.emit(")]")
             return
         if mname == "remove"
-            w.emit("_ = ")
-            genExpr(m.object)
-            w.emit(".orderedRemove(@intCast(")
-            if args.count() > 0
-                genExpr(args.at(0).value)
-            w.emit("))")
+            # BUG-032: discriminate HashMap vs List receiver. HashMap.remove(key)
+            # returns bool; List has no .remove, only .orderedRemove(idx).
+            var rem_obj_name = getMemberFieldName(m.object)
+            var is_hashmap_rem = false
+            if rem_obj_name != nil
+                var rem_nm = rem_obj_name to!
+                is_hashmap_rem = hashmap_locals.contains_(rem_nm) or fieldIsHashMap(this.module_types, this.dep_types, rem_nm)
+            if is_hashmap_rem
+                w.emit("_ = ")
+                genExpr(m.object)
+                w.emit(".remove(")
+                if args.count() > 0
+                    genExpr(args.at(0).value)
+                w.emit(")")
+            else
+                w.emit("_ = ")
+                genExpr(m.object)
+                w.emit(".orderedRemove(@intCast(")
+                if args.count() > 0
+                    genExpr(args.at(0).value)
+                w.emit("))")
             return
         if mname == "clear"
             genExpr(m.object)
