@@ -395,16 +395,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-033: Selfhost `.contains()` on class-field HashMap emits `List.contains` form
-- **Severity:** Medium (forces wrapper methods in every HashMap-holding selfhost class)
-- **Status:** Open
-- **Target:** Phase 17f+ (bundle with BUG-030/031/032 in one selfhost-edit wave).
-- **Symptom:** When the leftmost receiver of `.contains(key)` is a parameter/field of a user class whose TC type is `HashMap(K,V)`, selfhost emits the List form (loop / `indexOf != -1`) instead of the HashMap `.contains(key)` path.
-- **Evidence:** Same `hasLocal`/`localType` workaround pattern used in `InferCtx` — users currently wrap HashMap-field access in helper methods to dodge the misemit.
-- **Zig-side:** Works via `genStdlibMethod`/`genHashMapMethod` receiver-type dispatch; selfhost side lacks equivalent walker because TC `Type_` currently falls through to `.unknown_` for HashMap/List and no receiver-chain walker exists (BUG-030's scope).
-- **Fix direction (selfhost-only):** Same machinery as BUG-032 — once `hashmap_locals`/`fieldIsHashMap` infrastructure exists, extend `.contains` dispatch to check it before falling through to List form.  Pair with BUG-030 in the same walker.
-- **Risk:** Selfhost-side edit.  Group with BUG-030/031/032 in one selfhost-edit commit.
-- **Found by:** Phase 17.5 stability-sprint triage (deferred from BUG-030), 2026-04-17.
+### BUG-033: Selfhost `.contains()` on class-field HashMap emits `List.contains` form — NOT REPRODUCED
+- **Severity:** N/A
+- **Status:** Not Reproduced 2026-04-17
+- **Investigation:** Built reproducer `/tmp/bug033_verify.zbr` with `class Reg` holding `HashMap(str,int)` field, called via `self.by_name.contains(k)`.  Selfhost emits CORRECTLY:
+  ```zig
+  pub fn contains_key(self: *Reg, k: []const u8) bool {
+      return self.by_name.contains(k);
+  }
+  ```
+  i.e. the HashMap `.contains` path — NOT the List form as originally filed. BUG-032's walker work (field_hashmap_sites) evidently already covers this receiver shape, or it never mis-emitted for this shape to begin with.
+- **Replaced by:** BUG-036 (below) — investigating the above reproducer surfaced a *different* HashMap-field bug around `[key]` subscript emit.
+- **Found by:** Phase 17.5 stability-sprint triage (deferred from BUG-030), 2026-04-17.  Closed by same-day re-verification.
 
 ---
 
@@ -443,6 +445,35 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Extra:** The generic "selfhost pipeline error: " with empty `e.message` is itself a diagnostics gap — BUG candidate or merge into Phase 20 diagnostics. Leaving a breadcrumb here rather than filing separately.
 - **Risk:** Selfhost-side parser edit — bootstrap_check + corpus sweep required. May unlock additional corpus files beyond probe6.
 - **Found by:** probe6/probe7 triage (item #2 from Sean's 2026-04-17 nag list).
+
+---
+
+### BUG-036: Selfhost HashMap field `[key]` subscript emits array-index with bogus `@intCast`
+- **Severity:** High (any class-field HashMap read/write via `[k]` syntax emits code Zig rejects)
+- **Status:** Open
+- **Target:** Phase 17f selfhost-edit wave (pair with remaining HashMap walker work).
+- **Symptom:** For `this.field[k] = v` (assign) or `this.field[k]` (read) where `this.field` is typed `HashMap(K,V)`, selfhost emits:
+  ```zig
+  self.by_name[@as(usize, @intCast(k))] = n;           // assign
+  return self.by_name[@as(usize, @intCast(k))];         // read
+  ```
+  Zig rejects with `error: expected integer or vector, found '[]const u8'`.  The codegen treats the HashMap field as a List (array-indexing with `usize` cast) rather than lowering to `.put(k,v)` / `.get(k).?`.
+- **Reproducer:** `/tmp/bug033_verify.zbr`:
+  ```
+  class Reg
+      var by_name as HashMap(str, int)
+      cue init()
+          this.by_name = HashMap()
+      def insert_(k as str, n as int)
+          this.by_name[k] = n
+      def peek(k as str) as int
+          return this.by_name[k]
+  ```
+  `zebra-selfhost.exe --emit-zig` produces broken Zig; `zebra.exe --emit-zig` also emits `self.by_name[k] = n;` (without the cast) — itself also broken but is a separate Zig-backend issue tracked informally.  The *selfhost-specific* bug here is the spurious `@intCast` wrap.
+- **Zig-side reference:** Zig backend's subscript lowering for HashMap receivers routes through `genHashMapSubscript` (approx) and emits `.put`/`.get`.  Selfhost lacks this branch — the subscript path always emits `base[@as(usize, @intCast(idx))]` regardless of receiver type.
+- **Fix direction (selfhost-only):** In `selfhost/codegen.zbr`, the subscript emit paths (`genExpr` for `Expr.index_` and `genAssign` for indexed LHS) should consult the walker's `fieldIsHashMap` / `hashmap_locals` / `inferExpr` to detect HashMap receivers and emit `.put(k,v)` / `.get(k).?` instead of `base[@as(usize, @intCast(k))]`.  Also suppress the `@intCast` wrap when the index type isn't integer-coercible (defence-in-depth — a string index should never be cast to `usize`).
+- **Risk:** Selfhost-side edit — round-trip + bootstrap_check + corpus sweep required.  Subscript path is hot; regress potential is non-trivial.  Group with BUG-032 successor wave.
+- **Found by:** BUG-033 re-verification, 2026-04-17.
 
 ---
 
