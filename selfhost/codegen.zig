@@ -1539,6 +1539,7 @@ const nameUsedInStmts = cg_helpers.nameUsedInStmts;
 const typechecker = @import("typechecker.zig");
 const ModuleTypes = typechecker.ModuleTypes;
 const buildModuleTypes = typechecker.buildModuleTypes;
+const Type_ = typechecker.Type_;
 pub fn getMemberFieldName(e: Expr) ?[]const u8 {
     switch (e) {
         .member => |_ptr_m| {
@@ -1769,82 +1770,33 @@ pub fn isKnownListField(name: []const u8) bool {
     return false;
 }
 
-pub fn isKnownStrSetField(name: []const u8) bool {
-    if (((std.mem.eql(u8, name, "class_names") or std.mem.eql(u8, name, "union_names")) or std.mem.eql(u8, name, "enum_names"))) {
+pub fn fieldIsStrSet(mt: *ModuleTypes, dep_mt: *ModuleTypes, field_name: []const u8) bool {
+    if (mt.hasStrSetField(field_name)) {
         return true;
     }
-    if (((std.mem.eql(u8, name, "struct_names") or std.mem.eql(u8, name, "boxed_variants")) or std.mem.eql(u8, name, "unwrapped_imports"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "str_params") or std.mem.eql(u8, name, "list_locals")) or std.mem.eql(u8, name, "strset_locals"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "mut_set") or std.mem.eql(u8, name, "ret_set")) or std.mem.eql(u8, name, "nil_narrowed"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "param_names") or std.mem.eql(u8, name, "ref_fields")) or std.mem.eql(u8, name, "opt_ref_fields"))) {
-        return true;
-    }
-    if ((std.mem.eql(u8, name, "ptr_field_bindings") or std.mem.eql(u8, name, "opt_ptr_field_bindings"))) {
-        return true;
-    }
-    if ((std.mem.eql(u8, name, "for_loop_deref") or std.mem.eql(u8, name, "for_loop_vars"))) {
-        return true;
-    }
-    if ((std.mem.eql(u8, name, "closure_vars") or std.mem.eql(u8, name, "capture_fields"))) {
+    if (dep_mt.hasStrSetField(field_name)) {
         return true;
     }
     return false;
 }
 
-pub fn isAstStructWithPtrParams(name: []const u8) bool {
-    if (((std.mem.eql(u8, name, "StmtReturn") or std.mem.eql(u8, name, "StmtIf")) or std.mem.eql(u8, name, "StmtWhile"))) {
-        return true;
+pub fn ctorParamAtIsRefTo(mt: *ModuleTypes, dep_mt: *ModuleTypes, class_name: []const u8, idx: i64) bool {
+    var t: ?Type_ = mt.ctorParamAt(class_name, idx);
+    if ((t == null)) {
+        t = dep_mt.ctorParamAt(class_name, idx);
     }
-    if (((std.mem.eql(u8, name, "StmtForIn") or std.mem.eql(u8, name, "StmtForNum")) or std.mem.eql(u8, name, "StmtBranch"))) {
-        return true;
+    if ((t == null)) {
+        return false;
     }
-    if (((std.mem.eql(u8, name, "StmtAssert") or std.mem.eql(u8, name, "StmtAssign")) or std.mem.eql(u8, name, "StmtDefer"))) {
-        return true;
+    const tv: Type_ = t.?;
+    switch (tv) {
+        .ref_to => {
+            return true;
+        },
+        else => {
+            return false;
+        },
     }
-    if (((std.mem.eql(u8, name, "StmtWith") or std.mem.eql(u8, name, "StmtRaise")) or std.mem.eql(u8, name, "StmtGuard"))) {
-        return true;
-    }
-    if (std.mem.eql(u8, name, "StmtDestruct")) {
-        return true;
-    }
-    if ((std.mem.eql(u8, name, "ExprMember") or std.mem.eql(u8, name, "ExprIndex"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "ExprSlice") or std.mem.eql(u8, name, "ExprBinary")) or std.mem.eql(u8, name, "ExprUnary"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "ExprCast") or std.mem.eql(u8, name, "ExprTry")) or std.mem.eql(u8, name, "ExprOrelse"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "ExprCatch") or std.mem.eql(u8, name, "ExprIf")) or std.mem.eql(u8, name, "ExprAllAny"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "ExprToNonNil") or std.mem.eql(u8, name, "ExprExcept")) or std.mem.eql(u8, name, "ExprStringInterp"))) {
-        return true;
-    }
-    if (((std.mem.eql(u8, name, "DeclVar") or std.mem.eql(u8, name, "EnumMember")) or std.mem.eql(u8, name, "Param"))) {
-        return true;
-    }
-    if (std.mem.eql(u8, name, "DictEntry")) {
-        return true;
-    }
-    return false;
-}
-
-pub fn isUnboxedCtorArg(name: []const u8, idx: i64) bool {
-    if ((std.mem.eql(u8, name, "DeclVar") and (idx == 3))) {
-        return true;
-    }
-    if ((std.mem.eql(u8, name, "ExprExcept") and (idx == 1))) {
-        return true;
-    }
-    return false;
 }
 
 pub fn shouldBoxCtorArg(e: Expr) bool {
@@ -5931,7 +5883,6 @@ pub const Generator = struct {
         switch (c.callee) {
             .ident => |id| {
                 if ((self.class_names.contains_(id.name) or self.struct_names.contains_(id.name))) {
-                    const is_ast_struct = isAstStructWithPtrParams(id.name);
                     self.w.emit(id.name);
                     self.w.emit(".init(");
                     var first2 = true;
@@ -5949,7 +5900,8 @@ pub const Generator = struct {
                             self.w.emit(", ");
                         }
                         first2 = false;
-                        if (((is_ast_struct and shouldBoxCtorArg(a.value)) and (!isUnboxedCtorArg(id.name, arg_idx)))) {
+                        const is_ref_param: bool = ctorParamAtIsRefTo(self.module_types, self.dep_types, id.name, arg_idx);
+                        if ((is_ref_param and shouldBoxCtorArg(a.value))) {
                             const lbl = box_labels.items[@intCast(box_idx)];
                             self.w.emit(lbl);
                             self.w.emit(": { const _bv = ");
@@ -6049,7 +6001,8 @@ pub const Generator = struct {
             const add_obj_name = getMemberFieldName(m.object.*);
             var is_strset = false;
             if ((add_obj_name != null)) {
-                is_strset = (self.strset_locals.contains_(add_obj_name.?) or isKnownStrSetField(add_obj_name.?));
+                const add_nm = add_obj_name.?;
+                is_strset = (self.strset_locals.contains_(add_nm) or fieldIsStrSet(self.module_types, self.dep_types, add_nm));
             }
             if ((!is_strset)) {
                 self.genExpr(m.object.*);
@@ -6065,7 +6018,8 @@ pub const Generator = struct {
             const cnt_obj_name = getMemberFieldName(m.object.*);
             var is_strset_cnt = false;
             if ((cnt_obj_name != null)) {
-                is_strset_cnt = (self.strset_locals.contains_(cnt_obj_name.?) or isKnownStrSetField(cnt_obj_name.?));
+                const cnt_nm = cnt_obj_name.?;
+                is_strset_cnt = (self.strset_locals.contains_(cnt_nm) or fieldIsStrSet(self.module_types, self.dep_types, cnt_nm));
             }
             if (is_strset_cnt) {
                 self.w.emit("@as(i64, @intCast(");
@@ -6127,7 +6081,8 @@ pub const Generator = struct {
             const cont_obj_name = getMemberFieldName(m.object.*);
             var is_strset_obj = false;
             if ((cont_obj_name != null)) {
-                is_strset_obj = (self.strset_locals.contains_(cont_obj_name.?) or isKnownStrSetField(cont_obj_name.?));
+                const cont_nm = cont_obj_name.?;
+                is_strset_obj = (self.strset_locals.contains_(cont_nm) or fieldIsStrSet(self.module_types, self.dep_types, cont_nm));
             }
             if (is_strset_obj) {
                 self.w.emit(".contains_(");

@@ -24,7 +24,7 @@
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclProperty, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, AllAnyKind, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts
-use typechecker exposing ModuleTypes, buildModuleTypes, Type_
+use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -955,6 +955,9 @@ struct Generator
     # Plumbed now, consumed incrementally as heuristics retire (16c..17).
     var module_types          as ModuleTypes
     var dep_types             as ModuleTypes
+    # Phase 17c addition — per-method inference context. Seeded by genMethod/
+    # genInit via walkStmts pre-walk before emit. nil at module scope.
+    var infer_ctx             as InferCtx?
 
     cue init(w as Writer, indent as int, owner as str, in_method as bool,
              is_struct_owner as bool, is_generic as bool,
@@ -999,6 +1002,7 @@ struct Generator
         this.closure_vars          = StrSet()
         this.module_types          = module_types
         this.dep_types             = dep_types
+        this.infer_ctx             = nil
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1053,6 +1057,29 @@ struct Generator
         var g = this except
             self_name = name
         return g
+
+    # Phase 17c — attach an InferCtx. Written as a method on Generator so the
+    # `except`-on-this path goes through the self-pointer (workaround for a
+    # selfhost emit bug where `local = local except` emits an illegal
+    # `local.*` deref; `this except` is fine because `this` is a pointer).
+    def withInferCtx(ctx as InferCtx) as Generator
+        var g = this except
+            infer_ctx = ctx
+        return g
+
+    # Phase 17c — true iff t is a named union type known in this module or a dep.
+    # Used to replace shouldBoxCtorArg (name-pattern heuristic) with a walker-
+    # verified answer from inferExpr.
+    def isUnionType(t as Type_) as bool
+        branch t
+            on Type_.named as tn
+                if this.module_types.hasUnion(tn)
+                    return true
+                if this.dep_types.hasUnion(tn)
+                    return true
+                return false
+            else
+                return false
 
     def withMethodCtx(ms as StrSet?, rs as StrSet?, throws_ as bool, members as List(Decl), pnames as StrSet?, sparams as StrSet, sname as str) as Generator
         var g = this except
@@ -1559,6 +1586,18 @@ struct Generator
                             pass
             w.emit(" {\n")
             var bg = withMethodCtx(ms, rs, m.throws_, owner_members, ps, sp, "self")
+            # Phase 17c — seed a per-method InferCtx and pre-walk statements so
+            # expression-level type inference has a populated scope map. Used
+            # during emit (e.g., at ctor-arg boxing) to replace name-pattern
+            # heuristics with walker-derived types.
+            var ctx17c = InferCtx(this.module_types, owner)
+            for pp in m.params
+                if pp.type_ != nil
+                    ctx17c.bind(pp.name, typeFromRef(pp.type_ to!))
+                else
+                    ctx17c.bind(pp.name, Type_.unknown_)
+            walkStmts(mstmts, ctx17c)
+            bg = bg.withInferCtx(ctx17c)
             # Track List/StrSet params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
@@ -1627,6 +1666,15 @@ struct Generator
             for p in ini.params
                 ps.add(p.name)
             var bg = ig.withMethodCtx(ms, rs, false, owner_members, ps, StrSet(), "_self")
+            # Phase 17c — seed InferCtx for the init body as well (see genMethod).
+            var ctx17ci = InferCtx(this.module_types, owner)
+            for pp in ini.params
+                if pp.type_ != nil
+                    ctx17ci.bind(pp.name, typeFromRef(pp.type_ to!))
+                else
+                    ctx17ci.bind(pp.name, Type_.unknown_)
+            walkStmts(istmts, ctx17ci)
+            bg = bg.withInferCtx(ctx17ci)
             bg.genStmts(istmts)
         ig.writeIndent()
         ig.w.emit("return _self;\n")
@@ -3550,7 +3598,21 @@ struct Generator
                         #   isAstStructWithPtrParams + isUnboxedCtorArg
                         # heuristic pair across all 175 .zbr files in the repo.
                         var is_ref_param as bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
-                        if is_ref_param and shouldBoxCtorArg(a.value)
+                        var heur17c as bool = shouldBoxCtorArg(a.value)
+                        # Phase 17c compute-both: walker answer via inferExpr → isUnionType.
+                        # Log divergences; keep emission on heuristic until corpus is clean.
+                        if this.infer_ctx != nil
+                            var wt17c as Type_ = inferExpr(a.value, this.infer_ctx to!)
+                            var wres17c as bool = this.isUnionType(wt17c)
+                            if heur17c != wres17c
+                                var hs17c as str = "F"
+                                if heur17c
+                                    hs17c = "T"
+                                var ws17c as str = "F"
+                                if wres17c
+                                    ws17c = "T"
+                                sys.errln("DIVERGE-17C class=" + id.name + " idx=" + arg_idx.toString() + " heur=" + hs17c + " walker=" + ws17c)
+                        if is_ref_param and heur17c
                             # Box: heap-allocate for ^T parameter
                             var lbl = box_labels.at(box_idx)
                             w.emit(lbl)

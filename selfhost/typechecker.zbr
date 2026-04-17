@@ -341,8 +341,12 @@ class InferCtx
         scope.put(name, t)
 
     def unbind(name as str)
+        # Workaround: selfhost mis-emits HashMap.remove as orderedRemove. Until
+        # that bug is fixed, "unbind" by rebinding to Type_.unknown_. Effect:
+        # hasLocal returns true with an unknown type, which is safe (callers
+        # treat unknown as no information).
         if scope.contains(name)
-            scope.remove(name)
+            scope.put(name, Type_.unknown_)
 
     def hasLocal(name as str) as bool
         return scope.contains(name)
@@ -392,7 +396,10 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
             return Type_.string_
         on Expr.nil_ as _
             # Represents untyped nil — wraps unknown_ for optional compatibility.
-            return Type_.optional(Type_.unknown_)
+            # Workaround: bind to local first so selfhost's box emit has a named
+            # Type_ value (not a bare tag ref) for @TypeOf inspection.
+            var inner_unk as Type_ = Type_.unknown_
+            return Type_.optional(inner_unk)
         on Expr.this_ as _
             if ctx.current_class == ""
                 return Type_.unknown_
@@ -558,6 +565,16 @@ def narrowPayloadFromOnValue(mt as ModuleTypes, v as Expr) as Type_?
 # side table. Phase 17b adds branch-on variant-payload narrowing; Phase 17c
 # wires this walker into codegen so heuristics can be retired.
 
+# Wraps inferExpr to discard the returned Type_ — walkStmt sites only care
+# about side effects (scope bindings populated by sub-expression inference).
+# Zig 0.15 rejects throwing away non-void values, so this helper is required.
+def walkExpr(e as Expr, ctx as InferCtx)
+    var t_ign as Type_ = inferExpr(e, ctx)
+    # Force a use of t_ign so neither Zig nor Zebra warns; isString is pure.
+    var used as bool = isString(t_ign)
+    if used
+        pass
+
 def walkStmts(stmts as List(Stmt), ctx as InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -565,18 +582,18 @@ def walkStmts(stmts as List(Stmt), ctx as InferCtx)
 def walkStmt(s as Stmt, ctx as InferCtx)
     branch s
         on Stmt.if_ as si
-            inferExpr(si.cond, ctx)
+            walkExpr(si.cond, ctx)
             walkStmts(si.then_stmts, ctx)
             for ei in si.else_ifs
-                inferExpr(ei.cond, ctx)
+                walkExpr(ei.cond, ctx)
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts != nil
                 walkStmts(si.else_stmts to!, ctx)
         on Stmt.while_ as sw
-            inferExpr(sw.cond, ctx)
+            walkExpr(sw.cond, ctx)
             walkStmts(sw.stmts, ctx)
         on Stmt.for_in as fi
-            inferExpr(fi.iter, ctx)
+            walkExpr(fi.iter, ctx)
             # 17a: element-type inference for loop vars is deferred to 17c
             # (needs generic-arg awareness for List(T) / HashMap(K,V)). Bind
             # each loop var as unknown_ so `hasLocal` returns true — any later
@@ -587,14 +604,14 @@ def walkStmt(s as Stmt, ctx as InferCtx)
             for v2 in fi.vars
                 ctx.bind("" + v2, Type_.unknown_)
         on Stmt.for_num as fnum
-            inferExpr(fnum.start, ctx)
-            inferExpr(fnum.stop_, ctx)
+            walkExpr(fnum.start, ctx)
+            walkExpr(fnum.stop_, ctx)
             if fnum.step != nil
-                inferExpr(fnum.step to!, ctx)
+                walkExpr(fnum.step to!, ctx)
             ctx.bind("" + fnum.var_, Type_.int_)
             walkStmts(fnum.stmts, ctx)
         on Stmt.branch_ as sb
-            inferExpr(sb.expr, ctx)
+            walkExpr(sb.expr, ctx)
             # 17b: narrow `as name` bindings to the variant's payload type
             # when the on-case is `on UnionName.variant as name` and
             # UnionName is a known union in this module. Cross-module
@@ -602,12 +619,12 @@ def walkStmt(s as Stmt, ctx as InferCtx)
             # generic_named + dep_types threading into InferCtx).
             for c in sb.cases
                 for v in c.values
-                    inferExpr(v, ctx)
+                    walkExpr(v, ctx)
                 var had_narrow as bool = false
                 var narrow_name as str = ""
                 var prior_had as bool = false
                 var prior_type as Type_ = Type_.unknown_
-                if c.binding != nil and c.values.len == 1
+                if c.binding != nil and c.values.count() == 1
                     var val as Expr = c.values.at(0)
                     var payload as Type_? = narrowPayloadFromOnValue(ctx.module_types, val)
                     if payload != nil
@@ -627,11 +644,11 @@ def walkStmt(s as Stmt, ctx as InferCtx)
                 walkStmts(sb.else_ to!, ctx)
         on Stmt.return_ as sr
             if sr.value != nil
-                inferExpr(sr.value to!, ctx)
+                walkExpr(sr.value to!, ctx)
         on Stmt.assert_ as sa
-            inferExpr(sa.cond, ctx)
+            walkExpr(sa.cond, ctx)
             if sa.message != nil
-                inferExpr(sa.message to!, ctx)
+                walkExpr(sa.message to!, ctx)
         on Stmt.pass_
             pass
         on Stmt.break_
@@ -639,8 +656,8 @@ def walkStmt(s as Stmt, ctx as InferCtx)
         on Stmt.continue_
             pass
         on Stmt.assign as sasn
-            inferExpr(sasn.target, ctx)
-            inferExpr(sasn.value, ctx)
+            walkExpr(sasn.target, ctx)
+            walkExpr(sasn.value, ctx)
         on Stmt.var_ as dv
             # Bind local name to declared type, or to init_expr's inferred type
             # when the declaration omits the type annotation.
@@ -652,35 +669,33 @@ def walkStmt(s as Stmt, ctx as InferCtx)
                     t = inferExpr(dv.init_expr to!, ctx)
             ctx.bind("" + dv.name, t)
         on Stmt.expr as e
-            inferExpr(e, ctx)
+            walkExpr(e, ctx)
         on Stmt.defer_ as sd
             walkStmt(sd.stmt, ctx)
         on Stmt.with_ as sw2
-            inferExpr(sw2.target, ctx)
+            walkExpr(sw2.target, ctx)
             walkStmts(sw2.stmts, ctx)
         on Stmt.raise_ as sra
             if sra.message != nil
-                inferExpr(sra.message to!, ctx)
+                walkExpr(sra.message to!, ctx)
             if sra.details != nil
-                inferExpr(sra.details to!, ctx)
+                walkExpr(sra.details to!, ctx)
         on Stmt.try_catch as stc
             walkStmts(stc.stmts, ctx)
             for cc in stc.clauses
                 walkStmts(cc.stmts, ctx)
         on Stmt.guard_ as sg
-            inferExpr(sg.cond, ctx)
+            walkExpr(sg.cond, ctx)
             walkStmts(sg.else_stmts, ctx)
         on Stmt.destruct as sds
-            inferExpr(sds.init_expr, ctx)
+            walkExpr(sds.init_expr, ctx)
             for nm in sds.names
                 ctx.bind("" + nm, Type_.unknown_)
         on Stmt.arena_scope as sas
             walkStmts(sas.stmts, ctx)
         on Stmt.print_ as sp
             for a in sp.args
-                inferExpr(a, ctx)
-        else
-            pass
+                walkExpr(a, ctx)
 
 class Main
     shared def main()
