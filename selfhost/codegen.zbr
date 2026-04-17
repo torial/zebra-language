@@ -243,31 +243,30 @@ def isKnownListField(name as str) as bool
         return true
     return false
 
-def isKnownStrSetField(name as str) as bool
-    # Known StrSet-typed fields on Generator and other structs
-    if name == "class_names" or name == "union_names" or name == "enum_names"
-        return true
-    if name == "struct_names" or name == "boxed_variants" or name == "unwrapped_imports"
-        return true
-    if name == "str_params" or name == "list_locals" or name == "strset_locals"
-        return true
-    if name == "mut_set" or name == "ret_set" or name == "nil_narrowed"
-        return true
-    if name == "param_names" or name == "ref_fields" or name == "opt_ref_fields"
-        return true
-    if name == "ptr_field_bindings" or name == "opt_ptr_field_bindings"
-        return true
-    if name == "for_loop_deref" or name == "for_loop_vars"
-        return true
-    if name == "closure_vars" or name == "capture_fields"
-        return true
-    return false
+# Phase 16c retire #3: `isKnownStrSetField(name)` (a hardcoded allow-list
+# of 28 Generator/Helpers/Resolver StrSet-typed field names) was replaced
+# by `fieldIsStrSet(mt, dep_mt, name)`, which consults the ModuleTypes
+# reverse index populated at class/struct-build time in
+# typechecker.addClassMembers. Verified equivalent across the full
+# 175-file .zbr corpus before flip.
 
 # Phase 16c retire #1: replaced isAstStructWithPtrParams + isUnboxedCtorArg
 # with a direct ModuleTypes.ctorParamAt is-ref-to check. The two heuristics
 # answered "is ctor param at (class_name, idx) a ^T?" by name-list
 # enumeration; ModuleTypes answers it from the actual AST. Verified
 # effective-equivalent across the full 175-file .zbr corpus before flip.
+# Phase 16c retire #3: Replacement for `isKnownStrSetField(name)`.
+# Answers "is there a field by this name with StrSet type anywhere in
+# the current-module or dep-module type tables?" Populated at class/
+# struct-build time (typechecker.addClassMembers), so a reverse index
+# without HashMap iteration.
+def fieldIsStrSet(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) as bool
+    if mt.hasStrSetField(field_name)
+        return true
+    if dep_mt.hasStrSetField(field_name)
+        return true
+    return false
+
 def ctorParamAtIsRefTo(mt as ModuleTypes, dep_mt as ModuleTypes, class_name as str, idx as int) as bool
     var t as Type_? = mt.ctorParamAt(class_name, idx)
     if t == nil
@@ -3635,7 +3634,8 @@ struct Generator
             var add_obj_name = getMemberFieldName(m.object)
             var is_strset = false
             if add_obj_name != nil
-                is_strset = strset_locals.contains_(add_obj_name to!) or isKnownStrSetField(add_obj_name to!)
+                var add_nm = add_obj_name to!
+                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(this.module_types, this.dep_types, add_nm)
             if not is_strset
                 genExpr(m.object)
                 w.emit(".append(_allocator, ")
@@ -3647,7 +3647,8 @@ struct Generator
             var cnt_obj_name = getMemberFieldName(m.object)
             var is_strset_cnt = false
             if cnt_obj_name != nil
-                is_strset_cnt = strset_locals.contains_(cnt_obj_name to!) or isKnownStrSetField(cnt_obj_name to!)
+                var cnt_nm = cnt_obj_name to!
+                is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(this.module_types, this.dep_types, cnt_nm)
             if is_strset_cnt
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
@@ -3701,7 +3702,8 @@ struct Generator
             var cont_obj_name = getMemberFieldName(m.object)
             var is_strset_obj = false
             if cont_obj_name != nil
-                is_strset_obj = strset_locals.contains_(cont_obj_name to!) or isKnownStrSetField(cont_obj_name to!)
+                var cont_nm = cont_obj_name to!
+                is_strset_obj = strset_locals.contains_(cont_nm) or fieldIsStrSet(this.module_types, this.dep_types, cont_nm)
             if is_strset_obj
                 w.emit(".contains_(")
             else

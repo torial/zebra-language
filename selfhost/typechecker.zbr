@@ -131,12 +131,24 @@ class ClassTypes
 
 class ModuleTypes
     var classes as HashMap(str, ClassTypes)
+    # Reverse index: field names (across all classes in this module)
+    # whose declared type is Type_.str_set. Used by codegen to decide
+    # whether `obj.name.add(s)` is set-add or list-append without doing
+    # full receiver-type inference. Populated by addClassMembers.
+    var strset_field_names as HashMap(str, bool)
 
     cue init()
         classes = HashMap()
+        strset_field_names = HashMap()
 
     def addClass(c as ClassTypes)
         this.classes.put(c.name, c)
+
+    def addStrSetField(field_name as str)
+        this.strset_field_names.put(field_name, true)
+
+    def hasStrSetField(field_name as str) as bool
+        return this.strset_field_names.contains(field_name)
 
     def hasClass(class_name as str) as bool
         return this.classes.contains(class_name)
@@ -215,12 +227,28 @@ def typeFromRef(tr as TypeRef) as Type_
 # struct declarations. Unions and enums are added in Phase 17 when inferExpr
 # needs to infer union-variant / enum-member types.
 
-def addClassMembers(ct as ClassTypes, members as List(Decl))
+# Helper: true if t is Type_.str_set, or an optional/ref_to wrapping str_set.
+# (Mirrors the intent of isKnownStrSetField, which ignored `StrSet?` vs `StrSet`.)
+def isStrSetOrWrapped(t as Type_) as bool
+    branch t
+        on Type_.str_set
+            return true
+        on Type_.optional as inner
+            return isStrSetOrWrapped(inner)
+        on Type_.ref_to as inner
+            return isStrSetOrWrapped(inner)
+        else
+            return false
+
+def addClassMembers(mt as ModuleTypes, ct as ClassTypes, members as List(Decl))
     for member in members
         branch member
             on Decl.var_ as v
                 if v.type_ != nil
-                    ct.setField("" + v.name, typeFromRef(v.type_ to!))
+                    var ft as Type_ = typeFromRef(v.type_ to!)
+                    ct.setField("" + v.name, ft)
+                    if isStrSetOrWrapped(ft)
+                        mt.addStrSetField("" + v.name)
                 else
                     ct.setField("" + v.name, Type_.unknown_)
             on Decl.method as m
@@ -244,11 +272,11 @@ def populateModuleTypes(mt as ModuleTypes, m as Module)
         branch decl
             on Decl.class_ as c
                 var ct = ClassTypes("" + c.name)
-                addClassMembers(ct, c.members)
+                addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
             on Decl.struct_ as s
                 var ct2 = ClassTypes("" + s.name)
-                addClassMembers(ct2, s.members)
+                addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
             else
                 pass
