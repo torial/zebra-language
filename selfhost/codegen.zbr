@@ -1202,17 +1202,62 @@ struct Generator
                 genType(inner)
 
             on TypeRef.ref_to as inner
-                var emitted = false
+                # BUG-041: classes are already auto-boxed to `*T` by the `.named`
+                # arm, so a recursive genType on a class inner would stack a
+                # second `*`, producing `**T` (or `?**T`). For classes, `^T` is a
+                # no-op on representation — emit `*ClassName` / `?*ClassName`
+                # directly and skip the auto-box recursion.
+                var is_nilable = false
                 branch inner
-                    on TypeRef.nilable as ni2
-                        w.emit("?*")
-                        genType(ni2)
-                        emitted = true
+                    on TypeRef.nilable
+                        is_nilable = true
                     else
                         pass
-                if not emitted
-                    w.emit("*")
-                    genType(inner)
+                var prefix as str
+                if is_nilable
+                    prefix = "?*"
+                else
+                    prefix = "*"
+                var handled = false
+                branch inner
+                    on TypeRef.nilable as ni2
+                        branch ni2
+                            on TypeRef.named as n
+                                if class_names.contains_(n.name)
+                                    w.emit(prefix)
+                                    w.emit(n.name)
+                                    handled = true
+                                else if "." in n.name
+                                    var class_part = extractAfterDot(n.name)
+                                    if class_names.contains_(class_part)
+                                        w.emit(prefix)
+                                        w.emit(n.name)
+                                        handled = true
+                            else
+                                pass
+                    on TypeRef.named as n
+                        if class_names.contains_(n.name)
+                            w.emit(prefix)
+                            w.emit(n.name)
+                            handled = true
+                        else if "." in n.name
+                            var class_part = extractAfterDot(n.name)
+                            if class_names.contains_(class_part)
+                                w.emit(prefix)
+                                w.emit(n.name)
+                                handled = true
+                    else
+                        pass
+                if not handled
+                    w.emit(prefix)
+                    if is_nilable
+                        branch inner
+                            on TypeRef.nilable as ni3
+                                genType(ni3)
+                            else
+                                pass
+                    else
+                        genType(inner)
 
             on TypeRef.generic as gtr
                 genGenericType(gtr)

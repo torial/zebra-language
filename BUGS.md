@@ -183,7 +183,8 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `inferMember` only looked up fields/methods when `obj_type == .named`. For chained optional accesses like `n?.next` (where `n: ?Node`), the TC type of `n` passed to `inferMember` was `.optional(.named(Node))` — not `.named`. The member lookup silently returned `.unknown`. Local vars initialised from such accesses (`var n2 = n?.next`) then had `.unknown` declared type, so the `optional_unwraps` check for `n2?` failed and CodeGen emitted `try n2.field` (error-propagation) instead of `n2.?.field` (optional-unwrap).
 - **Fix:** Added `resolved_obj_type = if (obj_type == .optional) obj_type.optional.* else obj_type` before the `.named` member lookup. The `generic_named` branch was not affected (it already has its own path).
 - **Found by:** Recursive type test (`test/recursive_type_test.zbr`) — `n2?.value` where `n2` was inferred from a chained optional access.
-- **Re-verification 2026-04-17: unverified.** Three attempted re-probes (`verify_bug016.zbr`, `_b`, `_c`) all trip on adjacent codegen bug **BUG-041** (`^ClassType?` emits `?**T`) before reaching the inferMember-unwrap path. Named corpus `test/recursive_type_test.zig` does not build under Zig 0.15 ReleaseSafe today, but via different symptoms (mutation-scanner `var` + `^T?` representation), not BUG-016's original path. Re-verify once BUG-041 is closed.
+- **Re-verification 2026-04-17: unverified** — three attempted re-probes tripped on adjacent codegen bug **BUG-041** (`^ClassType?` emits `?**T`) before reaching the inferMember-unwrap path.
+- **Re-verification 2026-04-17 (after BUG-041 fix): holding.** `verify_bug016c.zbr` (minimal member-through-optional-return probe) emits `?*Node` return type, compiles under Zig 0.15 ReleaseSafe, runs printing `42`. `n.?.value` (optional-unwrap form) is emitted correctly — not `try n.value` (error-propagation form).
 
 ---
 
@@ -605,9 +606,11 @@ The selfhost codegen path diverges.
 
 ---
 
-### BUG-041: `^ClassType?` emits `?**T` instead of `?*T` (root cause)
+### BUG-041: `^ClassType?` emits `?**T` instead of `?*T` (root cause) — FIXED
 - **Severity:** High (blocks all uses of optional heap-pointer class fields; downstream causes invalid `.*` field-assignment emit)
-- **Status:** Open — root cause identified 2026-04-17 via discriminator probe
+- **Status:** **Fixed 2026-04-17**
+- **Fix:** `src/CodeGen.zig::genType .ref_to` arm (and selfhost `selfhost/codegen.zbr` mirror): when `^T`'s inner payload is a class (bare or dotted `Mod.Type`, optionally nilable-wrapped), emit `*ClassName` / `?*ClassName` directly and skip the recursive `genType` call. The recursion would re-enter `.named` which auto-adds `*` for class types, stacking a second pointer layer and producing `**T` / `?**T`. For classes, `^T` is a representation no-op — the auto-box already provides the pointer.
+- **Verified:** `verify_bug044.zbr` emits `?*Node` (was `?**Node`); `verify_bug016c.zbr` emits `?*Node` return type, builds and runs printing `42`; `verify_ref_struct.zbr` regression canary still emits `*Point` (single `*`, non-class no-op unchanged); `verify_selfref.zbr` self-ref field still emits `?*Node`; `tools/bootstrap_check.sh` PASS.
 - **Target:** 0.5
 - **Symptom (representation):** `var x as ^Node?` in a local OR a method return emits Zig type `?**Node` (optional-of-pointer-to-pointer) instead of `?*Node` (optional-pointer). Class auto-boxing already adds one `*`; the `^` operator is adding a second `*` on top of the already-boxed class representation for `^ClassType?`, though `^ClassType` alone emits `*T` correctly. Appears to be a type-formatting layering bug specific to `^` + class + `?` combination.
 - **Discriminator probe** (`verify_bug044.zbr`, 2026-04-17): Local `var x as ^Node?` emits `var x: ?**Node = undefined;` — same wrong form as return-position. Rules out "return-position-specific" hypothesis; confirms shared root cause.
@@ -656,6 +659,22 @@ The selfhost codegen path diverges.
 - **Reproducer:** `C:\tmp\bug022_main.zbr` + `C:\tmp\bug022_lib.zbr`.
 - **Likely fix site:** `selfhost/codegen.zbr` branch-pattern emit path — cross-module `Mod.Union.variant` is being read as `Mod.Union` with `variant` dropped. Check the dotted-name splitter used by branch patterns vs the one used by construction sites.
 - **Cross-oracle:** Zig backend emits `.empty` / `.data` correctly.
+
+---
+
+### BUG-045: Ctor-arg boxing wraps `^Class?` args in extra `*` (stale after BUG-041 fix)
+- **Severity:** Medium (blocks any ctor call that passes a `^Class?` value — linked list / tree construction idioms)
+- **Status:** Open — found 2026-04-17 while verifying BUG-041 fix; surfaces on `verify_bug016b.zbr`
+- **Target:** 0.5 (follow-up to BUG-041)
+- **Symptom:** For `cue init(..., nxt as ^Node?)`, a call `Node(3, nil)` or `Node(2, c)` emits:
+  ```zig
+  Node.init(3, _box_1: { const _bp_1 = _allocator.create(?*Node) catch @panic("OOM"); _bp_1.* = null; break :_box_1 _bp_1; })
+  ```
+  The labeled-block yields `*?*Node`, but the param type is now `?*Node` (post BUG-041) — one pointer layer too many. Zig rejects with "pointer type child '?*Node' cannot cast into pointer type child 'Node'".
+- **Root cause:** `src/CodeGen.zig::genArgs` (line ~8869) unconditionally boxes args whose param type is `.ref_to`. Before BUG-041, `^Class?` was `?**T` and the boxing matched; after the fix, `^Class` and `^Class?` collapse to `*T` / `?*T` (no extra indirection), so the boxing should be skipped when the payload is a class.
+- **Reproducer:** `C:\tmp\verify_bug016b.zbr` (constructor-based linked list with `^Node?` param).
+- **Likely fix:** in `genArgs` (and selfhost `selfhost/codegen.zbr` mirror), when `ps[i].type_` is `.ref_to` and the inner (directly, or through `.nilable`) is a class type, pass the arg directly via `genArgExpr` instead of routing to `genBoxedArgExpr`.
+- **Relation to BUG-041:** Same conceptual root ("`^Class` is representation no-op"), different codegen path (call-site arg materialization vs type emission). Filed separately to keep the BUG-041 commit diagnosable.
 
 ---
 

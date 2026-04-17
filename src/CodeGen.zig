@@ -10185,13 +10185,41 @@ const Generator = struct {
                 // ^T — heap-indirection pointer; emits `*T` in Zig to break recursive struct size.
                 // Special case: ^T? (ref_to wrapping nilable) → `?*T` rather than `*?T`.
                 // This is the natural form for optional recursive references (linked list next, tree children).
-                if (inner.* == .nilable) {
-                    try g.w.writeAll("?*");
-                    try g.genType(inner.nilable.*);
-                } else {
-                    try g.w.writeAll("*");
-                    try g.genType(inner.*);
+                //
+                // BUG-041: classes are already auto-boxed to `*T` by the `.named` arm,
+                // so recursing via genType on a class inner would stack a second `*`,
+                // producing `**T` or `?**T`. For classes `^T` is a no-op on representation —
+                // emit `*ClassName` (or `?*ClassName`) directly and skip the auto-box.
+                const payload: Ast.TypeRef = if (inner.* == .nilable) inner.nilable.* else inner.*;
+                const nilable_prefix: []const u8 = if (inner.* == .nilable) "?*" else "*";
+                if (payload == .named) {
+                    const n = payload.named;
+                    // Bare class name.
+                    if (g.class_names.contains(n.name)) {
+                        try g.w.writeAll(nilable_prefix);
+                        try g.w.writeAll(n.name);
+                        return;
+                    }
+                    // Cross-module dotted class: Mod.ClassName.
+                    if (std.mem.indexOfScalar(u8, n.name, '.')) |dot| {
+                        const mod_alias = n.name[0..dot];
+                        const type_name = n.name[dot+1..];
+                        const is_class = blk: {
+                            const imp = g.imported_modules orelse break :blk false;
+                            const iface = imp.get(mod_alias) orelse break :blk false;
+                            const kind = iface.types.get(type_name) orelse break :blk false;
+                            break :blk kind == .class;
+                        };
+                        if (is_class) {
+                            try g.w.writeAll(nilable_prefix);
+                            try g.w.writeAll(n.name);
+                            return;
+                        }
+                    }
                 }
+                // Non-class payload: emit `*` (or `?*`) and recurse normally.
+                try g.w.writeAll(nilable_prefix);
+                try g.genType(payload);
             },
             .generic     => |gtr| {
                 // Result(T, E) → _Result(T, E)

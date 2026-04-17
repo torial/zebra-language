@@ -2943,21 +2943,82 @@ pub const Generator = struct {
             },
             .ref_to => |_ptr_inner| {
                 const inner = _ptr_inner.*;
-                var emitted = false;
+                var is_nilable = false;
+                switch (inner) {
+                    .nilable => {
+                        is_nilable = true;
+                    },
+                    else => {
+                        // pass
+                    },
+                }
+                var prefix: []const u8 = undefined;
+                if (is_nilable) {
+                    prefix = "?*";
+                } else {
+                    prefix = "*";
+                }
+                var handled = false;
                 switch (inner) {
                     .nilable => |_ptr_ni2| {
                         const ni2 = _ptr_ni2.*;
-                        self.w.emit("?*");
-                        self.genType(ni2);
-                        emitted = true;
+                        switch (ni2) {
+                            .named => |n| {
+                                if (self.class_names.contains_(n.name)) {
+                                    self.w.emit(prefix);
+                                    self.w.emit(n.name);
+                                    handled = true;
+                                } else {
+                                    if ((std.mem.indexOf(u8, n.name, ".") != null)) {
+                                        const class_part = extractAfterDot(n.name);
+                                        if (self.class_names.contains_(class_part)) {
+                                            self.w.emit(prefix);
+                                            self.w.emit(n.name);
+                                            handled = true;
+                                        }
+                                    }
+                                }
+                            },
+                            else => |_| {
+                                // pass
+                            },
+                        }
+                    },
+                    .named => |n| {
+                        if (self.class_names.contains_(n.name)) {
+                            self.w.emit(prefix);
+                            self.w.emit(n.name);
+                            handled = true;
+                        } else {
+                            if ((std.mem.indexOf(u8, n.name, ".") != null)) {
+                                const class_part = extractAfterDot(n.name);
+                                if (self.class_names.contains_(class_part)) {
+                                    self.w.emit(prefix);
+                                    self.w.emit(n.name);
+                                    handled = true;
+                                }
+                            }
+                        }
                     },
                     else => |_| {
                         // pass
                     },
                 }
-                if ((!emitted)) {
-                    self.w.emit("*");
-                    self.genType(inner);
+                if ((!handled)) {
+                    self.w.emit(prefix);
+                    if (is_nilable) {
+                        switch (inner) {
+                            .nilable => |_ptr_ni3| {
+                                const ni3 = _ptr_ni3.*;
+                                self.genType(ni3);
+                            },
+                            else => |_| {
+                                // pass
+                            },
+                        }
+                    } else {
+                        self.genType(inner);
+                    }
                 }
             },
             .generic => |gtr| {
