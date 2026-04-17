@@ -394,6 +394,19 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-033: Selfhost `.contains()` on class-field HashMap emits `List.contains` form
+- **Severity:** Medium (forces wrapper methods in every HashMap-holding selfhost class)
+- **Status:** Open
+- **Target:** Phase 17f+ (bundle with BUG-030/031/032 in one selfhost-edit wave).
+- **Symptom:** When the leftmost receiver of `.contains(key)` is a parameter/field of a user class whose TC type is `HashMap(K,V)`, selfhost emits the List form (loop / `indexOf != -1`) instead of the HashMap `.contains(key)` path.
+- **Evidence:** Same `hasLocal`/`localType` workaround pattern used in `InferCtx` — users currently wrap HashMap-field access in helper methods to dodge the misemit.
+- **Zig-side:** Works via `genStdlibMethod`/`genHashMapMethod` receiver-type dispatch; selfhost side lacks equivalent walker because TC `Type_` currently falls through to `.unknown_` for HashMap/List and no receiver-chain walker exists (BUG-030's scope).
+- **Fix direction (selfhost-only):** Same machinery as BUG-032 — once `hashmap_locals`/`fieldIsHashMap` infrastructure exists, extend `.contains` dispatch to check it before falling through to List form.  Pair with BUG-030 in the same walker.
+- **Risk:** Selfhost-side edit.  Group with BUG-030/031/032 in one selfhost-edit commit.
+- **Found by:** Phase 17.5 stability-sprint triage (deferred from BUG-030), 2026-04-17.
+
+---
+
 *Last updated: 2026-04-17*
 
 ---
