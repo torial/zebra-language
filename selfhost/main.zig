@@ -1477,6 +1477,7 @@ const codegen = @import("codegen.zig");
 const generateModule = codegen.generateModule;
 const generateFull = codegen.generateFull;
 const generateFullWith = codegen.generateFullWith;
+const generateFullWithDeps = codegen.generateFullWithDeps;
 const generateEntryPoint = codegen.generateEntryPoint;
 const generateDep = codegen.generateDep;
 const generateDepWith = codegen.generateDepWith;
@@ -1551,7 +1552,16 @@ pub const MultiCompiler = struct {
                 const module = try ASTBuilder.build(pm, zbr_path);
                 var zig_src: []const u8 = "";
                 if (is_root) {
-                    zig_src = try generateFullWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types);
+                    var all_deps = std.ArrayList([]const u8){};
+                    var vi: i64 = 0;
+                    while ((vi < @as(i64, @intCast(self.visited.items.len)))) {
+                        const vpath: []const u8 = self.visited.items[@intCast(vi)];
+                        if (!std.mem.eql(u8, vpath, zbr_path)) {
+                            all_deps.append(_allocator, self.moduleNameOf(vpath)) catch @panic("OOM");
+                        }
+                        vi = (vi + 1);
+                    }
+                    zig_src = try generateFullWithDeps(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps);
                 } else {
                     zig_src = try generateDepWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types);
                 }
@@ -1606,6 +1616,31 @@ pub const MultiCompiler = struct {
             return _str_concat(_str_concat(_str_concat(self.output_dir, "/", _allocator), base, _allocator), ".zig", _allocator);
         }
         return _str_concat(stem, ".zig", _allocator);
+    }
+
+    pub fn moduleNameOf(self: *MultiCompiler, zbr_path: []const u8) []const u8 {
+        _ = self;
+        var base: []const u8 = zbr_path;
+        if ((std.mem.indexOf(u8, zbr_path, "/") != null)) {
+            var parts = std.ArrayList([]const u8){};
+            {
+                var _it_p = std.mem.splitSequence(u8, zbr_path, "/");
+                while (_it_p.next()) |p| {
+                    parts.append(_allocator, p) catch @panic("OOM");
+                }
+            }
+            base = parts.items[@intCast((@as(i64, @intCast(parts.items.len)) - 1))];
+        }
+        if (std.mem.endsWith(u8, base, ".zbr")) {
+            {
+                var _it_s = std.mem.splitSequence(u8, base, ".zbr");
+                while (_it_s.next()) |s| {
+                    base = s;
+                    break;
+                }
+            }
+        }
+        return base;
     }
 
     pub fn dirOf(self: *MultiCompiler, path: []const u8) []const u8 {
@@ -1783,9 +1818,13 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 fn _zbr_error_msg() []const u8 {
     if (_error_ctx.message.len > 0) return _error_ctx.message;
     if (@import("Parser.zig")._error_ctx.message.len > 0) return @import("Parser.zig")._error_ctx.message;
+    if (@import("Token.zig")._error_ctx.message.len > 0) return @import("Token.zig")._error_ctx.message;
+    if (@import("Lexer.zig")._error_ctx.message.len > 0) return @import("Lexer.zig")._error_ctx.message;
     if (@import("Resolver.zig")._error_ctx.message.len > 0) return @import("Resolver.zig")._error_ctx.message;
     if (@import("astbuilder.zig")._error_ctx.message.len > 0) return @import("astbuilder.zig")._error_ctx.message;
+    if (@import("ast.zig")._error_ctx.message.len > 0) return @import("ast.zig")._error_ctx.message;
     if (@import("codegen.zig")._error_ctx.message.len > 0) return @import("codegen.zig")._error_ctx.message;
+    if (@import("cg_helpers.zig")._error_ctx.message.len > 0) return @import("cg_helpers.zig")._error_ctx.message;
     if (@import("typechecker.zig")._error_ctx.message.len > 0) return @import("typechecker.zig")._error_ctx.message;
     return "";
 }

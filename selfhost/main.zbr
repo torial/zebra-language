@@ -37,7 +37,7 @@
 use Parser exposing PNode, PUse
 use Resolver
 use astbuilder exposing ASTBuilder
-use codegen exposing generateModule, generateFull, generateFullWith, generateEntryPoint, generateDep, generateDepWith
+use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateEntryPoint, generateDep, generateDepWith
 use typechecker exposing ModuleTypes, populateModuleTypes
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
@@ -104,7 +104,18 @@ class MultiCompiler
                 # Step 5: Generate Zig
                 var zig_src as str = ""
                 if is_root
-                    zig_src = generateFullWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
+                    # All transitive deps have been compiled above and are in
+                    # `visited`. Pass their module names (basenames without
+                    # `.zbr`) so _zbr_error_msg() can walk every module's
+                    # _error_ctx, not just the root's direct uses.
+                    var all_deps as List(str) = List(str)()
+                    var vi as int = 0
+                    while vi < visited.len
+                        var vpath as str = visited.at(vi)
+                        if vpath != zbr_path
+                            all_deps.add(.moduleNameOf(vpath))
+                        vi = vi + 1
+                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps)?
                 else
                     zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
 
@@ -151,6 +162,21 @@ class MultiCompiler
                 base = parts.at(parts.len - 1)
             return output_dir + "/" + base + ".zig"
         return stem + ".zig"
+
+    def moduleNameOf(zbr_path as str) as str
+        # Return the Zig module basename for a .zbr path: strip any dir prefix
+        # and the .zbr extension. E.g. "selfhost/Lexer.zbr" -> "Lexer".
+        var base as str = zbr_path
+        if zbr_path.contains("/")
+            var parts as List(str) = List(str)()
+            for p in zbr_path.split("/")
+                parts.add(p)
+            base = parts.at(parts.len - 1)
+        if base.endsWith(".zbr")
+            for s in base.split(".zbr")
+                base = s
+                break
+        return base
 
     def dirOf(path as str) as str
         # Find directory part by splitting on "/"
