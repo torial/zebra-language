@@ -34,6 +34,16 @@ A changed `content_sha` with `exit=0` on both sides is the sneaky case: emit
 changed silently. A flipped `exit` is a regression or a new pass. Cluster
 failures by `stderr_sha`.
 
+### Side effect to watch for
+
+Running `--emit-zig file.zbr` writes `file.zig` **next to the source** in
+addition to stdout. A `corpus_snapshot.sh` run over `test/*.zbr` will
+re-emit every `test/*.zig` — if those files were committed from a different
+backend (e.g. selfhost), you'll see them show up as modified. Revert by
+explicit paths (not `git checkout -- .`) per the sweep-WIP hazard rule. A
+future cleanup could route the tool's emits through `--stdout-only` or a
+temp working dir, but for now: snapshot, compare, revert.
+
 ### Non-goals
 
 - Does **not** compile emitted Zig. Use `tools/bootstrap_check.sh` for the
