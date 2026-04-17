@@ -1470,7 +1470,7 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 pub const Node = struct {
     _type_tag: u64 = _ttag_Node,
     value: i64,
-    next: ?**Node,
+    next: ?*Node,
     pub fn init(v: i64) *Node {
         const _self = _allocator.create(Node) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Node");
@@ -1505,7 +1505,7 @@ const _reflect_Pair_field_types: []const []const u8 = &.{"int", "int"};
 
 pub const PairHolder = struct {
     _type_tag: u64 = _ttag_PairHolder,
-    p: **Pair,
+    p: *Pair,
     pub fn init(pair: *Pair) *PairHolder {
         const _self = _allocator.create(PairHolder) catch @panic("OOM");
         _self._type_tag = _zbr_hash("PairHolder");
@@ -1522,8 +1522,8 @@ const _reflect_PairHolder_field_types: []const []const u8 = &.{"^Pair"};
 pub const Tree = struct {
     _type_tag: u64 = _ttag_Tree,
     value: i64,
-    left: ?**Tree,
-    right: ?**Tree,
+    left: ?*Tree,
+    right: ?*Tree,
     pub fn init(v: i64) *Tree {
         const _self = _allocator.create(Tree) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Tree");
