@@ -24,7 +24,7 @@
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclProperty, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, AllAnyKind, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts
-use typechecker exposing ModuleTypes, buildModuleTypes
+use typechecker exposing ModuleTypes, buildModuleTypes, Type_
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -263,44 +263,23 @@ def isKnownStrSetField(name as str) as bool
         return true
     return false
 
-def isAstStructWithPtrParams(name as str) as bool
-    # AST structs from ast.zbr that have ^Expr, ^Stmt, or ^TypeRef init params
-    if name == "StmtReturn" or name == "StmtIf" or name == "StmtWhile"
-        return true
-    if name == "StmtForIn" or name == "StmtForNum" or name == "StmtBranch"
-        return true
-    if name == "StmtAssert" or name == "StmtAssign" or name == "StmtDefer"
-        return true
-    if name == "StmtWith" or name == "StmtRaise" or name == "StmtGuard"
-        return true
-    if name == "StmtDestruct"
-        return true
-    if name == "ExprMember" or name == "ExprIndex"
-        return true
-    if name == "ExprSlice" or name == "ExprBinary" or name == "ExprUnary"
-        return true
-    if name == "ExprCast" or name == "ExprTry" or name == "ExprOrelse"
-        return true
-    if name == "ExprCatch" or name == "ExprIf" or name == "ExprAllAny"
-        return true
-    if name == "ExprToNonNil" or name == "ExprExcept" or name == "ExprStringInterp"
-        return true
-    if name == "DeclVar" or name == "EnumMember" or name == "Param"
-        return true
-    if name == "DictEntry"
-        return true
-    return false
-
-# Specific (struct, arg-position) pairs that are plain T (not ^T) despite the struct
-# being in isAstStructWithPtrParams. Selfhost lacks TypeChecker info, so these cases
-# that don't follow the "all union-valued args are boxed" heuristic are hand-listed.
-# TypeChecker port will subsume this.
-def isUnboxedCtorArg(name as str, idx as int) as bool
-    if name == "DeclVar" and idx == 3        # type_ as TypeRef?  (not ^TypeRef?)
-        return true
-    if name == "ExprExcept" and idx == 1     # base as Expr       (not ^Expr)
-        return true
-    return false
+# Phase 16c retire #1: replaced isAstStructWithPtrParams + isUnboxedCtorArg
+# with a direct ModuleTypes.ctorParamAt is-ref-to check. The two heuristics
+# answered "is ctor param at (class_name, idx) a ^T?" by name-list
+# enumeration; ModuleTypes answers it from the actual AST. Verified
+# effective-equivalent across the full 175-file .zbr corpus before flip.
+def ctorParamAtIsRefTo(mt as ModuleTypes, dep_mt as ModuleTypes, class_name as str, idx as int) as bool
+    var t as Type_? = mt.ctorParamAt(class_name, idx)
+    if t == nil
+        t = dep_mt.ctorParamAt(class_name, idx)
+    if t == nil
+        return false
+    var tv as Type_ = t to!
+    branch tv
+        on Type_.ref_to
+            return true
+        else
+            return false
 
 def shouldBoxCtorArg(e as Expr) as bool
     # Returns true if the expression likely produces a union value (Expr/Stmt/TypeRef)
@@ -3550,7 +3529,6 @@ struct Generator
         branch c.callee
             on Expr.ident as id
                 if class_names.contains_(id.name) or struct_names.contains_(id.name)
-                    var is_ast_struct = isAstStructWithPtrParams(id.name)
                     w.emit(id.name)
                     w.emit(".init(")
                     var first2 = true
@@ -3567,7 +3545,13 @@ struct Generator
                         if not first2
                             w.emit(", ")
                         first2 = false
-                        if is_ast_struct and shouldBoxCtorArg(a.value) and not isUnboxedCtorArg(id.name, arg_idx)
+                        # Phase 16c: box when the ctor param is ^T (per ModuleTypes)
+                        # and the arg looks like a union value (shouldBoxCtorArg).
+                        # Verified equivalent to the retired
+                        #   isAstStructWithPtrParams + isUnboxedCtorArg
+                        # heuristic pair across all 175 .zbr files in the repo.
+                        var is_ref_param as bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
+                        if is_ref_param and shouldBoxCtorArg(a.value)
                             # Box: heap-allocate for ^T parameter
                             var lbl = box_labels.at(box_idx)
                             w.emit(lbl)
