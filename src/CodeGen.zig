@@ -8845,7 +8845,35 @@ const Generator = struct {
 
     /// Emit a single argument, boxing value `T` → `*T` when the param is `^T`.
     /// `param_is_ref` = the param's declared type is `.ref_to`; `inner` = the inner TypeRef.
+    ///
+    /// Class payloads are representation no-ops: a class value is already `*T` via the
+    /// auto-box convention, and `^Class` / `^Class?` emit as `*T` / `?*T` (see BUG-041
+    /// + concept_zebra-class-auto-box-rule). Boxing the arg into `_allocator.create(...)`
+    /// would stack one pointer too many (BUG-045). Detect the class case and fall
+    /// through to plain `genArgExpr`.
     fn genBoxedArgExpr(g: Generator, expr: *const Ast.Expr, inner: Ast.TypeRef) anyerror!void {
+        const payload: Ast.TypeRef = if (inner == .nilable) inner.nilable.* else inner;
+        if (payload == .named) {
+            const n = payload.named;
+            if (g.class_names.contains(n.name)) {
+                try g.genArgExpr(expr);
+                return;
+            }
+            if (std.mem.indexOfScalar(u8, n.name, '.')) |dot| {
+                const mod_alias = n.name[0..dot];
+                const type_name = n.name[dot + 1 ..];
+                const is_class = blk: {
+                    const imp = g.imported_modules orelse break :blk false;
+                    const iface = imp.get(mod_alias) orelse break :blk false;
+                    const kind = iface.types.get(type_name) orelse break :blk false;
+                    break :blk kind == .class;
+                };
+                if (is_class) {
+                    try g.genArgExpr(expr);
+                    return;
+                }
+            }
+        }
         const uid = g.nextUid();
         const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
         defer g.alloc.free(lbl);
