@@ -64,12 +64,13 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-006: `zig"..."` expression statement emits double semicolon
+### BUG-006: `zig"..."` expression statement emits double semicolon — FIXED (Zig side)
 - **Severity:** Low
-- **Status:** Open
+- **Status:** Fixed (Zig backend) 2026-04-17; selfhost side still emits `;;` (cosmetic)
 - **Target:** 0.5 (low priority)
-- **Symptom:** `zig"some_stmt;"` inside a method body emits `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appends another `;`.
-- **Fix:** In the `.expr` case of `genStmt`, detect when the expression is a `zig_lit` ending with `;` and skip the trailing `;\n` append.
+- **Symptom:** `zig"some_stmt;"` inside a method body emitted `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appended another `;`.
+- **Zig-side fix:** `src/CodeGen.zig::genStmt` `.expr` case (lines ~4290-4300) detects trailing `;` on `zig_lit` content and skips the appended `;`.
+- **Selfhost residue:** `selfhost/codegen.zbr::genStmt` `on Stmt.expr` (line 1938) unconditionally emits `;\n`. Double `;;` is syntactically valid Zig (empty stmt), so round-trip is still clean. Port when selfhost is next touched.
 
 ---
 
