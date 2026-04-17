@@ -13,6 +13,23 @@
 
 use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
 
+# ── internString — storage-boundary copy ─────────────────────────────────────
+# Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
+# must pass through internString. These types live in `dep_types` (long-lived,
+# shared across dep compilations) while many of their string inputs originate
+# as slices into per-compilation state: the `src` local of compileDep, token
+# slices into src, PNode slices into tokens. Without a storage-boundary copy,
+# a `Type_.named` constructed in dep A and read by dep B (or by the root) can
+# dangle once dep A's compileDep frame exits.
+#
+# Phase 17d fixed one instance of this at typeFromRef (the `""+ n.name` line
+# that turned garbage `named(������)` reads into valid strings). internString
+# generalizes that fix: the copy is performed *inside* the storage sink, so
+# callers cannot forget. Implementation is a simple `""+ s` concat; dedup /
+# invariant checks can be layered on later if profiling motivates them.
+def internString(s as str) as str
+    return "" + s
+
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
 # (module_alias, type_name) — no Symbol pointers, safe across compilation
@@ -23,8 +40,8 @@ struct CrossModuleType
     var type_name as str
 
     cue init(module as str, type_name as str)
-        this.module = module
-        this.type_name = type_name
+        this.module = internString(module)
+        this.type_name = internString(type_name)
 
 # ── Type representation ──────────────────────────────────────────────────────
 # Skeleton variant set for Phase 16a. Phases 17–19 add:
@@ -91,16 +108,16 @@ class ClassTypes
     var ctor_params as List(Type_)
 
     cue init(name as str)
-        this.name = name
+        this.name = internString(name)
         field_types = HashMap()
         method_returns = HashMap()
         ctor_params = List(Type_)()
 
     def setField(field_name as str, t as Type_)
-        this.field_types.put(field_name, t)
+        this.field_types.put(internString(field_name), t)
 
     def setMethodReturn(method_name as str, t as Type_)
-        this.method_returns.put(method_name, t)
+        this.method_returns.put(internString(method_name), t)
 
     def addCtorParam(t as Type_)
         this.ctor_params.add(t)
@@ -157,18 +174,20 @@ class ModuleTypes
         this.classes.put(c.name, c)
 
     def addStrSetField(field_name as str)
-        this.strset_field_names.put(field_name, true)
+        this.strset_field_names.put(internString(field_name), true)
 
     def hasStrSetField(field_name as str) as bool
         return this.strset_field_names.contains(field_name)
 
     def addUnion(name as str)
-        this.union_names.put(name, true)
+        this.union_names.put(internString(name), true)
 
     def hasUnion(name as str) as bool
         return this.union_names.contains(name)
 
     def addVariantPayload(union_name as str, variant_name as str, t as Type_)
+        # Concatenation already produces a fresh owned str, so no additional
+        # internString is needed on the composed key.
         this.variant_payloads.put(union_name + "." + variant_name, t)
 
     def variantPayload(union_name as str, variant_name as str) as Type_?
@@ -205,8 +224,11 @@ class ModuleTypes
 
 # ── Built-in name → Type_ mapping ────────────────────────────────────────────
 # Maps the plain type-name strings used in AST TypeRef.named nodes to Type_.
-# Unknown names fall through to Type_.named(n) — callers can then check
-# ModuleTypes.hasClass to confirm it is a user-defined type in this module.
+# Unknown names fall through to Type_.named(intern(n)) — callers can then
+# check ModuleTypes.hasClass to confirm it is a user-defined type in this
+# module. The intern at the fallback is the storage-boundary copy for every
+# `Type_.named(...)` that passes through typeFromName; direct constructions
+# elsewhere must intern at their own call site.
 
 def typeFromName(n as str) as Type_
     if n == "int"
@@ -229,7 +251,7 @@ def typeFromName(n as str) as Type_
         return Type_.regex
     if n == "StrSet"
         return Type_.str_set
-    return Type_.named(n)
+    return Type_.named(internString(n))
 
 # ── TypeRef → Type_ mapping ──────────────────────────────────────────────────
 # Maps a parsed ast.TypeRef into the Type_ domain. Phase 16b handles
@@ -238,11 +260,14 @@ def typeFromName(n as str) as Type_
 def typeFromRef(tr as TypeRef) as Type_
     branch tr
         on TypeRef.named as n
-            # Force a fresh owned copy — the slice in n.name lives in the
-            # parse-tree arena, which is reset between dep compilations. If
-            # we pass the slice directly to typeFromName / Type_.named it
-            # holds a dangling reference, and later branch-on narrowing
-            # reads garbage.
+            # Storage-boundary copy. typeFromName interns its Type_.named
+            # fallback (see internString at the top of this file). We keep
+            # the `"" + n.name` here as defense-in-depth: it guarantees the
+            # string handed to typeFromName is owned even if a future edit
+            # short-circuits the intern inside typeFromName for a built-in
+            # name. n.name itself is a slice whose backing traces to the
+            # dep's `src` local (File.read result) in compileDep and must
+            # not be stored directly in long-lived dep_types.
             return typeFromName("" + n.name)
         on TypeRef.nilable as inner
             return Type_.optional(typeFromRef(inner))
