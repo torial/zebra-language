@@ -1591,6 +1591,7 @@ struct Generator
             # during emit (e.g., at ctor-arg boxing) to replace name-pattern
             # heuristics with walker-derived types.
             var ctx17c = InferCtx(this.module_types, owner)
+            ctx17c.withDepTypes(this.dep_types)
             for pp in m.params
                 if pp.type_ != nil
                     ctx17c.bind(pp.name, typeFromRef(pp.type_ to!))
@@ -1668,6 +1669,7 @@ struct Generator
             var bg = ig.withMethodCtx(ms, rs, false, owner_members, ps, StrSet(), "_self")
             # Phase 17c — seed InferCtx for the init body as well (see genMethod).
             var ctx17ci = InferCtx(this.module_types, owner)
+            ctx17ci.withDepTypes(this.dep_types)
             for pp in ini.params
                 if pp.type_ != nil
                     ctx17ci.bind(pp.name, typeFromRef(pp.type_ to!))
@@ -3592,27 +3594,22 @@ struct Generator
                         if not first2
                             w.emit(", ")
                         first2 = false
-                        # Phase 16c: box when the ctor param is ^T (per ModuleTypes)
-                        # and the arg looks like a union value (shouldBoxCtorArg).
-                        # Verified equivalent to the retired
-                        #   isAstStructWithPtrParams + isUnboxedCtorArg
-                        # heuristic pair across all 175 .zbr files in the repo.
+                        # Phase 17c: box when the ctor param is ^T (per ModuleTypes)
+                        # and inferExpr says the arg produces a union-typed value.
+                        # This replaced `shouldBoxCtorArg`, a name-pattern
+                        # heuristic (idents ending in _expr, _stmt, etc., plus a
+                        # short allow-list of known variable names). Walker is
+                        # strictly more conservative: on a 175-.zbr corpus it
+                        # boxed 16 additional sites the heuristic missed — all
+                        # of them legitimately require `&local` / boxing since
+                        # the receiving ctor param is `^Expr` and Zig does not
+                        # implicitly take addresses of values.
                         var is_ref_param as bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
-                        var heur17c as bool = shouldBoxCtorArg(a.value)
-                        # Phase 17c compute-both: walker answer via inferExpr → isUnionType.
-                        # Log divergences; keep emission on heuristic until corpus is clean.
-                        if this.infer_ctx != nil
+                        var should_box as bool = false
+                        if is_ref_param and this.infer_ctx != nil
                             var wt17c as Type_ = inferExpr(a.value, this.infer_ctx to!)
-                            var wres17c as bool = this.isUnionType(wt17c)
-                            if heur17c != wres17c
-                                var hs17c as str = "F"
-                                if heur17c
-                                    hs17c = "T"
-                                var ws17c as str = "F"
-                                if wres17c
-                                    ws17c = "T"
-                                sys.errln("DIVERGE-17C class=" + id.name + " idx=" + arg_idx.toString() + " heur=" + hs17c + " walker=" + ws17c)
-                        if is_ref_param and heur17c
+                            should_box = this.isUnionType(wt17c)
+                        if is_ref_param and should_box
                             # Box: heap-allocate for ^T parameter
                             var lbl = box_labels.at(box_idx)
                             w.emit(lbl)

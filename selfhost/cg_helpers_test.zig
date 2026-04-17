@@ -1620,16 +1620,16 @@ pub fn testNilNarrowVar() anyerror!void {
     const sp = zspan();
     const id_x = Expr{ .ident = ExprIdent.init(sp, "x") };
     const nil_ = Expr{ .nil_ = sp };
-    const ne = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.ne, id_x, nil_); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const ne = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.ne, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = nil_; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert(std.mem.eql(u8, nilNarrowVar(ne, true).?, "x"));
     std.debug.assert((nilNarrowVar(ne, false) == null));
-    const eq = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.eq, id_x, nil_); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const eq = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.eq, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = nil_; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert(std.mem.eql(u8, nilNarrowVar(eq, false).?, "x"));
     std.debug.assert((nilNarrowVar(eq, true) == null));
-    const ne2 = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.ne, nil_, id_x); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const ne2 = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.ne, _bx0: { const _bv = nil_; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert(std.mem.eql(u8, nilNarrowVar(ne2, true).?, "x"));
     const lit = Expr{ .int_lit = ExprIntLit.init(sp, "0", IntBase.decimal) };
-    const add = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, id_x, lit); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const add = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = lit; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert((nilNarrowVar(add, true) == null));
     std.debug.print("{s}\n", .{"5b. nilNarrowVar binary: OK"});
 }
@@ -1641,12 +1641,12 @@ pub fn testExprHasTry() anyerror!void {
     std.debug.assert((!exprHasTry(Expr{ .nil_ = sp })));
     std.debug.assert((!exprHasTry(Expr{ .ident = ExprIdent.init(sp, "x") })));
     const inner = Expr{ .ident = ExprIdent.init(sp, "f") };
-    const try_e = Expr{ .try_ = blk_box: { const _bv = ExprTry.init(sp, inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const try_e = Expr{ .try_ = blk_box: { const _bv = ExprTry.init(sp, _bx0: { const _bv = inner; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert(exprHasTry(try_e));
     const lhs = Expr{ .int_lit = ExprIntLit.init(sp, "0", IntBase.decimal) };
-    std.debug.assert(exprHasTry(Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, lhs, try_e); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }));
+    std.debug.assert(exprHasTry(Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, _bx0: { const _bv = lhs; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = try_e; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }));
     const rhs = Expr{ .int_lit = ExprIntLit.init(sp, "1", IntBase.decimal) };
-    std.debug.assert((!exprHasTry(Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, lhs, rhs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } })));
+    std.debug.assert((!exprHasTry(Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, _bx0: { const _bv = lhs; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = rhs; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } })));
     std.debug.print("{s}\n", .{"6. exprHasTry: OK"});
 }
 
@@ -1659,14 +1659,14 @@ pub fn testBodyHasRaise() anyerror!void {
     var with_pass = std.ArrayList(Stmt){};
     with_pass.append(_allocator, Stmt{ .pass_ = sp }) catch @panic("OOM");
     std.debug.assert((!bodyHasRaise(with_pass)));
-    const try_e = Expr{ .try_ = blk_box: { const _bv = ExprTry.init(sp, Expr{ .ident = ExprIdent.init(sp, "f") }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
-    const dv = DeclVar.init(sp, zmods(), "x", null, try_e, false);
+    const try_e = Expr{ .try_ = blk_box: { const _bv = ExprTry.init(sp, _bx0: { const _bv = Expr{ .ident = ExprIdent.init(sp, "f") }; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const dv = DeclVar.init(sp, zmods(), "x", null, _bx0: { const _bv = try_e; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, false);
     var with_try_var = std.ArrayList(Stmt){};
     with_try_var.append(_allocator, Stmt{ .var_ = blk_box: { const _bv = dv; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
     std.debug.assert(bodyHasRaise(with_try_var));
     const ret_lit = Expr{ .int_lit = ExprIntLit.init(sp, "42", IntBase.decimal) };
     var with_return = std.ArrayList(Stmt){};
-    with_return.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, ret_lit); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+    with_return.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, _bx0: { const _bv = ret_lit; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
     std.debug.assert((!bodyHasRaise(with_return)));
     std.debug.print("{s}\n", .{"7. bodyHasRaise: OK"});
 }
@@ -1686,7 +1686,7 @@ pub fn testNameUsedInExprBinary() anyerror!void {
     const sp = zspan();
     const id_x = Expr{ .ident = ExprIdent.init(sp, "x") };
     const id_y = Expr{ .ident = ExprIdent.init(sp, "y") };
-    const bin = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, id_x, id_y); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    const bin = Expr{ .binary = blk_box: { const _bv = ExprBinary.init(sp, BinaryOp.add, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = id_y; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     std.debug.assert(nameUsedInExpr("x", bin));
     std.debug.assert(nameUsedInExpr("y", bin));
     std.debug.assert((!nameUsedInExpr("z", bin)));
@@ -1697,7 +1697,7 @@ pub fn testNameUsedInStmts() anyerror!void {
     const sp = zspan();
     const id_x = Expr{ .ident = ExprIdent.init(sp, "x") };
     var stmts = std.ArrayList(Stmt){};
-    stmts.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, id_x); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+    stmts.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
     std.debug.assert(nameUsedInStmts("x", stmts));
     std.debug.assert((!nameUsedInStmts("y", stmts)));
     std.debug.assert((!nameUsedInStmts("x", std.ArrayList(Stmt){})));
@@ -1708,7 +1708,7 @@ pub fn testAnalyzeEscapes() anyerror!void {
     const sp = zspan();
     const id_x = Expr{ .ident = ExprIdent.init(sp, "x") };
     var stmts = std.ArrayList(Stmt){};
-    stmts.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, id_x); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+    stmts.append(_allocator, Stmt{ .return_ = blk_box: { const _bv = StmtReturn.init(sp, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
     const esc = analyzeEscapes(stmts);
     std.debug.assert(esc.contains("x"));
     std.debug.assert((!esc.contains("y")));
@@ -1721,7 +1721,7 @@ pub fn testScanMutations() anyerror!void {
     const id_x = Expr{ .ident = ExprIdent.init(sp, "x") };
     const lit = Expr{ .int_lit = ExprIntLit.init(sp, "1", IntBase.decimal) };
     var stmts = std.ArrayList(Stmt){};
-    stmts.append(_allocator, Stmt{ .assign = blk_box: { const _bv = StmtAssign.init(sp, id_x, AssignOp.assign, lit); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+    stmts.append(_allocator, Stmt{ .assign = blk_box: { const _bv = StmtAssign.init(sp, _bx0: { const _bv = id_x; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, AssignOp.assign, _bx1: { const _bv = lit; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
     const mut = scanMutations(stmts);
     std.debug.assert(mut.contains("x"));
     std.debug.assert((!mut.contains("y")));

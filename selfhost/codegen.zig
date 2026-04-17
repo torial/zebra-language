@@ -1540,6 +1540,10 @@ const typechecker = @import("typechecker.zig");
 const ModuleTypes = typechecker.ModuleTypes;
 const buildModuleTypes = typechecker.buildModuleTypes;
 const Type_ = typechecker.Type_;
+const InferCtx = typechecker.InferCtx;
+const inferExpr = typechecker.inferExpr;
+const walkStmts = typechecker.walkStmts;
+const typeFromRef = typechecker.typeFromRef;
 pub fn getMemberFieldName(e: Expr) ?[]const u8 {
     switch (e) {
         .member => |_ptr_m| {
@@ -2716,6 +2720,7 @@ pub const Generator = struct {
     closure_vars: *StrSet,
     module_types: *ModuleTypes,
     dep_types: *ModuleTypes,
+    infer_ctx: ?*InferCtx,
     pub fn init(w: *Writer, indent: i64, owner: []const u8, in_method: bool, is_struct_owner: bool, is_generic: bool, current_method_throws: bool, try_block_label: ?[]const u8, catch_var: []const u8, source_file: []const u8, class_names: *StrSet, module_types: *ModuleTypes, dep_types: *ModuleTypes) Generator {
         var _self: Generator = undefined;
             _self.w = w;
@@ -2755,6 +2760,7 @@ pub const Generator = struct {
             _self.closure_vars = StrSet.init();
             _self.module_types = module_types;
             _self.dep_types = dep_types;
+            _self.infer_ctx = null;
         return _self;
     }
 
@@ -2806,6 +2812,28 @@ pub const Generator = struct {
     pub fn withSelfName(self: *Generator, name: []const u8) Generator {
         const g = blk: { var _except_tmp = self.*; _except_tmp.self_name = name; break :blk _except_tmp; };
         return g;
+    }
+
+    pub fn withInferCtx(self: *Generator, ctx: *InferCtx) Generator {
+        const g = blk: { var _except_tmp = self.*; _except_tmp.infer_ctx = ctx; break :blk _except_tmp; };
+        return g;
+    }
+
+    pub fn isUnionType(self: *Generator, t: Type_) bool {
+        switch (t) {
+            .named => |tn| {
+                if (self.module_types.hasUnion(tn)) {
+                    return true;
+                }
+                if (self.dep_types.hasUnion(tn)) {
+                    return true;
+                }
+                return false;
+            },
+            else => |_| {
+                return false;
+            },
+        }
     }
 
     pub fn withMethodCtx(self: *Generator, ms: ?*StrSet, rs: ?*StrSet, throws_: bool, members: std.ArrayList(Decl), pnames: ?*StrSet, sparams: *StrSet, sname: []const u8) Generator {
@@ -3416,6 +3444,17 @@ pub const Generator = struct {
             }
             self.w.emit(" {\n");
             var bg = self.withMethodCtx(ms, rs, m.throws_, self.owner_members, ps, sp, "self");
+            var ctx17c = InferCtx.init(self.module_types, self.owner);
+            ctx17c.withDepTypes(self.dep_types);
+            for (m.params.items) |pp| {
+                if ((pp.type_ != null)) {
+                    ctx17c.bind(pp.name, typeFromRef(pp.type_.?));
+                } else {
+                    ctx17c.bind(pp.name, Type_.unknown_);
+                }
+            }
+            walkStmts(mstmts, ctx17c);
+            bg = bg.withInferCtx(ctx17c);
             for (m.params.items) |p2| {
                 if ((p2.type_ != null)) {
                     switch (p2.type_.?) {
@@ -3493,6 +3532,17 @@ pub const Generator = struct {
                 ps.add(p.name);
             }
             var bg = ig.withMethodCtx(ms, rs, false, self.owner_members, ps, StrSet.init(), "_self");
+            var ctx17ci = InferCtx.init(self.module_types, self.owner);
+            ctx17ci.withDepTypes(self.dep_types);
+            for (ini.params.items) |pp| {
+                if ((pp.type_ != null)) {
+                    ctx17ci.bind(pp.name, typeFromRef(pp.type_.?));
+                } else {
+                    ctx17ci.bind(pp.name, Type_.unknown_);
+                }
+            }
+            walkStmts(istmts, ctx17ci);
+            bg = bg.withInferCtx(ctx17ci);
             bg.genStmts(istmts);
         }
         ig.writeIndent();
@@ -5901,7 +5951,12 @@ pub const Generator = struct {
                         }
                         first2 = false;
                         const is_ref_param: bool = ctorParamAtIsRefTo(self.module_types, self.dep_types, id.name, arg_idx);
-                        if ((is_ref_param and shouldBoxCtorArg(a.value))) {
+                        var should_box: bool = false;
+                        if ((is_ref_param and (self.infer_ctx != null))) {
+                            const wt17c: Type_ = inferExpr(a.value, self.infer_ctx.?);
+                            should_box = self.isUnionType(wt17c);
+                        }
+                        if ((is_ref_param and should_box)) {
                             const lbl = box_labels.items[@intCast(box_idx)];
                             self.w.emit(lbl);
                             self.w.emit(": { const _bv = ");

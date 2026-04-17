@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
 
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
@@ -329,13 +329,28 @@ def buildModuleTypes(m as Module) as ModuleTypes
 
 class InferCtx
     var module_types as ModuleTypes
+    var dep_types as ModuleTypes
     var current_class as str
     var scope as HashMap(str, Type_)
 
     cue init(module_types as ModuleTypes, current_class as str)
         this.module_types = module_types
+        this.dep_types = ModuleTypes()
         this.current_class = current_class
         scope = HashMap()
+
+    # Phase 17c — attach merged dependency ModuleTypes (from codegen's
+    # buildModuleTypes over transitive deps) so inferExpr can see unions /
+    # classes defined in imported modules. Defaults to empty ModuleTypes so
+    # standalone callers (tests) don't need to build a dep table.
+    def withDepTypes(dt as ModuleTypes)
+        this.dep_types = dt
+
+    # True if a named union is known in this module OR in any dep.
+    def hasUnion(name as str) as bool
+        if this.module_types.hasUnion(name)
+            return true
+        return this.dep_types.hasUnion(name)
 
     def bind(name as str, t as Type_)
         scope.put(name, t)
@@ -455,6 +470,16 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                             return as_name
                 on Expr.member as mem
                     # Method call: infer receiver type, look up method return.
+                    # Special case first: `UnionName.variant(args)` — when the
+                    # receiver ident names a known union, the call yields a
+                    # value of the union's named type.
+                    branch mem.object
+                        on Expr.ident as uid
+                            var uname2 as str = "" + uid.name
+                            if ctx.hasUnion(uname2)
+                                return Type_.named(uname2)
+                        else
+                            pass
                     var recv as Type_ = Type_.unknown_
                     branch mem.object
                         on Expr.this_ as _
@@ -479,6 +504,43 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                     return Type_.unknown_
                 else
                     return Type_.unknown_
+        on Expr.try_ as et
+            # `expr?` — propagate the inner type; the `?` suffix only affects
+            # control flow (error propagation).
+            return inferExpr(et.expr, ctx)
+        on Expr.to_non_nil as etn
+            # `expr to!` — strip an outer optional wrapper if present.
+            var inner as Type_ = inferExpr(etn.expr, ctx)
+            branch inner
+                on Type_.optional as opt
+                    return opt
+                else
+                    return inner
+        on Expr.to_nilable as etl
+            # `expr to?` — wrap in optional.
+            var inner_t as Type_ = inferExpr(etl.expr, ctx)
+            return Type_.optional(inner_t)
+        on Expr.orelse_ as eo
+            # `expr orelse fallback` — result takes the non-optional inner type
+            # when it exists; otherwise the expression's type.
+            var lt_o as Type_ = inferExpr(eo.expr, ctx)
+            branch lt_o
+                on Type_.optional as opt_o
+                    return opt_o
+                else
+                    return lt_o
+        on Expr.catch_ as ec
+            # `expr catch fallback` — result is the expression's type.
+            return inferExpr(ec.expr, ctx)
+        on Expr.except_ as ee
+            # `base except f = v ...` — struct-update yields the base's type.
+            return inferExpr(ee.base, ctx)
+        on Expr.if_expr as eif
+            # ternary `if cond then a else b` — result is then-branch type.
+            return inferExpr(eif.then_expr, ctx)
+        on Expr.cast as ect
+            # `expr as TypeRef` / `cast(Expr, T)` — result is the target type.
+            return typeFromRef(ect.target)
         on Expr.binary as b
             var lt as Type_ = inferExpr(b.left, ctx)
             var rt as Type_ = inferExpr(b.right, ctx)
