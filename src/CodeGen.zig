@@ -6909,8 +6909,13 @@ const Generator = struct {
                         const field_name: []const u8 = switch (s.target.*) {
                             .ident  => |id| id.name,
                             .member => |mem| blk: {
-                                if (mem.object.* != .ident) break :emit false;
-                                if (!std.mem.eql(u8, mem.object.ident.name, "self")) break :emit false;
+                                switch (mem.object.*) {
+                                    .this => {},
+                                    .ident => |oid| {
+                                        if (!std.mem.eql(u8, oid.name, "self")) break :emit false;
+                                    },
+                                    else => break :emit false,
+                                }
                                 break :blk mem.member;
                             },
                             else => break :emit false,
