@@ -1411,7 +1411,22 @@ const Generator = struct {
         try g.w.writeAll("    }\n");
         try g.w.writeAll("};\n");
         try g.w.writeAll("const _ZebraErrorCtx = struct { message: []const u8 = \"\", details: ?_Stringable = null };\n");
-        try g.w.writeAll("threadlocal var _error_ctx: _ZebraErrorCtx = .{};\n");
+        try g.w.writeAll("pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};\n");
+        // Recursive error-message walker: each module checks its own
+        // `_error_ctx`, then falls through to every direct import's helper.
+        // Chain traverses transitive modules so a raise deep in a dep is
+        // visible from any catch that reads `e.message`.
+        try g.w.writeAll("pub fn _zbr_error_msg() []const u8 {\n");
+        try g.w.writeAll("    if (_error_ctx.message.len > 0) return _error_ctx.message;\n");
+        for (module.decls) |decl| {
+            const u = switch (decl) { .use => |u| u, else => continue };
+            if (g.native_uses) |nu| if (nu.get(u.path) != null) continue;
+            const imp_path = try std.mem.replaceOwned(u8, g.alloc, u.path, ".", "/");
+            defer g.alloc.free(imp_path);
+            try g.w.print("    if (@import(\"{s}.zig\")._zbr_error_msg().len > 0) return @import(\"{s}.zig\")._zbr_error_msg();\n", .{ imp_path, imp_path });
+        }
+        try g.w.writeAll("    return \"\";\n");
+        try g.w.writeAll("}\n");
         // ── Comparison helpers — handle both numeric and string ([]const u8) types ──
         try g.w.writeAll(
             \\fn _zebra_lt(a: anytype, b: anytype) bool {
@@ -3231,7 +3246,7 @@ const Generator = struct {
                     "{s}" ++
                     "    {s}.main() catch |_err| {{\n" ++
                     "        if (_err == error.ZebraError) {{\n" ++
-                    "            std.debug.print(\"Error: {{s}}\\n\", .{{_error_ctx.message}});\n" ++
+                    "            std.debug.print(\"Error: {{s}}\\n\", .{{_zbr_error_msg()}});\n" ++
                     "        }} else {{\n" ++
                     "            std.debug.print(\"Error: {{}}\\n\", .{{_err}});\n" ++
                     "        }}\n" ++
@@ -8324,7 +8339,10 @@ const Generator = struct {
                     std.mem.eql(u8, e.object.ident.name, g.catch_var))
                 {
                     if (std.mem.eql(u8, e.member, "message")) {
-                        try g.w.writeAll("_error_ctx.message");
+                        // Route through _zbr_error_msg() so transitive deps'
+                        // error contexts are visible — not just the current
+                        // module's own _error_ctx.
+                        try g.w.writeAll("_zbr_error_msg()");
                         break :sw;
                     }
                     if (std.mem.eql(u8, e.member, "details")) {
