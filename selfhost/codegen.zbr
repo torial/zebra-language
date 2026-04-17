@@ -24,7 +24,7 @@
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclProperty, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, AllAnyKind, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts
-use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef
+use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef, isString
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -1081,6 +1081,31 @@ struct Generator
             else
                 return false
 
+    # Phase 17d: walker-derived "is this expression a string?" — replaces the
+    # isStringExpr name-pattern heuristic when infer_ctx is populated.
+    def isStringWalker(e as Expr) as bool
+        if this.infer_ctx == nil
+            return false
+        var t as Type_ = inferExpr(e, this.infer_ctx to!)
+        return isString(t)
+
+    # Phase 17d compute-both wrapper: runs both the heuristic and walker,
+    # logs divergences on stderr, returns heuristic (for now — flip to
+    # walker once corpus is clean).
+    def isStringBoth(e as Expr, site as str) as bool
+        var h as bool = isStringExpr(e)
+        if this.infer_ctx != nil
+            var wres as bool = this.isStringWalker(e)
+            if h != wres
+                var hs as str = "F"
+                if h
+                    hs = "T"
+                var ws as str = "F"
+                if wres
+                    ws = "T"
+                sys.errln("DIVERGE-17D site=" + site + " heur=" + hs + " walker=" + ws)
+        return h
+
     def withMethodCtx(ms as StrSet?, rs as StrSet?, throws_ as bool, members as List(Decl), pnames as StrSet?, sparams as StrSet, sname as str) as Generator
         var g = this except
             in_method             = true
@@ -1961,7 +1986,7 @@ struct Generator
                 strset_locals.add(n.name)
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
-            if isStringExpr(n.init_expr to!)
+            if this.isStringBoth(n.init_expr to!, "var_decl")
                 str_params.add(n.name)
         # Track capture-lambda vars for .call() dispatch at call sites
         if n.init_expr != nil
@@ -2812,7 +2837,7 @@ struct Generator
             if ai > 0
                 w.emit(" ")
             var arg = p.args.at(ai)
-            if isStringExpr(arg) or isStringLitArg(arg)
+            if this.isStringBoth(arg, "print_fmt") or isStringLitArg(arg)
                 w.emit("{s}")
             else
                 w.emit("{}")
@@ -3273,7 +3298,7 @@ struct Generator
     def genBinary(b as ExprBinary)
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
-            if isStringExpr(b.left) or isStringExpr(b.right)
+            if this.isStringBoth(b.left, "bin_add_l") or this.isStringBoth(b.right, "bin_add_r")
                 w.emit("_str_concat(")
                 genExpr(b.left)
                 w.emit(", ")
@@ -3331,7 +3356,7 @@ struct Generator
                         either_nil = true
                     else
                         pass
-            if not either_nil and (isStringExpr(b.left) or isStringExpr(b.right))
+            if not either_nil and (this.isStringBoth(b.left, "bin_eq_l") or this.isStringBoth(b.right, "bin_eq_r"))
                 if b.op == BinaryOp.ne
                     w.emit("!")
                 w.emit("std.mem.eql(u8, ")
@@ -3790,7 +3815,7 @@ struct Generator
                 genExpr(args.at(0).value)
             w.emit(")")
             return
-        if mname == "contains" and not isStringExpr(m.object)
+        if mname == "contains" and not this.isStringBoth(m.object, "contains_recv")
             genExpr(m.object)
             w.emit(".contains(")
             if args.count() > 0

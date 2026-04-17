@@ -428,6 +428,13 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
             # inferExpr for the outer call.
             if ctx.module_types.hasClass(nm)
                 return Type_.named(nm)
+            # Implicit self-field: a bare ident inside a method that doesn't
+            # resolve to a local can mean `self.field`. Look up field type
+            # on the current class.
+            if ctx.current_class != ""
+                var fft as Type_? = ctx.module_types.fieldType(ctx.current_class, nm)
+                if fft != nil
+                    return fft to!
             return Type_.unknown_
         on Expr.member as m
             # Only self-/this-rooted member access is resolved here in 16b.
@@ -469,6 +476,12 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                         else
                             return as_name
                 on Expr.member as mem
+                    # Universal primitive conversion: `x.toString()` yields str
+                    # regardless of x's static type (int/float/char/bool all
+                    # have toString). Short-circuit before methodReturn lookup
+                    # since primitive toString() isn't registered anywhere.
+                    if mem.member == "toString"
+                        return Type_.string_
                     # Method call: infer receiver type, look up method return.
                     # Special case first: `UnionName.variant(args)` — when the
                     # receiver ident names a known union, the call yields a

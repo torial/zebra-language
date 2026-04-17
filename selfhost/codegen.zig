@@ -1544,6 +1544,7 @@ const InferCtx = typechecker.InferCtx;
 const inferExpr = typechecker.inferExpr;
 const walkStmts = typechecker.walkStmts;
 const typeFromRef = typechecker.typeFromRef;
+const isString = typechecker.isString;
 pub fn getMemberFieldName(e: Expr) ?[]const u8 {
     switch (e) {
         .member => |_ptr_m| {
@@ -2836,6 +2837,33 @@ pub const Generator = struct {
         }
     }
 
+    pub fn isStringWalker(self: *Generator, e: Expr) bool {
+        if ((self.infer_ctx == null)) {
+            return false;
+        }
+        const t: Type_ = inferExpr(e, self.infer_ctx.?);
+        return isString(t);
+    }
+
+    pub fn isStringBoth(self: *Generator, e: Expr, site: []const u8) bool {
+        const h: bool = self.isStringExpr(e);
+        if ((self.infer_ctx != null)) {
+            const wres: bool = self.isStringWalker(e);
+            if ((h != wres)) {
+                var hs: []const u8 = "F";
+                if (h) {
+                    hs = "T";
+                }
+                var ws: []const u8 = "F";
+                if (wres) {
+                    ws = "T";
+                }
+                std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("DIVERGE-17D site=", site, _allocator), " heur=", _allocator), hs, _allocator), " walker=", _allocator), ws, _allocator)});
+            }
+        }
+        return h;
+    }
+
     pub fn withMethodCtx(self: *Generator, ms: ?*StrSet, rs: ?*StrSet, throws_: bool, members: std.ArrayList(Decl), pnames: ?*StrSet, sparams: *StrSet, sname: []const u8) Generator {
         const g = blk: { var _except_tmp = self.*; _except_tmp.in_method = true; _except_tmp.current_method_throws = throws_; _except_tmp.mut_set = ms; _except_tmp.ret_set = rs; _except_tmp.owner_members = members; _except_tmp.param_names = pnames; _except_tmp.str_params = sparams; _except_tmp.self_name = sname; _except_tmp.indent = (self.indent + 1); _except_tmp.for_loop_deref = StrSet.init(); _except_tmp.for_loop_vars = StrSet.init(); break :blk _except_tmp; };
         return g;
@@ -3917,7 +3945,7 @@ pub const Generator = struct {
             }
         }
         if ((n.init_expr != null)) {
-            if (self.isStringExpr(n.init_expr.?.*)) {
+            if (self.isStringBoth(n.init_expr.?.*, "var_decl")) {
                 self.str_params.add(n.name);
             }
         }
@@ -5024,7 +5052,7 @@ pub const Generator = struct {
                 self.w.emit(" ");
             }
             const arg = p.args.items[@intCast(ai)];
-            if ((self.isStringExpr(arg) or self.isStringLitArg(arg))) {
+            if ((self.isStringBoth(arg, "print_fmt") or self.isStringLitArg(arg))) {
                 self.w.emit("{s}");
             } else {
                 self.w.emit("{}");
@@ -5571,7 +5599,7 @@ pub const Generator = struct {
 
     pub fn genBinary(self: *Generator, b: ExprBinary) void {
         if ((b.op == BinaryOp.add)) {
-            if ((self.isStringExpr(b.left.*) or self.isStringExpr(b.right.*))) {
+            if ((self.isStringBoth(b.left.*, "bin_add_l") or self.isStringBoth(b.right.*, "bin_add_r"))) {
                 self.w.emit("_str_concat(");
                 self.genExpr(b.left.*);
                 self.w.emit(", ");
@@ -5640,7 +5668,7 @@ pub const Generator = struct {
                     },
                 }
             }
-            if (((!either_nil) and (self.isStringExpr(b.left.*) or self.isStringExpr(b.right.*)))) {
+            if (((!either_nil) and (self.isStringBoth(b.left.*, "bin_eq_l") or self.isStringBoth(b.right.*, "bin_eq_r")))) {
                 if ((b.op == BinaryOp.ne)) {
                     self.w.emit("!");
                 }
@@ -6173,7 +6201,7 @@ pub const Generator = struct {
             self.w.emit(")");
             return;
         }
-        if ((std.mem.eql(u8, mname, "contains") and (!self.isStringExpr(m.object.*)))) {
+        if ((std.mem.eql(u8, mname, "contains") and (!self.isStringBoth(m.object.*, "contains_recv")))) {
             self.genExpr(m.object.*);
             self.w.emit(".contains(");
             if ((@as(i64, @intCast(args.items.len)) > 0)) {
