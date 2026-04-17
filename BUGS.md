@@ -421,6 +421,31 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-035: Selfhost parser has no atom handler for `doc_string_line` (`"""..."""` multi-line strings)
+- **Severity:** High (blocks any `.zbr` using `"""..."""` from compiling under selfhost; affects `test/selfhost_probe6.zbr` + potentially more corpus files)
+- **Status:** Open
+- **Target:** Phase 17e or 17f (selfhost-edit wave).
+- **Symptom:** A `.zbr` containing `"""..."""` multi-line string literals fails under selfhost with the generic `zebra: selfhost pipeline error:` (empty message — the parser raises without detail). The Zig-compiled compiler (`zebra.exe`) accepts the same file without issue.
+- **Reproducer (minimal):**
+  ```
+  class Main
+      shared
+          def main
+              var s = """
+  hello
+  """
+              print s
+  ```
+  `zebra-selfhost.exe --emit-zig` raises empty-message pipeline error at parsing; `zebra.exe --emit-zig` emits valid Zig.
+- **Root cause:** `selfhost/Lexer.zbr::scanDocString` (line 421) correctly emits `TokenKind.doc_string_line` for `"""..."""` content, but `selfhost/parser.zbr` has **no atom case** that builds an expression from it — `grep doc_string parser.zbr` returns no matches. Any expression position containing a `doc_string_line` token falls through and the parser raises without a message.
+- **Zig-side reference:** `src/AstBuilder.zig:2044` — `doc_string_line => .{ .string_lit = .{ .span = s, .kind = .plain, .text = text } }`. The selfhost `astbuilder.zbr`/`parser.zbr` need the equivalent atom handler.
+- **Fix direction (selfhost-only):** Add a `doc_string_line` case to the atom-building path in `selfhost/parser.zbr` (or wherever string-lit atoms are produced) that wraps the token text in `Expr.string_lit` with `kind = plain`. Same shape as existing `string_lit` handling.
+- **Extra:** The generic "selfhost pipeline error: " with empty `e.message` is itself a diagnostics gap — BUG candidate or merge into Phase 20 diagnostics. Leaving a breadcrumb here rather than filing separately.
+- **Risk:** Selfhost-side parser edit — bootstrap_check + corpus sweep required. May unlock additional corpus files beyond probe6.
+- **Found by:** probe6/probe7 triage (item #2 from Sean's 2026-04-17 nag list).
+
+---
+
 *Last updated: 2026-04-17*
 
 ---
