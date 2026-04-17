@@ -477,6 +477,71 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-037: Selfhost corpus-failure triage (57/160 .zbr files fail under selfhost)
+- **Severity:** High (headline self-hosting gap; every failure is selfhost-side — the Zig-compiled compiler passes all 57)
+- **Status:** Open — meta-ticket for the Phase 17e/17f selfhost-edit wave
+- **Target:** Phase 17e (grammar features) and 17f (diagnostics)
+
+**Sweep methodology** (reproducible, 2026-04-17):
+- `./zig-out/bin/zebra-selfhost.exe --emit-zig $file` over every `.zbr` in `test/` and `selfhost/*_test.zbr` (160 files total).
+- Fail-signal: stdout line matching `/^zebra:|pipeline error|^panic:|^error:|thread \d+ panic/`.
+- Cross-oracle: every selfhost-fail file is passed to `./zig-out/bin/zebra.exe --emit-zig` — **all 57 fails succeed under the Zig compiler**.  None of the failures are due to test authoring error or intentional broken-tests.
+- Phase gate on failure (from `printf`/`print` tracing in log): **all 47 silent-message fails die during the parser phase** (last log line is `parsing...`, never `parsed OK`).  That's the strongest single signal in the triage.
+
+**Failure buckets** (57 total; feature tags are the construct the file exercises that the Zig compiler parses but selfhost does not):
+
+| Count | Bucket | Representative files | Fix target |
+|------:|--------|----------------------|------------|
+|    47 | Parser-only gap, silent message | see below | Phase 17e grammar wave + diagnostics gap in Phase 20 |
+|     8 | `undefined name: 'TcScopeKind'` | `selfhost/typechecker_test.zbr` self-reference chain | Pair with BUG-034 follow-up / cross-module resolver work |
+|     1 | `undefined name: 'Dir'` | `test/directory_test.zbr` | Stdlib gap — add `Dir` to selfhost stdlib variant set (Phase 19) |
+|     1 | `undefined name: 'Calendar'` | `test/datetime_test.zbr` | Stdlib gap — selfhost's datetime stdlib doesn't expose `Calendar` |
+
+**47 parser-gap fails — feature-marker subtotals** (many files hit multiple markers; subtotals overlap):
+
+| Construct | Count | Example file | Notes |
+|-----------|------:|--------------|-------|
+| `with` contextual-self block | 10 | `test/with_test.zbr` | `with p\n    x = 10` — selfhost parser never learned the `with` atom |
+| `raise "msg", detail` with payload | 6 | `test/raise_auto.zbr` | Selfhost parser only handles single-operand `raise` |
+| `lambda` expression | 4 | `test/pipeline.zbr`, `test/features.zbr`, `test/result_methods_test.zbr` | Phase 17e scope |
+| `zig"..."` inline literal (expression form) | 3 | `test/greet.zbr` | Selfhost parser has no expression-level `zig"..."` atom; stmt form works (BUG-006 fixed it) |
+| `orelse` keyword | 2 | `test/nilable_test.zbr` | Parser gap — op-precedence table missing `orelse` |
+| `guard cond else, body` | 2 | `test/guard_test.zbr` | Statement-form guard missing in selfhost parser |
+| `trailing ?` for optional-unwrap try | 2 | `test/guard_test.zbr` | Postfix `?` as try sugar not wired up |
+| `(int, int)` tuple type annotation | 2 | `test/tuple_test.zbr` | Tuple types absent from selfhost type parser |
+| `p.0` `p.1` tuple-index member access | 1 | `test/tuple_test.zbr` | Goes with tuple-type work |
+| `"""..."""` multi-line doc strings | 2 | `test/csv_test.zbr`, `test/selfhost_probe6.zbr` | Tracked in BUG-035 (parser atom case missing for `doc_string_line` token) |
+| `except` block as expression | 2 | `test/tc_check.zbr` | Partial support; may be resolver-level not parser |
+| `arena` scope block | 1 | `test/arena_scope_test.zbr` | Atom/statement case missing |
+| `extend` declaration | 1 | `test/extend_test.zbr` | Phase 17e |
+
+**Additional constructs surfaced via secondary inspection (not caught by regex buckets above):**
+- Range syntax `for i in 0 : n` (`test/bench_zebra.zbr`)
+- Top-level `union Shape` with payload variants (`test/branch_exhaustive_test.zbr`)
+- Computed properties `get area as float\n    return ...` (`test/computed_property_test.zbr`)
+- Top-level `enum` (`test/enum_branch_test.zbr`)
+- Top-level `interface ... implements` (`test/interface_test.zbr`)
+- Constrained generics `class MinHeap(T where T implements Comparable)` (`test/generic_constrained_test.zbr`)
+- Top-level `namespace` (`test/namespace_main.zbr`)
+- `shared var` field declaration (`test/shared_field.zbr`)
+- `while var c = …, cond` with iterator binding (`test/while_var_test.zbr`)
+- `c'a'` char-literal token (`test/while_var_test.zbr`)
+- `same` type (recursive self-type in interface method) (`test/generic_constrained_test.zbr`)
+
+**Generic diagnostics gap (surfaced in 47/47 silent fails):**
+Every parser-level failure prints `zebra: selfhost pipeline error: ` with an **empty message** (the parser raises without setting `e.message`).  This is a direct diagnostics failure — user cannot tell *what* the parser choked on without adding instrumentation.  Already flagged as a breadcrumb in BUG-035; promoted here as a first-class Phase 20 item.  Minimum viable fix: parser raise sites must set a message even if only `unexpected token <kind>` at `<line:col>`.
+
+**Action items (derived from triage):**
+- **Phase 17e grammar wave:** with, raise-details, lambda, zig"..." expr, orelse, guard stmt, trailing `?`, tuples, arena, extend, range `:`, top-level union/enum/interface/namespace, computed properties, constrained generics `T where`, `shared var`, `while var`, `c'…'`, `same` type.  Closes ~50 of 57 failures.
+- **Phase 19 stdlib:** `Dir`, `Calendar` variant set (2 fails).
+- **Phase 20 diagnostics:** empty-message parser raises (affects all 47 silent fails).
+- **Cross-module resolver:** `TcScopeKind` undefined name cluster (8 fails) — investigate whether this is a BUG-034 follow-on (`deps_mt.hasEnum`) or a separate resolver/union-expose pathway.  Not yet root-caused.
+
+- **Risk:** This inventory is a planning instrument, not a fix.  Addressing individual buckets requires the standard sprint gate (bootstrap_check + tc tests + corpus diff per commit).  Do not bundle buckets in one commit.
+- **Found by:** Phase 17.5 stability-sprint task #40 corpus triage, 2026-04-17.  Inventory scripts live in `/tmp/sweep_triage3.sh` and `/tmp/cross_oracle.sh` for re-running.
+
+---
+
 *Last updated: 2026-04-17*
 
 ---
