@@ -2846,22 +2846,11 @@ pub const Generator = struct {
     }
 
     pub fn isStringBoth(self: *Generator, e: Expr, site: []const u8) bool {
-        const h: bool = self.isStringExpr(e);
+        _ = site;
         if ((self.infer_ctx != null)) {
-            const wres: bool = self.isStringWalker(e);
-            if ((h != wres)) {
-                var hs: []const u8 = "F";
-                if (h) {
-                    hs = "T";
-                }
-                var ws: []const u8 = "F";
-                if (wres) {
-                    ws = "T";
-                }
-                std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("DIVERGE-17D site=", site, _allocator), " heur=", _allocator), hs, _allocator), " walker=", _allocator), ws, _allocator)});
-            }
+            return self.isStringWalker(e);
         }
-        return h;
+        return self.isStringExpr(e);
     }
 
     pub fn withMethodCtx(self: *Generator, ms: ?*StrSet, rs: ?*StrSet, throws_: bool, members: std.ArrayList(Decl), pnames: ?*StrSet, sparams: *StrSet, sname: []const u8) Generator {

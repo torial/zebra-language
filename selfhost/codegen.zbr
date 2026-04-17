@@ -1089,22 +1089,15 @@ struct Generator
         var t as Type_ = inferExpr(e, this.infer_ctx to!)
         return isString(t)
 
-    # Phase 17d compute-both wrapper: runs both the heuristic and walker,
-    # logs divergences on stderr, returns heuristic (for now — flip to
-    # walker once corpus is clean).
+    # Phase 17d — walker-derived string detection replaces the name-pattern
+    # heuristic. isStringExpr is retained only as a fallback for callers
+    # reached before infer_ctx has been seeded (tests, emission paths that
+    # bypass genMethod / genInit). Flipped after corpus runs showed the
+    # walker is a strict superset of the heuristic over all selfhost files.
     def isStringBoth(e as Expr, site as str) as bool
-        var h as bool = isStringExpr(e)
         if this.infer_ctx != nil
-            var wres as bool = this.isStringWalker(e)
-            if h != wres
-                var hs as str = "F"
-                if h
-                    hs = "T"
-                var ws as str = "F"
-                if wres
-                    ws = "T"
-                sys.errln("DIVERGE-17D site=" + site + " heur=" + hs + " walker=" + ws)
-        return h
+            return this.isStringWalker(e)
+        return isStringExpr(e)
 
     def withMethodCtx(ms as StrSet?, rs as StrSet?, throws_ as bool, members as List(Decl), pnames as StrSet?, sparams as StrSet, sname as str) as Generator
         var g = this except

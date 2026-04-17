@@ -238,7 +238,12 @@ def typeFromName(n as str) as Type_
 def typeFromRef(tr as TypeRef) as Type_
     branch tr
         on TypeRef.named as n
-            return typeFromName(n.name)
+            # Force a fresh owned copy — the slice in n.name lives in the
+            # parse-tree arena, which is reset between dep compilations. If
+            # we pass the slice directly to typeFromName / Type_.named it
+            # holds a dangling reference, and later branch-on narrowing
+            # reads garbage.
+            return typeFromName("" + n.name)
         on TypeRef.nilable as inner
             return Type_.optional(typeFromRef(inner))
         on TypeRef.ref_to as inner
@@ -369,6 +374,68 @@ class InferCtx
     def localType(name as str) as Type_
         return scope.fetch(name)
 
+    # Phase 17d — cross-module field/method lookups. The walker previously
+    # consulted only module_types for Expr.member/Expr.call; that missed
+    # parameters and locals of types defined in deps (the common case when
+    # compiling parser/resolver/codegen, all of which take AST struct params
+    # from ast.zbr). These two helpers mirror hasUnion's module+dep fallback.
+    def fieldTypeAny(class_name as str, field_name as str) as Type_?
+        var ft as Type_? = this.module_types.fieldType(class_name, field_name)
+        if ft != nil
+            return ft
+        ft = this.dep_types.fieldType(class_name, field_name)
+        if ft != nil
+            return ft
+        # Cross-module qualified name fallback — parsed types keep the
+        # module prefix ("Token.Token", "Parser.PNode"). Strip to the last
+        # segment and retry, so dep_types (keyed by bare class name)
+        # resolves cross-module field access.
+        var bare as str = stripModulePrefix(class_name)
+        if bare != class_name
+            ft = this.module_types.fieldType(bare, field_name)
+            if ft != nil
+                return ft
+            return this.dep_types.fieldType(bare, field_name)
+        return nil
+
+    def methodReturnAny(class_name as str, method_name as str) as Type_?
+        var mr as Type_? = this.module_types.methodReturn(class_name, method_name)
+        if mr != nil
+            return mr
+        mr = this.dep_types.methodReturn(class_name, method_name)
+        if mr != nil
+            return mr
+        var bare as str = stripModulePrefix(class_name)
+        if bare != class_name
+            mr = this.module_types.methodReturn(bare, method_name)
+            if mr != nil
+                return mr
+            return this.dep_types.methodReturn(bare, method_name)
+        return nil
+
+    def hasClassAny(class_name as str) as bool
+        if this.module_types.hasClass(class_name)
+            return true
+        if this.dep_types.hasClass(class_name)
+            return true
+        var bare as str = stripModulePrefix(class_name)
+        if bare != class_name
+            if this.module_types.hasClass(bare)
+                return true
+            return this.dep_types.hasClass(bare)
+        return false
+
+# Strip the leading "Module." from a qualified type name, leaving the
+# bare class name. "Token.Token" → "Token", "Parser.PNode" → "PNode",
+# "Foo" → "Foo" (no dot → unchanged).
+def stripModulePrefix(name as str) as str
+    if not name.contains(".")
+        return name
+    var last as str = name
+    for p in name.split(".")
+        last = p
+    return last
+
 # Helper: true iff t is Type_.string_.
 def isString(t as Type_) as bool
     branch t
@@ -376,6 +443,44 @@ def isString(t as Type_) as bool
             return true
         else
             return false
+
+# Phase 17d diagnostic: short tag name for a Type_ variant. Caller may strip.
+def typeTag(t as Type_) as str
+    branch t
+        on Type_.int_
+            return "int"
+        on Type_.uint_
+            return "uint"
+        on Type_.float_
+            return "flt"
+        on Type_.bool_
+            return "bool"
+        on Type_.char_
+            return "char"
+        on Type_.string_
+            return "str"
+        on Type_.void_
+            return "void"
+        on Type_.named as n
+            return "named(" + n + ")"
+        on Type_.optional
+            return "opt"
+        on Type_.ref_to
+            return "ref"
+        on Type_.cross_module
+            return "crossmod"
+        on Type_.str_slice
+            return "slice"
+        on Type_.string_builder
+            return "sbld"
+        on Type_.regex
+            return "rgx"
+        on Type_.str_set
+            return "sset"
+        on Type_.unknown_
+            return "unk"
+        else
+            return "?"
 
 # Helper: true iff t is a numeric type (int/uint/float or their sized forms).
 def isNumeric(t as Type_) as bool
@@ -437,36 +542,40 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                     return fft to!
             return Type_.unknown_
         on Expr.member as m
-            # Only self-/this-rooted member access is resolved here in 16b.
-            # Arbitrary object member access lands in Phase 17 with proper scope.
-            branch m.object
-                on Expr.this_ as _
-                    if ctx.current_class == ""
-                        return Type_.unknown_
-                    var ft as Type_? = ctx.module_types.fieldType(ctx.current_class, "" + m.member)
+            # Phase 17d — infer the object's type recursively, then look up
+            # the field through module_types + dep_types. Unwraps `^T` and
+            # `T?` because field access through a pointer or nilable has the
+            # same field set as the underlying. This path subsumes the older
+            # dedicated Expr.this_/Expr.ident branches.
+            var obj_t as Type_ = inferExpr(m.object, ctx)
+            branch obj_t
+                on Type_.ref_to as rt
+                    obj_t = rt
+                on Type_.optional as ot
+                    obj_t = ot
+                else
+                    pass
+            branch obj_t
+                on Type_.named as tn
+                    var ft as Type_? = ctx.fieldTypeAny(tn, "" + m.member)
                     if ft != nil
                         return ft to!
-                    return Type_.unknown_
-                on Expr.ident as id2
-                    var cname as str = "" + id2.name
-                    if ctx.hasLocal(cname)
-                        var obj_t as Type_ = ctx.localType(cname)
-                        branch obj_t
-                            on Type_.named as tn
-                                var ft2 as Type_? = ctx.module_types.fieldType(tn, "" + m.member)
-                                if ft2 != nil
-                                    return ft2 to!
-                            else
-                                pass
-                    return Type_.unknown_
                 else
-                    return Type_.unknown_
+                    pass
+            # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
+            # registered nowhere in user code but widely used as `r.stdout`
+            # etc. Recognise by field name when the object type is unknown,
+            # so equality emits std.mem.eql instead of a broken slice ==.
+            var mm as str = "" + m.member
+            if mm == "stdout" or mm == "stderr"
+                return Type_.string_
+            return Type_.unknown_
         on Expr.call as c
             # Constructor or class name used as callee: `Foo(args)` → named("Foo").
             branch c.callee
                 on Expr.ident as id
                     var cname as str = "" + id.name
-                    if ctx.module_types.hasClass(cname)
+                    if ctx.hasClassAny(cname)
                         return Type_.named(cname)
                     # Primitive-name ctors like `int(x)` cast to that primitive.
                     var as_name as Type_ = typeFromName(cname)
@@ -503,13 +612,13 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                             if ctx.hasLocal(rname)
                                 recv = ctx.localType(rname)
                             else
-                                if ctx.module_types.hasClass(rname)
+                                if ctx.hasClassAny(rname)
                                     recv = Type_.named(rname)
                         else
                             pass
                     branch recv
                         on Type_.named as tn
-                            var rt as Type_? = ctx.module_types.methodReturn(tn, "" + mem.member)
+                            var rt as Type_? = ctx.methodReturnAny(tn, "" + mem.member)
                             if rt != nil
                                 return rt to!
                         else
@@ -612,6 +721,13 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
 # sentinel for "no payload" vs. "missing").
 
 def narrowPayloadFromOnValue(mt as ModuleTypes, v as Expr) as Type_?
+    return narrowPayloadFromOnValueDeps(mt, ModuleTypes(), v)
+
+# Phase 17d — variant payload lookup that also consults dep_types, so
+# branch-on patterns against unions defined in imported modules (Expr /
+# Stmt / Decl live in ast.zbr; every other selfhost module branches on
+# them) get their payload types narrowed correctly.
+def narrowPayloadFromOnValueDeps(mt as ModuleTypes, dt as ModuleTypes, v as Expr) as Type_?
     branch v
         on Expr.member as em
             branch em.object
@@ -619,6 +735,8 @@ def narrowPayloadFromOnValue(mt as ModuleTypes, v as Expr) as Type_?
                     var unam as str = "" + oid.name
                     var vnam as str = "" + em.member
                     var pt as Type_? = mt.variantPayload(unam, vnam)
+                    if pt == nil
+                        pt = dt.variantPayload(unam, vnam)
                     if pt != nil
                         var pt_val as Type_ = pt to!
                         branch pt_val
@@ -692,29 +810,22 @@ def walkStmt(s as Stmt, ctx as InferCtx)
             # UnionName is a known union in this module. Cross-module
             # unions and Result(T,E) are handled in Phase 18 (needs
             # generic_named + dep_types threading into InferCtx).
+            # Phase 17d — do NOT restore the prior binding after the case
+            # body. The walker runs in a single pre-pass before emission,
+            # so any restore would leave the scope empty by the time
+            # genExpr runs inside the same branch arm. Last-writer-wins is
+            # good enough for string-literal detection: selfhost code does
+            # not rebind the same pattern name across sibling arms to
+            # incompatible types.
             for c in sb.cases
                 for v in c.values
                     walkExpr(v, ctx)
-                var had_narrow as bool = false
-                var narrow_name as str = ""
-                var prior_had as bool = false
-                var prior_type as Type_ = Type_.unknown_
                 if c.binding != nil and c.values.count() == 1
                     var val as Expr = c.values.at(0)
-                    var payload as Type_? = narrowPayloadFromOnValue(ctx.module_types, val)
+                    var payload as Type_? = narrowPayloadFromOnValueDeps(ctx.module_types, ctx.dep_types, val)
                     if payload != nil
-                        narrow_name = "" + c.binding to!
-                        prior_had = ctx.hasLocal(narrow_name)
-                        if prior_had
-                            prior_type = ctx.localType(narrow_name)
-                        ctx.bind(narrow_name, payload to!)
-                        had_narrow = true
+                        ctx.bind("" + c.binding to!, payload to!)
                 walkStmts(c.stmts, ctx)
-                if had_narrow
-                    if prior_had
-                        ctx.bind(narrow_name, prior_type)
-                    else
-                        ctx.unbind(narrow_name)
             if sb.else_ != nil
                 walkStmts(sb.else_ to!, ctx)
         on Stmt.return_ as sr
