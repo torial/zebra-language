@@ -381,7 +381,20 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-16*
+### BUG-032: Selfhost codegen.zbr emits `.remove` unconditionally as `.orderedRemove` (List form)
+- **Severity:** Medium (silently corrupts HashMap mutation in every selfhost-emitted program)
+- **Status:** Open
+- **Target:** Phase 17f+ (after Zig-side sprint items).  Pairs with BUG-030.
+- **Symptom:** In `selfhost/codegen.zbr::genMemberCall` around line 3745, `if mname == "remove"` unconditionally emits `_ = obj.orderedRemove(@intCast(key))` regardless of whether the receiver is a `List` or `HashMap`.  HashMaps don't have `orderedRemove`; they have `.remove(key)` which returns `bool`.
+- **Evidence:** `selfhost/typechecker.zbr::InferCtx.unbind` (lines 388-394) has a workaround comment: "selfhost mis-emits HashMap.remove as orderedRemove. Until that bug is fixed, 'unbind' by rebinding to Type_.unknown_."  The workaround means any future HashMap-holding class in selfhost has to remember to avoid `.remove`.
+- **Zig-side:** Already correct — `src/CodeGen.zig::genStdlibMethod` at line 4636 dispatches via TC type (`tr.generic.name == "HashMap"` → `genHashMapMethod` → emits `.remove(key)` at line 6317-6324).
+- **Fix direction (selfhost-only):** Introduce `hashmap_locals: StrSet` + `fieldIsHashMap(module_types, dep_types, name)` parallel to the existing `strset_locals` / `fieldIsStrSet` infrastructure.  In `.remove` dispatch, check if the receiver is a HashMap — if so, emit `_ = obj.remove(key)`; otherwise fall through to `.orderedRemove`.  Also consider extending `.contains` dispatch for symmetric coverage (see BUG-030).
+- **Risk:** Selfhost-side edit — must go through bootstrap round-trip verification.  Group with BUG-030 and BUG-031 in a single selfhost-edit commit.
+- **Found by:** Phase 17.5 stability-sprint triage, 2026-04-17.
+
+---
+
+*Last updated: 2026-04-17*
 
 ---
 
