@@ -407,6 +407,19 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-034: Selfhost emits cross-module union construction as struct call (hard-coded `isUnionLikeName` allow-list)
+- **Severity:** High (blocks running any selfhost-emitted module whose union types aren't in the hard-coded list — `typechecker_test.zbr` currently only runs through `zebra.exe`, not the selfhost binary).
+- **Status:** Open
+- **Target:** Phase 17f or with BUG-030/031/032/033 selfhost-edit wave.
+- **Symptom:** `UnionName.variant(value)` on a **cross-module** union emits `UnionName.init(value)` (or `UnionName{}` struct call) instead of `UnionName{ .variant = value }`.  Example: in `typechecker_test.zbr`, `Type_.named("Bar")` falls through to the "Class/struct constructor" branch at `selfhost/codegen.zbr:3598` because `Type_` isn't recognised as a union.
+- **Root cause:** `selfhost/codegen.zbr::isUnionLikeName` (lines 409-417) is a hard-coded allow-list of 8 names (`PNode`, `PParam`, `Decl`, `TypeRef`, `Stmt`, `Expr`, `StringPart`, `LambdaBody`).  `Type_`, `ClassTypes`, `ModuleTypes`, `CrossModuleType`, etc. are absent, so `generateModuleWith` at line 695-701 classifies them as struct/class names.  Then `genCall` at line 3520-3558 misses the union-construction path because `union_names.contains_(oname)` is false.
+- **Zig-side:** Not applicable — the Zig backend discriminates via TC types, not name heuristics.
+- **Fix direction (selfhost-only):** Replace `isUnionLikeName` + `isEnumLikeName` name heuristics with `deps_mt.hasUnion(exposed_name)` / `deps_mt.hasEnum(exposed_name)` lookups — the infrastructure already exists (used by `isUnionType` at line 1076-1080).  Fallback to the hard-coded list only when `deps_mt` doesn't know the name (single-file emit paths).  Consider adding `hasEnum` to `ModuleTypes` if it's missing.
+- **Risk:** Selfhost-side edit — must go through round-trip + bootstrap_check.  Part of the selfhost-edit wave (BUG-030/031/032/033).
+- **Found by:** Phase 17.5 stability-sprint investigation, 2026-04-17.  Evidence: Phase 17d memory note that `typechecker_test.zbr` runs only via `zebra.exe`.
+
+---
+
 *Last updated: 2026-04-17*
 
 ---
