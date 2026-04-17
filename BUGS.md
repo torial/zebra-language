@@ -361,10 +361,11 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-031: Selfhost `except` codegen emits `.*` on value-typed subject
+### BUG-031: Selfhost `except` codegen emits `.*` on value-typed subject — FIXED
 - **Severity:** Medium (silent divergence between Zig-compiled compiler and selfhost; only surfaces at level-2 bootstrap)
-- **Status:** Open
+- **Status:** Fixed 2026-04-17
 - **Target:** Phase 17 — fix on Zig side (selfhost codegen), then round-trip
+- **Fix:** `selfhost/codegen.zbr` gen path for `Expr.except_` now emits `.*` only when the base is `Expr.this_` and we are in a method body (where `this` lowers to `self: *Owner` — `genMethod` always uses pointer receivers for both class and struct owners). Value-typed locals (`local except {...}`) no longer get a spurious deref. Bootstrap round-trip byte-identical; corpus sweep 114/61 unchanged vs baseline (173/173 byte-identical).
 - **Symptom:** `x except { f = v }` where `x` is a local value (not a pointer) compiles fine on the Zig-compiled Zebra compiler but fails on selfhost-emitted Zig with `error: cannot dereference non-pointer type 'T'`. The selfhost codegen unconditionally emits `var _except_tmp = x.*;` for the `except` subject; `.*` is only legal when the subject is a pointer.
 - **Reproducer:** Phase 16c plumbing attempt in `selfhost/codegen.zbr::generateModuleWith`:
   ```

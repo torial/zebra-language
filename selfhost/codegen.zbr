@@ -3273,8 +3273,18 @@ struct Generator
                 # struct update: blk: { var _tmp = base; _tmp.f = v; break :blk _tmp; }
                 w.emit("blk: { var _except_tmp = ")
                 genExpr(ex.base)
-                # In methods, self is *T — deref to copy value: self.* not self
-                if in_method
+                # BUG-031: emit `.*` only when the base is `this`.  In method
+                # bodies `this` lowers to `self: *Owner` (for both class and
+                # struct owners — genMethod always writes `self: *T`), so a
+                # deref is needed to produce a value copy.  Value-typed
+                # locals (`local except {...}`) must not be deref'd.
+                var base_is_this = false
+                branch ex.base
+                    on Expr.this_
+                        base_is_this = true
+                    else
+                        pass
+                if base_is_this and in_method
                     w.emit(".*")
                 w.emit("; ")
                 for ef in ex.fields

@@ -5557,7 +5557,16 @@ pub const Generator = struct {
                 const ex = _ptr_ex.*;
                 self.w.emit("blk: { var _except_tmp = ");
                 self.genExpr(ex.base);
-                if (self.in_method) {
+                var base_is_this = false;
+                switch (ex.base) {
+                    .this_ => {
+                        base_is_this = true;
+                    },
+                    else => {
+                        // pass
+                    },
+                }
+                if ((base_is_this and self.in_method)) {
                     self.w.emit(".*");
                 }
                 self.w.emit("; ");
