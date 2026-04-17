@@ -112,7 +112,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-09
 - **Was:** `mergePartialInto` concatenated all members from a partial without checking for name conflicts. If a partial redefined a method already in the root file, both definitions were appended, producing a Zig compile error with a confusing message about the generated file.
 - **Fix:** `mergePartialInto` now scans for duplicate method names before merging. Duplicates emit a clear warning (`"duplicate method 'ClassName.method' — already defined in root"`) and the partial definition is skipped. Non-method members (vars, properties) are still appended unconditionally.
-- **Re-verified 2026-04-17** (`C:\tmp\bug010/Greeter.zbr` + `Greeter.ext.zbr`): Zig-backend emits the expected warning (`duplicate method 'Greeter.hi' — already defined in root; skipping partial definition`), builds, and prints `root` (root's definition wins). Selfhost does not implement partial-class merging yet — the `.ext.zbr` partial is ignored; root's definition also wins. Feature-gap on selfhost side, not a regression of BUG-010.
+- **Re-verified 2026-04-17** (`C:\tmp\bug010/Greeter.zbr` + `Greeter.ext.zbr`): Zig-backend emits the expected warning (`duplicate method 'Greeter.hi' — already defined in root; skipping partial definition`), builds, and prints `root` (root's definition wins). Selfhost deep probe: grep for `partial` in `selfhost/` returns zero hits outside an unrelated comment; no `mergePartials`/`mergePartialInto` equivalent exists. Selfhost emits a single `fn hi() []const u8 { return "root"; }` — the `.ext.zbr` partial is never discovered, never warned about. For this test both compilers yield "root" for unrelated reasons (Zig by explicit dedup; selfhost by partials-not-implemented). A partial adding *non-conflicting* members would be silently dropped by selfhost — tracked as BUG-046, not a regression of BUG-010.
 
 ---
 
@@ -681,6 +681,18 @@ The selfhost codegen path diverges.
 - **Reproducer:** `C:\tmp\verify_bug016b.zbr` (constructor-based linked list with `^Node?` param).
 - **Likely fix:** in `genArgs` (and selfhost `selfhost/codegen.zbr` mirror), when `ps[i].type_` is `.ref_to` and the inner (directly, or through `.nilable`) is a class type, pass the arg directly via `genArgExpr` instead of routing to `genBoxedArgExpr`.
 - **Relation to BUG-041:** Same conceptual root ("`^Class` is representation no-op"), different codegen path (call-site arg materialization vs type emission). Filed separately to keep the BUG-041 commit diagnosable.
+
+---
+
+### BUG-046: Selfhost does not discover or merge partial-class sibling files — OPEN
+- **Severity:** Medium (selfhost-only parity gap; members added in `<stem>.*.zbr` partials are silently dropped)
+- **Status:** Open — filed 2026-04-17 during BUG-010 deeper probe
+- **Target:** 0.5 (ride with the selfhost-edit wave)
+- **Symptom:** Given `Foo.zbr` (root) and `Foo.ext.zbr` (partial) in the same directory, selfhost compiles only the root. No warning, no error, no discovery. The partial's declarations never reach the AST.
+- **Evidence:** `grep -rn partial selfhost/` returns one hit (an unrelated comment in `typechecker.zbr`). No `mergePartials`, no `mergePartialInto`. The Zig backend in `src/main.zig` lines ~184–427 implements the feature; selfhost's `main.zbr` does not call any equivalent.
+- **For BUG-010's duplicate-method scenario, both compilers happen to yield "root" output** — but for different reasons (Zig: discovers + dedups + skips; selfhost: never discovered). A partial adding non-conflicting members would diverge visibly.
+- **Reproducer:** `C:\tmp\bug010\Greeter.zbr` + `Greeter.ext.zbr` with the partial's method renamed (so it is additive, not a duplicate) — selfhost output omits it; Zig backend includes it.
+- **Likely fix:** port the `mergePartials` + `mergePartialInto` routine from `src/main.zig` into `selfhost/main.zbr`, invoked between parse and resolve. Needs directory listing, path-stem matching, per-partial tokenize/parse/build, and duplicate-method dedup mirroring the Zig side.
 
 ---
 
