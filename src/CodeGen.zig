@@ -152,6 +152,7 @@ pub fn generate(
 
     var uses_gui    = false;
     var has_exports = false;
+    var box_counter: u32 = 0;
     const g = Generator{
         .resolve     = resolve,
         .tc          = tc,
@@ -176,6 +177,7 @@ pub fn generate(
         .has_exports_ptr  = &has_exports,
         .source_file      = module.file,
         .imported_modules = imported_modules,
+        .box_counter_ptr  = &box_counter,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -1261,8 +1263,19 @@ const Generator = struct {
     /// Module interfaces of `use`d deps — used in `genUse` to decide whether to
     /// import the whole module or unwrap a same-named class.
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface) = null,
+    /// Monotonic counter used by `nextUid` for deterministic unique identifier
+    /// suffixes in emitted Zig (e.g. `_box_3`, `_bp_3`).  Replaces pointer-address
+    /// based names which varied across runs.
+    box_counter_ptr: *u32,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
+
+    /// Return the next unique identifier suffix.  Called at least once per
+    /// emit site that previously used `@intFromPtr(node)`.
+    fn nextUid(g: Generator) u32 {
+        g.box_counter_ptr.* += 1;
+        return g.box_counter_ptr.*;
+    }
 
     fn withOwner(g: Generator, new_owner: []const u8) Generator {
         var c = g; c.owner = new_owner; return c;
@@ -4316,9 +4329,9 @@ const Generator = struct {
     }
 
     fn genDestruct(g: Generator, s: *Ast.StmtDestruct) anyerror!void {
-        // Use pointer address as a unique suffix to avoid name collisions when
-        // multiple destructurings appear in the same scope.
-        const uid = @intFromPtr(s) & 0xFFFF;
+        // Monotonic counter — avoids name collisions when multiple destructurings
+        // appear in the same scope, and keeps emitted Zig deterministic.
+        const uid = g.nextUid();
         try g.writeIndent();
         try g.w.print("const _dt_{x} = ", .{uid});
         try g.genExpr(s.init);
@@ -7447,9 +7460,9 @@ const Generator = struct {
     /// Emits a while loop using `std.unicode.Utf8View.initUnchecked().iterator()`.
     fn genForInChars(g: Generator, s: *Ast.StmtForIn) anyerror!void {
         const var_name = if (s.vars.len > 0) s.vars[0] else "_cp";
-        // Use pointer address as unique suffix to avoid name collisions when the
-        // same loop variable name (e.g. `c`) appears in two separate chars() loops.
-        const uid = @intFromPtr(s) & 0xFFFF;
+        // Monotonic counter — avoids name collisions when the same loop variable
+        // name (e.g. `c`) appears in two separate chars() loops.
+        const uid = g.nextUid();
         const iter_var = try std.fmt.allocPrint(g.alloc, "_cp_it_{x}", .{uid});
         defer g.alloc.free(iter_var);
 
@@ -7530,7 +7543,7 @@ const Generator = struct {
             // ── String dispatch: lower to if-else-if chain ────────────────────
             // Hoist subject into a temp so it isn't evaluated N times.
             try g.writeIndent();
-            const tmp = try std.fmt.allocPrint(g.alloc, "_bs_{x}", .{@intFromPtr(s)});
+            const tmp = try std.fmt.allocPrint(g.alloc, "_bs_{x}", .{g.nextUid()});
             defer g.alloc.free(tmp);
             try g.w.writeAll("{\n");
             const bg = g.indented();
@@ -7581,9 +7594,10 @@ const Generator = struct {
         // Emitted flat (no wrapping block) so `if (!_bd) unreachable` at the end
         // is visible to Zig's return-path analysis.
         if (has_guard) {
-            const bv = try std.fmt.allocPrint(g.alloc, "_bv_{x}", .{@intFromPtr(s)});
+            const uid = g.nextUid();
+            const bv = try std.fmt.allocPrint(g.alloc, "_bv_{x}", .{uid});
             defer g.alloc.free(bv);
-            const bd = try std.fmt.allocPrint(g.alloc, "_bd_{x}", .{@intFromPtr(s)});
+            const bd = try std.fmt.allocPrint(g.alloc, "_bd_{x}", .{uid});
             defer g.alloc.free(bd);
             try g.writeIndent();
             try g.w.print("const {s} = ", .{bv});
@@ -8087,8 +8101,8 @@ const Generator = struct {
                 // Two-arg form: `raise "msg", details_obj`
                 // Determine details type from TypeChecker to pick the right shim.
                 const det_type = if (g.tc) |tc| tc.expr_types.get(det) orelse .unknown else .unknown;
-                // Unique label from AST pointer so multiple raises don't collide.
-                const uid = @intFromPtr(s) & 0xFFFF;
+                // Unique label from monotonic counter so multiple raises don't collide.
+                const uid = g.nextUid();
 
                 const det_is_primitive = switch (det_type) {
                     .int, .uint, .float, .bool, .char,
@@ -8197,8 +8211,8 @@ const Generator = struct {
         //       // catch body
         //   }
         //
-        // Label/var names are unique-per-try-block via the AST node pointer address.
-        const ptr_id = @intFromPtr(s) & 0xFFFF;
+        // Label/var names are unique-per-try-block via a monotonic counter.
+        const ptr_id = g.nextUid();
         const blk_label = try std.fmt.allocPrint(g.alloc, "_try_blk_{x}", .{ptr_id});
         const err_var   = try std.fmt.allocPrint(g.alloc, "_try_err_{x}", .{ptr_id});
         defer g.alloc.free(blk_label);
@@ -8641,7 +8655,7 @@ const Generator = struct {
                     // to the enclosing method.
                     //   expr catch |_c| { _try_err_XXXX = _c; break :blk; }
                     const ev  = g.try_err_var.?;
-                    const tmp = try std.fmt.allocPrint(g.alloc, "_tc_{x}", .{@intFromPtr(e)});
+                    const tmp = try std.fmt.allocPrint(g.alloc, "_tc_{x}", .{g.nextUid()});
                     defer g.alloc.free(tmp);
                     try g.genExpr(e.expr);
                     try g.w.print(" catch |{s}| {{ {s} = {s}; break :{s}; }}", .{ tmp, ev, tmp, lbl });
@@ -8814,13 +8828,14 @@ const Generator = struct {
     /// Emit a single argument, boxing value `T` → `*T` when the param is `^T`.
     /// `param_is_ref` = the param's declared type is `.ref_to`; `inner` = the inner TypeRef.
     fn genBoxedArgExpr(g: Generator, expr: *const Ast.Expr, inner: Ast.TypeRef) anyerror!void {
-        const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{@intFromPtr(expr)});
+        const uid = g.nextUid();
+        const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
         defer g.alloc.free(lbl);
-        try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ lbl, @intFromPtr(expr) });
+        try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ lbl, uid });
         try g.genType(inner);
-        try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{@intFromPtr(expr)});
+        try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
         try g.genArgExpr(expr);
-        try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, @intFromPtr(expr) });
+        try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, uid });
     }
 
     /// Emit a comma-separated argument list, honouring named args and defaults.
@@ -8977,13 +8992,14 @@ const Generator = struct {
                                 break :blk iface.boxed_variants.get(key);
                             };
                             if (box_type) |inner_name| {
-                                const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{@intFromPtr(e)});
+                                const uid = g.nextUid();
+                                const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
                                 defer g.alloc.free(box_lbl);
-                                try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, @intFromPtr(e) });
+                                try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, uid });
                                 try g.w.print("{s}.{s}", .{ mod_alias, inner_name });
-                                try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{@intFromPtr(e)});
+                                try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
                                 try g.genExpr(e.args[0].value);
-                                try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, @intFromPtr(e) });
+                                try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, uid });
                             } else {
                                 try g.genExpr(e.args[0].value);
                             }
@@ -9040,21 +9056,23 @@ const Generator = struct {
                             }
                         }
                         if (box_inner) |inner| {
-                            const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{@intFromPtr(e)});
+                            const uid = g.nextUid();
+                            const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
                             defer g.alloc.free(box_lbl);
-                            try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, @intFromPtr(e) });
+                            try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, uid });
                             try g.genType(inner.*);
-                            try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{@intFromPtr(e)});
+                            try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
                             try g.genExpr(e.args[0].value);
-                            try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, @intFromPtr(e) });
+                            try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, uid });
                         } else if (box_xmod_inner) |inner_name| {
-                            const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{@intFromPtr(e)});
+                            const uid = g.nextUid();
+                            const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
                             defer g.alloc.free(box_lbl);
-                            try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, @intFromPtr(e) });
+                            try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, uid });
                             try g.w.print("{s}.{s}", .{ box_xmod_alias.?, inner_name });
-                            try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{@intFromPtr(e)});
+                            try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
                             try g.genExpr(e.args[0].value);
-                            try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, @intFromPtr(e) });
+                            try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, uid });
                         } else {
                             try g.genExpr(e.args[0].value);
                         }
@@ -9131,13 +9149,14 @@ const Generator = struct {
                             }
                             // Need the inner type for boxing: look up ref_fields to get the type name.
                             // For now, emit the labeled-block boxing with anytype inference.
-                            const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{@intFromPtr(a.value)});
+                            const uid = g.nextUid();
+                            const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
                             defer g.alloc.free(lbl);
-                            try g.w.print("{s}: {{ const _bp_{x} = blk2: {{ break :blk2 _allocator.create(@TypeOf(", .{ lbl, @intFromPtr(a.value) });
+                            try g.w.print("{s}: {{ const _bp_{x} = blk2: {{ break :blk2 _allocator.create(@TypeOf(", .{ lbl, uid });
                             try g.genExpr(a.value);
-                            try g.w.print(")) catch @panic(\"OOM\"); }}; _bp_{x}.* = ", .{@intFromPtr(a.value)});
+                            try g.w.print(")) catch @panic(\"OOM\"); }}; _bp_{x}.* = ", .{uid});
                             try g.genExpr(a.value);
-                            try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, @intFromPtr(a.value) });
+                            try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, uid });
                             continue;
                         }
                     }
