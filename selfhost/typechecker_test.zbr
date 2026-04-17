@@ -5,7 +5,7 @@
 # hand-constructed (no Parser dependency) to keep the test file self-contained.
 
 use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
 def check(ok as bool, label as str)
     if ok
@@ -379,6 +379,43 @@ def testInferMethodCall()
     var call as Expr = Expr.call(ExprCall(mkSpan(), mem, List(Arg)()))
     check(typeIsInt(inferExpr(call, ctx)), "inferExpr(b.go()) → int")
 
+# ── Phase 17a: union variant payload indexing ───────────────────────────────
+# Build Module with `union Shape { circle as int, square as str, dot }` and
+# verify populateModuleTypes populates variant_payloads.
+
+def unionDecl(name as str, variants as List(UnionVariant)) as Decl
+    return Decl.union_(DeclUnion(mkSpan(), emptyMods(), name, variants))
+
+def testUnionVariantIndex()
+    var variants as List(UnionVariant) = List(UnionVariant)()
+    variants.add(UnionVariant(mkSpan(), "circle", namedRef("int")))
+    variants.add(UnionVariant(mkSpan(), "square", namedRef("str")))
+    variants.add(UnionVariant(mkSpan(), "dot", nil))
+    var decls as List(Decl) = List(Decl)()
+    decls.add(unionDecl("Shape", variants))
+    var m as Module = Module("" + "<test>", decls)
+    var mt as ModuleTypes = buildModuleTypes(m)
+
+    check(mt.hasUnion("Shape"), "buildModuleTypes: hasUnion(Shape)")
+    check(not mt.hasUnion("Missing"), "buildModuleTypes: hasUnion(Missing) is false")
+
+    var p_circle as Type_? = mt.variantPayload("Shape", "circle")
+    check(p_circle != nil, "variantPayload(Shape.circle) present")
+    if p_circle != nil
+        check(typeIsInt(p_circle to!), "variantPayload(Shape.circle) is int")
+
+    var p_square as Type_? = mt.variantPayload("Shape", "square")
+    if p_square != nil
+        check(typeIsString(p_square to!), "variantPayload(Shape.square) is string")
+
+    var p_dot as Type_? = mt.variantPayload("Shape", "dot")
+    check(p_dot != nil, "variantPayload(Shape.dot) present (payload-less)")
+    if p_dot != nil
+        check(typeIsUnknown(p_dot to!), "variantPayload(Shape.dot) is unknown_ (payload-less)")
+
+    var p_missing as Type_? = mt.variantPayload("Shape", "missing")
+    check(p_missing == nil, "variantPayload(Shape.missing) is nil")
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 class Main
@@ -401,4 +438,5 @@ class Main
         testInferCtorCall()
         testInferIdentScope()
         testInferMethodCall()
+        testUnionVariantIndex()
         print "typechecker_test: done"

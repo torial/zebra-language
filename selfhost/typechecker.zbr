@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, Arg, BinaryOp
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
 
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
@@ -136,10 +136,22 @@ class ModuleTypes
     # whether `obj.name.add(s)` is set-add or list-append without doing
     # full receiver-type inference. Populated by addClassMembers.
     var strset_field_names as HashMap(str, bool)
+    # Union variant payload index — key "UnionName.variantName", value is
+    # the payload's Type_ (or Type_.unknown_ for payload-less variants).
+    # Drives Phase 17b branch-on narrowing: `branch x on Foo.bar as n`
+    # binds n to variant_payloads["Foo.bar"]. Populated by
+    # populateModuleTypes on Decl.union_ arms.
+    var variant_payloads as HashMap(str, Type_)
+    # Separate set of known union type names — so a caller can ask
+    # "is 'Foo' declared as a union in this module?" without enumerating
+    # variant_payloads. Populated alongside variant_payloads.
+    var union_names as HashMap(str, bool)
 
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
+        variant_payloads = HashMap()
+        union_names = HashMap()
 
     def addClass(c as ClassTypes)
         this.classes.put(c.name, c)
@@ -149,6 +161,21 @@ class ModuleTypes
 
     def hasStrSetField(field_name as str) as bool
         return this.strset_field_names.contains(field_name)
+
+    def addUnion(name as str)
+        this.union_names.put(name, true)
+
+    def hasUnion(name as str) as bool
+        return this.union_names.contains(name)
+
+    def addVariantPayload(union_name as str, variant_name as str, t as Type_)
+        this.variant_payloads.put(union_name + "." + variant_name, t)
+
+    def variantPayload(union_name as str, variant_name as str) as Type_?
+        var key as str = union_name + "." + variant_name
+        if this.variant_payloads.contains(key)
+            return this.variant_payloads.fetch(key)
+        return nil
 
     def hasClass(class_name as str) as bool
         return this.classes.contains(class_name)
@@ -278,6 +305,15 @@ def populateModuleTypes(mt as ModuleTypes, m as Module)
                 var ct2 = ClassTypes("" + s.name)
                 addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
+            on Decl.union_ as u
+                # Index variant → payload Type_ for branch-on narrowing (17b).
+                var uname as str = "" + u.name
+                mt.addUnion(uname)
+                for variant in u.variants
+                    if variant.payload != nil
+                        mt.addVariantPayload(uname, "" + variant.name, typeFromRef(variant.payload to!))
+                    else
+                        mt.addVariantPayload(uname, "" + variant.name, Type_.unknown_)
             else
                 pass
 
@@ -481,6 +517,117 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                     return Type_.unknown_
         else
             return Type_.unknown_
+
+# ── Statement walker ─────────────────────────────────────────────────────────
+# Phase 17a: structural walker over all 22 ast.Stmt variants. Populates
+# InferCtx scope bindings on var/const decls and (basic) for-in loop vars
+# so that later expr-level inference sees real types for local names.
+# Sub-expression inference is advisory — results are not yet persisted to a
+# side table. Phase 17b adds branch-on variant-payload narrowing; Phase 17c
+# wires this walker into codegen so heuristics can be retired.
+
+def walkStmts(stmts as List(Stmt), ctx as InferCtx)
+    for s in stmts
+        walkStmt(s, ctx)
+
+def walkStmt(s as Stmt, ctx as InferCtx)
+    branch s
+        on Stmt.if_ as si
+            inferExpr(si.cond, ctx)
+            walkStmts(si.then_stmts, ctx)
+            for ei in si.else_ifs
+                inferExpr(ei.cond, ctx)
+                walkStmts(ei.stmts, ctx)
+            if si.else_stmts != nil
+                walkStmts(si.else_stmts to!, ctx)
+        on Stmt.while_ as sw
+            inferExpr(sw.cond, ctx)
+            walkStmts(sw.stmts, ctx)
+        on Stmt.for_in as fi
+            inferExpr(fi.iter, ctx)
+            # 17a: element-type inference for loop vars is deferred to 17c
+            # (needs generic-arg awareness for List(T) / HashMap(K,V)). Bind
+            # each loop var as unknown_ so `hasLocal` returns true — any later
+            # inferExpr on the loop var yields unknown_, which is safe.
+            for v in fi.vars
+                ctx.bind("" + v, Type_.unknown_)
+            walkStmts(fi.stmts, ctx)
+            for v2 in fi.vars
+                ctx.bind("" + v2, Type_.unknown_)
+        on Stmt.for_num as fnum
+            inferExpr(fnum.start, ctx)
+            inferExpr(fnum.stop_, ctx)
+            if fnum.step != nil
+                inferExpr(fnum.step to!, ctx)
+            ctx.bind("" + fnum.var_, Type_.int_)
+            walkStmts(fnum.stmts, ctx)
+        on Stmt.branch_ as sb
+            inferExpr(sb.expr, ctx)
+            # 17a: recurse into each case without narrowing the binding.
+            # 17b will introduce narrowed binding lookup via
+            # ModuleTypes.variantPayload.
+            for c in sb.cases
+                for v in c.values
+                    inferExpr(v, ctx)
+                walkStmts(c.stmts, ctx)
+            if sb.else_ != nil
+                walkStmts(sb.else_ to!, ctx)
+        on Stmt.return_ as sr
+            if sr.value != nil
+                inferExpr(sr.value to!, ctx)
+        on Stmt.assert_ as sa
+            inferExpr(sa.cond, ctx)
+            if sa.message != nil
+                inferExpr(sa.message to!, ctx)
+        on Stmt.pass_
+            pass
+        on Stmt.break_
+            pass
+        on Stmt.continue_
+            pass
+        on Stmt.assign as sasn
+            inferExpr(sasn.target, ctx)
+            inferExpr(sasn.value, ctx)
+        on Stmt.var_ as dv
+            # Bind local name to declared type, or to init_expr's inferred type
+            # when the declaration omits the type annotation.
+            var t as Type_ = Type_.unknown_
+            if dv.type_ != nil
+                t = typeFromRef(dv.type_ to!)
+            else
+                if dv.init_expr != nil
+                    t = inferExpr(dv.init_expr to!, ctx)
+            ctx.bind("" + dv.name, t)
+        on Stmt.expr as e
+            inferExpr(e, ctx)
+        on Stmt.defer_ as sd
+            walkStmt(sd.stmt, ctx)
+        on Stmt.with_ as sw2
+            inferExpr(sw2.target, ctx)
+            walkStmts(sw2.stmts, ctx)
+        on Stmt.raise_ as sra
+            if sra.message != nil
+                inferExpr(sra.message to!, ctx)
+            if sra.details != nil
+                inferExpr(sra.details to!, ctx)
+        on Stmt.try_catch as stc
+            walkStmts(stc.stmts, ctx)
+            for cc in stc.clauses
+                walkStmts(cc.stmts, ctx)
+        on Stmt.guard_ as sg
+            inferExpr(sg.cond, ctx)
+            walkStmts(sg.else_stmts, ctx)
+        on Stmt.destruct as sds
+            inferExpr(sds.init_expr, ctx)
+            for nm in sds.names
+                ctx.bind("" + nm, Type_.unknown_)
+        on Stmt.arena_scope as sas
+            walkStmts(sas.stmts, ctx)
+        on Stmt.print_ as sp
+            for a in sp.args
+                inferExpr(a, ctx)
+        else
+            pass
 
 class Main
     shared def main()
