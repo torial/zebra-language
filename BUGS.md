@@ -61,6 +61,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Context:** DateTime preamble `_dt_to_iso8601` and `_dt_format` used `i64` fields with `{d:0>N}` format spec. Zig 0.15.2 adds a `+` sign to positive signed integers when using fill-aligned format (e.g. `{d:0>4}` for `i64 = 1970` → `+1970`).
 - **Fix:** Cast all date fields to unsigned types (`@as(u32, ...)`, `@as(u8, ...)`) before passing to `bufPrint`/`allocPrint`. Unsigned integers never receive a sign prefix.
 - **Broader note:** This is a Zig 0.15 breaking change from 0.14. Any future preamble code that formats `i64` values with fill-aligned specs should cast to unsigned first.
+- **Re-verified 2026-04-17** (`C:\tmp\verify_bug005.zbr`): Zig-backend prints `2026-04-17T23:08:27Z` — no `+` prefix anywhere. Selfhost **untested** (`dt.toIso8601()` method dispatch not wired — feature gap, not a regression of BUG-005 itself).
 
 ---
 
@@ -85,6 +86,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
   - CodeGen `genBinary`: added dedicated `.add` case — if left operand is string, emits `_str_concat(a, b, _allocator)`.
   - Preamble: added `_str_concat(a, b, alloc)` using `std.mem.concat`.
 - **Note:** String concat was previously untested; all prior tests used interpolation `"${var}"` or `StringBuilder`. Now `greeting + ", " + name` style works.
+- **Re-verified 2026-04-17** (`C:\tmp\verify_bug007.zbr`): both Zig-backend and selfhost emit `_str_concat`, build, and print `hello, world`.
 
 ---
 
@@ -110,6 +112,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-09
 - **Was:** `mergePartialInto` concatenated all members from a partial without checking for name conflicts. If a partial redefined a method already in the root file, both definitions were appended, producing a Zig compile error with a confusing message about the generated file.
 - **Fix:** `mergePartialInto` now scans for duplicate method names before merging. Duplicates emit a clear warning (`"duplicate method 'ClassName.method' — already defined in root"`) and the partial definition is skipped. Non-method members (vars, properties) are still appended unconditionally.
+- **Re-verified 2026-04-17** (`C:\tmp\bug010/Greeter.zbr` + `Greeter.ext.zbr`): Zig-backend emits the expected warning (`duplicate method 'Greeter.hi' — already defined in root; skipping partial definition`), builds, and prints `root` (root's definition wins). Selfhost does not implement partial-class merging yet — the `.ext.zbr` partial is ignored; root's definition also wins. Feature-gap on selfhost side, not a regression of BUG-010.
 
 ---
 
@@ -129,6 +132,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ### BUG-013: `collectEnumMembers` — blank-line leaf detection used structural comparison — FIXED
+- **Re-verified 2026-04-17** (`C:\tmp\verify_bug013.zbr` — enum with blank lines between variants): Zig-backend prints `g` (variant resolves). Selfhost **fails at resolve stage** with `undefined name: 'Color'` — selfhost's parser/resolver appears to have an analogous blank-line-in-enum issue. Zig-backend fix holds; selfhost has an independent gap (not a regression of BUG-013 Zig side — selfhost has its own enum-blank-line path). File separately if it becomes a self-hosting blocker.
 - **Status:** Fixed 2026-04-10
 - **Was:** `if (kids[1] != .leaf)` in `collectEnumMembers` was a structural assumption about the tree shape — it relied on the fact that blank-line productions always produce `.leaf` nodes, which is an implementation detail of the Earley grammar output format.
 - **Fix:** Replaced with the named helper `isMeaningfulNode(tn: TN) bool` (returns `true` only for `.inner` nodes), co-located with the other tree-node helpers near the bottom of `AstBuilder.zig`. Intent is now explicit: skip everything that isn't a grammar rule reduction.
@@ -222,6 +226,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Found by:** Self-hosting Phase 1 (`selfhost/lexer_test.zbr`).
 
 ### BUG-018: Top-level `def` referenced inside class method set `uses_self = true` — FIXED 2026-04-10
+- **Re-verified 2026-04-17** (`C:\tmp\verify_bug018.zbr`): Zig-backend prints `hi!` (top-level `shout()` reachable from class method, no spurious `self` required). Selfhost emits but fails at runtime on format `{}` vs `{s}` — downstream BUG-040, not a regression of BUG-018 itself.
 - **Status:** Fixed 2026-04-10
 - **Was:** `refsInExpr` set `uses_self = true` for ANY `.method` symbol, including top-level `def` functions (LANG-001). When a class method body called a top-level function (e.g., `opName(o)` inside `Calc.describe`), `uses_self` was incorrectly True, so the compiler omitted `_ = self;`. Zig then reported "unused function parameter" for `self`.
 - **Fix:** `refsInExpr` now checks `sym.decl.method.is_top_level`; top-level methods do NOT set `uses_self`. Only instance method references (where the call is emitted as `self.method()`) mark self as used.
@@ -254,6 +259,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `genInit` always emitted `self._type_tag = _ttag_StructName` as the first line of any `cue init` body. Structs have no `_type_tag` field (only classes do); the emitted assignment caused a Zig compile error (`no field named '_type_tag' in struct 'StructName'`).
 - **Fix:** Added `is_struct_owner: bool = false` field to Generator. `genStruct` uses `var sg = g.withOwner(n.name)` (already done) and then sets `sg.is_struct_owner = true`. `genInit` wraps the `_type_tag` stamp in `if (!g.is_struct_owner)`.
 - **Found by:** Self-hosting Phase 2 (`selfhost/ast.zbr`) — first struct with an explicit `cue init`.
+- **Re-verified 2026-04-17** (`C:\tmp\verify_bug021.zbr`): both Zig-backend and selfhost build, and print `7` (struct with explicit `cue init` — no spurious `_type_tag` stamp).
 
 ---
 
