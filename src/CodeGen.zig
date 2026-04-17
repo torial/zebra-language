@@ -6890,15 +6890,12 @@ const Generator = struct {
                         try g.genExpr(s.value);
                         break :fn_emit true;
                     };
-                    if (fn_ref_emitted) {
-                        try g.w.writeAll(";\n");
-                        return;
-                    }
                     // In class bodies (generic or concrete), resolve the declared generic
                     // field type from the LHS so any zero-arg constructor `T()` emits
                     // `std.ArrayList(T){}` / `T(Arg).init()` correctly.
                     // Works for List, HashMap, and user-defined generics alike.
                     const generic_emitted: bool = emit: {
+                        if (fn_ref_emitted) break :emit true;
                         if (s.op != .assign) break :emit false;
                         if (s.value.* != .call) break :emit false;
                         const rhs_call = s.value.call;
