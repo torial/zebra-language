@@ -94,6 +94,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-09
 - **Was:** When `tc.resolve.exprs` had no entry for an ident used as a method receiver (common for stdlib builtins like `sys.args()`), `inferIdent` returned `.unknown`, which the scanner conservatively treated as always-mutating — marking variables like `args` as `var` when they should be `const`.
 - **Fix:** Removed the `if (obj_type == .unknown) break :blk true` conservative path. Unknown types now fall through to the explicit allow-list. Added `if (obj_type == .string) break :blk false` guard: Zebra strings are always immutable, so no method call should mark a string var as `var`. These two changes together fix `string_methods_test` (`str.reverse()` was in the List-mutation allow-list) and `sys_test` (`args.count()` was treating the unresolved `args` as always-mutating).
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug008.zbr`): Zig-backend holds — emits `const greeting`, `{s}` format, builds + runs under Zig 0.15 ReleaseSafe, prints `olleh`. **Regressed in selfhost** — selfhost emits `var greeting` + `{}` format (see BUG-039 + BUG-040).
 
 ---
 
@@ -101,6 +102,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-09
 - **Was:** `propagateEscapesOnce` only traced `var y = <expr>` alias chains. If a variable was stored into a returned struct's field (`result.items = list; return result`), `list` was not marked escaped and would get a `defer list.deinit()` while `result.items` still referenced its memory — a UAF.
 - **Fix:** Added `.assign => |s|` handling in `propagateEscapesOnce`: if the assignment target is a field access (`obj.field`) and `obj` is already in the escaped set, all idents in the RHS value are added to the escaped set.
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug009.zbr`): locally-built List assigned into returned Holder field; both compilers build and print `10 / 20 / 30`.
 
 ---
 
@@ -122,6 +124,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed 2026-04-10
 - **Was:** Classes with no explicit `cue init` were constructed via `ClassName{}` (struct literal), which sets fields to their defaults. The `_type_id: u32 = _tid_ClassName` field default worked in simple cases but was structurally fragile — any path that bypassed struct-literal construction (e.g., inline Zig `= undefined`) left `_type_id` garbage.
 - **Fix:** `genClass` now checks whether any member (own or mixin) is `.init`. If not, a synthetic default `pub fn init() ClassName` is emitted that explicitly stamps `self._type_id = _tid_ClassName`. The constructor call site was updated to emit `ClassName.init()` instead of `ClassName{}` for classes with no explicit init, so all construction paths go through init().
+- **Re-verified 2026-04-17** (`/c/tmp/verify_bug012.zbr`): class without `cue init`, field assignment `w.label = "hi"`; both compilers build + run, print `hi`.
 
 ---
 
@@ -180,6 +183,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `inferMember` only looked up fields/methods when `obj_type == .named`. For chained optional accesses like `n?.next` (where `n: ?Node`), the TC type of `n` passed to `inferMember` was `.optional(.named(Node))` — not `.named`. The member lookup silently returned `.unknown`. Local vars initialised from such accesses (`var n2 = n?.next`) then had `.unknown` declared type, so the `optional_unwraps` check for `n2?` failed and CodeGen emitted `try n2.field` (error-propagation) instead of `n2.?.field` (optional-unwrap).
 - **Fix:** Added `resolved_obj_type = if (obj_type == .optional) obj_type.optional.* else obj_type` before the `.named` member lookup. The `generic_named` branch was not affected (it already has its own path).
 - **Found by:** Recursive type test (`test/recursive_type_test.zbr`) — `n2?.value` where `n2` was inferred from a chained optional access.
+- **Re-verification 2026-04-17: unverified.** Three attempted re-probes (`verify_bug016.zbr`, `_b`, `_c`) all trip on adjacent codegen bug **BUG-041** (`^ClassType?` emits `?**T`) before reaching the inferMember-unwrap path. Named corpus `test/recursive_type_test.zig` does not build under Zig 0.15 ReleaseSafe today, but via different symptoms (mutation-scanner `var` + `^T?` representation), not BUG-016's original path. Re-verify once BUG-041 is closed.
 
 ---
 
@@ -257,6 +261,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Was:** `cloneInterface` in `main.zig` cloned `types`, `throws_methods`, and `exposed_unions` from a `ModuleInterface` but not the new `boxed_variants` map (added for `^T` union payload boxing). Re-imported modules received an empty/uninitialized `boxed_variants`, so cross-module `^T` union construction silently skipped the boxing expression and emitted the raw value — producing a Zig type-mismatch error (`expected '*T', found 'T'`).
 - **Fix:** Added full key/value clone loop for `boxed_variants` in `cloneInterface`. Also added `boxed_variants = std.StringHashMap([]const u8).init(alloc)` to the empty stub interface used for circular-import detection.
 - **Found by:** Self-hosting Phase 2 (`selfhost/ast.zbr`) — cross-module `TypeRef.nilable` construction.
+- **Re-verified 2026-04-17** (`/c/tmp/bug022_main.zbr` + `/c/tmp/bug022_lib.zbr`): Zig-backend holds — emits `.init`, struct-init with correct boxing expression, `.empty`/`.data` tags. **Three distinct selfhost regressions uncovered** in cross-module `Mod.Type.*` handling: BUG-042 (missing `.init`), BUG-043 (variant ctor as fn-call), BUG-044 (branch tag collapsed to union type name).
 
 ---
 
@@ -576,6 +581,81 @@ The selfhost codegen path diverges.
 **Impact:** Every selfhost-emitted program that calls `int.toString()` produces wrong output — most visibly parser error line numbers, but also any user program that formats an int.
 
 - **Found by:** Phase 20a verification, 2026-04-17 — observed `" at line "` with truncated/empty tail in selfhost-B output even though selfhost-A shows correct decimal line numbers.
+
+---
+
+### BUG-039: Selfhost mutation scanner marks string-method receiver as `var`
+- **Severity:** Medium (every selfhost-emitted program that calls a string method rejects under Zig 0.15 ReleaseSafe)
+- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-008
+- **Target:** selfhost-edit wave
+- **Symptom:** `var greeting = "hello"; print greeting.reverse()` — Zig backend emits `const greeting`, selfhost emits `var greeting`. Zig 0.15 rejects: "local variable is never mutated". BUG-008 fixed this on the Zig side (the `.unknown` → conservative-mutate path was removed); selfhost's mutation scanner never received the same fix.
+- **Reproducer:** `C:\tmp\verify_bug008.zbr`
+- **Cross-oracle:** `zebra.exe` builds + runs → `olleh`; `zebra-selfhost.exe` emits unbuildable Zig.
+- **Likely fix site:** `selfhost/codegen.zbr` mutation-scan phase — mirror Zig-side BUG-008 fix (unknown types fall through to allow-list; strings always immutable).
+
+---
+
+### BUG-040: Selfhost `print` emits `{}` instead of `{s}` for strings
+- **Severity:** Medium (every selfhost-emitted `print` of a string fails Zig 0.15 type check)
+- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-008
+- **Target:** selfhost-edit wave
+- **Symptom:** `print someString` — selfhost emits `std.debug.print("{}\n", .{ someString })`; Zig 0.15 rejects `[]const u8` under `{}` (needs `{s}`). Zig backend emits `{s}` correctly.
+- **Reproducer:** `C:\tmp\verify_bug008.zbr`
+- **Likely fix site:** `selfhost/codegen.zbr::genPrint` — check expression TC type; use `{s}` for `string`/`str_slice`, `{}` otherwise.
+
+---
+
+### BUG-041: `^ClassType?` emits `?**T` instead of `?*T` (root cause)
+- **Severity:** High (blocks all uses of optional heap-pointer class fields; downstream causes invalid `.*` field-assignment emit)
+- **Status:** Open — root cause identified 2026-04-17 via discriminator probe
+- **Target:** 0.5
+- **Symptom (representation):** `var x as ^Node?` in a local OR a method return emits Zig type `?**Node` (optional-of-pointer-to-pointer) instead of `?*Node` (optional-pointer). Class auto-boxing already adds one `*`; the `^` operator is adding a second `*` on top of the already-boxed class representation for `^ClassType?`, though `^ClassType` alone emits `*T` correctly. Appears to be a type-formatting layering bug specific to `^` + class + `?` combination.
+- **Discriminator probe** (`verify_bug044.zbr`, 2026-04-17): Local `var x as ^Node?` emits `var x: ?**Node = undefined;` — same wrong form as return-position. Rules out "return-position-specific" hypothesis; confirms shared root cause.
+- **Downstream symptom (field assignment):** On `^Node?` class fields, `b.next = c` emits `b.next.* = _rp` which Zig 0.15 rejects as `.*` on optional pointer requires `.?` first. Likely cascades from the `?**T` representation — the boxing path writes through the outer `*` expecting `?*T` but gets `?**T`.
+- **Reproducers:**
+  - `C:\tmp\verify_bug044.zbr` — minimal local-var form showing `?**Node`.
+  - `C:\tmp\verify_bug016c.zbr` — return-type `^Node?` emits `?**Node` signature.
+  - `C:\tmp\verify_bug016.zbr` — field-assignment `.*` downstream symptom.
+- **Likely fix site:** `src/CodeGen.zig` type-formatting for `^T?` when `T` is a class. Check `typeRefToZig` / equivalent — suspect a path that double-applies the class pointer wrapper when the type carries both `^` and `?`.
+- **Relation to BUG-016:** BUG-041 blocks all three attempted BUG-016 re-probes; re-verification of BUG-016's original member-through-optional path is unverified until BUG-041 is fixed.
+
+---
+
+### BUG-042: Selfhost cross-module struct ctor missing `.init`
+- **Severity:** Medium (every cross-module class/struct construction `Mod.Type(args)` emits as unbuildable fn-call)
+- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-022
+- **Target:** selfhost-edit wave
+- **Symptom:** `var p = bug022_lib.Payload(42)` emits as `const pay = bug022_lib.Payload(42);`. Expected `bug022_lib.Payload.init(42);` (matching Zig backend).
+- **Reproducer:** `C:\tmp\bug022_main.zbr` + `C:\tmp\bug022_lib.zbr`.
+- **Likely fix site:** `selfhost/codegen.zbr` call-emit path — detect `Mod.Type(...)` callee as a cross-module struct/class constructor via `deps_mt` and append `.init`. Unqualified `Type(args)` emit already handles this.
+
+---
+
+### BUG-043: Selfhost `Mod.Union.variant(v)` emits fn-call not struct-init
+- **Severity:** Medium (every cross-module tagged-union construction emits unbuildable)
+- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-022
+- **Target:** selfhost-edit wave (likely same fix as BUG-042 + BUG-044)
+- **Symptom:** `var v = bug022_lib.Value.data(pay)` emits as `const v = bug022_lib.Value.data(pay);` (fn-call form). Expected `bug022_lib.Value{ .data = <boxed pay> };` (struct-init with boxing per LANG-003).
+- **Reproducer:** `C:\tmp\bug022_main.zbr` + `C:\tmp\bug022_lib.zbr`.
+- **Likely fix site:** `selfhost/codegen.zbr` call-emit path — detect `Mod.UnionName.variant(...)` via `deps_mt.hasUnion` (BUG-034 fix) and route to struct-init with `boxed_variants` boxing. Unqualified `UnionName.variant(...)` path already handles this (post-BUG-034).
+
+---
+
+### BUG-044: Selfhost cross-module branch pattern collapses variant tag to union type name
+- **Severity:** Medium (every cross-module `branch v on Mod.Union.variant` emits duplicate wrong-tag switch arms)
+- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-022
+- **Target:** selfhost-edit wave (likely same fix as BUG-042 + BUG-043)
+- **Symptom:** `branch v on bug022_lib.Value.empty ... on bug022_lib.Value.data as p ...` emits:
+  ```zig
+  switch (v) {
+      .Value => |_| { ... }   // should be .empty
+      .Value => |p| { ... }   // should be .data
+  }
+  ```
+  Both arms collapse to `.Value` (the union type name). Zig rejects duplicate arms.
+- **Reproducer:** `C:\tmp\bug022_main.zbr` + `C:\tmp\bug022_lib.zbr`.
+- **Likely fix site:** `selfhost/codegen.zbr` branch-pattern emit path — cross-module `Mod.Union.variant` is being read as `Mod.Union` with `variant` dropped. Check the dotted-name splitter used by branch patterns vs the one used by construction sites.
+- **Cross-oracle:** Zig backend emits `.empty` / `.data` correctly.
 
 ---
 
