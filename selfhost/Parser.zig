@@ -1475,6 +1475,7 @@ pub const PNode = union(enum) {
     use_: *PUse,
     class_: *PClass,
     struct_: *PClass,
+    interface_: *PClass,
     enum_: *PEnum,
     union_decl: *PUnionDecl,
     sig_: *PSig,
@@ -2417,21 +2418,25 @@ pub const Parser = struct {
                     if (self.textIs("struct")) {
                         return try self.parseStructDecl();
                     } else {
-                        if (self.textIs("union")) {
-                            return try self.parseUnionDecl();
+                        if (self.textIs("interface")) {
+                            return try self.parseInterfaceDecl();
                         } else {
-                            if (self.textIs("enum")) {
-                                return try self.parseEnumDecl();
+                            if (self.textIs("union")) {
+                                return try self.parseUnionDecl();
                             } else {
-                                if (self.textIs("sig")) {
-                                    return try self.parseSigDecl();
+                                if (self.textIs("enum")) {
+                                    return try self.parseEnumDecl();
                                 } else {
-                                    if (self.textIs("shared")) {
-                                        self.advance();
-                                        return try self.parseMethodDecl(true);
+                                    if (self.textIs("sig")) {
+                                        return try self.parseSigDecl();
                                     } else {
-                                        if (self.textIs("def")) {
-                                            return try self.parseMethodDecl(false);
+                                        if (self.textIs("shared")) {
+                                            self.advance();
+                                            return try self.parseMethodDecl(true);
+                                        } else {
+                                            if (self.textIs("def")) {
+                                                return try self.parseMethodDecl(false);
+                                            }
                                         }
                                     }
                                 }
@@ -2600,6 +2605,37 @@ pub const Parser = struct {
         const ifaces = std.ArrayList([]const u8){};
         const type_params = std.ArrayList([]const u8){};
         return PNode{ .struct_ = blk_box: { const _bv = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn parseInterfaceDecl(self: *Parser) anyerror!PNode {
+        try self.expectText("interface");
+        const name = try self.eatId();
+        var ifaces = std.ArrayList([]const u8){};
+        if (self.textIs("implements")) {
+            self.advance();
+            ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
+            while (self.textIs(",")) {
+                self.advance();
+                ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
+            }
+        }
+        self.skipEol();
+        var members = std.ArrayList(PNode){};
+        if (self.isIndent()) {
+            self.advance();
+            while (((!self.isDedent()) and (!self.isEof()))) {
+                self.skipEol();
+                if (self.isDedent()) {
+                    break;
+                }
+                members.append(_allocator, try self.parseMemberDecl(false)) catch @panic("OOM");
+            }
+            if (self.isDedent()) {
+                self.advance();
+            }
+        }
+        const type_params = std.ArrayList([]const u8){};
+        return PNode{ .interface_ = blk_box: { const _bv = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseUnionDecl(self: *Parser) anyerror!PNode {

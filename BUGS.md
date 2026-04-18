@@ -746,6 +746,18 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-064: Selfhost parseTopDecl rejects the `interface` keyword — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseTopDecl` had no arm for `interface Name [implements ...]` + indented method list. Everything else was wired — `ast.zbr` defined `Decl.interface_ as ^DeclInterface` (line 43) with `DeclInterface {span, mods, name, ifaces, members}` (lines 129-141), and `codegen.zbr::genInterface` (lines 1860-1898) emitted an appropriate stub. Zig grammar: `InterfaceDecl → ModList kw_interface id InterfaceHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent` (`ZebraGrammar.zig:453-459`), built at `AstBuilder.zig:307-324`.
+- **Fix:**
+  1. `selfhost/parser.zbr` — added `interface_ as ^PClass` variant (reusing the PClass holder since name+ifaces+members shape matches); `parseInterfaceDecl` method (eat `interface`, read id, optional `implements` list, `skipEol`, standard indent/dedent loop calling `parseMemberDecl(false)`); parseTopDecl arm. Method bodies stay optional via existing `parseMethodDecl` behavior (`if .isIndent(): stmts = .parseBlock()`).
+  2. `selfhost/astbuilder.zbr` — added `DeclInterface` to `use ast exposing`; `on PNode.interface_ as i` arm in buildTopDecl returning `Decl.interface_(DeclInterface(zspan(), zmods(), i.name, ifaces, members))`.
+  3. `selfhost/codegen.zbr::addCrossModuleBoxedVariants` — added `bv.add("PNode.interface_")` so the boxed-variant branch-arm auto-deref kicks in. Without it, `on PNode.interface_ as i` emits `.interface_ => |i| return self.buildInterface(i)` with `i` typed as `*Parser.PClass` but `buildInterface` expects `Parser.PClass`, failing at selfhost-B build time with "expected 'Parser.PClass', found '*Parser.PClass'". Registering the variant makes the codegen emit the standard `|_ptr_i| { const i = _ptr_i.*; ... }` shape.
+- **Verification:** Corpus 129/152 → 130/152 (+1 emit: `interface_test`). Compiles and runs, prints `Hello / Hola / Hello, Alice / Hola, Bob / 3`. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-063: Selfhost parseWhileStmt rejects `while var id = init, cond` bind-and-guard — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

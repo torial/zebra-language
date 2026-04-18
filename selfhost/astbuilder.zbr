@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars as List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
 use Parser exposing PNode, PModule, PClass, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse
 
 def zspan() as Span
@@ -162,6 +162,8 @@ class ASTBuilder
                 return .buildClass(c)?
             on PNode.struct_ as s
                 return .buildStruct(s)?
+            on PNode.interface_ as i
+                return .buildInterface(i)?
             on PNode.enum_ as e
                 return .buildEnum(e)?
             on PNode.union_decl as u
@@ -187,6 +189,17 @@ class ASTBuilder
         for tp in c.type_params
             tparams.add(TypeParam(tp, nil))
         return Decl.class_(DeclClass(zspan(), zmods(), c.name, tparams, ifaces, mixins, members))
+
+    # ── Interface ─────────────────────────────────────────────────────────────
+
+    def buildInterface(c as PClass) as Decl throws
+        var members as List(Decl) = List(Decl)()
+        for pn in c.members
+            members.add(.buildMember(pn)?)
+        var ifaces as List(TypeRef) = List(TypeRef)()
+        for iface in c.ifaces
+            ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
+        return Decl.interface_(DeclInterface(zspan(), zmods(), c.name, ifaces, members))
 
     # ── Struct ────────────────────────────────────────────────────────────────
 

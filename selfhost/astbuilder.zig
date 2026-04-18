@@ -1473,6 +1473,7 @@ const Decl = ast.Decl;
 const DeclUse = ast.DeclUse;
 const DeclNamespace = ast.DeclNamespace;
 const DeclClass = ast.DeclClass;
+const DeclInterface = ast.DeclInterface;
 const DeclStruct = ast.DeclStruct;
 const DeclEnum = ast.DeclEnum;
 const DeclUnion = ast.DeclUnion;
@@ -1741,6 +1742,10 @@ pub const ASTBuilder = struct {
                 const s = _ptr_s.*;
                 return try self.buildStruct(s);
             },
+            .interface_ => |_ptr_i| {
+                const i = _ptr_i.*;
+                return try self.buildInterface(i);
+            },
             .enum_ => |_ptr_e| {
                 const e = _ptr_e.*;
                 return try self.buildEnum(e);
@@ -1778,6 +1783,18 @@ pub const ASTBuilder = struct {
             tparams.append(_allocator, TypeParam.init(tp, null)) catch @panic("OOM");
         }
         return Decl{ .class_ = blk_box: { const _bv = DeclClass.init(zspan(), zmods(), c.name, tparams, ifaces, mixins, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn buildInterface(self: *ASTBuilder, c: PClass) anyerror!Decl {
+        var members = std.ArrayList(Decl){};
+        for (c.members.items) |pn| {
+            members.append(_allocator, try self.buildMember(pn)) catch @panic("OOM");
+        }
+        var ifaces = std.ArrayList(TypeRef){};
+        for (c.ifaces.items) |iface| {
+            ifaces.append(_allocator, TypeRef{ .named = NamedTypeRef.init(zspan(), iface) }) catch @panic("OOM");
+        }
+        return Decl{ .interface_ = blk_box: { const _bv = DeclInterface.init(zspan(), zmods(), c.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn buildStruct(self: *ASTBuilder, s: PClass) anyerror!Decl {

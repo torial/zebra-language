@@ -1610,6 +1610,7 @@ pub fn addCrossModuleBoxedVariants(bv: *StrSet, module_name: []const u8) void {
         bv.add("PNode.use_");
         bv.add("PNode.class_");
         bv.add("PNode.struct_");
+        bv.add("PNode.interface_");
         bv.add("PNode.enum_");
         bv.add("PNode.union_decl");
         bv.add("PNode.sig_");

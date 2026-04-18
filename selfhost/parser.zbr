@@ -25,6 +25,7 @@ union PNode
     use_ as ^PUse
     class_ as ^PClass
     struct_ as ^PClass
+    interface_ as ^PClass
     enum_ as ^PEnum
     union_decl as ^PUnionDecl
     sig_ as ^PSig
@@ -678,6 +679,8 @@ class Parser
             return .parseClassDecl()
         else if this.textIs("struct")
             return .parseStructDecl()
+        else if this.textIs("interface")
+            return .parseInterfaceDecl()
         else if this.textIs("union")
             return .parseUnionDecl()
         else if this.textIs("enum")
@@ -815,6 +818,30 @@ class Parser
         var ifaces = List(str)()
         var type_params = List(str)()
         return PNode.struct_(PClass(name, type_params, ifaces, members))
+
+    def parseInterfaceDecl() as PNode throws
+        .expectText("interface")
+        const name = .eatId()
+        var ifaces = List(str)()
+        if this.textIs("implements")
+            this.advance()
+            ifaces.add(.eatId())
+            while this.textIs(",")
+                this.advance()
+                ifaces.add(.eatId())
+        .skipEol()
+        var members = List(PNode)()
+        if .isIndent()
+            this.advance()
+            while not .isDedent() and not .isEof()
+                .skipEol()
+                if .isDedent()
+                    break
+                members.add(.parseMemberDecl(false))
+            if .isDedent()
+                this.advance()
+        var type_params = List(str)()
+        return PNode.interface_(PClass(name, type_params, ifaces, members))
 
     def parseUnionDecl() as PNode throws
         .expectText("union")
