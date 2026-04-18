@@ -1269,6 +1269,13 @@ class Parser
             var ops = List(PNode)()
             ops.add(operand)
             return PNode.expr_unary(PUnary("-", ops))
+        if this.textIs("try")
+            # `try expr` prefix form — semantically identical to `expr?`
+            # (both emit Expr.try_ / ExprTry). Zig backend treats them as
+            # the same Expr8 production.
+            this.advance()
+            const operand = .parseUnary()
+            return PNode.expr_try(operand)
         return .parsePostfix()
 
     def parsePostfix() as PNode throws

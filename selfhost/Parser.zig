@@ -3147,6 +3147,11 @@ pub const Parser = struct {
             ops.append(_allocator, operand) catch @panic("OOM");
             return PNode{ .expr_unary = blk_box: { const _bv = PUnary.init("-", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
         }
+        if (self.textIs("try")) {
+            self.advance();
+            const operand = try self.parseUnary();
+            return PNode{ .expr_try = blk_box: { const _bv = operand; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        }
         return try self.parsePostfix();
     }
 

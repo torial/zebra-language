@@ -719,6 +719,15 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-052: Selfhost parseUnary drops the `try expr` prefix form — FIXED
+- **Status:** Fixed 2026-04-17
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseUnary` only recognised `-` as a unary prefix. The `try` prefix form of an expression (`result = try App.risky(5)`) — which the Zig backend accepts as the `kw_try Expr8` production in `src/ZebraGrammar.zig:1129` and builds into `Expr.try_` in `src/AstBuilder.zig:1811` — was silently rejected as `unexpected expression token: 'try'`. The suffix form `expr?` worked already (parsePostfix, line 1298), and stmt-level `try` (try-catch block) worked already (parseStmt at line 924), so the gap was isolated to the expression-prefix form. Equivalence rule: the grammar has both the prefix and the suffix form mapping to the same AST node; selfhost had only the suffix.
+- **Fix:** One edit to `parseUnary` — after the `-` branch, mirror the pattern: consume `try`, recurse with `parseUnary()`, wrap in `PNode.expr_try(operand)`. Astbuilder already routes `PNode.expr_try` to `Expr.try_(ExprTry(...))` (astbuilder.zbr:432-434), so no downstream changes needed.
+- **Verification:** Corpus 112/152 → 116/152 (+4 emit: try_catch_err, try_catch_full, try_outer_vars, raise_auto). Of those, 3 build + run correctly end-to-end (try_catch_err → "caught an error / after try"; try_catch_full → "10 / after try"; try_outer_vars → "60 / 10"). raise_auto emits but fails `zig build` on a separate auto-throws-inference gap (def risky has `raise` in body but no `throws` annotation; Zig backend infers the `anyerror!` return type — selfhost doesn't yet). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-051: Selfhost genRaise drops the 2-arg `raise msg, details` form — FIXED (primitive + string paths)
 - **Status:** Fixed 2026-04-17 (primitive + string details paths; object path emits `@compileError` fail-loud, pending future port)
 - **Backend:** selfhost only (Zig compiler unaffected)
