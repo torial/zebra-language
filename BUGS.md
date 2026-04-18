@@ -746,6 +746,17 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-060a: Selfhost parseOr drops the `orelse` binary op — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseOr` accepted only `or`; `orelse` was rejected as a binary operator. `Expr.orelse_ / ExprOrelse` (`ast.zbr:655,945-953`) + codegen arm (`codegen.zbr:3369-3372`) already emit `genExpr(lhs) + " orelse " + genExpr(fallback)`. Zig backend: `Expr → Expr kw_orelse Expr2` (`ZebraGrammar.zig:1074`), builds to `.orelse_` (`AstBuilder.zig:1907-1909`).
+- **Fix (parser.zbr + astbuilder.zbr only):**
+  1. `parser.zbr`: new `POrelse {expr, fallback}` struct, `PNode.expr_orelse as ^POrelse` variant. Extended `parseOr` loop with `or this.textIs("orelse")`; chose branch by flag.
+  2. `astbuilder.zbr`: `on PNode.expr_orelse as po → Expr.orelse_(ExprOrelse(zspan(), ...))`. Added `ExprOrelse`, `POrelse` to `use` lists.
+- **Verification:** Corpus 124/152 → 126/152 (+2: nilable_test, generic_stack_test). Output `return val orelse fallback` matches Zig backend. Bootstrap A/B byte-identical.
+
+---
+
 ### BUG-059: Selfhost parseStmt rejects `guard ... else` blocks — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

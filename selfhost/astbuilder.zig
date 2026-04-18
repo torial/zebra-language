@@ -1502,6 +1502,7 @@ const StmtBranch = ast.StmtBranch;
 const StmtArenaScope = ast.StmtArenaScope;
 const StmtWith = ast.StmtWith;
 const StmtGuard = ast.StmtGuard;
+const ExprOrelse = ast.ExprOrelse;
 const BranchOn = ast.BranchOn;
 const CatchClause = ast.CatchClause;
 const StmtPrint = ast.StmtPrint;
@@ -1571,6 +1572,7 @@ const PCaptureVar = Parser.PCaptureVar;
 const PArenaScope = Parser.PArenaScope;
 const PWith = Parser.PWith;
 const PGuard = Parser.PGuard;
+const POrelse = Parser.POrelse;
 pub fn zspan() Span {
     return Span.init(0, 0, 0, 0);
 }
@@ -2167,6 +2169,11 @@ pub const ASTBuilder = struct {
                 const right_expr = try self.buildExpr(pb.right.items[@intCast(0)]);
                 const op = try self.toBinaryOp(pb.op);
                 return Expr{ .binary = blk_box: { const _bv = ExprBinary.init(zspan(), op, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            },
+            .expr_orelse => |po| {
+                const expr_val = try self.buildExpr(po.expr.items[@intCast(0)]);
+                const fb_val = try self.buildExpr(po.fallback.items[@intCast(0)]);
+                return Expr{ .orelse_ = blk_box: { const _bv = ExprOrelse.init(zspan(), _bx0: { const _bv = expr_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .expr_unary => |_ptr_pu| {
                 const pu = _ptr_pu.*;

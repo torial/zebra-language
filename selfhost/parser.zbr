@@ -52,6 +52,7 @@ union PNode
     stmt_arena_scope as ^PArenaScope
     stmt_with as ^PWith
     stmt_guard as ^PGuard
+    expr_orelse as ^POrelse
 
     # Expressions (inline - no heap indirection)
     expr_int as str
@@ -274,6 +275,13 @@ struct PGuard
     cue init(cond as List(PNode), else_stmts as List(PNode))
         this.cond = cond
         this.else_stmts = else_stmts
+
+struct POrelse
+    var expr as List(PNode)
+    var fallback as List(PNode)
+    cue init(expr as List(PNode), fallback as List(PNode))
+        this.expr = expr
+        this.fallback = fallback
 
 struct PForIn
     var var_names as List(str)
@@ -1274,14 +1282,18 @@ class Parser
 
     def parseOr() as PNode throws
         var left = .parseAnd()
-        while this.textIs("or")
+        while this.textIs("or") or this.textIs("orelse")
+            const is_orelse = this.textIs("orelse")
             this.advance()
             const right = .parseAnd()
             var l = List(PNode)()
             l.add(left)
             var r = List(PNode)()
             r.add(right)
-            left = PNode.expr_binary(PBinary("or", l, r))
+            if is_orelse
+                left = PNode.expr_orelse(POrelse(l, r))
+            else
+                left = PNode.expr_binary(PBinary("or", l, r))
         return left
 
     def parseAnd() as PNode throws

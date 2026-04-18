@@ -1498,6 +1498,7 @@ pub const PNode = union(enum) {
     stmt_arena_scope: *PArenaScope,
     stmt_with: *PWith,
     stmt_guard: *PGuard,
+    expr_orelse: *POrelse,
     expr_int: []const u8,
     expr_float: []const u8,
     expr_bool: bool,
@@ -1831,6 +1832,18 @@ pub const PGuard = struct {
         var _self: PGuard = undefined;
             _self.cond = cond;
             _self.else_stmts = else_stmts;
+        return _self;
+    }
+
+};
+
+pub const POrelse = struct {
+    expr: std.ArrayList(PNode),
+    fallback: std.ArrayList(PNode),
+    pub fn init(expr: std.ArrayList(PNode), fallback: std.ArrayList(PNode)) POrelse {
+        var _self: POrelse = undefined;
+            _self.expr = expr;
+            _self.fallback = fallback;
         return _self;
     }
 
@@ -3161,14 +3174,19 @@ pub const Parser = struct {
 
     pub fn parseOr(self: *Parser) anyerror!PNode {
         var left = try self.parseAnd();
-        while (self.textIs("or")) {
+        while ((self.textIs("or") or self.textIs("orelse"))) {
+            const is_orelse = self.textIs("orelse");
             self.advance();
             const right = try self.parseAnd();
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-            left = PNode{ .expr_binary = blk_box: { const _bv = PBinary.init("or", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            if (is_orelse) {
+                left = PNode{ .expr_orelse = blk_box: { const _bv = POrelse.init(l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            } else {
+                left = PNode{ .expr_binary = blk_box: { const _bv = PBinary.init("or", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            }
         }
         return left;
     }
