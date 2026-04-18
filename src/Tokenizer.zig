@@ -989,3 +989,73 @@ test "compound assignment operators" {
         },
     );
 }
+
+// ── Lambda-in-call-arg state machine ─────────────────────────────────────────
+
+test "lambda in call arg: expression body" {
+    // sortBy(def(a, b) = a < b)  — expression body, no EOL/INDENT emitted
+    try expectKinds(
+        "sortBy(def(a, b) = a < b)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .comma, .id, .rparen,
+            .assign, .id, .lt, .id,
+            .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: statement body no return type" {
+    // sortBy(def(a, b)\n    return a < b\n)
+    // EOL after params + INDENT/body/DEDENT must be emitted inside the outer (
+    try expectKinds(
+        "sortBy(def(a, b)\n    return a < b\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .comma, .id, .rparen,
+            .eol,
+            .indent, .kw_return, .id, .lt, .id, .eol,
+            .dedent,
+            .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: statement body with as T return annotation" {
+    // sortBy(def(a, b) as bool\n    return a < b\n)
+    // `after_lambda_params` must survive past the `as bool` tokens until EOL
+    try expectKinds(
+        "sortBy(def(a, b) as bool\n    return a < b\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .comma, .id, .rparen,
+            .kw_as, .kw_bool,
+            .eol,
+            .indent, .kw_return, .id, .lt, .id, .eol,
+            .dedent,
+            .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: multi-statement body" {
+    // sortBy(def(a, b)\n    if a < b\n        return true\n    return false\n)
+    try expectKinds(
+        "sortBy(def(a, b)\n    if a < b\n        return true\n    return false\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .comma, .id, .rparen,
+            .eol,
+            .indent,
+            .kw_if, .id, .lt, .id, .eol,
+            .indent, .kw_return, .kw_true, .eol, .dedent,
+            .kw_return, .kw_false, .eol,
+            .dedent,
+            .rparen,
+            .eol,
+        },
+    );
+}
