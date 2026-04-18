@@ -6338,11 +6338,13 @@ pub const Generator = struct {
         if (std.mem.eql(u8, mname, "add")) {
             const add_obj_name = getMemberFieldName(m.object.*);
             var is_strset = false;
+            var is_class_ref = false;
             if ((add_obj_name != null)) {
                 const add_nm = add_obj_name.?;
                 is_strset = (self.strset_locals.contains_(add_nm) or fieldIsStrSet(self.module_types, self.dep_types, add_nm));
+                is_class_ref = isUpperCase(add_nm);
             }
-            if ((!is_strset)) {
+            if (((!is_strset) and (!is_class_ref))) {
                 self.genExpr(m.object.*);
                 self.w.emit(".append(_allocator, ");
                 if ((@as(i64, @intCast(args.items.len)) > 0)) {

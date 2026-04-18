@@ -746,6 +746,16 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-061: Selfhost `genMemberCall` rewrites `ClassName.add(...)` to List.append — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `genMemberCall` in `selfhost/codegen.zbr:3949` matched any `.add` call and rewrote the receiver to `x.append(_allocator, arg0) catch @panic("OOM")` unless the receiver was a known StrSet. A user-defined class method like `Math.add(3, 10)` or `App.add(3, 10)` therefore emitted `App.append(_allocator, 3) catch @panic("OOM")` — wrong method *and* dropped argument. Zig backend is type-aware and correctly emits `App.add(3, 10)`. Surfaced by the pipeline fix in BUG-060b (`test/pipeline.zbr` uses `Math.add` as a pipeline target).
+- **Fix (selfhost/codegen.zbr only):** Added an `is_class_ref = isUpperCase(add_nm)` guard alongside the existing `is_strset` check. The `.add → .append` rewrite now only fires when the receiver is neither a StrSet nor a class-style uppercase identifier (`App`, `Math`, `DottedLib`, etc.). This mirrors the existing uppercase guard on the StringBuilder `.build()` rewrite a few lines above.
+- **Why the guard instead of positive List detection:** The codegen already has `isListField` + `list_locals` + `isKnownListField` predicates, but their coverage is not total (class-method rewrites, chained expressions, param-of-param Lists). Flipping to a positive check risked silent regressions on List receivers that weren't in any of those sets. A conservative negative guard (skip only uppercase class refs) narrows the bug without shrinking existing coverage.
+- **Verification:** Bootstrap round-trip A/B byte-identical (`tools/bootstrap_check.sh`). Corpus snapshot diff: only `test/pipeline.zbr` and `test/expose_dotted_test.zbr` changed stderr_sha (emit flipped from wrong `.append(...)` to correct `.add(...)`); all other 150 files unchanged. `test/pipeline.zbr` still fails downstream on a separate pre-existing issue (user class named `Math` collides with the hardcoded `std.math.*` dispatch at `codegen.zbr:4222` — different bug, not filed yet).
+
+---
+
 ### BUG-060b: Selfhost parseExpr drops the `->` pipeline operator — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

@@ -3945,14 +3945,18 @@ struct Generator
                     genExpr(m.object)
                     w.emit(".toOwnedSlice(_allocator) catch \"\")")
                 return
-        # List (not StrSet — StrSet.add is a real method)
+        # List (not StrSet — StrSet.add is a real method).
+        # BUG-061: also skip uppercase receivers like `Math.add(3,10)` — those
+        # are class-scoped method calls, not List operations.
         if mname == "add"
             var add_obj_name = getMemberFieldName(m.object)
             var is_strset = false
+            var is_class_ref = false
             if add_obj_name != nil
                 var add_nm = add_obj_name to!
                 is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(this.module_types, this.dep_types, add_nm)
-            if not is_strset
+                is_class_ref = isUpperCase(add_nm)
+            if not is_strset and not is_class_ref
                 genExpr(m.object)
                 w.emit(".append(_allocator, ")
                 if args.count() > 0
