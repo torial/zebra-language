@@ -1499,6 +1499,7 @@ pub const PNode = union(enum) {
     stmt_with: *PWith,
     stmt_guard: *PGuard,
     expr_orelse: *POrelse,
+    expr_pipeline: *PPipeline,
     expr_int: []const u8,
     expr_float: []const u8,
     expr_bool: bool,
@@ -1844,6 +1845,18 @@ pub const POrelse = struct {
         var _self: POrelse = undefined;
             _self.expr = expr;
             _self.fallback = fallback;
+        return _self;
+    }
+
+};
+
+pub const PPipeline = struct {
+    lhs: std.ArrayList(PNode),
+    rhs: std.ArrayList(PNode),
+    pub fn init(lhs: std.ArrayList(PNode), rhs: std.ArrayList(PNode)) PPipeline {
+        var _self: PPipeline = undefined;
+            _self.lhs = lhs;
+            _self.rhs = rhs;
         return _self;
     }
 
@@ -3169,7 +3182,21 @@ pub const Parser = struct {
     }
 
     pub fn parseExpr(self: *Parser) anyerror!PNode {
-        return try self.parseOr();
+        return try self.parsePipeline();
+    }
+
+    pub fn parsePipeline(self: *Parser) anyerror!PNode {
+        var left = try self.parseOr();
+        while (self.textIs("->")) {
+            self.advance();
+            const rhs = try self.parseOr();
+            var lhs_list = std.ArrayList(PNode){};
+            lhs_list.append(_allocator, left) catch @panic("OOM");
+            var rhs_list = std.ArrayList(PNode){};
+            rhs_list.append(_allocator, rhs) catch @panic("OOM");
+            left = PNode{ .expr_pipeline = blk_box: { const _bv = PPipeline.init(lhs_list, rhs_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        }
+        return left;
     }
 
     pub fn parseOr(self: *Parser) anyerror!PNode {

@@ -53,6 +53,7 @@ union PNode
     stmt_with as ^PWith
     stmt_guard as ^PGuard
     expr_orelse as ^POrelse
+    expr_pipeline as ^PPipeline
 
     # Expressions (inline - no heap indirection)
     expr_int as str
@@ -282,6 +283,13 @@ struct POrelse
     cue init(expr as List(PNode), fallback as List(PNode))
         this.expr = expr
         this.fallback = fallback
+
+struct PPipeline
+    var lhs as List(PNode)
+    var rhs as List(PNode)
+    cue init(lhs as List(PNode), rhs as List(PNode))
+        this.lhs = lhs
+        this.rhs = rhs
 
 struct PForIn
     var var_names as List(str)
@@ -1278,7 +1286,19 @@ class Parser
     # or - and - not - comparison - add/sub - mul/div - unary - - postfix - atom
 
     def parseExpr() as PNode throws
-        return .parseOr()
+        return .parsePipeline()
+
+    def parsePipeline() as PNode throws
+        var left = .parseOr()
+        while this.textIs("->")
+            this.advance()
+            const rhs = .parseOr()
+            var lhs_list = List(PNode)()
+            lhs_list.add(left)
+            var rhs_list = List(PNode)()
+            rhs_list.add(rhs)
+            left = PNode.expr_pipeline(PPipeline(lhs_list, rhs_list))
+        return left
 
     def parseOr() as PNode throws
         var left = .parseAnd()

@@ -2175,6 +2175,26 @@ pub const ASTBuilder = struct {
                 const fb_val = try self.buildExpr(po.fallback.items[@intCast(0)]);
                 return Expr{ .orelse_ = blk_box: { const _bv = ExprOrelse.init(zspan(), _bx0: { const _bv = expr_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
+            .expr_pipeline => |pp| {
+                const lhs_expr = try self.buildExpr(pp.lhs.items[@intCast(0)]);
+                const rhs_node = pp.rhs.items[@intCast(0)];
+                switch (rhs_node) {
+                    .expr_call => |_ptr_pc| {
+                        const pc = _ptr_pc.*;
+                        const callee_expr = try self.buildExpr(pc.callee.items[@intCast(0)]);
+                        var args = std.ArrayList(Arg){};
+                        args.append(_allocator, Arg.init(zspan(), null, lhs_expr)) catch @panic("OOM");
+                        for (pc.args.items) |arg_pn| {
+                            const av = try self.buildExpr(arg_pn);
+                            args.append(_allocator, Arg.init(zspan(), null, av)) catch @panic("OOM");
+                        }
+                        return Expr{ .call = blk_box: { const _bv = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    },
+                    else => |_| {
+                        { _error_ctx = .{ .message = "buildExpr: pipeline RHS must be a call expression" }; return error.ZebraError; }
+                    },
+                }
+            },
             .expr_unary => |_ptr_pu| {
                 const pu = _ptr_pu.*;
                 const operand_expr = try self.buildExpr(pu.operand.items[@intCast(0)]);

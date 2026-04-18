@@ -746,6 +746,18 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-060b: Selfhost parseExpr drops the `->` pipeline operator — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseExpr` had no case for the `arrow` token. Zig backend accepts `Expr → Expr arrow PipelineCall` (`ZebraGrammar.zig:1065`) and desugars `lhs -> f(args)` → `f(lhs, args...)` in `AstBuilder.zig:2266-2305` (member-call form `lhs -> obj.f(args)` → `obj.f(lhs, args...)` preserved by extracting the existing callee from the expr_call node).
+- **Fix (parser.zbr + astbuilder.zbr only):**
+  1. `parser.zbr`: new `PPipeline {lhs, rhs}` struct, `PNode.expr_pipeline as ^PPipeline` variant. New `parsePipeline` wrapper above `parseOr` — left-associative while-loop on `->`, with `parseOr` for both LHS and RHS. `parseExpr` now returns `parsePipeline()`.
+  2. `astbuilder.zbr`: `on PNode.expr_pipeline` arm does the desugar: build `lhs_expr`, branch-match on `rhs_node` — if `PNode.expr_call as pc`, build `callee_expr` + args list with `lhs_expr` prepended; else raise. Added `PPipeline` to `use Parser exposing`.
+- **Orthogonal pre-existing bug surfaced:** `test/pipeline.zbr` still fails selfhost codegen because selfhost's genMemberCall pattern-matches `.add` as a List.add→append conversion regardless of receiver type (`App.add(3, 10)` emits as `App.append(_allocator, 3) catch @panic("OOM")`, dropping the second arg). Zig backend correctly emits `App.add(3, 10)`. Filed as separate issue; the pipeline fix itself is verified sound.
+- **Verification:** Corpus 126/152 → 127/152 (+1: dns_test; pipeline.zbr blocked on orthogonal `.add` bug). A `/tmp/pip_sum.zbr` probe with `.sum(a, b)` method name shows byte-identical emit to Zig backend: `const r = App.sum(3, 10);`. Bootstrap A/B byte-identical.
+
+---
+
 ### BUG-060a: Selfhost parseOr drops the `orelse` binary op — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

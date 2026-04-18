@@ -531,6 +531,22 @@ class ASTBuilder
                 const fb_val = .buildExpr(po.fallback.at(0))?
                 return Expr.orelse_(ExprOrelse(zspan(), expr_val, fb_val))
 
+            on PNode.expr_pipeline as pp
+                # Desugar: `lhs -> f(args)` → `f(lhs, args)` (prepend lhs as first arg).
+                const lhs_expr = .buildExpr(pp.lhs.at(0))?
+                const rhs_node = pp.rhs.at(0)
+                branch rhs_node
+                    on PNode.expr_call as pc
+                        const callee_expr = .buildExpr(pc.callee.at(0))?
+                        var args as List(Arg) = List(Arg)()
+                        args.add(Arg(zspan(), nil, lhs_expr))
+                        for arg_pn in pc.args
+                            const av = .buildExpr(arg_pn)?
+                            args.add(Arg(zspan(), nil, av))
+                        return Expr.call(ExprCall(zspan(), callee_expr, args))
+                    else
+                        raise "buildExpr: pipeline RHS must be a call expression"
+
             on PNode.expr_unary as pu
                 const operand_expr = .buildExpr(pu.operand.at(0))?
                 const op = .toUnaryOp(pu.op)?
