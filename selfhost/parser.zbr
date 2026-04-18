@@ -28,6 +28,7 @@ union PNode
     enum_ as ^PEnum
     union_decl as ^PUnionDecl
     sig_ as ^PSig
+    namespace_decl as ^PNamespace
 
     # Members / declarations
     field_ as ^PField
@@ -177,6 +178,13 @@ struct PUse
 struct PModule
     var decls as List(PNode)
     cue init(decls as List(PNode))
+        this.decls = decls
+
+struct PNamespace
+    var name as str
+    var decls as List(PNode)
+    cue init(name as str, decls as List(PNode))
+        this.name = name
         this.decls = decls
 
 struct PParam
@@ -664,6 +672,8 @@ class Parser
     def parseTopDecl() as PNode throws
         if this.textIs("use")
             return .parseUseDecl()
+        else if this.textIs("namespace")
+            return .parseNamespaceDecl()
         else if this.textIs("class")
             return .parseClassDecl()
         else if this.textIs("struct")
@@ -680,6 +690,27 @@ class Parser
         else if this.textIs("def")
             return .parseMethodDecl(false)
         raise "unexpected top-level token: '" + this.peek().text + "' at line " + this.peek().line.toString()
+
+    def parseNamespaceDecl() as PNode throws
+        .expectText("namespace")
+        var name as str = .eatId()
+        while this.textIs(".")
+            this.advance()
+            name = name + "."
+            name = name + .eatId()
+        .skipEol()
+        var decls = List(PNode)()
+        if .isIndent()
+            this.advance()
+            while not .isDedent() and not .isEof()
+                .skipEol()
+                if .isDedent()
+                    break
+                decls.add(.parseTopDecl())
+                .skipEol()
+            if .isDedent()
+                this.advance()
+        return PNode.namespace_decl(PNamespace(name, decls))
 
     def parseUseDecl() as PNode throws
         .expectText("use")

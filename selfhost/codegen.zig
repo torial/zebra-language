@@ -2564,6 +2564,36 @@ pub fn generateEntryPoint(m: Module) []const u8 {
                     }
                 }
             },
+            .namespace_ => |_ptr_ns| {
+                const ns = _ptr_ns.*;
+                for (ns.decls.items) |nested| {
+                    switch (nested) {
+                        .class_ => |_ptr_nc| {
+                            const nc = _ptr_nc.*;
+                            for (nc.members.items) |nmem| {
+                                switch (nmem) {
+                                    .method => |_ptr_nmth| {
+                                        const nmth = _ptr_nmth.*;
+                                        if ((std.mem.eql(u8, nmth.name, "main") and nmth.mods.is_shared)) {
+                                            var qn: []const u8 = ns.name;
+                                            qn = _str_concat(qn, ".", _allocator);
+                                            qn = _str_concat(qn, nc.name, _allocator);
+                                            main_class = qn;
+                                            main_throws = nmth.throws_;
+                                        }
+                                    },
+                                    else => |_| {
+                                        // pass
+                                    },
+                                }
+                            }
+                        },
+                        else => |_| {
+                            // pass
+                        },
+                    }
+                }
+            },
             else => |_| {
                 // pass
             },

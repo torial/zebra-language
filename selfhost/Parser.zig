@@ -1478,6 +1478,7 @@ pub const PNode = union(enum) {
     enum_: *PEnum,
     union_decl: *PUnionDecl,
     sig_: *PSig,
+    namespace_decl: *PNamespace,
     field_: *PField,
     method_: *PMethod,
     init_: *PInit,
@@ -1674,6 +1675,18 @@ pub const PModule = struct {
     decls: std.ArrayList(PNode),
     pub fn init(decls: std.ArrayList(PNode)) PModule {
         var _self: PModule = undefined;
+            _self.decls = decls;
+        return _self;
+    }
+
+};
+
+pub const PNamespace = struct {
+    name: []const u8,
+    decls: std.ArrayList(PNode),
+    pub fn init(name: []const u8, decls: std.ArrayList(PNode)) PNamespace {
+        var _self: PNamespace = undefined;
+            _self.name = name;
             _self.decls = decls;
         return _self;
     }
@@ -2395,27 +2408,31 @@ pub const Parser = struct {
         if (self.textIs("use")) {
             return try self.parseUseDecl();
         } else {
-            if (self.textIs("class")) {
-                return try self.parseClassDecl();
+            if (self.textIs("namespace")) {
+                return try self.parseNamespaceDecl();
             } else {
-                if (self.textIs("struct")) {
-                    return try self.parseStructDecl();
+                if (self.textIs("class")) {
+                    return try self.parseClassDecl();
                 } else {
-                    if (self.textIs("union")) {
-                        return try self.parseUnionDecl();
+                    if (self.textIs("struct")) {
+                        return try self.parseStructDecl();
                     } else {
-                        if (self.textIs("enum")) {
-                            return try self.parseEnumDecl();
+                        if (self.textIs("union")) {
+                            return try self.parseUnionDecl();
                         } else {
-                            if (self.textIs("sig")) {
-                                return try self.parseSigDecl();
+                            if (self.textIs("enum")) {
+                                return try self.parseEnumDecl();
                             } else {
-                                if (self.textIs("shared")) {
-                                    self.advance();
-                                    return try self.parseMethodDecl(true);
+                                if (self.textIs("sig")) {
+                                    return try self.parseSigDecl();
                                 } else {
-                                    if (self.textIs("def")) {
-                                        return try self.parseMethodDecl(false);
+                                    if (self.textIs("shared")) {
+                                        self.advance();
+                                        return try self.parseMethodDecl(true);
+                                    } else {
+                                        if (self.textIs("def")) {
+                                            return try self.parseMethodDecl(false);
+                                        }
                                     }
                                 }
                             }
@@ -2425,6 +2442,33 @@ pub const Parser = struct {
             }
         }
         { _error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("unexpected top-level token: '", self.peek().text, _allocator), "' at line ", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(self.peek().line), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator) }; return error.ZebraError; }
+    }
+
+    pub fn parseNamespaceDecl(self: *Parser) anyerror!PNode {
+        try self.expectText("namespace");
+        var name: []const u8 = try self.eatId();
+        while (self.textIs(".")) {
+            self.advance();
+            name = _str_concat(name, ".", _allocator);
+            name = _str_concat(name, try self.eatId(), _allocator);
+        }
+        self.skipEol();
+        var decls = std.ArrayList(PNode){};
+        if (self.isIndent()) {
+            self.advance();
+            while (((!self.isDedent()) and (!self.isEof()))) {
+                self.skipEol();
+                if (self.isDedent()) {
+                    break;
+                }
+                decls.append(_allocator, try self.parseTopDecl()) catch @panic("OOM");
+                self.skipEol();
+            }
+            if (self.isDedent()) {
+                self.advance();
+            }
+        }
+        return PNode{ .namespace_decl = blk_box: { const _bv = PNamespace.init(name, decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseUseDecl(self: *Parser) anyerror!PNode {

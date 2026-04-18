@@ -1471,6 +1471,7 @@ const ast = @import("ast.zig");
 const Module = ast.Module;
 const Decl = ast.Decl;
 const DeclUse = ast.DeclUse;
+const DeclNamespace = ast.DeclNamespace;
 const DeclClass = ast.DeclClass;
 const DeclStruct = ast.DeclStruct;
 const DeclEnum = ast.DeclEnum;
@@ -1727,6 +1728,10 @@ pub const ASTBuilder = struct {
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
                 return Decl{ .use_ = blk_box: { const _bv = DeclUse.init(zspan(), u.path, u.exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            },
+            .namespace_decl => |ns| {
+                const nested: std.ArrayList(Decl) = try self.buildTopDecls(ns.decls);
+                return Decl{ .namespace_ = blk_box: { const _bv = DeclNamespace.init(zspan(), ns.name, nested); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;

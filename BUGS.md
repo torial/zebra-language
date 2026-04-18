@@ -746,6 +746,18 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-062: Selfhost parseTopDecl rejects the `namespace` keyword — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseTopDecl` had no arm for `namespace Foo[.Bar]` + indented block. Everything else was wired — `ast.zbr` defined `Decl.namespace_ as ^DeclNamespace` (line 41) with `DeclNamespace {span, name, decls}` (line 97-100), and `codegen.zbr::genNamespace` (line 1820) emitted `pub const Foo = struct { ... };` wrapping the nested class/method/var/struct/enum decls. Zig backend grammar: `NamespaceDecl → kw_namespace UsePath eol indent TopDeclList dedent` (`ZebraGrammar.zig:311-316`), built at `AstBuilder.zig:144-154`.
+- **Fix:**
+  1. `selfhost/parser.zbr` — added `namespace_decl as ^PNamespace` to PNode union; `PNamespace {name, decls}` struct; `parseNamespaceDecl` (eat `namespace`, read dotted path via the existing id/dot loop, `skipEol`, indent/dedent recursion via `parseTopDecl`); parseTopDecl arm.
+  2. `selfhost/astbuilder.zbr` — added `DeclNamespace` to `use ast exposing`; `on PNode.namespace_decl as ns` arm in buildTopDecl recurses via `.buildTopDecls(ns.decls)?` and returns `Decl.namespace_(DeclNamespace(zspan(), ns.name, nested))`.
+  3. `selfhost/codegen.zbr::generateEntryPoint` — previously only scanned `m.decls` for top-level `Decl.class_` with `shared def main`. When `main` lives inside `namespace App / class Runner / shared def main`, the scanner missed it and no top-level `pub fn main()` thunk was emitted. Added a nested `on Decl.namespace_ as ns` arm that walks `ns.decls`, finds the main class, and sets `main_class = ns.name + "." + nc.name`. The two-step string concat (`qn = ns.name; qn = qn + "."; qn = qn + nc.name;`) works around a selfhost codegen quirk where three-way `a + "." + b` can't compose two separate string slices in a single binary expression.
+- **Verification:** Corpus 127/152 → 128/152 (+1 emit: `namespace_main`). Emitted `pub const App = struct { pub const Runner = struct { ... } };` + `pub fn main() void { _allocator = _arena.allocator(); defer _arena.deinit(); App.Runner.main(); }`. Compiles and runs cleanly, prints `from namespace`. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-061: Selfhost `genMemberCall` rewrites `ClassName.add(...)` to List.append — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

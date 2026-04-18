@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars as List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
 use Parser exposing PNode, PModule, PClass, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse
 
 def zspan() as Span
@@ -155,6 +155,9 @@ class ASTBuilder
         branch pn
             on PNode.use_ as u
                 return Decl.use_(DeclUse(zspan(), u.path, u.exposed))
+            on PNode.namespace_decl as ns
+                var nested as List(Decl) = .buildTopDecls(ns.decls)?
+                return Decl.namespace_(DeclNamespace(zspan(), ns.name, nested))
             on PNode.class_ as c
                 return .buildClass(c)?
             on PNode.struct_ as s

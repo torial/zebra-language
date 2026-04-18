@@ -811,6 +811,23 @@ def generateEntryPoint(m as Module) as str
                                 main_throws = mth.throws_
                         else
                             pass
+            on Decl.namespace_ as ns
+                for nested in ns.decls
+                    branch nested
+                        on Decl.class_ as nc
+                            for nmem in nc.members
+                                branch nmem
+                                    on Decl.method as nmth
+                                        if nmth.name == "main" and nmth.mods.is_shared
+                                            var qn as str = ns.name
+                                            qn = qn + "."
+                                            qn = qn + nc.name
+                                            main_class = qn
+                                            main_throws = nmth.throws_
+                                    else
+                                        pass
+                        else
+                            pass
             else
                 pass
     if main_class == ""
