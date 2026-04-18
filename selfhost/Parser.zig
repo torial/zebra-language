@@ -1496,6 +1496,7 @@ pub const PNode = union(enum) {
     stmt_expr: *PNode,
     stmt_print: *PNode,
     stmt_arena_scope: *PArenaScope,
+    stmt_with: *PWith,
     expr_int: []const u8,
     expr_float: []const u8,
     expr_bool: bool,
@@ -1804,6 +1805,18 @@ pub const PArenaScope = struct {
     stmts: std.ArrayList(PNode),
     pub fn init(stmts: std.ArrayList(PNode)) PArenaScope {
         var _self: PArenaScope = undefined;
+            _self.stmts = stmts;
+        return _self;
+    }
+
+};
+
+pub const PWith = struct {
+    target: std.ArrayList(PNode),
+    stmts: std.ArrayList(PNode),
+    pub fn init(target: std.ArrayList(PNode), stmts: std.ArrayList(PNode)) PWith {
+        var _self: PWith = undefined;
+            _self.target = target;
             _self.stmts = stmts;
         return _self;
     }
@@ -2783,13 +2796,17 @@ pub const Parser = struct {
                                                             if (self.textIs("arena")) {
                                                                 return try self.parseArenaScopeStmt();
                                                             } else {
-                                                                if (self.textIs("print")) {
-                                                                    self.advance();
-                                                                    const expr = try self.parseExpr();
-                                                                    self.skipEol();
-                                                                    return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                if (self.textIs("with")) {
+                                                                    return try self.parseWithStmt();
                                                                 } else {
-                                                                    return try self.parseExprOrAssignStmt();
+                                                                    if (self.textIs("print")) {
+                                                                        self.advance();
+                                                                        const expr = try self.parseExpr();
+                                                                        self.skipEol();
+                                                                        return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                    } else {
+                                                                        return try self.parseExprOrAssignStmt();
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -2852,6 +2869,16 @@ pub const Parser = struct {
         self.skipEol();
         const stmts = try self.parseBlock();
         return PNode{ .stmt_arena_scope = blk_box: { const _bv = PArenaScope.init(stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn parseWithStmt(self: *Parser) anyerror!PNode {
+        try self.expectText("with");
+        const target_expr = try self.parseExpr();
+        self.skipEol();
+        const stmts = try self.parseBlock();
+        var target_list = std.ArrayList(PNode){};
+        target_list.append(_allocator, target_expr) catch @panic("OOM");
+        return PNode{ .stmt_with = blk_box: { const _bv = PWith.init(target_list, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseForInStmt(self: *Parser) anyerror!PNode {

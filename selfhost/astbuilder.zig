@@ -1500,6 +1500,7 @@ const StmtRaise = ast.StmtRaise;
 const StmtTryCatch = ast.StmtTryCatch;
 const StmtBranch = ast.StmtBranch;
 const StmtArenaScope = ast.StmtArenaScope;
+const StmtWith = ast.StmtWith;
 const BranchOn = ast.BranchOn;
 const CatchClause = ast.CatchClause;
 const StmtPrint = ast.StmtPrint;
@@ -1567,6 +1568,7 @@ const PStringInterp = Parser.PStringInterp;
 const PLambda = Parser.PLambda;
 const PCaptureVar = Parser.PCaptureVar;
 const PArenaScope = Parser.PArenaScope;
+const PWith = Parser.PWith;
 pub fn zspan() Span {
     return Span.init(0, 0, 0, 0);
 }
@@ -1868,6 +1870,28 @@ pub const ASTBuilder = struct {
         return stmts;
     }
 
+    pub fn rewriteWithStmt(self: *ASTBuilder, s: Stmt, target_expr: Expr) Stmt {
+        _ = self;
+        switch (s) {
+            .assign => |_ptr_sa| {
+                const sa = _ptr_sa.*;
+                switch (sa.target.*) {
+                    .ident => |ei| {
+                        const new_target: Expr = Expr{ .member = blk_box: { const _bv = ExprMember.init(zspan(), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        const val_copy: Expr = sa.value.*;
+                        return Stmt{ .assign = blk_box: { const _bv = StmtAssign.init(zspan(), _bx0: { const _bv = new_target; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, sa.op, _bx1: { const _bv = val_copy; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    },
+                    else => |_| {
+                        return s;
+                    },
+                }
+            },
+            else => |_| {
+                return s;
+            },
+        }
+    }
+
     pub fn buildStmt(self: *ASTBuilder, pn: PNode) anyerror!Stmt {
         switch (pn) {
             .stmt_pass => |_| {
@@ -1973,6 +1997,15 @@ pub const ASTBuilder = struct {
             .stmt_arena_scope => |pas| {
                 const stmts = try self.buildStmts(pas.stmts);
                 return Stmt{ .arena_scope = blk_box: { const _bv = StmtArenaScope.init(zspan(), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            },
+            .stmt_with => |pw| {
+                const target_expr = try self.buildExpr(pw.target.items[@intCast(0)]);
+                const raw_body: std.ArrayList(Stmt) = try self.buildStmts(pw.stmts);
+                var new_body = std.ArrayList(Stmt){};
+                for (raw_body.items) |s| {
+                    new_body.append(_allocator, self.rewriteWithStmt(s, target_expr)) catch @panic("OOM");
+                }
+                return Stmt{ .with_ = blk_box: { const _bv = StmtWith.init(zspan(), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, new_body); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .stmt_expr => |_ptr_inner| {
                 const inner = _ptr_inner.*;

@@ -746,6 +746,19 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-058: Selfhost parseStmt rejects `with target` contextual-self blocks — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseStmt` had no case for `with`. `Stmt.with_` (`ast.zbr:415`) + `StmtWith` (`ast.zbr:549-557`) + codegen `genWith` (`codegen.zbr:3184`) all existed, but the parser dropped the token. Zig backend: `StmtWith → kw_with Expr eol Block` (`ZebraGrammar.zig:1019`) with a non-trivial astbuilder step — bare-name assignments inside the block desugar to member accesses on the target (`AstBuilder.zig:1416-1438`). Selfhost `genWith` just wraps the body; without the desugar, `x = 10` inside `with p` emits as a local `x`, not `p.x`.
+- **Fix (parser.zbr + astbuilder.zbr):**
+  1. `parser.zbr`: new `PWith {target, stmts}` struct, `PNode.stmt_with as ^PWith` variant, `parseWithStmt` (expectText `with` / `parseExpr` / `skipEol` / `parseBlock`), parseStmt arm.
+  2. `astbuilder.zbr`: `buildStmts` builds raw body; new helper `rewriteWithStmt(s, target_expr) as Stmt` pattern-matches on `Stmt.assign` → `Expr.ident`, rewrites the assign target to `Expr.member(target_expr, ident.name)`. New `on PNode.stmt_with` arm calls the helper on each body stmt. Added `StmtWith` to `use ast exposing`, `PWith` to `use Parser exposing`.
+- **Gotchas encountered:**
+  - **Nested `branch` inside a parent `branch` arm:** Selfhost Zig-backend parser emits a `syntax error near 'body'` on a triple-nested `branch / on / branch / on` with a following `var` declaration. Extracted the inner pattern match into a helper method `rewriteWithStmt` to keep each `branch` at a single level of nesting.
+  - **Inferred list types don't iterate:** `const raw_body = .buildStmts(...)?` was lowered to `ArrayList(Stmt)` but the `for s in raw_body` loop emitted `for (raw_body)` (missing `.items`), causing `type is not indexable`. Adding an explicit annotation `var raw_body as List(Stmt) = .buildStmts(...)?` made selfhost emit `for (raw_body.items)` correctly. **Rule:** when a `List(T)` is introduced via `const`, annotate the type.
+  - **Pointer field of a unwrapped branch variant:** `sa.value` where `sa` is the unwrapped `Stmt.assign as ^StmtAssign` lowered to `sa.value.*` (auto-deref Expr value) but was then passed to `StmtAssign.init` which wants `*ast.Expr`, producing `expected type '*ast.Expr', found 'ast.Expr'`. Workaround: copy to a local `var val_copy as Expr = sa.value`, which selfhost then auto-boxes at the call site. (Filed as a latent codegen inconsistency for future cleanup, but the workaround is local and safe.)
+- **Verification:** Corpus 122/152 → 123/152 (+1 emit: with_test). Output `p.x = 10; p.y = 20;` inside the `{ // with }` block matches the Zig backend's emit. Bootstrap round-trip A/B byte-identical.
+
 ---
 
 ### BUG-053: Selfhost parseAtom rejects the `zig"..."` / `zig'...'` backend literal — FIXED
