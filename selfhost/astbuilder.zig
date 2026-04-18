@@ -1909,37 +1909,39 @@ pub const ASTBuilder = struct {
         var cases = std.ArrayList(BranchOn){};
         for (pb.arms.items) |arm| {
             var values = std.ArrayList(Expr){};
-            const pat: []const u8 = arm.pattern;
-            if ((std.mem.indexOf(u8, pat, "..") != null)) {
-                var range_parts = std.ArrayList([]const u8){};
-                {
-                    var _it_rp = std.mem.splitSequence(u8, pat, "..");
-                    while (_it_rp.next()) |rp| {
-                        range_parts.append(_allocator, rp) catch @panic("OOM");
-                    }
-                }
-                if ((@as(i64, @intCast(range_parts.items.len)) >= 2)) {
-                    const left_expr = self.patternToExpr(range_parts.items[@intCast(0)]);
-                    const right_expr = self.patternToExpr(range_parts.items[@intCast(1)]);
-                    values.append(_allocator, Expr{ .binary = blk_box: { const _bv = ExprBinary.init(zspan(), BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
-                } else {
-                    values.append(_allocator, Expr{ .ident = ExprIdent.init(zspan(), pat) }) catch @panic("OOM");
-                }
-            } else {
-                if ((std.mem.indexOf(u8, pat, ".") != null)) {
-                    var parts = std.ArrayList([]const u8){};
+            for (arm.patterns.items) |pat_tok| {
+                const pat: []const u8 = pat_tok;
+                if ((std.mem.indexOf(u8, pat, "..") != null)) {
+                    var range_parts = std.ArrayList([]const u8){};
                     {
-                        var _it_p = std.mem.splitSequence(u8, pat, ".");
-                        while (_it_p.next()) |p| {
-                            parts.append(_allocator, p) catch @panic("OOM");
+                        var _it_rp = std.mem.splitSequence(u8, pat, "..");
+                        while (_it_rp.next()) |rp| {
+                            range_parts.append(_allocator, rp) catch @panic("OOM");
                         }
                     }
-                    const base_name = parts.items[@intCast(0)];
-                    const member_name = parts.items[@intCast(1)];
-                    const base_expr = Expr{ .ident = ExprIdent.init(zspan(), base_name) };
-                    values.append(_allocator, Expr{ .member = blk_box: { const _bv = ExprMember.init(zspan(), _bx0: { const _bv = base_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, member_name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                    if ((@as(i64, @intCast(range_parts.items.len)) >= 2)) {
+                        const left_expr = self.patternToExpr(range_parts.items[@intCast(0)]);
+                        const right_expr = self.patternToExpr(range_parts.items[@intCast(1)]);
+                        values.append(_allocator, Expr{ .binary = blk_box: { const _bv = ExprBinary.init(zspan(), BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                    } else {
+                        values.append(_allocator, Expr{ .ident = ExprIdent.init(zspan(), pat) }) catch @panic("OOM");
+                    }
                 } else {
-                    values.append(_allocator, self.patternToExpr(pat)) catch @panic("OOM");
+                    if ((std.mem.indexOf(u8, pat, ".") != null)) {
+                        var parts = std.ArrayList([]const u8){};
+                        {
+                            var _it_p = std.mem.splitSequence(u8, pat, ".");
+                            while (_it_p.next()) |p| {
+                                parts.append(_allocator, p) catch @panic("OOM");
+                            }
+                        }
+                        const base_name = parts.items[@intCast(0)];
+                        const member_name = parts.items[@intCast(1)];
+                        const base_expr = Expr{ .ident = ExprIdent.init(zspan(), base_name) };
+                        values.append(_allocator, Expr{ .member = blk_box: { const _bv = ExprMember.init(zspan(), _bx0: { const _bv = base_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, member_name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                    } else {
+                        values.append(_allocator, self.patternToExpr(pat)) catch @panic("OOM");
+                    }
                 }
             }
             const arm_stmts = try self.buildStmts(arm.stmts);

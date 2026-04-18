@@ -312,30 +312,31 @@ class ASTBuilder
         var cases as List(BranchOn) = List(BranchOn)()
         for arm in pb.arms
             var values as List(Expr) = List(Expr)()
-            # Pattern is a dotted path like "TokenKind.eol" or "PNode.class_"
-            # or a range like "c'0'..c'9'"
-            var pat as str = arm.pattern
-            if ".." in pat
-                # Range pattern: split on ".." to get left and right
-                var range_parts as List(str) = List(str)()
-                for rp in pat.split("..")
-                    range_parts.add(rp)
-                if range_parts.count() >= 2
-                    var left_expr = .patternToExpr(range_parts.at(0))
-                    var right_expr = .patternToExpr(range_parts.at(1))
-                    values.add(Expr.binary(ExprBinary(zspan(), BinaryOp.dotdot, left_expr, right_expr)))
+            # Each pattern is a dotted path like "TokenKind.eol" or "PNode.class_"
+            # or a range like "c'0'..c'9'" or a string/ident literal
+            for pat_tok in arm.patterns
+                var pat as str = pat_tok
+                if ".." in pat
+                    # Range pattern: split on ".." to get left and right
+                    var range_parts as List(str) = List(str)()
+                    for rp in pat.split("..")
+                        range_parts.add(rp)
+                    if range_parts.count() >= 2
+                        var left_expr = .patternToExpr(range_parts.at(0))
+                        var right_expr = .patternToExpr(range_parts.at(1))
+                        values.add(Expr.binary(ExprBinary(zspan(), BinaryOp.dotdot, left_expr, right_expr)))
+                    else
+                        values.add(Expr.ident(ExprIdent(zspan(), pat)))
+                else if "." in pat
+                    var parts as List(str) = List(str)()
+                    for p in pat.split(".")
+                        parts.add(p)
+                    var base_name = parts.at(0)
+                    var member_name = parts.at(1)
+                    var base_expr = Expr.ident(ExprIdent(zspan(), base_name))
+                    values.add(Expr.member(ExprMember(zspan(), base_expr, member_name)))
                 else
-                    values.add(Expr.ident(ExprIdent(zspan(), pat)))
-            else if "." in pat
-                var parts as List(str) = List(str)()
-                for p in pat.split(".")
-                    parts.add(p)
-                var base_name = parts.at(0)
-                var member_name = parts.at(1)
-                var base_expr = Expr.ident(ExprIdent(zspan(), base_name))
-                values.add(Expr.member(ExprMember(zspan(), base_expr, member_name)))
-            else
-                values.add(.patternToExpr(pat))
+                    values.add(.patternToExpr(pat))
             var arm_stmts = .buildStmts(arm.stmts)?
             var binding_opt as str? = nil
             if arm.binding != ""

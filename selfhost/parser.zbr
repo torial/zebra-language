@@ -109,11 +109,11 @@ struct PBranch
         this.else_stmts = else_stmts
 
 struct PBranchOn
-    var pattern as str
+    var patterns as List(str)
     var binding as str
     var stmts as List(PNode)
-    cue init(pattern as str, binding as str, stmts as List(PNode))
-        this.pattern = pattern
+    cue init(patterns as List(str), binding as str, stmts as List(PNode))
+        this.patterns = patterns
         this.binding = binding
         this.stmts = stmts
 
@@ -1084,8 +1084,12 @@ class Parser
                     break
                 if this.textIs("on")
                     this.advance()
-                    # Parse pattern: collect tokens until `as`, eol, or indent
-                    var pattern = .eatBranchPattern()
+                    # Parse pattern list: one or more comma-separated patterns
+                    var patterns = List(str)()
+                    patterns.add(.eatBranchPattern())
+                    while this.textIs(",")
+                        this.advance()
+                        patterns.add(.eatBranchPattern())
                     var binding = ""
                     if this.textIs("as")
                         this.advance()
@@ -1097,12 +1101,17 @@ class Parser
                     else if not .isEol() and not .isDedent() and not .isEof()
                         # Inline single-line arm: `on Pattern  return value`
                         stmts.add(.parseStmt())
-                    arms.add(PBranchOn(pattern, binding, stmts))
+                    arms.add(PBranchOn(patterns, binding, stmts))
                 else if this.textIs("else")
                     this.advance()
-                    .skipEol()
-                    if .isIndent()
-                        else_stmts = .parseBlock()
+                    if this.textIs(",")
+                        # Inline else form: `else, stmt`
+                        this.advance()
+                        else_stmts.add(.parseStmt())
+                    else
+                        .skipEol()
+                        if .isIndent()
+                            else_stmts = .parseBlock()
                 else
                     break
             if .isDedent()

@@ -719,6 +719,19 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-050: Selfhost branch-on drops multi-pattern lists and inline-else — FIXED
+- **Status:** Fixed 2026-04-17
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseBranchStmt` parsed exactly one `eatBranchPattern()` per arm and handled `else` only as an indented block. Two separate grammar forms were dropped: (1) `on P1, P2, ...` multi-pattern arms (Zig backend emits these as `eql(...) or eql(...)` chains — see `string_branch_test.zbr` line 5), and (2) inline `else, stmt` form (see `branch_exhaustive_test.zbr`). Equivalence rule: Zig `BranchOn` already stores `values as List(Expr)` and `BranchElseOpt → kw_else comma Stmt` — selfhost was silently restricting both to singletons.
+- **Fix:** Four coordinated edits preserving semantics:
+  1. `parser.zbr::PBranchOn` struct — `pattern as str` → `patterns as List(str)`.
+  2. `parseBranchStmt` — after first `eatBranchPattern`, loop while `textIs(",")` collecting more patterns.
+  3. `parseBranchStmt` else-arm — after `else`, if `textIs(",")` parse a single inline stmt into `else_stmts`; otherwise fall back to the existing block form.
+  4. `astbuilder.zbr::buildBranch` — iterate `arm.patterns` instead of single `arm.pattern`; added `var pat as str = pat_tok` inside the loop to give the Zig emitter a declared `str` so `.split(...)` emits `std.mem.splitSequence(u8, pat, ...)` rather than a raw method call (iteration vars come out untyped `[]const u8` and miss the str-shim path — a separate Zig-backend codegen wrinkle, not a blocker).
+- **Verification:** Corpus 105/152 → 110/152 (+5: string_branch_test, enum_branch_test, branch_inline_return_test, branch_exhaustive_test, and one additional). Selfhost emission byte-matches Zig backend on the classify function (`eql(u8, cmd, "start") or eql(u8, cmd, "begin")`). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-049: Selfhost parser drops field initializers — FIXED
 - **Status:** Fixed 2026-04-17
 - **Backend:** selfhost only (Zig compiler unaffected)

@@ -1570,12 +1570,12 @@ pub const PBranch = struct {
 };
 
 pub const PBranchOn = struct {
-    pattern: []const u8,
+    patterns: std.ArrayList([]const u8),
     binding: []const u8,
     stmts: std.ArrayList(PNode),
-    pub fn init(pattern: []const u8, binding: []const u8, stmts: std.ArrayList(PNode)) PBranchOn {
+    pub fn init(patterns: std.ArrayList([]const u8), binding: []const u8, stmts: std.ArrayList(PNode)) PBranchOn {
         var _self: PBranchOn = undefined;
-            _self.pattern = pattern;
+            _self.patterns = patterns;
             _self.binding = binding;
             _self.stmts = stmts;
         return _self;
@@ -2916,7 +2916,12 @@ pub const Parser = struct {
                 }
                 if (self.textIs("on")) {
                     self.advance();
-                    const pattern = try self.eatBranchPattern();
+                    var patterns = std.ArrayList([]const u8){};
+                    patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
+                    while (self.textIs(",")) {
+                        self.advance();
+                        patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
+                    }
                     var binding: []const u8 = "";
                     if (self.textIs("as")) {
                         self.advance();
@@ -2931,13 +2936,18 @@ pub const Parser = struct {
                             stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
                         }
                     }
-                    arms.append(_allocator, PBranchOn.init(pattern, binding, stmts)) catch @panic("OOM");
+                    arms.append(_allocator, PBranchOn.init(patterns, binding, stmts)) catch @panic("OOM");
                 } else {
                     if (self.textIs("else")) {
                         self.advance();
-                        self.skipEol();
-                        if (self.isIndent()) {
-                            else_stmts = try self.parseBlock();
+                        if (self.textIs(",")) {
+                            self.advance();
+                            else_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
+                        } else {
+                            self.skipEol();
+                            if (self.isIndent()) {
+                                else_stmts = try self.parseBlock();
+                            }
                         }
                     } else {
                         break;
