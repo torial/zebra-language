@@ -497,6 +497,38 @@ def isString(t as Type_) as bool
         else
             return false
 
+# BUG-071: return type of a method call whose receiver is `str`. Grounded in
+# src/CodeGen.zig::genStringMethod (6373-6600). nil → method is not a known
+# string stdlib method; caller falls through to Type_.unknown_.
+# chars/split/lines return generics (List(char)/List(str)); Phase 18 generics
+# will infer them properly — returning unknown_ here is intentional.
+def stringMethodReturn(name as str) as Type_?
+    if name == "trim" or name == "trimLeft" or name == "trimRight"
+        return Type_.string_
+    if name == "replace" or name == "replaceAll" or name == "reverse" or name == "repeat"
+        return Type_.string_
+    if name == "concat" or name == "format" or name == "upper" or name == "lower"
+        return Type_.string_
+    if name == "toHex" or name == "padLeft" or name == "padRight" or name == "center"
+        return Type_.string_
+    if name == "substring" or name == "charAt"
+        return Type_.string_
+    if name == "join" or name == "toString"
+        return Type_.string_
+    if name == "count" or name == "indexOf" or name == "lastIndexOf"
+        return Type_.int_
+    if name == "codePointCount" or name == "toInt"
+        return Type_.int_
+    if name == "toFloat"
+        return Type_.float_
+    if name == "contains" or name == "startsWith" or name == "endsWith"
+        return Type_.bool_
+    if name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
+        return Type_.bool_
+    if name == "fromHex"
+        return Type_.optional(Type_.string_)
+    return nil
+
 # Phase 17d diagnostic: short tag name for a Type_ variant. Caller may strip.
 def typeTag(t as Type_) as str
     branch t
@@ -655,18 +687,17 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                                 return Type_.named(uname2)
                         else
                             pass
-                    var recv as Type_ = Type_.unknown_
-                    branch mem.object
-                        on Expr.this_ as _
-                            if ctx.current_class != ""
-                                recv = Type_.named(ctx.current_class)
-                        on Expr.ident as rid
-                            var rname as str = "" + rid.name
-                            if ctx.hasLocal(rname)
-                                recv = ctx.localType(rname)
-                            else
-                                if ctx.hasClassAny(rname)
-                                    recv = Type_.named(rname)
+                    # BUG-071: recursive receiver inference (not just this_/ident)
+                    # so chained calls like `s.trim().upper()` resolve: inferExpr
+                    # of mem.object returns string_ from the inner trim call via
+                    # stringMethodReturn, and the outer upper call dispatches on
+                    # string_ again.
+                    var recv as Type_ = inferExpr(mem.object, ctx)
+                    branch recv
+                        on Type_.ref_to as rrt
+                            recv = rrt
+                        on Type_.optional as rro
+                            recv = rro
                         else
                             pass
                     branch recv
@@ -674,6 +705,10 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                             var rt as Type_? = ctx.methodReturnAny(tn, "" + mem.member)
                             if rt != nil
                                 return rt to!
+                        on Type_.string_
+                            var srt as Type_? = stringMethodReturn("" + mem.member)
+                            if srt != nil
+                                return srt to!
                         else
                             pass
                     return Type_.unknown_

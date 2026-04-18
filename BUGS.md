@@ -746,6 +746,23 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-071: Selfhost TypeChecker misses string-method return types; str.count(substr) unimplemented in codegen — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** Three gaps in the selfhost path surfaced when compiling `typechecker.zbr` through the selfhost pipeline:
+  1. `TypeChecker` had no `stringMethodReturn()` helper — all string-method calls (`s.trim()`, `s.upper()`, `s.count(x)`, etc.) inferred `Type_.unknown_`. Any expression depending on a string method's return type for further inference (e.g. a chained call or a boolean guard) was silently mistyped.
+  2. `inferExpr` for `ExprMember` resolved the receiver only by pattern-matching the object AST node (`Expr.this_` or `Expr.ident`) — chained calls like `s.trim().upper()` always produced `unknown_` for the outer method because the inner call's result was never recursively inferred.
+  3. Codegen had no emit path for `str.count(substr)` — it fell through to the `@as(i64, @intCast(.count()))` catch-all, emitting a Zig method call that doesn't exist on `[]const u8` slices.
+  4. The `blk_box` heap-allocation path typed `_bv` by inference. For payload-less union tags (e.g. `Type_.string_`, `Type_.int_`), `@TypeOf(_bv)` returns the bare tag enum, not the full union — so the subsequent `_bp.* = _bv` assignment failed with a Zig type-mismatch error when `Type_?` values constructed from `stringMethodReturn()` flowed through the boxer.
+- **Fix (3 coordinated edits):**
+  1. `typechecker.zbr` — new `stringMethodReturn(name as str) as Type_?` function (35 lines) mapping every known string stdlib method to its `Type_` return value (e.g. `trim/replace/concat/...` → `string_`, `count/indexOf/...` → `int_`, `contains/startsWith/...` → `bool_`). Returns `nil` for unknown methods; caller falls through to `Type_.unknown_` and a future pass can refine. `chars/split/lines` intentionally return `unknown_` — their real types are generic (`List(char)`, `List(str)`) and will be wired when Phase 18 generics land.
+  2. `typechecker.zbr::inferExpr` (`ExprMember` arm) — switched receiver resolution from `branch mem.object` AST-node pattern-matching to `inferExpr(mem.object, ctx)` recursively, then unwrapping `Type_.ref_to` and `Type_.optional` wrappers to get the base type. Added a new `on Type_.string_` dispatch arm that calls `stringMethodReturn(mem.member)` and returns the result when non-nil. This enables chained calls (`s.trim().upper()`) because `trim()` resolves to `string_`, and `upper()` then dispatches on `string_` again.
+  3. `codegen.zbr` — (a) new `isStringBoth(m.object, "count_recv")` branch in `genMethod` emitting `@as(i64, @intCast(std.mem.count(u8, receiver, arg)))` for `str.count(substr)`, matching `src/CodeGen.zig::genStringMethod` line 6477; (b) `blk_box` now emits `const _bv: std.meta.Child(@FieldType(UnionName, "variant")) = ` rather than bare `const _bv = `, so the binding carries the union payload child type — payload-less tags coerce from the tag enum to the union at `_bv` rather than silently at `@TypeOf(_bv)`.
+- **Collateral:** `codegen_test.zbr` — `makeGen()` and one inline `Generator(...)` call updated from 11 → 13 args after `module_types + dep_types` were added to `Generator.init` in a prior phase but the test was missed. Added `use typechecker exposing ModuleTypes` to the test imports.
+- **Verification:** All 8 selfhost unit tests pass. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-070: Selfhost parser missing `var {x, y} = expr` struct/tuple destructuring — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

@@ -3821,9 +3821,16 @@ struct Generator
                     w.emit(" = ")
                     if c.args.count() > 0
                         if is_boxed
-                            # Heap-allocate the value for ^T payloads
-                            # Use a labeled block to avoid evaluating the arg twice
-                            w.emit("blk_box: { const _bv = ")
+                            # Heap-allocate the value for ^T payloads.
+                            # Type _bv to the variant's payload child type so
+                            # payload-less-tag args (e.g. Type_.string_) coerce
+                            # from tag to union at the _bv binding rather than
+                            # at @TypeOf(_bv), which would return the tag type.
+                            w.emit("blk_box: { const _bv: std.meta.Child(@FieldType(")
+                            w.emit(oname)
+                            w.emit(", \"")
+                            w.emit(mname2)
+                            w.emit("\")) = ")
                             genExpr(c.args.at(0).value)
                             w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :blk_box _bp; }")
                         else
@@ -4010,6 +4017,16 @@ struct Generator
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
                 w.emit(".count()))")
+            else if this.isStringBoth(m.object, "count_recv")
+                # BUG-071: str.count(substr) → std.mem.count
+                w.emit("@as(i64, @intCast(std.mem.count(u8, ")
+                genExpr(m.object)
+                w.emit(", ")
+                if args.count() > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("\"\"")
+                w.emit(")))")
             else
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
