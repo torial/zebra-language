@@ -1729,6 +1729,10 @@ pub const ASTBuilder = struct {
             .field_ => |_ptr_f| {
                 const f = _ptr_f.*;
                 const type_ref = self.parseTypeRef(f.type_name);
+                if ((@as(i64, @intCast(f.init_expr.items.len)) > 0)) {
+                    const initval = try self.buildExpr(f.init_expr.items[@intCast(0)]);
+                    return Decl{ .var_ = blk_box: { const _bv = DeclVar.init(zspan(), zmods(), f.name, type_ref, _bx0: { const _bv = initval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                }
                 return Decl{ .var_ = blk_box: { const _bv = DeclVar.init(zspan(), zmods(), f.name, type_ref, null, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .method_ => |_ptr_m| {

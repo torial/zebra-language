@@ -199,10 +199,12 @@ struct PField
     var name as str
     var type_name as str
     var is_const as bool
-    cue init(name as str, type_name as str, is_const as bool)
+    var init_expr as List(PNode)
+    cue init(name as str, type_name as str, is_const as bool, init_expr as List(PNode))
         this.name = name
         this.type_name = type_name
         this.is_const = is_const
+        this.init_expr = init_expr
 
 struct PMethod
     var name as str
@@ -795,8 +797,12 @@ class Parser
             if this.textIs("?")
                 this.advance()
                 type_name = type_name + "?"
+        var init_expr = List(PNode)()
+        if this.textIs("=")
+            this.advance()
+            init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.field_(PField(name, type_name, is_const))
+        return PNode.field_(PField(name, type_name, is_const, init_expr))
 
     def parseDeclInit() as PNode throws
         .expectText("cue")

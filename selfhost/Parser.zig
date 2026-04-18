@@ -1715,11 +1715,13 @@ pub const PField = struct {
     name: []const u8,
     type_name: []const u8,
     is_const: bool,
-    pub fn init(name: []const u8, type_name: []const u8, is_const: bool) PField {
+    init_expr: std.ArrayList(PNode),
+    pub fn init(name: []const u8, type_name: []const u8, is_const: bool, init_expr: std.ArrayList(PNode)) PField {
         var _self: PField = undefined;
             _self.name = name;
             _self.type_name = type_name;
             _self.is_const = is_const;
+            _self.init_expr = init_expr;
         return _self;
     }
 
@@ -2554,8 +2556,13 @@ pub const Parser = struct {
                 type_name = _str_concat(type_name, "?", _allocator);
             }
         }
+        var init_expr = std.ArrayList(PNode){};
+        if (self.textIs("=")) {
+            self.advance();
+            init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
+        }
         self.skipEol();
-        return PNode{ .field_ = blk_box: { const _bv = PField.init(name, type_name, is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .field_ = blk_box: { const _bv = PField.init(name, type_name, is_const, init_expr); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseDeclInit(self: *Parser) anyerror!PNode {

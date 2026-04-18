@@ -719,6 +719,18 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-049: Selfhost parser drops field initializers — FIXED
+- **Status:** Fixed 2026-04-17
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseDeclField` parsed `var NAME as TYPE` then went straight to `skipEol`, never consuming optional `= expr`. The next `parseMemberDecl` iteration saw `=` as a member head and raised "unexpected member: '=' at line N". Equivalence rule also violated: Zig backend preserves the initializer; silently discarding it in selfhost would hide divergence behind A/B byte-identity.
+- **Fix:** Three coordinated edits preserving semantics:
+  1. `PField` struct — added `init_expr as List(PNode)` (mirrors `PVar`).
+  2. `parseDeclField` — parse optional `= .parseExpr()` after type annotation into `init_expr`.
+  3. `astbuilder.zbr::buildMember` `on PNode.field_` — thread `f.init_expr` into the `DeclVar` init slot (analogous to the stmt_var arm).
+- **Verification:** Corpus 102/152 → 105/152 (+3: shared_field, tco_test, zebra_ide). The other 4 files in the triage cluster (struct_destruct_test, with_test, features, named_args_infer_test) expose different next features (struct destructuring, `zig"..."` expr, named-arg `:`) that the field-init error had masked — separate clusters. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-048: Selfhost resolver does not register enum names — FIXED
 - **Status:** Fixed 2026-04-17
 - **Backend:** selfhost only (Zig compiler unaffected)
