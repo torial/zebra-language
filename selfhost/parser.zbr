@@ -59,6 +59,7 @@ union PNode
     expr_str as str
     expr_char as str
     expr_zig_lit as str
+    expr_raw_str as str
     expr_id as str
 
     # Expressions (heap-boxed - recursive)
@@ -487,6 +488,15 @@ class Parser
             on TokenKind.zig_single
                 return true
             on TokenKind.zig_double
+                return true
+            else
+                return false
+
+    def isRawString() as bool
+        branch this.peek().kind
+            on TokenKind.string_raw_single
+                return true
+            on TokenKind.string_raw_double
                 return true
             else
                 return false
@@ -1438,6 +1448,10 @@ class Parser
             const text = this.peek().text
             this.advance()
             return PNode.expr_zig_lit(text)
+        else if .isRawString()
+            const text = this.peek().text
+            this.advance()
+            return PNode.expr_raw_str(text)
         else if this.textIs("(")
             this.advance()
             const inner = .parseExpr()

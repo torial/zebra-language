@@ -728,6 +728,19 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-056: Selfhost parser rejects `r"..."` / `r'...'` raw string literals — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseAtom` had no case for `TokenKind.string_raw_single` / `string_raw_double`, even though every other stage was wired: `Token.zbr:29-30` declared the variants; `Lexer.zbr:221-229` emitted them via `scanSimpleString`; `ast.zbr:717-726` already had `StringKind.raw` + `ExprStringLit`; `codegen.zbr:3680` already had an `if sl.kind == StringKind.raw` arm. Parser rejected the atom, so every `r"..."` raised `unexpected expression token`. Zig backend: `ZebraGrammar.zig:1202-1203` (`Atom → string_raw_single | string_raw_double`), `AstBuilder.zig:2040-2041` (`→ .string_lit` with `kind = .raw`), escape at emit in `CodeGen.zig:9946-9961`.
+- **Fix (parser.zbr + astbuilder.zbr only):**
+  1. `parser.zbr`: new `isRawString()` helper mirroring `isZigLit`, new `PNode.expr_raw_str as str` variant, new `parseAtom` arm after `isZigLit` that consumes the token and returns `PNode.expr_raw_str(text)`.
+  2. `astbuilder.zbr`: new `stripRawAndEscape(text)` helper (strips the `r` prefix + surrounding quotes, then doubles every backslash via split-on-`\` / rejoin-with-`\\`), plus arm `on PNode.expr_raw_str as text → Expr.string_lit(ExprStringLit(zspan(), StringKind.raw, stripRawAndEscape(text)))`.
+- **Why pre-escape in astbuilder (vs. Zig backend which escapes in codegen):** Mirrors the BUG-053 precedent for `stripZigQuotes`. The selfhost codegen's existing `StringKind.raw` arm emits `"` + text + `"` verbatim; if the AST kept raw content (e.g. `\d+`) un-doubled, the emitted Zig would be invalid because `\d` is not a legal Zig escape. Doubling inside the astbuilder keeps codegen trivial and sidesteps selfhost's uint/int slice-arithmetic awkwardness.
+- **Why two `for p in …split(…)` loops were renamed:** Selfhost codegen lowers `for p in …` to a Zig `_it_p` iterator variable. The helper has two `split` loops, so both lowered to the same name — `redeclaration of local variable '_it_p'`. Renamed the second loop's variable to `bp` so the lowered iterators don't collide.
+- **Verification:** Corpus 120/152 → 121/152 (+1 emit: raw_string_test). `diff` of `Regex.compile(...)` lines between selfhost and Zig-backend emit is empty except for pre-existing `var`/`const` divergence unrelated to this bug. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-053: Selfhost parseAtom rejects the `zig"..."` / `zig'...'` backend literal — FIXED
 - **Status:** Fixed 2026-04-17
 - **Backend:** selfhost only (Zig compiler unaffected)

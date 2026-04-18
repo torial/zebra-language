@@ -1636,6 +1636,51 @@ pub fn stripZigQuotes(text: []const u8) []const u8 {
     return result;
 }
 
+pub fn stripRawAndEscape(text: []const u8) []const u8 {
+    if ((text.len < 3)) {
+        return text;
+    }
+    var quote: []const u8 = "\"";
+    if (std.mem.startsWith(u8, text, "r'")) {
+        quote = "'";
+    }
+    var parts = std.ArrayList([]const u8){};
+    {
+        var _it_p = std.mem.splitSequence(u8, text, quote);
+        while (_it_p.next()) |p| {
+            parts.append(_allocator, p) catch @panic("OOM");
+        }
+    }
+    if ((@as(i64, @intCast(parts.items.len)) <= 2)) {
+        return "";
+    }
+    var content: []const u8 = parts.items[@intCast(1)];
+    var i: i64 = 2;
+    while ((i < (@as(i64, @intCast(parts.items.len)) - 1))) {
+        content = _str_concat(content, quote, _allocator);
+        content = _str_concat(content, parts.items[@intCast(i)], _allocator);
+        i = (i + 1);
+    }
+    var bs_parts = std.ArrayList([]const u8){};
+    {
+        var _it_bp = std.mem.splitSequence(u8, content, "\\");
+        while (_it_bp.next()) |bp| {
+            bs_parts.append(_allocator, bp) catch @panic("OOM");
+        }
+    }
+    if ((@as(i64, @intCast(bs_parts.items.len)) <= 1)) {
+        return content;
+    }
+    var result: []const u8 = bs_parts.items[@intCast(0)];
+    var j: i64 = 1;
+    while ((j < @as(i64, @intCast(bs_parts.items.len)))) {
+        result = _str_concat(result, "\\\\", _allocator);
+        result = _str_concat(result, bs_parts.items[@intCast(j)], _allocator);
+        j = (j + 1);
+    }
+    return result;
+}
+
 pub fn stripCharQuotes(text: []const u8) []const u8 {
     if ((text.len < 3)) {
         return text;
@@ -2031,6 +2076,9 @@ pub const ASTBuilder = struct {
             },
             .expr_zig_lit => |text| {
                 return Expr{ .zig_lit = ExprZigLit.init(zspan(), stripZigQuotes(text)) };
+            },
+            .expr_raw_str => |text| {
+                return Expr{ .string_lit = ExprStringLit.init(zspan(), StringKind.raw, stripRawAndEscape(text)) };
             },
             .expr_id => |name| {
                 return Expr{ .ident = ExprIdent.init(zspan(), name) };

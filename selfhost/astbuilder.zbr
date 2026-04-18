@@ -83,6 +83,43 @@ def stripZigQuotes(text as str) as str
         i = i + 1
     return result
 
+# Strip raw string: r"\d+" → \\d+ (backslashes doubled for Zig emit).
+# Token text includes `r` prefix + quote + content + closing quote.
+# Backslashes inside are literal (per raw-string semantics), so to emit a
+# valid Zig double-quoted string we double every backslash.
+def stripRawAndEscape(text as str) as str
+    if text.len < 3
+        return text
+    var quote as str = "\""
+    if text.startsWith("r'")
+        quote = "'"
+    # Split on quote: ["r", "\d+", ""] (or more parts if content embeds the quote).
+    var parts as List(str) = List(str)()
+    for p in text.split(quote)
+        parts.add(p)
+    if parts.count() <= 2
+        return ""
+    # Rejoin interior parts with the quote char to preserve embedded quotes.
+    var content as str = parts.at(1)
+    var i as int = 2
+    while i < parts.count() - 1
+        content = content + quote
+        content = content + parts.at(i)
+        i = i + 1
+    # Double every backslash: split on "\" and rejoin with "\\".
+    var bs_parts as List(str) = List(str)()
+    for bp in content.split("\\")
+        bs_parts.add(bp)
+    if bs_parts.count() <= 1
+        return content
+    var result as str = bs_parts.at(0)
+    var j as int = 1
+    while j < bs_parts.count()
+        result = result + "\\\\"
+        result = result + bs_parts.at(j)
+        j = j + 1
+    return result
+
 # Strip char literal: c'x' → x, c'\n' → \n
 def stripCharQuotes(text as str) as str
     # text is e.g. "c'a'" or "c'\n'" — strip leading c' and trailing '
@@ -413,6 +450,10 @@ class ASTBuilder
             on PNode.expr_zig_lit as text
                 # Strip zig"..." / zig'...' wrapper so stored text is emit-ready.
                 return Expr.zig_lit(ExprZigLit(zspan(), stripZigQuotes(text)))
+
+            on PNode.expr_raw_str as text
+                # Strip r"..." / r'...' wrapper, double backslashes for Zig emit.
+                return Expr.string_lit(ExprStringLit(zspan(), StringKind.raw, stripRawAndEscape(text)))
 
             on PNode.expr_id as name
                 return Expr.ident(ExprIdent(zspan(), name))
