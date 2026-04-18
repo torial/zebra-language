@@ -2144,6 +2144,23 @@ pub const Parser = struct {
         }
     }
 
+    pub fn isSizedTypeName(self: *Parser) bool {
+        switch (self.peek().kind) {
+            .int_size => {
+                return true;
+            },
+            .uint_size => {
+                return true;
+            },
+            .float_size => {
+                return true;
+            },
+            else => {
+                return false;
+            },
+        }
+    }
+
     pub fn isTypeKeyword(self: *Parser) bool {
         switch (self.peek().kind) {
             .kw_int => {
@@ -2401,7 +2418,15 @@ pub const Parser = struct {
             }
             return text;
         }
-        if (((((((std.mem.eql(u8, text, "int") or std.mem.eql(u8, text, "bool")) or std.mem.eql(u8, text, "str")) or std.mem.eql(u8, text, "float")) or std.mem.eql(u8, text, "char")) or std.mem.eql(u8, text, "void")) or std.mem.eql(u8, text, "any"))) {
+        if ((((((((std.mem.eql(u8, text, "int") or std.mem.eql(u8, text, "uint")) or std.mem.eql(u8, text, "bool")) or std.mem.eql(u8, text, "str")) or std.mem.eql(u8, text, "float")) or std.mem.eql(u8, text, "char")) or std.mem.eql(u8, text, "void")) or std.mem.eql(u8, text, "any"))) {
+            self.advance();
+            return text;
+        }
+        if (self.isSizedTypeName()) {
+            self.advance();
+            return text;
+        }
+        if ((std.mem.eql(u8, text, "byte") or std.mem.eql(u8, text, "String"))) {
             self.advance();
             return text;
         }

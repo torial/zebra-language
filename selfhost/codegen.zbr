@@ -1401,6 +1401,8 @@ struct Generator
             return "u64"
         if name == "uint128"
             return "u128"
+        if name == "byte"
+            return "u8"
         if name == "float16"
             return "f16"
         if name == "float32"

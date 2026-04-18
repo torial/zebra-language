@@ -474,6 +474,17 @@ class Parser
             else
                 return false
 
+    def isSizedTypeName() as bool
+        branch this.peek().kind
+            on TokenKind.int_size
+                return true
+            on TokenKind.uint_size
+                return true
+            on TokenKind.float_size
+                return true
+            else
+                return false
+
     # Type keywords used as expressions (e.g., List(int), HashMap(str, bool))
     def isTypeKeyword() as bool
         branch this.peek().kind
@@ -661,7 +672,16 @@ class Parser
                 return sb.build()
             return text
         # Accept built-in type keywords by text
-        if text == "int" or text == "bool" or text == "str" or text == "float" or text == "char" or text == "void" or text == "any"
+        if text == "int" or text == "uint" or text == "bool" or text == "str" or text == "float" or text == "char" or text == "void" or text == "any"
+            this.advance()
+            return text
+        # Sized numeric type names: int8/int16/int32/int64, uint8/…, float32/float64
+        if .isSizedTypeName()
+            this.advance()
+            return text
+        # `byte` alias (lexed as plain id above, so this branch handles it if
+        # the lexer ever splits it out; also covers `String` alias).
+        if text == "byte" or text == "String"
             this.advance()
             return text
         raise "expected type name, got '" + text + "' at line " + this.peek().line.toString()

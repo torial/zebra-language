@@ -3213,6 +3213,9 @@ pub const Generator = struct {
         if (std.mem.eql(u8, name, "uint128")) {
             return "u128";
         }
+        if (std.mem.eql(u8, name, "byte")) {
+            return "u8";
+        }
         if (std.mem.eql(u8, name, "float16")) {
             return "f16";
         }

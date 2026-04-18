@@ -746,6 +746,18 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-066: Selfhost eatTypeName rejects sized numeric type names (int32/uint8/float32/byte/uint) — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `Lexer.zbr:251-260` emits `TokenKind.int_size`, `uint_size`, `float_size` for identifiers like `int32`, `uint8`, `float32`. But `parser.zbr::eatTypeName` accepted only `TokenKind.id` (via `isId()`) or a handful of bare text matches (`int`, `bool`, `str`, `float`, `char`, `void`, `any`). `uint`, `byte`, and any sized numeric spelling all fell through to `raise "expected type name, got 'X'"`.
+- **Fix:**
+  1. `selfhost/parser.zbr` — added `isSizedTypeName()` helper covering `int_size`/`uint_size`/`float_size` token kinds; extended `eatTypeName` with a `.isSizedTypeName()` arm and a small text-match arm for `byte`/`String`; added `uint` to the existing builtin-text list.
+  2. `selfhost/codegen.zbr::zigTypeForName` — added `"byte" → "u8"` mapping (matches `src/Builtins.zig:162`). The existing `int8..int128` / `uint8..uint128` / `float16..float128` entries already handled the sized spellings once the parser could produce them.
+- **Partial:** `test/numeric_types_test.zbr` now emits (`--emit-zig` exit 0) but the trailing `int(8)` / `uint(16)` arbitrary-width syntax still fails Zig compile — the parser swallows `int` as a bare type name without entering the open_call path, so `(8) = 127` is misparsed. Orthogonal feature, filed as a follow-up.
+- **Verification:** Corpus 131/152 → 132/152 (+1 emit: numeric_types_test). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-065: Selfhost parseTopDecl rejects the `extend Type` keyword — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)
