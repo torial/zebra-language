@@ -3719,9 +3719,58 @@ struct Generator
             w.emit(sl.text)
             w.emit("\"")
             return
+        # Triple-quoted doc string: sl.text starts with """
+        var sl_text as str = sl.text
+        if sl_text.startsWith("\"\"\"")
+            .genDocStringLit(sl_text)
+            return
         # plain / nosub: emit as Zig string literal
         w.emit("\"")
         w.emit(sl.text)
+        w.emit("\"")
+
+    def genDocStringLit(text as str)
+        # Strip """ delimiters, leading newline; escape " and actual newlines for Zig output.
+        var dq_parts = List(str)()
+        for dqp in text.split("\"\"\"")
+            dq_parts.add(dqp)
+        var content as str = ""
+        if dq_parts.count() >= 2
+            content = dq_parts.at(1)
+        # Strip leading newline (right after opening """)
+        if content.startsWith("\n")
+            var nl_split = List(str)()
+            for nsp in content.split("\n")
+                nl_split.add(nsp)
+            content = ""
+            var nsi = 1
+            while nsi < nl_split.count()
+                if nsi > 1
+                    content = content + "\n"
+                content = content + nl_split.at(nsi)
+                nsi = nsi + 1
+        # Escape " → \" (so it can be embedded in a Zig double-quoted string)
+        var qparts = List(str)()
+        for qp in content.split("\"")
+            qparts.add(qp)
+        var escaped as str = qparts.at(0)
+        var qi = 1
+        while qi < qparts.count()
+            escaped = escaped + "\\\""
+            escaped = escaped + qparts.at(qi)
+            qi = qi + 1
+        # Escape actual newline bytes → \n (the two-char Zig escape sequence)
+        var nparts = List(str)()
+        for np in escaped.split("\n")
+            nparts.add(np)
+        var final_str as str = nparts.at(0)
+        var ni = 1
+        while ni < nparts.count()
+            final_str = final_str + "\\n"
+            final_str = final_str + nparts.at(ni)
+            ni = ni + 1
+        w.emit("\"")
+        w.emit(final_str)
         w.emit("\"")
 
     # ── genStringInterp ───────────────────────────────────────────────────────
@@ -4274,8 +4323,10 @@ struct Generator
         branch m.object
             on Expr.ident as id
                 if id.name == "Math"
-                    genMathCall(mname, args)
-                    return
+                    # If user defined class Math, skip stdlib dispatch
+                    if not (this.module_types.hasClass("Math") or this.dep_types.hasClass("Math"))
+                        genMathCall(mname, args)
+                        return
                 if id.name == "File"
                     genFileCall(mname, args)
                     return
@@ -4350,6 +4401,9 @@ struct Generator
                     return
                 if id.name == "Reflect"
                     genReflectCall(mname, args)
+                    return
+                if id.name == "Result"
+                    genResultCall(mname, args)
                     return
             else
                 pass
@@ -4564,6 +4618,28 @@ struct Generator
         w.emit(")")
         if callee_throws2 and try_block_label != nil
             emitTryBlockCatch()
+
+    def genResultCall(mname as str, args as List(Arg))
+        if mname == "ok"
+            w.emit(".{ .ok = ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("{}")
+            w.emit(" }")
+        else if mname == "err"
+            w.emit(".{ .err = ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("{}")
+            w.emit(" }")
+        else
+            w.emit("Result.")
+            w.emit(mname)
+            w.emit("(")
+            genArgList(args)
+            w.emit(")")
 
     def genMathCall(mname as str, args as List(Arg))
         if mname == "sqrt"

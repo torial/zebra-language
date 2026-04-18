@@ -46,6 +46,7 @@ union PNode
     stmt_if as ^PIf
     stmt_while as ^PWhile
     stmt_for_in as ^PForIn
+    stmt_for_num as ^PForNum
     stmt_var as ^PVar
     stmt_assign as ^PAssign
     stmt_assert as ^PAssert
@@ -84,6 +85,7 @@ union PNode
     expr_except as ^PExcept
     expr_string_interp as ^PStringInterp
     expr_lambda as PLambda
+    expr_tuple_lit as ^PTupleLit
 
     # Branch statement
     stmt_branch as ^PBranch
@@ -129,6 +131,11 @@ struct PBranchOn
         this.binding = binding
         this.stmts = stmts
 
+struct PTupleLit
+    var elems as List(PNode)
+    cue init(elems as List(PNode))
+        this.elems = elems
+
 struct PExcept
     var base as List(PNode)
     var fields as List(PExceptField)
@@ -164,12 +171,12 @@ struct PLambda
 struct PCaptureVar
     var name as str
     var type_name as str
-    var init_name as str
+    var init_expr as List(PNode)
     var is_const as bool
-    cue init(name as str, type_name as str, init_name as str, is_const as bool)
+    cue init(name as str, type_name as str, init_expr as List(PNode), is_const as bool)
         this.name = name
         this.type_name = type_name
-        this.init_name = init_name
+        this.init_expr = init_expr
         this.is_const = is_const
 
 struct PUse
@@ -194,9 +201,11 @@ struct PNamespace
 struct PParam
     var name as str
     var type_name as str
-    cue init(name as str, type_name as str)
+    var default_expr as List(PNode)
+    cue init(name as str, type_name as str, default_expr as List(PNode))
         this.name = name
         this.type_name = type_name
+        this.default_expr = default_expr
 
 struct PClass
     var name as str
@@ -326,6 +335,19 @@ struct PForIn
     cue init(var_names as List(str), iter as List(PNode), stmts as List(PNode))
         this.var_names = var_names
         this.iter = iter
+        this.stmts = stmts
+
+struct PForNum
+    var var_name as str
+    var start as List(PNode)
+    var stop_ as List(PNode)
+    var step as List(PNode)
+    var stmts as List(PNode)
+    cue init(var_name as str, start as List(PNode), stop_ as List(PNode), step as List(PNode), stmts as List(PNode))
+        this.var_name = var_name
+        this.start = start
+        this.stop_ = stop_
+        this.step = step
         this.stmts = stmts
 
 struct PVar
@@ -587,6 +609,13 @@ class Parser
             else
                 return false
 
+    def isDocString() as bool
+        branch this.peek().kind
+            on TokenKind.doc_string_line
+                return true
+            else
+                return false
+
     def isStringStart() as bool
         branch this.peek().kind
             on TokenKind.string_start_single
@@ -617,6 +646,13 @@ class Parser
     def isRcurlySpecial() as bool
         branch this.peek().kind
             on TokenKind.rcurly_special
+                return true
+            else
+                return false
+
+    def isStringPartFormat() as bool
+        branch this.peek().kind
+            on TokenKind.string_part_format
                 return true
             else
                 return false
@@ -708,6 +744,31 @@ class Parser
         if text == "byte" or text == "String"
             this.advance()
             return text
+        # `same` — constrained parameter type ("same type as this class")
+        if text == "same"
+            this.advance()
+            return text
+        # Tuple type: (T1, T2, ...) → "(T1,T2,...)"
+        if text == "("
+            this.advance()
+            var sb as StringBuilder = StringBuilder()
+            sb.append("(")
+            var first = true
+            while not this.textIs(")")
+                if this.textIs(",")
+                    this.advance()
+                else
+                    if not first
+                        sb.append(",")
+                    var elem as str = .eatTypeName()
+                    if this.textIs("?")
+                        this.advance()
+                        elem = elem + "?"
+                    sb.append(elem)
+                    first = false
+            .expectText(")")
+            sb.append(")")
+            return sb.build()
         raise "expected type name, got '" + text + "' at line " + this.peek().line.toString()
 
     # -- Module ----------------------------------------------------------------
@@ -796,9 +857,17 @@ class Parser
             this.advance()
             if not this.textIs(")")
                 type_params.add(.eatId())
+                # Skip optional `where T implements Interface` constraint clause
+                if this.textIs("where")
+                    while not this.textIs(")") and not this.textIs(",")
+                        this.advance()
                 while this.textIs(",")
                     this.advance()
                     type_params.add(.eatId())
+                    # Skip optional constraint on this param
+                    if this.textIs("where")
+                        while not this.textIs(")") and not this.textIs(",")
+                            this.advance()
             .expectText(")")
         else
             name = .eatId()
@@ -964,7 +1033,11 @@ class Parser
                     if this.textIs("as")
                         this.advance()
                         ptype = .eatTypeName()
-                    params.add(PParam(pname, ptype))
+                    var pdefault = List(PNode)()
+                    if this.textIs("=")
+                        this.advance()
+                        pdefault.add(.parseExpr())
+                    params.add(PParam(pname, ptype, pdefault))
             .expectText(")")
         var return_type = ""
         if this.textIs("as")
@@ -1045,7 +1118,11 @@ class Parser
                     if this.textIs("?")
                         this.advance()
                         ptype = ptype + "?"
-                params.add(PParam(pname, ptype))
+                var pdefault = List(PNode)()
+                if this.textIs("=")
+                    this.advance()
+                    pdefault.add(.parseExpr())
+                params.add(PParam(pname, ptype, pdefault))
         .expectText(")")
         .skipEol()
         var stmts = List(PNode)()
@@ -1077,7 +1154,11 @@ class Parser
                         if this.textIs("?")
                             this.advance()
                             ptype = ptype + "?"
-                    params.add(PParam(pname, ptype))
+                    var pdefault = List(PNode)()
+                    if this.textIs("=")
+                        this.advance()
+                        pdefault.add(.parseExpr())
+                    params.add(PParam(pname, ptype, pdefault))
             .expectText(")")
         var return_type = ""
         if this.textIs("as")
@@ -1265,11 +1346,27 @@ class Parser
             this.advance()
             var_names.add(.eatId())
         .expectText("in")
-        const iter_expr = .parseExpr()
+        const start_expr = .parseExpr()
+        # Numeric range: for i in lo : hi [:step]
+        if this.textIs(":")
+            this.advance()
+            const stop_expr = .parseExpr()
+            var step_list = List(PNode)()
+            if this.textIs(":")
+                this.advance()
+                step_list.add(.parseExpr())
+            .skipEol()
+            const stmts = .parseBlock()
+            var start_list = List(PNode)()
+            start_list.add(start_expr)
+            var stop_list = List(PNode)()
+            stop_list.add(stop_expr)
+            return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts))
+        # Iterator form: for i in expr
         .skipEol()
         const stmts = .parseBlock()
         var iter_list = List(PNode)()
-        iter_list.add(iter_expr)
+        iter_list.add(start_expr)
         return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts))
 
     # `var {x, y} = expr` (struct destructure) or `var (x, y) = expr` (tuple)
@@ -1556,6 +1653,26 @@ class Parser
             op = "in"
         else if this.textIs("is")
             op = "is"
+        else if this.textIs("not")
+            # Peek ahead: `not in` is a binary operator
+            # Consume "not", then expect "in"
+            this.advance()
+            if not this.textIs("in")
+                raise "expected 'in' after 'not' in comparison at line " + this.peek().line.toString()
+            this.advance()
+            const right = .parseAddSub()
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            # Desugar to `not (left in right)`
+            var inner = List(PNode)()
+            var lc = List(PNode)()
+            lc.add(left)
+            var rc = List(PNode)()
+            rc.add(right)
+            inner.add(PNode.expr_binary(PBinary("in", lc, rc)))
+            return PNode.expr_unary(PUnary("not", inner))
         if op != ""
             this.advance()
             const right = .parseAddSub()
@@ -1636,6 +1753,13 @@ class Parser
                     var callee = List(PNode)()
                     callee.add(PNode.expr_member(PMember(base, mname)))
                     expr = PNode.expr_call(PCall(callee, args))
+                else if .isIntLit()
+                    # expr.0 — tuple element access by numeric index
+                    const field = this.peek().text
+                    this.advance()
+                    var base = List(PNode)()
+                    base.add(expr)
+                    expr = PNode.expr_member(PMember(base, field))
                 else
                     # expr.field
                     const field = .eatId()
@@ -1746,11 +1870,24 @@ class Parser
             const text = this.peek().text
             this.advance()
             return PNode.expr_raw_str(text)
+        else if .isDocString()
+            const text = this.peek().text
+            this.advance()
+            return PNode.expr_str(text)
         else if this.textIs("(")
             this.advance()
-            const inner = .parseExpr()
+            const first = .parseExpr()
+            if this.textIs(",")
+                # Tuple literal: (expr, expr, ...)
+                var elems = List(PNode)()
+                elems.add(first)
+                while this.textIs(",")
+                    this.advance()
+                    elems.add(.parseExpr())
+                .expectText(")")
+                return PNode.expr_tuple_lit(PTupleLit(elems))
             .expectText(")")
-            return inner
+            return first
         else if .isOpenCall()
             # function/constructor call: name(args)
             const name = this.peek().text
@@ -1833,7 +1970,11 @@ class Parser
         if this.textIs("as")
             this.advance()
             type_name = .eatTypeName()
-        return PParam(name, type_name)
+        var pdefault = List(PNode)()
+        if this.textIs("=")
+            this.advance()
+            pdefault.add(.parseExpr())
+        return PParam(name, type_name, pdefault)
 
     def parseLambdaPrefix() as PLambda throws
         # Parse def(params) [as T] without consuming the body
@@ -1875,12 +2016,14 @@ class Parser
             if this.textIs("as")
                 this.advance()
                 cap_type = .eatTypeName()
-            var init_name = cap_name
+            var init_list = List(PNode)()
             if this.textIs("=")
                 this.advance()
-                init_name = .eatId()
+                init_list.add(.parseExpr())
+            else
+                init_list.add(PNode.expr_id(cap_name))
             .skipEol()
-            caps.add(PCaptureVar(cap_name, cap_type, init_name, is_const))
+            caps.add(PCaptureVar(cap_name, cap_type, init_list, is_const))
         if .isDedent()
             this.advance()
         return caps
@@ -1895,6 +2038,9 @@ class Parser
         while not .isStringStop() and not .isEof()
             # Parse the interpolated expression
             parts.add(.parseExpr())
+            # Consume optional format spec token `:spec` (e.g. `:08x`, `:.2f`)
+            if .isStringPartFormat()
+                this.advance()
             # Consume rcurly_special (the closing } of ${...})
             if .isRcurlySpecial()
                 this.advance()

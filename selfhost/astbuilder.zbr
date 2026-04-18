@@ -16,8 +16,8 @@
 #   - For str.split() iteration the TC must see local List vars as List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclProperty, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PProperty, PReturn, PIf, PWhile, PForIn, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclProperty, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PProperty, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit
 
 def zspan() as Span
     return Span(0, 0, 0, 0)
@@ -244,6 +244,7 @@ class ASTBuilder
         var ret_type = .parseTypeRef(sg.return_type)
         return Decl.sig_(DeclSig(zspan(), sg.name, params, ret_type))
 
+
     # ── Members ───────────────────────────────────────────────────────────────
 
     def buildMember(pn as PNode) as Decl throws
@@ -282,7 +283,11 @@ class ASTBuilder
         var params as List(Param) = List(Param)()
         for p in m.params
             const ptype = .parseTypeRef(p.type_name)
-            params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
+            if p.default_expr.len > 0
+                const defval = .buildExpr(p.default_expr.at(0))?
+                params.add(Param(zspan(), ParamMode.normal, p.name, ptype, defval))
+            else
+                params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
         var ret_type = .parseTypeRef(m.return_type)
         var stmts_list = .buildStmts(m.stmts)?
         var mods = Modifiers(false, false, false, m.is_shared, false, false)
@@ -295,7 +300,11 @@ class ASTBuilder
         var params as List(Param) = List(Param)()
         for p in pinit.params
             const ptype = .parseTypeRef(p.type_name)
-            params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
+            if p.default_expr.len > 0
+                const defval = .buildExpr(p.default_expr.at(0))?
+                params.add(Param(zspan(), ParamMode.normal, p.name, ptype, defval))
+            else
+                params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
         var stmts_list = .buildStmts(pinit.stmts)?
         return Decl.init(DeclInit(zspan(), zmods(), params, stmts_list))
 
@@ -361,6 +370,15 @@ class ASTBuilder
                 for vname in pfor.var_names
                     vars.add(vname)
                 return Stmt.for_in(StmtForIn(zspan(), vars, iter_expr, stmts))
+
+            on PNode.stmt_for_num as pfn
+                const start_expr = .buildExpr(pfn.start.at(0))?
+                const stop_expr = .buildExpr(pfn.stop_.at(0))?
+                var stmts = .buildStmts(pfn.stmts)?
+                if pfn.step.len > 0
+                    const step_expr = .buildExpr(pfn.step.at(0))?
+                    return Stmt.for_num(StmtForNum(zspan(), pfn.var_name, start_expr, stop_expr, step_expr, stmts))
+                return Stmt.for_num(StmtForNum(zspan(), pfn.var_name, start_expr, stop_expr, nil, stmts))
 
             on PNode.stmt_var as pv
                 const type_ref = .parseTypeRef(pv.type_name)
@@ -512,7 +530,7 @@ class ASTBuilder
                 return Expr.this_(zspan())
 
             on PNode.expr_str as text
-                return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, stripStringQuotes(text)))
+                return .buildStringLit(text)?
 
             on PNode.expr_char as text
                 # Keep raw token text (e.g. c'A', c'\'') — codegen strips c prefix
@@ -630,8 +648,19 @@ class ASTBuilder
             on PNode.expr_lambda as pl
                 return .buildLambdaExpr(pl)?
 
+            on PNode.expr_tuple_lit as pt
+                var elems as List(Expr) = List(Expr)()
+                for e in pt.elems
+                    elems.add(.buildExpr(e)?)
+                return Expr.tuple_lit(ExprTuple(zspan(), elems))
+
             else
                 raise "buildExpr: unexpected PNode variant"
+
+    def buildStringLit(text as str) as Expr throws
+        if text.startsWith("\"\"\"")
+            return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, text))
+        return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, stripStringQuotes(text)))
 
     def buildLambdaExpr(pl as PLambda) as Expr throws
         # Convert PLambda → ExprLambda
@@ -640,7 +669,11 @@ class ASTBuilder
             var tr as TypeRef? = nil
             if pp.type_name != ""
                 tr = .parseTypeRef(pp.type_name)
-            params.add(Param(zspan(), ParamMode.normal, pp.name, tr, nil))
+            if pp.default_expr.len > 0
+                const defval = .buildExpr(pp.default_expr.at(0))?
+                params.add(Param(zspan(), ParamMode.normal, pp.name, tr, defval))
+            else
+                params.add(Param(zspan(), ParamMode.normal, pp.name, tr, nil))
         var ret_type as TypeRef? = nil
         if pl.return_type != ""
             ret_type = .parseTypeRef(pl.return_type)
@@ -658,7 +691,7 @@ class ASTBuilder
             var cv_tr as TypeRef? = nil
             if cv.type_name != ""
                 cv_tr = .parseTypeRef(cv.type_name)
-            var cv_init_expr = Expr.ident(ExprIdent(zspan(), cv.init_name))
+            const cv_init_expr = .buildExpr(cv.init_expr.at(0))?
             var dv = DeclVar(zspan(), zmods(), cv.name, cv_tr, cv_init_expr, not cv.is_const)
             captures.add(dv)
         return Expr.lambda(ExprLambda(zspan(), params, ret_type, lbody, captures))
@@ -728,9 +761,64 @@ class ASTBuilder
     #   "^Type"     → ref_to(named("Type"))
     #   "^Type?"    → nilable(ref_to(named("Type")))
 
+    # Split s by top-level commas, ignoring commas inside nested parens.
+    # e.g. "int,str" → ["int","str"]; "Result(int,str)" → ["Result(int,str)"]
+    def splitTopLevelArgs(s as str) as List(str)
+        var result as List(str) = List(str)()
+        var depth = 0
+        var current as str = ""
+        for gch in s.chars()
+            if gch == c'('
+                depth = depth + 1
+                current = current + gch.toString()
+            else if gch == c')'
+                depth = depth - 1
+                current = current + gch.toString()
+            else if gch == c',' and depth == 0
+                result.add(current)
+                current = ""
+            else
+                current = current + gch.toString()
+        if current != ""
+            result.add(current)
+        return result
+
     def parseTypeRef(s as str) as TypeRef?
         if s == "" or s == "void"
             return nil
+
+        # `same` — constrained type placeholder
+        if s == "same"
+            return TypeRef.same_()
+
+        # Tuple type: "(T1,T2,...)" → TypeRef.tuple(TupleTypeRef([T1, T2, ...]))
+        if s.startsWith("(")
+            # Strip surrounding parens and split by "," (simple top-level split)
+            var inner_parts as List(str) = List(str)()
+            for p in s.split(",")
+                inner_parts.add(p)
+            var elems as List(TypeRef) = List(TypeRef)()
+            # First element has leading "(", last has trailing ")"
+            var i as int = 0
+            while i < inner_parts.count()
+                var part as str = inner_parts.at(i)
+                # Strip leading "(" from first, trailing ")" from last
+                if part.startsWith("(")
+                    var stripped as List(str) = List(str)()
+                    for sp in part.split("(")
+                        stripped.add(sp)
+                    if stripped.count() > 1
+                        part = stripped.at(1)
+                if part.endsWith(")")
+                    var stripped as List(str) = List(str)()
+                    for sp in part.split(")")
+                        stripped.add(sp)
+                    if stripped.count() > 0
+                        part = stripped.at(0)
+                if part != ""
+                    elems.add(.parseTypeRefRequired(part))
+                i = i + 1
+            return TypeRef.tuple(TupleTypeRef(zspan(), elems))
 
         # Ref prefix: "^Type" → ref_to(inner)
         if s.startsWith("^")
@@ -754,25 +842,35 @@ class ASTBuilder
             const inner = .parseTypeRefRequired(base_s)
             return TypeRef.nilable(inner)
 
-        # Generic type: "List(str)", "HashMap(str,int)"
+        # Generic type: "List(str)", "HashMap(str,int)", "List(Result(int,str))"
         if s.contains("(")
             var name_parts as List(str) = List(str)()
             for p in s.split("(")
                 name_parts.add(p)
             var gen_name = name_parts.at(0)
+            # Reconstruct everything after first "(" by joining parts with "("
             var rest = ""
-            if name_parts.len > 1
-                rest = name_parts.at(1)
-            # rest = "str)" → strip trailing ")"
-            var arg_parts as List(str) = List(str)()
+            var ri = 1
+            while ri < name_parts.count()
+                if ri > 1
+                    rest = rest + "("
+                rest = rest + name_parts.at(ri)
+                ri = ri + 1
+            # Strip only the last ")" (closing paren of outer generic)
+            var rparts as List(str) = List(str)()
             for q in rest.split(")")
-                arg_parts.add(q)
+                rparts.add(q)
             var args_str = ""
-            if arg_parts.len > 0
-                args_str = arg_parts.at(0)
-            # Split args by "," — handles single and multi-arg generics
+            var si = 0
+            while si < rparts.count() - 1
+                if si > 0
+                    args_str = args_str + ")"
+                args_str = args_str + rparts.at(si)
+                si = si + 1
+            # Split args at top-level commas only (bracket-aware)
             var args as List(TypeRef) = List(TypeRef)()
-            for a in args_str.split(",")
+            var tl_args as List(str) = .splitTopLevelArgs(args_str)
+            for a in tl_args
                 if a != ""
                     args.add(.parseTypeRefRequired(a))
             return TypeRef.generic(GenericTypeRef(zspan(), gen_name, args))
