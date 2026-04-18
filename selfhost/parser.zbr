@@ -51,6 +51,7 @@ union PNode
     stmt_print as ^PNode
     stmt_arena_scope as ^PArenaScope
     stmt_with as ^PWith
+    stmt_guard as ^PGuard
 
     # Expressions (inline - no heap indirection)
     expr_int as str
@@ -266,6 +267,13 @@ struct PWith
     cue init(target as List(PNode), stmts as List(PNode))
         this.target = target
         this.stmts = stmts
+
+struct PGuard
+    var cond as List(PNode)
+    var else_stmts as List(PNode)
+    cue init(cond as List(PNode), else_stmts as List(PNode))
+        this.cond = cond
+        this.else_stmts = else_stmts
 
 struct PForIn
     var var_names as List(str)
@@ -979,6 +987,8 @@ class Parser
             return .parseArenaScopeStmt()
         else if this.textIs("with")
             return .parseWithStmt()
+        else if this.textIs("guard")
+            return .parseGuardStmt()
         else if this.textIs("print")
             this.advance()
             const expr = .parseExpr()
@@ -1036,6 +1046,23 @@ class Parser
         var target_list = List(PNode)()
         target_list.add(target_expr)
         return PNode.stmt_with(PWith(target_list, stmts))
+
+    def parseGuardStmt() as PNode throws
+        .expectText("guard")
+        const cond_expr = .parseExpr()
+        .expectText("else")
+        var cond_list = List(PNode)()
+        cond_list.add(cond_expr)
+        var else_stmts = List(PNode)()
+        if this.textIs(",")
+            this.advance()
+            # Inline form: `guard Expr else, Stmt`
+            else_stmts.add(.parseStmt())
+        else
+            # Block form: `guard Expr else eol Block`
+            .skipEol()
+            else_stmts = .parseBlock()
+        return PNode.stmt_guard(PGuard(cond_list, else_stmts))
 
     def parseForInStmt() as PNode throws
         .expectText("for")

@@ -1497,6 +1497,7 @@ pub const PNode = union(enum) {
     stmt_print: *PNode,
     stmt_arena_scope: *PArenaScope,
     stmt_with: *PWith,
+    stmt_guard: *PGuard,
     expr_int: []const u8,
     expr_float: []const u8,
     expr_bool: bool,
@@ -1818,6 +1819,18 @@ pub const PWith = struct {
         var _self: PWith = undefined;
             _self.target = target;
             _self.stmts = stmts;
+        return _self;
+    }
+
+};
+
+pub const PGuard = struct {
+    cond: std.ArrayList(PNode),
+    else_stmts: std.ArrayList(PNode),
+    pub fn init(cond: std.ArrayList(PNode), else_stmts: std.ArrayList(PNode)) PGuard {
+        var _self: PGuard = undefined;
+            _self.cond = cond;
+            _self.else_stmts = else_stmts;
         return _self;
     }
 
@@ -2799,13 +2812,17 @@ pub const Parser = struct {
                                                                 if (self.textIs("with")) {
                                                                     return try self.parseWithStmt();
                                                                 } else {
-                                                                    if (self.textIs("print")) {
-                                                                        self.advance();
-                                                                        const expr = try self.parseExpr();
-                                                                        self.skipEol();
-                                                                        return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                    if (self.textIs("guard")) {
+                                                                        return try self.parseGuardStmt();
                                                                     } else {
-                                                                        return try self.parseExprOrAssignStmt();
+                                                                        if (self.textIs("print")) {
+                                                                            self.advance();
+                                                                            const expr = try self.parseExpr();
+                                                                            self.skipEol();
+                                                                            return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                        } else {
+                                                                            return try self.parseExprOrAssignStmt();
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -2879,6 +2896,23 @@ pub const Parser = struct {
         var target_list = std.ArrayList(PNode){};
         target_list.append(_allocator, target_expr) catch @panic("OOM");
         return PNode{ .stmt_with = blk_box: { const _bv = PWith.init(target_list, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn parseGuardStmt(self: *Parser) anyerror!PNode {
+        try self.expectText("guard");
+        const cond_expr = try self.parseExpr();
+        try self.expectText("else");
+        var cond_list = std.ArrayList(PNode){};
+        cond_list.append(_allocator, cond_expr) catch @panic("OOM");
+        var else_stmts = std.ArrayList(PNode){};
+        if (self.textIs(",")) {
+            self.advance();
+            else_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
+        } else {
+            self.skipEol();
+            else_stmts = try self.parseBlock();
+        }
+        return PNode{ .stmt_guard = blk_box: { const _bv = PGuard.init(cond_list, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseForInStmt(self: *Parser) anyerror!PNode {

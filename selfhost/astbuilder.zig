@@ -1501,6 +1501,7 @@ const StmtTryCatch = ast.StmtTryCatch;
 const StmtBranch = ast.StmtBranch;
 const StmtArenaScope = ast.StmtArenaScope;
 const StmtWith = ast.StmtWith;
+const StmtGuard = ast.StmtGuard;
 const BranchOn = ast.BranchOn;
 const CatchClause = ast.CatchClause;
 const StmtPrint = ast.StmtPrint;
@@ -1569,6 +1570,7 @@ const PLambda = Parser.PLambda;
 const PCaptureVar = Parser.PCaptureVar;
 const PArenaScope = Parser.PArenaScope;
 const PWith = Parser.PWith;
+const PGuard = Parser.PGuard;
 pub fn zspan() Span {
     return Span.init(0, 0, 0, 0);
 }
@@ -1997,6 +1999,11 @@ pub const ASTBuilder = struct {
             .stmt_arena_scope => |pas| {
                 const stmts = try self.buildStmts(pas.stmts);
                 return Stmt{ .arena_scope = blk_box: { const _bv = StmtArenaScope.init(zspan(), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            },
+            .stmt_guard => |pg| {
+                const cond_expr = try self.buildExpr(pg.cond.items[@intCast(0)]);
+                const else_stmts: std.ArrayList(Stmt) = try self.buildStmts(pg.else_stmts);
+                return Stmt{ .guard_ = blk_box: { const _bv = StmtGuard.init(zspan(), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .stmt_with => |pw| {
                 const target_expr = try self.buildExpr(pw.target.items[@intCast(0)]);

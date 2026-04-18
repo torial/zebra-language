@@ -746,6 +746,17 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-059: Selfhost parseStmt rejects `guard ... else` blocks — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseStmt` had no case for `guard`. The AST (`Stmt.guard_ as ^StmtGuard`, `ast.zbr:418,591-599`) and the codegen (`on Stmt.guard_`, `codegen.zbr:584,2025`) were already wired, but the parser rejected the token. Zig backend accepts both productions: `StmtGuard → kw_guard Expr kw_else eol Block` (block form, `ZebraGrammar.zig:1024`) and `StmtGuardInline → kw_guard Expr kw_else comma Stmt` (inline form, `ZebraGrammar.zig:1025`).
+- **Fix (parser.zbr + astbuilder.zbr only, no codegen change):**
+  1. `parser.zbr`: new `PGuard {cond, else_stmts}` struct, `PNode.stmt_guard as ^PGuard` variant, `parseGuardStmt` — after `expectText("else")`, peek for `,`: if present, `parseStmt()` into a one-element list (inline form); else `skipEol()` + `parseBlock()` (block form). parseStmt arm.
+  2. `astbuilder.zbr`: `on PNode.stmt_guard` arm builds condition + else-stmts and constructs `Stmt.guard_(StmtGuard(zspan(), cond_expr, else_stmts))`. Added `StmtGuard` to `use ast exposing`, `PGuard` to `use Parser exposing`.
+- **Verification:** Corpus 123/152 → 124/152 (+1 emit: guard_test). Output block + inline forms match the Zig backend (modulo pre-existing `_zebra_gt` polymorphic-op wrapping — orthogonal). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-058: Selfhost parseStmt rejects `with target` contextual-self blocks — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)
