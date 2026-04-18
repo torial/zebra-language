@@ -746,6 +746,21 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-072: Tokenizer suppresses EOL/INDENT/DEDENT inside parens — statement-body lambdas in call args fail — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** Both (Zig backend + selfhost Lexer)
+- **Was:** The tokenizer tracks `paren_depth` and suppresses EOL/INDENT/DEDENT when `paren_depth > 0`, to allow multi-line argument lists without triggering indentation parsing. This correctly handles `foo(a, b,\n    c)` but incorrectly suppressed the newline+indent for statement-body lambdas in call arguments: `sortBy(def(a, b)\n    if a < b\n        return true\n    return false\n)` — the EOL after `def(a, b)` was swallowed, so the grammar rule `LambdaBlockExpr → def(params) eol indent body dedent` never fired.  Both `sort_test.zbr` (at `people2.sortBy(def(a, b)...)`) and `result_methods_test.zbr` failed at the Zig backend with "syntax error near 'if'". The selfhost `parseLambdaExpr` only handled the expression-body form (`def(params) = expr`).
+- **Fix — 5 coordinated changes:**
+  1. `src/Tokenizer.zig` — 5 new fields (`in_lambda_params`, `lambda_param_depth`, `after_lambda_params`, `lambda_body_active`, `lambda_indent_level`) form a state machine: when a `(` immediately follows `kw_def` inside an outer call (`paren_depth > 0`), set `in_lambda_params = true`; when the matching `)` closes, set `after_lambda_params = true`; the next EOL activates `lambda_body_active`; `processIndentation` re-enables INDENT/DEDENT while `lambda_body_active`; the body is exited when `indent_depth` falls to or below `lambda_indent_level`. Expression-body form (`=` after params) clears `after_lambda_params` immediately.
+  2. `selfhost/Lexer.zbr` — identical state machine ported to the selfhost Lexer class.
+  3. `selfhost/Lexer.zig` — regenerated.
+  4. `selfhost/parser.zbr` — `parseLambdaExpr` extended: after parsing `def(params) [as T]`, checks for `=` (expression-body) vs EOL+INDENT (statement-body). Statement-body path mirrors `parseVarStmt`'s existing logic: `skipEol()`, check `isIndent()`, parse optional capture block, loop `parseStmt()` until dedent.
+  5. `selfhost/Parser.zig` — regenerated.
+  6. `selfhost/main.zig` — regenerated via Zig backend (fixes missing transitive `_initAllocator` calls — selfhost codegen gap).
+- **Verification:** `zig build test` passes. Corpus selfhost 138/152 → 139/152 (`sort_test.zbr` newly passing).
+
+---
+
 ### BUG-071: Selfhost TypeChecker misses string-method return types; str.count(substr) unimplemented in codegen — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

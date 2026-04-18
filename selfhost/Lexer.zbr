@@ -60,24 +60,35 @@ union LineKind
     has_content
 
 class Lexer
-    var src         as str
-    var pos         as int
-    var line        as int
-    var lineStart   as int
-    var indentDepth as int
-    var blockDepth  as int
-    var parenDepth  as int
-    var out         as List(Token.Token)
+    var src              as str
+    var pos              as int
+    var line             as int
+    var lineStart        as int
+    var indentDepth      as int
+    var blockDepth       as int
+    var parenDepth       as int
+    var out              as List(Token.Token)
+    # Lambda-in-call-arg state machine
+    var inLambdaParams    as bool
+    var lambdaParamDepth  as int
+    var afterLambdaParams as bool
+    var lambdaBodyActive  as bool
+    var lambdaIndentLevel as int
 
     cue init()
-        src         = ""
-        pos         = 0
-        line        = 1
-        lineStart   = 0
-        indentDepth = 0
-        blockDepth  = 0
-        parenDepth  = 0
-        out         = List()
+        src              = ""
+        pos              = 0
+        line             = 1
+        lineStart        = 0
+        indentDepth      = 0
+        blockDepth       = 0
+        parenDepth       = 0
+        out              = List()
+        inLambdaParams    = false
+        lambdaParamDepth  = 0
+        afterLambdaParams = false
+        lambdaBodyActive  = false
+        lambdaIndentLevel = 0
 
     shared def tokenize(source as str) as List(Token.Token) throws
         var lex = Lexer()
@@ -168,6 +179,8 @@ class Lexer
         while level < indentDepth
             emit(TokenKind.dedent(), "", ln, 1)
             indentDepth = indentDepth - 1
+        if lambdaBodyActive and indentDepth <= lambdaIndentLevel
+            lambdaBodyActive = false
 
     # -- Block comment  /# ... #/ --------------------------------------------
 
@@ -660,6 +673,8 @@ class Lexer
             emit(TokenKind.percent(), "%", ln, cl)
             return
         if c == c'='
+            if afterLambdaParams
+                afterLambdaParams = false
             emit(TokenKind.assign(), "=", ln, cl)
             return
         if c == c'<'
@@ -699,10 +714,21 @@ class Lexer
             emit(TokenKind.comma(), ",", ln, cl)
             return
         if c == c'('
+            if parenDepth > 0 and out.len > 0
+                var lastKind = out.at(out.len - 1).kind
+                branch lastKind
+                    on TokenKind.kw_def
+                        inLambdaParams   = true
+                        lambdaParamDepth = parenDepth + 1
+                    else
+                        pass
             parenDepth = parenDepth + 1
             emit(TokenKind.lparen(), "(", ln, cl)
             return
         if c == c')'
+            if inLambdaParams and parenDepth == lambdaParamDepth
+                inLambdaParams    = false
+                afterLambdaParams = true
             parenDepth = parenDepth - 1
             emit(TokenKind.rparen(), ")", ln, cl)
             return
@@ -759,8 +785,12 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if parenDepth == 0
+                        if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
                             emit(TokenKind.eol(), "\n", ln, cl)
+                            if afterLambdaParams
+                                afterLambdaParams = false
+                                lambdaBodyActive  = true
+                                lambdaIndentLevel = indentDepth
                         atLineStart = true
                         continue
                     on LineKind.whitespace_only
@@ -778,7 +808,7 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.has_content
-                        if parenDepth == 0
+                        if parenDepth == 0 or lambdaBodyActive
                             processIndentation()?
 
             var c = src[pos]
@@ -791,8 +821,12 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if parenDepth == 0
+                if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
                     emit(TokenKind.eol(), "\n", ln, cl)
+                    if afterLambdaParams
+                        afterLambdaParams = false
+                        lambdaBodyActive  = true
+                        lambdaIndentLevel = indentDepth
                 atLineStart = true
                 continue
 

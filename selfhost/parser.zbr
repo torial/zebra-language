@@ -1788,7 +1788,8 @@ class Parser
         raise "unexpected expression token: '" + this.peek().text + "' at line " + this.peek().line.toString()
 
     def parseLambdaExpr() as PNode throws
-        # Expression-body lambda: def(params) [as T] = expr
+        # Lambda: expression-body `def(params) [as T] = expr`
+        #      or statement-body  `def(params) [as T] eol indent stmts dedent`
         .expectText("def")
         .expectText("(")
         var params = List(PParam)()
@@ -1802,10 +1803,29 @@ class Parser
         if this.textIs("as")
             this.advance()
             ret_type = .eatTypeName()
-        .expectText("=")
-        var body_expr = List(PNode)()
-        body_expr.add(.parseExpr())
-        return PNode.expr_lambda(PLambda(params, ret_type, List(PCaptureVar)(), body_expr, List(PNode)()))
+        if this.textIs("=")
+            # Expression-body form
+            this.advance()
+            var body_expr = List(PNode)()
+            body_expr.add(.parseExpr())
+            return PNode.expr_lambda(PLambda(params, ret_type, List(PCaptureVar)(), body_expr, List(PNode)()))
+        # Statement-body form: def(params) [as T] eol indent [capture] stmts dedent
+        .skipEol()
+        if not .isIndent()
+            raise "expected '=' or indent after lambda params at line " + this.peek().line.toString()
+        this.advance()
+        var captures = List(PCaptureVar)()
+        if this.textIs("capture")
+            captures = .parseCaptureBlock()
+        var body_stmts = List(PNode)()
+        while not .isDedent() and not .isEof()
+            .skipEol()
+            if .isDedent()
+                break
+            body_stmts.add(.parseStmt())
+        if .isDedent()
+            this.advance()
+        return PNode.expr_lambda(PLambda(params, ret_type, captures, List(PNode)(), body_stmts))
 
     def parseLambdaParam() as PParam throws
         const name = .eatId()

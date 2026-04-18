@@ -86,6 +86,23 @@ const Tokenizer = struct {
     /// SpaceIndentNotMultipleOfFour errors.
     paren_depth: u32 = 0,
 
+    // ── Lambda-in-call-arg state machine ──────────────────────────────────
+    // Tracks `sortBy(def(a, b)\n    body\n)` so that EOL/INDENT/DEDENT are
+    // emitted inside the lambda body even though paren_depth > 0.
+
+    /// True while scanning the parameter list of a `def(` that appears inside
+    /// an outer call's argument list.
+    in_lambda_params: bool = false,
+    /// paren_depth at which the lambda's `(` was opened (after increment).
+    lambda_param_depth: u32 = 0,
+    /// True after the lambda's `)` closes (and optional `as T`) but before
+    /// the EOL that starts its body.  Cleared when that EOL is consumed.
+    after_lambda_params: bool = false,
+    /// True while inside the indented body of a statement-body lambda.
+    lambda_body_active: bool = false,
+    /// indent_depth when the lambda body started; used to detect dedent-out.
+    lambda_indent_level: u32 = 0,
+
     // ── Low-level helpers ─────────────────────────────────────────────────
 
     fn col(self: *const Tokenizer) u16 {
@@ -131,7 +148,14 @@ const Tokenizer = struct {
                         const ln = self.line;
                         const cl = self.col();
                         self.advanceNewline();
-                        if (self.paren_depth == 0) try self.emit(.eol, "\n", ln, cl);
+                        if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_body_active) {
+                            try self.emit(.eol, "\n", ln, cl);
+                            if (self.after_lambda_params) {
+                                self.after_lambda_params = false;
+                                self.lambda_body_active = true;
+                                self.lambda_indent_level = self.indent_depth;
+                            }
+                        }
                         at_line_start = true;
                         continue;
                     },
@@ -164,8 +188,16 @@ const Tokenizer = struct {
             if (c == '\n') {
                 const ln = self.line; const cl = self.col();
                 self.advanceNewline();
-                // Inside balanced parens, newlines are not significant.
-                if (self.paren_depth == 0) try self.emit(.eol, "\n", ln, cl);
+                // Inside balanced parens, newlines are not significant unless
+                // we're in a statement-body lambda (after_lambda_params / lambda_body_active).
+                if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_body_active) {
+                    try self.emit(.eol, "\n", ln, cl);
+                    if (self.after_lambda_params) {
+                        self.after_lambda_params = false;
+                        self.lambda_body_active = true;
+                        self.lambda_indent_level = self.indent_depth;
+                    }
+                }
                 at_line_start = true;
                 continue;
             }
@@ -237,7 +269,8 @@ const Tokenizer = struct {
 
         // Inside balanced parentheses, indentation is not significant —
         // suppress INDENT/DEDENT emission and return after consuming whitespace.
-        if (self.paren_depth > 0) return;
+        // Exception: while inside a statement-body lambda, emit normally.
+        if (self.paren_depth > 0 and !self.lambda_body_active) return;
 
         const level: u32 = if (spaces > 0) blk: {
             if (spaces % 4 != 0) return error.SpaceIndentNotMultipleOfFour;
@@ -251,6 +284,11 @@ const Tokenizer = struct {
         while (level < self.indent_depth) {
             try self.emit(.dedent, "", ln, 1);
             self.indent_depth -= 1;
+        }
+
+        // Detect dedent back to or below the lambda's start level — body is done.
+        if (self.lambda_body_active and self.indent_depth <= self.lambda_indent_level) {
+            self.lambda_body_active = false;
         }
     }
 
@@ -815,9 +853,23 @@ const Tokenizer = struct {
         };
         // Track parenthesis depth for indentation suppression.
         if (kind == .lparen) {
+            // Detect `def(` inside an outer call — start tracking lambda params.
+            if (self.paren_depth > 0 and self.out.items.len > 0 and
+                    self.out.items[self.out.items.len - 1].kind == .kw_def) {
+                self.in_lambda_params = true;
+                self.lambda_param_depth = self.paren_depth + 1;
+            }
             self.paren_depth += 1;
         } else if (kind == .rparen and self.paren_depth > 0) {
+            // Detect close of lambda param list.
+            if (self.in_lambda_params and self.paren_depth == self.lambda_param_depth) {
+                self.in_lambda_params = false;
+                self.after_lambda_params = true;
+            }
             self.paren_depth -= 1;
+        } else if (kind == .assign and self.after_lambda_params) {
+            // Expression-body lambda `def(params) = expr` — cancel body mode.
+            self.after_lambda_params = false;
         }
         try self.emit(kind, self.src[self.pos - 1 .. self.pos], ln, cl);
     }
