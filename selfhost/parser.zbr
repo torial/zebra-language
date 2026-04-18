@@ -58,6 +58,7 @@ union PNode
     expr_this
     expr_str as str
     expr_char as str
+    expr_zig_lit as str
     expr_id as str
 
     # Expressions (heap-boxed - recursive)
@@ -475,6 +476,15 @@ class Parser
             on TokenKind.char_lit_single
                 return true
             on TokenKind.char_lit_double
+                return true
+            else
+                return false
+
+    def isZigLit() as bool
+        branch this.peek().kind
+            on TokenKind.zig_single
+                return true
+            on TokenKind.zig_double
                 return true
             else
                 return false
@@ -1396,6 +1406,10 @@ class Parser
             const text = this.peek().text
             this.advance()
             return PNode.expr_char(text)
+        else if .isZigLit()
+            const text = this.peek().text
+            this.advance()
+            return PNode.expr_zig_lit(text)
         else if this.textIs("(")
             this.advance()
             const inner = .parseExpr()

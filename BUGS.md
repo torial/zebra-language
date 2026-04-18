@@ -719,6 +719,19 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-053: Selfhost parseAtom rejects the `zig"..."` / `zig'...'` backend literal — FIXED
+- **Status:** Fixed 2026-04-17
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseAtom` had no case for the `zig_single` / `zig_double` tokens the lexer already emits (`selfhost/Lexer.zbr:241-249`). `ast.zbr` already carried `Expr.zig_lit as ExprZigLit` (line 663), `codegen.zbr` already had an `on Expr.zig_lit` arm (line 3447), and `astbuilder.zbr` had the type in scope — but with no producer in the parser, every `var g as Greeter = zig"Greeter{}"` raised `unexpected expression token`. Zig backend accepts these via `ZebraGrammar.zig:1204-1205` (`Atom → zig_single | zig_double`) and builds to `.zig_lit` at `AstBuilder.zig:2042-2043`.
+- **Fix:** Four coordinated edits:
+  1. `parser.zbr` — added `expr_zig_lit as str` to the `PNode` union (mirrors `expr_str`).
+  2. `parser.zbr::isZigLit()` helper — mirrors `isStringSingle/Double` for the `zig_single`/`zig_double` TokenKinds.
+  3. `parser.zbr::parseAtom` — added branch after the char-lit case: `if .isZigLit(): const text = this.peek().text; this.advance(); return PNode.expr_zig_lit(text)`.
+  4. `astbuilder.zbr::stripZigQuotes(text)` + new `on PNode.expr_zig_lit` arm — strip the `zig"`/`zig'` prefix and trailing quote, store content-only text in `ExprZigLit.text` (the selfhost codegen then emits it verbatim, matching Zig-backend `genZigLit` which does `text[4..len-1]` during emit — selfhost shifts the strip earlier because `uint`-typed `String.len` arithmetic is awkward in `.zbr` source).
+- **Verification:** Corpus 116/152 → 118/152 (+2 emit). Both new-passing files (greet, features) emit byte-identical to the Zig backend and then fail `zig build` with the same pre-existing class-auto-box errors that the Zig-backend emit also hits (expected `*Counter`, found `Counter{}`) — so they're at exit-code-parity with the zig backend, not new runtime successes. with_test was the 3rd file in the original cluster but it trips on a separate `with ctx` keyword parser gap before reaching the zig-lit. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-052: Selfhost parseUnary drops the `try expr` prefix form — FIXED
 - **Status:** Fixed 2026-04-17
 - **Backend:** selfhost only (Zig compiler unaffected)

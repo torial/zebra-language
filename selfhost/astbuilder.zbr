@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars as List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
+use ast exposing Module, Decl, DeclUse, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody
 use Parser exposing PNode, PModule, PClass, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar
 
 def zspan() as Span
@@ -60,6 +60,28 @@ def stripStringQuotes(text as str) as str
             i = i + 1
         return result
     return text
+
+# Strip zig literal: zig"Point{}" → Point{}, zig'x' → x
+# Token text includes the "zig" prefix + quote + content + closing quote.
+def stripZigQuotes(text as str) as str
+    if text.len < 5
+        return text
+    var quote as str = "\""
+    if text.startsWith("zig'")
+        quote = "'"
+    var parts as List(str) = List(str)()
+    for p in text.split(quote)
+        parts.add(p)
+    # parts[0] = "zig", parts[-1] = ""; content is between.
+    if parts.count() <= 2
+        return ""
+    var result as str = parts.at(1)
+    var i as int = 2
+    while i < parts.count() - 1
+        result = result + quote
+        result = result + parts.at(i)
+        i = i + 1
+    return result
 
 # Strip char literal: c'x' → x, c'\n' → \n
 def stripCharQuotes(text as str) as str
@@ -385,6 +407,10 @@ class ASTBuilder
             on PNode.expr_char as text
                 # Keep raw token text (e.g. c'A', c'\'') — codegen strips c prefix
                 return Expr.char_lit(ExprCharLit(zspan(), text))
+
+            on PNode.expr_zig_lit as text
+                # Strip zig"..." / zig'...' wrapper so stored text is emit-ready.
+                return Expr.zig_lit(ExprZigLit(zspan(), stripZigQuotes(text)))
 
             on PNode.expr_id as name
                 return Expr.ident(ExprIdent(zspan(), name))

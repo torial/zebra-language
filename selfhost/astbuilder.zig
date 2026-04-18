@@ -1517,6 +1517,7 @@ const ExprIntLit = ast.ExprIntLit;
 const ExprFloatLit = ast.ExprFloatLit;
 const ExprCharLit = ast.ExprCharLit;
 const ExprStringLit = ast.ExprStringLit;
+const ExprZigLit = ast.ExprZigLit;
 const ExprStringInterp = ast.ExprStringInterp;
 const ExprTry = ast.ExprTry;
 const ExprToNonNil = ast.ExprToNonNil;
@@ -1605,6 +1606,34 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
         return result;
     }
     return text;
+}
+
+pub fn stripZigQuotes(text: []const u8) []const u8 {
+    if ((text.len < 5)) {
+        return text;
+    }
+    var quote: []const u8 = "\"";
+    if (std.mem.startsWith(u8, text, "zig'")) {
+        quote = "'";
+    }
+    var parts = std.ArrayList([]const u8){};
+    {
+        var _it_p = std.mem.splitSequence(u8, text, quote);
+        while (_it_p.next()) |p| {
+            parts.append(_allocator, p) catch @panic("OOM");
+        }
+    }
+    if ((@as(i64, @intCast(parts.items.len)) <= 2)) {
+        return "";
+    }
+    var result: []const u8 = parts.items[@intCast(1)];
+    var i: i64 = 2;
+    while ((i < (@as(i64, @intCast(parts.items.len)) - 1))) {
+        result = _str_concat(result, quote, _allocator);
+        result = _str_concat(result, parts.items[@intCast(i)], _allocator);
+        i = (i + 1);
+    }
+    return result;
 }
 
 pub fn stripCharQuotes(text: []const u8) []const u8 {
@@ -1996,6 +2025,9 @@ pub const ASTBuilder = struct {
             },
             .expr_char => |text| {
                 return Expr{ .char_lit = ExprCharLit.init(zspan(), text) };
+            },
+            .expr_zig_lit => |text| {
+                return Expr{ .zig_lit = ExprZigLit.init(zspan(), stripZigQuotes(text)) };
             },
             .expr_id => |name| {
                 return Expr{ .ident = ExprIdent.init(zspan(), name) };

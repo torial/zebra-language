@@ -1502,6 +1502,7 @@ pub const PNode = union(enum) {
     expr_this,
     expr_str: []const u8,
     expr_char: []const u8,
+    expr_zig_lit: []const u8,
     expr_id: []const u8,
     expr_member: *PMember,
     expr_call: *PCall,
@@ -2140,6 +2141,20 @@ pub const Parser = struct {
                 return true;
             },
             .char_lit_double => {
+                return true;
+            },
+            else => {
+                return false;
+            },
+        }
+    }
+
+    pub fn isZigLit(self: *Parser) bool {
+        switch (self.peek().kind) {
+            .zig_single => {
+                return true;
+            },
+            .zig_double => {
                 return true;
             },
             else => {
@@ -3294,48 +3309,54 @@ pub const Parser = struct {
                                             self.advance();
                                             return PNode{ .expr_char = text };
                                         } else {
-                                            if (self.textIs("(")) {
+                                            if (self.isZigLit()) {
+                                                const text = self.peek().text;
                                                 self.advance();
-                                                const inner = try self.parseExpr();
-                                                try self.expectText(")");
-                                                return inner;
+                                                return PNode{ .expr_zig_lit = text };
                                             } else {
-                                                if (self.isOpenCall()) {
-                                                    const name = self.peek().text;
+                                                if (self.textIs("(")) {
                                                     self.advance();
-                                                    const args = try self.parseCallArgs();
-                                                    var callee = std.ArrayList(PNode){};
-                                                    callee.append(_allocator, PNode{ .expr_id = name }) catch @panic("OOM");
-                                                    return PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                    const inner = try self.parseExpr();
+                                                    try self.expectText(")");
+                                                    return inner;
                                                 } else {
-                                                    if (self.textIs(".")) {
+                                                    if (self.isOpenCall()) {
+                                                        const name = self.peek().text;
                                                         self.advance();
-                                                        if (self.isOpenCall()) {
-                                                            const mname = self.peek().text;
-                                                            self.advance();
-                                                            const args = try self.parseCallArgs();
-                                                            const base = std.ArrayList(PNode){};
-                                                            var callee = std.ArrayList(PNode){};
-                                                            callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
-                                                            return PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
-                                                        } else {
-                                                            const field = try self.eatId();
-                                                            const base = std.ArrayList(PNode){};
-                                                            return PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
-                                                        }
+                                                        const args = try self.parseCallArgs();
+                                                        var callee = std.ArrayList(PNode){};
+                                                        callee.append(_allocator, PNode{ .expr_id = name }) catch @panic("OOM");
+                                                        return PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
                                                     } else {
-                                                        if (self.isId()) {
-                                                            const name = self.peek().text;
+                                                        if (self.textIs(".")) {
                                                             self.advance();
-                                                            return PNode{ .expr_id = name };
+                                                            if (self.isOpenCall()) {
+                                                                const mname = self.peek().text;
+                                                                self.advance();
+                                                                const args = try self.parseCallArgs();
+                                                                const base = std.ArrayList(PNode){};
+                                                                var callee = std.ArrayList(PNode){};
+                                                                callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                                                                return PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                            } else {
+                                                                const field = try self.eatId();
+                                                                const base = std.ArrayList(PNode){};
+                                                                return PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                            }
                                                         } else {
-                                                            if (self.isTypeKeyword()) {
+                                                            if (self.isId()) {
                                                                 const name = self.peek().text;
                                                                 self.advance();
                                                                 return PNode{ .expr_id = name };
                                                             } else {
-                                                                if ((self.textIs("def") and std.mem.eql(u8, self.peekAt(1).text, "("))) {
-                                                                    return try self.parseLambdaExpr();
+                                                                if (self.isTypeKeyword()) {
+                                                                    const name = self.peek().text;
+                                                                    self.advance();
+                                                                    return PNode{ .expr_id = name };
+                                                                } else {
+                                                                    if ((self.textIs("def") and std.mem.eql(u8, self.peekAt(1).text, "("))) {
+                                                                        return try self.parseLambdaExpr();
+                                                                    }
                                                                 }
                                                             }
                                                         }

@@ -3445,6 +3445,7 @@ struct Generator
                     w.emit("true")
                 w.emit("; break; } } break :blk _aa_res; }")
             on Expr.zig_lit as zl
+                # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
                 w.emit(zl.text)
             on Expr.try_ as tr
                 if try_block_label != nil
