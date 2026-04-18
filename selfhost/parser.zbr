@@ -655,7 +655,11 @@ class Parser
                 if this.textIs(",")
                     this.advance()
                 else
-                    args.add(.eatTypeName())
+                    var arg as str = .eatTypeName()
+                    if this.textIs("?")
+                        this.advance()
+                        arg = arg + "?"
+                    args.add(arg)
             .expectText(")")
             # Build "Name(arg1,arg2,...)" using StringBuilder to avoid cross-module str type issue
             var sb as StringBuilder = StringBuilder()
@@ -1850,9 +1854,13 @@ class Parser
     def parseCallArgs() as List(PNode) throws
         var args = List(PNode)()
         while not this.textIs(")")
-            # skip named arg label: name = expr
-            if .isId() and false  # placeholder - named args not needed for demo
-                pass
+            # Named-arg label `name:` is consumed and ignored — the selfhost
+            # call-site emitter is positional, so we still forward the value
+            # expression in source order. Matches the Zig backend which
+            # attaches `name` to Ast.Arg but emits positional Zig calls.
+            if .isId() and this.peekAt(1).text == ":"
+                this.advance()  # consume the id (label)
+                this.advance()  # consume ':'
             args.add(.parseExpr())
             if this.textIs(",")
                 this.advance()

@@ -2402,7 +2402,12 @@ pub const Parser = struct {
                 if (self.textIs(",")) {
                     self.advance();
                 } else {
-                    args.append(_allocator, try self.eatTypeName()) catch @panic("OOM");
+                    var arg: []const u8 = try self.eatTypeName();
+                    if (self.textIs("?")) {
+                        self.advance();
+                        arg = _str_concat(arg, "?", _allocator);
+                    }
+                    args.append(_allocator, arg) catch @panic("OOM");
                 }
             }
             try self.expectText(")");
@@ -3881,8 +3886,9 @@ pub const Parser = struct {
     pub fn parseCallArgs(self: *Parser) anyerror!std.ArrayList(PNode) {
         var args = std.ArrayList(PNode){};
         while ((!self.textIs(")"))) {
-            if ((self.isId() and false)) {
-                // pass
+            if ((self.isId() and std.mem.eql(u8, self.peekAt(1).text, ":"))) {
+                self.advance();
+                self.advance();
             }
             args.append(_allocator, try self.parseExpr()) catch @panic("OOM");
             if (self.textIs(",")) {

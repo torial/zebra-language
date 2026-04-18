@@ -746,6 +746,20 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-068: Selfhost parser rejects generic-arg `?` suffix and `name:` labeled call args — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** Two independent parser gaps, both affecting forms the Zig backend already accepts.
+  - (a) `eatTypeName` handled the `?` nilable suffix only at its top-level callers (e.g. `parseDeclField`, `parseMethodDecl`); inside the generic-args loop (`List(int)`, `Result(int?, str)`, etc.) the `?` fell through and triggered `raise "expected type name, got '?' at line N"`.
+  - (b) `parseCallArgs` had a `and false` placeholder instead of consuming the `name:` label form. Any call using Zebra's named-argument syntax — `p.move(dx: 5, dy: 3)` — failed at the `:` with `unexpected expression token: ':'`.
+- **Fix (parser.zbr only, two call-sites):**
+  1. In the generic-args loop inside `eatTypeName`, after each `.eatTypeName()` peek for `?` and fold it into the arg string (matches existing caller-level pattern).
+  2. In `parseCallArgs`, replace the placeholder with `if .isId() and this.peekAt(1).text == ":"` → advance past id + colon, then call `parseExpr()` as before. The name label is consumed and discarded; the selfhost call-site emitter is positional (so is the Zig-backend Zig emit — `Ast.Arg.name` is preserved for diagnostics and is written positionally at emit time).
+- **Resolver follow-ups surfaced but not fixed here:** `test/result_test.zbr` now clears the parser but still fails at resolve with `undefined name: 'Result'`. The Zig backend registers `Result` as a builtin generic; the selfhost resolver does not yet. That is orthogonal stdlib wiring, tracked separately.
+- **Verification:** Corpus 133/152 → 135/152 (+2 emit: named_args_infer_test, ref_struct_test — both previously failed at the `:` label). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-067: Selfhost parseMemberDecl rejects the `get name as T` computed-property form — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)
