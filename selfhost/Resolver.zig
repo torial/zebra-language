@@ -1549,6 +1549,11 @@ pub const Resolver = struct {
                 self.module_scope.put(u.name, 0) catch @panic("OOM");
                 self.symbol_count = (self.symbol_count + 1);
             },
+            .enum_ => |_ptr_e| {
+                const e = _ptr_e.*;
+                self.module_scope.put(e.name, 0) catch @panic("OOM");
+                self.symbol_count = (self.symbol_count + 1);
+            },
             .sig_ => |_ptr_sg| {
                 const sg = _ptr_sg.*;
                 self.module_scope.put(sg.name, 0) catch @panic("OOM");

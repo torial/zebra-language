@@ -100,6 +100,9 @@ class Resolver
             on PNode.union_decl as u
                 this.module_scope.put(u.name, 0)
                 this.symbol_count = this.symbol_count + 1
+            on PNode.enum_ as e
+                this.module_scope.put(e.name, 0)
+                this.symbol_count = this.symbol_count + 1
             on PNode.sig_ as sg
                 this.module_scope.put(sg.name, 0)
                 this.symbol_count = this.symbol_count + 1

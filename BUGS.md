@@ -719,6 +719,15 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-048: Selfhost resolver does not register enum names — FIXED
+- **Status:** Fixed 2026-04-17
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/resolver.zbr::bindTopDecl` had arms for `class_`, `struct_`, `union_decl`, `sig_`, `method_`, `use_` but no arm for `PNode.enum_`. Enum names declared at module scope (e.g. `enum TcScopeKind`) were never added to `module_scope`, so any later `expr_id` reference to the enum type (param annotation `kind as TcScopeKind`, return type `as TcScopeKind`, list construction `List(TcScopeKind)()`) hit `resolveExpr`'s `expr_id` arm → `"undefined name: 'TcScopeKind'"`. 8 corpus files (`tc_scope.zbr`, `tc_check.zbr`, `tc_infer.zbr`, `tc_stdlib.zbr`, and their `_test.zbr` siblings) all tripped on this.
+- **Fix:** Added `on PNode.enum_ as e` arm to `bindTopDecl` in `selfhost/resolver.zbr`, mirroring the existing `union_decl` arm.
+- **Verification:** Corpus snapshot moved from 94/152 pass → 102/152 pass (+8, matching the affected file count exactly, zero regressions). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-009: `opt?.field` emits `try opt.?.field` inside `if opt != nil` guard — FIXED
 - **Status:** Fixed 2026-04-09
 - **Was:** `opt?.x` inside an `if opt != nil` block generated `try opt.?.x` instead of `opt.?.x`. Root cause was two-layered:

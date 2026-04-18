@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # bootstrap_check.sh — verify selfhost round-trip and level-2 fixed point.
 #
-# What it does:
+# Usage:
+#   tools/bootstrap_check.sh           # full 5-step round-trip (commit gate)
+#   tools/bootstrap_check.sh --quick   # stop after step 2 (iterative rebuild)
+#
+# What it does (full mode):
 #   1. Regenerates all selfhost .zig files from the Zig-compiled zebra into
 #      /tmp/bs-zig (leaving selfhost/*.zig untouched at this stage).
 #   2. Builds zebra-selfhost-A.exe from /tmp/bs-zig.
@@ -9,14 +13,41 @@
 #   4. Builds zebra-selfhost-B.exe from the selfhost-A-emitted selfhost/.
 #   5. Has B re-emit; diffs /tmp/bs-A against /tmp/bs-B.
 #
+# Quick mode runs only steps 1+2 and exits. Use it for iterative work after
+# editing selfhost/*.zbr — you get a fresh zebra-selfhost.exe in ~10s without
+# the A/B round-trip. selfhost/*.zig is never touched in quick mode, so the
+# working tree stays clean. Run full mode before commit.
+#
+# Why this flag exists: running `zebra --emit-zig selfhost/X.zbr` manually and
+# copying into selfhost/X.zig mixes zebra-shape output (with prologue/
+# entry-thunk) against selfhost-shape neighbors (dep-shape), causing runtime
+# crashes. Always regenerate the whole set; --quick is the guarded way.
+#
 # Prerequisites: zig build has already produced zig-out/bin/zebra.exe.
 #
-# Safety: selfhost/*.zig is snapshotted at start; on ERR/INT the snapshot
-# is restored so a failed bootstrap never leaves the working tree in
-# half-emitted state. A successful run leaves selfhost/*.zig in the
-# deterministic selfhost-B-emitted fixed point (subsequent runs → no diff).
+# Safety: in full mode, selfhost/*.zig is snapshotted at start; on ERR/INT
+# the snapshot is restored so a failed bootstrap never leaves the working
+# tree in half-emitted state. A successful full run leaves selfhost/*.zig
+# in the deterministic selfhost-B-emitted fixed point. Quick mode never
+# writes to selfhost/.
 
 set -euo pipefail
+
+QUICK=0
+for arg in "$@"; do
+    case "$arg" in
+        --quick) QUICK=1 ;;
+        -h|--help)
+            sed -n '2,32p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "bootstrap_check: unknown argument: $arg" >&2
+            echo "  usage: $0 [--quick]" >&2
+            exit 2
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -39,23 +70,26 @@ fi
 # A clean successful run leaves selfhost/ in the fixed-point state without
 # restore. A failure (build error, interrupt) puts the tree back to the
 # pre-bootstrap state rather than leaving half-emitted intermediates.
-BS_PRE=/tmp/bs-pre
-rm -rf "$BS_PRE"
-mkdir -p "$BS_PRE"
-for f_zig in selfhost/*.zig; do
-    cp "$f_zig" "$BS_PRE/$(basename "$f_zig")"
-done
+# Quick mode skips this because it never writes to selfhost/.
+if [[ $QUICK -eq 0 ]]; then
+    BS_PRE=/tmp/bs-pre
+    rm -rf "$BS_PRE"
+    mkdir -p "$BS_PRE"
+    for f_zig in selfhost/*.zig; do
+        cp "$f_zig" "$BS_PRE/$(basename "$f_zig")"
+    done
 
-restore_selfhost() {
-    local ec=$?
-    if [[ $ec -ne 0 ]]; then
-        echo "bootstrap_check: restoring selfhost/*.zig from pre-run snapshot ($BS_PRE)" >&2
-        for f_zig in "$BS_PRE"/*.zig; do
-            cp "$f_zig" "selfhost/$(basename "$f_zig")"
-        done
-    fi
-}
-trap restore_selfhost EXIT INT
+    restore_selfhost() {
+        local ec=$?
+        if [[ $ec -ne 0 ]]; then
+            echo "bootstrap_check: restoring selfhost/*.zig from pre-run snapshot ($BS_PRE)" >&2
+            for f_zig in "$BS_PRE"/*.zig; do
+                cp "$f_zig" "selfhost/$(basename "$f_zig")"
+            done
+        fi
+    }
+    trap restore_selfhost EXIT INT
+fi
 
 echo "── Step 1: regenerate .zig into /tmp/bs-zig (zebra — Zig-compiled compiler)"
 # Emit into /tmp/bs-zig instead of selfhost/ so the checked-in selfhost/*.zig
@@ -75,6 +109,11 @@ if ! zig build-exe "$BS_ZIG/main.zig" -femit-bin="$SELFHOST_A" 2>/tmp/bs-rebuild
     echo "FAIL: selfhost-A build errors:" >&2
     head -30 /tmp/bs-rebuildA.err >&2
     exit 1
+fi
+
+if [[ $QUICK -eq 1 ]]; then
+    echo "PASS: quick rebuild — zebra-selfhost.exe rebuilt from selfhost/*.zbr (round-trip skipped)"
+    exit 0
 fi
 
 echo "── Step 3: selfhost-A re-emits its own source"
