@@ -746,6 +746,16 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-067: Selfhost parseMemberDecl rejects the `get name as T` computed-property form — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseMemberDecl` recognised only `def` / `var` / `const` / `cue` and raised `"unexpected member: 'get'"` on the property keyword. Everything downstream was already in place — `ast.zbr:271` defines `DeclProperty {span, mods, name, type_, getter_, setter_}`, `Decl` union has `property as ^DeclProperty`, and `codegen.zbr::genProperty` (line 1967) already emits `pub fn <name>(self: *Owner) T { <body> }` with the expected `_ = self;` fallback for nil getters. Zig backend: `PropDecl → ModList kw_get open_call_or_id ReturnAnnotOpt eol Block` — see `src/astbuilder.zig:568-598`.
+- **Fix (parser.zbr + astbuilder.zbr + codegen.zbr):** 1) New `PProperty {name, type_name, getter_stmts}` holder struct, new `PNode.property_ as ^PProperty` variant, new `parsePropertyDecl` (`expectText get` / `eatId` / optional `as TypeName`+`?` / `skipEol` / `parseBlock` if indented), new parseMemberDecl arm. 2) Astbuilder: new `buildProperty` returning `Decl.property(DeclProperty(zspan(), zmods(), p.name, type_ref, getter_stmts, nil))`; new `on PNode.property_` arm in `buildMember`. Added `DeclProperty` to the `use ast exposing` list and `PProperty` to the `use Parser exposing` list. 3) `addCrossModuleBoxedVariants`: `bv.add("PNode.property_")` so the cross-module boxing machinery emits the required `|_ptr_p| { const p = _ptr_p.*; ... }` auto-deref for pattern-match arms (same trap as BUG-064).
+- **Partial (pre-existing, not parser-related):** `test/computed_property_test.zbr` now emits via `--emit-zig` (corpus win) but `zig build-exe` still fails because the Zig backend and selfhost both emit the access site `r.area` as a plain field load rather than a method call `r.area()`. The same failure reproduces against `./zig-out/bin/zebra --emit-zig`, so the gap is in the member-call codegen (property accessors need call-site parens injected) and is orthogonal to the parser fix. Filed as a follow-up.
+- **Verification:** Corpus 132/152 → 133/152 (+1 emit: computed_property_test). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-066: Selfhost eatTypeName rejects sized numeric type names (int32/uint8/float32/byte/uint) — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

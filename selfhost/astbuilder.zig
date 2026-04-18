@@ -1481,6 +1481,7 @@ const DeclUnion = ast.DeclUnion;
 const DeclSig = ast.DeclSig;
 const DeclMethod = ast.DeclMethod;
 const DeclInit = ast.DeclInit;
+const DeclProperty = ast.DeclProperty;
 const DeclVar = ast.DeclVar;
 const EnumMember = ast.EnumMember;
 const UnionVariant = ast.UnionVariant;
@@ -1547,6 +1548,7 @@ const PEnum = Parser.PEnum;
 const PField = Parser.PField;
 const PMethod = Parser.PMethod;
 const PInit = Parser.PInit;
+const PProperty = Parser.PProperty;
 const PReturn = Parser.PReturn;
 const PIf = Parser.PIf;
 const PWhile = Parser.PWhile;
@@ -1865,10 +1867,20 @@ pub const ASTBuilder = struct {
                 const pinit = _ptr_pinit.*;
                 return try self.buildInit(pinit);
             },
+            .property_ => |_ptr_p| {
+                const p = _ptr_p.*;
+                return try self.buildProperty(p);
+            },
             else => |_| {
                 { _error_ctx = .{ .message = "buildMember: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
+    }
+
+    pub fn buildProperty(self: *ASTBuilder, p: PProperty) anyerror!Decl {
+        const type_ref = self.parseTypeRef(p.type_name);
+        const getter_stmts = try self.buildStmts(p.getter_stmts);
+        return Decl{ .property = blk_box: { const _bv = DeclProperty.init(zspan(), zmods(), p.name, type_ref, getter_stmts, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn buildEnum(self: *ASTBuilder, e: PEnum) anyerror!Decl {

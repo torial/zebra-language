@@ -1618,6 +1618,7 @@ pub fn addCrossModuleBoxedVariants(bv: *StrSet, module_name: []const u8) void {
         bv.add("PNode.field_");
         bv.add("PNode.method_");
         bv.add("PNode.init_");
+        bv.add("PNode.property_");
         bv.add("PNode.stmt_return");
         bv.add("PNode.stmt_if");
         bv.add("PNode.stmt_while");

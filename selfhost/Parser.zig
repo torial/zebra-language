@@ -1484,6 +1484,7 @@ pub const PNode = union(enum) {
     field_: *PField,
     method_: *PMethod,
     init_: *PInit,
+    property_: *PProperty,
     stmt_pass,
     stmt_break,
     stmt_continue,
@@ -1790,6 +1791,20 @@ pub const PInit = struct {
         var _self: PInit = undefined;
             _self.params = params;
             _self.stmts = stmts;
+        return _self;
+    }
+
+};
+
+pub const PProperty = struct {
+    name: []const u8,
+    type_name: []const u8,
+    getter_stmts: std.ArrayList(PNode),
+    pub fn init(name: []const u8, type_name: []const u8, getter_stmts: std.ArrayList(PNode)) PProperty {
+        var _self: PProperty = undefined;
+            _self.name = name;
+            _self.type_name = type_name;
+            _self.getter_stmts = getter_stmts;
         return _self;
     }
 
@@ -2787,11 +2802,35 @@ pub const Parser = struct {
                 } else {
                     if (self.textIs("cue")) {
                         return try self.parseDeclInit();
+                    } else {
+                        if (self.textIs("get")) {
+                            return try self.parsePropertyDecl();
+                        }
                     }
                 }
             }
         }
         { _error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("unexpected member: '", self.peek().text, _allocator), "' at line ", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(self.peek().line), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator) }; return error.ZebraError; }
+    }
+
+    pub fn parsePropertyDecl(self: *Parser) anyerror!PNode {
+        try self.expectText("get");
+        const name = try self.eatId();
+        var type_name: []const u8 = "";
+        if (self.textIs("as")) {
+            self.advance();
+            type_name = try self.eatTypeName();
+            if (self.textIs("?")) {
+                self.advance();
+                type_name = _str_concat(type_name, "?", _allocator);
+            }
+        }
+        self.skipEol();
+        var stmts = std.ArrayList(PNode){};
+        if (self.isIndent()) {
+            stmts = try self.parseBlock();
+        }
+        return PNode{ .property_ = blk_box: { const _bv = PProperty.init(name, type_name, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseDeclField(self: *Parser, is_const: bool) anyerror!PNode {
