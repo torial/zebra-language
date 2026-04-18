@@ -191,6 +191,12 @@ class Resolver
                     .resolveExpr(expr)
                 this.method_scope.put(v.name, 4)
                 this.symbol_count = this.symbol_count + 1
+            on PNode.stmt_destruct as d
+                for expr in d.init_expr
+                    .resolveExpr(expr)
+                for nm in d.names
+                    this.method_scope.put(nm, 4)
+                    this.symbol_count = this.symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
                     .resolveExpr(expr)

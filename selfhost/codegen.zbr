@@ -108,6 +108,7 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("PNode.expr_try")
         bv.add("PNode.expr_to_bang")
         bv.add("PNode.stmt_branch")
+        bv.add("PNode.stmt_destruct")
         bv.add("PNode.expr_except")
         bv.add("PNode.expr_string_interp")
     # Decl, Stmt, Expr, TypeRef from ast module
@@ -3242,8 +3243,12 @@ struct Generator
     # ── genDestruct ───────────────────────────────────────────────────────────
 
     def genDestruct(d as StmtDestruct)
+        var uid as int = w.nextUid()
+        var tmp as str = "_zbr_dt_" + uid.toString()
         writeIndent()
-        w.emit("const _zbr_dt = ")
+        w.emit("const ")
+        w.emit(tmp)
+        w.emit(" = ")
         genExpr(d.init_expr)
         w.emit(";\n")
         var i = 0
@@ -3251,9 +3256,18 @@ struct Generator
             writeIndent()
             w.emit("const ")
             w.emit(d.names.at(i))
-            w.emit(" = _zbr_dt.@\"")
-            w.emit(i.toString())
-            w.emit("\";\n")
+            w.emit(" = ")
+            w.emit(tmp)
+            if d.is_struct
+                # Struct destructure: `const x = _tmp.fieldname;`
+                w.emit(".")
+                w.emit(d.names.at(i))
+            else
+                # Tuple destructure: `const x = _tmp.@"0";`
+                w.emit(".@\"")
+                w.emit(i.toString())
+                w.emit("\"")
+            w.emit(";\n")
             i += 1
 
     # ── genExpr ───────────────────────────────────────────────────────────────

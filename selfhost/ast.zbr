@@ -602,11 +602,13 @@ struct StmtDestruct
     var span as Span
     var names as List(String)
     var init_expr as ^Expr
+    var is_struct as bool
 
-    cue init(span as Span, names as List(String), init_expr as ^Expr)
+    cue init(span as Span, names as List(String), init_expr as ^Expr, is_struct as bool)
         this.span = span
         this.names = names
         this.init_expr = init_expr
+        this.is_struct = is_struct
 
 struct StmtArenaScope
     var span as Span
