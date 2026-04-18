@@ -1154,6 +1154,143 @@ Total bugs fixed:      ~103+ (cumulative across all phases)
 
 ---
 
+## Phase 16: Bootstrap Baseline Sprint (2026-04-17 → 2026-04-18)
+
+**Goal:** Close the selfhost corpus from 57/152 failing → 14/152 failing by fixing parser gaps,
+codegen correctness, and cross-module issues discovered during the Phase 14 round-trip.
+
+### What this phase is
+
+Not a module port — a correctness sprint. Each bug fix follows the standard gate:
+bootstrap_check + corpus sweep + round-trip verification before committing.
+All work is on the `bootstrap-baseline` branch.
+
+### Parser gap wave (BUG-053 → BUG-070)
+
+Seventeen parser bugs closed in priority order. Each bug represents a grammar construct
+the selfhost parser didn't support that the Zig backend does. Fixes are exclusively in
+`selfhost/parser.zbr`, `selfhost/astbuilder.zbr`, `selfhost/resolver.zbr`, and (where a
+cross-module bv/rf entry was needed) `selfhost/codegen.zbr`.
+
+| Bug | Construct |
+|-----|-----------|
+| BUG-053 | `zig"..."` / `zig'...'` backend literal atoms |
+| BUG-054 | `class Foo(T, U)` generic type parameters in class head |
+| BUG-055 | `expr.get(args)` / `expr.post(args)` keyword-method calls |
+| BUG-056 | `r"..."` / `r'...'` raw string literals |
+| BUG-057 | `arena` scope blocks |
+| BUG-058 | `with target` contextual-self blocks |
+| BUG-059 | `guard ... else` guard statements |
+| BUG-060a | `orelse` binary operator |
+| BUG-060b | `->` pipeline operator |
+| BUG-061 | `ClassName.add(...)` receiver heuristic — prevented accidental List.append rewrite |
+| BUG-062 | `namespace Foo` top-level declarations |
+| BUG-063 | `while var id = init, cond` bind-and-guard form |
+| BUG-064 | `interface Name` top-level declarations |
+| BUG-065 | `extend Type` top-level declarations |
+| BUG-066 | Sized numeric type names (`int32`, `uint8`, `float32`, `byte`, `uint`) |
+| BUG-067 | `get name as T` computed-property member declarations |
+| BUG-068 | Generic-arg `?` suffix and `name:` labeled call arguments |
+| BUG-069 | `expr is TypeName` type-check expressions (+ `bv` entry for cross-module round-trip) |
+| BUG-070 | `var {x, y} = expr` struct/tuple destructuring (parser + astbuilder + resolver + codegen bv) |
+
+**Key recurrence across parser bugs:** Adding a new boxed union-variant constructor
+(e.g. `Expr.type_check`, `PNode.stmt_destruct`) always requires updating both the `bv`
+(boxed variants) list in `addCrossModuleBoxedVariants` and the `rf` (ref-fields) list.
+Omitting either causes round-trip failure only at selfhost-B compilation, not at emit —
+making it a silent divergence caught only by bootstrap_check. This trap was hit five
+times across the sprint; the pattern is now documented in BUGS.md.
+
+### TypeChecker / codegen improvements (BUG-071)
+
+After the parser wave, one codegen/TC bug closed:
+
+- **BUG-071:** `stringMethodReturn()` for string-method return type inference; recursive
+  `inferExpr` receiver resolution so `s.trim().upper()` types correctly; `str.count(substr)`
+  codegen via `std.mem.count`; `blk_box` typing fix for payload-less union tags (e.g.
+  `Type_.string_` coercing from bare enum to union). Also fixed `codegen_test.zbr`
+  Generator() calls that were missing the `module_types` + `dep_types` params.
+
+### Corpus trajectory
+
+| After | Pass | Fail | Notes |
+|-------|------|------|-------|
+| Phase 15 | 95/152 | 57/152 | Phase 15 milestone |
+| BUG-053 → BUG-057 | ~110/152 | ~42/152 | First parser wave |
+| BUG-058 → BUG-063 | ~125/152 | ~27/152 | Second parser wave |
+| BUG-064 → BUG-070 | 138/152 | 14/152 | Third parser wave |
+| BUG-071 | 138/152 | 14/152 | TC/codegen; no new corpus passes |
+
+### Remaining 14 failures — categorized triage (2026-04-18)
+
+**A. Stdlib name gaps (4 files)** — resolver doesn't know these names:
+- `csv_test.zbr` → `Csv`, `datetime_test.zbr` → `Calendar`,
+  `file_io_test.zbr` → `Dir`, `result_test.zbr` → `Result`
+
+**B. Inline statement-body lambda as call arg (2 files) — Zig backend bug too:**
+- `sort_test.zbr`, `result_methods_test.zbr`
+- Root cause: tokenizer suppresses EOL/INDENT/DEDENT inside open parens; the grammar
+  rule `LambdaBlockExpr → def(params) eol indent body dedent` never fires inside a call
+  arg because those structural tokens are absent. The Zig backend has the same bug.
+- Fix requires Zig tokenizer change to un-suppress indentation after `def(params)` inside
+  parens, OR a special parser strategy for flat-token-stream lambdas.
+
+**C. Other selfhost parser gaps (4 files):**
+- `bench_zebra.zbr` → `for i in 0 : 10` numeric range (`for_num` colon form)
+- `expressiveness_test.zbr` → default param value `greeting as String = "Hello"` in method sig
+- `gui_test.zbr` → capture var initializer `var count as int = 0` in `capture` block
+- `string_format_test.zbr` → format spec `:08x` in string interpolation `"[n:08x]"`
+
+**D. Type syntax gaps (3 files):**
+- `tuple_test.zbr` → tuple type annotation `(int, int)` in parser
+- `generic_pair_test.zbr` → generic type param `B` not bound in `class Pair(A, B)` body
+- `generic_constrained_test.zbr` → `same` type keyword in interface method sigs
+
+**E. Doc string atom (1 file) — BUG-035:**
+- `selfhost_probe6.zbr` → `"""..."""` has no atom handler in selfhost parser
+
+### Open correctness bugs (don't block emit, break self-compilation)
+
+| Bug | Issue |
+|-----|-------|
+| BUG-038 | `int.toString()` emits codepoint-encode, not decimal |
+| BUG-039 | Mutation scanner marks string-method receivers as `var` |
+| BUG-040 | `print str` emits `{}` not `{s}` |
+| BUG-036 | HashMap `[k]` subscript emits `@intCast` array-index instead of `.put`/`.get` |
+| BUG-042–044 | Cross-module struct/union ctor + branch patterns emit fn-call not struct-init |
+
+### Zebra vs Zig observations
+
+**Parser bugs are the majority of the selfhost gap.** Of 57 original failures,
+~50 were parser-only gaps — constructs the Zebra language supports that the selfhost
+parser simply didn't have cases for. Most required 3-5 coordinated edits (parser +
+astbuilder + resolver + optional codegen bv entry). The Earley parser in src/ handles
+all of these via grammar rules; the selfhost recursive-descent parser needs an explicit
+case per construct.
+
+**bv/rf trap recurrence.** The boxed-variant / ref-field (bv/rf) lists in
+`addCrossModuleBoxedVariants` are easy to forget and only fail at level-2 bootstrap
+(selfhost-A compiles selfhost-B). This is the dominant class of "silent divergence"
+bugs — emit looks correct, Zig compiles, but the round-trip A→B produces broken code.
+
+**Tokenizer parity.** The selfhost `Lexer.zbr` correctly mirrors the Zig tokenizer's
+`parenDepth` suppression of EOL/INDENT/DEDENT inside open parens. This was correct
+behavior but surfaced that statement-body lambdas inside call args are broken in BOTH
+compilers — a latent Zig grammar limitation.
+
+### Results
+
+```
+Corpus (selfhost --emit-zig):  138/152  (was 95/152 entering this sprint)
+Parser bugs closed:             19 (BUG-053 → BUG-071)
+Correctness bugs open:          ~6 (BUG-036/038/039/040/042-044)
+Zig backend tests:              ALL PASS (zig build test clean throughout)
+Selfhost unit tests:            8/8 PASS
+Bootstrap round-trip:           A/B byte-identical
+```
+
+---
+
 ## Phase 15: Reflect + Lambda Capture (2026-04-13)
 
 **Goal:** Implement the two remaining blocked features from the gap audit — `Reflect` runtime metadata and lambda `capture` blocks.
