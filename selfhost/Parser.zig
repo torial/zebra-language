@@ -3204,10 +3204,22 @@ pub const Parser = struct {
                     callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
                     expr = PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
                 } else {
-                    const field = try self.eatId();
-                    var base = std.ArrayList(PNode){};
-                    base.append(_allocator, expr) catch @panic("OOM");
-                    expr = PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    if (((self.textIs("get") or self.textIs("post")) and std.mem.eql(u8, self.peekAt(1).text, "("))) {
+                        const mname = self.peek().text;
+                        self.advance();
+                        self.advance();
+                        const args = try self.parseCallArgs();
+                        var base = std.ArrayList(PNode){};
+                        base.append(_allocator, expr) catch @panic("OOM");
+                        var callee = std.ArrayList(PNode){};
+                        callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                        expr = PNode{ .expr_call = blk_box: { const _bv = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    } else {
+                        const field = try self.eatId();
+                        var base = std.ArrayList(PNode){};
+                        base.append(_allocator, expr) catch @panic("OOM");
+                        expr = PNode{ .expr_member = blk_box: { const _bv = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    }
                 }
             } else {
                 if (self.textIs("?")) {

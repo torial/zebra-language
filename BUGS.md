@@ -715,7 +715,16 @@ The selfhost codegen path diverges.
 
 ---
 
-*Last updated: 2026-04-17*
+*Last updated: 2026-04-18*
+
+---
+
+### BUG-055: Selfhost parsePostfix drops `expr.get(args)` / `expr.post(args)` method calls — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parsePostfix` only checked `.isOpenCall()` after a `.`-dot member path. When the method name is `get` or `post`, the lexer emits `kw_get` / `kw_post` keyword tokens (Token.zbr:108,150; 225-226,309-310) rather than `open_call` (which only fires when an identifier is *immediately* followed by `(` — Lexer.zbr:274-279). Since keywords win over `open_call`, `csv.get(` and `Http.post(` tokenize as `id dot kw_get/kw_post lparen ...`. The selfhost parser then fell through to the `expr.field` branch, called `.eatId()` on a non-id token, and raised `expected identifier, got 'get'/'post'`. Zig backend has dedicated productions `Expr9 → Expr9 dot (kw_get|kw_post) lparen ArgList rparen` (`src/ZebraGrammar.zig:1137-1138`).
+- **Fix:** Single new branch in `parsePostfix` after the `isOpenCall` check: when peek text is `"get"` or `"post"` and `peekAt(1).text == "("`, treat it as a method call — consume the keyword, consume `(`, reuse existing `parseCallArgs()` (which expects `(` already consumed), build `expr_member` + `expr_call` same as the isOpenCall branch. Text comparison via `textIs` rather than a new `isKwGet/isKwPost` helper since the keyword token's text is the word itself.
+- **Verification:** Corpus 118/152 → 120/152 (+2 emit: http_test, https_test). Both emit end-to-end to valid Zig. csv_test was the 3rd file in the cluster but trips on a separate resolver-level gap (`undefined name: 'Csv'`) after the parser succeeds — unrelated to BUG-055. Bootstrap round-trip A/B byte-identical.
 
 ---
 

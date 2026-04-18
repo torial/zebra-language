@@ -1320,6 +1320,18 @@ class Parser
                     var callee = List(PNode)()
                     callee.add(PNode.expr_member(PMember(base, mname)))
                     expr = PNode.expr_call(PCall(callee, args))
+                else if (this.textIs("get") or this.textIs("post")) and this.peekAt(1).text == "("
+                    # expr.get(args) / expr.post(args) — keyword used as method name.
+                    # Zig backend: Expr9 → Expr9 dot (kw_get|kw_post) lparen ArgList rparen.
+                    const mname = this.peek().text
+                    this.advance()
+                    this.advance()
+                    const args = .parseCallArgs()
+                    var base = List(PNode)()
+                    base.add(expr)
+                    var callee = List(PNode)()
+                    callee.add(PNode.expr_member(PMember(base, mname)))
+                    expr = PNode.expr_call(PCall(callee, args))
                 else
                     # expr.field
                     const field = .eatId()
