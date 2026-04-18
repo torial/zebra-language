@@ -6794,7 +6794,12 @@ const Generator = struct {
                     if (lhs_t != .optional) break :blk false;
                     if (lhs_t.optional.* != .named) break :blk false;
                     if (rhs_t != .named) break :blk false;
-                    break :blk lhs_t.optional.named == rhs_t.named;
+                    if (lhs_t.optional.named != rhs_t.named) break :blk false;
+                    // BUG-047 sibling (self-ref field-assign): class payloads are already `*T`
+                    // via auto-box; wrapping `_rp.* = classValue` double-indirects. Suppress.
+                    const sym = rhs_t.named;
+                    if (sym.decl == .class) break :blk false;
+                    break :blk true;
                 };
                 // `^T` heap-indirection field assignment:
                 // If the field's declared type is `^T` or `^T?`, and the RHS is a
@@ -6864,7 +6869,7 @@ const Generator = struct {
                     // The inner TypeRef must resolve to a named type for codegen.
                     // Handle both `^T` and `^T?` (nilable optional pointer).
                     const inner = field_tr.ref_to;
-                    break :blk switch (inner.*) {
+                    const type_name: ?[]const u8 = switch (inner.*) {
                         .named   => |n| n.name,
                         .nilable => |ni| switch (ni.*) {
                             .named => |n| n.name,
@@ -6872,6 +6877,22 @@ const Generator = struct {
                         },
                         else     => null,
                     };
+                    const tn = type_name orelse break :blk null;
+                    // BUG-047 sibling (field-assign path): class payloads are already `*T` via
+                    // auto-box, so the `^T` box-and-store pattern would double-indirect. Suppress.
+                    if (g.class_names.contains(tn)) break :blk null;
+                    if (std.mem.indexOfScalar(u8, tn, '.')) |dot| {
+                        const mod_alias = tn[0..dot];
+                        const inner_name = tn[dot + 1 ..];
+                        if (g.imported_modules) |imp| {
+                            if (imp.get(mod_alias)) |iface| {
+                                if (iface.types.get(inner_name)) |kind| {
+                                    if (kind == .class) break :blk null;
+                                }
+                            }
+                        }
+                    }
+                    break :blk tn;
                 };
                 if (needs_box) {
                     // Emit: { const _rp = _allocator.create(T) catch @panic("OOM"); _rp.* = value; target = _rp; }
@@ -8435,9 +8456,14 @@ const Generator = struct {
                         break :sw;
                     }
                 }
-                // Auto-deref for ^T struct/class fields: `pair.left` → `pair.left.*`
+                // Auto-deref for ^T struct fields: `pair.left` → `pair.left.*`
                 // when the field's declared TypeRef is ref_to (^T in Zebra).
                 // Zig stores the pointer; Zebra semantics expose the dereffed value.
+                //
+                // BUG-047: class payloads are auto-boxed to `*T` already — `^T` and `^T?`
+                // emit as `*T`/`?*T` via the class short-circuit in genType's .ref_to arm.
+                // The stored value IS the class value; `.*` would dereference the class pointer
+                // itself and produce an invalid Zig expression. Suppress deref for class payloads.
                 const field_needs_deref = blk: {
                     const tc = g.tc orelse break :blk false;
                     const obj_type = tc.expr_types.get(e.object) orelse break :blk false;
@@ -8448,7 +8474,28 @@ const Generator = struct {
                             const field_sym = scope.lookupLocal(e.member) orelse break :blk false;
                             if (field_sym.decl != .var_) break :blk false;
                             const field_tr = field_sym.decl.var_.type_ orelse break :blk false;
-                            break :blk field_tr == .ref_to;
+                            if (field_tr != .ref_to) break :blk false;
+                            // Class-payload short-circuit (BUG-047).
+                            const payload: Ast.TypeRef = if (field_tr.ref_to.* == .nilable)
+                                field_tr.ref_to.nilable.*
+                            else
+                                field_tr.ref_to.*;
+                            if (payload == .named) {
+                                const pn = payload.named.name;
+                                if (g.class_names.contains(pn)) break :blk false;
+                                if (std.mem.indexOfScalar(u8, pn, '.')) |dot| {
+                                    const mod_alias = pn[0..dot];
+                                    const type_name = pn[dot + 1 ..];
+                                    if (g.imported_modules) |imp| {
+                                        if (imp.get(mod_alias)) |iface| {
+                                            if (iface.types.get(type_name)) |kind| {
+                                                if (kind == .class) break :blk false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break :blk true;
                         }
                         // Exposed cross-module type (`use Mod exposing T`): sym.own_scope is null.
                         // Fall through to look up ref_fields in the imported interface.

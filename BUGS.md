@@ -698,15 +698,20 @@ The selfhost codegen path diverges.
 
 ---
 
-### BUG-047: Field-read on `^Class?` emits stale `.*` after BUG-041 fix — OPEN
-- **Severity:** Medium (blocks read access to `^Class?` fields via a local copy — `var mid = a.next` style)
-- **Status:** Open — filed 2026-04-17 during BUG-045 verification
+### BUG-047: Field-read + field-assign on `^Class?` emitted stale boxing after BUG-041 fix — FIXED
+- **Severity:** Medium (blocked read access to `^Class?` fields via a local copy — `var mid = a.next` style — and also turned out to block `b.next = c` writes; both symptoms shared the same root cause)
+- **Status:** Fixed 2026-04-17
 - **Target:** 0.5 (same wave as BUG-045; closes the class-auto-box-rule's codegen paths)
-- **Symptom:** Given `class Node { var next as ^Node? }`, the expression `var mid = a.next` emits `const mid = a.next.*;` — a dereference that was correct when `.next` had type `?**Node` (pre BUG-041) and is one deref too many now that `.next` is `?*Node`. Zig rejects: *"cannot dereference non-pointer type `?*Node`"*.
-- **Reproducer:** `C:\tmp\verify_bug016b.zbr` — `var mid = a.next` then `mid?.next` chain. Currently fails after BUG-041+045 fixes; the ctor calls and the field TYPE are both correct, but the field-READ still has the stale `.*`.
-- **Root cause hypothesis:** a field-read codegen path that applies `.*` when it sees a `ref_to`-typed member, unconditional on class vs. non-class payload. Same pattern as BUG-041 (type emit) and BUG-045 (call-site arg): a codegen site that pre-BUG-041 needed an extra indirection and now does not, for class payloads.
-- **Related rule:** `concept_zebra-class-auto-box-rule` — closes the triad of type emit (BUG-041), arg materialization (BUG-045), and member read (this).
-- **Likely fix:** locate the field-read `.*` emission in `src/CodeGen.zig` (and the matching site in `selfhost/codegen.zbr`); add the same class-payload short-circuit pattern used by BUG-041 and BUG-045.
+- **Symptom (read):** Given `class Node { var next as ^Node? }`, `var mid = a.next` emitted `const mid = a.next.*;` — a dereference that was correct when `.next` had type `?**Node` (pre BUG-041) and is one too many now that `.next` is `?*Node`. Zig rejected: *"cannot dereference non-pointer type `?*Node`"*.
+- **Symptom (write, discovered while validating the read fix):** `b.next = c` emitted the self-ref heap-box pattern `{ const _rp = _allocator.create(Node); _rp.* = c; b.next = _rp; }` — `c` is already `*Node` via class auto-box, so `_rp.* = c` assigned `*Node` to a `Node` slot. Same BUG-041 staleness, different codegen site.
+- **Reproducer:** `test/recursive_type_test.zbr` (write path via `b.next = c`), `C:\tmp\verify_bug016b.zbr` (read path via `var mid = a.next`), and `test/ctor_arg_ref_test.zbr` (adjacent BUG-045 arg path). All three now compile and run.
+- **Root cause:** three codegen sites each used a `field_tr == .ref_to` guard unconditional on class vs. non-class payload:
+  1. `.member` field-read at `src/CodeGen.zig:8441` — emitted `field.*`.
+  2. `StmtAssign` self-ref boxing at `src/CodeGen.zig:6788` — emitted `{ _rp.* = rhs; target = _rp; }` for `?*T`-lhs + `T`-rhs pairs, which also fires when `rhs` is a class (already `*Class`).
+  3. `StmtAssign` `ref_box_type_name` path at `src/CodeGen.zig:6802` — emitted the same create-and-store pattern for `^T` fields, again unconditional on class.
+- **Fix:** three parallel class-payload short-circuits — unwrap `.ref_to` (and optional `.nilable`), check `class_names` (local) or the imported module's `types` map (cross-module); if class, return false/null and fall through to plain assign. Mirror of BUG-041 in genType and BUG-045 in genBoxedArgExpr.
+- **Selfhost:** no parallel port needed — `selfhost/codegen.zbr`'s genAssign does not emit the boxing patterns (it just writes `target = value`), and `Expr.member` does not append `.*` for `ref_to`-typed fields. Phase 17c's walker-based approach bypassed the whole family.
+- **Related rule:** `concept_zebra-class-auto-box-rule` — closes the triad of type emit (BUG-041), arg materialization (BUG-045), and member read + write (this).
 
 ---
 
