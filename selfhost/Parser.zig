@@ -2943,6 +2943,34 @@ pub const Parser = struct {
 
     pub fn parseWhileStmt(self: *Parser) anyerror!PNode {
         try self.expectText("while");
+        if (self.textIs("var")) {
+            self.advance();
+            const bind_name = try self.eatId();
+            try self.expectText("=");
+            const init_expr_pn = try self.parseExpr();
+            try self.expectText(",");
+            const guard_expr_pn = try self.parseExpr();
+            self.skipEol();
+            const body_stmts: std.ArrayList(PNode) = try self.parseBlock();
+            var init_list = std.ArrayList(PNode){};
+            init_list.append(_allocator, init_expr_pn) catch @panic("OOM");
+            var guard_operand = std.ArrayList(PNode){};
+            guard_operand.append(_allocator, guard_expr_pn) catch @panic("OOM");
+            var if_cond_list = std.ArrayList(PNode){};
+            if_cond_list.append(_allocator, PNode{ .expr_unary = blk_box: { const _bv = PUnary.init("not", guard_operand); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+            var break_list = std.ArrayList(PNode){};
+            break_list.append(_allocator, PNode{ .stmt_break = {} }) catch @panic("OOM");
+            const empty_else = std.ArrayList(PNode){};
+            var wrapped = std.ArrayList(PNode){};
+            wrapped.append(_allocator, PNode{ .stmt_var = blk_box: { const _bv = PVar.init(bind_name, false, "", init_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+            wrapped.append(_allocator, PNode{ .stmt_if = blk_box: { const _bv = PIf.init(if_cond_list, break_list, empty_else); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+            for (body_stmts.items) |bs| {
+                wrapped.append(_allocator, bs) catch @panic("OOM");
+            }
+            var true_cond = std.ArrayList(PNode){};
+            true_cond.append(_allocator, PNode{ .expr_bool = true }) catch @panic("OOM");
+            return PNode{ .stmt_while = blk_box: { const _bv = PWhile.init(true_cond, wrapped); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        }
         const cond_expr = try self.parseExpr();
         self.skipEol();
         const stmts = try self.parseBlock();

@@ -746,6 +746,16 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-063: Selfhost parseWhileStmt rejects `while var id = init, cond` bind-and-guard — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** Selfhost parser had only the `while Expr eol Block` arm. Zig grammar: `StmtWhile → kw_while kw_var id assign Expr comma Expr eol Block` (`ZebraGrammar.zig:919-921`). Zig backend threads this through a special `StmtWhile.bind = ?{name,init}` field (`AstBuilder.zig:1121-1136`), but selfhost `StmtWhile` has no bind field.
+- **Fix (parser-side desugar, single edit in parser.zbr):** Detect `var` right after `while`, read `id = InitExpr , CondExpr eol Block`, and lower to the equivalent ast: `while true { var id = InitExpr; if not CondExpr: break; ...body }`. The desugar preserves the "re-evaluate the init each iteration" semantics because the `var id` is inside the loop body. Zero changes to ast.zbr / codegen.zbr / astbuilder.zbr — this is pure parse-tree shape.
+- **Gotcha:** `const body_stmts = .parseBlock()` triggered the same inferred-List-doesn't-iterate trap documented under BUG-058 — the selfhost codegen emits `for (body_stmts)` without `.items` unless the type is explicit. Annotated as `var body_stmts as List(PNode) = .parseBlock()`.
+- **Verification:** Corpus 128/152 → 129/152 (+1: while_var_test). Compiles and runs `hello`/`42`. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-062: Selfhost parseTopDecl rejects the `namespace` keyword — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

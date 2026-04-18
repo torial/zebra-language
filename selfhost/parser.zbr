@@ -1072,6 +1072,35 @@ class Parser
 
     def parseWhileStmt() as PNode throws
         .expectText("while")
+        # Bind-and-guard form: `while var id = InitExpr, CondExpr eol Block`.
+        # Desugared here to `while true { var id = InitExpr; if not CondExpr: break; body }`
+        # so the existing StmtWhile/StmtVar/StmtIf/StmtBreak codegen path carries it.
+        if this.textIs("var")
+            this.advance()
+            const bind_name = .eatId()
+            .expectText("=")
+            const init_expr_pn = .parseExpr()
+            .expectText(",")
+            const guard_expr_pn = .parseExpr()
+            .skipEol()
+            var body_stmts as List(PNode) = .parseBlock()
+            var init_list = List(PNode)()
+            init_list.add(init_expr_pn)
+            var guard_operand = List(PNode)()
+            guard_operand.add(guard_expr_pn)
+            var if_cond_list = List(PNode)()
+            if_cond_list.add(PNode.expr_unary(PUnary("not", guard_operand)))
+            var break_list = List(PNode)()
+            break_list.add(PNode.stmt_break())
+            var empty_else = List(PNode)()
+            var wrapped = List(PNode)()
+            wrapped.add(PNode.stmt_var(PVar(bind_name, false, "", init_list)))
+            wrapped.add(PNode.stmt_if(PIf(if_cond_list, break_list, empty_else)))
+            for bs in body_stmts
+                wrapped.add(bs)
+            var true_cond = List(PNode)()
+            true_cond.add(PNode.expr_bool(true))
+            return PNode.stmt_while(PWhile(true_cond, wrapped))
         const cond_expr = .parseExpr()
         .skipEol()
         const stmts = .parseBlock()
