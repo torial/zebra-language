@@ -144,6 +144,8 @@ class ASTBuilder
             ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
         var mixins as List(TypeRef) = List(TypeRef)()
         var tparams as List(TypeParam) = List(TypeParam)()
+        for tp in c.type_params
+            tparams.add(TypeParam(tp, nil))
         return Decl.class_(DeclClass(zspan(), zmods(), c.name, tparams, ifaces, mixins, members))
 
     # ── Struct ────────────────────────────────────────────────────────────────

@@ -1688,11 +1688,13 @@ pub const PParam = struct {
 
 pub const PClass = struct {
     name: []const u8,
+    type_params: std.ArrayList([]const u8),
     ifaces: std.ArrayList([]const u8),
     members: std.ArrayList(PNode),
-    pub fn init(name: []const u8, ifaces: std.ArrayList([]const u8), members: std.ArrayList(PNode)) PClass {
+    pub fn init(name: []const u8, type_params: std.ArrayList([]const u8), ifaces: std.ArrayList([]const u8), members: std.ArrayList(PNode)) PClass {
         var _self: PClass = undefined;
             _self.name = name;
+            _self.type_params = type_params;
             _self.ifaces = ifaces;
             _self.members = members;
         return _self;
@@ -2370,7 +2372,22 @@ pub const Parser = struct {
 
     pub fn parseClassDecl(self: *Parser) anyerror!PNode {
         try self.expectText("class");
-        const name = try self.eatId();
+        var name: []const u8 = "";
+        var type_params = std.ArrayList([]const u8){};
+        if (self.isOpenCall()) {
+            name = self.peek().text;
+            self.advance();
+            if ((!self.textIs(")"))) {
+                type_params.append(_allocator, try self.eatId()) catch @panic("OOM");
+                while (self.textIs(",")) {
+                    self.advance();
+                    type_params.append(_allocator, try self.eatId()) catch @panic("OOM");
+                }
+            }
+            try self.expectText(")");
+        } else {
+            name = try self.eatId();
+        }
         var ifaces = std.ArrayList([]const u8){};
         if (self.textIs("implements")) {
             self.advance();
@@ -2415,7 +2432,7 @@ pub const Parser = struct {
                 self.advance();
             }
         }
-        return PNode{ .class_ = blk_box: { const _bv = PClass.init(name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .class_ = blk_box: { const _bv = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseEnumDecl(self: *Parser) anyerror!PNode {
@@ -2459,7 +2476,8 @@ pub const Parser = struct {
             }
         }
         const ifaces = std.ArrayList([]const u8){};
-        return PNode{ .struct_ = blk_box: { const _bv = PClass.init(name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        const type_params = std.ArrayList([]const u8){};
+        return PNode{ .struct_ = blk_box: { const _bv = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseUnionDecl(self: *Parser) anyerror!PNode {

@@ -1715,7 +1715,10 @@ pub const ASTBuilder = struct {
             ifaces.append(_allocator, TypeRef{ .named = NamedTypeRef.init(zspan(), iface) }) catch @panic("OOM");
         }
         const mixins = std.ArrayList(TypeRef){};
-        const tparams = std.ArrayList(TypeParam){};
+        var tparams = std.ArrayList(TypeParam){};
+        for (c.type_params.items) |tp| {
+            tparams.append(_allocator, TypeParam.init(tp, null)) catch @panic("OOM");
+        }
         return Decl{ .class_ = blk_box: { const _bv = DeclClass.init(zspan(), zmods(), c.name, tparams, ifaces, mixins, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 

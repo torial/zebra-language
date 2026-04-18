@@ -182,10 +182,12 @@ struct PParam
 
 struct PClass
     var name as str
+    var type_params as List(str)
     var ifaces as List(str)
     var members as List(PNode)
-    cue init(name as str, ifaces as List(str), members as List(PNode))
+    cue init(name as str, type_params as List(str), ifaces as List(str), members as List(PNode))
         this.name = name
+        this.type_params = type_params
         this.ifaces = ifaces
         this.members = members
 
@@ -650,7 +652,20 @@ class Parser
 
     def parseClassDecl() as PNode throws
         .expectText("class")
-        const name = .eatId()
+        var name as str = ""
+        var type_params = List(str)()
+        # Generic class: name is tokenized as open_call because `(` follows immediately.
+        if .isOpenCall()
+            name = this.peek().text
+            this.advance()
+            if not this.textIs(")")
+                type_params.add(.eatId())
+                while this.textIs(",")
+                    this.advance()
+                    type_params.add(.eatId())
+            .expectText(")")
+        else
+            name = .eatId()
         var ifaces = List(str)()
         if this.textIs("implements")
             this.advance()
@@ -685,7 +700,7 @@ class Parser
                     members.add(.parseMemberDecl(false))
             if .isDedent()
                 this.advance()
-        return PNode.class_(PClass(name, ifaces, members))
+        return PNode.class_(PClass(name, type_params, ifaces, members))
 
     def parseEnumDecl() as PNode throws
         .expectText("enum")
@@ -719,7 +734,8 @@ class Parser
             if .isDedent()
                 this.advance()
         var ifaces = List(str)()
-        return PNode.struct_(PClass(name, ifaces, members))
+        var type_params = List(str)()
+        return PNode.struct_(PClass(name, type_params, ifaces, members))
 
     def parseUnionDecl() as PNode throws
         .expectText("union")
