@@ -668,10 +668,12 @@ The selfhost codegen path diverges.
 
 ---
 
-### BUG-045: Ctor-arg boxing wraps `^Class?` args in extra `*` (stale after BUG-041 fix)
+### BUG-045: Ctor-arg boxing wraps `^Class?` args in extra `*` (stale after BUG-041 fix) — FIXED
 - **Severity:** Medium (blocks any ctor call that passes a `^Class?` value — linked list / tree construction idioms)
-- **Status:** Open — found 2026-04-17 while verifying BUG-041 fix; surfaces on `verify_bug016b.zbr`
+- **Status:** Fixed 2026-04-17 (`a5e082b`) — Zig backend only; selfhost was already correct via Phase 17c walker.
 - **Target:** 0.5 (follow-up to BUG-041)
+- **Fix:** `genBoxedArgExpr` in `src/CodeGen.zig` short-circuits when the payload is a class (local via `class_names` OR cross-module via `imported_modules`) and falls through to plain `genArgExpr`. The selfhost side (`selfhost/codegen.zbr` lines ~3719-3736) already had this behaviour: Phase 17c replaced the `shouldBoxCtorArg` heuristic with an `inferExpr(arg)` + `isUnionType` walker, which correctly identifies class args as non-union so they were never wrapped in `_bx` blocks. The Zig-side fix brings it up to parity.
+- **Verified:** `test/ctor_arg_ref_test.zbr` (promoted probe) — `Node(3, nil) / Node(2, c) / Node(1, b)` emit as plain `Node.init(3, null) / Node.init(2, c) / Node.init(1, b)` via both backends.
 - **Symptom:** For `cue init(..., nxt as ^Node?)`, a call `Node(3, nil)` or `Node(2, c)` emits:
   ```zig
   Node.init(3, _box_1: { const _bp_1 = _allocator.create(?*Node) catch @panic("OOM"); _bp_1.* = null; break :_box_1 _bp_1; })
@@ -693,6 +695,18 @@ The selfhost codegen path diverges.
 - **For BUG-010's duplicate-method scenario, both compilers happen to yield "root" output** — but for different reasons (Zig: discovers + dedups + skips; selfhost: never discovered). A partial adding non-conflicting members would diverge visibly.
 - **Reproducer:** `C:\tmp\bug010\Greeter.zbr` + `Greeter.ext.zbr` with the partial's method renamed (so it is additive, not a duplicate) — selfhost output omits it; Zig backend includes it.
 - **Likely fix:** port the `mergePartials` + `mergePartialInto` routine from `src/main.zig` into `selfhost/main.zbr`, invoked between parse and resolve. Needs directory listing, path-stem matching, per-partial tokenize/parse/build, and duplicate-method dedup mirroring the Zig side.
+
+---
+
+### BUG-047: Field-read on `^Class?` emits stale `.*` after BUG-041 fix — OPEN
+- **Severity:** Medium (blocks read access to `^Class?` fields via a local copy — `var mid = a.next` style)
+- **Status:** Open — filed 2026-04-17 during BUG-045 verification
+- **Target:** 0.5 (same wave as BUG-045; closes the class-auto-box-rule's codegen paths)
+- **Symptom:** Given `class Node { var next as ^Node? }`, the expression `var mid = a.next` emits `const mid = a.next.*;` — a dereference that was correct when `.next` had type `?**Node` (pre BUG-041) and is one deref too many now that `.next` is `?*Node`. Zig rejects: *"cannot dereference non-pointer type `?*Node`"*.
+- **Reproducer:** `C:\tmp\verify_bug016b.zbr` — `var mid = a.next` then `mid?.next` chain. Currently fails after BUG-041+045 fixes; the ctor calls and the field TYPE are both correct, but the field-READ still has the stale `.*`.
+- **Root cause hypothesis:** a field-read codegen path that applies `.*` when it sees a `ref_to`-typed member, unconditional on class vs. non-class payload. Same pattern as BUG-041 (type emit) and BUG-045 (call-site arg): a codegen site that pre-BUG-041 needed an extra indirection and now does not, for class payloads.
+- **Related rule:** `concept_zebra-class-auto-box-rule` — closes the triad of type emit (BUG-041), arg materialization (BUG-045), and member read (this).
+- **Likely fix:** locate the field-read `.*` emission in `src/CodeGen.zig` (and the matching site in `selfhost/codegen.zbr`); add the same class-payload short-circuit pattern used by BUG-041 and BUG-045.
 
 ---
 
