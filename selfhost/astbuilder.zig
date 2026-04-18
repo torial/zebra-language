@@ -1530,6 +1530,7 @@ const ExprStringInterp = ast.ExprStringInterp;
 const ExprTry = ast.ExprTry;
 const ExprToNonNil = ast.ExprToNonNil;
 const ExprExcept = ast.ExprExcept;
+const ExprTypeCheck = ast.ExprTypeCheck;
 const ExceptField = ast.ExceptField;
 const IntBase = ast.IntBase;
 const BinaryOp = ast.BinaryOp;
@@ -2216,6 +2217,16 @@ pub const ASTBuilder = struct {
                 const pb = _ptr_pb.*;
                 const left_expr = try self.buildExpr(pb.left.items[@intCast(0)]);
                 const right_expr = try self.buildExpr(pb.right.items[@intCast(0)]);
+                if (std.mem.eql(u8, pb.op, "is")) {
+                    switch (right_expr) {
+                        .ident => |ei| {
+                            return Expr{ .type_check = blk_box: { const _bv = ExprTypeCheck.init(zspan(), _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        },
+                        else => |_| {
+                            { _error_ctx = .{ .message = "buildExpr: `is` RHS must be a plain type identifier" }; return error.ZebraError; }
+                        },
+                    }
+                }
                 const op = try self.toBinaryOp(pb.op);
                 return Expr{ .binary = blk_box: { const _bv = ExprBinary.init(zspan(), op, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },

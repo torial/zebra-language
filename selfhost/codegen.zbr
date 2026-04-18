@@ -173,6 +173,7 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("Expr.all_any")
         bv.add("Expr.try_")
         bv.add("Expr.except_")
+        bv.add("Expr.type_check")
         # StringPart boxed variant
         bv.add("StringPart.expr_")
 

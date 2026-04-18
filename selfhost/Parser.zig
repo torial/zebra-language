@@ -3481,6 +3481,10 @@ pub const Parser = struct {
                             } else {
                                 if (self.textIs("in")) {
                                     op = "in";
+                                } else {
+                                    if (self.textIs("is")) {
+                                        op = "is";
+                                    }
                                 }
                             }
                         }

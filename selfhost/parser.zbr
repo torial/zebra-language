@@ -1519,6 +1519,8 @@ class Parser
             op = ">"
         else if this.textIs("in")
             op = "in"
+        else if this.textIs("is")
+            op = "is"
         if op != ""
             this.advance()
             const right = .parseAddSub()

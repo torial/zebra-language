@@ -1700,6 +1700,7 @@ pub fn addCrossModuleBoxedVariants(bv: *StrSet, module_name: []const u8) void {
         bv.add("Expr.all_any");
         bv.add("Expr.try_");
         bv.add("Expr.except_");
+        bv.add("Expr.type_check");
         bv.add("StringPart.expr_");
     }
 }
@@ -5819,7 +5820,8 @@ pub const Generator = struct {
                 }
                 self.w.emit("}");
             },
-            .type_check => |tc2| {
+            .type_check => |_ptr_tc2| {
+                const tc2 = _ptr_tc2.*;
                 self.genExpr(tc2.expr.*);
                 self.w.emit("._type_tag == _ttag_");
                 self.w.emit(tc2.type_name);

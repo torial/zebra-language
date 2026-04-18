@@ -746,6 +746,19 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-069: Selfhost parser missing `expr is TypeName` type-check — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseComparison` recognised `==`, `!=`, `<>`, `<=`, `>=`, `<`, `>`, `in` but not `is`. Any `b is Box` or `d is Dog` expression crashed with `unexpected expression token: 'is'`. The downstream AST (`ast.zbr:666` — `Expr.type_check as ^ExprTypeCheck` / `ExprTypeCheck {span, expr, type_name}`) and codegen (`codegen.zbr:3493` — `on Expr.type_check as tc2` emits `_type_id(x) == _ttag_T`) were already wired. Zig backend ref: `src/astbuilder.zig:1882-1890` — `kw_is` with ident-right lowers to `ExprTypeCheck`, with non-ident-right falls back to equality.
+- **Fix (parser.zbr + astbuilder.zbr + codegen.zbr):**
+  1. `parseComparison` — added an `else if this.textIs("is")` arm that captures `op = "is"` in the shared operator dispatch (so the normal `this.advance()` + `parseAddSub()` path runs, producing a `PNode.expr_binary(PBinary("is", left, right))`).
+  2. `astbuilder.zbr::buildExpr` — in the `on PNode.expr_binary as pb` arm, before the normal `toBinaryOp` dispatch, intercept `pb.op == "is"` and `branch right_expr`: when the RHS is `Expr.ident as ei`, emit `Expr.type_check(ExprTypeCheck(zspan(), left_expr, ei.name))`; otherwise raise (strict — the corpus doesn't use the equality-fallback form the Zig backend keeps). Added `ExprTypeCheck` to the `use ast exposing` list.
+  3. `codegen.zbr::addCrossModuleBoxedVariants` — `bv.add("Expr.type_check")`. Without this, selfhost-A emitted `Expr{ .type_check = ExprTypeCheck.init(...) }` (value assigned to a `^ExprTypeCheck` field, which is `*ExprTypeCheck` in Zig), causing selfhost-B to fail with `expected type '*ast.ExprTypeCheck', found 'ast.ExprTypeCheck'`. The `rf.add("ExprTypeCheck.expr")` entry for the inner `^Expr` field was already in place.
+- **Rule re-surfaced:** when adding a new boxed union-variant constructor (here `Expr.type_check`), the `bv` list in `addCrossModuleBoxedVariants` must be updated alongside the `rf` (ref-field) list — otherwise A/B round-trip fails only at step 4. Same trap as BUG-064's `addCrossModuleBoxedVariants("PNode.interface_")` miss. Until Phase 22 retires the lists this is mandatory.
+- **Verification:** Corpus 135/152 → 137/152 (+2 emit: generic_is_test, type_check_test). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-068: Selfhost parser rejects generic-arg `?` suffix and `name:` labeled call args — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

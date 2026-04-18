@@ -1760,7 +1760,8 @@ pub fn exprHasTry(expr: Expr) bool {
             const c = _ptr_c.*;
             return exprHasTry(c.expr.*);
         },
-        .type_check => |t| {
+        .type_check => |_ptr_t| {
+            const t = _ptr_t.*;
             return exprHasTry(t.expr.*);
         },
         .if_expr => |_ptr_i| {
@@ -2105,7 +2106,8 @@ pub fn nameUsedInExpr(name: []const u8, expr: Expr) bool {
             const c = _ptr_c.*;
             return nameUsedInExpr(name, c.expr.*);
         },
-        .type_check => |t| {
+        .type_check => |_ptr_t| {
+            const t = _ptr_t.*;
             return nameUsedInExpr(name, t.expr.*);
         },
         .dict_lit => |_ptr_d| {
@@ -2389,7 +2391,8 @@ pub fn collectAllIdents(expr: Expr, out: *StrSet) void {
             const t = _ptr_t.*;
             collectAllIdents(t.expr.*, out);
         },
-        .type_check => |t| {
+        .type_check => |_ptr_t| {
+            const t = _ptr_t.*;
             collectAllIdents(t.expr.*, out);
         },
         .dict_lit => |_ptr_d| {
@@ -2693,7 +2696,8 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
             const t = _ptr_t.*;
             scanMutationsInExpr(t.expr.*, out);
         },
-        .type_check => |t| {
+        .type_check => |_ptr_t| {
+            const t = _ptr_t.*;
             scanMutationsInExpr(t.expr.*, out);
         },
         .if_expr => |_ptr_i| {
