@@ -1611,6 +1611,7 @@ pub fn addCrossModuleBoxedVariants(bv: *StrSet, module_name: []const u8) void {
         bv.add("PNode.class_");
         bv.add("PNode.struct_");
         bv.add("PNode.interface_");
+        bv.add("PNode.extend_");
         bv.add("PNode.enum_");
         bv.add("PNode.union_decl");
         bv.add("PNode.sig_");
@@ -3841,7 +3842,7 @@ pub const Generator = struct {
         self.w.emit("_");
         self.w.emit(mth.name);
         self.w.emit("(self: ");
-        if (std.mem.eql(u8, tname, "str")) {
+        if ((std.mem.eql(u8, tname, "str") or std.mem.eql(u8, tname, "String"))) {
             self.w.emit("[]const u8");
         } else {
             if (std.mem.eql(u8, tname, "int")) {

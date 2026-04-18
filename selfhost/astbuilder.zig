@@ -1475,6 +1475,7 @@ const DeclNamespace = ast.DeclNamespace;
 const DeclClass = ast.DeclClass;
 const DeclInterface = ast.DeclInterface;
 const DeclStruct = ast.DeclStruct;
+const DeclExtend = ast.DeclExtend;
 const DeclEnum = ast.DeclEnum;
 const DeclUnion = ast.DeclUnion;
 const DeclSig = ast.DeclSig;
@@ -1541,6 +1542,7 @@ const Parser = @import("Parser.zig");
 const PNode = Parser.PNode;
 const PModule = Parser.PModule;
 const PClass = Parser.PClass;
+const PExtend = Parser.PExtend;
 const PEnum = Parser.PEnum;
 const PField = Parser.PField;
 const PMethod = Parser.PMethod;
@@ -1746,6 +1748,10 @@ pub const ASTBuilder = struct {
                 const i = _ptr_i.*;
                 return try self.buildInterface(i);
             },
+            .extend_ => |_ptr_ex| {
+                const ex = _ptr_ex.*;
+                return try self.buildExtend(ex);
+            },
             .enum_ => |_ptr_e| {
                 const e = _ptr_e.*;
                 return try self.buildEnum(e);
@@ -1795,6 +1801,15 @@ pub const ASTBuilder = struct {
             ifaces.append(_allocator, TypeRef{ .named = NamedTypeRef.init(zspan(), iface) }) catch @panic("OOM");
         }
         return Decl{ .interface_ = blk_box: { const _bv = DeclInterface.init(zspan(), zmods(), c.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn buildExtend(self: *ASTBuilder, ex: PExtend) anyerror!Decl {
+        var members = std.ArrayList(Decl){};
+        for (ex.members.items) |pn| {
+            members.append(_allocator, try self.buildMember(pn)) catch @panic("OOM");
+        }
+        const target = self.parseTypeRefRequired(ex.target_name);
+        return Decl{ .extend_ = blk_box: { const _bv = DeclExtend.init(zspan(), target, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn buildStruct(self: *ASTBuilder, s: PClass) anyerror!Decl {

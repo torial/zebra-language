@@ -746,6 +746,20 @@ The selfhost codegen path diverges.
 - **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
 - **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
 
+### BUG-065: Selfhost parseTopDecl rejects the `extend Type` keyword — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseTopDecl` had no arm for `extend TypeRef` + indented member block. Everything else was wired — `ast.zbr` defines `Decl.extend_ as ^DeclExtend` (line 51) with `DeclExtend {span, target, members}` (lines 201-210), and `codegen.zbr::genExtend` + `genExtMethod` (lines 1899-1959) already emit `// extend <T>` / `fn _ext_<T>_<method>(self: <ZigT>, ...)` standalone functions. Zig grammar: `ExtendDecl → ModList kw_extend TypeRef IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent` (`ZebraGrammar.zig:692-695`), built at `AstBuilder.zig:427-434`.
+- **Fix:**
+  1. `selfhost/parser.zbr` — added `PExtend {target_name, members}` struct, `extend_ as ^PExtend` PNode variant, `parseExtendDecl` (eat `extend`, read target via the existing `eatTypeName`, `skipEol`, standard indent/dedent loop calling `parseMemberDecl(false)`), and parseTopDecl arm.
+  2. `selfhost/astbuilder.zbr` — added `DeclExtend` to `use ast exposing` and `PExtend` to `use Parser exposing`; `on PNode.extend_ as ex` arm in buildTopDecl calls `parseTypeRefRequired(ex.target_name)` and returns `Decl.extend_(DeclExtend(zspan(), target, members))`.
+  3. `selfhost/codegen.zbr::addCrossModuleBoxedVariants` — `bv.add("PNode.extend_")` so the branch-arm auto-deref emits `|_ptr_ex| { const ex = _ptr_ex.*; ... }`. Same load-bearing rule as BUG-064.
+  4. `selfhost/codegen.zbr::genExtMethod` — extended the `tname == "str"` check to also accept `"String"` (Zebra alias for the builtin string type; Zig backend handles this via `Builtins.zigTypeName` which maps both to `[]const u8`).
+- **Partial:** `extend_test` now passes corpus emit (`--emit-zig` exits 0) but `zig build-exe` of the emitted .zig fails with two residual codegen gaps: (a) `this.upper()` inside an extension body emits `_zbr_str_upper(_allocator, self)` — no such helper is in the preamble; Zig backend inlines to `std.ascii.allocUpperString(_allocator, self)`. (b) Call-site `s.shout()` where `s: []const u8` doesn't rewrite to `_ext_String_shout(s)` — selfhost codegen lacks the extension-method dispatch table at member-call emit time. These are codegen bugs, not parser bugs, and are left for a follow-up.
+- **Verification:** Corpus 130/152 → 131/152 (+1 emit: extend_test). Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-064: Selfhost parseTopDecl rejects the `interface` keyword — FIXED
 - **Status:** Fixed 2026-04-18
 - **Backend:** selfhost only (Zig compiler unaffected)

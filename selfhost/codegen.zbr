@@ -80,6 +80,7 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("PNode.class_")
         bv.add("PNode.struct_")
         bv.add("PNode.interface_")
+        bv.add("PNode.extend_")
         bv.add("PNode.enum_")
         bv.add("PNode.union_decl")
         bv.add("PNode.sig_")
@@ -1925,7 +1926,7 @@ struct Generator
         w.emit(mth.name)
         w.emit("(self: ")
         # Map builtin type names to Zig types
-        if tname == "str"
+        if tname == "str" or tname == "String"
             w.emit("[]const u8")
         else if tname == "int"
             w.emit("i64")

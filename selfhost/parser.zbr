@@ -26,6 +26,7 @@ union PNode
     class_ as ^PClass
     struct_ as ^PClass
     interface_ as ^PClass
+    extend_ as ^PExtend
     enum_ as ^PEnum
     union_decl as ^PUnionDecl
     sig_ as ^PSig
@@ -204,6 +205,13 @@ struct PClass
         this.name = name
         this.type_params = type_params
         this.ifaces = ifaces
+        this.members = members
+
+struct PExtend
+    var target_name as str
+    var members as List(PNode)
+    cue init(target_name as str, members as List(PNode))
+        this.target_name = target_name
         this.members = members
 
 struct PEnum
@@ -681,6 +689,8 @@ class Parser
             return .parseStructDecl()
         else if this.textIs("interface")
             return .parseInterfaceDecl()
+        else if this.textIs("extend")
+            return .parseExtendDecl()
         else if this.textIs("union")
             return .parseUnionDecl()
         else if this.textIs("enum")
@@ -842,6 +852,22 @@ class Parser
                 this.advance()
         var type_params = List(str)()
         return PNode.interface_(PClass(name, type_params, ifaces, members))
+
+    def parseExtendDecl() as PNode throws
+        .expectText("extend")
+        const target_name = .eatTypeName()
+        .skipEol()
+        var members = List(PNode)()
+        if .isIndent()
+            this.advance()
+            while not .isDedent() and not .isEof()
+                .skipEol()
+                if .isDedent()
+                    break
+                members.add(.parseMemberDecl(false))
+            if .isDedent()
+                this.advance()
+        return PNode.extend_(PExtend(target_name, members))
 
     def parseUnionDecl() as PNode throws
         .expectText("union")

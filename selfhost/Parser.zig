@@ -1476,6 +1476,7 @@ pub const PNode = union(enum) {
     class_: *PClass,
     struct_: *PClass,
     interface_: *PClass,
+    extend_: *PExtend,
     enum_: *PEnum,
     union_decl: *PUnionDecl,
     sig_: *PSig,
@@ -1716,6 +1717,18 @@ pub const PClass = struct {
             _self.name = name;
             _self.type_params = type_params;
             _self.ifaces = ifaces;
+            _self.members = members;
+        return _self;
+    }
+
+};
+
+pub const PExtend = struct {
+    target_name: []const u8,
+    members: std.ArrayList(PNode),
+    pub fn init(target_name: []const u8, members: std.ArrayList(PNode)) PExtend {
+        var _self: PExtend = undefined;
+            _self.target_name = target_name;
             _self.members = members;
         return _self;
     }
@@ -2421,21 +2434,25 @@ pub const Parser = struct {
                         if (self.textIs("interface")) {
                             return try self.parseInterfaceDecl();
                         } else {
-                            if (self.textIs("union")) {
-                                return try self.parseUnionDecl();
+                            if (self.textIs("extend")) {
+                                return try self.parseExtendDecl();
                             } else {
-                                if (self.textIs("enum")) {
-                                    return try self.parseEnumDecl();
+                                if (self.textIs("union")) {
+                                    return try self.parseUnionDecl();
                                 } else {
-                                    if (self.textIs("sig")) {
-                                        return try self.parseSigDecl();
+                                    if (self.textIs("enum")) {
+                                        return try self.parseEnumDecl();
                                     } else {
-                                        if (self.textIs("shared")) {
-                                            self.advance();
-                                            return try self.parseMethodDecl(true);
+                                        if (self.textIs("sig")) {
+                                            return try self.parseSigDecl();
                                         } else {
-                                            if (self.textIs("def")) {
-                                                return try self.parseMethodDecl(false);
+                                            if (self.textIs("shared")) {
+                                                self.advance();
+                                                return try self.parseMethodDecl(true);
+                                            } else {
+                                                if (self.textIs("def")) {
+                                                    return try self.parseMethodDecl(false);
+                                                }
                                             }
                                         }
                                     }
@@ -2636,6 +2653,27 @@ pub const Parser = struct {
         }
         const type_params = std.ArrayList([]const u8){};
         return PNode{ .interface_ = blk_box: { const _bv = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn parseExtendDecl(self: *Parser) anyerror!PNode {
+        try self.expectText("extend");
+        const target_name = try self.eatTypeName();
+        self.skipEol();
+        var members = std.ArrayList(PNode){};
+        if (self.isIndent()) {
+            self.advance();
+            while (((!self.isDedent()) and (!self.isEof()))) {
+                self.skipEol();
+                if (self.isDedent()) {
+                    break;
+                }
+                members.append(_allocator, try self.parseMemberDecl(false)) catch @panic("OOM");
+            }
+            if (self.isDedent()) {
+                self.advance();
+            }
+        }
+        return PNode{ .extend_ = blk_box: { const _bv = PExtend.init(target_name, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseUnionDecl(self: *Parser) anyerror!PNode {
