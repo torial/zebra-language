@@ -739,6 +739,13 @@ The selfhost codegen path diverges.
 - **Why two `for p in …split(…)` loops were renamed:** Selfhost codegen lowers `for p in …` to a Zig `_it_p` iterator variable. The helper has two `split` loops, so both lowered to the same name — `redeclaration of local variable '_it_p'`. Renamed the second loop's variable to `bp` so the lowered iterators don't collide.
 - **Verification:** Corpus 120/152 → 121/152 (+1 emit: raw_string_test). `diff` of `Regex.compile(...)` lines between selfhost and Zig-backend emit is empty except for pre-existing `var`/`const` divergence unrelated to this bug. Bootstrap round-trip A/B byte-identical.
 
+### BUG-057: Selfhost parseStmt rejects `arena` scope blocks — FIXED
+- **Status:** Fixed 2026-04-18
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `parseStmt` had no case for the `arena` keyword. Everything else was wired — `ast.zbr:611-617` defines `StmtArenaScope`, `Stmt` union has `arena_scope as ^StmtArenaScope` (line 420), and `codegen.zbr` already emits the `std.heap.ArenaAllocator.init(_allocator); defer _arena.deinit(); _allocator = _arena.allocator();` block. Zig backend: `StmtArenaScope → kw_arena eol Block` (`ZebraGrammar.zig:1020`).
+- **Fix (parser.zbr + astbuilder.zbr):** New `PArenaScope` holder struct (stmts only), new `PNode.stmt_arena_scope as ^PArenaScope` variant, new `parseArenaScopeStmt` (`expectText arena` / `skipEol` / `parseBlock`), new parseStmt arm. Astbuilder: new `on PNode.stmt_arena_scope` arm that calls `buildStmts` and returns `Stmt.arena_scope(StmtArenaScope(zspan(), stmts))`. Added `StmtArenaScope` to astbuilder's `use ast exposing` list and `PArenaScope` to the `use Parser exposing` list.
+- **Verification:** Corpus 121/152 → 122/152 (+1 emit: arena_scope_test). Bootstrap round-trip A/B byte-identical.
+
 ---
 
 ### BUG-053: Selfhost parseAtom rejects the `zig"..."` / `zig'...'` backend literal — FIXED

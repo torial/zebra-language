@@ -1499,6 +1499,7 @@ const StmtAssign = ast.StmtAssign;
 const StmtRaise = ast.StmtRaise;
 const StmtTryCatch = ast.StmtTryCatch;
 const StmtBranch = ast.StmtBranch;
+const StmtArenaScope = ast.StmtArenaScope;
 const BranchOn = ast.BranchOn;
 const CatchClause = ast.CatchClause;
 const StmtPrint = ast.StmtPrint;
@@ -1565,6 +1566,7 @@ const PExceptField = Parser.PExceptField;
 const PStringInterp = Parser.PStringInterp;
 const PLambda = Parser.PLambda;
 const PCaptureVar = Parser.PCaptureVar;
+const PArenaScope = Parser.PArenaScope;
 pub fn zspan() Span {
     return Span.init(0, 0, 0, 0);
 }
@@ -1967,6 +1969,10 @@ pub const ASTBuilder = struct {
             .stmt_branch => |_ptr_pb| {
                 const pb = _ptr_pb.*;
                 return try self.buildBranch(pb);
+            },
+            .stmt_arena_scope => |pas| {
+                const stmts = try self.buildStmts(pas.stmts);
+                return Stmt{ .arena_scope = blk_box: { const _bv = StmtArenaScope.init(zspan(), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
             .stmt_expr => |_ptr_inner| {
                 const inner = _ptr_inner.*;

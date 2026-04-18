@@ -49,6 +49,7 @@ union PNode
     stmt_try_catch as ^PTryCatch
     stmt_expr as ^PNode
     stmt_print as ^PNode
+    stmt_arena_scope as ^PArenaScope
 
     # Expressions (inline - no heap indirection)
     expr_int as str
@@ -251,6 +252,11 @@ struct PWhile
     var stmts as List(PNode)
     cue init(cond as List(PNode), stmts as List(PNode))
         this.cond = cond
+        this.stmts = stmts
+
+struct PArenaScope
+    var stmts as List(PNode)
+    cue init(stmts as List(PNode))
         this.stmts = stmts
 
 struct PForIn
@@ -961,6 +967,8 @@ class Parser
             return .parseTryCatch()
         else if this.textIs("branch")
             return .parseBranchStmt()
+        else if this.textIs("arena")
+            return .parseArenaScopeStmt()
         else if this.textIs("print")
             this.advance()
             const expr = .parseExpr()
@@ -1003,6 +1011,12 @@ class Parser
         var cond_list = List(PNode)()
         cond_list.add(cond_expr)
         return PNode.stmt_while(PWhile(cond_list, stmts))
+
+    def parseArenaScopeStmt() as PNode throws
+        .expectText("arena")
+        .skipEol()
+        const stmts = .parseBlock()
+        return PNode.stmt_arena_scope(PArenaScope(stmts))
 
     def parseForInStmt() as PNode throws
         .expectText("for")

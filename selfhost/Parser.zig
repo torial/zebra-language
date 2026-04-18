@@ -1495,6 +1495,7 @@ pub const PNode = union(enum) {
     stmt_try_catch: *PTryCatch,
     stmt_expr: *PNode,
     stmt_print: *PNode,
+    stmt_arena_scope: *PArenaScope,
     expr_int: []const u8,
     expr_float: []const u8,
     expr_bool: bool,
@@ -1793,6 +1794,16 @@ pub const PWhile = struct {
     pub fn init(cond: std.ArrayList(PNode), stmts: std.ArrayList(PNode)) PWhile {
         var _self: PWhile = undefined;
             _self.cond = cond;
+            _self.stmts = stmts;
+        return _self;
+    }
+
+};
+
+pub const PArenaScope = struct {
+    stmts: std.ArrayList(PNode),
+    pub fn init(stmts: std.ArrayList(PNode)) PArenaScope {
+        var _self: PArenaScope = undefined;
             _self.stmts = stmts;
         return _self;
     }
@@ -2769,13 +2780,17 @@ pub const Parser = struct {
                                                         if (self.textIs("branch")) {
                                                             return try self.parseBranchStmt();
                                                         } else {
-                                                            if (self.textIs("print")) {
-                                                                self.advance();
-                                                                const expr = try self.parseExpr();
-                                                                self.skipEol();
-                                                                return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                            if (self.textIs("arena")) {
+                                                                return try self.parseArenaScopeStmt();
                                                             } else {
-                                                                return try self.parseExprOrAssignStmt();
+                                                                if (self.textIs("print")) {
+                                                                    self.advance();
+                                                                    const expr = try self.parseExpr();
+                                                                    self.skipEol();
+                                                                    return PNode{ .stmt_print = blk_box: { const _bv = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                } else {
+                                                                    return try self.parseExprOrAssignStmt();
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -2830,6 +2845,13 @@ pub const Parser = struct {
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
         return PNode{ .stmt_while = blk_box: { const _bv = PWhile.init(cond_list, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+    }
+
+    pub fn parseArenaScopeStmt(self: *Parser) anyerror!PNode {
+        try self.expectText("arena");
+        self.skipEol();
+        const stmts = try self.parseBlock();
+        return PNode{ .stmt_arena_scope = blk_box: { const _bv = PArenaScope.init(stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
     }
 
     pub fn parseForInStmt(self: *Parser) anyerror!PNode {
