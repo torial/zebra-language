@@ -273,7 +273,11 @@ class ASTBuilder
                 return Stmt.assert_(StmtAssert(zspan(), cond_expr, nil))
 
             on PNode.stmt_raise as pr
-                if pr.message.len > 0
+                if pr.message.len >= 2
+                    const msg = .buildExpr(pr.message.at(0))?
+                    const det = .buildExpr(pr.message.at(1))?
+                    return Stmt.raise_(StmtRaise(zspan(), msg, det))
+                if pr.message.len == 1
                     const msg = .buildExpr(pr.message.at(0))?
                     return Stmt.raise_(StmtRaise(zspan(), msg, nil))
                 return Stmt.raise_(StmtRaise(zspan(), nil, nil))

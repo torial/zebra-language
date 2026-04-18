@@ -1863,7 +1863,12 @@ pub const ASTBuilder = struct {
             },
             .stmt_raise => |_ptr_pr| {
                 const pr = _ptr_pr.*;
-                if ((@as(i64, @intCast(pr.message.items.len)) > 0)) {
+                if ((@as(i64, @intCast(pr.message.items.len)) >= 2)) {
+                    const msg = try self.buildExpr(pr.message.items[@intCast(0)]);
+                    const det = try self.buildExpr(pr.message.items[@intCast(1)]);
+                    return Stmt{ .raise_ = blk_box: { const _bv = StmtRaise.init(zspan(), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = det; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                }
+                if ((@as(i64, @intCast(pr.message.items.len)) == 1)) {
                     const msg = try self.buildExpr(pr.message.items[@intCast(0)]);
                     return Stmt{ .raise_ = blk_box: { const _bv = StmtRaise.init(zspan(), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
                 }

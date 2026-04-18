@@ -719,6 +719,19 @@ The selfhost codegen path diverges.
 
 ---
 
+### BUG-051: Selfhost genRaise drops the 2-arg `raise msg, details` form — FIXED (primitive + string paths)
+- **Status:** Fixed 2026-04-17 (primitive + string details paths; object path emits `@compileError` fail-loud, pending future port)
+- **Backend:** selfhost only (Zig compiler unaffected)
+- **Was:** `selfhost/parser.zbr::parseRaiseStmt` parsed at most one expression after `raise` and dropped any trailing `, expr` details. The AST (`ast.zbr::StmtRaise`) already carried a `details as ^Expr?` slot, and `selfhost/codegen.zbr::genRaise` ignored it entirely — emitting only the single-message path. Zig backend (`src/CodeGen.zig::genRaise` lines 8132–8221) implements three type-dispatched paths via `tc.expr_types.get(det)`: primitive → `std.fmt.allocPrint`-based `_rdet_N` slot + shim; string → direct slice-header alloc + shim; object → typed alloc + `.toString()` shim. Equivalence rule violated in two places (parser + codegen).
+- **Fix:** Four coordinated edits preserving semantics:
+  1. `parser.zbr::parseRaiseStmt` — after first `parseExpr()`, if `textIs(",")` consume and append a second expr to `msg_list` (0 / 1 / 2 element shape).
+  2. `astbuilder.zbr::stmt_raise` arm — thread `msg_list.at(1)` into `StmtRaise.details` when `len >= 2`.
+  3. `codegen.zbr::Writer` — added `_uid` counter + `nextUid()` method on the shared `Writer` class (mirrors `Generator.nextUid()` in `src/CodeGen.zig`; Writer is heap-allocated so it survives `except`-derived Generator copies).
+  4. `codegen.zbr::genRaise` — ported primitive + string emission paths from `src/CodeGen.zig`. Gate via `inferExpr(details, infer_ctx)` (pre-seeded at method/init entry with param types via `typeFromRef`). Primitive fmt dispatch: `float_/float_n` → `{d}`, `char_` → `{u}`, others → `{}`. Object path (non-primitive, non-string) emits `@compileError("selfhost BUG-051: ...")` — loud at `zig build` time rather than silent.
+- **Verification:** Corpus 110/152 → 112/152 (+2 real: `throws_raise.zbr` emits valid Zig, builds, runs to completion; `raise_details_test.zbr` emits but trips the `@compileError` — object-details path, not yet ported). Selfhost emission of the 2-arg raise block is byte-identical to Zig backend on `throws_raise.zbr`. The other 4 files in the original 5-file triage cluster (`raise_auto`, `try_catch_err`, `try_catch_full`, `try_outer_vars`) remain blocked on an unrelated parser gap — `try` as an expression prefix (`result = try App.risky(5)`) — which the 2-arg raise error had previously masked. Bootstrap round-trip A/B byte-identical.
+
+---
+
 ### BUG-050: Selfhost branch-on drops multi-pattern lists and inline-else — FIXED
 - **Status:** Fixed 2026-04-17
 - **Backend:** selfhost only (Zig compiler unaffected)

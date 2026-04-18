@@ -935,15 +935,24 @@ def generateDepWith(m as Module, file as str, preamble_path as str, extra_class_
 
 class Writer
     var _buf as StringBuilder
+    var _uid as int
 
     cue init()
         _buf = StringBuilder()
+        _uid = 0
 
     def emit(s as str)
         _buf.append(s)
 
     def result() as str
         return _buf.build()
+
+    # Monotonic counter for deterministic unique identifier suffixes in emitted
+    # Zig (_rdet_N, _rshim_N, etc). Shared across all Generator copies because
+    # Writer is a class — `except`-derived Generators keep the same Writer ref.
+    def nextUid() as int
+        _uid = _uid + 1
+        return _uid
 
 # ── Generator ─────────────────────────────────────────────────────────────────
 
@@ -2944,21 +2953,156 @@ struct Generator
 
     def genRaise(r as StmtRaise)
         writeIndent()
-        if r.message != nil
+        if r.message != nil and r.details != nil
+            # Two-arg form: `raise "msg", details_expr`. Mirrors the three-path
+            # dispatch in src/CodeGen.zig:genRaise — primitive / string / object.
+            # Non-primitive details currently raise a selfhost compile error
+            # (the object-details path is not ported yet); primitive-only paths
+            # cover all current target corpus files (all int details).
+            var det as Expr = r.details to!
+            var det_t as Type_ = Type_.unknown_
+            if this.infer_ctx != nil
+                det_t = inferExpr(det, this.infer_ctx to!)
+            var uid as int = w.nextUid()
+            var is_prim as bool = false
+            branch det_t
+                on Type_.int_
+                    is_prim = true
+                on Type_.uint_
+                    is_prim = true
+                on Type_.float_
+                    is_prim = true
+                on Type_.bool_
+                    is_prim = true
+                on Type_.char_
+                    is_prim = true
+                on Type_.int_n as _
+                    is_prim = true
+                on Type_.uint_n as _
+                    is_prim = true
+                on Type_.float_n as _
+                    is_prim = true
+                else
+                    pass
+            var is_string_det as bool = false
+            branch det_t
+                on Type_.string_
+                    is_string_det = true
+                else
+                    pass
+            if is_prim
+                var fmt as str = "{}"
+                branch det_t
+                    on Type_.float_
+                        fmt = "{d}"
+                    on Type_.float_n as _
+                        fmt = "{d}"
+                    on Type_.char_
+                        fmt = "{u}"
+                    else
+                        pass
+                w.emit("{ const _rdet_")
+                w.emit(uid.toString())
+                w.emit(": []const u8 = std.fmt.allocPrint(_allocator, \"")
+                w.emit(fmt)
+                w.emit("\", .{")
+                genExpr(det)
+                w.emit("}) catch @panic(\"OOM\");\n")
+                writeIndent()
+                w.emit("  const _rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n")
+                writeIndent()
+                w.emit("  _rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit(".* = _rdet_")
+                w.emit(uid.toString())
+                w.emit(";\n")
+                writeIndent()
+                w.emit("  const _rshim_")
+                w.emit(uid.toString())
+                w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n")
+                writeIndent()
+                w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
+                writeIndent()
+                w.emit("  } };\n")
+                writeIndent()
+                w.emit("  _error_ctx = .{ .message = ")
+                genExpr(r.message to!)
+                w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit("), .toString_fn = _rshim_")
+                w.emit(uid.toString())
+                w.emit(".call } };\n")
+                writeIndent()
+                w.emit("  ")
+            else if is_string_det
+                w.emit("{ const _rdet_")
+                w.emit(uid.toString())
+                w.emit(": []const u8 = ")
+                genExpr(det)
+                w.emit(";\n")
+                writeIndent()
+                w.emit("  const _rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n")
+                writeIndent()
+                w.emit("  _rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit(".* = _rdet_")
+                w.emit(uid.toString())
+                w.emit(";\n")
+                writeIndent()
+                w.emit("  const _rshim_")
+                w.emit(uid.toString())
+                w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n")
+                writeIndent()
+                w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
+                writeIndent()
+                w.emit("  } };\n")
+                writeIndent()
+                w.emit("  _error_ctx = .{ .message = ")
+                genExpr(r.message to!)
+                w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
+                w.emit(uid.toString())
+                w.emit("), .toString_fn = _rshim_")
+                w.emit(uid.toString())
+                w.emit(".call } };\n")
+                writeIndent()
+                w.emit("  ")
+            else
+                # Object-details path not ported in BUG-051. Emit a Zig compile
+                # error so divergence is loud, not silent.
+                w.emit("@compileError(\"selfhost BUG-051: 2-arg raise with non-primitive/string details not yet supported\");\n")
+                writeIndent()
+            if try_block_label != nil
+                w.emit(try_err_var to!)
+                w.emit(" = error.ZebraError; break :")
+                w.emit(try_block_label to!)
+                w.emit("; ")
+            else
+                w.emit("return error.ZebraError; ")
+            w.emit("}\n")
+        else if r.message != nil
             w.emit("{ _error_ctx = .{ .message = ")
             genExpr(r.message to!)
             w.emit(" }; ")
-        if try_block_label != nil
-            # Inside a try block: set error variable and break out of labeled block
-            w.emit(try_err_var to!)
-            w.emit(" = error.ZebraError; break :")
-            w.emit(try_block_label to!)
-            w.emit("; ")
-        else
-            w.emit("return error.ZebraError; ")
-        if r.message != nil
+            if try_block_label != nil
+                w.emit(try_err_var to!)
+                w.emit(" = error.ZebraError; break :")
+                w.emit(try_block_label to!)
+                w.emit("; ")
+            else
+                w.emit("return error.ZebraError; ")
             w.emit("}\n")
         else
+            if try_block_label != nil
+                w.emit(try_err_var to!)
+                w.emit(" = error.ZebraError; break :")
+                w.emit(try_block_label to!)
+                w.emit("; ")
+            else
+                w.emit("return error.ZebraError; ")
             w.emit("\n")
 
     # ── genTryCatch ───────────────────────────────────────────────────────────

@@ -1053,6 +1053,9 @@ class Parser
         var msg_list = List(PNode)()
         if not .isEol() and not .isEof() and not .isDedent()
             msg_list.add(.parseExpr())
+            if this.textIs(",")
+                this.advance()
+                msg_list.add(.parseExpr())
         .skipEol()
         return PNode.stmt_raise(PRaise(msg_list))
 

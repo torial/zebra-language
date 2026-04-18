@@ -2689,10 +2689,12 @@ pub fn generateDepWith(m: Module, file: []const u8, preamble_path: []const u8, e
 pub const Writer = struct {
     _type_tag: u64 = _ttag_Writer,
     _buf: std.ArrayList(u8) = .{},
+    _uid: i64,
     pub fn init() *Writer {
         const _self = _allocator.create(Writer) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Writer");
             _self._buf = std.ArrayList(u8){};
+            _self._uid = 0;
         return _self;
     }
 
@@ -2704,11 +2706,16 @@ pub const Writer = struct {
         return (self._buf.toOwnedSlice(_allocator) catch "");
     }
 
+    pub fn nextUid(self: *Writer) i64 {
+        self._uid = (self._uid + 1);
+        return self._uid;
+    }
+
 };
 const _ttag_Writer: u64 = _zbr_hash("Writer");
 const _reflect_Writer_name: []const u8 = "Writer";
-const _reflect_Writer_fields: []const []const u8 = &.{"_buf"};
-const _reflect_Writer_field_types: []const []const u8 = &.{"StringBuilder"};
+const _reflect_Writer_fields: []const []const u8 = &.{"_buf", "_uid"};
+const _reflect_Writer_field_types: []const []const u8 = &.{"StringBuilder", "int"};
 
 pub const Generator = struct {
     w: *Writer,
@@ -5177,23 +5184,177 @@ pub const Generator = struct {
 
     pub fn genRaise(self: *Generator, r: StmtRaise) void {
         self.writeIndent();
-        if ((r.message != null)) {
-            self.w.emit("{ _error_ctx = .{ .message = ");
-            self.genExpr(r.message.?.*);
-            self.w.emit(" }; ");
-        }
-        if ((self.try_block_label != null)) {
-            self.w.emit(self.try_err_var.?);
-            self.w.emit(" = error.ZebraError; break :");
-            self.w.emit(self.try_block_label.?);
-            self.w.emit("; ");
-        } else {
-            self.w.emit("return error.ZebraError; ");
-        }
-        if ((r.message != null)) {
+        if (((r.message != null) and (r.details != null))) {
+            const det: Expr = r.details.?.*;
+            var det_t: Type_ = Type_.unknown_;
+            if ((self.infer_ctx != null)) {
+                det_t = inferExpr(det, self.infer_ctx.?);
+            }
+            const uid: i64 = self.w.nextUid();
+            var is_prim: bool = false;
+            switch (det_t) {
+                .int_ => |_| {
+                    is_prim = true;
+                },
+                .uint_ => |_| {
+                    is_prim = true;
+                },
+                .float_ => |_| {
+                    is_prim = true;
+                },
+                .bool_ => |_| {
+                    is_prim = true;
+                },
+                .char_ => |_| {
+                    is_prim = true;
+                },
+                .int_n => |_| {
+                    is_prim = true;
+                },
+                .uint_n => |_| {
+                    is_prim = true;
+                },
+                .float_n => |_| {
+                    is_prim = true;
+                },
+                else => |_| {
+                    // pass
+                },
+            }
+            var is_string_det: bool = false;
+            switch (det_t) {
+                .string_ => {
+                    is_string_det = true;
+                },
+                else => {
+                    // pass
+                },
+            }
+            if (is_prim) {
+                var fmt: []const u8 = "{}";
+                switch (det_t) {
+                    .float_ => |_| {
+                        fmt = "{d}";
+                    },
+                    .float_n => |_| {
+                        fmt = "{d}";
+                    },
+                    .char_ => |_| {
+                        fmt = "{u}";
+                    },
+                    else => |_| {
+                        // pass
+                    },
+                }
+                self.w.emit("{ const _rdet_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(": []const u8 = std.fmt.allocPrint(_allocator, \"");
+                self.w.emit(fmt);
+                self.w.emit("\", .{");
+                self.genExpr(det);
+                self.w.emit("}) catch @panic(\"OOM\");\n");
+                self.writeIndent();
+                self.w.emit("  const _rdet_ptr_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n");
+                self.writeIndent();
+                self.w.emit("  _rdet_ptr_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(".* = _rdet_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(";\n");
+                self.writeIndent();
+                self.w.emit("  const _rshim_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n");
+                self.writeIndent();
+                self.w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n");
+                self.writeIndent();
+                self.w.emit("  } };\n");
+                self.writeIndent();
+                self.w.emit("  _error_ctx = .{ .message = ");
+                self.genExpr(r.message.?.*);
+                self.w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit("), .toString_fn = _rshim_");
+                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit(".call } };\n");
+                self.writeIndent();
+                self.w.emit("  ");
+            } else {
+                if (is_string_det) {
+                    self.w.emit("{ const _rdet_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(": []const u8 = ");
+                    self.genExpr(det);
+                    self.w.emit(";\n");
+                    self.writeIndent();
+                    self.w.emit("  const _rdet_ptr_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n");
+                    self.writeIndent();
+                    self.w.emit("  _rdet_ptr_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(".* = _rdet_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(";\n");
+                    self.writeIndent();
+                    self.w.emit("  const _rshim_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n");
+                    self.writeIndent();
+                    self.w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n");
+                    self.writeIndent();
+                    self.w.emit("  } };\n");
+                    self.writeIndent();
+                    self.w.emit("  _error_ctx = .{ .message = ");
+                    self.genExpr(r.message.?.*);
+                    self.w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit("), .toString_fn = _rshim_");
+                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit(".call } };\n");
+                    self.writeIndent();
+                    self.w.emit("  ");
+                } else {
+                    self.w.emit("@compileError(\"selfhost BUG-051: 2-arg raise with non-primitive/string details not yet supported\");\n");
+                    self.writeIndent();
+                }
+            }
+            if ((self.try_block_label != null)) {
+                self.w.emit(self.try_err_var.?);
+                self.w.emit(" = error.ZebraError; break :");
+                self.w.emit(self.try_block_label.?);
+                self.w.emit("; ");
+            } else {
+                self.w.emit("return error.ZebraError; ");
+            }
             self.w.emit("}\n");
         } else {
-            self.w.emit("\n");
+            if ((r.message != null)) {
+                self.w.emit("{ _error_ctx = .{ .message = ");
+                self.genExpr(r.message.?.*);
+                self.w.emit(" }; ");
+                if ((self.try_block_label != null)) {
+                    self.w.emit(self.try_err_var.?);
+                    self.w.emit(" = error.ZebraError; break :");
+                    self.w.emit(self.try_block_label.?);
+                    self.w.emit("; ");
+                } else {
+                    self.w.emit("return error.ZebraError; ");
+                }
+                self.w.emit("}\n");
+            } else {
+                if ((self.try_block_label != null)) {
+                    self.w.emit(self.try_err_var.?);
+                    self.w.emit(" = error.ZebraError; break :");
+                    self.w.emit(self.try_block_label.?);
+                    self.w.emit("; ");
+                } else {
+                    self.w.emit("return error.ZebraError; ");
+                }
+                self.w.emit("\n");
+            }
         }
     }
 

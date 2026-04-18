@@ -2880,6 +2880,10 @@ pub const Parser = struct {
         var msg_list = std.ArrayList(PNode){};
         if ((((!self.isEol()) and (!self.isEof())) and (!self.isDedent()))) {
             msg_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
+            if (self.textIs(",")) {
+                self.advance();
+                msg_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
+            }
         }
         self.skipEol();
         return PNode{ .stmt_raise = blk_box: { const _bv = PRaise.init(msg_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
