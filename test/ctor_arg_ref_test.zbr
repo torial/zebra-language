@@ -1,0 +1,21 @@
+# Ctor args of type `^Class?` / `^Class` must NOT be boxed into
+# `_allocator.create(...)` (BUG-045). Companion to `recursive_type_test.zbr`
+# which covers the field-assign path (`obj.field = x`); this covers the
+# call-site arg materialization path in genBoxedArgExpr.
+# Rule: concept_zebra-class-auto-box-rule.
+class Node
+    var value as int
+    var next  as ^Node?
+    cue init(v as int, nxt as ^Node?)
+        this.value = v
+        this.next  = nxt
+
+class Main
+    shared def main()
+        var c = Node(3, nil)
+        var b = Node(2, c)
+        var a = Node(1, b)
+        assert a.value == 1
+        assert b.value == 2
+        assert c.value == 3
+        print "ctor_arg_ref_test OK"

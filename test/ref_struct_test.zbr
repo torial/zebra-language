@@ -1,0 +1,21 @@
+# `^Struct` must emit `*Struct` (not `**Struct`) — struct discriminator for
+# BUG-041. Companion to `recursive_type_test.zbr` which covers `^Class`.
+# Rule: concept_zebra-class-auto-box-rule — the class short-circuit in
+# genType's .ref_to arm MUST NOT fire for struct payloads; structs are
+# value types and need the extra pointer.
+struct Point
+    var x as int
+    var y as int
+
+class Holder
+    var p as ^Point
+    cue init(pt as Point)
+        p = pt
+
+class Main
+    shared def main()
+        var pt = Point(x: 3, y: 4)
+        var h = Holder(pt)
+        assert h.p.x == 3
+        assert h.p.y == 4
+        print "ref_struct_test OK"
