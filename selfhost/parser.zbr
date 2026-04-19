@@ -238,11 +238,13 @@ struct PField
     var name as str
     var type_name as str
     var is_const as bool
+    var is_shared as bool
     var init_expr as List(PNode)
-    cue init(name as str, type_name as str, is_const as bool, init_expr as List(PNode))
+    cue init(name as str, type_name as str, is_const as bool, is_shared as bool, init_expr as List(PNode))
         this.name = name
         this.type_name = type_name
         this.is_const = is_const
+        this.is_shared = is_shared
         this.init_expr = init_expr
 
 struct PMethod
@@ -741,7 +743,22 @@ class Parser
                 return sb.build()
             return text
         # Accept built-in type keywords by text
-        if text == "int" or text == "uint" or text == "bool" or text == "str" or text == "float" or text == "char" or text == "void" or text == "any"
+        if text == "int" or text == "uint" or text == "float"
+            this.advance()
+            # Check for sized variant: int(N), uint(N), float(N)
+            if this.textIs("(")
+                this.advance()
+                var n_str = this.peek().text
+                this.advance()
+                .expectText(")")
+                var sb2 as StringBuilder = StringBuilder()
+                sb2.append(text)
+                sb2.append("(")
+                sb2.append(n_str)
+                sb2.append(")")
+                return sb2.build()
+            return text
+        if text == "bool" or text == "str" or text == "char" or text == "void" or text == "any"
             this.advance()
             return text
         # Sized numeric type names: int8/int16/int32/int64, uint8/…, float32/float64
@@ -1061,9 +1078,9 @@ class Parser
         if this.textIs("def")
             return .parseMethodDecl(is_shared)
         else if this.textIs("var")
-            return .parseDeclField(false)
+            return .parseDeclField(false, is_shared)
         else if this.textIs("const")
-            return .parseDeclField(true)
+            return .parseDeclField(true, is_shared)
         else if this.textIs("cue")
             return .parseDeclInit()
         else if this.textIs("get")
@@ -1086,7 +1103,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.property_(PProperty(name, type_name, stmts))
 
-    def parseDeclField(is_const as bool) as PNode throws
+    def parseDeclField(is_const as bool, is_shared as bool) as PNode throws
         if is_const
             .expectText("const")
         else
@@ -1104,7 +1121,7 @@ class Parser
             this.advance()
             init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.field_(PField(name, type_name, is_const, init_expr))
+        return PNode.field_(PField(name, type_name, is_const, is_shared, init_expr))
 
     def parseDeclInit() as PNode throws
         .expectText("cue")

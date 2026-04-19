@@ -1477,22 +1477,22 @@ pub const Main = struct {
         {
             var _cp_it_c = std.unicode.Utf8View.initUnchecked(word).iterator();
             while (_cp_it_c.nextCodepoint()) |c| {
-                std.debug.print("{}\n", .{c});
+                std.debug.print("{u}\n", .{c});
             }
         }
         var ca: u21 = 'A';
         var cz: u21 = 'z';
         var c0: u21 = '0';
         var sp: u21 = ' ';
-        std.debug.print("{}\n", .{(blk_ia: { if (ca.len == 0) break :blk_ia false; for (ca) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
-        std.debug.print("{}\n", .{(blk_ia: { if (c0.len == 0) break :blk_ia false; for (c0) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
-        std.debug.print("{}\n", .{c0.isDigit()});
-        std.debug.print("{}\n", .{ca.isDigit()});
-        std.debug.print("{}\n", .{sp.isWhitespace()});
-        std.debug.print("{}\n", .{ca.isUpper()});
-        std.debug.print("{}\n", .{cz.isLower()});
-        std.debug.print("{}\n", .{ca.toLower()});
-        std.debug.print("{}\n", .{cz.toUpper()});
+        std.debug.print("{any}\n", .{(blk_ia: { if (ca.len == 0) break :blk_ia false; for (ca) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
+        std.debug.print("{any}\n", .{(blk_ia: { if (c0.len == 0) break :blk_ia false; for (c0) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
+        std.debug.print("{any}\n", .{c0.isDigit()});
+        std.debug.print("{any}\n", .{ca.isDigit()});
+        std.debug.print("{any}\n", .{sp.isWhitespace()});
+        std.debug.print("{any}\n", .{ca.isUpper()});
+        std.debug.print("{any}\n", .{cz.isLower()});
+        std.debug.print("{any}\n", .{ca.toLower()});
+        std.debug.print("{any}\n", .{cz.toUpper()});
     }
 
     pub fn init() *Main {

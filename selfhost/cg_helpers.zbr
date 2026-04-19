@@ -546,7 +546,10 @@ def nameUsedInStmt(name as str, stmt as Stmt) as bool
             return false
         on Stmt.raise_ as r
             if r.message != nil
-                return nameUsedInExpr(name, r.message to!)
+                if nameUsedInExpr(name, r.message to!)
+                    return true
+            if r.details != nil
+                return nameUsedInExpr(name, r.details to!)
             return false
         on Stmt.defer_ as d
             return nameUsedInStmt(name, d.stmt)
@@ -766,6 +769,15 @@ def isReadOnlyMethod(name as str) as bool
     if name == "toHex" or name == "fromHex" or name == "repeat" or name == "replace"
         return true
     if name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
+        return true
+    # Regex read-only methods
+    if name == "match" or name == "find" or name == "findAll" or name == "groups"
+        return true
+    # String methods not covered above
+    if name == "trimLeft" or name == "trimRight"
+        return true
+    # Sort methods: mutate internal slice data but the ArrayList handle is not reassigned
+    if name == "sort" or name == "sortBy"
         return true
     return false
 

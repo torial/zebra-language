@@ -1584,13 +1584,13 @@ pub const Types = struct {
     pub fn eql(a: Type, b: Type) bool {
         switch (a) {
             .int_ => |_| {
-                return (b == Type{ .int_ = {} });
+                return std.meta.eql(b, Type{ .int_ = {} });
             },
             .str_ => |_| {
-                return (b == Type{ .str_ = {} });
+                return std.meta.eql(b, Type{ .str_ = {} });
             },
             .bool_ => |_| {
-                return (b == Type{ .bool_ = {} });
+                return std.meta.eql(b, Type{ .bool_ = {} });
             },
             .optional => |_ptr_ia| {
                 const ia = _ptr_ia.*;
@@ -1715,7 +1715,7 @@ pub const Checker = struct {
             .neg => |_ptr_inner| {
                 const inner = _ptr_inner.*;
                 const t = try self.inferExpr(inner);
-                if (((t != Type{ .int_ = {} }) and (t != Type{ .float_ = {} }))) {
+                if ((!std.meta.eql(t, Type{ .int_ = {} }) and !std.meta.eql(t, Type{ .float_ = {} }))) {
                     { _error_ctx = .{ .message = "neg requires numeric type" }; return error.ZebraError; }
                 }
                 return t;
@@ -1723,10 +1723,10 @@ pub const Checker = struct {
             .add => |pair| {
                 const lt = try self.inferExpr(pair.left);
                 const rt = try self.inferExpr(pair.right);
-                if ((lt != Type{ .int_ = {} })) {
+                if (!std.meta.eql(lt, Type{ .int_ = {} })) {
                     { _error_ctx = .{ .message = "add requires int left" }; return error.ZebraError; }
                 }
-                if ((rt != Type{ .int_ = {} })) {
+                if (!std.meta.eql(rt, Type{ .int_ = {} })) {
                     { _error_ctx = .{ .message = "add requires int right" }; return error.ZebraError; }
                 }
                 return Type{ .int_ = {} };
@@ -1749,7 +1749,7 @@ const _reflect_Checker_field_types: []const []const u8 = &.{"List(str)"};
 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
-    pub fn main() void {
+    pub fn main() anyerror!void {
         std.debug.assert(std.mem.eql(u8, Types.describe(Type{ .int_ = {} }), "int"));
         std.debug.assert(std.mem.eql(u8, Types.describe(Type{ .str_ = {} }), "str"));
         std.debug.assert(std.mem.eql(u8, Types.describe(Type{ .unknown = {} }), "unknown"));

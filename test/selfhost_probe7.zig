@@ -1561,7 +1561,7 @@ pub const Generator = struct {
 
     pub fn emitIndented(self: *Generator, s: []const u8) void {
         var i: i64 = 0;
-        while ((i < self.indent)) {
+        while (_zebra_lt(i, self.indent)) {
             self.w.appendSlice(_allocator, "    ") catch @panic("OOM");
             i += 1;
         }

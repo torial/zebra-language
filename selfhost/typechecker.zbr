@@ -529,8 +529,10 @@ def stringMethodReturn(name as str) as Type_?
         return Type_.string_
     if name == "join" or name == "toString"
         return Type_.string_
-    if name == "count" or name == "indexOf" or name == "lastIndexOf"
+    if name == "count"
         return Type_.int_
+    if name == "indexOf" or name == "lastIndexOf"
+        return Type_.optional(Type_.int_)
     if name == "codePointCount" or name == "toInt"
         return Type_.int_
     if name == "toFloat"
@@ -691,6 +693,14 @@ def inferExpr(e as Expr, ctx as InferCtx) as Type_
                     if mem.member == "toString"
                         return Type_.string_
                     # Method call: infer receiver type, look up method return.
+                    # Builtin type constructors: Regex.compile → regex, etc.
+                    branch mem.object
+                        on Expr.ident as bid
+                            var bname as str = "" + bid.name
+                            if bname == "Regex" and mem.member == "compile"
+                                return Type_.regex
+                        else
+                            pass
                     # Special case first: `UnionName.variant(args)` — when the
                     # receiver ident names a known union, the call yields a
                     # value of the union's named type.

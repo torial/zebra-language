@@ -1476,7 +1476,7 @@ pub const Greeter = struct {
 
     pub fn check(self: *Greeter, value: i64, lo: i64, hi: i64) bool {
         _ = self;
-        return ((value >= lo) and (value <= hi));
+        return (_zebra_ge(value, lo) and _zebra_le(value, hi));
     }
 
     pub fn init() *Greeter {

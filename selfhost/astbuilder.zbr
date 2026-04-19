@@ -260,10 +260,13 @@ class ASTBuilder
         branch pn
             on PNode.field_ as f
                 const type_ref = .parseTypeRef(f.type_name)
+                var fmods = zmods()
+                if f.is_shared
+                    fmods = zshared()
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
-                    return Decl.var_(DeclVar(zspan(), zmods(), f.name, type_ref, initval, f.is_const))
-                return Decl.var_(DeclVar(zspan(), zmods(), f.name, type_ref, nil, f.is_const))
+                    return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
+                return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, nil, f.is_const))
             on PNode.method_ as m
                 return .buildMethod(m, true)?
             on PNode.init_ as pinit
