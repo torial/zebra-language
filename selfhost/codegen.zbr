@@ -2351,6 +2351,10 @@ struct Generator
             genExpr(a.value)
             w.emit(");\n")
             return
+        # Detect HashMap[key] = value → .put(key, value)
+        if a.op == AssignOp.assign
+            if genHashMapAssign(a.target, a.value)
+                return
         # Detect bare collection ctor in field assignment: self.field = List()/HashMap()/StrSet()
         if a.op == AssignOp.assign
             var field_type = getAssignFieldType(a)
@@ -2376,6 +2380,24 @@ struct Generator
         w.emit(" ")
         genExpr(a.value)
         w.emit(";\n")
+
+    def genHashMapAssign(target as Expr, value as Expr) as bool
+        # Branch directly on target (Expr parameter) so ix.object/ix.index get correct .* deref
+        branch target
+            on Expr.index as ix
+                var nm = getMemberFieldName(ix.object)
+                if nm != nil
+                    if hashmap_locals.contains_(nm to!) or fieldIsHashMap(this.module_types, this.dep_types, nm to!)
+                        genExpr(ix.object)
+                        w.emit(".put(")
+                        genExpr(ix.index)
+                        w.emit(", ")
+                        genExpr(value)
+                        w.emit(") catch @panic(\"OOM\");\n")
+                        return true
+            else
+                pass
+        return false
 
     def getAssignFieldType(a as StmtAssign) as TypeRef?
         # If target is a member expression (self.field), extract field name and look up type
@@ -3363,10 +3385,21 @@ struct Generator
             on Expr.call as c
                 genCall(c)
             on Expr.index as ix
-                genExpr(ix.object)
-                w.emit("[@as(usize, @intCast(")
-                genExpr(ix.index)
-                w.emit("))]")
+                var idx_obj_nm = getMemberFieldName(ix.object)
+                var is_hm_idx = false
+                if idx_obj_nm != nil
+                    var idx_nm = idx_obj_nm to!
+                    is_hm_idx = hashmap_locals.contains_(idx_nm) or fieldIsHashMap(this.module_types, this.dep_types, idx_nm)
+                if is_hm_idx
+                    genExpr(ix.object)
+                    w.emit(".get(")
+                    genExpr(ix.index)
+                    w.emit(").?")
+                else
+                    genExpr(ix.object)
+                    w.emit("[@as(usize, @intCast(")
+                    genExpr(ix.index)
+                    w.emit("))]")
             on Expr.slice as sl2
                 genExpr(sl2.object)
                 w.emit("[")

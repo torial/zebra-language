@@ -4438,6 +4438,11 @@ pub const Generator = struct {
             return;
         }
         if ((a.op == AssignOp.assign)) {
+            if (self.genHashMapAssign(a.target.*, a.value.*)) {
+                return;
+            }
+        }
+        if ((a.op == AssignOp.assign)) {
             const field_type = self.getAssignFieldType(a);
             if ((field_type != null)) {
                 switch (a.value.*) {
@@ -4472,6 +4477,30 @@ pub const Generator = struct {
         self.w.emit(" ");
         self.genExpr(a.value.*);
         self.w.emit(";\n");
+    }
+
+    pub fn genHashMapAssign(self: *Generator, target: Expr, value: Expr) bool {
+        switch (target) {
+            .index => |_ptr_ix| {
+                const ix = _ptr_ix.*;
+                const nm = getMemberFieldName(ix.object.*);
+                if ((nm != null)) {
+                    if ((self.hashmap_locals.contains_(nm.?) or fieldIsHashMap(self.module_types, self.dep_types, nm.?))) {
+                        self.genExpr(ix.object.*);
+                        self.w.emit(".put(");
+                        self.genExpr(ix.index.*);
+                        self.w.emit(", ");
+                        self.genExpr(value);
+                        self.w.emit(") catch @panic(\"OOM\");\n");
+                        return true;
+                    }
+                }
+            },
+            else => |_| {
+                // pass
+            },
+        }
+        return false;
     }
 
     pub fn getAssignFieldType(self: *Generator, a: StmtAssign) ?TypeRef {
@@ -5644,10 +5673,23 @@ pub const Generator = struct {
             },
             .index => |_ptr_ix| {
                 const ix = _ptr_ix.*;
-                self.genExpr(ix.object.*);
-                self.w.emit("[@as(usize, @intCast(");
-                self.genExpr(ix.index.*);
-                self.w.emit("))]");
+                const idx_obj_nm = getMemberFieldName(ix.object.*);
+                var is_hm_idx = false;
+                if ((idx_obj_nm != null)) {
+                    const idx_nm = idx_obj_nm.?;
+                    is_hm_idx = (self.hashmap_locals.contains_(idx_nm) or fieldIsHashMap(self.module_types, self.dep_types, idx_nm));
+                }
+                if (is_hm_idx) {
+                    self.genExpr(ix.object.*);
+                    self.w.emit(".get(");
+                    self.genExpr(ix.index.*);
+                    self.w.emit(").?");
+                } else {
+                    self.genExpr(ix.object.*);
+                    self.w.emit("[@as(usize, @intCast(");
+                    self.genExpr(ix.index.*);
+                    self.w.emit("))]");
+                }
             },
             .slice => |_ptr_sl2| {
                 const sl2 = _ptr_sl2.*;

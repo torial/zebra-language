@@ -2772,6 +2772,17 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                             },
                         }
                     },
+                    .index => |_ptr_ix| {
+                        const ix = _ptr_ix.*;
+                        switch (ix.object.*) {
+                            .ident => |id| {
+                                out.add(id.name);
+                            },
+                            else => |_| {
+                                // pass
+                            },
+                        }
+                    },
                     else => |_| {
                         // pass
                     },

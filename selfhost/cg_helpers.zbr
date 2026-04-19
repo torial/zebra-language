@@ -834,6 +834,13 @@ def scanMutationsInto(stmts as List(Stmt), out as StrSet)
                                 out.add(id.name)
                             else
                                 pass
+                    on Expr.index as ix
+                        # counts[k] = v mutates counts
+                        branch ix.object
+                            on Expr.ident as id
+                                out.add(id.name)
+                            else
+                                pass
                     else
                         pass
             on Stmt.if_ as si

@@ -469,7 +469,8 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-036: Selfhost HashMap field `[key]` subscript emits array-index with bogus `@intCast`
 - **Severity:** High (any class-field HashMap read/write via `[k]` syntax emits code Zig rejects)
-- **Status:** Open
+- **Status:** **Fixed 2026-04-18**
+- **Fix:** `genExpr` for `Expr.index` and `genAssign` (via new `genHashMapAssign` method) now consult `hashmap_locals` + `fieldIsHashMap` to detect HashMap receivers: reads emit `.get(k).?`, writes emit `.put(k, v) catch @panic("OOM")`. `scanMutationsInto` in `cg_helpers.zbr` updated to mark the base of `target[k] = v` as mutated (was falling through to `else`, emitting `const`). `genHashMapAssign` extracted as a separate method to avoid a nested-branch `.*` deref bug in the Zig backend (inside `branch a.target … on Expr.index`, field accesses on the branch-bound payload don't get `.*` — passing `a.target` as an `Expr` parameter to a helper method sidesteps this). Bootstrap round-trip A/B byte-identical.
 - **Target:** Phase 17f selfhost-edit wave (pair with remaining HashMap walker work).
 - **Symptom:** For `this.field[k] = v` (assign) or `this.field[k]` (read) where `this.field` is typed `HashMap(K,V)`, selfhost emits:
   ```zig
