@@ -1025,3 +1025,13 @@ The selfhost codegen path diverges.
   1. `exprHasTry`/`bodyHasRaise` treated all `.try_` nodes as error propagation, causing `Main.main()` to get `anyerror!void` return type even when `opt` was a plain optional.
   2. `genExpr` for `.try_` used `tc.expr_types.get(inner_ident)` to detect optional unwraps, but inside a nil-guard the ident's TC type is already narrowed to the non-optional inner type — so the optional check always missed.
 - **Fix:** TypeChecker now populates `optional_unwraps: AutoHashMap(*const Ast.Expr, void)` in TypeCheckResult. When inferring a `.try_` node, it checks the inner ident's **declared** type (via `symbolType`, which bypasses nil-narrowing) rather than the inferred type. `exprHasTry` and `genExpr` both consult `optional_unwraps` instead of `expr_types`. The nil-narrowed `genIdent` path (which already emits `name.?`) is detected and the extra `.?` suppressed to prevent double-unwrap.
+
+---
+
+### BUG-074: `Result.ok` / `Result.err` constructor syntax — planned removal
+- **Severity:** Design (language change)
+- **Status:** Planned — remove from language
+- **Target:** Pre-1.0
+- **Description:** `Result.ok(v)` / `Result.err(e)` constructor syntax is not intended to be part of Zebra's language design. The `Result` type itself may be kept as a stdlib type, but the `.ok`/`.err` namespace-call constructor pattern (which the selfhost currently emits as `.{ .ok = v }` / `.{ .err = e }`) should be replaced by a different surface syntax or removed entirely.
+- **Current state:** Selfhost codegen has a `genResultCall()` workaround that handles `Result.ok(v)` → `.{ .ok = v }`. The corpus tests `result_test.zbr` and `result_methods_test.zbr` use this pattern.
+- **Action required:** (1) Decide on replacement syntax (or removal). (2) Update/replace `result_test.zbr` and `result_methods_test.zbr`. (3) Remove `genResultCall()` from codegen and the `Result` entry from `isBuiltin()` in the resolver.

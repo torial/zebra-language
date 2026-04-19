@@ -111,6 +111,8 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("PNode.stmt_destruct")
         bv.add("PNode.expr_except")
         bv.add("PNode.expr_string_interp")
+        bv.add("PNode.stmt_for_num")
+        bv.add("PNode.expr_tuple_lit")
     # Decl, Stmt, Expr, TypeRef from ast module
     if module_name == "ast" or module_name == "codegen" or module_name == "astbuilder" or module_name == "cg_helpers"
         # Decl variants — all are ^T boxed
@@ -175,6 +177,7 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("Expr.try_")
         bv.add("Expr.except_")
         bv.add("Expr.type_check")
+        bv.add("Expr.tuple_lit")
         # StringPart boxed variant
         bv.add("StringPart.expr_")
 
@@ -239,6 +242,10 @@ def isKnownListField(name as str) as bool
     if name == "message" or name == "base" or name == "args"
         return true
     if name == "params" or name == "decls" or name == "stmts"
+        return true
+    if name == "default_expr"
+        return true
+    if name == "step" or name == "start" or name == "stop_"
         return true
     if name == "variants" or name == "exposed" or name == "fields"
         return true
