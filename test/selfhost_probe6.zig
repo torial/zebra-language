@@ -1596,10 +1596,10 @@ pub fn emitNode(node: CgNode) []const u8 {
             return "fn() void { ... }";
         },
         .list_lit => |n| {
-            return (try std.fmt.allocPrint(_allocator, "{}]", .{n}));
+            return (std.fmt.allocPrint(_allocator, "list[{}]", .{n}) catch @panic("OOM"));
         },
         .dict_lit => |n| {
-            return (try std.fmt.allocPrint(_allocator, "{}]", .{n}));
+            return (std.fmt.allocPrint(_allocator, "dict[{}]", .{n}) catch @panic("OOM"));
         },
         .zig_lit => |t| {
             return t;

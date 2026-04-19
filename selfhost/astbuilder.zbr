@@ -34,6 +34,11 @@ def zshared() as Modifiers
 # matching the Zig backend's AST representation.
 # Slices from index 1 to len-1 to preserve internal escape sequences.
 def stripStringQuotes(text as str) as str
+    if text.len == 0
+        return text
+    # Single-char quote: string_start token with no content before ${
+    if text == "\"" or text == "'"
+        return ""
     if text.len < 2
         return text
     if text.startsWith("\"") or text.startsWith("'")
@@ -49,9 +54,13 @@ def stripStringQuotes(text as str) as str
             parts.add(p)
         # Skip first (before opening quote) and last (after closing quote),
         # rejoin interior parts with the original quote char.
-        if parts.count() <= 2
-            # No interior content (empty string like "" or '')
+        if parts.count() <= 1
+            # No interior content
             return ""
+        if parts.count() == 2
+            # Only one quote in text — string_start token like "hello or bare ".
+            # Return content after the leading quote (parts[1]).
+            return parts.at(1)
         var result as str = parts.at(1)
         var i as int = 2
         while i < parts.count() - 1
@@ -486,16 +495,26 @@ class ASTBuilder
                     for p in pat.split(".")
                         parts.add(p)
                     var base_name = parts.at(0)
-                    var member_name = parts.at(1)
                     var base_expr = Expr.ident(ExprIdent(zspan(), base_name))
-                    values.add(Expr.member(ExprMember(zspan(), base_expr, member_name)))
+                    # Build nested member chain: for 2 parts (Union.variant), one member access.
+                    # For 3 parts (Mod.Union.variant), two nested member accesses.
+                    var i_pat as int = 1
+                    var built_expr as Expr = base_expr
+                    while i_pat < parts.count()
+                        built_expr = Expr.member(ExprMember(zspan(), built_expr, parts.at(i_pat)))
+                        i_pat = i_pat + 1
+                    values.add(built_expr)
                 else
                     values.add(.patternToExpr(pat))
             var arm_stmts = .buildStmts(arm.stmts)?
             var binding_opt as str? = nil
             if arm.binding != ""
                 binding_opt = arm.binding
-            cases.add(BranchOn(zspan(), values, arm_stmts, binding_opt))
+            var guard_exprs = List(Expr)()
+            if arm.guard_cond.count() > 0
+                var gexpr = .buildExpr(arm.guard_cond.at(0))?
+                guard_exprs.add(gexpr)
+            cases.add(BranchOn(zspan(), values, arm_stmts, binding_opt, guard_exprs))
         var else_opt as List(Stmt)? = nil
         if pb.else_stmts.len > 0
             else_opt = .buildStmts(pb.else_stmts)?

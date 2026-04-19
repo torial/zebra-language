@@ -1472,12 +1472,12 @@ pub const Main = struct {
     pub fn main() void {
         const n: i64 = 42;
         const f: f64 = 3.14;
-        const s1 = (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(n), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); });
-        const s2 = (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(f), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); });
+        const s1 = (std.fmt.allocPrint(_allocator, "{}", .{n}) catch unreachable);
+        const s2 = (std.fmt.allocPrint(_allocator, "{}", .{f}) catch unreachable);
         std.debug.print("{s}\n", .{s1});
         std.debug.print("{s}\n", .{s2});
         const big: i64 = (-100);
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(big), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{big}) catch unreachable)});
     }
 
     pub fn init() *Main {

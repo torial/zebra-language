@@ -1586,11 +1586,13 @@ pub const PBranch = struct {
 pub const PBranchOn = struct {
     patterns: std.ArrayList([]const u8),
     binding: []const u8,
+    guard_cond: std.ArrayList(PNode),
     stmts: std.ArrayList(PNode),
-    pub fn init(patterns: std.ArrayList([]const u8), binding: []const u8, stmts: std.ArrayList(PNode)) PBranchOn {
+    pub fn init(patterns: std.ArrayList([]const u8), binding: []const u8, guard_cond: std.ArrayList(PNode), stmts: std.ArrayList(PNode)) PBranchOn {
         var _self: PBranchOn = undefined;
             _self.patterns = patterns;
             _self.binding = binding;
+            _self.guard_cond = guard_cond;
             _self.stmts = stmts;
         return _self;
     }
@@ -2193,6 +2195,13 @@ pub const Parser = struct {
                 return false;
             },
         }
+    }
+
+    pub fn isStmtKeyword(self: *Parser, text: []const u8) bool {
+        _ = self;
+        const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|guard|defer|";
+        const needle = _str_concat(_str_concat("|", text, _allocator), "|", _allocator);
+        return (std.mem.indexOf(u8, kws, needle) != null);
     }
 
     pub fn isId(self: *Parser) bool {
@@ -3462,13 +3471,30 @@ pub const Parser = struct {
                     var patterns = std.ArrayList([]const u8){};
                     patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
                     while (self.textIs(",")) {
+                        if (self.isStmtKeyword(self.peekAt(1).text)) {
+                            break;
+                        }
                         self.advance();
                         patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
                     }
-                    var binding: []const u8 = "";
-                    if (self.textIs("as")) {
+                    var inline_comma = false;
+                    if (self.textIs(",")) {
                         self.advance();
-                        binding = try self.eatId();
+                        inline_comma = true;
+                    }
+                    var binding: []const u8 = "";
+                    if ((!inline_comma)) {
+                        if (self.textIs("as")) {
+                            self.advance();
+                            binding = try self.eatId();
+                        }
+                    }
+                    var guard_cond = std.ArrayList(PNode){};
+                    if ((!inline_comma)) {
+                        if (self.textIs("if")) {
+                            self.advance();
+                            guard_cond.append(_allocator, try self.parseExpr()) catch @panic("OOM");
+                        }
                     }
                     self.skipEol();
                     var stmts = std.ArrayList(PNode){};
@@ -3479,7 +3505,7 @@ pub const Parser = struct {
                             stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
                         }
                     }
-                    arms.append(_allocator, PBranchOn.init(patterns, binding, stmts)) catch @panic("OOM");
+                    arms.append(_allocator, PBranchOn.init(patterns, binding, guard_cond, stmts)) catch @panic("OOM");
                 } else {
                     if (self.textIs("else")) {
                         self.advance();

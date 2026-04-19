@@ -1617,17 +1617,17 @@ pub const Main = struct {
         std.debug.assert((opCode(Op{ .neg = {} }) == 40));
         const x = Op{ .mul = {} };
         switch (x) {
-            .add, .print => {
-                "unexpected";
+            .add => {
+                std.debug.print("{s}\n", .{"unexpected"});
             },
-            .sub, .print => {
-                "unexpected";
+            .sub => {
+                std.debug.print("{s}\n", .{"unexpected"});
             },
-            .mul, .print => {
-                "matched mul";
+            .mul => {
+                std.debug.print("{s}\n", .{"matched mul"});
             },
-            .neg, .print => {
-                "unexpected";
+            .neg => {
+                std.debug.print("{s}\n", .{"unexpected"});
             },
         }
         std.debug.print("{s}\n", .{"branch inline return OK"});

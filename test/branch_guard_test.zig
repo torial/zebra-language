@@ -1476,55 +1476,73 @@ pub const Shape = union(enum) {
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn checkShape(s: Shape) []const u8 {
-        switch (s) {
-            .circle => |r| {
-                if ((r > 5.0)) {
-                    return "big circle";
-                }
-            },
-            .circle => |r| {
-                return "small circle";
-            },
-            .square => |side| {
-                if ((side > 10.0)) {
-                    return "big square";
-                }
-            },
-            .square => |side| {
-                return "small square";
-            },
-            .point => |_| {
-                return "point";
-            },
+        const _bv_1 = s;
+        var _bd_1 = false;
+        if (!_bd_1 and _bv_1 == .circle) {
+            const r = _bv_1.circle;
+            if ((r > 5.0)) {
+                _bd_1 = true;
+                return "big circle";
+            }
         }
+        if (!_bd_1 and _bv_1 == .circle) {
+            const r = _bv_1.circle;
+            _ = r;
+            _bd_1 = true;
+            return "small circle";
+        }
+        if (!_bd_1 and _bv_1 == .square) {
+            const side = _bv_1.square;
+            if ((side > 10.0)) {
+                _bd_1 = true;
+                return "big square";
+            }
+        }
+        if (!_bd_1 and _bv_1 == .square) {
+            const side = _bv_1.square;
+            _ = side;
+            _bd_1 = true;
+            return "small square";
+        }
+        if (!_bd_1 and _bv_1 == .point) {
+            _bd_1 = true;
+            return "point";
+        }
+        if (!_bd_1) unreachable;
+        unreachable;
     }
 
     pub fn main() void {
         const x: i64 = 7;
-        switch (x) {
-            .7 => {
-                if ((x > 5)) {
-                    std.debug.print("{s}\n", .{"seven big"});
-                }
-            },
-            .7 => {
-                std.debug.print("{s}\n", .{"seven small"});
-            },
-            else => {
-                std.debug.print("{s}\n", .{"other"});
-            },
+        const _bv_2 = x;
+        var _bd_2 = false;
+        if (!_bd_2 and (_bv_2 == 7)) {
+            if ((x > 5)) {
+                _bd_2 = true;
+                std.debug.print("{s}\n", .{"seven big"});
+            }
+        }
+        if (!_bd_2 and (_bv_2 == 7)) {
+            _bd_2 = true;
+            std.debug.print("{s}\n", .{"seven small"});
+        }
+        if (!_bd_2) {
+            std.debug.print("{s}\n", .{"other"});
         }
         const y: i64 = 7;
-        switch (y) {
-            .7 => {
-                if ((y > 100)) {
-                    std.debug.print("{s}\n", .{"seven huge"});
-                }
-            },
-            .7 => {
-                std.debug.print("{s}\n", .{"seven ok"});
-            },
+        const _bv_3 = y;
+        var _bd_3 = false;
+        if (!_bd_3 and (_bv_3 == 7)) {
+            if ((y > 100)) {
+                _bd_3 = true;
+                std.debug.print("{s}\n", .{"seven huge"});
+            }
         }
+        if (!_bd_3 and (_bv_3 == 7)) {
+            _bd_3 = true;
+            std.debug.print("{s}\n", .{"seven ok"});
+        }
+        if (!_bd_3) unreachable;
         std.debug.print("{s}\n", .{Main.checkShape(Shape{ .circle = 8.0 })});
         std.debug.print("{s}\n", .{Main.checkShape(Shape{ .circle = 3.0 })});
         std.debug.print("{s}\n", .{Main.checkShape(Shape{ .square = 12.0 })});

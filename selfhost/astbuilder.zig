@@ -1600,6 +1600,12 @@ pub fn zshared() Modifiers {
 }
 
 pub fn stripStringQuotes(text: []const u8) []const u8 {
+    if ((text.len == 0)) {
+        return text;
+    }
+    if ((std.mem.eql(u8, text, "\"") or std.mem.eql(u8, text, "'"))) {
+        return "";
+    }
     if ((text.len < 2)) {
         return text;
     }
@@ -1615,8 +1621,11 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
                 parts.append(_allocator, p) catch @panic("OOM");
             }
         }
-        if ((@as(i64, @intCast(parts.items.len)) <= 2)) {
+        if ((@as(i64, @intCast(parts.items.len)) <= 1)) {
             return "";
+        }
+        if ((@as(i64, @intCast(parts.items.len)) == 2)) {
+            return parts.items[@intCast(1)];
         }
         var result: []const u8 = parts.items[@intCast(1)];
         var i: i64 = 2;
@@ -2149,9 +2158,14 @@ pub const ASTBuilder = struct {
                             }
                         }
                         const base_name = parts.items[@intCast(0)];
-                        const member_name = parts.items[@intCast(1)];
                         const base_expr = Expr{ .ident = ExprIdent.init(zspan(), base_name) };
-                        values.append(_allocator, Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = base_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, member_name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                        var i_pat: i64 = 1;
+                        var built_expr: Expr = base_expr;
+                        while ((i_pat < @as(i64, @intCast(parts.items.len)))) {
+                            built_expr = Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = built_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, parts.items[@intCast(i_pat)]); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                            i_pat = (i_pat + 1);
+                        }
+                        values.append(_allocator, built_expr) catch @panic("OOM");
                     } else {
                         values.append(_allocator, self.patternToExpr(pat)) catch @panic("OOM");
                     }
@@ -2162,7 +2176,12 @@ pub const ASTBuilder = struct {
             if (!std.mem.eql(u8, arm.binding, "")) {
                 binding_opt = arm.binding;
             }
-            cases.append(_allocator, BranchOn.init(zspan(), values, arm_stmts, binding_opt)) catch @panic("OOM");
+            var guard_exprs = std.ArrayList(Expr){};
+            if ((@as(i64, @intCast(arm.guard_cond.items.len)) > 0)) {
+                const gexpr = try self.buildExpr(arm.guard_cond.items[@intCast(0)]);
+                guard_exprs.append(_allocator, gexpr) catch @panic("OOM");
+            }
+            cases.append(_allocator, BranchOn.init(zspan(), values, arm_stmts, binding_opt, guard_exprs)) catch @panic("OOM");
         }
         var else_opt: ?std.ArrayList(Stmt) = null;
         if ((@as(i64, @intCast(pb.else_stmts.items.len)) > 0)) {

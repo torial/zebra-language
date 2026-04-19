@@ -1470,7 +1470,7 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 pub const Program = struct {
     _type_tag: u64 = _ttag_Program,
     pub fn main() void {
-        var s: []const u8 = "Hello World";
+        const s: []const u8 = "Hello World";
         std.debug.print("{s}\n", .{(try _zbr_str_upper(_allocator, s))});
         std.debug.print("{s}\n", .{(try _zbr_str_lower(_allocator, s))});
         std.debug.print("{}\n", .{blk: { const _idx = std.mem.indexOf(u8, s, "World"); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }});

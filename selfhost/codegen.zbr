@@ -489,6 +489,25 @@ def getMemberName(callee as Expr) as str?
             pass
     return nil
 
+def getXmUnionParts(callee as Expr) as List(str)?
+    # Detect Mod.Union.variant callee shape: member(member(ident(Mod), Union), variant)
+    # Returns [mod_name, union_name, variant_name] or nil.
+    # Uses a standalone function to avoid nested-branch TC gap (Zig backend doesn't
+    # auto-deref ^Expr fields in nested branch subjects).
+    branch callee
+        on Expr.member as outer_m
+            var inner_union = getMemberName(outer_m.object)
+            var inner_mod = getMemberObjectIdent(outer_m.object)
+            if inner_union != nil and inner_mod != nil
+                var parts = List(str)()
+                parts.add(inner_mod to!)
+                parts.add(inner_union to!)
+                parts.add(outer_m.member)
+                return parts
+        else
+            pass
+    return nil
+
 # ── bodyMentionsThis ─────────────────────────────────────────────────────────
 # Returns true if any statement in the list contains Expr.this_ or
 # a member access on "this" (self/this field access).
@@ -2791,6 +2810,11 @@ struct Generator
         if first_case.values.count() == 0
             genStmts(first_case.stmts)
             return
+        # Detect if any case has a guard expression
+        var has_guard = false
+        for cas in b.cases
+            if cas.guard_expr.count() > 0
+                has_guard = true
         # Detect dispatch kind: string literal values → if/else chain
         var fv = first_case.values.at(0)
         var is_str_branch = false
@@ -2801,6 +2825,8 @@ struct Generator
                 pass
         if is_str_branch
             genBranchString(b)
+        else if has_guard
+            genBranchGuarded(b)
         else
             genBranchTagged(b)
 
@@ -2837,6 +2863,156 @@ struct Generator
             writeIndent()
             w.emit("}")
         w.emit("\n")
+
+    def genBranchGuarded(b as StmtBranch)
+        # Lower guarded branch to sequential ifs (Zig switch prongs cannot have guards).
+        # const _bv_N = <subject>;  var _bd_N = false;
+        # if (!_bd_N and <match>) { [const <binding> = _bv_N.<tag>;]
+        #   [if (<guard>) {] _bd_N = true; <body> [}] }
+        # if (!_bd_N) unreachable; // or else block
+        var is_union = false
+        for cas in b.cases
+            if cas.binding != nil
+                is_union = true
+        var uid = w.nextUid()
+        var bv = "_bv_" + uid.toString()
+        var bd = "_bd_" + uid.toString()
+        writeIndent()
+        w.emit("const ")
+        w.emit(bv)
+        w.emit(" = ")
+        genExpr(b.expr)
+        w.emit(";\n")
+        writeIndent()
+        w.emit("var ")
+        w.emit(bd)
+        w.emit(" = false;\n")
+        for cas in b.cases
+            writeIndent()
+            w.emit("if (!")
+            w.emit(bd)
+            if is_union
+                if cas.values.count() > 0
+                    var v0 = cas.values.at(0)
+                    var tag_name as str = ""
+                    branch v0
+                        on Expr.member as m
+                            tag_name = m.member
+                        else
+                            pass
+                    if tag_name.len > 0
+                        w.emit(" and ")
+                        w.emit(bv)
+                        w.emit(" == .")
+                        w.emit(tag_name)
+                w.emit(") {\n")
+                var ig = indented()
+                if cas.binding != nil
+                    ig.writeIndent()
+                    ig.w.emit("const ")
+                    ig.w.emit(cas.binding to!)
+                    ig.w.emit(" = ")
+                    ig.w.emit(bv)
+                    ig.w.emit(".")
+                    if cas.values.count() > 0
+                        var v0b = cas.values.at(0)
+                        branch v0b
+                            on Expr.member as mb
+                                ig.w.emit(mb.member)
+                            else
+                                pass
+                    ig.w.emit(";\n")
+                    # Suppress unused-const warning: emit `_ = binding;` when no guard.
+                    # When a guard is present, the guard expression already uses the binding.
+                    if cas.guard_expr.count() == 0
+                        ig.writeIndent()
+                        ig.w.emit("_ = ")
+                        ig.w.emit(cas.binding to!)
+                        ig.w.emit(";\n")
+                if cas.guard_expr.count() > 0
+                    ig.writeIndent()
+                    ig.w.emit("if (")
+                    ig.genExpr(cas.guard_expr.at(0))
+                    ig.w.emit(") {\n")
+                    var iig = ig.indented()
+                    iig.writeIndent()
+                    iig.w.emit(bd)
+                    iig.w.emit(" = true;\n")
+                    iig.genStmts(cas.stmts)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
+                else
+                    ig.writeIndent()
+                    ig.w.emit(bd)
+                    ig.w.emit(" = true;\n")
+                    ig.genStmts(cas.stmts)
+            else
+                # Non-union: match by value equality
+                if cas.values.count() > 0
+                    w.emit(" and (")
+                    var fv2 = true
+                    for v in cas.values
+                        if not fv2
+                            w.emit(" or ")
+                        fv2 = false
+                        w.emit(bv)
+                        w.emit(" == ")
+                        branch v
+                            on Expr.member as m2
+                                w.emit(".")
+                                w.emit(m2.member)
+                            else
+                                genExpr(v)
+                    w.emit(")")
+                w.emit(") {\n")
+                var ig = indented()
+                if cas.guard_expr.count() > 0
+                    ig.writeIndent()
+                    ig.w.emit("if (")
+                    ig.genExpr(cas.guard_expr.at(0))
+                    ig.w.emit(") {\n")
+                    var iig = ig.indented()
+                    iig.writeIndent()
+                    iig.w.emit(bd)
+                    iig.w.emit(" = true;\n")
+                    iig.genStmts(cas.stmts)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
+                else
+                    ig.writeIndent()
+                    ig.w.emit(bd)
+                    ig.w.emit(" = true;\n")
+                    ig.genStmts(cas.stmts)
+            writeIndent()
+            w.emit("}\n")
+        if b.else_ != nil
+            writeIndent()
+            w.emit("if (!")
+            w.emit(bd)
+            w.emit(") {\n")
+            var ig = indented()
+            ig.genStmts(b.else_ to!)
+            writeIndent()
+            w.emit("}\n")
+        else
+            writeIndent()
+            w.emit("if (!")
+            w.emit(bd)
+            w.emit(") unreachable;\n")
+            var all_return = true
+            for cas in b.cases
+                if cas.stmts.count() == 0
+                    all_return = false
+                else
+                    var last = cas.stmts.at(cas.stmts.count() - 1)
+                    branch last
+                        on Stmt.return_
+                            pass
+                        else
+                            all_return = false
+            if all_return
+                writeIndent()
+                w.emit("unreachable;\n")
 
     def genBranchTagged(b as StmtBranch)
         # Determine if any case has a binding (union dispatch vs enum dispatch)
@@ -3368,6 +3544,27 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".items.len))")
                         return
+                # Tuple index access: p.0 → p.@"0"
+                if m.member.len > 0 and m.member.isNumeric()
+                    genExpr(m.object)
+                    w.emit(".@\"")
+                    w.emit(m.member)
+                    w.emit("\"")
+                    return
+                # Computed property getter: obj.area → obj.area()
+                # Infer the object's type; if it's a named class, check getter_prop_keys.
+                if this.infer_ctx != nil
+                    var obj_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
+                    branch obj_t
+                        on Type_.named as nt
+                            if this.module_types.hasGetterPropKey(nt, m.member) or this.dep_types.hasGetterPropKey(nt, m.member)
+                                genExpr(m.object)
+                                w.emit(".")
+                                w.emit(m.member)
+                                w.emit("()")
+                                return
+                        else
+                            pass
                 genExpr(m.object)
                 w.emit(".")
                 w.emit(m.member)
@@ -3816,7 +4013,7 @@ struct Generator
     # ── genStringInterp ───────────────────────────────────────────────────────
 
     def genStringInterp(si as ExprStringInterp)
-        w.emit("(try std.fmt.allocPrint(_allocator, \"")
+        w.emit("(std.fmt.allocPrint(_allocator, \"")
         for part in si.parts
             branch part
                 on StringPart.literal as lit
@@ -3825,8 +4022,11 @@ struct Generator
                     w.emit("{")
                     w.emit(fmt)
                     w.emit("}")
-                on StringPart.expr_
-                    w.emit("{}")
+                on StringPart.expr_ as e_chk
+                    if this.isStringBoth(e_chk, "interp_fmt")
+                        w.emit("{s}")
+                    else
+                        w.emit("{}")
         w.emit("\", .{")
         var first = true
         for part in si.parts
@@ -3838,7 +4038,7 @@ struct Generator
                     genExpr(e)
                 else
                     pass
-        w.emit("}))")
+        w.emit("}) catch @panic(\"OOM\"))")
 
     # ── genCall ───────────────────────────────────────────────────────────────
 
@@ -3854,13 +4054,15 @@ struct Generator
                     return
             else
                 pass
-        # Cross-module constructor: Module.ClassName(args) → ClassName.init(args)
-        # When genUse unwraps same-named class, Module IS the class, so emit .init() directly
-        if isCrossModuleCtorCall(c.callee)
-            var cm_obj = getMemberObjectIdent(c.callee)
-            var cm_mem = getMemberName(c.callee)
-            # Cross-module ctor: Module.Class(args) → Module.Class.init(args) or Class.init(args)
-            if cm_obj != nil and cm_mem != nil
+        # Cross-module constructor: Module.ClassName(args) → Module.ClassName.init(args)
+        # Two detection paths:
+        # 1. isCrossModuleCtorCall: obj_name == member_name (same-name unwrap)
+        # 2. dep_types.hasClass(member): general cross-module class/struct ctor
+        var cm_obj = getMemberObjectIdent(c.callee)
+        var cm_mem = getMemberName(c.callee)
+        if cm_obj != nil and cm_mem != nil
+            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or this.dep_types.hasClass(cm_mem to!)
+            if is_xm_ctor
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
                 if unwrapped_imports.contains_(cm_obj to!)
@@ -3927,6 +4129,40 @@ struct Generator
                     else
                         w.emit("{}")
                     w.emit(" }")
+                return
+        # Cross-module union construction: Mod.Union.variant(args) → Mod.Union{ .variant = value }
+        # Callee shape: member(member(ident(mod), union_name), variant_name)
+        var xmu_parts = getXmUnionParts(c.callee)
+        if xmu_parts != nil
+            var xmu_list = xmu_parts to!
+            var xmu_mod = xmu_list.at(0)
+            var xmu_union = xmu_list.at(1)
+            var xmu_variant = xmu_list.at(2)
+            if this.dep_types.hasUnion(xmu_union)
+                var xmu_key = makeDottedKey(xmu_union, xmu_variant)
+                var xmu_boxed = boxed_variants.contains_(xmu_key)
+                w.emit(xmu_mod)
+                w.emit(".")
+                w.emit(xmu_union)
+                w.emit("{ .")
+                w.emit(xmu_variant)
+                w.emit(" = ")
+                if c.args.count() > 0
+                    if xmu_boxed
+                        w.emit("blk_box: { const _bv: std.meta.Child(@FieldType(")
+                        w.emit(xmu_mod)
+                        w.emit(".")
+                        w.emit(xmu_union)
+                        w.emit(", \"")
+                        w.emit(xmu_variant)
+                        w.emit("\")) = ")
+                        genExpr(c.args.at(0).value)
+                        w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :blk_box _bp; }")
+                    else
+                        genExpr(c.args.at(0).value)
+                else
+                    w.emit("{}")
+                w.emit(" }")
                 return
         # Member call dispatch
         branch c.callee

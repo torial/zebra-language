@@ -1470,7 +1470,7 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
-        var s: []const u8 = "hello";
+        const s: []const u8 = "hello";
         std.debug.print("{}\n", .{std.unicode.utf8ValidateSlice(s)});
         std.debug.print("{}\n", .{@as(i64, @intCast(std.unicode.utf8CountCodepoints(s) catch 0))});
         const word: []const u8 = "abc";

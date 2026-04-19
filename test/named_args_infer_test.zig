@@ -1477,7 +1477,7 @@ pub const Point = struct {
     }
 
     pub fn describe(self: *Point) []const u8 {
-        return _str_concat(_str_concat(_str_concat(_str_concat("(", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(self.x), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator), ", ", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(self.y), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator), ")", _allocator);
+        return _str_concat(_str_concat(_str_concat(_str_concat("(", (std.fmt.allocPrint(_allocator, "{}", .{self.x}) catch unreachable), _allocator), ", ", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{self.y}) catch unreachable), _allocator), ")", _allocator);
     }
 
     pub fn init() *Point {

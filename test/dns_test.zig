@@ -1491,7 +1491,7 @@ pub const Main = struct {
     pub fn testInvalidHost() void {
         std.debug.print("{s}\n", .{"Attempting to resolve invalid host:"});
         const results = _net_resolve("invalid.hostname.that.does.not.exist.local");
-        std.debug.print("{s}\n", .{(std.mem.concat(_allocator, u8, &.{ (std.mem.concat(_allocator, u8, &.{ "Got ", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(@as(i64, @intCast(results.items.len))), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }) }) catch unreachable), " results" }) catch unreachable)});
+        std.debug.print("{s}\n", .{(std.mem.concat(_allocator, u8, &.{ (std.mem.concat(_allocator, u8, &.{ "Got ", (std.fmt.allocPrint(_allocator, "{}", .{@as(i64, @intCast(results.items.len))}) catch unreachable) }) catch unreachable), " results" }) catch unreachable)});
     }
 
     pub fn main() void {

@@ -1540,17 +1540,17 @@ pub const Helper = struct {
     _type_tag: u64 = _ttag_Helper,
     pub fn kindName(k: TokenKind) []const u8 {
         switch (k) {
-            .ident, .return => {
-                "ident";
+            .ident => {
+                return "ident";
             },
-            .number, .return => {
-                "number";
+            .number => {
+                return "number";
             },
-            .plus, .return => {
-                "plus";
+            .plus => {
+                return "plus";
             },
-            .eof, .return => {
-                "eof";
+            .eof => {
+                return "eof";
             },
         }
     }

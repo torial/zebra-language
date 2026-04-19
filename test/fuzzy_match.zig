@@ -1546,8 +1546,8 @@ pub const Program = struct {
     pub fn main() void {
         const mark_verses: std.ArrayList([]const u8) = Program.loadVerses("test/texts/MAR.csv");
         const mat_verses: std.ArrayList([]const u8) = Program.loadVerses("test/texts/MAT.csv");
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{} verses", .{@as(i64, @intCast(mark_verses.items.len))}))});
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{} verses", .{@as(i64, @intCast(mat_verses.items.len))}))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "Mark: {} verses", .{@as(i64, @intCast(mark_verses.items.len))}) catch @panic("OOM"))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "Mat: {} verses", .{@as(i64, @intCast(mat_verses.items.len))}) catch @panic("OOM"))});
         var mat_ngrams = std.ArrayList(std.StringHashMap(i64)){};
         var mat_totals = std.ArrayList(i64){};
         var mat_idx = std.ArrayList(i64){};
@@ -1562,7 +1562,7 @@ pub const Program = struct {
             }
             pi = (pi + 1);
         }
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{}", .{@as(i64, @intCast(mat_ngrams.items.len))}))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "Mat ngrams cached: {}", .{@as(i64, @intCast(mat_ngrams.items.len))}) catch @panic("OOM"))});
         var mi: i64 = 0;
         while ((mi < @as(i64, @intCast(mark_verses.items.len)))) {
             const mtext: []const u8 = mark_verses.items[@intCast(mi)];
@@ -1576,7 +1576,7 @@ pub const Program = struct {
                     const inter = Program.intersection(ngrams_m, ngrams_t);
                     if (((20 * inter) >= (7 * (total_m + total_t)))) {
                         const orig_ti: i64 = mat_idx.items[@intCast(ti)];
-                        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{}] ~ MAT[{}] inter={} total={}", .{mi, orig_ti, inter, (total_m + total_t)}))});
+                        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "MAR[{}] ~ MAT[{}] inter={} total={}", .{mi, orig_ti, inter, (total_m + total_t)}) catch @panic("OOM"))});
                     }
                     ti = (ti + 1);
                 }

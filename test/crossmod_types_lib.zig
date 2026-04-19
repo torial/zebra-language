@@ -1486,7 +1486,7 @@ pub const Point = struct {
     }
 
     pub fn show(self: *Point) []const u8 {
-        return (try std.fmt.allocPrint(_allocator, "{}, {})", .{self.x, self.y}));
+        return (std.fmt.allocPrint(_allocator, "({}, {})", .{self.x, self.y}) catch @panic("OOM"));
     }
 
 };

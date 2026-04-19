@@ -1495,17 +1495,17 @@ pub const Program = struct {
     pub fn main() void {
         const m = Math.init();
         const p = .{10, 20};
-        std.debug.print("{}\n", .{p.0});
-        std.debug.print("{}\n", .{p.1});
+        std.debug.print("{}\n", .{p.@"0"});
+        std.debug.print("{}\n", .{p.@"1"});
         const q: struct { i64, i64 } = .{3, 7};
-        std.debug.print("{}\n", .{(q.0 + q.1)});
+        std.debug.print("{}\n", .{(q.@"0" + q.@"1")});
         const _zbr_dt_1 = m.minMax(42, 17);
         const lo = _zbr_dt_1.@"0";
         const hi = _zbr_dt_1.@"1";
         std.debug.print("{}\n", .{lo});
         std.debug.print("{}\n", .{hi});
         const t = .{1, 2, 3};
-        std.debug.print("{}\n", .{t.2});
+        std.debug.print("{}\n", .{t.@"2"});
     }
 
     pub fn init() *Program {

@@ -487,12 +487,14 @@ struct BranchOn
     var values as List(Expr)
     var stmts as List(Stmt)
     var binding as String?
+    var guard_expr as List(Expr)
 
-    cue init(span as Span, values as List(Expr), stmts as List(Stmt), binding as String?)
+    cue init(span as Span, values as List(Expr), stmts as List(Stmt), binding as String?, guard_expr as List(Expr))
         this.span = span
         this.values = values
         this.stmts = stmts
         this.binding = binding
+        this.guard_expr = guard_expr
 
 struct StmtBranch
     var span as Span

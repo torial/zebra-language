@@ -161,40 +161,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-040: Selfhost `print` emits `{}` instead of `{s}` for strings
-- **Severity:** Medium (every selfhost-emitted `print` of a string fails Zig 0.15 type check)
-- **Status:** Open — found 2026-04-17
-- **Target:** selfhost-edit wave
-- **Symptom:** `print someString` — selfhost emits `std.debug.print("{}\n", .{ someString })`; Zig 0.15 rejects `[]const u8` under `{}` (needs `{s}`). Zig backend emits `{s}` correctly.
-- **Likely fix site:** `selfhost/codegen.zbr::genPrint` — check expression TC type; use `{s}` for `string`/`str_slice`, `{}` otherwise.
-
----
-
-### BUG-042: Selfhost cross-module struct ctor missing `.init`
-- **Severity:** Medium (every cross-module class/struct construction `Mod.Type(args)` emits as unbuildable fn-call)
-- **Status:** Open — found 2026-04-17
-- **Target:** selfhost-edit wave
-- **Symptom:** `var p = bug022_lib.Payload(42)` emits as `const pay = bug022_lib.Payload(42);`. Expected `bug022_lib.Payload.init(42);`.
-- **Likely fix site:** `selfhost/codegen.zbr` call-emit path — detect `Mod.Type(...)` callee as a cross-module struct/class constructor via `deps_mt` and append `.init`.
-
----
-
-### BUG-043: Selfhost `Mod.Union.variant(v)` emits fn-call not struct-init
-- **Severity:** Medium
-- **Status:** Open — found 2026-04-17
-- **Target:** selfhost-edit wave (likely same fix as BUG-042 + BUG-044)
-- **Symptom:** `var v = bug022_lib.Value.data(pay)` emits as `const v = bug022_lib.Value.data(pay);` (fn-call form). Expected `bug022_lib.Value{ .data = <boxed pay> };`.
-- **Likely fix site:** `selfhost/codegen.zbr` call-emit path — detect `Mod.UnionName.variant(...)` via `deps_mt.hasUnion` (BUG-034 fix) and route to struct-init with `boxed_variants` boxing.
-
----
-
-### BUG-044: Selfhost cross-module branch pattern collapses variant tag to union type name
-- **Severity:** Medium
-- **Status:** Open — found 2026-04-17
-- **Target:** selfhost-edit wave (likely same fix as BUG-042 + BUG-043)
-- **Symptom:** `branch v on bug022_lib.Value.empty ... on bug022_lib.Value.data as p ...` emits both arms as `.Value` (the union type name). Zig rejects duplicate arms.
-- **Likely fix site:** `selfhost/codegen.zbr` branch-pattern emit path — cross-module `Mod.Union.variant` is being read as `Mod.Union` with `variant` dropped.
-
 ---
 
 ### BUG-046: Selfhost does not discover or merge partial-class sibling files — OPEN
@@ -226,4 +192,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-18*
+*Last updated: 2026-04-19*

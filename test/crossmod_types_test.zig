@@ -1475,13 +1475,13 @@ pub const Segment = struct {
     pub fn init(sx: i64, sy: i64, ex: i64, ey: i64) *Segment {
         const _self = _allocator.create(Segment) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Segment");
-            _self.start = crossmod_types_lib.Point(sx, sy);
-            _self.end_ = crossmod_types_lib.Point(ex, ey);
+            _self.start = crossmod_types_lib.Point.init(sx, sy);
+            _self.end_ = crossmod_types_lib.Point.init(ex, ey);
         return _self;
     }
 
     pub fn label(self: *Segment) []const u8 {
-        return (try std.fmt.allocPrint(_allocator, ""{} to {}", .{self.start.show(), self.end_.show()}));
+        return (std.fmt.allocPrint(_allocator, "{s} to {s}", .{self.start.show(), self.end_.show()}) catch @panic("OOM"));
     }
 
 };
@@ -1493,7 +1493,7 @@ const _reflect_Segment_field_types: []const []const u8 = &.{"crossmod_types_lib.
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
-        var p = crossmod_types_lib.Point(3, 4);
+        var p = crossmod_types_lib.Point.init(3, 4);
         std.debug.assert((p.x == 3));
         std.debug.assert((p.y == 4));
         std.debug.assert(std.mem.eql(u8, p.show(), "(3, 4)"));

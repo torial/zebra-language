@@ -1531,10 +1531,10 @@ pub const Types = struct {
                 return "uint";
             },
             .int_n => |bits| {
-                return _str_concat("int", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(bits), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator);
+                return _str_concat("int", (std.fmt.allocPrint(_allocator, "{}", .{bits}) catch unreachable), _allocator);
             },
             .uint_n => |bits| {
-                return _str_concat("uint", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(bits), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator);
+                return _str_concat("uint", (std.fmt.allocPrint(_allocator, "{}", .{bits}) catch unreachable), _allocator);
             },
             .optional => |_ptr_inner| {
                 const inner = _ptr_inner.*;

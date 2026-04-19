@@ -1609,7 +1609,7 @@ pub const Main = struct {
         g3.emitIndented("x: i64 = 0,");
         g1.emit("};\n");
         const out = wr.result();
-        if (!(std.mem.eql(u8, out, "// module\npub const MyClass = struct {\n        x: i64 = 0,\n};\n"))) @panic((try std.fmt.allocPrint(_allocator, "{}'", .{out})));
+        if (!(std.mem.eql(u8, out, "// module\npub const MyClass = struct {\n        x: i64 = 0,\n};\n"))) @panic((std.fmt.allocPrint(_allocator, "output mismatch: '{s}", .{out}) catch @panic("OOM")));
         std.debug.print("{s}\n", .{"test2 OK"});
     }
 
@@ -1640,7 +1640,7 @@ pub const Main = struct {
         g1.emitIndented("level1");
         g2.emitIndented("level2");
         const out = wr.result();
-        if (!(std.mem.eql(u8, out, "level0\n    level1\n        level2\n"))) @panic((try std.fmt.allocPrint(_allocator, "{}'", .{out})));
+        if (!(std.mem.eql(u8, out, "level0\n    level1\n        level2\n"))) @panic((std.fmt.allocPrint(_allocator, "indentation mismatch: '{s}", .{out}) catch @panic("OOM")));
         std.debug.print("{s}\n", .{"test4 OK"});
     }
 

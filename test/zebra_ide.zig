@@ -1502,7 +1502,7 @@ pub const IDE = struct {
         }
         IDE.saveFile();
         IDE.run_output = (blk_sh: {
-            const _sh_cmd = (try std.fmt.allocPrint(_allocator, "{}", .{IDE.current_file}));
+            const _sh_cmd = (std.fmt.allocPrint(_allocator, "zebra {s}", .{IDE.current_file}) catch @panic("OOM"));
             const _sh_argv = if (comptime builtin.os.tag == .windows)
                 @as([]const []const u8, &[_][]const u8{ "cmd", "/c", _sh_cmd })
             else
@@ -1531,7 +1531,7 @@ pub const IDE = struct {
         if ((IDE.current_file.len == 0)) {
             g.text("(no file selected)");
         } else {
-            g.text((try std.fmt.allocPrint(_allocator, "{}", .{IDE.current_file})));
+            g.text((std.fmt.allocPrint(_allocator, "Editing: {s}", .{IDE.current_file}) catch @panic("OOM")));
         }
         IDE.source_code = g.inputMultiline("##editor", IDE.source_code, 760.0, 380.0);
         if (g.button("Save")) {

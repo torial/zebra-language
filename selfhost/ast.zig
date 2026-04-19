@@ -2018,12 +2018,14 @@ pub const BranchOn = struct {
     values: std.ArrayList(Expr),
     stmts: std.ArrayList(Stmt),
     binding: ?[]const u8,
-    pub fn init(span: Span, values: std.ArrayList(Expr), stmts: std.ArrayList(Stmt), binding: ?[]const u8) BranchOn {
+    guard_expr: std.ArrayList(Expr),
+    pub fn init(span: Span, values: std.ArrayList(Expr), stmts: std.ArrayList(Stmt), binding: ?[]const u8, guard_expr: std.ArrayList(Expr)) BranchOn {
         var _self: BranchOn = undefined;
             _self.span = span;
             _self.values = values;
             _self.stmts = stmts;
             _self.binding = binding;
+            _self.guard_expr = guard_expr;
         return _self;
     }
 

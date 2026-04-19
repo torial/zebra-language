@@ -1499,11 +1499,11 @@ pub const Program = struct {
         g.greet("Bob", "Hey");
         g.greet("Hi", "Carol");
         const ok = g.check(5, 1, 10);
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(ok), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{ok}) catch unreachable)});
         const s: []const u8 = "hello world";
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast((std.mem.indexOf(u8, s, "world") != null)), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast((std.mem.indexOf(u8, s, "xyz") != null)), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast((!(std.mem.indexOf(u8, s, "xyz") != null))), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{(std.mem.indexOf(u8, s, "world") != null)}) catch unreachable)});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{(std.mem.indexOf(u8, s, "xyz") != null)}) catch unreachable)});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{(!(std.mem.indexOf(u8, s, "xyz") != null))}) catch unreachable)});
         const sep = ("=" * 20);
         std.debug.print("{}\n", .{sep});
         std.debug.print("{}\n", .{("-" * 5)});
@@ -1511,8 +1511,8 @@ pub const Program = struct {
         nums.append(_allocator, 10) catch @panic("OOM");
         nums.append(_allocator, 20) catch @panic("OOM");
         nums.append(_allocator, 30) catch @panic("OOM");
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast((std.mem.indexOf(u8, nums, 20) != null)), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
-        std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast((std.mem.indexOf(u8, nums, 99) != null)), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{(std.mem.indexOf(u8, nums, 20) != null)}) catch unreachable)});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{(std.mem.indexOf(u8, nums, 99) != null)}) catch unreachable)});
     }
 
     pub fn init() *Program {

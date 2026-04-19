@@ -1600,7 +1600,7 @@ pub const Program = struct {
             return (a.name > b.name);
          } }.call, people2.items);
         for (people2.items) |p| {
-            std.debug.print("{}\n", .{(std.mem.concat(_allocator, u8, &.{ (std.mem.concat(_allocator, u8, &.{ p.name, ": " }) catch unreachable), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(p.score), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }) }) catch unreachable)});
+            std.debug.print("{}\n", .{(std.mem.concat(_allocator, u8, &.{ (std.mem.concat(_allocator, u8, &.{ p.name, ": " }) catch unreachable), (std.fmt.allocPrint(_allocator, "{}", .{p.score}) catch unreachable) }) catch unreachable)});
         }
     }
 

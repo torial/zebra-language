@@ -1501,12 +1501,12 @@ pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
         const r = Rectangle.init(3.0, 4.0);
-        std.debug.print("{}\n", .{r.area});
-        std.debug.print("{}\n", .{r.perimeter});
-        std.debug.print("{}\n", .{r.isSquare});
+        std.debug.print("{}\n", .{r.area()});
+        std.debug.print("{}\n", .{r.perimeter()});
+        std.debug.print("{}\n", .{r.isSquare()});
         const sq = Rectangle.init(5.0, 5.0);
-        std.debug.print("{}\n", .{sq.area});
-        std.debug.print("{}\n", .{sq.isSquare});
+        std.debug.print("{}\n", .{sq.area()});
+        std.debug.print("{}\n", .{sq.isSquare()});
     }
 
     pub fn init() *Main {

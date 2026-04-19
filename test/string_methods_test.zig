@@ -1470,7 +1470,7 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
-        var greeting: []const u8 = "hello";
+        const greeting: []const u8 = "hello";
         std.debug.print("{}\n", .{greeting.len});
         var padded: []const u8 = "  hi  ";
         std.debug.print("{s}\n", .{std.mem.trimLeft(u8, padded, &std.ascii.whitespace)});
@@ -1490,13 +1490,13 @@ pub const Main = struct {
             std.debug.print("{}\n", .{line});
         }
         std.debug.print("{s}\n", .{(blk_rev: { const _rbuf = _allocator.alloc(u8, greeting.len) catch @panic("OOM"); @memcpy(_rbuf, greeting); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })});
-        var hi: []const u8 = "hi";
+        const hi: []const u8 = "hi";
         std.debug.print("{s}\n", .{(blk_hex: { const _hx_s = hi; const _hx_buf = _allocator.alloc(u8, _hx_s.len * 2) catch @panic("OOM"); for (_hx_s, 0..) |_hx_b, _hx_i| { _ = std.fmt.bufPrint(_hx_buf[_hx_i * 2 .. _hx_i * 2 + 2], "{x:0>2}", .{_hx_b}) catch unreachable; } break :blk_hex _hx_buf; })});
         std.debug.print("{s}\n", .{_pad_left(greeting, @as(usize, @intCast(8)), "*", _allocator)});
         std.debug.print("{s}\n", .{_pad_right(greeting, @as(usize, @intCast(8)), "-", _allocator)});
-        var alpha: []const u8 = "hello";
-        var digits: []const u8 = "12345";
-        var mixed: []const u8 = "hi2";
+        const alpha: []const u8 = "hello";
+        const digits: []const u8 = "12345";
+        const mixed: []const u8 = "hi2";
         std.debug.print("{}\n", .{(blk_ia: { if (alpha.len == 0) break :blk_ia false; for (alpha) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
         std.debug.print("{}\n", .{(blk_ia: { if (digits.len == 0) break :blk_ia false; for (digits) |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })});
         std.debug.print("{}\n", .{(blk_in: { if (digits.len == 0) break :blk_in false; for (digits) |_nc| { if (!std.ascii.isDigit(_nc)) break :blk_in false; } break :blk_in true; })});

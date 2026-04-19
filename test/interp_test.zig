@@ -1472,9 +1472,9 @@ pub const Main = struct {
     pub fn main() void {
         const name: []const u8 = "world";
         const n: i64 = 42;
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{}!", .{name}))});
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, "{}", .{n}))});
-        const msg: []const u8 = (try std.fmt.allocPrint(_allocator, "{} and {}", .{n, name}));
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "hello {s}!", .{name}) catch @panic("OOM"))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "n = {}", .{n}) catch @panic("OOM"))});
+        const msg: []const u8 = (std.fmt.allocPrint(_allocator, "result: {} and {s}", .{n, name}) catch @panic("OOM"));
         std.debug.print("{s}\n", .{msg});
     }
 

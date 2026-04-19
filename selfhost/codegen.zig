@@ -2095,6 +2095,27 @@ pub fn getMemberName(callee: Expr) ?[]const u8 {
     return null;
 }
 
+pub fn getXmUnionParts(callee: Expr) ?std.ArrayList([]const u8) {
+    switch (callee) {
+        .member => |_ptr_outer_m| {
+            const outer_m = _ptr_outer_m.*;
+            const inner_union = getMemberName(outer_m.object.*);
+            const inner_mod = getMemberObjectIdent(outer_m.object.*);
+            if (((inner_union != null) and (inner_mod != null))) {
+                var parts = std.ArrayList([]const u8){};
+                parts.append(_allocator, inner_mod.?) catch @panic("OOM");
+                parts.append(_allocator, inner_union.?) catch @panic("OOM");
+                parts.append(_allocator, outer_m.member) catch @panic("OOM");
+                return parts;
+            }
+        },
+        else => |_| {
+            // pass
+        },
+    }
+    return null;
+}
+
 pub fn exprMentionsThis(e: Expr) bool {
     switch (e) {
         .this_ => |_| {
@@ -4998,6 +5019,12 @@ pub const Generator = struct {
             self.genStmts(first_case.stmts);
             return;
         }
+        var has_guard = false;
+        for (b.cases.items) |cas| {
+            if ((@as(i64, @intCast(cas.guard_expr.items.len)) > 0)) {
+                has_guard = true;
+            }
+        }
         const fv = first_case.values.items[@intCast(0)];
         var is_str_branch = false;
         switch (fv) {
@@ -5011,7 +5038,11 @@ pub const Generator = struct {
         if (is_str_branch) {
             self.genBranchString(b);
         } else {
-            self.genBranchTagged(b);
+            if (has_guard) {
+                self.genBranchGuarded(b);
+            } else {
+                self.genBranchTagged(b);
+            }
         }
     }
 
@@ -5053,6 +5084,182 @@ pub const Generator = struct {
             self.w.emit("}");
         }
         self.w.emit("\n");
+    }
+
+    pub fn genBranchGuarded(self: *Generator, b: StmtBranch) void {
+        var is_union = false;
+        for (b.cases.items) |cas| {
+            if ((cas.binding != null)) {
+                is_union = true;
+            }
+        }
+        const uid = self.w.nextUid();
+        const bv = _str_concat("_bv_", (std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable), _allocator);
+        const bd = _str_concat("_bd_", (std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable), _allocator);
+        self.writeIndent();
+        self.w.emit("const ");
+        self.w.emit(bv);
+        self.w.emit(" = ");
+        self.genExpr(b.expr.*);
+        self.w.emit(";\n");
+        self.writeIndent();
+        self.w.emit("var ");
+        self.w.emit(bd);
+        self.w.emit(" = false;\n");
+        for (b.cases.items) |cas| {
+            self.writeIndent();
+            self.w.emit("if (!");
+            self.w.emit(bd);
+            if (is_union) {
+                if ((@as(i64, @intCast(cas.values.items.len)) > 0)) {
+                    const v0 = cas.values.items[@intCast(0)];
+                    var tag_name: []const u8 = "";
+                    switch (v0) {
+                        .member => |_ptr_m| {
+                            const m = _ptr_m.*;
+                            tag_name = m.member;
+                        },
+                        else => |_| {
+                            // pass
+                        },
+                    }
+                    if ((tag_name.len > 0)) {
+                        self.w.emit(" and ");
+                        self.w.emit(bv);
+                        self.w.emit(" == .");
+                        self.w.emit(tag_name);
+                    }
+                }
+                self.w.emit(") {\n");
+                var ig = self.indented();
+                if ((cas.binding != null)) {
+                    ig.writeIndent();
+                    ig.w.emit("const ");
+                    ig.w.emit(cas.binding.?);
+                    ig.w.emit(" = ");
+                    ig.w.emit(bv);
+                    ig.w.emit(".");
+                    if ((@as(i64, @intCast(cas.values.items.len)) > 0)) {
+                        const v0b = cas.values.items[@intCast(0)];
+                        switch (v0b) {
+                            .member => |_ptr_mb| {
+                                const mb = _ptr_mb.*;
+                                ig.w.emit(mb.member);
+                            },
+                            else => |_| {
+                                // pass
+                            },
+                        }
+                    }
+                    ig.w.emit(";\n");
+                    if ((@as(i64, @intCast(cas.guard_expr.items.len)) == 0)) {
+                        ig.writeIndent();
+                        ig.w.emit("_ = ");
+                        ig.w.emit(cas.binding.?);
+                        ig.w.emit(";\n");
+                    }
+                }
+                if ((@as(i64, @intCast(cas.guard_expr.items.len)) > 0)) {
+                    ig.writeIndent();
+                    ig.w.emit("if (");
+                    ig.genExpr(cas.guard_expr.items[@intCast(0)]);
+                    ig.w.emit(") {\n");
+                    var iig = ig.indented();
+                    iig.writeIndent();
+                    iig.w.emit(bd);
+                    iig.w.emit(" = true;\n");
+                    iig.genStmts(cas.stmts);
+                    ig.writeIndent();
+                    ig.w.emit("}\n");
+                } else {
+                    ig.writeIndent();
+                    ig.w.emit(bd);
+                    ig.w.emit(" = true;\n");
+                    ig.genStmts(cas.stmts);
+                }
+            } else {
+                if ((@as(i64, @intCast(cas.values.items.len)) > 0)) {
+                    self.w.emit(" and (");
+                    var fv2 = true;
+                    for (cas.values.items) |v| {
+                        if ((!fv2)) {
+                            self.w.emit(" or ");
+                        }
+                        fv2 = false;
+                        self.w.emit(bv);
+                        self.w.emit(" == ");
+                        switch (v) {
+                            .member => |_ptr_m2| {
+                                const m2 = _ptr_m2.*;
+                                self.w.emit(".");
+                                self.w.emit(m2.member);
+                            },
+                            else => |_| {
+                                self.genExpr(v);
+                            },
+                        }
+                    }
+                    self.w.emit(")");
+                }
+                self.w.emit(") {\n");
+                var ig = self.indented();
+                if ((@as(i64, @intCast(cas.guard_expr.items.len)) > 0)) {
+                    ig.writeIndent();
+                    ig.w.emit("if (");
+                    ig.genExpr(cas.guard_expr.items[@intCast(0)]);
+                    ig.w.emit(") {\n");
+                    var iig = ig.indented();
+                    iig.writeIndent();
+                    iig.w.emit(bd);
+                    iig.w.emit(" = true;\n");
+                    iig.genStmts(cas.stmts);
+                    ig.writeIndent();
+                    ig.w.emit("}\n");
+                } else {
+                    ig.writeIndent();
+                    ig.w.emit(bd);
+                    ig.w.emit(" = true;\n");
+                    ig.genStmts(cas.stmts);
+                }
+            }
+            self.writeIndent();
+            self.w.emit("}\n");
+        }
+        if ((b.else_ != null)) {
+            self.writeIndent();
+            self.w.emit("if (!");
+            self.w.emit(bd);
+            self.w.emit(") {\n");
+            var ig = self.indented();
+            ig.genStmts(b.else_.?);
+            self.writeIndent();
+            self.w.emit("}\n");
+        } else {
+            self.writeIndent();
+            self.w.emit("if (!");
+            self.w.emit(bd);
+            self.w.emit(") unreachable;\n");
+            var all_return = true;
+            for (b.cases.items) |cas| {
+                if ((@as(i64, @intCast(cas.stmts.items.len)) == 0)) {
+                    all_return = false;
+                } else {
+                    const last = cas.stmts.items[@intCast((@as(i64, @intCast(cas.stmts.items.len)) - 1))];
+                    switch (last) {
+                        .return_ => {
+                            // pass
+                        },
+                        else => {
+                            all_return = false;
+                        },
+                    }
+                }
+            }
+            if (all_return) {
+                self.writeIndent();
+                self.w.emit("unreachable;\n");
+            }
+        }
     }
 
     pub fn genBranchTagged(self: *Generator, b: StmtBranch) void {
@@ -5650,6 +5857,30 @@ pub const Generator = struct {
                         return;
                     }
                 }
+                if (((m.member.len > 0) and (blk_in: { if (m.member.len == 0) break :blk_in false; for (m.member) |_nc| { if (!std.ascii.isDigit(_nc)) break :blk_in false; } break :blk_in true; }))) {
+                    self.genExpr(m.object.*);
+                    self.w.emit(".@\"");
+                    self.w.emit(m.member);
+                    self.w.emit("\"");
+                    return;
+                }
+                if ((self.infer_ctx != null)) {
+                    const obj_t: Type_ = inferExpr(m.object.*, self.infer_ctx.?);
+                    switch (obj_t) {
+                        .named => |nt| {
+                            if ((self.module_types.hasGetterPropKey(nt, m.member) or self.dep_types.hasGetterPropKey(nt, m.member))) {
+                                self.genExpr(m.object.*);
+                                self.w.emit(".");
+                                self.w.emit(m.member);
+                                self.w.emit("()");
+                                return;
+                            }
+                        },
+                        else => |_| {
+                            // pass
+                        },
+                    }
+                }
                 self.genExpr(m.object.*);
                 self.w.emit(".");
                 self.w.emit(m.member);
@@ -6222,7 +6453,7 @@ pub const Generator = struct {
     }
 
     pub fn genStringInterp(self: *Generator, si: ExprStringInterp) void {
-        self.w.emit("(try std.fmt.allocPrint(_allocator, \"");
+        self.w.emit("(std.fmt.allocPrint(_allocator, \"");
         for (si.parts.items) |part| {
             switch (part) {
                 .literal => |lit| {
@@ -6233,8 +6464,13 @@ pub const Generator = struct {
                     self.w.emit(fmt);
                     self.w.emit("}");
                 },
-                .expr_ => |_| {
-                    self.w.emit("{}");
+                .expr_ => |_ptr_e_chk| {
+                    const e_chk = _ptr_e_chk.*;
+                    if (self.isStringBoth(e_chk, "interp_fmt")) {
+                        self.w.emit("{s}");
+                    } else {
+                        self.w.emit("{}");
+                    }
                 },
             }
         }
@@ -6255,7 +6491,7 @@ pub const Generator = struct {
                 },
             }
         }
-        self.w.emit("}))");
+        self.w.emit("}) catch @panic(\"OOM\"))");
     }
 
     pub fn genCall(self: *Generator, c: ExprCall) void {
@@ -6273,10 +6509,11 @@ pub const Generator = struct {
                 // pass
             },
         }
-        if (isCrossModuleCtorCall(c.callee)) {
-            const cm_obj = getMemberObjectIdent(c.callee);
-            const cm_mem = getMemberName(c.callee);
-            if (((cm_obj != null) and (cm_mem != null))) {
+        const cm_obj = getMemberObjectIdent(c.callee);
+        const cm_mem = getMemberName(c.callee);
+        if (((cm_obj != null) and (cm_mem != null))) {
+            const is_xm_ctor = (isCrossModuleCtorCall(c.callee) or self.dep_types.hasClass(cm_mem.?));
+            if (is_xm_ctor) {
                 if (self.unwrapped_imports.contains_(cm_obj.?)) {
                     self.w.emit(cm_mem.?);
                 } else {
@@ -6337,6 +6574,42 @@ pub const Generator = struct {
                     }
                     self.w.emit(" }");
                 }
+                return;
+            }
+        }
+        const xmu_parts = getXmUnionParts(c.callee);
+        if ((xmu_parts != null)) {
+            const xmu_list = xmu_parts.?;
+            const xmu_mod = xmu_list.items[@intCast(0)];
+            const xmu_union = xmu_list.items[@intCast(1)];
+            const xmu_variant = xmu_list.items[@intCast(2)];
+            if (self.dep_types.hasUnion(xmu_union)) {
+                const xmu_key = makeDottedKey(xmu_union, xmu_variant);
+                const xmu_boxed = self.boxed_variants.contains_(xmu_key);
+                self.w.emit(xmu_mod);
+                self.w.emit(".");
+                self.w.emit(xmu_union);
+                self.w.emit("{ .");
+                self.w.emit(xmu_variant);
+                self.w.emit(" = ");
+                if ((@as(i64, @intCast(c.args.items.len)) > 0)) {
+                    if (xmu_boxed) {
+                        self.w.emit("blk_box: { const _bv: std.meta.Child(@FieldType(");
+                        self.w.emit(xmu_mod);
+                        self.w.emit(".");
+                        self.w.emit(xmu_union);
+                        self.w.emit(", \"");
+                        self.w.emit(xmu_variant);
+                        self.w.emit("\")) = ");
+                        self.genExpr(c.args.items[@intCast(0)].value);
+                        self.w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :blk_box _bp; }");
+                    } else {
+                        self.genExpr(c.args.items[@intCast(0)].value);
+                    }
+                } else {
+                    self.w.emit("{}");
+                }
+                self.w.emit(" }");
                 return;
             }
         }

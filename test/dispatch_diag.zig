@@ -1471,7 +1471,7 @@ pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
         const n: i64 = 42;
-        const s = (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(n), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); });
+        const s = (std.fmt.allocPrint(_allocator, "{}", .{n}) catch unreachable);
         std.debug.print("{s}\n", .{s});
     }
 

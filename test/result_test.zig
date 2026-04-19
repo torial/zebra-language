@@ -1551,7 +1551,7 @@ pub const Main = struct {
             std.debug.print("{s}\n", .{(std.mem.concat(_allocator, u8, &.{ "Error in r1: ", r1.errValue() }) catch unreachable)});
         }
         if (r2.isOk()) {
-            std.debug.print("{s}\n", .{(std.mem.concat(_allocator, u8, &.{ "Success in r2: ", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(r2.okValue()), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }) }) catch unreachable)});
+            std.debug.print("{s}\n", .{(std.mem.concat(_allocator, u8, &.{ "Success in r2: ", (std.fmt.allocPrint(_allocator, "{}", .{r2.okValue()}) catch unreachable) }) catch unreachable)});
         }
     }
 

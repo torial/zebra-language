@@ -1471,20 +1471,20 @@ pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
         const n: i32 = 255;
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, ""{}", .{n}))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{n}) catch @panic("OOM"))});
         const fval: f64 = 3.14159;
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, ""{}", .{fval}))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{fval}) catch @panic("OOM"))});
         const greeting: []const u8 = "hello";
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, ""{}", .{greeting}))});
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{s}", .{greeting}) catch @panic("OOM"))});
         const tag: []const u8 = "ok";
-        std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, ""{}", .{tag}))});
-        var word: []const u8 = "hi";
+        std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{s}", .{tag}) catch @panic("OOM"))});
+        const word: []const u8 = "hi";
         std.debug.print("{s}\n", .{_pad_left(word, @as(usize, @intCast(8)), ' ', _allocator)});
         std.debug.print("{s}\n", .{_pad_right(word, @as(usize, @intCast(8)), ' ', _allocator)});
         std.debug.print("{s}\n", .{_pad_center(word, @as(usize, @intCast(8)), ' ', _allocator)});
         const s: []const u8 = "ab";
         for (s.bytes().items) |c| {
-            std.debug.print("{s}\n", .{(try std.fmt.allocPrint(_allocator, ""{}", .{c}))});
+            std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{c}) catch @panic("OOM"))});
         }
     }
 

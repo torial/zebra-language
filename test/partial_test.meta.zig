@@ -1470,7 +1470,7 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 pub const PartialTest = struct {
     _type_tag: u64 = _ttag_PartialTest,
     pub fn describe(name: []const u8, value: i64) []const u8 {
-        return _str_concat(_str_concat(name, ": ", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(value), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator);
+        return _str_concat(_str_concat(name, ": ", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{value}) catch unreachable), _allocator);
     }
 
     pub fn init() *PartialTest {

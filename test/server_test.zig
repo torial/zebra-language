@@ -1475,7 +1475,7 @@ pub const Main = struct {
                 return HttpResponse{ .status = 200, .text = "<h1>Hello from Zebra!</h1>" };
             }
             if (std.mem.eql(u8, req.path, "/greet")) {
-                const msg: []const u8 = (try std.fmt.allocPrint(_allocator, "{} {}", .{req.method, req.path}));
+                const msg: []const u8 = (std.fmt.allocPrint(_allocator, "Hello, {} {}", .{req.method, req.path}) catch @panic("OOM"));
                 return HttpResponse{ .status = 200, .text = msg };
             }
             if (std.mem.eql(u8, req.path, "/echo")) {

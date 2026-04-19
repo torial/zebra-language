@@ -1473,7 +1473,7 @@ pub const Main = struct {
         const frame = (struct {
             count: i64,
          fn call(self: @This(), g: Gui) void {
-            g.text((try std.fmt.allocPrint(_allocator, "{}", .{self.count})));
+            g.text((std.fmt.allocPrint(_allocator, "Count: {}", .{self.count}) catch @panic("OOM")));
             if (g.button("Increment")) {
                 self.count = (self.count + 1);
             }

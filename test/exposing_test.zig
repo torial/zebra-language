@@ -1475,13 +1475,13 @@ pub const Main = struct {
     pub fn main() void {
         const c = Color{ .green = {} };
         switch (c) {
-            .Color => {
+            .red => {
                 std.debug.print("{s}\n", .{"red"});
             },
-            .Color => {
+            .green => {
                 std.debug.print("{s}\n", .{"green"});
             },
-            .Color => {
+            .blue => {
                 std.debug.print("{s}\n", .{"blue"});
             },
         }

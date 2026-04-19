@@ -1506,7 +1506,7 @@ pub const Main = struct {
             }
             if (_try_err != null) {
                 std.debug.print("{}\n", .{_zbr_error_msg()});
-                std.debug.print("{s}\n", .{(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(e.details), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); })});
+                std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{e.details}) catch unreachable)});
             }
         }
         {

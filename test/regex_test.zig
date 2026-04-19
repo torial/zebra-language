@@ -1494,7 +1494,7 @@ pub const Main = struct {
         for (re7.findAll("one 1 two 22 three 333").items) |m| {
             std.debug.print("{}\n", .{m});
         }
-        var re8: Regex = _regex_compile("\\d+", "");
+        const re8: Regex = _regex_compile("\\d+", "");
         std.debug.print("{}\n", .{(std.mem.replaceOwned(u8, _allocator, re8, "abc 42 def 99", "NUM") catch unreachable)});
         std.debug.print("{}\n", .{(std.mem.replaceOwned(u8, _allocator, re8, "no digits here", "X") catch unreachable)});
     }
