@@ -5294,7 +5294,7 @@ pub const Generator = struct {
                     },
                 }
                 self.w.emit("{ const _rdet_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(": []const u8 = std.fmt.allocPrint(_allocator, \"");
                 self.w.emit(fmt);
                 self.w.emit("\", .{");
@@ -5302,17 +5302,17 @@ pub const Generator = struct {
                 self.w.emit("}) catch @panic(\"OOM\");\n");
                 self.writeIndent();
                 self.w.emit("  const _rdet_ptr_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n");
                 self.writeIndent();
                 self.w.emit("  _rdet_ptr_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(".* = _rdet_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(";\n");
                 self.writeIndent();
                 self.w.emit("  const _rshim_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n");
                 self.writeIndent();
                 self.w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n");
@@ -5322,32 +5322,32 @@ pub const Generator = struct {
                 self.w.emit("  _error_ctx = .{ .message = ");
                 self.genExpr(r.message.?.*);
                 self.w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit("), .toString_fn = _rshim_");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                 self.w.emit(".call } };\n");
                 self.writeIndent();
                 self.w.emit("  ");
             } else {
                 if (is_string_det) {
                     self.w.emit("{ const _rdet_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(": []const u8 = ");
                     self.genExpr(det);
                     self.w.emit(";\n");
                     self.writeIndent();
                     self.w.emit("  const _rdet_ptr_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(" = _allocator.create([]const u8) catch @panic(\"OOM\");\n");
                     self.writeIndent();
                     self.w.emit("  _rdet_ptr_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(".* = _rdet_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(";\n");
                     self.writeIndent();
                     self.w.emit("  const _rshim_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n");
                     self.writeIndent();
                     self.w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n");
@@ -5357,9 +5357,9 @@ pub const Generator = struct {
                     self.w.emit("  _error_ctx = .{ .message = ");
                     self.genExpr(r.message.?.*);
                     self.w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit("), .toString_fn = _rshim_");
-                    self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                    self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable));
                     self.w.emit(".call } };\n");
                     self.writeIndent();
                     self.w.emit("  ");
@@ -5505,7 +5505,7 @@ pub const Generator = struct {
 
     pub fn genDestruct(self: *Generator, d: StmtDestruct) void {
         const uid: i64 = self.w.nextUid();
-        const tmp: []const u8 = _str_concat("_zbr_dt_", (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(uid), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator);
+        const tmp: []const u8 = _str_concat("_zbr_dt_", (std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable), _allocator);
         self.writeIndent();
         self.w.emit("const ");
         self.w.emit(tmp);
@@ -5524,7 +5524,7 @@ pub const Generator = struct {
                 self.w.emit(d.names.items[@intCast(i)]);
             } else {
                 self.w.emit(".@\"");
-                self.w.emit((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(i), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }));
+                self.w.emit((std.fmt.allocPrint(_allocator, "{}", .{i}) catch unreachable));
                 self.w.emit("\"");
             }
             self.w.emit(";\n");
@@ -6775,9 +6775,27 @@ pub const Generator = struct {
             return;
         }
         if (std.mem.eql(u8, mname, "toString")) {
-            self.w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(");
-            self.genExpr(m.object.*);
-            self.w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })");
+            var is_char_recv = false;
+            if ((self.infer_ctx != null)) {
+                const recv_t: Type_ = inferExpr(m.object.*, self.infer_ctx.?);
+                switch (recv_t) {
+                    .char_ => {
+                        is_char_recv = true;
+                    },
+                    else => {
+                        // pass
+                    },
+                }
+            }
+            if (is_char_recv) {
+                self.w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(");
+                self.genExpr(m.object.*);
+                self.w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })");
+            } else {
+                self.w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{");
+                self.genExpr(m.object.*);
+                self.w.emit("}) catch unreachable)");
+            }
             return;
         }
         if (std.mem.eql(u8, mname, "toFloat")) {

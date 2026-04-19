@@ -761,6 +761,12 @@ def isReadOnlyMethod(name as str) as bool
         return true
     if name == "codePointCount" or name == "byteLen" or name == "isEmpty"
         return true
+    if name == "reverse" or name == "padLeft" or name == "padRight" or name == "center"
+        return true
+    if name == "toHex" or name == "fromHex" or name == "repeat" or name == "replace"
+        return true
+    if name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
+        return true
     return false
 
 def scanMutationsInExpr(expr as Expr, out as StrSet)

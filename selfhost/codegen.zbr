@@ -4310,11 +4310,24 @@ struct Generator
             w.emit("))")
             return
         if mname == "toString"
-            # For u21 codepoints (from chars() loop) use "{u}" format.
-            # This also works for printing integers as Unicode scalars.
-            w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
-            genExpr(m.object)
-            w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")
+            # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
+            # Int/other receivers need decimal string via allocPrint.
+            var is_char_recv = false
+            if this.infer_ctx != nil
+                var recv_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
+                branch recv_t
+                    on Type_.char_
+                        is_char_recv = true
+                    else
+                        pass
+            if is_char_recv
+                w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
+                genExpr(m.object)
+                w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")
+            else
+                w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
+                genExpr(m.object)
+                w.emit("}) catch unreachable)")
             return
         if mname == "toFloat"
             w.emit("@as(f64, @floatFromInt(")

@@ -856,6 +856,22 @@ def walkExpr(e as Expr, ctx as InferCtx)
     if used
         pass
 
+# Returns true when e is a bare `.chars()` call (no args). Used by the
+# for_in walker to bind the loop variable as char_ so that c.toString()
+# inside the body routes to utf8Encode rather than allocPrint.
+def isCharsCallExpr(e as Expr) as bool
+    branch e
+        on Expr.call as cal
+            branch cal.callee
+                on Expr.member as mem
+                    if mem.member == "chars"
+                        return true
+                else
+                    pass
+        else
+            pass
+    return false
+
 def walkStmts(stmts as List(Stmt), ctx as InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -879,11 +895,18 @@ def walkStmt(s as Stmt, ctx as InferCtx)
             # (needs generic-arg awareness for List(T) / HashMap(K,V)). Bind
             # each loop var as unknown_ so `hasLocal` returns true — any later
             # inferExpr on the loop var yields unknown_, which is safe.
+            # Exception: `for c in s.chars()` (single var) → c is char_,
+            # so c.toString() in the body routes to utf8Encode, not allocPrint.
+            var loop_var_t as Type_ = Type_.unknown_
+            if fi.vars.count() == 1 and isCharsCallExpr(fi.iter)
+                loop_var_t = Type_.char_
             for v in fi.vars
-                ctx.bind("" + v, Type_.unknown_)
+                ctx.bind("" + v, loop_var_t)
             walkStmts(fi.stmts, ctx)
+            # Keep the loop var binding at its typed value (not reset to unknown_)
+            # so the single-pass ctx persists the correct type for code generation.
             for v2 in fi.vars
-                ctx.bind("" + v2, Type_.unknown_)
+                ctx.bind("" + v2, loop_var_t)
         on Stmt.for_num as fnum
             walkExpr(fnum.start, ctx)
             walkExpr(fnum.stop_, ctx)
