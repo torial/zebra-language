@@ -564,7 +564,8 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ### BUG-038: Selfhost emits `int.toString()` as codepoint-to-UTF8 encode, not integer-to-decimal
 
 - **Severity:** Medium (produces truncated/garbage output for any line-number / integer embedded in error messages emitted by selfhost-B; selfhost-A is unaffected because Zig backend emits `std.fmt.allocPrint` correctly)
-- **Status:** Open — discovered during Phase 20a investigation (2026-04-17)
+- **Status:** **Fixed 2026-04-18** — commit 443886d
+- **Fix:** `genMemberCall` in `codegen.zbr` now calls `inferExpr(m.object, infer_ctx)` before choosing the toString emit path. `Type_.char_` receivers → utf8Encode blk; all others (int, float, bool) → `std.fmt.allocPrint`. Enabled by typechecker fix: `walkStmt` for_in pre-pass detects `for c in s.chars()` via `isCharsCallExpr()` and binds the loop var as `Type_.char_` (not `unknown_`), and keeps that binding after the body walk so the single-pass InferCtx carries the right type into genStmts.
 - **Target:** selfhost-edit wave (same as BUG-036)
 
 **Symptom:** In selfhost-emitted `.zig` files, `int.toString()` expands to
@@ -593,7 +594,8 @@ The selfhost codegen path diverges.
 
 ### BUG-039: Selfhost mutation scanner marks string-method receiver as `var`
 - **Severity:** Medium (every selfhost-emitted program that calls a string method rejects under Zig 0.15 ReleaseSafe)
-- **Status:** Open — found 2026-04-17 by task #48 Batch 2 re-verification of BUG-008
+- **Status:** **Fixed 2026-04-18** — commit 443886d
+- **Fix:** Added missing string methods to `isReadOnlyMethod()` in `cg_helpers.zbr`: `reverse`, `padLeft`, `padRight`, `center`, `toHex`, `fromHex`, `repeat`, `replace`, `isAlpha`, `isNumeric`, `isValidUtf8`. The mutation scanner now correctly identifies their receivers as not-mutated → emits `const`.
 - **Target:** selfhost-edit wave
 - **Symptom:** `var greeting = "hello"; print greeting.reverse()` — Zig backend emits `const greeting`, selfhost emits `var greeting`. Zig 0.15 rejects: "local variable is never mutated". BUG-008 fixed this on the Zig side (the `.unknown` → conservative-mutate path was removed); selfhost's mutation scanner never received the same fix.
 - **Reproducer:** `C:\tmp\verify_bug008.zbr`
