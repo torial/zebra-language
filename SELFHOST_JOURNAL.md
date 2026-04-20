@@ -1372,3 +1372,46 @@ Capture test:          PASS (both Zig compiler and selfhost)
 Round-trip:            PASS (selfhost compiles own codegen.zbr)
 Bugs fixed this phase: ~8 (~111+ total)
 ```
+
+---
+
+## Phase 19 (partial): `if x is Union.variant |r|` inline capture binding
+**Completed:** 2026-04-20
+
+### What was added
+
+Two related features, implemented together:
+
+1. **`x is Union.variant` tag check fix** — the plain `x is Union.variant` expression was falling through to `std.meta.eql()` instead of emitting a `== .variant` tag comparison. Fixed in `src/CodeGen.zig::genExprTypeCheck`.
+
+2. **`if x is Union.variant |r|` capture binding** — new syntax that combines a union tag check with payload extraction. The `|r|` binding makes the variant's payload available in the then-body. Works in else-if chains too: `else if x is Union.other |s|`.
+
+### Where Zebra felt better than Zig
+
+The selfhost port exposed a real auto-deref insight: by writing helper functions that take `Expr` by value (instead of `^Expr`), the call sites auto-deref `^Expr` fields into `Expr` values. This pattern — "design the function signature to force safe auto-deref at the call site" — is more elegant than explicit `.*` everywhere.
+
+### Where Zebra felt worse or missing
+
+**`var x as T = expr` required for field-type inference.** The TypeChecker fails to emit `.*` for `em.object` when `em` is bound from a local variable with inferred type (even though the theoretical chain should resolve). Adding `var right_expr as Expr = ...` explicitly fixed it. Parameters with annotated types work; untyped locals derived from function returns may not. This is a known gap in TC type inference for auto-deref.
+
+**Method-chain-on-temporary error.** `indented().genStmts(stmts)` generates `*const Generator` in Zig — can't call a mutating method on the temporary result. Required materializing `var ig2 = indented(); ig2.genStmts(stmts)`. This is documented in CLAUDE.md but easy to accidentally re-introduce.
+
+**`^ClassName` in union variant double-boxes.** `union U { item as ^Payload }` where `Payload` is a class generates `create(*Payload)` because `genType(Payload)` emits `*Payload` for classes. Boxing then creates `**Payload`. The rule: `^T` union payload variants should only use struct/union/primitive types — not class types (which are already pointer-typed).
+
+### Did `branch` / union dispatch do its job?
+
+Yes. `branch cond_expr on Expr.type_check as tc` in `genIsCaptureThen` is clean and explicit. The by-value trick made the nested switch in Zig straightforward.
+
+### Isolation tactics used
+
+- **Helper functions as by-value adapters**: `getObjectIdentName(e as Expr)` and `genIsCaptureThen(cond_expr as Expr, ...)` take `Expr` by value, isolating callers from `^Expr` pointer semantics. This is a reusable pattern for any selfhost function that needs to branch on a union type retrieved via a `^T` field.
+
+### Results
+
+```
+Bootstrap:    5/5 PASS (byte-identical round-trip)
+Tests:        zig build test — all pass
+Runtime test: if_is_capture_test.zbr — 7 lines output, all correct
+              (plain payload, non-match, else-if chain, standalone is,
+               boxed ^struct payload)
+```
