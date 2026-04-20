@@ -235,6 +235,8 @@ items.add(2)
 var n = items.count()            # length
 var x = items.at(0)             # index (bounds-checked)
 items.remove(0)                  # remove by index
+var has = items.any(def(x) = x > 2)   # true if any element matches predicate
+var ok  = items.all(def(x) = x > 0)   # true if every element matches predicate
 
 # HashMap
 var m = HashMap(str, int)()
