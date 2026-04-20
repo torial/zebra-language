@@ -1487,51 +1487,6 @@ const Generator = struct {
             \\    return h;
             \\}
         );
-        // ── Result(T, E) — functional error type ──────────────────────────────
-        try g.w.writeAll(
-            \\fn _Result(comptime T: type, comptime E: type) type {
-            \\    return union(enum) {
-            \\        ok: T,
-            \\        err: E,
-            \\        pub fn isOk(self: @This()) bool { return self == .ok; }
-            \\        pub fn isErr(self: @This()) bool { return self == .err; }
-            \\        pub fn unwrap(self: @This()) T {
-            \\            return switch (self) { .ok => |v| v, .err => std.debug.panic("unwrap() on error Result\n", .{}) };
-            \\        }
-            \\        pub fn unwrapOr(self: @This(), default: T) T {
-            \\            return switch (self) { .ok => |v| v, .err => default };
-            \\        }
-            \\        pub fn okValue(self: @This()) ?T {
-            \\            return switch (self) { .ok => |v| v, .err => null };
-            \\        }
-            \\        pub fn errValue(self: @This()) ?E {
-            \\            return switch (self) { .ok => null, .err => |e| e };
-            \\        }
-            \\        /// map(f) — apply f to the ok value; propagate err unchanged.
-            \\        /// f may be a fn pointer or a capture-closure struct with a `call` method.
-            \\        pub fn map(self: @This(), f: anytype) _Result(
-            \\            @TypeOf(if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))), E
-            \\        ) {
-            \\            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
-            \\            return switch (self) {
-            \\                .ok  => |v| .{ .ok = if (_is_fn) f(v) else f.call(v) },
-            \\                .err => |e| .{ .err = e },
-            \\            };
-            \\        }
-            \\        /// flatMap(f) — apply f to the ok value; f must return Result(U, E).
-            \\        pub fn flatMap(self: @This(), f: anytype) @TypeOf(
-            \\            if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))
-            \\        ) {
-            \\            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
-            \\            return switch (self) {
-            \\                .ok  => |v| if (_is_fn) f(v) else f.call(v),
-            \\                .err => |e| .{ .err = e },
-            \\            };
-            \\        }
-            \\    };
-            \\}
-            \\
-        );
         // ── String padding helpers ──────────────────────────────────────────
         // fill is `anytype`: comptime char literal (' ') or a 1-char string ("*").
         // _pad_fill() normalises both to u8.
@@ -4600,9 +4555,6 @@ const Generator = struct {
                     const key_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
                     return g.genHashMapMethod(object, key_is_str, method, args);
                 }
-                if (std.mem.eql(u8, gtr.name, "Result")) {
-                    return g.genResultMethod(object, method, args);
-                }
             },
             .named => |n| {
                 if (isStringTypeName(n.name)) return g.genStringMethod(object, method, args);
@@ -6288,27 +6240,6 @@ const Generator = struct {
             return true;
         }
         return false;
-    }
-
-    // ── Result(T, E) methods ──────────────────────────────────────────────────
-
-    fn genResultMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
-        const known = std.StaticStringMap(void).initComptime(&.{
-            .{ "isOk", {} }, .{ "isErr", {} }, .{ "unwrap", {} },
-            .{ "unwrapOr", {} }, .{ "okValue", {} }, .{ "errValue", {} },
-            .{ "map", {} }, .{ "flatMap", {} },
-        });
-        if (!known.has(method)) return false;
-        try g.genExpr(obj);
-        try g.w.writeByte('.');
-        try g.w.writeAll(method);
-        try g.w.writeByte('(');
-        for (args, 0..) |a, i| {
-            if (i > 0) try g.w.writeAll(", ");
-            try g.genExpr(a.value);
-        }
-        try g.w.writeByte(')');
-        return true;
     }
 
     // ── String methods ────────────────────────────────────────────────────────
@@ -9031,15 +8962,6 @@ const Generator = struct {
                 }
             }
             if (mem.object.* == .ident) {
-                // Result.ok(v) / Result.err(v) → anonymous struct literal, inferred to declared type
-                if (std.mem.eql(u8, mem.object.ident.name, "Result")) {
-                    if (std.mem.eql(u8, mem.member, "ok") or std.mem.eql(u8, mem.member, "err")) {
-                        try g.w.print(".{{ .{s} = ", .{mem.member});
-                        if (e.args.len >= 1) try g.genExpr(e.args[0].value) else try g.w.writeAll("{}");
-                        try g.w.writeAll(" }");
-                        return;
-                    }
-                }
                 const type_name = mem.object.ident.name;
                 if (g.union_names.contains(type_name) or g.exposed_unions.contains(type_name)) {
                     try g.w.print("{s}{{ .{s} = ", .{type_name, mem.member});
@@ -10223,15 +10145,6 @@ const Generator = struct {
                 try g.genType(payload);
             },
             .generic     => |gtr| {
-                // Result(T, E) → _Result(T, E)
-                if (std.mem.eql(u8, gtr.name, "Result")) {
-                    try g.w.writeAll("_Result(");
-                    if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("void");
-                    try g.w.writeAll(", ");
-                    if (gtr.args.len >= 2) try g.genType(gtr.args[1]) else try g.w.writeAll("[]const u8");
-                    try g.w.writeAll(")");
-                    return;
-                }
                 // HashMap(K, V): use StringHashMap for string keys, AutoHashMap otherwise.
                 if (std.mem.eql(u8, gtr.name, "HashMap")) {
                     const key_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);

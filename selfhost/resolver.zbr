@@ -348,7 +348,7 @@ class Resolver
             return true
         if name == "Regex" or name == "Gui" or name == "DateTime" or name == "Reflect"
             return true
-        if name == "Result" or name == "Csv" or name == "CsvWriter" or name == "Calendar"
+        if name == "Csv" or name == "CsvWriter" or name == "Calendar"
             return true
         if name == "Dir" or name == "Path" or name == "HttpResponse"
             return true

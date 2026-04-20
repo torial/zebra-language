@@ -138,13 +138,6 @@ def testGenTypeGenerics
     g2.genType(hashTr(namedTr("str"), namedTr("int")))
     assert g2.w.result() == "std.StringHashMap(i64)", "HashMap(str, int)"
 
-    var g3 = makeGen()
-    var rargs = List(TypeRef)()
-    rargs.add(namedTr("int"))
-    rargs.add(namedTr("str"))
-    g3.genType(TypeRef.generic(GenericTypeRef(zspan(), "Result", rargs)))
-    assert g3.w.result() == "_Result(i64, []const u8)", "Result(int, str)"
-
     print "4. genType generics: OK"
 
 # ── Part 5: genType nilable / ref_to / error_union ───────────────────────────

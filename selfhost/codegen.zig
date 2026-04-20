@@ -3179,22 +3179,6 @@ pub const Generator = struct {
                 }
             }
         }
-        if (std.mem.eql(u8, gtr.name, "Result")) {
-            self.w.emit("_Result(");
-            if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 1)) {
-                self.genType(gtr.args.items[@intCast(0)]);
-            } else {
-                self.w.emit("void");
-            }
-            self.w.emit(", ");
-            if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
-                self.genType(gtr.args.items[@intCast(1)]);
-            } else {
-                self.w.emit("[]const u8");
-            }
-            self.w.emit(")");
-            return;
-        }
         if (std.mem.eql(u8, gtr.name, "HashMap")) {
             const key_str = (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 1) and self.isStringTypeRef(gtr.args.items[@intCast(0)]));
             if (key_str) {
@@ -7783,10 +7767,6 @@ pub const Generator = struct {
                     self.genReflectCall(mname, args);
                     return;
                 }
-                if (std.mem.eql(u8, id.name, "Result")) {
-                    self.genResultCall(mname, args);
-                    return;
-                }
             },
             else => |_| {
                 // pass
@@ -8042,34 +8022,6 @@ pub const Generator = struct {
         self.w.emit(")");
         if (((callee_throws2 and (self.try_block_label != null)) and (!self.in_try_expr))) {
             self.emitTryBlockCatch();
-        }
-    }
-
-    pub fn genResultCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
-        if (std.mem.eql(u8, mname, "ok")) {
-            self.w.emit(".{ .ok = ");
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-                self.genExpr(args.items[@intCast(0)].value);
-            } else {
-                self.w.emit("{}");
-            }
-            self.w.emit(" }");
-        } else {
-            if (std.mem.eql(u8, mname, "err")) {
-                self.w.emit(".{ .err = ");
-                if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-                    self.genExpr(args.items[@intCast(0)].value);
-                } else {
-                    self.w.emit("{}");
-                }
-                self.w.emit(" }");
-            } else {
-                self.w.emit("Result.");
-                self.w.emit(mname);
-                self.w.emit("(");
-                self.genArgList(args);
-                self.w.emit(")");
-            }
         }
     }
 

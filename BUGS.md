@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-074. Next new bug: BUG-075.**
+**Last bug number generated: BUG-075. Next new bug: BUG-076.**
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
 
@@ -172,13 +172,13 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-074: `Result.ok` / `Result.err` constructor syntax — planned removal
-- **Severity:** Design (language change)
-- **Status:** Planned — remove from language
-- **Target:** Pre-1.0
-- **Description:** `Result.ok(v)` / `Result.err(e)` constructor syntax is not intended to be part of Zebra's language design. The `Result` type itself may be kept as a stdlib type, but the `.ok`/`.err` namespace-call constructor pattern should be replaced by a different surface syntax or removed entirely.
-- **Current state:** Selfhost codegen has a `genResultCall()` workaround. The corpus tests `result_test.zbr` and `result_methods_test.zbr` use this pattern.
-- **Action required:** (1) Decide on replacement syntax (or removal). (2) Update/replace test files. (3) Remove `genResultCall()` from codegen and the `Result` entry from `isBuiltin()` in the resolver.
+### BUG-075: `String + str` concat not routed through `_str_concat` in selfhost TypeChecker
+- **Severity:** TC inference gap (selfhost only)
+- **Status:** Workaround in place; principled fix deferred
+- **Description:** When a struct field has type `String` (the Zebra class) rather than `str` (primitive), cross-module member access yields `Type.cross_module`, not `Type.string`. The `+` operator for a `cross_module` typed value therefore emits raw Zig `+` instead of `_str_concat`, causing a Zig compile error (`invalid operands to binary expression: 'pointer' and 'pointer'`).
+- **Discovered in:** `genMethod` seeding loop for `opt_ptr_field_bindings` (BUG-073 fix). `nt2.name` is `String` (cross-module), so `nt2.name + "."` would emit invalid Zig.
+- **Workaround:** Call `makeDottedKey(nt2.name, "")` instead of `nt2.name + "."`. `makeDottedKey` takes `str`-typed parameters, so inside it `a + "."` correctly routes through `_str_concat`.
+- **Principled fix:** The TC's `inferBinary` should recognise `String + str` (and `str + String` and `String + String`) as string concat, returning `Type.string` and emitting `_str_concat`.
 
 ---
 

@@ -1235,35 +1235,13 @@ const TypeChecker = struct {
             },
             .branch   => |s| {
                 const subj_type = try tc.inferExpr(s.expr);
-                // For Result(T, E) subjects: determine payload types for `as` bindings.
-                var result_ok_type: ?Type = null;
-                var result_err_type: ?Type = null;
-                if (s.expr.* == .ident) {
-                    if (tc.resolve.exprs.get(&s.expr.ident)) |sym| {
-                        const declared_tr: ?Ast.TypeRef = switch (sym.decl) {
-                            .var_  => |v| v.type_,
-                            .param => |p| p.type_,
-                            else   => null,
-                        };
-                        if (declared_tr) |dtr| {
-                            if (dtr == .generic and std.mem.eql(u8, dtr.generic.name, "Result") and dtr.generic.args.len >= 2) {
-                                result_ok_type = tc.typeFromRef(&dtr.generic.args[0]);
-                                result_err_type = tc.typeFromRef(&dtr.generic.args[1]);
-                            }
-                        }
-                    }
-                }
                 for (s.on) |on| {
                     for (on.values) |v| _ = try tc.inferExpr(v);
                     // Push binding type into narrowed_types so body stmts see the payload type.
                     if (on.binding) |bname| {
                         if (on.values.len == 1 and on.values[0].* == .member) {
                             const variant = on.values[0].member.member;
-                            if (std.mem.eql(u8, variant, "ok")) {
-                                if (result_ok_type) |t| try tc.narrowed_types.put(bname, t);
-                            } else if (std.mem.eql(u8, variant, "err")) {
-                                if (result_err_type) |t| try tc.narrowed_types.put(bname, t);
-                            } else {
+                            {
                                 // Union variant payload: on Shape.circle as r → r has the payload type.
                                 // ① Same-module union: look up the variant symbol directly.
                                 if (subj_type == .named) {
@@ -2071,12 +2049,6 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "socket")) return .udp_socket;
                     return .void_;
                 }
-                // Result.ok(v) / Result.err(v) — constructors; return type depends on context.
-                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Result")) {
-                    _ = try tc.inferExpr(mem.object);
-                    for (e.args) |a| _ = try tc.inferExpr(a.value);
-                    return .unknown; // full generic Result type not modelled yet
-                }
                 // Net.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Net")) {
                     _ = try tc.inferExpr(mem.object);
@@ -2404,25 +2376,6 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "fetch") and dtr.generic.args.len >= 2)
                     {
                         return tc.typeFromRef(&dtr.generic.args[1]);
-                    }
-                    if (dtr == .generic and std.mem.eql(u8, dtr.generic.name, "Result")) {
-                        const gtr = dtr.generic;
-                        if (std.mem.eql(u8, mem.member, "okValue") and gtr.args.len >= 1) {
-                            const inner_t = tc.typeFromRef(&gtr.args[0]);
-                            const boxed = tc.map_alloc.create(Type) catch return .unknown;
-                            boxed.* = inner_t;
-                            return Type{ .optional = boxed };
-                        }
-                        if (std.mem.eql(u8, mem.member, "errValue") and gtr.args.len >= 2) {
-                            const inner_t = tc.typeFromRef(&gtr.args[1]);
-                            const boxed = tc.map_alloc.create(Type) catch return .unknown;
-                            boxed.* = inner_t;
-                            return Type{ .optional = boxed };
-                        }
-                        if (std.mem.eql(u8, mem.member, "unwrap") and gtr.args.len >= 1)
-                            return tc.typeFromRef(&gtr.args[0]);
-                        if (std.mem.eql(u8, mem.member, "unwrapOr") and gtr.args.len >= 1)
-                            return tc.typeFromRef(&gtr.args[0]);
                     }
                 }
                 return tc.inferStdlibMethodType(obj_type, mem.member);

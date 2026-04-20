@@ -1926,7 +1926,7 @@ pub const Resolver = struct {
         if ((((std.mem.eql(u8, name, "Regex") or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Reflect"))) {
             return true;
         }
-        if ((((std.mem.eql(u8, name, "Result") or std.mem.eql(u8, name, "Csv")) or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
+        if (((std.mem.eql(u8, name, "Csv") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
             return true;
         }
         if (((std.mem.eql(u8, name, "Dir") or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "HttpResponse"))) {
