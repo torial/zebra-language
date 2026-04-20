@@ -123,41 +123,10 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-037: Selfhost corpus-failure triage (57/160 .zbr files fail under selfhost)
+### BUG-037: Selfhost corpus-failure triage — RESOLVED 2026-04-19
 - **Severity:** High (headline self-hosting gap)
-- **Status:** Open — meta-ticket for the Phase 17e/17f selfhost-edit wave
-- **Target:** Phase 17e (grammar features) and 17f (diagnostics)
-
-**Failure buckets** (57 total):
-
-| Count | Bucket | Fix target |
-|------:|--------|------------|
-|    47 | Parser-only gap, silent message | Phase 17e grammar wave |
-|     8 | `undefined name: 'TcScopeKind'` | BUG-034 follow-up / cross-module resolver work |
-|     1 | `undefined name: 'Dir'` | Stdlib gap — Phase 19 |
-|     1 | `undefined name: 'Calendar'` | Stdlib gap — selfhost datetime doesn't expose `Calendar` |
-
-**47 parser-gap fails — remaining feature gaps** (many files hit multiple):
-
-| Construct | Count | Notes |
-|-----------|------:|-------|
-| `lambda` expression | 4 | Phase 17e scope |
-| `zig"..."` inline literal (expression form) | 3 | Selfhost parser has no expression-level `zig"..."` atom |
-| `(int, int)` tuple type annotation | 2 | Tuple types absent from selfhost type parser |
-| `p.0` `p.1` tuple-index member access | 1 | Goes with tuple-type work |
-| `"""..."""` multi-line doc strings | 2 | BUG-035 |
-| `except` block as expression | 2 | Partial support; may be resolver-level |
-| Range syntax `for i in 0 : n` | 1 | |
-| Top-level `union Shape` with payload variants | 1 | |
-| Constrained generics `class MinHeap(T where T implements Comparable)` | 1 | |
-| `shared var` field declaration | 1 | |
-| `c'a'` char-literal token | 1 | |
-| `same` type (recursive self-type) | 1 | |
-
-**Action items:**
-- **Phase 17e grammar wave:** lambda, zig"..." expr, tuples, range `:`, top-level union, constrained generics `T where`, `shared var`, `c'…'`, `same` type, `except` as expr.
-- **Phase 19 stdlib:** `Dir`, `Calendar` (2 fails).
-- **Cross-module resolver:** `TcScopeKind` undefined name cluster (8 fails).
+- **Status:** Closed — corpus reached 100% (149/149) via BUG-048 through BUG-073 grammar wave. All 47 parser-gap failures driven to zero.
+- **Remaining open work (not tracked here):** BUG-035 (`"""…"""` doc strings), BUG-046 (partial-class sibling discovery).
 
 ---
 

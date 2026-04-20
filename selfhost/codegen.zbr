@@ -1812,6 +1812,9 @@ struct Generator
                             if nt2.name == "StrSet"
                                 bg.strset_locals.add(p2.name)
                             # Seed opt_ptr_field_bindings for ^T? fields of named-type params
+                            # BUG-075: nt2.name is String (cross-module type), not str.
+                            # `nt2.name + "."` would emit raw Zig + (invalid). Workaround:
+                            # route through makeDottedKey where params are typed as str.
                             var nt2_dot = makeDottedKey(nt2.name, "")
                             var orf3 = opt_ref_fields.items()
                             var orf3i = 0
