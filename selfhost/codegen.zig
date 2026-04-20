@@ -4131,9 +4131,29 @@ pub const Generator = struct {
             },
             .expr => |_ptr_e| {
                 const e = _ptr_e.*;
-                self.writeIndent();
-                self.genExpr(e);
-                self.w.emit(";\n");
+                var hoisted = false;
+                switch (e) {
+                    .call => |_ptr_ec| {
+                        const ec = _ptr_ec.*;
+                        switch (ec.callee) {
+                            .member => |_ptr_mem| {
+                                const mem = _ptr_mem.*;
+                                hoisted = self.hoistCallOnTemp(mem.object.*, mem.member, ec.args);
+                            },
+                            else => |_| {
+                                // pass
+                            },
+                        }
+                    },
+                    else => |_| {
+                        // pass
+                    },
+                }
+                if ((!hoisted)) {
+                    self.writeIndent();
+                    self.genExpr(e);
+                    self.w.emit(";\n");
+                }
             },
             .pass_ => |_| {
                 self.line("// pass");
@@ -4832,6 +4852,27 @@ pub const Generator = struct {
             self.w.emit(";\n");
         } else {
             self.w.emit("return;\n");
+        }
+    }
+
+    pub fn hoistCallOnTemp(self: *Generator, obj: Expr, method_name: []const u8, call_args: std.ArrayList(Arg)) bool {
+        switch (obj) {
+            .call => {
+                const uid = self.w.nextUid();
+                const mc = _str_concat("_mc_", (std.fmt.allocPrint(_allocator, "{}", .{uid}) catch unreachable), _allocator);
+                self.writeIndent();
+                self.w.emit(_str_concat(_str_concat("var ", mc, _allocator), " = ", _allocator));
+                self.genExpr(obj);
+                self.w.emit(";\n");
+                self.writeIndent();
+                self.w.emit(_str_concat(_str_concat(_str_concat(mc, ".", _allocator), method_name, _allocator), "(", _allocator));
+                self.genArgList(call_args);
+                self.w.emit(");\n");
+                return true;
+            },
+            else => {
+                return false;
+            },
         }
     }
 

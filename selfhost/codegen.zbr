@@ -2119,9 +2119,23 @@ struct Generator
             on Stmt.destruct as d
                 genDestruct(d)
             on Stmt.expr as e
-                writeIndent()
-                genExpr(e)
-                w.emit(";\n")
+                # BUG-027 fix (statement-position): hoist f().method(args)
+                # → var _mc_N = f(); _mc_N.method(args);
+                # hoistCallOnTemp takes object by value so ^Expr auto-derefs at call site.
+                var hoisted = false
+                branch e
+                    on Expr.call as ec
+                        branch ec.callee
+                            on Expr.member as mem
+                                hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
+                            else
+                                pass
+                    else
+                        pass
+                if not hoisted
+                    writeIndent()
+                    genExpr(e)
+                    w.emit(";\n")
             on Stmt.pass_
                 line("// pass")
             on Stmt.break_
@@ -2613,6 +2627,26 @@ struct Generator
             w.emit(";\n")
         else
             w.emit("return;\n")
+
+    # BUG-027 fix: takes object by value so a ^Expr caller auto-derefs at call site.
+    # Emits `var _mc_N = obj_call; _mc_N.method(args);` and returns true.
+    # Returns false if obj is not a call expression (no hoisting needed).
+    def hoistCallOnTemp(obj as Expr, method_name as String, call_args as List(Arg)) as bool
+        branch obj
+            on Expr.call
+                var uid = w.nextUid()
+                var mc = "_mc_" + uid.toString()
+                writeIndent()
+                w.emit("var " + mc + " = ")
+                genExpr(obj)
+                w.emit(";\n")
+                writeIndent()
+                w.emit(mc + "." + method_name + "(")
+                genArgList(call_args)
+                w.emit(");\n")
+                return true
+            else
+                return false
 
     # ── genIf ─────────────────────────────────────────────────────────────────
 

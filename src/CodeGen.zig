@@ -4210,6 +4210,33 @@ const Generator = struct {
             .expr      => |e| {
                 // GUI widget calls with allocating string args need block-scoped temps.
                 if (try g.genGuiWidgetStmt(e)) return;
+                // BUG-027 fix (statement-position): hoist `f().method(args)` to avoid
+                // Zig's *const temporary slot. `var _mc_N = f(); _mc_N.method(args);`
+                if (e.* == .call) {
+                    const call = e.call;
+                    if (call.callee.* == .member) {
+                        const mem = call.callee.member;
+                        if (mem.object.* == .call) {
+                            const uid = g.nextUid();
+                            try g.writeIndent();
+                            try g.w.print("var _mc_{x} = ", .{uid});
+                            try g.genExpr(mem.object);
+                            try g.w.writeAll(";\n");
+                            try g.writeIndent();
+                            try g.w.print("_mc_{x}.{s}(", .{ uid, mem.member });
+                            try g.genArgs(g.lookupParams(call), call.args);
+                            try g.w.writeAll(")");
+                            if (g.try_block_label) |lbl| {
+                                if (exprCallIsThrows(call, g.resolve, g.imported_modules, g.owner_members)) {
+                                    const ev = g.try_err_var.?;
+                                    try g.w.print(" catch |_e| {{ {s} = _e; break :{s}; }}", .{ ev, lbl });
+                                }
+                            }
+                            try g.w.writeAll(";\n");
+                            return;
+                        }
+                    }
+                }
                 try g.writeIndent();
                 try g.genExpr(e);
                 // Inside a try block, a call to a `throws` method must have its

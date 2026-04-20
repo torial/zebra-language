@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-075. Next new bug: BUG-076.**
+**Last bug number generated: BUG-078. Next new bug: BUG-079.**
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
 
@@ -85,13 +85,16 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-027: Method chaining on struct temporaries requires manual intermediate vars
 - **Severity:** Low (ergonomic / language design)
-- **Status:** Open — language limitation, not a compiler bug per se
-- **Symptom:** `g.indented().withOwner(n.name)` fails if the intermediate result is a struct (value type). Users must break the chain:
+- **Status:** Partial fix — statement-position hoisting implemented; expression-position and deep chains remain open
+- **Symptom A (method-chain-on-temporary):** `g.indented().withOwner(n.name)` fails if the intermediate result is a struct (value type). Users must break the chain:
   ```zebra
   var g0 = g.indented()
   var g1 = g0.withOwner(n.name)
   ```
-- **Root cause:** Zig temporary value semantics — caller's stack slot for a struct returned by value is `const`.
+  **Fix:** Statement-position codegen now auto-hoists `f().method(args)` → `var _mc_N = f(); _mc_N.method(args)`. Expression-position (`return f().method()`, assignment RHS) and deep chains (`f().g().h()`) remain unhandled — `f().g()` still produces a `*const` intermediate for `h()`.
+- **Symptom B (TC auto-deref annotation gap):** When a local variable is assigned from a `throws`-returning function via `?` propagation (`var x = foo()?`), the TypeChecker doesn't record the inferred type in `expr_types`. Downstream `^T` field accesses on `x` then silently omit the required `.*` deref because TC type is `.unknown`. Workaround: annotate explicitly — `var x as T = foo()?`. Fix tracked separately as BUG-077.
+- **Root cause (A):** Zig temporary value semantics — caller's stack slot for a struct returned by value is `const`.
+- **Root cause (B):** `inferCall` for `?`-propagated throws calls doesn't write back to `expr_types` for the receiving variable.
 
 ---
 
@@ -151,6 +154,37 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-077: TC doesn't record inferred type for `?`-propagated throws-call assignments
+- **Severity:** Medium (selfhost-code quality; type errors inside capture/post-throws code go uncaught until Zig compile time)
+- **Status:** Open
+- **Target:** TC hardening wave
+- **Symptom:** `var x = foo()?` where `foo` returns `T throws` — TC type of `x` is `.unknown`. Downstream `x.field` where `field: ^T` silently omits the `.*` auto-deref. Also affects `if x is Union.variant as r`: the binding `r` has type `.unknown` (see BUG-076).
+- **Root cause:** `inferCall` in the TypeChecker doesn't write the resolved return type into `expr_types` for the receiving local after `?` propagation. TC for explicit type annotations (`var x as T = foo()?`) works because the annotation is used directly.
+- **Fix direction:** In `visitVarDecl` / `inferExpr` for `?`-postfix, look up the callee's declared return type from the resolve result and store it in `expr_types[init_expr]`. Mirror in selfhost TC inference path.
+
+---
+
+### BUG-078: `^ClassName` in union variant double-boxes (`**T`)
+- **Severity:** Medium (silent codegen bug; payload pointer is one level too deep)
+- **Status:** Open — needs compiler error
+- **Target:** Resolver or TypeChecker pass
+- **Symptom:** `union Wrap { item as ^Payload }` where `Payload` is a class: class constructors already return `*Payload`, so boxed-variant codegen emits `_allocator.create(*Payload)` → `**Payload`. Struct payloads are unaffected.
+- **Root cause:** The `^T` ref-boxing convention was designed for struct/union/primitive payloads. Classes are already reference types; `^ClassName` adds a redundant indirection level.
+- **Fix direction:** In the Resolver or TypeChecker, when a union variant's payload type is `.ref_to` and the inner type resolves to a class name, emit a hard error: `'^ClassName' double-boxes — ClassName is already a reference type; use 'item as ClassName' directly`. Add a note to QUICKSTART.md under union variants.
+
+---
+
+### BUG-076: `if x is Union.variant |r|` capture binding not registered in TypeChecker `narrowed_types`
+- **Severity:** Medium (TC silent on type errors inside capture body; catches nothing until Zig compile time)
+- **Status:** Open
+- **Target:** Phase 20 or TC hardening wave
+- **Symptom:** Inside `if x is Shape.circle |r| { ... }`, the binding `r` has TC type `.unknown`. Any misuse of `r` (wrong method, wrong field) produces no Zebra-level error — the error only surfaces as a Zig compile error after codegen.
+- **Root cause:** `src/TypeChecker.zig::visitIf` and `visitElseIf` do not call `pushNarrowedBinding` (or equivalent) for `is_capture` bindings. The Zig-side code correctly emits `const r = x.circle;` — Zig infers the type — but the TC never records `r → payload_type` in `narrowed_types`.
+- **Fix direction:** In `visitIf`/`visitElseIf`, when `is_capture != null` and the condition is `ExprTypeCheck` with a non-null `variant_name`, look up the union's variant payload type and insert it into `narrowed_types` for the then-block scope. Mirror in `selfhost/codegen.zbr` TypeChecker phase (if one exists) and in `selfhost/resolver.zbr` if scope tracking is needed there.
+- **Selfhost note:** The selfhost TC (`selfhost/codegen.zbr` inference path) has the same gap; `genIsCaptureThen` emits correct Zig but the walker never learns `r`'s type.
+
+---
+
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design
 - **Description:** Throws auto-propagation emits `try` for direct self-method calls and statement-level calls whose receiver is a `throws` method. It does NOT auto-propagate for:
@@ -161,4 +195,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-19*
+*Last updated: 2026-04-20*
