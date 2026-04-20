@@ -48,6 +48,8 @@ class MultiCompiler
     var dep_types as ModuleTypes
     var preamble_path as str
     var output_dir as str
+    var c_sources as List(str)   # paths to .c deps discovered via `use`
+    var c_i_dirs as List(str)    # deduplicated -I dirs for C deps that have a .h
 
     cue init(preamble_path as str, output_dir as str)
         this.visited = List(str)()
@@ -55,6 +57,8 @@ class MultiCompiler
         this.dep_types = ModuleTypes()
         this.preamble_path = preamble_path
         this.output_dir = output_dir
+        this.c_sources = List(str)()
+        this.c_i_dirs = List(str)()
 
     def alreadyVisited(p as str) as bool
         var i as int = 0
@@ -138,7 +142,7 @@ class MultiCompiler
                 raise "expected module"
 
     def compileDep_use(u as PUse, parent_path as str) throws
-        # Resolve dep path: same directory as parent, with .zbr extension
+        # Resolve dep path: same directory as parent. Try .zbr first, then .c.
         var src_dir as str = .dirOf(parent_path)
         var dep_name as str = u.path
         var dep_path as str = dep_name + ".zbr"
@@ -146,6 +150,28 @@ class MultiCompiler
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if File.exists(dep_path)
             .compileDep(dep_path, false)?
+            return
+        # Native C dep: collect path and optional -I dir; zig handles compilation.
+        var c_path as str = dep_name + ".c"
+        if src_dir != ""
+            c_path = src_dir + "/" + dep_name + ".c"
+        if File.exists(c_path)
+            c_sources.add(c_path)
+            var h_path as str = dep_name + ".h"
+            if src_dir != ""
+                h_path = src_dir + "/" + dep_name + ".h"
+            if File.exists(h_path)
+                var c_dir as str = .dirOf(c_path)
+                if c_dir == ""
+                    c_dir = "."
+                var already_added as bool = false
+                var dchk as int = 0
+                while dchk < c_i_dirs.count()
+                    if c_i_dirs.at(dchk) == c_dir
+                        already_added = true
+                    dchk = dchk + 1
+                if not already_added
+                    c_i_dirs.add(c_dir)
 
     def zbrToZig(zbr_path as str) as str
         # Replace ".zbr" extension with ".zig"
@@ -205,8 +231,8 @@ class MultiCompiler
     # Returns a new PModule with partial class members merged in.
     # Functional (no in-place mutation) because Zebra branch bindings produce
     # const copies: `const rcls = rcls_ptr.*` — mutations through them fail.
-    # NOTE: duplicate-method filtering (src/main.zig:415-443) is not ported;
-    # duplicate methods will surface as Zig compile errors.
+    # Duplicate methods (same name already present in root class) are filtered
+    # out before merging — matching src/main.zig:415-443.
 
     def mergePartials_pmodule(pm as PModule, zbr_path as str) as PModule throws
         var base as str = zbr_path
@@ -279,7 +305,25 @@ class MultiCompiler
                                     if pcls_name == rcls_name
                                         var memi = 0
                                         while memi < pcls.members.count()
-                                            extra_members.add(pcls.members.at(memi))
+                                            var pmem = pcls.members.at(memi)
+                                            var is_dup as bool = false
+                                            branch pmem
+                                                on PNode.method_ as pmth
+                                                    var pmth_name as str = pmth.name
+                                                    var rmi as int = 0
+                                                    while rmi < rcls.members.count()
+                                                        branch rcls.members.at(rmi)
+                                                            on PNode.method_ as rmth
+                                                                var rmth_name as str = rmth.name
+                                                                if rmth_name == pmth_name
+                                                                    is_dup = true
+                                                            else
+                                                                pass
+                                                        rmi = rmi + 1
+                                                else
+                                                    pass
+                                            if not is_dup
+                                                extra_members.add(pmem)
                                             memi = memi + 1
                                 else
                                     pass
@@ -397,6 +441,19 @@ class Main
                 else
                     argv2.add("run")
                     argv2.add(zig_path)
+
+                # Append any C source files discovered during dep walk
+                var csi as int = 0
+                while csi < mc.c_sources.count()
+                    argv2.add(mc.c_sources.at(csi))
+                    csi = csi + 1
+                # -I flags for C deps that have a matching .h header
+                var idi as int = 0
+                while idi < mc.c_i_dirs.count()
+                    argv2.add("-I" + mc.c_i_dirs.at(idi))
+                    idi = idi + 1
+                # Always link libc — the stdlib preamble requires it
+                argv2.add("-lc")
 
                 var r2 = sys.run(argv2)
                 if r2.stdout != ""

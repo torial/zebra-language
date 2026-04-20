@@ -1493,6 +1493,8 @@ pub const MultiCompiler = struct {
     dep_types: *ModuleTypes,
     preamble_path: []const u8,
     output_dir: []const u8,
+    c_sources: std.ArrayList([]const u8),
+    c_i_dirs: std.ArrayList([]const u8),
     pub fn init(preamble_path: []const u8, output_dir: []const u8) *MultiCompiler {
         const _self = _allocator.create(MultiCompiler) catch @panic("OOM");
         _self._type_tag = _zbr_hash("MultiCompiler");
@@ -1501,6 +1503,8 @@ pub const MultiCompiler = struct {
             _self.dep_types = ModuleTypes.init();
             _self.preamble_path = preamble_path;
             _self.output_dir = output_dir;
+            _self.c_sources = std.ArrayList([]const u8){};
+            _self.c_i_dirs = std.ArrayList([]const u8){};
         return _self;
     }
 
@@ -1590,6 +1594,35 @@ pub const MultiCompiler = struct {
         }
         if ((blk_fex: { std.fs.cwd().access(dep_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
             try self.compileDep(dep_path, false);
+            return;
+        }
+        var c_path: []const u8 = _str_concat(dep_name, ".c", _allocator);
+        if (!std.mem.eql(u8, src_dir, "")) {
+            c_path = _str_concat(_str_concat(_str_concat(src_dir, "/", _allocator), dep_name, _allocator), ".c", _allocator);
+        }
+        if ((blk_fex: { std.fs.cwd().access(c_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
+            self.c_sources.append(_allocator, c_path) catch @panic("OOM");
+            var h_path: []const u8 = _str_concat(dep_name, ".h", _allocator);
+            if (!std.mem.eql(u8, src_dir, "")) {
+                h_path = _str_concat(_str_concat(_str_concat(src_dir, "/", _allocator), dep_name, _allocator), ".h", _allocator);
+            }
+            if ((blk_fex: { std.fs.cwd().access(h_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
+                var c_dir: []const u8 = self.dirOf(c_path);
+                if (std.mem.eql(u8, c_dir, "")) {
+                    c_dir = ".";
+                }
+                var already_added: bool = false;
+                var dchk: i64 = 0;
+                while (_zebra_lt(dchk, @as(i64, @intCast(self.c_i_dirs.items.len)))) {
+                    if (std.mem.eql(u8, self.c_i_dirs.items[@intCast(dchk)], c_dir)) {
+                        already_added = true;
+                    }
+                    dchk = (dchk + 1);
+                }
+                if ((!already_added)) {
+                    self.c_i_dirs.append(_allocator, c_dir) catch @panic("OOM");
+                }
+            }
         }
     }
 
@@ -1770,7 +1803,36 @@ pub const MultiCompiler = struct {
                                     if (std.mem.eql(u8, pcls_name, rcls_name)) {
                                         var memi: i64 = 0;
                                         while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
-                                            extra_members.append(_allocator, pcls.members.items[@intCast(memi)]) catch @panic("OOM");
+                                            const pmem = pcls.members.items[@intCast(memi)];
+                                            var is_dup: bool = false;
+                                            switch (pmem) {
+                                                .method_ => |_ptr_pmth| {
+                                                    const pmth = _ptr_pmth.*;
+                                                    const pmth_name: []const u8 = pmth.name;
+                                                    var rmi: i64 = 0;
+                                                    while (_zebra_lt(rmi, @as(i64, @intCast(rcls.members.items.len)))) {
+                                                        switch (rcls.members.items[@intCast(rmi)]) {
+                                                            .method_ => |_ptr_rmth| {
+                                                                const rmth = _ptr_rmth.*;
+                                                                const rmth_name: []const u8 = rmth.name;
+                                                                if (std.mem.eql(u8, rmth_name, pmth_name)) {
+                                                                    is_dup = true;
+                                                                }
+                                                            },
+                                                            else => |_| {
+                                                                // pass
+                                                            },
+                                                        }
+                                                        rmi = (rmi + 1);
+                                                    }
+                                                },
+                                                else => |_| {
+                                                    // pass
+                                                },
+                                            }
+                                            if ((!is_dup)) {
+                                                extra_members.append(_allocator, pmem) catch @panic("OOM");
+                                            }
                                             memi = (memi + 1);
                                         }
                                     }
@@ -1830,8 +1892,8 @@ pub const MultiCompiler = struct {
 };
 const _ttag_MultiCompiler: u64 = _zbr_hash("MultiCompiler");
 const _reflect_MultiCompiler_name: []const u8 = "MultiCompiler";
-const _reflect_MultiCompiler_fields: []const []const u8 = &.{"visited", "dep_class_names", "dep_types", "preamble_path", "output_dir"};
-const _reflect_MultiCompiler_field_types: []const []const u8 = &.{"List(str)", "List(str)", "ModuleTypes", "str", "str"};
+const _reflect_MultiCompiler_fields: []const []const u8 = &.{"visited", "dep_class_names", "dep_types", "preamble_path", "output_dir", "c_sources", "c_i_dirs"};
+const _reflect_MultiCompiler_field_types: []const []const u8 = &.{"List(str)", "List(str)", "ModuleTypes", "str", "str", "List(str)", "List(str)"};
 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
@@ -1902,6 +1964,17 @@ pub const Main = struct {
                         argv2.append(_allocator, "run") catch @panic("OOM");
                         argv2.append(_allocator, zig_path) catch @panic("OOM");
                     }
+                    var csi: i64 = 0;
+                    while (_zebra_lt(csi, @as(i64, @intCast(mc.c_sources.items.len)))) {
+                        argv2.append(_allocator, mc.c_sources.items[@intCast(csi)]) catch @panic("OOM");
+                        csi = (csi + 1);
+                    }
+                    var idi: i64 = 0;
+                    while (_zebra_lt(idi, @as(i64, @intCast(mc.c_i_dirs.items.len)))) {
+                        argv2.append(_allocator, _str_concat("-I", mc.c_i_dirs.items[@intCast(idi)], _allocator)) catch @panic("OOM");
+                        idi = (idi + 1);
+                    }
+                    argv2.append(_allocator, "-lc") catch @panic("OOM");
                     const r2 = _sys_run(argv2);
                     if (!std.mem.eql(u8, r2.stdout, "")) {
                         std.debug.print("{s}\n", .{r2.stdout});

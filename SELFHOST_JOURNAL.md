@@ -41,6 +41,21 @@ Each phase uses the same question template. Fill it in before moving to the next
 
 ---
 
+## Cutover Roadmap (phases 18–22)
+
+Goal: selfhost binary becomes the production `zebra` compiler; Zig backend
+becomes bootstrap-only.
+
+| Phase | Name | Key work | Gate |
+|-------|------|----------|------|
+| **18** | `--selfhost-compile` parity | `-lc` flag, C file discovery, duplicate method filter in mergePartials | selfhost compiles every test the Zig backend does |
+| **19** | Source-mapped errors | `// zbr:file:line` in codegen.zbr + stderr remap in main.zbr | zig errors show Zebra file+line |
+| **20** | Parity bugs | BUG-006, BUG-035, BUG-075 | bootstrap clean, corpus 152/152 |
+| **21** | GUI backend | `--gui-backend=` flag + `compileGuiProject` in selfhost | gui_test.zbr compiles via selfhost |
+| **22** | Cutover | build.zig produces `zebra` from selfhost; Zig backend = bootstrap artifact | `zebra --version` from selfhost binary |
+
+---
+
 ## Phases
 
 Planned port order (roughly mirrors the Zig source structure):
