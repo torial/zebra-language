@@ -93,12 +93,6 @@ pub const NT = enum {
     MethodDecl,
     ReturnAnnotOpt,      // optional `as TypeRef`
 
-    PropDecl,
-    ProDecl,             // pro id [as T] [from var|id] [PropBodyOpt]
-    PropBodyOpt,         // ε | indent PropBodyListNE dedent
-    PropBodyListNE,      // one or more get/set sub-blocks
-    PropBodyItem,        // kw_get eol Block | kw_set eol Block
-
     VarMemberDecl,
     VarTypeOpt,          // optional `as TypeRef`
     VarInitOpt,          // optional `= Expr`
@@ -144,7 +138,6 @@ pub const NT = enum {
     ElseClauseOpt,
 
     StmtWhile,
-    StmtPostWhile,       // post while Expr eol Block  (do-while form)
 
     StmtForIn,
     StmtForNum,
@@ -205,9 +198,6 @@ pub const NT = enum {
 
     // ── pipeline operator (->)  ────────────────────────────────────────────
     PipelineCall,     // open_call ArgList rparen  (the RHS of a pipeline step)
-
-    // ── all / any comprehension ────────────────────────────────────────────
-    AllAnyExpr,  // all/any for ForVarList in Expr get Expr
 
     // ── Argument list ──────────────────────────────────────────────────────
     ArgList,    // possibly empty
@@ -509,8 +499,6 @@ const member_rules: []const Rule = &.{
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.MethodDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.VarMemberDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.InitDecl) } },
-    .{ .lhs = .MemberDecl, .rhs = &.{ n(.PropDecl) } },
-    .{ .lhs = .MemberDecl, .rhs = &.{ n(.ProDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.SharedGroupDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.TestMemberDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.InvariantDecl) } },
@@ -562,94 +550,6 @@ const method_rules: []const Rule = &.{
 
     .{ .lhs = .ThrowsOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ThrowsOpt, .rhs = &.{ t(.kw_throws) } },
-};
-
-// ── Property declarations (get / set) ─────────────────────────────────────────
-
-const prop_rules: []const Rule = &.{
-    // get foo as T  (read-only property)
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_get), t(.id), n(.ReturnAnnotOpt), n(.IsClauseOpt), n(.HasOpt), t(.eol),
-    } },
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_get), t(.id), n(.ReturnAnnotOpt), n(.IsClauseOpt), n(.HasOpt), t(.eol), n(.Block),
-    } },
-    // get foo from var [as T]  — backed by implicit _foo var
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_get), t(.id), t(.kw_from), t(.kw_var), n(.ReturnAnnotOpt), t(.eol),
-    } },
-    // get foo from _bar [as T]  — backed by named var
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_get), t(.id), t(.kw_from), t(.id), n(.ReturnAnnotOpt), t(.eol),
-    } },
-
-    // set foo(value as T)  (write accessor with explicit param)
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_set), t(.open_call), n(.Param), t(.rparen),
-        n(.IsClauseOpt), n(.HasOpt), t(.eol),
-    } },
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_set), t(.open_call), n(.Param), t(.rparen),
-        n(.IsClauseOpt), n(.HasOpt), t(.eol), n(.Block),
-    } },
-    // set foo  (implicit value param)
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_set), t(.id), n(.IsClauseOpt), n(.HasOpt), t(.eol),
-    } },
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_set), t(.id), n(.IsClauseOpt), n(.HasOpt), t(.eol), n(.Block),
-    } },
-    // set foo from _bar  — backed by named var
-    .{ .lhs = .PropDecl, .rhs = &.{
-        n(.ModList), t(.kw_set), t(.id), t(.kw_from), t(.id), t(.eol),
-    } },
-
-    // pro foo [as T] [from var|id]  — full property (with optional get/set body)
-    // Handled in pro_rules below.
-};
-
-// ── Pro property declarations ─────────────────────────────────────────────────
-//
-// `pro` declares a full read-write property, optionally backed by a var.
-//
-//   pro age as int            — abstract/auto property, no body
-//   pro age from var          — backed by implicit _age var, auto accessors
-//   pro age from var as int   — same, with explicit type
-//   pro age from _storage     — backed by named var
-//   pro age as int            — full body with explicit get/set blocks
-//       get
-//           return _age
-//       set
-//           _age = value
-
-const pro_rules: []const Rule = &.{
-    // No body (abstract or auto-property)
-    .{ .lhs = .ProDecl, .rhs = &.{
-        n(.ModList), t(.kw_pro), t(.id), n(.ReturnAnnotOpt), n(.IsClauseOpt), n(.HasOpt), t(.eol),
-    } },
-    // With get/set body
-    .{ .lhs = .ProDecl, .rhs = &.{
-        n(.ModList), t(.kw_pro), t(.id), n(.ReturnAnnotOpt), n(.IsClauseOpt), n(.HasOpt), t(.eol), n(.PropBodyOpt),
-    } },
-    // from var [as T]  — auto-backed
-    .{ .lhs = .ProDecl, .rhs = &.{
-        n(.ModList), t(.kw_pro), t(.id), t(.kw_from), t(.kw_var), n(.ReturnAnnotOpt), t(.eol),
-    } },
-    // from named var [as T]
-    .{ .lhs = .ProDecl, .rhs = &.{
-        n(.ModList), t(.kw_pro), t(.id), t(.kw_from), t(.id), n(.ReturnAnnotOpt), t(.eol),
-    } },
-
-    // PropBodyOpt — optional get/set sub-blocks
-    .{ .lhs = .PropBodyOpt, .rhs = &.{} }, // ε
-    .{ .lhs = .PropBodyOpt, .rhs = &.{ t(.indent), n(.PropBodyListNE), t(.dedent) } },
-
-    .{ .lhs = .PropBodyListNE, .rhs = &.{ n(.PropBodyItem) } },
-    .{ .lhs = .PropBodyListNE, .rhs = &.{ n(.PropBodyListNE), n(.PropBodyItem) } },
-
-    // Each accessor is a keyword followed by its own block
-    .{ .lhs = .PropBodyItem, .rhs = &.{ t(.kw_get), t(.eol), n(.Block) } },
-    .{ .lhs = .PropBodyItem, .rhs = &.{ t(.kw_set), t(.eol), n(.Block) } },
 };
 
 // ── Var / const member declarations ──────────────────────────────────────────
@@ -750,7 +650,6 @@ const contract_rules: []const Rule = &.{
     .{ .lhs = .ContractClauseListNE,  .rhs = &.{ n(.ContractClauseListNE), n(.ContractClause) } },
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_require),   t(.eol), n(.Block) } },
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_ensure),    t(.eol), n(.Block) } },
-    .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_body),      t(.eol), n(.Block) } },
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_test),      t(.eol), n(.Block) } },
 };
 
@@ -869,7 +768,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtYield) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtIf) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWhile) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtPostWhile) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtForIn) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtForNum) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtBranch) } },
@@ -909,19 +807,12 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .ElseClauseOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ElseClauseOpt, .rhs = &.{ t(.kw_else), t(.eol), n(.Block) } },
 
-    // while [post]
+    // while
     .{ .lhs = .StmtWhile, .rhs = &.{ t(.kw_while), n(.Expr), t(.eol), n(.Block) } },
-    .{ .lhs = .StmtWhile, .rhs = &.{
-        t(.kw_while), n(.Expr), t(.eol), n(.Block),
-        t(.kw_post), t(.eol), n(.Block),
-    } },
     // while var id = Expr, Expr eol Block — bind-and-guard form
     .{ .lhs = .StmtWhile, .rhs = &.{
         t(.kw_while), t(.kw_var), t(.id), t(.assign), n(.Expr), t(.comma), n(.Expr), t(.eol), n(.Block),
     } },
-
-    // post while  (do-while: body executes, then condition is checked)
-    .{ .lhs = .StmtPostWhile, .rhs = &.{ t(.kw_post), t(.kw_while), n(.Expr), t(.eol), n(.Block) } },
 
     // for x in collection
     .{ .lhs = .StmtForIn, .rhs = &.{
@@ -1134,8 +1025,6 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.integer_lit) } },                    // tuple.0  tuple.1
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.open_call), n(.ArgList), t(.rparen) } }, // obj.method(args)
     // Allow keyword names as method-call targets: obj.get(args)  obj.post(args)
-    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.kw_get),  t(.lparen), n(.ArgList), t(.rparen) } }, // obj.get(args)
-    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.kw_post), t(.lparen), n(.ArgList), t(.rparen) } }, // obj.post(args)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.rbracket) } },        // obj[index]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.dotdot), n(.Expr), t(.rbracket) } }, // obj[start..stop]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), n(.TypeRef) } },                       // expr to T
@@ -1210,22 +1099,6 @@ const expr_rules: []const Rule = &.{
     } },
     .{ .lhs = .Atom, .rhs = &.{
         t(.string_start_double), n(.InterpBodyD), t(.string_stop_double),
-    } },
-    // — all / any comprehensions
-    .{ .lhs = .Atom, .rhs = &.{ n(.AllAnyExpr) } },
-};
-
-// ── All / any comprehensions ──────────────────────────────────────────────────
-//
-// all for s in list get s > 0
-// any for s in list get s > 0
-
-const all_any_rules: []const Rule = &.{
-    .{ .lhs = .AllAnyExpr, .rhs = &.{
-        t(.kw_all), t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.kw_get), n(.Expr),
-    } },
-    .{ .lhs = .AllAnyExpr, .rhs = &.{
-        t(.kw_any), t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.kw_get), n(.Expr),
     } },
 };
 
@@ -1412,8 +1285,6 @@ const rules: []const Rule = program_rules ++
     at_directive_rules ++
     member_rules ++
     method_rules ++
-    prop_rules ++
-    pro_rules ++
     var_member_rules ++
     init_rules ++
     group_member_rules ++
@@ -1424,7 +1295,6 @@ const rules: []const Rule = program_rules ++
     block_rules ++
     stmt_rules ++
     expr_rules ++
-    all_any_rules ++
     interp_rules ++
     list_rules ++
     lambda_rules ++

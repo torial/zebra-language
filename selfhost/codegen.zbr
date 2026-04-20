@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclProperty, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, AllAnyKind, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef, isString
 
@@ -124,7 +124,6 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("Decl.mixin_")
         bv.add("Decl.enum_")
         bv.add("Decl.method")
-        bv.add("Decl.property")
         bv.add("Decl.var_")
         bv.add("Decl.init")
         bv.add("Decl.extend_")
@@ -173,7 +172,6 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         bv.add("Expr.list_lit")
         bv.add("Expr.dict_lit")
         bv.add("Expr.array_lit")
-        bv.add("Expr.all_any")
         bv.add("Expr.try_")
         bv.add("Expr.except_")
         bv.add("Expr.type_check")
@@ -229,8 +227,6 @@ def addCrossModuleRefFields(rf as StrSet, orf as StrSet, module_name as str)
         rf.add("ExprIf.cond")
         rf.add("ExprIf.then_expr")
         rf.add("ExprIf.else_expr")
-        rf.add("ExprAllAny.iter")
-        rf.add("ExprAllAny.cond")
         rf.add("ExprTypeCheck.expr")
         rf.add("DictEntry.key")
         rf.add("DictEntry.value")
@@ -403,8 +399,6 @@ def variantStructName(union_name as str, variant_name as str) as str?
             return "ExprCatch"
         if variant_name == "if_" or variant_name == "if_expr"
             return "ExprIf"
-        if variant_name == "all_any"
-            return "ExprAllAny"
         if variant_name == "to_non_nil"
             return "ExprToNonNil"
         if variant_name == "to_nilable"
@@ -424,8 +418,6 @@ def variantStructName(union_name as str, variant_name as str) as str?
             return "DeclMethod"
         if variant_name == "init"
             return "DeclInit"
-        if variant_name == "property"
-            return "DeclProperty"
         if variant_name == "sig_"
             return "DeclSig"
     return nil
@@ -1685,8 +1677,6 @@ struct Generator
                 on Decl.init as ini
                     ig.genInit(ini)
                     has_init = true
-                on Decl.property as prop
-                    ig.genProperty(prop)
                 else
                     pass
         # Synthetic default init for classes without explicit cue init
@@ -1834,6 +1824,15 @@ struct Generator
                         on TypeRef.named as nt2
                             if nt2.name == "StrSet"
                                 bg.strset_locals.add(p2.name)
+                            # Seed opt_ptr_field_bindings for ^T? fields of named-type params
+                            var nt2_dot = makeDottedKey(nt2.name, "")
+                            var orf3 = opt_ref_fields.items()
+                            var orf3i = 0
+                            while orf3i < orf3.count()
+                                var orf3e as str = orf3.at(orf3i)
+                                if orf3e.startsWith(nt2_dot)
+                                    bg.opt_ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(orf3e)))
+                                orf3i += 1
                         else
                             pass
             # Suppress unused-parameter errors for self and params
@@ -1978,15 +1977,6 @@ struct Generator
                     w.emit(".")
                     w.emit(mth.name)
                     w.emit("\");\n")
-                on Decl.property as prop
-                    iig.writeIndent()
-                    w.emit("if (!@hasDecl(T, \"")
-                    w.emit(prop.name)
-                    w.emit("\")) @compileError(\"type \" ++ @typeName(T) ++ \" does not implement ")
-                    w.emit(ifc.name)
-                    w.emit(".")
-                    w.emit(prop.name)
-                    w.emit("\");\n")
                 else
                     pass
         ig.writeIndent()
@@ -2056,34 +2046,6 @@ struct Generator
             w.emit("}\n")
         else
             w.emit(" {}\n")
-
-    # ── genProperty ───────────────────────────────────────────────────────────
-
-    def genProperty(prop as DeclProperty)
-        # getter
-        writeIndent()
-        w.emit("pub fn ")
-        w.emit(prop.name)
-        w.emit("(self: *")
-        w.emit(owner)
-        w.emit(") ")
-        if prop.type_ != nil
-            genType(prop.type_ to!)
-        else
-            w.emit("void")
-        w.emit(" {\n")
-        if prop.getter_ != nil
-            var gbody = prop.getter_ to!
-            var ms = scanMutations(gbody)
-            var rs = analyzeEscapes(gbody)
-            var pig = indented()
-            var bg = pig.withMethodCtx(ms, rs, false, owner_members, nil, StrSet(), "self")
-            bg.genStmts(gbody)
-        else
-            var ig = indented()
-            ig.line("_ = self;")
-        writeIndent()
-        w.emit("}\n\n")
 
     # ── genParamList ──────────────────────────────────────────────────────────
 
@@ -3890,20 +3852,6 @@ struct Generator
                     w.emit(m.member)
                     w.emit("\"")
                     return
-                # Computed property getter: obj.area → obj.area()
-                # Infer the object's type; if it's a named class, check getter_prop_keys.
-                if this.infer_ctx != nil
-                    var obj_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
-                    branch obj_t
-                        on Type_.named as nt
-                            if this.module_types.hasGetterPropKey(nt, m.member) or this.dep_types.hasGetterPropKey(nt, m.member)
-                                genExpr(m.object)
-                                w.emit(".")
-                                w.emit(m.member)
-                                w.emit("()")
-                                return
-                        else
-                            pass
                 genExpr(m.object)
                 w.emit(".")
                 w.emit(m.member)
@@ -4033,30 +3981,6 @@ struct Generator
                     genExpr(al.elems.at(ali))
                     ali += 1
                 w.emit("}")
-            on Expr.all_any as aa
-                # all/any comprehension over List: simplified
-                w.emit("blk: { var _aa_res = ")
-                if aa.kind == AllAnyKind.all_
-                    w.emit("true")
-                else
-                    w.emit("false")
-                w.emit("; for (")
-                genExpr(aa.iter)
-                w.emit(".items) |")
-                w.emit(aa.var_)
-                w.emit("| { if (")
-                if aa.kind == AllAnyKind.all_
-                    w.emit("!(")
-                    genExpr(aa.cond)
-                    w.emit(")")
-                else
-                    genExpr(aa.cond)
-                w.emit(") { _aa_res = ")
-                if aa.kind == AllAnyKind.all_
-                    w.emit("false")
-                else
-                    w.emit("true")
-                w.emit("; break; } } break :blk _aa_res; }")
             on Expr.zig_lit as zl
                 # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
                 w.emit(zl.text)

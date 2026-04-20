@@ -139,7 +139,6 @@ const Resolver = struct {
             .enum_     => |n| try r.walkEnum(n, scope),
             .extend    => |n| try r.walkExtend(n, scope),
             .method    => |n| try r.walkMethod(n, scope),
-            .property  => |n| try r.walkProperty(n, scope),
             .var_      => |n| try r.walkVarDecl(n, scope),
             .init      => |n| try r.walkInit(n, scope),
             .union_    => |n| try r.walkUnion(n, scope),
@@ -241,7 +240,6 @@ const Resolver = struct {
     fn walkMember(r: Resolver, decl: Ast.Decl, scope: *Scope) anyerror!void {
         switch (decl) {
             .method   => |n| try r.walkMethod(n, scope),
-            .property => |n| try r.walkProperty(n, scope),
             .var_     => |n| try r.walkVarDecl(n, scope),
             .init     => |n| try r.walkInit(n, scope),
             else      => {},
@@ -266,18 +264,6 @@ const Resolver = struct {
         if (n.body) |body| try r.walkStmts(body, method_scope);
         for (n.require) |e| try r.walkExpr(e, method_scope);
         for (n.ensure)  |e| try r.walkExpr(e, method_scope);
-    }
-
-    // ── Property ──────────────────────────────────────────────────────────────
-
-    fn walkProperty(r: Resolver, n: *Ast.DeclProperty, scope: *Scope) anyerror!void {
-        if (n.type_) |*tr| try r.resolveTypeRef(tr, scope);
-        // Create a fresh method scope for accessor bodies (no named params).
-        if (n.getter != null or n.setter != null) {
-            const acc_scope = try r.table.newScope(.method, scope);
-            if (n.getter) |body| try r.walkStmts(body, acc_scope);
-            if (n.setter) |body| try r.walkStmts(body, acc_scope);
-        }
     }
 
     // ── Field / local variable ────────────────────────────────────────────────
@@ -559,10 +545,6 @@ const Resolver = struct {
                 }
             },
             .array_lit     => |e| { for (e.elems) |el| try r.walkExpr(el, scope); },
-            .all_any       => |e| {
-                try r.walkExpr(e.iter, scope);
-                try r.walkExpr(e.cond, scope);
-            },
             .old           => |e| try r.walkExpr(e.expr, scope),
             .try_          => |e| try r.walkExpr(e.expr, scope),
             .tuple_lit     => |e| { for (e.elems) |el| try r.walkExpr(el, scope); },
@@ -716,10 +698,6 @@ const Resolver = struct {
                 try r.collectFreeVars(e.then_expr, local, out, seen);
                 try r.collectFreeVars(e.else_expr, local, out, seen);
             },
-            .all_any       => |e| {
-                try r.collectFreeVars(e.iter, local, out, seen);
-                try r.collectFreeVars(e.cond, local, out, seen);
-            },
             .list_lit      => |e| { for (e.elems) |el| try r.collectFreeVars(el, local, out, seen); },
             .array_lit     => |e| { for (e.elems) |el| try r.collectFreeVars(el, local, out, seen); },
             .dict_lit      => |e| {
@@ -856,10 +834,6 @@ const Resolver = struct {
                 try r.checkCaptureBoundary(e.cond, lambda_local);
                 try r.checkCaptureBoundary(e.then_expr, lambda_local);
                 try r.checkCaptureBoundary(e.else_expr, lambda_local);
-            },
-            .all_any       => |e| {
-                try r.checkCaptureBoundary(e.iter, lambda_local);
-                try r.checkCaptureBoundary(e.cond, lambda_local);
             },
             .list_lit      => |e| { for (e.elems) |el| try r.checkCaptureBoundary(el, lambda_local); },
             .array_lit     => |e| { for (e.elems) |el| try r.checkCaptureBoundary(el, lambda_local); },

@@ -363,42 +363,7 @@ test "parse: invariant block" {
 
 // ── Acceptance: pro and from-var properties ───────────────────────────────────
 
-test "parse: pro declaration no body" {
-    // ProDecl → ModList kw_pro id ReturnAnnotOpt … eol
-    try expectAccepts("class Foo\n\tpro age as int\n");
-}
-
-test "parse: pro from var" {
-    // ProDecl → ModList kw_pro id kw_from kw_var ReturnAnnotOpt eol
-    try expectAccepts("class Foo\n\tpro age from var\n");
-}
-
-test "parse: pro with full get/set body" {
-    // ProDecl → … eol PropBodyOpt(indent PropBodyListNE dedent)
-    try expectAccepts("class Foo\n\tpro age as int\n\t\tget\n\t\t\treturn _age\n\t\tset\n\t\t\t_age = value\n");
-}
-
-test "parse: get from var" {
-    try expectAccepts("class Foo\n\tget x from var as int\n");
-}
-
-test "parse: set from named var" {
-    try expectAccepts("class Foo\n\tset age from _age\n");
-}
-
-// ── Acceptance: contract sub-blocks ───────────────────────────────────────────
-
-test "parse: method with require and body clauses" {
-    // ContractBlock → indent ContractClauseListNE dedent
-    try expectAccepts("class Foo\n\tdef square(x as int) as int\n\t\trequire\n\t\t\tassert x > 0\n\t\tbody\n\t\t\treturn x\n");
-}
-
 // ── Acceptance: new statements ────────────────────────────────────────────────
-
-test "parse: post while (do-while form)" {
-    // StmtPostWhile → kw_post kw_while Expr eol Block
-    try expectAccepts("class Foo\n\tdef run\n\t\tpost while x > 0\n\t\t\tx = 0\n");
-}
 
 test "parse: expect statement" {
     // StmtExpect → kw_expect TypeRef comma Expr eol
@@ -430,15 +395,6 @@ test "parse: self-method call" {
 test "parse: to! non-nil assertion" {
     // Expr9 → Expr9 kw_to bang
     try expectAccepts("class Foo\n\tdef run\n\t\tx = foo() to!\n");
-}
-
-test "parse: all comprehension" {
-    // AllAnyExpr → kw_all kw_for ForVarList kw_in Expr kw_get Expr
-    try expectAccepts("class Foo\n\tdef run\n\t\tx = all for s in items get s > 0\n");
-}
-
-test "parse: any comprehension" {
-    try expectAccepts("class Foo\n\tdef run\n\t\tx = any for s in items get s > 0\n");
 }
 
 // ── Rejection cases ────────────────────────────────────────────────────────────

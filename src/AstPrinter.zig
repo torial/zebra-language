@@ -91,7 +91,6 @@ const Printer = struct {
             .union_    => |n| try p.w("(union {s})", .{n.name}),
             .sig_      => |n| try p.w("(sig {s})", .{n.name}),
             .method    => |n| try p.printMethod(n.*),
-            .property  => |n| try p.printProperty(n.*),
             .var_      => |n| try p.printVar(n.*),
             .init      => |n| try p.printInit(n.*),
         }
@@ -223,23 +222,6 @@ const Printer = struct {
         if (d.require.len > 0) try p.printContractExprs("require", d.require);
         if (d.ensure.len > 0)  try p.printContractExprs("ensure",  d.ensure);
         if (d.body) |body| try p.printBody(body);
-        try p.w(")", .{});
-    }
-
-    fn printProperty(p: *Printer, d: Ast.DeclProperty) anyerror!void {
-        try p.w("(property {s}", .{d.name});
-        try p.printMods(d.mods);
-        if (d.type_) |t| { try p.w(" (type ", .{}); try p.printTypeRef(t); try p.w(")", .{}); }
-        if (d.getter) |g| {
-            try p.w(" (get", .{});
-            try p.printBody(g);
-            try p.w(")", .{});
-        }
-        if (d.setter) |s| {
-            try p.w(" (set", .{});
-            try p.printBody(s);
-            try p.w(")", .{});
-        }
         try p.w(")", .{});
     }
 
@@ -520,7 +502,6 @@ const Printer = struct {
             .list_lit   => |n| try p.printListLit(n.*),
             .dict_lit   => |n| try p.printDictLit(n.*),
             .array_lit  => |n| try p.printArrayLit(n.*),
-            .all_any    => |n| try p.printAllAny(n.*),
             .old        => |n| { try p.w("(old ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .zig_lit     => |n| try p.w("(zig {s})", .{n.text}),
             .try_        => |n| { try p.w("(try ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
@@ -676,13 +657,5 @@ const Printer = struct {
         try p.w(")", .{});
     }
 
-    fn printAllAny(p: *Printer, n: Ast.ExprAllAny) anyerror!void {
-        const kw = if (n.kind == .all) "all" else "any";
-        try p.w("({s} {s} ", .{ kw, n.var_ });
-        try p.printExpr(n.iter.*);
-        try p.w(" ", .{});
-        try p.printExpr(n.cond.*);
-        try p.w(")", .{});
-    }
 };
 

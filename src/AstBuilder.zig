@@ -486,8 +486,6 @@ const Builder = struct {
             .MethodDecl    => .{ .method   = try b.box(Ast.DeclMethod,   try b.buildMethodDecl(inner_node)) },
             .VarMemberDecl => .{ .var_     = try b.box(Ast.DeclVar,      try b.buildVarMemberDecl(inner_node)) },
             .InitDecl      => .{ .init     = try b.box(Ast.DeclInit,     try b.buildInitDecl(inner_node)) },
-            .PropDecl      => .{ .property = try b.box(Ast.DeclProperty, try b.buildPropDecl(inner_node)) },
-            .ProDecl       => .{ .property = try b.box(Ast.DeclProperty, try b.buildProDecl(inner_node)) },
             .SharedGroupDecl,
             .TestMemberDecl,
             .InvariantDecl,
@@ -563,90 +561,6 @@ const Builder = struct {
         };
     }
 
-    // ── Property declarations (get / set) ─────────────────────────────────────
-
-    fn buildPropDecl(b: Builder, node: TN) anyerror!Ast.DeclProperty {
-        const kids = ch(node);
-        const mods = b.buildModList(kids[0]);
-        const kw   = kids[1].leaf.token;
-        // open_call text already excludes `(`
-        const name = leafText(kids[2], b.tokens);
-
-        var getter: ?[]const Ast.Stmt = null;
-        var setter: ?[]const Ast.Stmt = null;
-        var type_:  ?Ast.TypeRef      = null;
-
-        for (kids[3..]) |kid| {
-            if (kid != .inner) continue;
-            switch (ntOf(kid)) {
-                .ReturnAnnotOpt => type_ = try b.buildReturnAnnotOpt(kid),
-                .Block => {
-                    const stmts = try b.buildBlock(kid);
-                    if (kw == .kw_get) getter = stmts else setter = stmts;
-                },
-                else => {},
-            }
-        }
-
-        return .{
-            .span   = spanOf(node, b.tokens),
-            .mods   = mods,
-            .name   = name,
-            .type_  = type_,
-            .getter = getter,
-            .setter = setter,
-        };
-    }
-
-    fn buildProDecl(b: Builder, node: TN) anyerror!Ast.DeclProperty {
-        const kids = ch(node);
-        const mods = b.buildModList(kids[0]);
-        const name = leafText(kids[2], b.tokens);
-        var type_:  ?Ast.TypeRef      = null;
-        var getter: ?[]const Ast.Stmt = null;
-        var setter: ?[]const Ast.Stmt = null;
-
-        for (kids[3..]) |kid| {
-            if (kid != .inner) continue;
-            switch (ntOf(kid)) {
-                .ReturnAnnotOpt => type_ = try b.buildReturnAnnotOpt(kid),
-                .PropBodyOpt    => {
-                    const pk = ch(kid);
-                    // PropBodyOpt → ε  |  indent PropBodyListNE dedent
-                    if (pk.len >= 3) try b.collectPropBody(pk[1], &getter, &setter);
-                },
-                else => {},
-            }
-        }
-
-        return .{
-            .span   = spanOf(node, b.tokens),
-            .mods   = mods,
-            .name   = name,
-            .type_  = type_,
-            .getter = getter,
-            .setter = setter,
-        };
-    }
-
-    fn collectPropBody(b: Builder, node: TN, getter: *?[]const Ast.Stmt, setter: *?[]const Ast.Stmt) anyerror!void {
-        // PropBodyListNE → PropBodyItem | PropBodyListNE PropBodyItem
-        const kids = ch(node);
-        if (kids.len == 1) {
-            try b.applyPropBodyItem(kids[0], getter, setter);
-        } else {
-            try b.collectPropBody(kids[0], getter, setter);
-            try b.applyPropBodyItem(kids[1], getter, setter);
-        }
-    }
-
-    fn applyPropBodyItem(b: Builder, node: TN, getter: *?[]const Ast.Stmt, setter: *?[]const Ast.Stmt) anyerror!void {
-        // PropBodyItem → kw_get eol Block | kw_set eol Block
-        const kids = ch(node);
-        const stmts = try b.buildBlock(kids[2]);
-        if (isLeafKind(kids[0], .kw_get)) getter.* = stmts else setter.* = stmts;
-    }
-
     // ── Var member ────────────────────────────────────────────────────────────
     //
     // ModList kw_var   id VarTypeOpt VarInitOpt eol
@@ -720,7 +634,7 @@ const Builder = struct {
         const clause_list = ch(node)[1];
         var require = std.ArrayList(*Ast.Expr){};
         var ensure  = std.ArrayList(*Ast.Expr){};
-        var body:   ?[]const Ast.Stmt = null;
+        const body: ?[]const Ast.Stmt = null;
 
         var clauses = std.ArrayList(TN){};
         defer clauses.deinit(b.arena);
@@ -741,7 +655,6 @@ const Builder = struct {
                         if (stmt == .expr) try ensure.append(b.arena,stmt.expr);
                     }
                 },
-                .kw_body => body = block_stmts,
                 else => {},
             }
         }
@@ -1030,7 +943,6 @@ const Builder = struct {
             }) },
             .StmtIf       => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtIf(inner)) },
             .StmtWhile    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtWhile(inner)) },
-            .StmtPostWhile => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtPostWhile(inner)) },
             .StmtForIn    => .{ .for_in  = try b.box(Ast.StmtForIn,  try b.buildStmtForIn(inner)) },
             .StmtForNum   => .{ .for_num = try b.box(Ast.StmtForNum, try b.buildStmtForNum(inner)) },
             .StmtBranch   => .{ .branch  = try b.box(Ast.StmtBranch, try b.buildStmtBranch(inner)) },
@@ -1141,18 +1053,6 @@ const Builder = struct {
             .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
             .body      = try b.buildBlock(kids[3]),
             .post_body = if (kids.len > 4) try b.buildBlock(kids[6]) else null,
-        };
-    }
-
-    fn buildStmtPostWhile(b: Builder, node: TN) anyerror!Ast.StmtWhile {
-        // kw_post kw_while Expr eol Block
-        const kids = ch(node);
-        return .{
-            .span      = spanOf(node, b.tokens),
-            .bind      = null,
-            .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
-            .body      = try b.buildBlock(kids[4]),
-            .post_body = null,
         };
     }
 
@@ -1788,7 +1688,6 @@ const Builder = struct {
             .Expr, .Expr2, .Expr3, .Expr4,
             .Expr5, .Expr6, .Expr7, .Expr8, .Expr9 => b.buildExprLevel(node),
             .Atom       => b.buildAtom(node),
-            .AllAnyExpr => b.buildAllAnyExpr(node),
             else => std.debug.panic("buildExpr: unexpected NT {s}", .{@tagName(ntOf(node))}),
         };
     }
@@ -2136,22 +2035,6 @@ const Builder = struct {
         std.debug.panic("buildAtom: children={}", .{kids.len});
     }
 
-    // ── AllAny comprehension ──────────────────────────────────────────────────
-
-    fn buildAllAnyExpr(b: Builder, node: TN) anyerror!Ast.Expr {
-        // kw_all/kw_any kw_for ForVarList kw_in Expr kw_get Expr
-        const kids = ch(node);
-        var vars = std.ArrayList([]const u8){};
-        try b.collectForVarList(kids[2], &vars);
-        return .{ .all_any = try b.box(Ast.ExprAllAny, .{
-            .span = spanOf(node, b.tokens),
-            .kind = if (isLeafKind(kids[0], .kw_all)) .all else .any,
-            .var_ = if (vars.items.len > 0) vars.items[0] else "_",
-            .iter = try b.box(Ast.Expr, try b.buildExpr(kids[4])),
-            .cond = try b.box(Ast.Expr, try b.buildExpr(kids[6])),
-        }) };
-    }
-
     // ── String interpolation builder ─────────────────────────────────────────
 
     /// Build `ExprStringInterp` from the Atom rule:
@@ -2452,7 +2335,6 @@ fn setShared(d: *Ast.Decl) void {
     switch (d.*) {
         .method   => |n| n.mods.shared = true,
         .var_     => |n| n.mods.shared = true,
-        .property => |n| n.mods.shared = true,
         .init     => |n| n.mods.shared = true,
         .class    => |n| n.mods.shared = true,
         .interface=> |n| n.mods.shared = true,

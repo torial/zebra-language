@@ -685,7 +685,6 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .array_lit   => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
         .dict_lit    => |e| { for (e.entries) |en| { try refsInExpr(en.key, r, o); try refsInExpr(en.value, r, o); } },
         .string_interp => |e| { for (e.parts) |p| switch (p) { .expr => |ex| try refsInExpr(ex, r, o), else => {} }; },
-        .all_any     => |e| { try refsInExpr(e.iter, r, o); try refsInExpr(e.cond, r, o); },
         .lambda      => |e| switch (e.body) {
             .expr  => |ex| try refsInExpr(ex, r, o),
             .stmts => |ss| try refsInStmts(ss, r, o),
@@ -745,7 +744,6 @@ fn collectAllIdents(expr: *const Ast.Expr, set: *std.StringHashMap(void)) anyerr
         .list_lit      => |l|  { for (l.elems)    |e| try collectAllIdents(e, set); },
         .array_lit     => |a|  { for (a.elems)    |e| try collectAllIdents(e, set); },
         .dict_lit      => |d|  { for (d.entries) |e| { try collectAllIdents(e.key, set); try collectAllIdents(e.value, set); } },
-        .all_any       => |a|  { try collectAllIdents(a.iter, set); try collectAllIdents(a.cond, set); },
         .string_interp => |si| { for (si.parts) |p| { switch (p) { .expr => |e| try collectAllIdents(e, set), else => {} } } },
         else           => {},  // literals, nil, this, zig_lit — no idents
     }
@@ -3280,7 +3278,6 @@ const Generator = struct {
             .enum_     => |n| try g.genEnum(n),
             .extend    => |n| try g.genExtend(n),
             .method    => |n| try g.genMethod(n),
-            .property  => |n| try g.genProperty(n),
             .var_      => |n| try g.genTopVar(n),
             .init      => {},   // top-level constructor makes no sense
             .union_    => |n| try g.genUnion(n),
@@ -3664,7 +3661,6 @@ const Generator = struct {
         switch (decl) {
             .var_     => |n| try g.genFieldDecl(n),
             .method   => |n| try g.genMethod(n),
-            .property => |n| try g.genProperty(n),
             .init     => |n| try g.genInit(n),
             else      => {},
         }
@@ -3741,9 +3737,8 @@ const Generator = struct {
         const iig = ig.indented();
         for (n.members) |m| {
             const req_name: ?[]const u8 = switch (m) {
-                .method   => |meth| meth.name,
-                .property => |prop| prop.name,
-                else      => null,
+                .method => |meth| meth.name,
+                else    => null,
             };
             if (req_name) |mname| {
                 try iig.writeIndent();
@@ -4095,57 +4090,6 @@ const Generator = struct {
         }
     }
 
-    // ── property ──────────────────────────────────────────────────────────────
-
-    fn genProperty(g: Generator, n: *Ast.DeclProperty) anyerror!void {
-        const pg = g.asMethod();
-
-        // Getter — named after the property itself.
-        if (n.getter) |body| {
-            var refs = try collectRefs(body, g.resolve, g.alloc);
-            defer refs.deinit();
-            var mut_set = try scanMutations(body, g.alloc, g.tc);
-            defer mut_set.deinit();
-            var cv_map = std.StringHashMap(void).init(g.alloc);
-            defer cv_map.deinit();
-            const pbg = pg.indented().withMutated(&mut_set).withClosureVars(&cv_map);
-            try g.writeIndent();
-            try g.w.print("pub fn {s}(", .{n.name});
-            if (g.owner.len > 0) try g.w.print("self: *const {s}", .{g.owner});
-            try g.w.writeAll(") ");
-            if (n.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
-            try g.w.writeAll(" {\n");
-            if (g.owner.len > 0 and !refs.uses_self) try pbg.line("_ = self;");
-            try pbg.genStmts(body);
-            try g.writeIndent();
-            try g.w.writeAll("}\n\n");
-        }
-
-        // Setter — prefixed with `set_`.
-        if (n.setter) |body| {
-            var refs = try collectRefs(body, g.resolve, g.alloc);
-            defer refs.deinit();
-            var mut_set = try scanMutations(body, g.alloc, g.tc);
-            defer mut_set.deinit();
-            var cv_map2 = std.StringHashMap(void).init(g.alloc);
-            defer cv_map2.deinit();
-            const pbg = pg.indented().withMutated(&mut_set).withClosureVars(&cv_map2);
-            try g.writeIndent();
-            try g.w.print("pub fn set_{s}(", .{n.name});
-            if (g.owner.len > 0) {
-                try g.w.print("self: *{s}, ", .{g.owner});
-            }
-            try g.w.writeAll("value: ");
-            if (n.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
-            try g.w.writeAll(") void {\n");
-            if (g.owner.len > 0 and !refs.uses_self) try pbg.line("_ = self;");
-            if (!refs.param_names.contains("value")) try pbg.line("_ = value;");
-            try pbg.genStmts(body);
-            try g.writeIndent();
-            try g.w.writeAll("}\n\n");
-        }
-    }
-
     // ── constructor ───────────────────────────────────────────────────────────
 
     fn genInit(g: Generator, n: *Ast.DeclInit) anyerror!void {
@@ -4268,7 +4212,6 @@ const Generator = struct {
             .list_lit      => |x| x.span,
             .dict_lit      => |x| x.span,
             .array_lit     => |x| x.span,
-            .all_any       => |x| x.span,
             .old           => |x| x.span,
             .try_          => |x| x.span,
             .tuple_lit     => |x| x.span,
@@ -8415,20 +8358,6 @@ const Generator = struct {
                         }
                     }
                 }
-                // Computed property (getter): obj.area → obj.area()
-                if (g.tc) |tc| {
-                    const obj_type = tc.expr_types.get(e.object) orelse .unknown;
-                    if (obj_type == .named) {
-                        const key = std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ obj_type.named.name, e.member }) catch "";
-                        if (tc.getter_methods.contains(key)) {
-                            try g.genExpr(e.object);
-                            try g.w.writeByte('.');
-                            try g.w.writeAll(e.member);
-                            try g.w.writeAll("()");
-                            break :sw;
-                        }
-                    }
-                }
                 // Math constants: Math.PI, Math.E, Math.TAU, Math.INF, Math.NAN
                 if (e.object.* == .ident and std.mem.eql(u8, e.object.ident.name, "Math")) {
                     if (std.mem.eql(u8, e.member, "PI"))  { try g.w.writeAll("std.math.pi");      break :sw; }
@@ -8688,9 +8617,6 @@ const Generator = struct {
                     try g.genExpr(el);
                 }
                 try g.w.writeAll("}");
-            },
-            .all_any => {
-                try g.w.writeAll("@compileError(\"all/any: rewrite as a loop\")");
             },
             .old     => |e| try g.genExpr(e.expr), // contract pre-value → pass through
             .zig_lit => |e| try g.genZigLit(e),

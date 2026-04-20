@@ -1504,7 +1504,7 @@ pub const MultiCompiler = struct {
 
     pub fn alreadyVisited(self: *MultiCompiler, p: []const u8) bool {
         var i: i64 = 0;
-        while ((i < @as(i64, @intCast(self.visited.items.len)))) {
+        while (_zebra_lt(i, @as(i64, @intCast(self.visited.items.len)))) {
             const v: []const u8 = self.visited.items[@intCast(i)];
             if (std.mem.eql(u8, v, p)) {
                 return true;
@@ -1527,7 +1527,7 @@ pub const MultiCompiler = struct {
         var resolver = Resolver.init();
         try resolver.resolve(pm_node);
         std.debug.print("{s}\n", .{"  resolved OK"});
-        if ((resolver.errorCount() > 0)) {
+        if (_zebra_gt(resolver.errorCount(), 0)) {
             { _error_ctx = .{ .message = resolver.firstError() }; return error.ZebraError; }
         }
         switch (pm_node) {
@@ -1554,7 +1554,7 @@ pub const MultiCompiler = struct {
                 if (is_root) {
                     var all_deps = std.ArrayList([]const u8){};
                     var vi: i64 = 0;
-                    while ((vi < @as(i64, @intCast(self.visited.items.len)))) {
+                    while (_zebra_lt(vi, @as(i64, @intCast(self.visited.items.len)))) {
                         const vpath: []const u8 = self.visited.items[@intCast(vi)];
                         if (!std.mem.eql(u8, vpath, zbr_path)) {
                             all_deps.append(_allocator, self.moduleNameOf(vpath)) catch @panic("OOM");
@@ -1655,13 +1655,13 @@ pub const MultiCompiler = struct {
                 parts.append(_allocator, part) catch @panic("OOM");
             }
         }
-        if ((@as(i64, @intCast(parts.items.len)) <= 1)) {
+        if (_zebra_le(@as(i64, @intCast(parts.items.len)), 1)) {
             return "";
         }
         var result: []const u8 = parts.items[@intCast(0)];
         var i: i64 = 1;
         const last: i64 = (@as(i64, @intCast(parts.items.len)) - 1);
-        while ((i < last)) {
+        while (_zebra_lt(i, last)) {
             result = _str_concat(result, "/", _allocator);
             result = _str_concat(result, parts.items[@intCast(i)], _allocator);
             i = (i + 1);
@@ -1685,7 +1685,7 @@ pub const Main = struct {
         }
         var src_path: ?[]const u8 = null;
         var pi: i64 = 0;
-        while ((pi < 10)) {
+        while (_zebra_lt(pi, 10)) {
             const candidate = args.positional(pi);
             if ((candidate == null)) {
                 break;
@@ -1721,6 +1721,7 @@ pub const Main = struct {
         if ((mode_emit or mode_selfhost)) {
             {
                 var _try_err: ?anyerror = null;
+                _ = &_try_err;
                 _try_blk: {
                     var mc = MultiCompiler.init(preamble_path, output_dir);
                     mc.compileDep(path, true) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; };

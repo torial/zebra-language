@@ -217,10 +217,6 @@ def exprHasTry(expr as Expr) as bool
                     else
                         pass
             return false
-        on Expr.all_any as a
-            if exprHasTry(a.iter)
-                return true
-            return exprHasTry(a.cond)
         on Expr.dict_lit as d
             for entry in d.entries
                 if exprHasTry(entry.key)
@@ -438,10 +434,6 @@ def nameUsedInExpr(name as str, expr as Expr) as bool
                     else
                         pass
             return false
-        on Expr.all_any as a
-            if nameUsedInExpr(name, a.iter)
-                return true
-            return nameUsedInExpr(name, a.cond)
         on Expr.except_ as ex
             if nameUsedInExpr(name, ex.base)
                 return true
@@ -608,9 +600,6 @@ def collectAllIdents(expr as Expr, out as StrSet)
                         collectAllIdents(e, out)
                     else
                         pass
-        on Expr.all_any as a
-            collectAllIdents(a.iter, out)
-            collectAllIdents(a.cond, out)
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no user idents
             pass

@@ -656,20 +656,6 @@ fn extractFromMembers(
                 }
             }
         },
-        .property => |p| {
-            const t = simpleTypeFromRef(if (p.type_) |*tr| tr else null, resolve, alloc);
-            const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ class_name, p.name });
-            try fields.put(key, t);
-            if (t == .unknown) {
-                if (p.type_) |*tr| {
-                    if (namedTypeStr(tr, resolve)) |tname| {
-                        const ift_key = try alloc.dupe(u8, key);
-                        const ift_val = try alloc.dupe(u8, tname);
-                        try instance_field_types.put(ift_key, ift_val);
-                    }
-                }
-            }
-        },
         .init => |ci| {
             // Record per-param boxing flags for cross-module constructor calls.
             // For each param, true iff the param is `^T` (ref_to) or `^T?` (nilable(ref_to)).
@@ -765,8 +751,6 @@ pub const TypeCheckResult = struct {
     expr_types: std.AutoHashMap(*const Ast.Expr, Type),
     diags:      []const Diagnostic,
     diag_alloc: Allocator,
-    /// "ClassName.propName" → void — getter properties that should be called as obj.prop().
-    getter_methods: std.StringHashMap(void),
     /// "TypeName.methodName" → DeclMethod* — extension methods from `extend` blocks.
     ext_methods: std.StringHashMap(*const Ast.DeclMethod),
     /// Set of `.try_` Expr nodes that represent optional-unwraps (`opt?.x`), NOT error
@@ -787,7 +771,6 @@ pub const TypeCheckResult = struct {
         for (self.diags) |d| self.diag_alloc.free(d.message);
         self.diag_alloc.free(self.diags);
         self.expr_types.deinit();
-        self.getter_methods.deinit();
         self.ext_methods.deinit();
         self.optional_unwraps.deinit();
         self.fn_ref_args.deinit();
@@ -837,38 +820,6 @@ fn nilNarrowedVarExpr(cond: *const Ast.Expr, for_then: bool) ?NilNarrow {
     if (b.right.* == .ident and b.left.* == .nil)
         return .{ .name = b.right.ident.name, .expr = b.right };
     return null;
-}
-
-// ── Getter method scanning ────────────────────────────────────────────────────
-
-/// Scan all class declarations and record "ClassName.propName" for every getter property.
-fn collectGetterMethods(
-    module: Ast.Module,
-    out:    *std.StringHashMap(void),
-    alloc:  Allocator,
-) !void {
-    try collectGetterMethodsInDecls(module.decls, out, alloc);
-}
-
-fn collectGetterMethodsInDecls(
-    decls:      []const Ast.Decl,
-    out:        *std.StringHashMap(void),
-    alloc:      Allocator,
-) !void {
-    for (decls) |decl| switch (decl) {
-        .class => |c| {
-            for (c.members) |m| switch (m) {
-                .property => |p| if (p.getter != null) {
-                    const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ c.name, p.name });
-                    try out.put(key, {});
-                },
-                else => {},
-            };
-            try collectGetterMethodsInDecls(c.members, out, alloc);
-        },
-        .namespace => |n| try collectGetterMethodsInDecls(n.decls, out, alloc),
-        else => {},
-    };
 }
 
 // ── Extension method scanning ────────────────────────────────────────────────
@@ -932,8 +883,6 @@ pub fn typeCheckPass3(
     var union_variants  = std.StringHashMap([]const []const u8).init(map_alloc);
     defer union_variants.deinit();
     try collectUnionVariants(module, &union_variants, map_alloc);
-    var getter_methods  = std.StringHashMap(void).init(map_alloc);
-    try collectGetterMethods(module, &getter_methods, map_alloc);
     var ext_methods     = std.StringHashMap(*const Ast.DeclMethod).init(map_alloc);
     try collectExtMethods(module, &ext_methods, map_alloc);
     var narrowed_types  = std.StringHashMap(Type).init(map_alloc);
@@ -964,7 +913,6 @@ pub fn typeCheckPass3(
         .expr_types       = expr_types,
         .diags            = try diags.toOwnedSlice(diag_alloc),
         .diag_alloc       = diag_alloc,
-        .getter_methods   = getter_methods,
         .ext_methods      = ext_methods,
         .optional_unwraps = optional_unwraps,
         .fn_ref_args      = fn_ref_args,
@@ -1061,7 +1009,6 @@ const TypeChecker = struct {
             .enum_     => |n| try tc.checkEnum(n),
             .extend    => |n| try tc.checkExtend(n),
             .method    => |n| try tc.checkMethod(n),
-            .property  => |n| try tc.checkProperty(n),
             .var_      => |n| try tc.checkVarDecl(n, false),
             .init      => |n| try tc.checkInit(n),
             .union_    => {},  // no body to type-check (variants are types, not expressions)
@@ -1106,7 +1053,6 @@ const TypeChecker = struct {
     fn checkMember(tc: TypeChecker, decl: Ast.Decl) anyerror!void {
         switch (decl) {
             .method   => |n| try tc.checkMethod(n),
-            .property => |n| try tc.checkProperty(n),
             .var_     => |n| try tc.checkVarDecl(n, false),
             .init     => |n| try tc.checkInit(n),
             else      => {},
@@ -1132,13 +1078,6 @@ const TypeChecker = struct {
         if (n.body)    |body| try inner.checkStmts(body);
         for (n.require) |e|   _ = try inner.inferExpr(e);
         for (n.ensure)  |e|   _ = try inner.inferExpr(e);
-    }
-
-    fn checkProperty(tc: TypeChecker, n: *Ast.DeclProperty) anyerror!void {
-        const prop_type = tc.typeFromOptRef(if (n.type_) |*t| t else null);
-        const inner = tc.withReturn(prop_type);
-        if (n.getter) |body| try inner.checkStmts(body);
-        if (n.setter) |body| try inner.checkStmts(body);
     }
 
     // ── Variable / field declaration ──────────────────────────────────────────
@@ -1644,7 +1583,6 @@ const TypeChecker = struct {
             .list_lit       => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .unknown; },
             .dict_lit       => |e| blk: { for (e.entries) |en| { _ = try tc.inferExpr(en.key); _ = try tc.inferExpr(en.value); } break :blk .unknown; },
             .array_lit      => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .unknown; },
-            .all_any        => |e| blk: { _ = try tc.inferExpr(e.iter); _ = try tc.inferExpr(e.cond); break :blk .bool; },
             .old            => |e| try tc.inferExpr(e.expr),
             // try expr — may be error propagation OR optional-unwrap (`opt?.x`).
             // Detect optional-unwrap by checking the inner ident's DECLARED type
@@ -2788,10 +2726,6 @@ const TypeChecker = struct {
             .class, .interface, .struct_, .mixin, .enum_ => .{ .named = sym },
             .namespace_   => .unknown, // namespaces are not value-typed
             .method       => .{ .fn_ref = sym }, // first-class function reference
-            .property     => {
-                const decl = sym.decl.property;
-                return tc.typeFromOptRef(if (decl.type_) |*t| t else null);
-            },
             .var_, .local => switch (sym.decl) {
                 .var_ => |decl| {
                     // Prefer the explicitly declared type.
@@ -3019,7 +2953,6 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
         .list_lit      => |e| e.span,
         .dict_lit      => |e| e.span,
         .array_lit     => |e| e.span,
-        .all_any       => |e| e.span,
         .old           => |e| e.span,
         .try_          => |e| e.span,
         .tuple_lit     => |e| e.span,

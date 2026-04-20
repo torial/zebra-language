@@ -41,7 +41,7 @@ pub const ScopeKind = enum {
     namespace_,
     /// Body of a class / interface / struct / mixin / enum.
     type_,
-    /// Method or property body — parameters and locals live here.
+    /// Method body — parameters and locals live here.
     method,
     /// Inner block inside a method (if/while/for body).
     block,
@@ -58,8 +58,6 @@ pub const SymbolKind = enum {
     enum_,
     /// Regular method (`def`).
     method,
-    /// Property (`get`/`set`/`pro`).
-    property,
     /// Field / member variable (`var` or `const`).
     var_,
     /// Method parameter.
@@ -94,7 +92,6 @@ pub const DeclRef = union(enum) {
     enum_:       *Ast.DeclEnum,
     extend:      *Ast.DeclExtend,
     method:      *Ast.DeclMethod,
-    property:    *Ast.DeclProperty,
     var_:        *Ast.DeclVar,
     /// Points into the owning `DeclMethod.params` slice (stable, arena-owned).
     param:         *const Ast.Param,

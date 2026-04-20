@@ -55,7 +55,6 @@ pub const Decl = union(enum) {
     mixin: *DeclMixin,
     enum_: *DeclEnum,
     method: *DeclMethod,
-    property: *DeclProperty,
     var_: *DeclVar,
     init: *DeclInit,
     extend: *DeclExtend,
@@ -218,17 +217,6 @@ pub const DeclMethod = struct {
     /// Declared at the top level (outside any class/struct).  Callers must not
     /// prepend `self.` or `ClassName.` when invoking these functions.
     is_top_level: bool = false,
-};
-
-pub const DeclProperty = struct {
-    span: Span,
-    mods: Modifiers,
-    name: []const u8,
-    type_: ?TypeRef,
-    /// `get` accessor body — nil means abstract / auto.
-    getter: ?[]const Stmt,
-    /// `set` accessor body — nil means read-only or abstract.
-    setter: ?[]const Stmt,
 };
 
 pub const DeclVar = struct {
@@ -587,7 +575,6 @@ pub const Expr = union(enum) {
     list_lit: *ExprListLit,
     dict_lit: *ExprDictLit,
     array_lit: *ExprArrayLit,
-    all_any: *ExprAllAny,
     old: *ExprOld,     // old expr — pre-call value in `ensure` contracts
     zig_lit: ExprZigLit, // zig'...' / zig"..." backend literal
     try_: *ExprTry,    // try expr — propagate error upward
@@ -846,19 +833,6 @@ pub const ExprDictLit = struct {
 pub const ExprArrayLit = struct {
     span: Span,
     elems: []const *Expr,
-};
-
-// ── Comprehensions ────────────────────────────────────────────────────────────
-
-pub const AllAnyKind = enum { all, any };
-
-/// `all x in list where x > 0` or `any x in list where x > 0`
-pub const ExprAllAny = struct {
-    span: Span,
-    kind: AllAnyKind,
-    var_: []const u8,
-    iter: *Expr,
-    cond: *Expr,
 };
 
 // ── Contract expression ───────────────────────────────────────────────────────

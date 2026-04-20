@@ -45,7 +45,6 @@ union Decl
     mixin_ as ^DeclMixin
     enum_ as ^DeclEnum
     method as ^DeclMethod
-    property as ^DeclProperty
     var_ as ^DeclVar
     init as ^DeclInit
     extend_ as ^DeclExtend
@@ -267,22 +266,6 @@ struct DeclMethod
         this.stmts = stmts
         this.is_test = is_test
         this.throws_ = throws_
-
-struct DeclProperty
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var type_ as TypeRef?
-    var getter_ as List(Stmt)?
-    var setter_ as List(Stmt)?
-
-    cue init(span as Span, mods as Modifiers, name as String, type_ as TypeRef?, getter_ as List(Stmt)?, setter_ as List(Stmt)?)
-        this.span = span
-        this.mods = mods
-        this.name = name
-        this.type_ = type_
-        this.getter_ = getter_
-        this.setter_ = setter_
 
 # ── Variable / constant ───────────────────────────────────────────────────────
 
@@ -663,7 +646,6 @@ union Expr
     list_lit as ^ExprListLit
     dict_lit as ^ExprDictLit
     array_lit as ^ExprArrayLit
-    all_any as ^ExprAllAny
     zig_lit as ExprZigLit
     try_ as ^ExprTry
     tuple_lit as ^ExprTuple
@@ -1038,27 +1020,6 @@ struct ExprArrayLit
     cue init(span as Span, elems as List(Expr))
         this.span = span
         this.elems = elems
-
-# all/any comprehensions
-# 'all' and 'any' are keywords; use all_/any_.
-
-enum AllAnyKind
-    all_
-    any_
-
-struct ExprAllAny
-    var span as Span
-    var kind as AllAnyKind
-    var var_ as String
-    var iter as ^Expr
-    var cond as ^Expr
-
-    cue init(span as Span, kind as AllAnyKind, var_ as String, iter as ^Expr, cond as ^Expr)
-        this.span = span
-        this.kind = kind
-        this.var_ = var_
-        this.iter = iter
-        this.cond = cond
 
 # backend / misc
 

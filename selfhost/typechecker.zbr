@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, DeclProperty, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -168,18 +168,12 @@ class ModuleTypes
     # "is 'Foo' declared as a union in this module?" without enumerating
     # variant_payloads. Populated alongside variant_payloads.
     var union_names as HashMap(str, bool)
-    # Computed property (getter) key set — "ClassName.propName".
-    # Populated from Decl.property arms in addClassMembers.
-    # Codegen uses this to emit `obj.prop()` instead of `obj.prop` for getters.
-    var getter_prop_keys as HashMap(str, bool)
-
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
         hashmap_field_names = HashMap()
         variant_payloads = HashMap()
         union_names = HashMap()
-        getter_prop_keys = HashMap()
 
     def addClass(c as ClassTypes)
         this.classes.put(c.name, c)
@@ -212,12 +206,6 @@ class ModuleTypes
         if this.variant_payloads.contains(key)
             return this.variant_payloads.fetch(key)
         return nil
-
-    def addGetterPropKey(class_name as str, prop_name as str)
-        this.getter_prop_keys.put(class_name + "." + prop_name, true)
-
-    def hasGetterPropKey(class_name as str, prop_name as str) as bool
-        return this.getter_prop_keys.contains(class_name + "." + prop_name)
 
     def hasClass(class_name as str) as bool
         return this.classes.contains(class_name)
@@ -360,9 +348,6 @@ def addClassMembers(mt as ModuleTypes, ct as ClassTypes, members as List(Decl))
                             ct.addCtorParam(typeFromRef(p.type_ to!))
                         else
                             ct.addCtorParam(Type_.unknown_)
-            on Decl.property as prop
-                # Register getter so codegen emits obj.prop() instead of obj.prop.
-                mt.addGetterPropKey("" + ct.name, "" + prop.name)
             else
                 pass
 

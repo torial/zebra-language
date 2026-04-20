@@ -120,7 +120,6 @@ const Binder = struct {
             .enum_     => |n| try b.declareEnum_(n, scope),
             .extend    => {},  // target type not yet resolved; handled in Pass 2
             .method    => |n| try b.declareMethod(n, scope),
-            .property  => |n| try b.declareProperty(n, scope),
             .var_      => |n| try b.declareVar_(n, scope),
             .init      => {},  // constructors have no name to declare
             .union_    => |n| try b.declareUnion(n, scope),
@@ -254,7 +253,6 @@ const Binder = struct {
     fn declareMember(b: Binder, decl: Ast.Decl, scope: *Scope) anyerror!void {
         switch (decl) {
             .method   => |n| try b.declareMethod(n, scope),
-            .property => |n| try b.declareProperty(n, scope),
             .var_     => |n| try b.declareVar_(n, scope),
             .init     => {},  // constructors are unnamed
             else      => {},  // nested types etc. handled as top-level when needed
@@ -279,12 +277,6 @@ const Binder = struct {
             if (try inner.define(p.name, psym)) |_|
                 try b.emitDuplicateError(p.span, p.name);
         }
-    }
-
-    fn declareProperty(b: Binder, n: *Ast.DeclProperty, scope: *Scope) anyerror!void {
-        const sym = try b.table.newSymbol(n.name, .property, .{ .property = n });
-        if (try scope.define(n.name, sym)) |_|
-            try b.emitDuplicateError(n.span, n.name);
     }
 
     fn declareVar_(b: Binder, n: *Ast.DeclVar, scope: *Scope) anyerror!void {

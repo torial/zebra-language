@@ -105,9 +105,6 @@ union TokenKind
     kw_extend
     kw_def
     kw_sig
-    kw_get
-    kw_set
-    kw_pro
     kw_var
     kw_const
     kw_cue
@@ -118,7 +115,6 @@ union TokenKind
     kw_as
     kw_from
     kw_has
-    kw_body
     kw_shared
     kw_invariant
     kw_where
@@ -147,7 +143,6 @@ union TokenKind
     kw_else
     kw_lock
     kw_while
-    kw_post
     kw_for
     kw_break
     kw_continue
@@ -222,12 +217,6 @@ class Keywords
             return TokenKind.kw_def()
         if word == "sig"
             return TokenKind.kw_sig()
-        if word == "get"
-            return TokenKind.kw_get()
-        if word == "set"
-            return TokenKind.kw_set()
-        if word == "pro"
-            return TokenKind.kw_pro()
         if word == "var"
             return TokenKind.kw_var()
         if word == "const"
@@ -248,8 +237,6 @@ class Keywords
             return TokenKind.kw_from()
         if word == "has"
             return TokenKind.kw_has()
-        if word == "body"
-            return TokenKind.kw_body()
         if word == "shared"
             return TokenKind.kw_shared()
         if word == "invariant"
@@ -306,8 +293,6 @@ class Keywords
             return TokenKind.kw_lock()
         if word == "while"
             return TokenKind.kw_while()
-        if word == "post"
-            return TokenKind.kw_post()
         if word == "for"
             return TokenKind.kw_for()
         if word == "break"

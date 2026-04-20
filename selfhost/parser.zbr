@@ -36,8 +36,6 @@ union PNode
     field_ as ^PField
     method_ as ^PMethod
     init_ as ^PInit
-    property_ as ^PProperty
-
     # Statements
     stmt_pass
     stmt_break
@@ -268,15 +266,6 @@ struct PInit
     cue init(params as List(PParam), stmts as List(PNode))
         this.params = params
         this.stmts = stmts
-
-struct PProperty
-    var name as str
-    var type_name as str
-    var getter_stmts as List(PNode)
-    cue init(name as str, type_name as str, getter_stmts as List(PNode))
-        this.name = name
-        this.type_name = type_name
-        this.getter_stmts = getter_stmts
 
 struct PReturn
     var value as List(PNode)
@@ -1083,25 +1072,7 @@ class Parser
             return .parseDeclField(true, is_shared)
         else if this.textIs("cue")
             return .parseDeclInit()
-        else if this.textIs("get")
-            return .parsePropertyDecl()
         raise "unexpected member: '" + this.peek().text + "' at line " + this.peek().line.toString()
-
-    def parsePropertyDecl() as PNode throws
-        .expectText("get")
-        const name = .eatId()
-        var type_name as str = ""
-        if this.textIs("as")
-            this.advance()
-            type_name = .eatTypeName()
-            if this.textIs("?")
-                this.advance()
-                type_name = type_name + "?"
-        .skipEol()
-        var stmts = List(PNode)()
-        if .isIndent()
-            stmts = .parseBlock()
-        return PNode.property_(PProperty(name, type_name, stmts))
 
     def parseDeclField(is_const as bool, is_shared as bool) as PNode throws
         if is_const
@@ -1778,18 +1749,6 @@ class Parser
                 if .isOpenCall()
                     # expr.method(args)
                     const mname = this.peek().text
-                    this.advance()
-                    const args = .parseCallArgs()
-                    var base = List(PNode)()
-                    base.add(expr)
-                    var callee = List(PNode)()
-                    callee.add(PNode.expr_member(PMember(base, mname)))
-                    expr = PNode.expr_call(PCall(callee, args))
-                else if (this.textIs("get") or this.textIs("post")) and this.peekAt(1).text == "("
-                    # expr.get(args) / expr.post(args) — keyword used as method name.
-                    # Zig backend: Expr9 → Expr9 dot (kw_get|kw_post) lparen ArgList rparen.
-                    const mname = this.peek().text
-                    this.advance()
                     this.advance()
                     const args = .parseCallArgs()
                     var base = List(PNode)()
