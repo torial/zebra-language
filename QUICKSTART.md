@@ -639,9 +639,90 @@ def rawMemset(ptr as uint, size as uint)
         this.y = y
     ```
 
+11. **`arena` block — strings/slices allocated inside do NOT survive the block:**
+    ```zebra
+    arena
+        var src = File.read("data.txt")
+        var words = src.split(" ")
+        process(words)
+    # src and words are gone here — the sub-arena was freed
+    ```
+    Copy values you need to survive using assignment to outer variables
+    (string concat, List addition, etc. all allocate into the outer arena):
+    ```zebra
+    var summary = ""
+    arena
+        var src = File.read("data.txt")
+        summary = summarise(src)    # copies result into outer arena
+    print summary                   # safe
+    ```
+
 ---
 
-## 25. Build and run
+## 25. Memory model and the `arena` block
+
+**Book note — must be covered thoroughly in the language book.**
+
+Zebra uses a single program-wide `ArenaAllocator`. All allocations (strings,
+lists, class instances) live until program exit. You never free individual
+values; the arena cleans up everything at once. This makes memory management
+invisible for typical programs.
+
+### When you need bounded-scope memory: `arena`
+
+The `arena` keyword creates a scoped sub-arena. On exit the sub-arena is
+destroyed — everything allocated inside it is freed, and `_allocator` reverts
+to the parent arena.
+
+```zebra
+arena
+    var src = File.read("big_file.txt")
+    var parsed = parse(src)
+    result = extract_summary(parsed)   # copies into parent arena
+# big_file.txt buffer + all parse temporaries freed here
+```
+
+Typical uses:
+- **Large file processing in a loop** — read, process, discard each file's
+  memory before reading the next.
+- **Compute-intensive stdlib use** — regex matches, heavy string transforms —
+  where intermediate allocations would otherwise accumulate.
+- **Any batch operation** where you want to bound peak memory usage.
+
+### What does NOT survive an `arena` block
+
+Any `str`, `List`, or class instance allocated inside the block is freed when
+the block exits. If you store a reference to it in an outer variable, that
+reference becomes dangling.
+
+Safe patterns for passing values out:
+```zebra
+var name = ""
+arena
+    var src = File.read("config.txt")
+    name = parse_name(src)    # _str_concat call copies into outer arena
+```
+
+Unsafe (do not do this):
+```zebra
+var ptr_into_block as str
+arena
+    var src = File.read("config.txt")
+    ptr_into_block = src      # WRONG: src freed when arena exits
+print ptr_into_block          # dangling slice — undefined behaviour
+```
+
+### Why individual `free` calls are absent
+
+Unlike Zig or C, Zebra never emits `defer allocator.free(x)` for local
+string variables. With `ArenaAllocator`, individual frees are either a
+no-op (middle of the arena) or dangerous (last allocation — Zig 0.15
+rewinds the bump pointer, corrupting any sub-slice still in use). The
+`arena` block is the correct, safe mechanism for bounded reclaim.
+
+---
+
+## 26. Build and run
 
 ```bash
 # From repo root:

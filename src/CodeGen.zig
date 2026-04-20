@@ -5996,8 +5996,6 @@ const Generator = struct {
                 try bg.w.print("const {s} = ", .{tname});
                 try bg.genExpr(a.value);
                 try bg.w.writeAll(";\n");
-                try bg.writeIndent();
-                try bg.w.print("defer _allocator.free({s});\n", .{tname});
             } else {
                 try tmp_names.append(g.alloc, null);
             }
@@ -6886,8 +6884,6 @@ const Generator = struct {
                     try ig.w.writeAll("const _ret_recv = ");
                     try ig.genExpr(mem_call.object);
                     try ig.w.writeAll(";\n");
-                    try ig.writeIndent();
-                    try ig.w.writeAll("defer _allocator.free(_ret_recv);\n");
                     try ig.writeIndent();
                     try ig.w.writeAll("return ");
                     var sg = ig;
@@ -7811,10 +7807,6 @@ const Generator = struct {
                 try bg.w.print("const {s} = ", .{tname});
                 try bg.genExpr(a);
                 try bg.w.writeAll(";\n");
-                if (isAllocatingStringInit(a, g.tc) or a.* == .string_interp) {
-                    try bg.writeIndent();
-                    try bg.w.print("defer _allocator.free({s});\n", .{tname});
-                }
             } else {
                 try tmp_names.append(g.alloc, null);
             }
