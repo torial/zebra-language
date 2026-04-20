@@ -1012,7 +1012,7 @@ class Parser
                     break
                 const vname = .eatId()
                 var vtype: str = ""
-                if this.textIs("as")
+                if this.textIs(":")
                     this.advance()
                     # Handle ^Type prefix
                     if this.textIs("^")
@@ -1047,7 +1047,7 @@ class Parser
                 else
                     const pname = .eatId()
                     var ptype = ""
-                    if this.textIs("as")
+                    if this.textIs(":")
                         this.advance()
                         ptype = .eatTypeName()
                     var pdefault = List(PNode)()
@@ -1057,7 +1057,7 @@ class Parser
                     params.add(PParam(pname, ptype, pdefault))
             .expectText(")")
         var return_type = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             return_type = .eatTypeName()
         .skipEol()
@@ -1083,7 +1083,7 @@ class Parser
             .expectText("var")
         const name = .eatId()
         var type_name: str = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             type_name = .eatTypeName()
             if this.textIs("?")
@@ -1111,7 +1111,7 @@ class Parser
             else
                 const pname = .eatId()
                 var ptype = ""
-                if this.textIs("as")
+                if this.textIs(":")
                     this.advance()
                     ptype = .eatTypeName()
                     if this.textIs("?")
@@ -1147,7 +1147,7 @@ class Parser
                 else
                     const pname = .eatId()
                     var ptype = ""
-                    if this.textIs("as")
+                    if this.textIs(":")
                         this.advance()
                         ptype = .eatTypeName()
                         if this.textIs("?")
@@ -1160,7 +1160,7 @@ class Parser
                     params.add(PParam(pname, ptype, pdefault))
             .expectText(")")
         var return_type = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             return_type = .eatTypeName()
             if this.textIs("?")
@@ -1252,14 +1252,11 @@ class Parser
     def parseIfStmt(): PNode throws
         .expectText("if")
         const cond_expr = .parseExpr()
-        # Optional capture binding: `if x is Variant |name|`
+        # Optional capture binding: `if x is Variant as name`
         var capture_name: String? = nil
-        if this.textIs("|")
+        if this.textIs("as")
             this.advance()
-            const cap = this.peek().text
-            this.advance()
-            .expectText("|")
-            capture_name = cap
+            capture_name = .eatId()
         .skipEol()
         const then_stmts = .parseBlock()
         var else_stmts = List(PNode)()
@@ -1408,7 +1405,7 @@ class Parser
             .expectText("var")
         const name = .eatId()
         var type_name: str = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             type_name = .eatTypeName()
             if this.textIs("?")
@@ -1952,7 +1949,7 @@ class Parser
                 params.add(.parseLambdaParam())
         .expectText(")")
         var ret_type = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             ret_type = .eatTypeName()
         if this.textIs("=")
@@ -1982,7 +1979,7 @@ class Parser
     def parseLambdaParam(): PParam throws
         const name = .eatId()
         var type_name = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             type_name = .eatTypeName()
         var pdefault = List(PNode)()
@@ -2003,7 +2000,7 @@ class Parser
                 params.add(.parseLambdaParam())
         .expectText(")")
         var ret_type = ""
-        if this.textIs("as")
+        if this.textIs(":")
             this.advance()
             ret_type = .eatTypeName()
         return PLambda(params, ret_type, List(PCaptureVar)(), List(PNode)(), List(PNode)())
@@ -2028,7 +2025,7 @@ class Parser
                 .expectText("var")
             const cap_name = .eatId()
             var cap_type = ""
-            if this.textIs("as")
+            if this.textIs(":")
                 this.advance()
                 cap_type = .eatTypeName()
             var init_list = List(PNode)()

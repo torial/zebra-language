@@ -2869,7 +2869,7 @@ pub const Parser = struct {
                 }
                 const vname = try self.eatId();
                 var vtype: []const u8 = "";
-                if (self.textIs("as")) {
+                if (self.textIs(":")) {
                     self.advance();
                     if (self.textIs("^")) {
                         self.advance();
@@ -2911,7 +2911,7 @@ pub const Parser = struct {
                 } else {
                     const pname = try self.eatId();
                     var ptype: []const u8 = "";
-                    if (self.textIs("as")) {
+                    if (self.textIs(":")) {
                         self.advance();
                         ptype = try self.eatTypeName();
                     }
@@ -2926,7 +2926,7 @@ pub const Parser = struct {
             try self.expectText(")");
         }
         var return_type: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             return_type = try self.eatTypeName();
         }
@@ -2961,7 +2961,7 @@ pub const Parser = struct {
         }
         const name = try self.eatId();
         var type_name: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             type_name = try self.eatTypeName();
             if (self.textIs("?")) {
@@ -2995,7 +2995,7 @@ pub const Parser = struct {
             } else {
                 const pname = try self.eatId();
                 var ptype: []const u8 = "";
-                if (self.textIs("as")) {
+                if (self.textIs(":")) {
                     self.advance();
                     ptype = try self.eatTypeName();
                     if (self.textIs("?")) {
@@ -3039,7 +3039,7 @@ pub const Parser = struct {
                 } else {
                     const pname = try self.eatId();
                     var ptype: []const u8 = "";
-                    if (self.textIs("as")) {
+                    if (self.textIs(":")) {
                         self.advance();
                         ptype = try self.eatTypeName();
                         if (self.textIs("?")) {
@@ -3058,7 +3058,7 @@ pub const Parser = struct {
             try self.expectText(")");
         }
         var return_type: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             return_type = try self.eatTypeName();
             if (self.textIs("?")) {
@@ -3196,12 +3196,9 @@ pub const Parser = struct {
         try self.expectText("if");
         const cond_expr = try self.parseExpr();
         var capture_name: ?[]const u8 = null;
-        if (self.textIs("|")) {
+        if (self.textIs("as")) {
             self.advance();
-            const cap = self.peek().text;
-            self.advance();
-            try self.expectText("|");
-            capture_name = cap;
+            capture_name = try self.eatId();
         }
         self.skipEol();
         const then_stmts = try self.parseBlock();
@@ -3360,7 +3357,7 @@ pub const Parser = struct {
         }
         const name = try self.eatId();
         var type_name: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             type_name = try self.eatTypeName();
             if (self.textIs("?")) {
@@ -4014,7 +4011,7 @@ pub const Parser = struct {
         }
         try self.expectText(")");
         var ret_type: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             ret_type = try self.eatTypeName();
         }
@@ -4050,7 +4047,7 @@ pub const Parser = struct {
     pub fn parseLambdaParam(self: *Parser) anyerror!PParam {
         const name = try self.eatId();
         var type_name: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             type_name = try self.eatTypeName();
         }
@@ -4075,7 +4072,7 @@ pub const Parser = struct {
         }
         try self.expectText(")");
         var ret_type: []const u8 = "";
-        if (self.textIs("as")) {
+        if (self.textIs(":")) {
             self.advance();
             ret_type = try self.eatTypeName();
         }
@@ -4104,7 +4101,7 @@ pub const Parser = struct {
             }
             const cap_name = try self.eatId();
             var cap_type: []const u8 = "";
-            if (self.textIs("as")) {
+            if (self.textIs(":")) {
                 self.advance();
                 cap_type = try self.eatTypeName();
             }

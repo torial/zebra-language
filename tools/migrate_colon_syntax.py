@@ -70,7 +70,7 @@ def migrate_line(line: str, in_zig_snippet: bool = False) -> str:
 
 def migrate_file(path: Path, is_capture_migration: bool = False) -> int:
     """Migrate a file in place. Returns number of changed lines."""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8", newline="")
     lines = text.splitlines(keepends=True)
 
     is_zig = path.suffix == ".zig"
@@ -94,7 +94,7 @@ def migrate_file(path: Path, is_capture_migration: bool = False) -> int:
     if changes > 0:
         print(f"  {path}: {changes} line(s) changed")
         if not DRY_RUN:
-            path.write_text("".join(new_lines), encoding="utf-8")
+            path.write_bytes("".join(new_lines).encode("utf-8"))
 
     return changes
 
