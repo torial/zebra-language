@@ -4423,20 +4423,11 @@ const Generator = struct {
             }
         }
         try g.w.writeAll(";\n");
-        // List/HashMap vars initialized from non-constructor exprs (e.g. File.readLines,
-        // No defer deinit for List/HashMap: the arena allocator owns all memory and
-        // frees everything at program exit. Individual deinit calls are harmful because
-        // Allocator.free poisons the freed buffer with 0xAA via @memset before calling
-        // rawFree — corrupting any struct that still holds a pointer to the same buffer.
-        // Allocated string vars (concat, format) need explicit free —
-        // unless the variable is returned from this function (caller takes ownership).
-        if (n.init) |e| {
-            const is_returned = if (g.returned_names) |rn| rn.contains(n.name) else false;
-            if (!is_returned and isAllocatingStringInit(e, g.tc)) {
-                try g.writeIndent();
-                try g.w.print("defer _allocator.free({s});\n", .{n.name});
-            }
-        }
+        // No defer free for local string variables: Zebra uses ArenaAllocator, where
+        // individual frees are either a no-op (middle allocation) or dangerous (last
+        // allocation — Zig 0.15 rewinds end_index, corrupting any sub-slice still in use).
+        // The arena frees all memory at program exit. For bounded-scope reclaim, use an
+        // `arena` block, which creates a sub-arena that genuinely reclaims on exit.
     }
 
     /// True when `expr` is a call that allocates a heap-owned string.
