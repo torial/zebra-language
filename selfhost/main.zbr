@@ -34,7 +34,7 @@
 
 # File, Arg, sys, Shell are built-in stdlib globals — no `use` needed.
 
-use Parser exposing PNode, PUse
+use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateEntryPoint, generateDep, generateDepWith
@@ -98,8 +98,11 @@ class MultiCompiler
                         else
                             pass
 
-                # Step 4: Build AST
-                const module = ASTBuilder.build(pm, zbr_path)?
+                # Step 3b: Merge partial sibling files (Foo.extra.zbr → Foo.zbr)
+                var merged_pm = .mergePartials_pmodule(pm, zbr_path)?
+
+                # Step 4: Build AST from merged PModule
+                const module = ASTBuilder.build(merged_pm, zbr_path)?
 
                 # Step 5: Generate Zig
                 var zig_src as str = ""
@@ -196,6 +199,123 @@ class MultiCompiler
             result = result + parts.at(i)
             i = i + 1
         return result
+
+    # ── Partial-file merging ──────────────────────────────────────────────────
+    #
+    # Returns a new PModule with partial class members merged in.
+    # Functional (no in-place mutation) because Zebra branch bindings produce
+    # const copies: `const rcls = rcls_ptr.*` — mutations through them fail.
+    # NOTE: duplicate-method filtering (src/main.zig:415-443) is not ported;
+    # duplicate methods will surface as Zig compile errors.
+
+    def mergePartials_pmodule(pm as PModule, zbr_path as str) as PModule throws
+        var base as str = zbr_path
+        if zbr_path.contains("/")
+            var parts = List(str)()
+            for p in zbr_path.split("/")
+                parts.add(p)
+            base = parts.at(parts.len - 1)
+        if not base.endsWith(".zbr")
+            return pm
+        # Get stem via split (avoids str.len arithmetic, which returns uint)
+        var stem as str = base
+        for s in base.split(".zbr")
+            stem = s
+            break
+        if stem.contains(".")
+            return pm
+        var list_dir as str = .dirOf(zbr_path)
+        if list_dir == ""
+            list_dir = "."
+        var entries = Dir.list(list_dir)
+        var partial_paths = List(str)()
+        var prefix as str = stem + "."
+        var ei = 0
+        while ei < entries.count()
+            var ename as str = entries.at(ei)
+            if ename.startsWith(prefix) and ename.endsWith(".zbr") and ename != base
+                var full_path as str = ename
+                if list_dir != "."
+                    full_path = list_dir + "/" + ename
+                partial_paths.add(full_path)
+            ei = ei + 1
+        if partial_paths.count() == 0
+            return pm
+        partial_paths.sort()
+        # Parse each partial into a PModule list
+        var partial_pms = List(PModule)()
+        var pi = 0
+        while pi < partial_paths.count()
+            var ppath as str = partial_paths.at(pi)
+            var psrc_raw as str = File.read(ppath)
+            var psrc as str = "" + psrc_raw
+            const ppm_node = Parser.Parser.parse(psrc)?
+            branch ppm_node
+                on PNode.module_ as ppm
+                    partial_pms.add(ppm)
+                else
+                    pass
+            pi = pi + 1
+        # Rebuild root decl list, merging partial class members into matching classes
+        var merged_decls = List(PNode)()
+        var ri = 0
+        while ri < pm.decls.count()
+            var rdecl = pm.decls.at(ri)
+            branch rdecl
+                on PNode.class_ as rcls
+                    # Collect any extra members from partials with the same class name.
+                    # Extract name as str explicitly so == emits std.mem.eql (not raw ==).
+                    var rcls_name as str = rcls.name
+                    var extra_members = List(PNode)()
+                    var pmi = 0
+                    while pmi < partial_pms.count()
+                        var partial_pm = partial_pms.at(pmi)
+                        var pdi = 0
+                        while pdi < partial_pm.decls.count()
+                            var pdecl = partial_pm.decls.at(pdi)
+                            branch pdecl
+                                on PNode.class_ as pcls
+                                    var pcls_name as str = pcls.name
+                                    if pcls_name == rcls_name
+                                        var memi = 0
+                                        while memi < pcls.members.count()
+                                            extra_members.add(pcls.members.at(memi))
+                                            memi = memi + 1
+                                else
+                                    pass
+                            pdi = pdi + 1
+                        pmi = pmi + 1
+                    if extra_members.count() == 0
+                        merged_decls.add(rdecl)
+                    else
+                        var new_members = List(PNode)()
+                        var mi = 0
+                        while mi < rcls.members.count()
+                            new_members.add(rcls.members.at(mi))
+                            mi = mi + 1
+                        mi = 0
+                        while mi < extra_members.count()
+                            new_members.add(extra_members.at(mi))
+                            mi = mi + 1
+                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, new_members)))
+                else
+                    merged_decls.add(rdecl)
+            ri = ri + 1
+        # Append any non-class top-level decls from partials (use_, etc.)
+        var pmi = 0
+        while pmi < partial_pms.count()
+            var partial_pm = partial_pms.at(pmi)
+            var pdi = 0
+            while pdi < partial_pm.decls.count()
+                var pdecl = partial_pm.decls.at(pdi)
+                branch pdecl
+                    on PNode.class_
+                        pass
+                    else
+                        merged_decls.add(pdecl)
+                pdi = pdi + 1
+            pmi = pmi + 1
+        return PModule(merged_decls)
 
 class Main
     shared def main()

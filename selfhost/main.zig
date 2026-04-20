@@ -1470,6 +1470,8 @@ fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() 
 const Parser = @import("Parser.zig");
 const PNode = Parser.PNode;
 const PUse = Parser.PUse;
+const PModule = Parser.PModule;
+const PClass = Parser.PClass;
 const Resolver = @import("Resolver.zig").Resolver;
 const astbuilder = @import("astbuilder.zig");
 const ASTBuilder = astbuilder.ASTBuilder;
@@ -1549,7 +1551,8 @@ pub const MultiCompiler = struct {
                         },
                     }
                 }
-                const module = try ASTBuilder.build(pm, zbr_path);
+                const merged_pm = try self.mergePartials_pmodule(pm, zbr_path);
+                const module = try ASTBuilder.build(merged_pm, zbr_path);
                 var zig_src: []const u8 = "";
                 if (is_root) {
                     var all_deps = std.ArrayList([]const u8){};
@@ -1667,6 +1670,161 @@ pub const MultiCompiler = struct {
             i = (i + 1);
         }
         return result;
+    }
+
+    pub fn mergePartials_pmodule(self: *MultiCompiler, pm: PModule, zbr_path: []const u8) anyerror!PModule {
+        var base: []const u8 = zbr_path;
+        if ((std.mem.indexOf(u8, zbr_path, "/") != null)) {
+            var parts = std.ArrayList([]const u8){};
+            {
+                var _it_p = std.mem.splitSequence(u8, zbr_path, "/");
+                while (_it_p.next()) |p| {
+                    parts.append(_allocator, p) catch @panic("OOM");
+                }
+            }
+            base = parts.items[@intCast((@as(i64, @intCast(parts.items.len)) - 1))];
+        }
+        if ((!std.mem.endsWith(u8, base, ".zbr"))) {
+            return pm;
+        }
+        var stem: []const u8 = base;
+        {
+            var _it_s = std.mem.splitSequence(u8, base, ".zbr");
+            while (_it_s.next()) |s| {
+                stem = s;
+                break;
+            }
+        }
+        if ((std.mem.indexOf(u8, stem, ".") != null)) {
+            return pm;
+        }
+        var list_dir: []const u8 = self.dirOf(zbr_path);
+        if (std.mem.eql(u8, list_dir, "")) {
+            list_dir = ".";
+        }
+        const entries = (blk_dl: {
+            var _dl_dir = std.fs.cwd().openDir(list_dir, .{ .iterate = true }) catch @panic("Dir.list error");
+            defer _dl_dir.close();
+            var _dl_list = std.ArrayList([]const u8){};
+            var _dl_iter = _dl_dir.iterate();
+            while (_dl_iter.next() catch null) |_dl_entry| {
+                _dl_list.append(_allocator, _allocator.dupe(u8, _dl_entry.name) catch @panic("OOM")) catch @panic("OOM");
+            }
+            break :blk_dl _dl_list;
+        });
+        var partial_paths = std.ArrayList([]const u8){};
+        const prefix: []const u8 = _str_concat(stem, ".", _allocator);
+        var ei: i64 = 0;
+        while (_zebra_lt(ei, @as(i64, @intCast(entries.items.len)))) {
+            const ename: []const u8 = entries.items[@intCast(ei)];
+            if (((std.mem.startsWith(u8, ename, prefix) and std.mem.endsWith(u8, ename, ".zbr")) and !std.mem.eql(u8, ename, base))) {
+                var full_path: []const u8 = ename;
+                if (!std.mem.eql(u8, list_dir, ".")) {
+                    full_path = _str_concat(_str_concat(list_dir, "/", _allocator), ename, _allocator);
+                }
+                partial_paths.append(_allocator, full_path) catch @panic("OOM");
+            }
+            ei = (ei + 1);
+        }
+        if ((@as(i64, @intCast(partial_paths.items.len)) == 0)) {
+            return pm;
+        }
+        _zebra_sort_natural(std.meta.Child(@TypeOf(partial_paths.items)), partial_paths.items);
+        var partial_pms = std.ArrayList(PModule){};
+        var pi: i64 = 0;
+        while (_zebra_lt(pi, @as(i64, @intCast(partial_paths.items.len)))) {
+            const ppath: []const u8 = partial_paths.items[@intCast(pi)];
+            const psrc_raw: []const u8 = (std.fs.cwd().readFileAlloc(_allocator, ppath, std.math.maxInt(usize)) catch @panic("File.read error"));
+            const psrc: []const u8 = _str_concat("", psrc_raw, _allocator);
+            const ppm_node = try Parser.Parser.parse(psrc);
+            switch (ppm_node) {
+                .module_ => |_ptr_ppm| {
+                    const ppm = _ptr_ppm.*;
+                    partial_pms.append(_allocator, ppm) catch @panic("OOM");
+                },
+                else => |_| {
+                    // pass
+                },
+            }
+            pi = (pi + 1);
+        }
+        var merged_decls = std.ArrayList(PNode){};
+        var ri: i64 = 0;
+        while (_zebra_lt(ri, @as(i64, @intCast(pm.decls.items.len)))) {
+            const rdecl = pm.decls.items[@intCast(ri)];
+            switch (rdecl) {
+                .class_ => |_ptr_rcls| {
+                    const rcls = _ptr_rcls.*;
+                    const rcls_name: []const u8 = rcls.name;
+                    var extra_members = std.ArrayList(PNode){};
+                    var pmi: i64 = 0;
+                    while (_zebra_lt(pmi, @as(i64, @intCast(partial_pms.items.len)))) {
+                        const partial_pm = partial_pms.items[@intCast(pmi)];
+                        var pdi: i64 = 0;
+                        while (_zebra_lt(pdi, @as(i64, @intCast(partial_pm.decls.items.len)))) {
+                            const pdecl = partial_pm.decls.items[@intCast(pdi)];
+                            switch (pdecl) {
+                                .class_ => |_ptr_pcls| {
+                                    const pcls = _ptr_pcls.*;
+                                    const pcls_name: []const u8 = pcls.name;
+                                    if (std.mem.eql(u8, pcls_name, rcls_name)) {
+                                        var memi: i64 = 0;
+                                        while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
+                                            extra_members.append(_allocator, pcls.members.items[@intCast(memi)]) catch @panic("OOM");
+                                            memi = (memi + 1);
+                                        }
+                                    }
+                                },
+                                else => |_| {
+                                    // pass
+                                },
+                            }
+                            pdi = (pdi + 1);
+                        }
+                        pmi = (pmi + 1);
+                    }
+                    if ((@as(i64, @intCast(extra_members.items.len)) == 0)) {
+                        merged_decls.append(_allocator, rdecl) catch @panic("OOM");
+                    } else {
+                        var new_members = std.ArrayList(PNode){};
+                        var mi: i64 = 0;
+                        while (_zebra_lt(mi, @as(i64, @intCast(rcls.members.items.len)))) {
+                            new_members.append(_allocator, rcls.members.items[@intCast(mi)]) catch @panic("OOM");
+                            mi = (mi + 1);
+                        }
+                        mi = 0;
+                        while (_zebra_lt(mi, @as(i64, @intCast(extra_members.items.len)))) {
+                            new_members.append(_allocator, extra_members.items[@intCast(mi)]) catch @panic("OOM");
+                            mi = (mi + 1);
+                        }
+                        merged_decls.append(_allocator, PNode{ .class_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(rcls_name, rcls.type_params, rcls.ifaces, new_members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                    }
+                },
+                else => |_| {
+                    merged_decls.append(_allocator, rdecl) catch @panic("OOM");
+                },
+            }
+            ri = (ri + 1);
+        }
+        var pmi: i64 = 0;
+        while (_zebra_lt(pmi, @as(i64, @intCast(partial_pms.items.len)))) {
+            const partial_pm = partial_pms.items[@intCast(pmi)];
+            var pdi: i64 = 0;
+            while (_zebra_lt(pdi, @as(i64, @intCast(partial_pm.decls.items.len)))) {
+                const pdecl = partial_pm.decls.items[@intCast(pdi)];
+                switch (pdecl) {
+                    .class_ => {
+                        // pass
+                    },
+                    else => {
+                        merged_decls.append(_allocator, pdecl) catch @panic("OOM");
+                    },
+                }
+                pdi = (pdi + 1);
+            }
+            pmi = (pmi + 1);
+        }
+        return PModule.init(merged_decls);
     }
 
 };

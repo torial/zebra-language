@@ -126,18 +126,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ### BUG-037: Selfhost corpus-failure triage — RESOLVED 2026-04-19
 - **Severity:** High (headline self-hosting gap)
 - **Status:** Closed — corpus reached 100% (149/149) via BUG-048 through BUG-073 grammar wave. All 47 parser-gap failures driven to zero.
-- **Remaining open work (not tracked here):** BUG-035 (`"""…"""` doc strings), BUG-046 (partial-class sibling discovery).
+- **Remaining open work (not tracked here):** BUG-035 (`"""…"""` doc strings).
 
 ---
 
 ---
 
-### BUG-046: Selfhost does not discover or merge partial-class sibling files — OPEN
+### BUG-046: Selfhost does not discover or merge partial-class sibling files — FIXED 2026-04-19
 - **Severity:** Medium (selfhost-only parity gap; members added in `<stem>.*.zbr` partials are silently dropped)
-- **Status:** Open — filed 2026-04-17
-- **Target:** 0.5 (ride with the selfhost-edit wave)
-- **Symptom:** Given `Foo.zbr` (root) and `Foo.ext.zbr` (partial) in the same directory, selfhost compiles only the root. No warning, no error, no discovery.
-- **Likely fix:** Port the `mergePartials` + `mergePartialInto` routine from `src/main.zig` into `selfhost/main.zbr`.
+- **Status:** Fixed — committed 2026-04-19
+- **Root cause:** `selfhost/main.zbr` had no sibling-file discovery or partial merge logic.
+- **Fix:** Added `mergePartials_pmodule` in `selfhost/main.zbr` — scans the directory for `<stem>.*.zbr` siblings, parses each, and merges matching class members into the root module before codegen. Key implementation detail: `File.read` generates `defer _allocator.free(src)`, which in Zig 0.15 can rewind the arena if the buffer is the last allocation. Fix uses `"" + psrc_raw` (Zebra string concat → `_str_concat`) to make a permanent arena copy before parsing.
+- **Gate:** bootstrap 5/5 + `zig build test` green.
 
 ---
 
