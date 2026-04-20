@@ -987,10 +987,24 @@ const Builder = struct {
     // ── Individual statement builders ─────────────────────────────────────────
 
     fn buildStmtIf(b: Builder, node: TN) anyerror!Ast.StmtIf {
-        // kw_if Expr eol Block IfTail
         const kids = ch(node);
         var else_ifs  = std.ArrayList(Ast.ElseIf){};
         var else_body: ?[]const Ast.Stmt = null;
+        if (kids.len == 8) {
+            // Capture form: kw_if Expr vertical_bar id vertical_bar eol Block IfTail
+            // [0]kw_if [1]Expr [2]| [3]id [4]| [5]eol [6]Block [7]IfTail
+            try b.collectIfTail(kids[7], &else_ifs, &else_body);
+            return .{
+                .span       = spanOf(node, b.tokens),
+                .cond       = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+                .is_capture = leafText(kids[3], b.tokens),
+                .then_body  = try b.buildBlock(kids[6]),
+                .else_ifs   = try else_ifs.toOwnedSlice(b.arena),
+                .else_body  = else_body,
+            };
+        }
+        // Standard form: kw_if Expr eol Block IfTail
+        // [0]kw_if [1]Expr [2]eol [3]Block [4]IfTail
         try b.collectIfTail(kids[4], &else_ifs, &else_body);
         return .{
             .span      = spanOf(node, b.tokens),
@@ -1012,11 +1026,24 @@ const Builder = struct {
                 switch (ntOf(kids[0])) {
                     .ElseIfClause => {
                         const ek = ch(kids[0]);
-                        try else_ifs.append(b.arena,.{
-                            .span = spanOf(kids[0], b.tokens),
-                            .cond = try b.box(Ast.Expr, try b.buildExpr(ek[2])),
-                            .body = try b.buildBlock(ek[4]),
-                        });
+                        if (ek.len == 8) {
+                            // Capture form: kw_else kw_if Expr | id | eol Block
+                            // [0]else [1]if [2]Expr [3]| [4]id [5]| [6]eol [7]Block
+                            try else_ifs.append(b.arena, .{
+                                .span       = spanOf(kids[0], b.tokens),
+                                .cond       = try b.box(Ast.Expr, try b.buildExpr(ek[2])),
+                                .is_capture = leafText(ek[4], b.tokens),
+                                .body       = try b.buildBlock(ek[7]),
+                            });
+                        } else {
+                            // Standard form: kw_else kw_if Expr eol Block
+                            // [0]else [1]if [2]Expr [3]eol [4]Block
+                            try else_ifs.append(b.arena, .{
+                                .span = spanOf(kids[0], b.tokens),
+                                .cond = try b.box(Ast.Expr, try b.buildExpr(ek[2])),
+                                .body = try b.buildBlock(ek[4]),
+                            });
+                        }
                         try b.collectIfTail(kids[1], else_ifs, else_body);
                     },
                     .ElseClauseOpt => {
@@ -1778,11 +1805,18 @@ const Builder = struct {
             return switch (op_tok) {
                 .kw_or     => mk.bin(b, s, .or_,     left, right),
                 .kw_and    => mk.bin(b, s, .and_,    left, right),
-                // `expr is TypeName` — if RHS is a plain ident, emit a type-check node.
-                // `expr is value`    — if RHS is anything else (literal, call, …), emit equality.
+                // `expr is TypeName`         — plain ident RHS → type-check node (_type_tag).
+                // `expr is Union.variant`    — dotted-name RHS → union variant tag check.
+                // `expr is value`            — anything else → equality.
                 .kw_is     => if (right.* == .ident)
                     .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
                         .span = s, .expr = left, .type_name = right.ident.name,
+                    }) }
+                else if (right.* == .member and right.member.object.* == .ident)
+                    .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
+                        .span = s, .expr = left,
+                        .type_name    = right.member.object.ident.name,
+                        .variant_name = right.member.member,
                     }) }
                 else
                     mk.bin(b, s, .eq, left, right),

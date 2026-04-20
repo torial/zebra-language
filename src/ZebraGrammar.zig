@@ -800,10 +800,14 @@ const stmt_rules: []const Rule = &.{
 
     // if / else if / else
     .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.eol), n(.Block), n(.IfTail) } },
+    // `if x is Variant |r|` — capture form
+    .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.vertical_bar), t(.id), t(.vertical_bar), t(.eol), n(.Block), n(.IfTail) } },
     .{ .lhs = .IfTail, .rhs = &.{} }, // ε — no else
     .{ .lhs = .IfTail, .rhs = &.{ n(.ElseIfClause), n(.IfTail) } },
     .{ .lhs = .IfTail, .rhs = &.{ n(.ElseClauseOpt) } },
     .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.eol), n(.Block) } },
+    // `else if x is Variant |r|` — capture form
+    .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.vertical_bar), t(.id), t(.vertical_bar), t(.eol), n(.Block) } },
     .{ .lhs = .ElseClauseOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ElseClauseOpt, .rhs = &.{ t(.kw_else), t(.eol), n(.Block) } },
 

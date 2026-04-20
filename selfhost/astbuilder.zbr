@@ -143,6 +143,15 @@ def stripCharQuotes(text as str) as str
         return parts.at(1)
     return text
 
+# Returns the ident name of an Expr if it is Expr.ident, nil otherwise.
+# Takes Expr by value so callers with ^Expr get auto-deref at the call site.
+def getObjectIdentName(e as Expr) as str?
+    branch e
+        on Expr.ident as id
+            return id.name
+        else
+            return nil
+
 # ── ASTBuilder ────────────────────────────────────────────────────────────────
 
 class ASTBuilder
@@ -361,7 +370,9 @@ class ASTBuilder
                 var else_opt as List(Stmt)? = nil
                 if pif.else_stmts.len > 0
                     else_opt = else_stmts_built
-                return Stmt.if_(StmtIf(zspan(), cond_expr, then_stmts, else_ifs, else_opt))
+                var si = StmtIf(zspan(), cond_expr, then_stmts, else_ifs, else_opt)
+                si.is_capture = pif.is_capture
+                return Stmt.if_(si)
 
             on PNode.stmt_while as pw
                 const cond_expr = .buildExpr(pw.cond.at(0))?
@@ -593,17 +604,24 @@ class ASTBuilder
 
             on PNode.expr_binary as pb
                 const left_expr = .buildExpr(pb.left.at(0))?
-                const right_expr = .buildExpr(pb.right.at(0))?
-                # `expr is TypeName` — when RHS is a plain ident, emit a type-check
-                # node matching the Zig-backend lowering (src/astbuilder.zig:1884).
-                # `expr is otherExpr` would fall through to equality but we keep it
-                # strict for now — the corpus only uses the ident form.
+                var right_expr as Expr = .buildExpr(pb.right.at(0))?
+                # `expr is TypeName`       — plain ident RHS → class type-tag check.
+                # `expr is Union.variant`  — member RHS → union variant tag check.
                 if pb.op == "is"
                     branch right_expr
                         on Expr.ident as ei
                             return Expr.type_check(ExprTypeCheck(zspan(), left_expr, ei.name))
+                        on Expr.member as em
+                            # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
+                            var obj_name = getObjectIdentName(em.object)
+                            if obj_name != nil
+                                var tc = ExprTypeCheck(zspan(), left_expr, obj_name to!)
+                                tc.variant_name = em.member
+                                return Expr.type_check(tc)
+                            else
+                                raise "buildExpr: `is` member object must be a plain identifier"
                         else
-                            raise "buildExpr: `is` RHS must be a plain type identifier"
+                            raise "buildExpr: `is` RHS must be a plain identifier or Union.variant"
                 const op = .toBinaryOp(pb.op)?
                 return Expr.binary(ExprBinary(zspan(), op, left_expr, right_expr))
 

@@ -1,0 +1,36 @@
+union Shape
+    circle as float
+    rect as float
+
+class Program
+    shared
+        def main
+            var s as Shape = Shape.circle(3.14)
+
+            # ── plain payload: circle ───────────────────────────────────────
+            if s is Shape.circle |r|
+                print r          # 3.14
+            else
+                print "not circle"
+
+            # ── non-matching variant falls to else ──────────────────────────
+            var s2 as Shape = Shape.rect(10.0)
+            if s2 is Shape.circle |r|
+                print r
+            else
+                print "is rect"  # is rect
+
+            # ── else-if chain: first match wins ─────────────────────────────
+            if s2 is Shape.circle |r|
+                print r
+            else if s2 is Shape.rect |r|
+                print r          # 10.0
+            else
+                print "unknown"
+
+            # ── standalone `is` without capture still works ─────────────────
+            var ok = s is Shape.circle
+            print ok             # true
+
+            var ok2 = s2 is Shape.circle
+            print ok2            # false

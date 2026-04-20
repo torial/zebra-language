@@ -2616,15 +2616,60 @@ struct Generator
 
     # ── genIf ─────────────────────────────────────────────────────────────────
 
+    def genIsCaptureThen(cond_expr as Expr, cap as String, stmts as List(Stmt))
+        # Helper called from genIf when is_capture is set.
+        # Takes Expr by value so callers with ^Expr get auto-deref at the call site.
+        branch cond_expr
+            on Expr.type_check as tc
+                var variant = tc.type_name
+                if tc.variant_name != nil
+                    variant = tc.variant_name to!
+                var union_nm = ""
+                if tc.variant_name != nil
+                    union_nm = tc.type_name
+                w.emit("if (")
+                genExpr(tc.expr)
+                w.emit(" == .")
+                w.emit(variant)
+                w.emit(") {\n")
+                var ig = indented()
+                ig.writeIndent()
+                var variant_key = union_nm + "." + variant
+                if boxed_variants.contains_(variant_key)
+                    ig.w.emit("const " + cap + "_ptr = ")
+                    ig.genExpr(tc.expr)
+                    ig.w.emit("." + variant + ";\n")
+                    ig.writeIndent()
+                    ig.w.emit("const " + cap + " = " + cap + "_ptr.*;\n")
+                else
+                    ig.w.emit("const " + cap + " = ")
+                    ig.genExpr(tc.expr)
+                    ig.w.emit("." + variant + ";\n")
+                ig.genStmts(stmts)
+            else
+                # Fallback: emit a plain if (should not happen for well-formed is-capture)
+                w.emit("if (")
+                genExpr(cond_expr)
+                w.emit(") {\n")
+                var ig2 = indented()
+                ig2.genStmts(stmts)
+
     def genIf(si as StmtIf)
         writeIndent()
-        w.emit("if (")
-        genExpr(si.cond)
-        w.emit(") {\n")
         var ig = indented()
-        ig.genStmts(si.then_stmts)
-        writeIndent()
-        w.emit("}")
+        if si.is_capture != nil
+            # `if x is Union.variant |r|` — emit tag check + payload binding
+            # si.cond is ^Expr; auto-deref passes Expr value to genIsCaptureThen
+            genIsCaptureThen(si.cond, si.is_capture to!, si.then_stmts)
+            writeIndent()
+            w.emit("}")
+        else
+            w.emit("if (")
+            genExpr(si.cond)
+            w.emit(") {\n")
+            ig.genStmts(si.then_stmts)
+            writeIndent()
+            w.emit("}")
         for ei in si.else_ifs
             w.emit(" else if (")
             genExpr(ei.cond)
@@ -3996,10 +4041,18 @@ struct Generator
                     ti += 1
                 w.emit("}")
             on Expr.type_check as tc2
-                # expr is TypeName → check _type_tag
-                genExpr(tc2.expr)
-                w.emit("._type_tag == _ttag_")
-                w.emit(tc2.type_name)
+                if tc2.variant_name != nil
+                    # Union variant check: expr == .variant
+                    w.emit("(")
+                    genExpr(tc2.expr)
+                    w.emit(" == .")
+                    w.emit(tc2.variant_name to!)
+                    w.emit(")")
+                else
+                    # Class type-tag check: expr._type_tag == _ttag_TypeName
+                    genExpr(tc2.expr)
+                    w.emit("._type_tag == _ttag_")
+                    w.emit(tc2.type_name)
             on Expr.except_ as ex
                 # struct update: blk: { var _tmp = base; _tmp.f = v; break :blk _tmp; }
                 w.emit("blk: { var _except_tmp = ")

@@ -889,6 +889,8 @@ def walkStmt(s as Stmt, ctx as InferCtx)
     branch s
         on Stmt.if_ as si
             walkExpr(si.cond, ctx)
+            if si.is_capture != nil
+                ctx.bind(si.is_capture to!, Type_.unknown_)
             walkStmts(si.then_stmts, ctx)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)

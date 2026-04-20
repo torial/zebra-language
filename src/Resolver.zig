@@ -298,10 +298,26 @@ const Resolver = struct {
         switch (stmt) {
             .if_      => |s| {
                 try r.walkExpr(s.cond, scope);
-                try r.walkStmts(s.then_body, scope);
+                if (s.is_capture) |cap| {
+                    var body_scope = try r.table.newScope(.block, scope);
+                    const sym = try r.table.arena.create(Symbol);
+                    sym.* = .{ .name = cap, .kind = .local, .decl = .{ .catch_binding = s.span } };
+                    _ = try body_scope.define(cap, sym);
+                    try r.walkStmts(s.then_body, body_scope);
+                } else {
+                    try r.walkStmts(s.then_body, scope);
+                }
                 for (s.else_ifs) |ei| {
                     try r.walkExpr(ei.cond, scope);
-                    try r.walkStmts(ei.body, scope);
+                    if (ei.is_capture) |cap| {
+                        var body_scope = try r.table.newScope(.block, scope);
+                        const sym = try r.table.arena.create(Symbol);
+                        sym.* = .{ .name = cap, .kind = .local, .decl = .{ .catch_binding = s.span } };
+                        _ = try body_scope.define(cap, sym);
+                        try r.walkStmts(ei.body, body_scope);
+                    } else {
+                        try r.walkStmts(ei.body, scope);
+                    }
                 }
                 if (s.else_body) |eb| try r.walkStmts(eb, scope);
             },

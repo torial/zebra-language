@@ -223,6 +223,19 @@ branch e
 - `^T` payload: the pointer is transparent — the branch-binding variable has type `T`, not `*T`.
 - `else` with `pass` is required for non-exhaustive branches.
 
+```zebra
+# `if x is Union.variant |r|` — inline single-variant check with payload binding
+var e = Expr.int_(42)
+if e is Expr.int_ |n|
+    print "got int: ${n}"    # n is the int payload
+else
+    print "not int"
+
+# Standalone `is` check (no binding):
+var ok = e is Expr.int_          # true — union variant check
+var ok2 = e is MyClass           # true — class type-tag check
+```
+
 ---
 
 ## 10. Collections

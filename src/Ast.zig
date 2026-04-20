@@ -332,6 +332,8 @@ pub const Stmt = union(enum) {
 pub const StmtIf = struct {
     span: Span,
     cond: *Expr,
+    /// Non-null for `if x is Variant |r|` — the capture binding name.
+    is_capture: ?[]const u8 = null,
     then_body: []const Stmt,
     /// Each subsequent `else if`.
     else_ifs: []const ElseIf,
@@ -342,6 +344,8 @@ pub const StmtIf = struct {
 pub const ElseIf = struct {
     span: Span,
     cond: *Expr,
+    /// Non-null for `else if x is Variant |r|` — the capture binding name.
+    is_capture: ?[]const u8 = null,
     body: []const Stmt,
 };
 
@@ -742,10 +746,13 @@ pub const ExprCast = struct {
 /// `expr is TypeName` — runtime type-ID check; evaluates to bool.
 /// The TypeChecker and CodeGen cooperate to verify TypeName is a known class
 /// and emit `expr._type_id == _tid_TypeName`.
+/// When `variant_name` is non-null (e.g. `x is Shape.circle`), this is a
+/// union-variant tag check; CodeGen emits `(expr == .variant_name)`.
 pub const ExprTypeCheck = struct {
     span: Span,
     expr: *Expr,
     type_name: []const u8,
+    variant_name: ?[]const u8 = null,
 };
 
 /// `expr to?` — return nilable, nil if cast fails.

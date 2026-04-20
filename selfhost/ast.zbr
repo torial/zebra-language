@@ -406,16 +406,19 @@ union Stmt
 struct ElseIf
     var span as Span
     var cond as Expr
+    var is_capture as String?
     var stmts as List(Stmt)
 
     cue init(span as Span, cond as Expr, stmts as List(Stmt))
         this.span = span
         this.cond = cond
+        this.is_capture = nil
         this.stmts = stmts
 
 struct StmtIf
     var span as Span
     var cond as ^Expr
+    var is_capture as String?
     var then_stmts as List(Stmt)
     var else_ifs as List(ElseIf)
     var else_stmts as List(Stmt)?
@@ -423,6 +426,7 @@ struct StmtIf
     cue init(span as Span, cond as ^Expr, then_stmts as List(Stmt), else_ifs as List(ElseIf), else_stmts as List(Stmt)?)
         this.span = span
         this.cond = cond
+        this.is_capture = nil
         this.then_stmts = then_stmts
         this.else_ifs = else_ifs
         this.else_stmts = else_stmts
@@ -888,17 +892,20 @@ struct ExprCast
         this.expr = expr
         this.target = target
 
-# type check: expr is TypeName
+# type check: expr is TypeName  /  expr is Union.variant
+# variant_name is nil for class type checks, non-nil for union variant checks
 
 struct ExprTypeCheck
     var span as Span
     var expr as ^Expr
     var type_name as String
+    var variant_name as String?
 
     cue init(span as Span, expr as ^Expr, type_name as String)
         this.span = span
         this.expr = expr
         this.type_name = type_name
+        this.variant_name = nil
 
 # nilable / nil-check operators
 

@@ -6936,6 +6936,81 @@ const Generator = struct {
 
     fn genIf(g: Generator, s: *Ast.StmtIf) anyerror!void {
         try g.writeIndent();
+        // `if x is Union.variant |r|` — emit tag check + payload binding.
+        if (s.is_capture) |cap| {
+            // cond must be type_check with variant_name set (x is Union.variant).
+            const tc_node = s.cond.type_check;
+            const variant = tc_node.variant_name orelse tc_node.type_name;
+            const union_nm = if (tc_node.variant_name != null) tc_node.type_name else "";
+            try g.w.writeAll("if (");
+            try g.genExpr(tc_node.expr);
+            try g.w.print(" == .{s}) {{\n", .{variant});
+            const pk = if (union_nm.len > 0)
+                g.unionPayloadKind(union_nm, variant)
+            else
+                PayloadKind.other;
+            const bg = g.indented();
+            try bg.writeIndent();
+            if (pk == .ref_payload) {
+                try bg.w.print("const {s}_ptr = ", .{cap});
+                try bg.genExpr(tc_node.expr);
+                try bg.w.print(".{s};\n", .{variant});
+                try bg.writeIndent();
+                try bg.w.print("const {s} = {s}_ptr.*;\n", .{ cap, cap });
+            } else {
+                try bg.w.print("const {s} = ", .{cap});
+                try bg.genExpr(tc_node.expr);
+                try bg.w.print(".{s};\n", .{variant});
+            }
+            try bg.genStmts(s.then_body);
+            try g.writeIndent();
+            try g.w.writeAll("}");
+            for (s.else_ifs) |ei| {
+                if (ei.is_capture) |ei_cap| {
+                    const ei_tc = ei.cond.type_check;
+                    const ei_variant = ei_tc.variant_name orelse ei_tc.type_name;
+                    const ei_union = if (ei_tc.variant_name != null) ei_tc.type_name else "";
+                    try g.w.writeAll(" else if (");
+                    try g.genExpr(ei_tc.expr);
+                    try g.w.print(" == .{s}) {{\n", .{ei_variant});
+                    const ei_pk = if (ei_union.len > 0)
+                        g.unionPayloadKind(ei_union, ei_variant)
+                    else
+                        PayloadKind.other;
+                    const ei_bg = g.indented();
+                    try ei_bg.writeIndent();
+                    if (ei_pk == .ref_payload) {
+                        try ei_bg.w.print("const {s}_ptr = ", .{ei_cap});
+                        try ei_bg.genExpr(ei_tc.expr);
+                        try ei_bg.w.print(".{s};\n", .{ei_variant});
+                        try ei_bg.writeIndent();
+                        try ei_bg.w.print("const {s} = {s}_ptr.*;\n", .{ ei_cap, ei_cap });
+                    } else {
+                        try ei_bg.w.print("const {s} = ", .{ei_cap});
+                        try ei_bg.genExpr(ei_tc.expr);
+                        try ei_bg.w.print(".{s};\n", .{ei_variant});
+                    }
+                    try ei_bg.genStmts(ei.body);
+                    try g.writeIndent();
+                    try g.w.writeAll("}");
+                } else {
+                    try g.w.writeAll(" else if (");
+                    try g.genExpr(ei.cond);
+                    try g.w.writeAll(") {\n");
+                    try g.indented().genStmts(ei.body);
+                    try g.writeIndent();
+                    try g.w.writeAll("}");
+                }
+            }
+            if (s.else_body) |eb| {
+                try g.w.writeAll(" else {\n");
+                try g.indented().genStmts(eb);
+                try g.writeIndent();
+                try g.w.writeAll("}");
+            }
+            try g.w.writeAll("\n");
+            return;
+        }
         try g.w.writeAll("if (");
         try g.genExpr(s.cond);
         try g.w.writeAll(") {\n");
@@ -7449,6 +7524,36 @@ const Generator = struct {
         try g.w.writeAll("}\n");
     }
 
+    // Classifies the payload of a union variant for binding purposes.
+    //   .ref_payload  → `^T`: Zig switch gives *T; emit `const name = name_ptr.*`.
+    //   .list_payload → `List(T)`: inject list_loop_vars so nested for-in uses .items.
+    //   .other        → plain value; no special treatment.
+    const PayloadKind = enum { ref_payload, list_payload, other };
+
+    fn unionPayloadKind(g: Generator, union_name: []const u8, variant_name: []const u8) PayloadKind {
+        if (g.union_decls.get(union_name)) |du| {
+            for (du.variants) |vr| {
+                if (std.mem.eql(u8, vr.name, variant_name)) {
+                    if (vr.payload) |pl| {
+                        if (pl == .ref_to) return .ref_payload;
+                        if (pl == .generic and std.mem.eql(u8, pl.generic.name, "List"))
+                            return .list_payload;
+                    }
+                    return .other;
+                }
+            }
+        } else if (g.exposed_unions.get(union_name)) |mod_alias| {
+            if (g.imported_modules) |imp| {
+                if (imp.get(mod_alias)) |iface| {
+                    const bv_key = std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ union_name, variant_name }) catch return .other;
+                    defer g.alloc.free(bv_key);
+                    if (iface.boxed_variants.contains(bv_key)) return .ref_payload;
+                }
+            }
+        }
+        return .other;
+    }
+
     fn genBranch(g: Generator, s: *Ast.StmtBranch) anyerror!void {
         // Detect union dispatch: any on-clause has a binding name.
         const is_union = for (s.on) |on| { if (on.binding != null) break true; } else false;
@@ -7699,53 +7804,22 @@ const Generator = struct {
             }
             if (is_union) {
                 if (on.binding) |bname| {
-                    // Determine payload kind for this variant:
-                    //   .ref_payload  → ^T: Zig binding gives *T; emit auto-deref local.
-                    //   .list_payload → List(T): inject list_loop_vars so nested for-in
-                    //                   knows to iterate via .items.
-                    //   .other        → plain value payload; no special treatment.
-                    const PayloadKind = enum { ref_payload, list_payload, other };
-                    const payload_kind: PayloadKind = blk: {
-                        const v = on.values[0];
-                        const variant_name: []const u8 = if (v.* == .member)
-                            v.member.member
-                        else if (v.* == .call and v.call.callee.* == .member)
-                            v.call.callee.member.member
-                        else break :blk .other;
-                        // Extract union type name from the value expression object
-                        // (e.g. `Type.optional` → "Type", `Type.optional()` → "Type").
-                        const union_name: []const u8 = if (v.* == .member and v.member.object.* == .ident)
-                            v.member.object.ident.name
-                        else if (v.* == .call and v.call.callee.* == .member and
-                                 v.call.callee.member.object.* == .ident)
-                            v.call.callee.member.object.ident.name
-                        else break :blk .other;
-                        if (g.union_decls.get(union_name)) |du| {
-                            // Same-module union: inspect AST payload directly.
-                            for (du.variants) |vr| {
-                                if (std.mem.eql(u8, vr.name, variant_name)) {
-                                    if (vr.payload) |pl| {
-                                        if (pl == .ref_to) break :blk .ref_payload;
-                                        if (pl == .generic and
-                                            std.mem.eql(u8, pl.generic.name, "List"))
-                                            break :blk .list_payload;
-                                    }
-                                    break :blk .other;
-                                }
-                            }
-                        } else if (g.exposed_unions.get(union_name)) |mod_alias| {
-                            // Cross-module union: consult boxed_variants in imported interface.
-                            // boxed_variants key = "UnionName.variantName" → inner type name (non-null iff ^T).
-                            if (g.imported_modules) |imp| {
-                                if (imp.get(mod_alias)) |iface| {
-                                    const bv_key = std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ union_name, variant_name }) catch break :blk .other;
-                                    defer g.alloc.free(bv_key);
-                                    if (iface.boxed_variants.contains(bv_key)) break :blk .ref_payload;
-                                }
-                            }
-                        }
-                        break :blk .other;
-                    };
+                    const v = on.values[0];
+                    const variant_name: []const u8 = if (v.* == .member)
+                        v.member.member
+                    else if (v.* == .call and v.call.callee.* == .member)
+                        v.call.callee.member.member
+                    else "";
+                    const union_name: []const u8 = if (v.* == .member and v.member.object.* == .ident)
+                        v.member.object.ident.name
+                    else if (v.* == .call and v.call.callee.* == .member and
+                             v.call.callee.member.object.* == .ident)
+                        v.call.callee.member.object.ident.name
+                    else "";
+                    const payload_kind = if (variant_name.len > 0 and union_name.len > 0)
+                        g.unionPayloadKind(union_name, variant_name)
+                    else
+                        PayloadKind.other;
                     if (payload_kind == .ref_payload) {
                         // Pointer payload: |bname_ptr| { const bname = bname_ptr.*; ... }
                         try bg.w.print(" => |{s}_ptr| {{\n", .{bname});
@@ -8627,16 +8701,17 @@ const Generator = struct {
                 try g.w.writeAll(" }");
             },
 
-            // `expr is TypeName` — runtime type-tag check.
-            // Non-generic: emits (expr._type_tag == _ttag_TypeName)
-            //   Upper bits of _ttag are 0, so full u64 compare works.
-            // Generic bare check (Phase 3): will emit (expr._type_tag & 0xFFFFFFFF) == _ttag_TypeName
-            // Parameterised (Phase 3): will emit (expr._type_tag == <combined u64 literal>)
+            // `expr is TypeName`       — class runtime type-tag check.
+            // `expr is Union.variant`  — union variant tag check.
             // Parenthesised so unary `not` and other operators bind correctly.
             .type_check => |e| {
                 try g.w.writeAll("(");
                 try g.genExpr(e.expr);
-                try g.w.print("._type_tag == _ttag_{s})", .{e.type_name});
+                if (e.variant_name) |vname| {
+                    try g.w.print(" == .{s})", .{vname});
+                } else {
+                    try g.w.print("._type_tag == _ttag_{s})", .{e.type_name});
+                }
             },
         }
     }

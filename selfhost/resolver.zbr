@@ -207,6 +207,9 @@ class Resolver
             on PNode.stmt_if as i
                 for expr in i.cond
                     .resolveExpr(expr)
+                if i.is_capture != nil
+                    this.method_scope.put(i.is_capture to!, 4)
+                    this.symbol_count = this.symbol_count + 1
                 .resolveStmts(i.then_stmts)
                 .resolveStmts(i.else_stmts)
             on PNode.stmt_while as w

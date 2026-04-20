@@ -274,10 +274,12 @@ struct PReturn
 
 struct PIf
     var cond as List(PNode)
+    var is_capture as String?
     var then_stmts as List(PNode)
     var else_stmts as List(PNode)
     cue init(cond as List(PNode), then_stmts as List(PNode), else_stmts as List(PNode))
         this.cond = cond
+        this.is_capture = nil
         this.then_stmts = then_stmts
         this.else_stmts = else_stmts
 
@@ -1250,6 +1252,14 @@ class Parser
     def parseIfStmt() as PNode throws
         .expectText("if")
         const cond_expr = .parseExpr()
+        # Optional capture binding: `if x is Variant |name|`
+        var capture_name as String? = nil
+        if this.textIs("|")
+            this.advance()
+            const cap = this.peek().text
+            this.advance()
+            .expectText("|")
+            capture_name = cap
         .skipEol()
         const then_stmts = .parseBlock()
         var else_stmts = List(PNode)()
@@ -1263,7 +1273,9 @@ class Parser
                 else_stmts = .parseBlock()
         var cond_list = List(PNode)()
         cond_list.add(cond_expr)
-        return PNode.stmt_if(PIf(cond_list, then_stmts, else_stmts))
+        var pif = PIf(cond_list, then_stmts, else_stmts)
+        pif.is_capture = capture_name
+        return PNode.stmt_if(pif)
 
     def parseWhileStmt() as PNode throws
         .expectText("while")
