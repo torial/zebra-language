@@ -2,6 +2,15 @@ union Shape
     circle as float
     rect as float
 
+struct Payload
+    var n as int
+    cue init(v as int)
+        n = v
+
+union Wrap
+    item as ^Payload
+    empty_
+
 class Program
     shared
         def main
@@ -34,3 +43,16 @@ class Program
 
             var ok2 = s2 is Shape.circle
             print ok2            # false
+
+            # ── boxed variant: ^T struct payload ────────────────────────────
+            var b as Wrap = Wrap.item(Payload(7))
+            if b is Wrap.item |p|
+                print p.n        # 7
+            else
+                print "none"
+
+            var e as Wrap = Wrap.empty_()
+            if e is Wrap.item |p|
+                print p.n
+            else
+                print "empty"    # empty

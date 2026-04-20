@@ -1438,52 +1438,92 @@ pub const Shape = union(enum) {
     rect: f64,
 };
 
+pub const Payload = struct {
+    n: i64 = undefined,
+    pub fn init(v: i64) Payload {
+        var self: Payload = undefined;
+// zbr:test/if_is_capture_test.zbr:8
+        self.n = v;
+        return self;
+    }
+
+};
+
+pub const Wrap = union(enum) {
+    item: *Payload,
+    empty_,
+};
+
 pub const Program = struct {
     _type_tag: u64 = _ttag_Program,
     pub fn main() void {
-// zbr:test/if_is_capture_test.zbr:8
+// zbr:test/if_is_capture_test.zbr:17
         const s: Shape = Shape{ .circle = 3.14 };
-// zbr:test/if_is_capture_test.zbr:11
+// zbr:test/if_is_capture_test.zbr:20
         if (s == .circle) {
             const r = s.circle;
-// zbr:test/if_is_capture_test.zbr:12
+// zbr:test/if_is_capture_test.zbr:21
             std.debug.print("{any}\n", .{r});
         } else {
-// zbr:test/if_is_capture_test.zbr:14
+// zbr:test/if_is_capture_test.zbr:23
             std.debug.print("{s}\n", .{"not circle"});
         }
-// zbr:test/if_is_capture_test.zbr:17
+// zbr:test/if_is_capture_test.zbr:26
         const s2: Shape = Shape{ .rect = 10.0 };
-// zbr:test/if_is_capture_test.zbr:18
+// zbr:test/if_is_capture_test.zbr:27
         if (s2 == .circle) {
             const r = s2.circle;
-// zbr:test/if_is_capture_test.zbr:19
+// zbr:test/if_is_capture_test.zbr:28
             std.debug.print("{any}\n", .{r});
         } else {
-// zbr:test/if_is_capture_test.zbr:21
+// zbr:test/if_is_capture_test.zbr:30
             std.debug.print("{s}\n", .{"is rect"});
         }
-// zbr:test/if_is_capture_test.zbr:24
+// zbr:test/if_is_capture_test.zbr:33
         if (s2 == .circle) {
             const r = s2.circle;
-// zbr:test/if_is_capture_test.zbr:25
+// zbr:test/if_is_capture_test.zbr:34
             std.debug.print("{any}\n", .{r});
         } else if (s2 == .rect) {
             const r = s2.rect;
-// zbr:test/if_is_capture_test.zbr:27
+// zbr:test/if_is_capture_test.zbr:36
             std.debug.print("{any}\n", .{r});
         } else {
-// zbr:test/if_is_capture_test.zbr:29
+// zbr:test/if_is_capture_test.zbr:38
             std.debug.print("{s}\n", .{"unknown"});
         }
-// zbr:test/if_is_capture_test.zbr:32
+// zbr:test/if_is_capture_test.zbr:41
         const ok = (s == .circle);
-// zbr:test/if_is_capture_test.zbr:33
+// zbr:test/if_is_capture_test.zbr:42
         std.debug.print("{}\n", .{ok});
-// zbr:test/if_is_capture_test.zbr:35
+// zbr:test/if_is_capture_test.zbr:44
         const ok2 = (s2 == .circle);
-// zbr:test/if_is_capture_test.zbr:36
+// zbr:test/if_is_capture_test.zbr:45
         std.debug.print("{}\n", .{ok2});
+// zbr:test/if_is_capture_test.zbr:48
+        const b: Wrap = Wrap{ .item = _box_1: { const _bp_1 = _allocator.create(Payload) catch @panic("OOM"); _bp_1.* = Payload.init(7); break :_box_1 _bp_1; } };
+// zbr:test/if_is_capture_test.zbr:49
+        if (b == .item) {
+            const p_ptr = b.item;
+            const p = p_ptr.*;
+// zbr:test/if_is_capture_test.zbr:50
+            std.debug.print("{any}\n", .{p.n});
+        } else {
+// zbr:test/if_is_capture_test.zbr:52
+            std.debug.print("{s}\n", .{"none"});
+        }
+// zbr:test/if_is_capture_test.zbr:54
+        const e: Wrap = Wrap{ .empty_ = {} };
+// zbr:test/if_is_capture_test.zbr:55
+        if (e == .item) {
+            const p_ptr = e.item;
+            const p = p_ptr.*;
+// zbr:test/if_is_capture_test.zbr:56
+            std.debug.print("{any}\n", .{p.n});
+        } else {
+// zbr:test/if_is_capture_test.zbr:58
+            std.debug.print("{s}\n", .{"empty"});
+        }
     }
 
     pub fn init() *Program {
