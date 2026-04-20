@@ -1,6 +1,7 @@
 class Program
     shared
         def main
+            # ── non-empty list ──────────────────────────────────────────
             var nums as List(int) = List()
             nums.add(1)
             nums.add(2)
@@ -21,3 +22,53 @@ class Program
             # all() — false when some element doesn't match
             var all_big = nums.all(def(x) = x > 2)
             print all_big    # false
+
+            # ── empty list ──────────────────────────────────────────────
+            var empty as List(int) = List()
+
+            # any() on empty — vacuously false
+            var empty_any = empty.any(def(x) = x > 0)
+            print empty_any  # false
+
+            # all() on empty — vacuously true
+            var empty_all = empty.all(def(x) = x > 0)
+            print empty_all  # true
+
+            # ── single-element list ─────────────────────────────────────
+            var one as List(int) = List()
+            one.add(5)
+
+            var one_any_t = one.any(def(x) = x == 5)
+            print one_any_t  # true
+
+            var one_any_f = one.any(def(x) = x == 0)
+            print one_any_f  # false
+
+            var one_all_t = one.all(def(x) = x > 0)
+            print one_all_t  # true
+
+            var one_all_f = one.all(def(x) = x > 10)
+            print one_all_f  # false
+
+            # ── str list (equality only — string methods inside anytype lambdas
+            #    are a known gap, covered separately) ───────────────────
+            var words as List(str) = List()
+            words.add("hello")
+            words.add("world")
+            words.add("hi")
+
+            # any matches exact value
+            var has_hello = words.any(def(s) = s == "hello")
+            print has_hello  # true
+
+            # none match missing value
+            var has_xyz = words.any(def(s) = s == "xyz")
+            print has_xyz    # false
+
+            # not all are "hello"
+            var all_hello = words.all(def(s) = s == "hello")
+            print all_hello  # false
+
+            # all are non-empty (compare to empty string)
+            var all_nonempty = words.all(def(s) = s != "")
+            print all_nonempty  # true

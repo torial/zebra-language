@@ -6181,9 +6181,9 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "any")) {
             if (args.len == 0) return false;
-            try g.w.writeAll("_zebra_list_any(@TypeOf(");
+            try g.w.writeAll("_zebra_list_any(std.meta.Child(@TypeOf(");
             try g.genExpr(obj);
-            try g.w.writeAll(".items[0]), ");
+            try g.w.writeAll(".items)), ");
             try g.genExpr(args[0].value);
             try g.w.writeAll(", ");
             try g.genExpr(obj);
@@ -6192,9 +6192,9 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "all")) {
             if (args.len == 0) return false;
-            try g.w.writeAll("_zebra_list_all(@TypeOf(");
+            try g.w.writeAll("_zebra_list_all(std.meta.Child(@TypeOf(");
             try g.genExpr(obj);
-            try g.w.writeAll(".items[0]), ");
+            try g.w.writeAll(".items)), ");
             try g.genExpr(args[0].value);
             try g.w.writeAll(", ");
             try g.genExpr(obj);
