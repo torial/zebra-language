@@ -167,6 +167,14 @@ fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (pred(item)) return true; }
+    return false;
+}
+fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (!pred(item)) return false; }
+    return true;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     const _r = std.process.Child.run(.{
@@ -7421,6 +7429,30 @@ pub const Generator = struct {
                 self.w.emit(", ");
                 self.genExpr(m.object.*);
                 self.w.emit(".items)");
+            }
+            return;
+        }
+        if (std.mem.eql(u8, mname, "any")) {
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+                self.w.emit("_zebra_list_any(std.meta.Child(@TypeOf(");
+                self.genExpr(m.object.*);
+                self.w.emit(".items)), ");
+                self.genExpr(args.items[@intCast(0)].value);
+                self.w.emit(", ");
+                self.genExpr(m.object.*);
+                self.w.emit(")");
+            }
+            return;
+        }
+        if (std.mem.eql(u8, mname, "all")) {
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+                self.w.emit("_zebra_list_all(std.meta.Child(@TypeOf(");
+                self.genExpr(m.object.*);
+                self.w.emit(".items)), ");
+                self.genExpr(args.items[@intCast(0)].value);
+                self.w.emit(", ");
+                self.genExpr(m.object.*);
+                self.w.emit(")");
             }
             return;
         }

@@ -712,15 +712,15 @@ const weave_rules: []const Rule = &.{
 
     // Project-level: weaves Aspect to all def Pattern
     .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.kw_all), t(.kw_def), n(.Atom), t(.eol),
+        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_def), n(.Atom), t(.eol),
     } },
     // Project-level: weaves Aspect to all class Pattern
     .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.kw_all), t(.kw_class), n(.Atom), t(.eol),
+        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_class), n(.Atom), t(.eol),
     } },
     // Project-level: weaves Aspect to all public def Pattern
     .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.kw_all), t(.kw_public), t(.kw_def), n(.Atom), t(.eol),
+        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_public), t(.kw_def), n(.Atom), t(.eol),
     } },
 };
 

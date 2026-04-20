@@ -167,6 +167,14 @@ fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (pred(item)) return true; }
+    return false;
+}
+fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (!pred(item)) return false; }
+    return true;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     const _r = std.process.Child.run(.{

@@ -159,8 +159,6 @@ union TokenKind
     kw_and
     kw_or
     kw_not
-    kw_any
-    kw_all
     kw_in
     kw_orelse
     kw_catch
@@ -325,10 +323,6 @@ class Keywords
             return TokenKind.kw_or()
         if word == "not"
             return TokenKind.kw_not()
-        if word == "any"
-            return TokenKind.kw_any()
-        if word == "all"
-            return TokenKind.kw_all()
         if word == "in"
             return TokenKind.kw_in()
         if word == "orelse"

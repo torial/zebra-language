@@ -234,6 +234,19 @@ class MultiCompiler
     # Duplicate methods (same name already present in root class) are filtered
     # out before merging — matching src/main.zig:415-443.
 
+    def hasDupMethod(method_name as str, root_members as List(PNode)) as bool
+        var i as int = 0
+        while i < root_members.count()
+            branch root_members.at(i)
+                on PNode.method_ as rm
+                    var rm_name as str = rm.name
+                    if rm_name == method_name
+                        return true
+                else
+                    pass
+            i = i + 1
+        return false
+
     def mergePartials_pmodule(pm as PModule, zbr_path as str) as PModule throws
         var base as str = zbr_path
         if zbr_path.contains("/")
@@ -306,23 +319,14 @@ class MultiCompiler
                                         var memi = 0
                                         while memi < pcls.members.count()
                                             var pmem = pcls.members.at(memi)
-                                            var is_dup as bool = false
+                                            var keep as bool = true
                                             branch pmem
                                                 on PNode.method_ as pmth
                                                     var pmth_name as str = pmth.name
-                                                    var rmi as int = 0
-                                                    while rmi < rcls.members.count()
-                                                        branch rcls.members.at(rmi)
-                                                            on PNode.method_ as rmth
-                                                                var rmth_name as str = rmth.name
-                                                                if rmth_name == pmth_name
-                                                                    is_dup = true
-                                                            else
-                                                                pass
-                                                        rmi = rmi + 1
+                                                    keep = not .hasDupMethod(pmth_name, rcls.members)
                                                 else
                                                     pass
-                                            if not is_dup
+                                            if keep
                                                 extra_members.add(pmem)
                                             memi = memi + 1
                                 else

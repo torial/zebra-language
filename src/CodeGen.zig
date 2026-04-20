@@ -1540,6 +1540,14 @@ const Generator = struct {
             \\    };
             \\    std.mem.sort(T, items, {}, _I.less);
             \\}
+            \\fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+            \\    for (list.items) |item| { if (pred(item)) return true; }
+            \\    return false;
+            \\}
+            \\fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+            \\    for (list.items) |item| { if (!pred(item)) return false; }
+            \\    return true;
+            \\}
             \\
         );
         // ── sys.run — subprocess spawn + capture ───────────────────────────
@@ -4588,6 +4596,7 @@ const Generator = struct {
                     .{ "add", {} }, .{ "at", {} }, .{ "remove", {} },
                     .{ "clear", {} }, .{ "contains", {} }, .{ "count", {} },
                     .{ "sort", {} }, .{ "sortBy", {} },
+                    .{ "any", {} }, .{ "all", {} },
                 });
                 if (list_methods.get(method) != null) {
                     return g.genListMethod(object, method, args);
@@ -6168,6 +6177,28 @@ const Generator = struct {
             try g.w.writeAll(", ");
             try g.genExpr(obj);
             try g.w.writeAll(".items)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "any")) {
+            if (args.len == 0) return false;
+            try g.w.writeAll("_zebra_list_any(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items[0]), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "all")) {
+            if (args.len == 0) return false;
+            try g.w.writeAll("_zebra_list_all(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items[0]), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
             return true;
         }
         return false;

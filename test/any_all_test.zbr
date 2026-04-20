@@ -1,0 +1,23 @@
+class Program
+    shared
+        def main
+            var nums as List(int) = List()
+            nums.add(1)
+            nums.add(2)
+            nums.add(3)
+
+            # any() — true when at least one element matches
+            var has_big = nums.any(def(x) = x > 2)
+            print has_big    # true
+
+            # any() — false when no element matches
+            var has_huge = nums.any(def(x) = x > 10)
+            print has_huge   # false
+
+            # all() — true when all elements match
+            var all_pos = nums.all(def(x) = x > 0)
+            print all_pos    # true
+
+            # all() — false when some element doesn't match
+            var all_big = nums.all(def(x) = x > 2)
+            print all_big    # false

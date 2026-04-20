@@ -167,6 +167,14 @@ fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (pred(item)) return true; }
+    return false;
+}
+fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+    for (list.items) |item| { if (!pred(item)) return false; }
+    return true;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     const _r = std.process.Child.run(.{
@@ -1705,6 +1713,27 @@ pub const MultiCompiler = struct {
         return result;
     }
 
+    pub fn hasDupMethod(self: *MultiCompiler, method_name: []const u8, root_members: std.ArrayList(PNode)) bool {
+        _ = self;
+        var i: i64 = 0;
+        while (_zebra_lt(i, @as(i64, @intCast(root_members.items.len)))) {
+            switch (root_members.items[@intCast(i)]) {
+                .method_ => |_ptr_rm| {
+                    const rm = _ptr_rm.*;
+                    const rm_name: []const u8 = rm.name;
+                    if (std.mem.eql(u8, rm_name, method_name)) {
+                        return true;
+                    }
+                },
+                else => |_| {
+                    // pass
+                },
+            }
+            i = (i + 1);
+        }
+        return false;
+    }
+
     pub fn mergePartials_pmodule(self: *MultiCompiler, pm: PModule, zbr_path: []const u8) anyerror!PModule {
         var base: []const u8 = zbr_path;
         if ((std.mem.indexOf(u8, zbr_path, "/") != null)) {
@@ -1804,33 +1833,18 @@ pub const MultiCompiler = struct {
                                         var memi: i64 = 0;
                                         while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
                                             const pmem = pcls.members.items[@intCast(memi)];
-                                            var is_dup: bool = false;
+                                            var keep: bool = true;
                                             switch (pmem) {
                                                 .method_ => |_ptr_pmth| {
                                                     const pmth = _ptr_pmth.*;
                                                     const pmth_name: []const u8 = pmth.name;
-                                                    var rmi: i64 = 0;
-                                                    while (_zebra_lt(rmi, @as(i64, @intCast(rcls.members.items.len)))) {
-                                                        switch (rcls.members.items[@intCast(rmi)]) {
-                                                            .method_ => |_ptr_rmth| {
-                                                                const rmth = _ptr_rmth.*;
-                                                                const rmth_name: []const u8 = rmth.name;
-                                                                if (std.mem.eql(u8, rmth_name, pmth_name)) {
-                                                                    is_dup = true;
-                                                                }
-                                                            },
-                                                            else => |_| {
-                                                                // pass
-                                                            },
-                                                        }
-                                                        rmi = (rmi + 1);
-                                                    }
+                                                    keep = (!self.hasDupMethod(pmth_name, rcls.members));
                                                 },
                                                 else => |_| {
                                                     // pass
                                                 },
                                             }
-                                            if ((!is_dup)) {
+                                            if (keep) {
                                                 extra_members.append(_allocator, pmem) catch @panic("OOM");
                                             }
                                             memi = (memi + 1);

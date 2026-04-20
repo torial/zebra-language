@@ -4798,6 +4798,26 @@ struct Generator
                 genExpr(m.object)
                 w.emit(".items)")
             return
+        if mname == "any"
+            if args.count() > 0
+                w.emit("_zebra_list_any(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
+        if mname == "all"
+            if args.count() > 0
+                w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
         # StrSet
         if mname == "contains_"
             genExpr(m.object)
