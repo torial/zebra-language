@@ -13,14 +13,14 @@ union Op
     neg
 
 # Top-level free function — exercises LANG-001 + LANG-002 together
-def opName(o as Op) as str
+def opName(o: Op): str
     branch o
         on Op.add return "add"
         on Op.sub return "sub"
         on Op.mul return "mul"
         on Op.neg return "neg"
 
-def opSymbol(o as Op) as str
+def opSymbol(o: Op): str
     branch o
         on Op.add return "+"
         on Op.sub return "-"
@@ -28,7 +28,7 @@ def opSymbol(o as Op) as str
         on Op.neg return "-"
 
 # Binary expression in the return value
-def opPriority(o as Op) as int
+def opPriority(o: Op): int
     branch o
         on Op.add return 1 + 0
         on Op.sub return 1 + 0
@@ -36,7 +36,7 @@ def opPriority(o as Op) as int
         on Op.neg return 3 + 0
 
 # Bool returns
-def isAdditive(o as Op) as bool
+def isAdditive(o: Op): bool
     branch o
         on Op.add return true
         on Op.sub return true
@@ -44,15 +44,15 @@ def isAdditive(o as Op) as bool
         on Op.neg return false
 
 class Calc
-    var scale as int
-    cue init(s as int)
+    var scale: int
+    cue init(s: int)
         scale = s
 
-    def scaled(n as int) as int
+    def scaled(n: int): int
         return n * scale
 
     # top-level free function called from inside a class method (LANG-001 + is_top_level check)
-    def describe(o as Op) as str
+    def describe(o: Op): str
         branch o
             on Op.add return opName(o)
             on Op.sub return opName(o)
@@ -60,7 +60,7 @@ class Calc
             on Op.neg return opName(o)
 
 # Blank-line sensitivity: blank lines between on-clauses (not before first or after last)
-def opCode(o as Op) as int
+def opCode(o: Op): int
     branch o
         on Op.add return 10
 

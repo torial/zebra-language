@@ -1,13 +1,13 @@
 class Dog
-    var name as str
-    var breed as str
-    cue init(n as str, b as str)
+    var name: str
+    var breed: str
+    cue init(n: str, b: str)
         name = n
         breed = b
 
 class Cat
-    var name as str
-    cue init(n as str)
+    var name: str
+    cue init(n: str)
         name = n
 
 class Main

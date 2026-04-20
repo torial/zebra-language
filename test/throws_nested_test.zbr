@@ -15,7 +15,7 @@ class Helper
         raise "from compute"
 
 class Engine
-    var helper as Helper
+    var helper: Helper
 
     cue init()
         this.helper = Helper()

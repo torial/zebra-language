@@ -1,7 +1,7 @@
 class Main
     shared
         def main
-            var s as str = "hello"
+            var s: str = "hello"
             var c = s[0]
             print c
             var sub = s[1..3]

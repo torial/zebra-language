@@ -1,7 +1,7 @@
 class Product
-    var name  as str
-    var price as float
-    var qty   as int
+    var name : str
+    var price: float
+    var qty  : int
 
 class Main
     shared

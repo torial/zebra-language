@@ -3,7 +3,7 @@
 # Bug history: when a user writes `use expose_dotted.lib exposing DottedLib`, the
 # TypeChecker registered the symbol with name "DottedLib" (the exposed name) but
 # looked it up in imported_modules under "DottedLib" — which fails because the map
-# uses the full DeclUse.path "expose_dotted.lib" as its key.
+# uses the full DeclUse.path "expose_dotted.lib": its key.
 #
 # The fix: use mod_sym.decl.use.path (the full path) for the imp.get() lookup, while
 # keeping mod_sym.name ("DottedLib") for the "ClassName.method" key in the methods table.

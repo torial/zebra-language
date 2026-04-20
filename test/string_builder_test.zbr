@@ -2,7 +2,7 @@ class Main
     shared
         def main
             # ── Basic append + build ──────────────────────────────────────
-            var sb as StringBuilder = StringBuilder()
+            var sb: StringBuilder = StringBuilder()
             sb.append("hello")
             sb.append(", ")
             sb.append("world")
@@ -16,12 +16,12 @@ class Main
             print sb.len()           # 0
 
             # ── Build a string in a loop (O(n), not O(n²)) ────────────────
-            var words as List(str) = List()
+            var words: List(str) = List()
             words.add("one")
             words.add("two")
             words.add("three")
-            var sb2 as StringBuilder = StringBuilder()
-            var first as bool = true
+            var sb2: StringBuilder = StringBuilder()
+            var first: bool = true
             for w in words
                 if not first
                     sb2.append(", ")
@@ -30,7 +30,7 @@ class Main
             print sb2.build()        # one, two, three
 
             # ── appendChar ────────────────────────────────────────────────
-            var sb3 as StringBuilder = StringBuilder()
+            var sb3: StringBuilder = StringBuilder()
             sb3.append("abc")
             sb3.appendChar(33)       # '!' = ASCII 33
             print sb3.build()        # abc!

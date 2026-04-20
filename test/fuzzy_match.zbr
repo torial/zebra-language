@@ -5,9 +5,9 @@
 
 class Program
     shared
-        def buildNgrams(text as str) as HashMap(str, int)
-            var ngrams as HashMap(str, int) = HashMap()
-            var clist as List(str) = List()
+        def buildNgrams(text: str): HashMap(str, int)
+            var ngrams: HashMap(str, int) = HashMap()
+            var clist: List(str) = List()
             for c in text.chars()
                 clist.add(c.toString())
             var i = 0
@@ -20,7 +20,7 @@ class Program
                 i = i + 1
             return ngrams
 
-        def intersection(a as HashMap(str, int), b as HashMap(str, int)) as int
+        def intersection(a: HashMap(str, int), b: HashMap(str, int)): int
             var total = 0
             for tri, ca in a
                 if b.contains(tri)
@@ -31,36 +31,36 @@ class Program
                         total = total + cb
             return total
 
-        def loadVerses(path as str) as List(str)
-            var verses as List(str) = List()
-            var lines as List(str) = File.readLines(path)
+        def loadVerses(path: str): List(str)
+            var verses: List(str) = List()
+            var lines: List(str) = File.readLines(path)
             var first = true
             for line in lines
                 if first
                     first = false
                 else
-                    var parts as List(str) = List()
+                    var parts: List(str) = List()
                     for p in line.split(",")
                         parts.add(p)
                     if parts.count() >= 3
-                        var text as str = parts.at(2)
+                        var text: str = parts.at(2)
                         if text.codePointCount() > 4
                             verses.add(text)
             return verses
 
         def main
-            var mark_verses as List(str) = Program.loadVerses("test/texts/MAR.csv")
-            var mat_verses as List(str) = Program.loadVerses("test/texts/MAT.csv")
+            var mark_verses: List(str) = Program.loadVerses("test/texts/MAR.csv")
+            var mat_verses: List(str) = Program.loadVerses("test/texts/MAT.csv")
             print "Mark: ${mark_verses.count()} verses"
             print "Mat: ${mat_verses.count()} verses"
 
             # Pre-build all Matthew ngrams once (avoids 643× redundant rebuilds)
-            var mat_ngrams as List(HashMap(str, int)) = List()
-            var mat_totals as List(int) = List()
-            var mat_idx as List(int) = List()
+            var mat_ngrams: List(HashMap(str, int)) = List()
+            var mat_totals: List(int) = List()
+            var mat_idx: List(int) = List()
             var pi = 0
             while pi < mat_verses.count()
-                var ptext as str = mat_verses.at(pi)
+                var ptext: str = mat_verses.at(pi)
                 var ptotal = ptext.codePointCount() - 2
                 if ptotal > 3
                     mat_ngrams.add(Program.buildNgrams(ptext))
@@ -71,18 +71,18 @@ class Program
 
             var mi = 0
             while mi < mark_verses.count()
-                var mtext as str = mark_verses.at(mi)
+                var mtext: str = mark_verses.at(mi)
                 var total_m = mtext.codePointCount() - 2
                 if total_m > 3
-                    var ngrams_m as HashMap(str, int) = Program.buildNgrams(mtext)
+                    var ngrams_m: HashMap(str, int) = Program.buildNgrams(mtext)
                     var ti = 0
                     while ti < mat_ngrams.count()
-                        var total_t as int = mat_totals.at(ti)
-                        var ngrams_t as HashMap(str, int) = mat_ngrams.at(ti)
+                        var total_t: int = mat_totals.at(ti)
+                        var ngrams_t: HashMap(str, int) = mat_ngrams.at(ti)
                         var inter = Program.intersection(ngrams_m, ngrams_t)
                         # score >= 0.7  ↔  20*inter >= 7*(total_m + total_t)
                         if 20 * inter >= 7 * (total_m + total_t)
-                            var orig_ti as int = mat_idx.at(ti)
+                            var orig_ti: int = mat_idx.at(ti)
                             print "MAR[${mi}] ~ MAT[${orig_ti}] inter=${inter} total=${total_m + total_t}"
                         ti = ti + 1
                 mi = mi + 1

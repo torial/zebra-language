@@ -30,18 +30,18 @@ enum TcSymbolKind
 # Named user-defined type: symbol name + kind.
 # Replaces Zig's *const Symbol -- uses name equality instead of pointer identity.
 struct TcSymRef
-    var name as str
-    var kind as TcSymbolKind
-    cue init(n as str, k as TcSymbolKind)
+    var name: str
+    var kind: TcSymbolKind
+    cue init(n: str, k: TcSymbolKind)
         name = n
         kind = k
 
 # Cross-module type reference: (module_alias, type_name).
 # Mirrors TypeChecker.Type.cross_module.
 struct TcCrossRef
-    var module    as str
-    var type_name as str
-    cue init(mod as str, tname as str)
+    var module   : str
+    var type_name: str
+    cue init(mod: str, tname: str)
         module    = mod
         type_name = tname
 
@@ -49,10 +49,10 @@ struct TcCrossRef
 # E.g. Stack(int) -> TcGenericRef("Stack", class_, [TcType.int_])
 # Mirrors TypeChecker.Type.generic_named.
 struct TcGenericRef
-    var name as str
-    var kind as TcSymbolKind
-    var args as List(TcType)
-    cue init(n as str, k as TcSymbolKind, a as List(TcType))
+    var name: str
+    var kind: TcSymbolKind
+    var args: List(TcType)
+    cue init(n: str, k: TcSymbolKind, a: List(TcType))
         name = n
         kind = k
         args = a
@@ -69,25 +69,25 @@ union TcType
     string_
     void_
 
-    # Sized numeric types (carry bit width as int payload)
-    int_n   as int
-    uint_n  as int
-    float_n as int
+    # Sized numeric types (carry bit width: int payload)
+    int_n  : int
+    uint_n : int
+    float_n: int
 
     # User-defined types
-    named         as TcSymRef
-    generic_named as TcGenericRef
+    named        : TcSymRef
+    generic_named: TcGenericRef
 
     # Compound / recursive
-    optional as ^TcType
-    tuple    as List(TcType)
+    optional: ^TcType
+    tuple   : List(TcType)
 
     # Cross-module instance
-    cross_module as TcCrossRef
+    cross_module: TcCrossRef
 
-    # Function types (carry name as str for diagnostics and equality)
-    fn_ref as str
-    fn_sig as str
+    # Function types (carry name: str for diagnostics and equality)
+    fn_ref: str
+    fn_sig: str
 
     # Stdlib opaque types
     string_builder
@@ -120,7 +120,7 @@ union TcType
 class TcTypes
     shared
         # Structural equality.
-        def eql(a as TcType, b as TcType) as bool
+        def eql(a: TcType, b: TcType): bool
             branch a
                 # Unit primitives.
                 on TcType.int_    return b == TcType.int_()
@@ -249,7 +249,7 @@ class TcTypes
         # a (source) can be assigned where b (target) is expected.
         # unknown on either side bypasses the check (error already reported).
         # All numeric types are mutually compatible -- Zig enforces range/precision.
-        def isAssignable(a as TcType, b as TcType) as bool
+        def isAssignable(a: TcType, b: TcType): bool
             if a == TcType.unknown_() or b == TcType.unknown_()
                 return true
 
@@ -305,7 +305,7 @@ class TcTypes
             return TcTypes.eql(a, b)
 
         # Human-readable type name for diagnostics.
-        def typeName(t as TcType) as str
+        def typeName(t: TcType): str
             branch t
                 on TcType.int_    return "int"
                 on TcType.uint_   return "uint"
@@ -354,7 +354,7 @@ class TcTypes
                 on TcType.timer_handle   return "TimerHandle"
                 on TcType.unknown_       return "<unknown>"
 
-        def isIntFamily(t as TcType) as bool
+        def isIntFamily(t: TcType): bool
             branch t
                 on TcType.int_
                     return true
@@ -363,7 +363,7 @@ class TcTypes
                 else
                     return false
 
-        def isUintFamily(t as TcType) as bool
+        def isUintFamily(t: TcType): bool
             branch t
                 on TcType.uint_
                     return true
@@ -372,7 +372,7 @@ class TcTypes
                 else
                     return false
 
-        def isFloatFamily(t as TcType) as bool
+        def isFloatFamily(t: TcType): bool
             branch t
                 on TcType.float_
                     return true
@@ -381,13 +381,13 @@ class TcTypes
                 else
                     return false
 
-        def isNumeric(t as TcType) as bool
+        def isNumeric(t: TcType): bool
             return TcTypes.isIntFamily(t) or TcTypes.isUintFamily(t) or TcTypes.isFloatFamily(t)
 
         # Extract the inner type from an optional, or unknown_ if not optional.
-        # Must live in tc_types.zbr (same module as TcType) so the ^T binding
+        # Must live in tc_types.zbr (same module: TcType) so the ^T binding
         # resolves without cross-module pointer-identity issues.
-        def optionalInner(t as TcType) as TcType
+        def optionalInner(t: TcType): TcType
             branch t
                 on TcType.optional as inner
                     return inner

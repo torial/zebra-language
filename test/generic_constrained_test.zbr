@@ -1,24 +1,24 @@
 interface Comparable
-    def compareTo(other as same) as int
+    def compareTo(other: same): int
 
 class Score implements Comparable
-    var value as int
+    var value: int
 
-    cue init(v as int)
+    cue init(v: int)
         value = v
 
-    def compareTo(other as same) as int
+    def compareTo(other: same): int
         return value - other.value
 
 # A generic class that constrains T to Comparable.
 # The TypeChecker enforces this at instantiation.
 class MinHeap(T where T implements Comparable)
-    var best as T
+    var best: T
 
-    cue init(seed as T)
+    cue init(seed: T)
         best = seed
 
-    def top as T
+    def top: T
         return best
 
 class Main

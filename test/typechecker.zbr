@@ -22,8 +22,8 @@ use tc_infer  exposing TcInfer, TcExpr
 use tc_check  exposing TcCheck, TcStmt
 
 class TypeChecker
-    var errors   as List(str)
-    var _scope   as TcScope
+    var errors  : List(str)
+    var _scope  : TcScope
     cue init()
         errors = List(str)()
         var s = TcScope()
@@ -32,49 +32,49 @@ class TypeChecker
 
     # -- Scope management -----------------------------------------------------
 
-    def enterScope(kind as TcScopeKind)
+    def enterScope(kind: TcScopeKind)
         _scope.push(kind)
 
     def leaveScope()
         _scope.pop()
 
-    def defineSymbol(name as str, kind as TcSymKind, type_ as TcType) as bool
+    def defineSymbol(name: str, kind: TcSymKind, type_: TcType): bool
         return _scope.define(name, TcSymbol(name, kind, type_))
 
-    def hasSymbol(name as str) as bool
+    def hasSymbol(name: str): bool
         return _scope.hasSymbol(name)
 
-    def symbolType(name as str) as TcType
+    def symbolType(name: str): TcType
         if _scope.hasSymbol(name)
             return _scope.lookup(name).type_
         return TcType.unknown_()
 
-    def currentDepth() as int
+    def currentDepth(): int
         return _scope.depth()
 
     # -- Type queries (thin wrappers) -----------------------------------------
 
-    def memberType(t as TcType, member as str) as TcType
+    def memberType(t: TcType, member: str): TcType
         return TcStdlib.memberType(t, member)
 
-    def staticCallType(class_ as str, method as str) as TcType
+    def staticCallType(class_: str, method: str): TcType
         return TcStdlib.staticCall(class_, method)
 
-    def typeName(t as TcType) as str
+    def typeName(t: TcType): str
         return TcTypes.typeName(t)
 
-    def isNumeric(t as TcType) as bool
+    def isNumeric(t: TcType): bool
         return TcTypes.isNumeric(t)
 
-    def isAssignable(src as TcType, dst as TcType) as bool
+    def isAssignable(src: TcType, dst: TcType): bool
         return TcTypes.isAssignable(src, dst)
 
     # -- Method body checking -------------------------------------------------
 
-    # Type-check a list of statements as a method body.
+    # Type-check a list of statements: a method body.
     # `ret_type` is the declared return type.
     # Errors are appended to TypeChecker.errors.
-    def checkMethod(ret_type as TcType, stmts as List(TcStmt))
+    def checkMethod(ret_type: TcType, stmts: List(TcStmt))
         _scope.push(TcScopeKind.method_)
         var infer = TcInfer(_scope)
         var chk   = TcCheck(infer, ret_type)
@@ -86,7 +86,7 @@ class TypeChecker
         _scope.pop()
 
     # True if no errors have been collected.
-    def ok() as bool
+    def ok(): bool
         return errors.count() == 0
 
     # Clear all collected errors.

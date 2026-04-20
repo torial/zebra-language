@@ -4,13 +4,13 @@ union Color
     blue
 
 class Palette
-    var name as str
+    var name: str
 
-    cue init(n as str)
+    cue init(n: str)
         name = n
 
-    def describe() as str
+    def describe(): str
         return "Palette:" + name
 
-shared def makeRed() as Color
+shared def makeRed(): Color
     return Color.red()

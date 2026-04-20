@@ -1,12 +1,12 @@
 union Shape
-    circle as float
-    rect as int
+    circle: float
+    rect: int
     point
 
 class App
     shared
         def main
-            var s as Shape = Shape.circle(3.14)
+            var s: Shape = Shape.circle(3.14)
             branch s
                 on Shape.circle as r
                     print r

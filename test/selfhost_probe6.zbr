@@ -1,7 +1,7 @@
 # selfhost_probe6.zbr -- Phase 6 (CodeGen) readiness probe
 #
 # Tests patterns heavy in codegen.zbr:
-#   1. """...""" multiline strings as values
+#   1. """...""" multiline strings: values
 #   2. struct except for context-copy (withOwner pattern)
 #   3. StringBuilder for incremental output
 #   4. branch with many union variants
@@ -11,7 +11,7 @@
 
 # -- 1. Multiline triple-quoted strings --
 
-def preamble() as str
+def preamble(): str
     return """
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -27,26 +27,26 @@ def test_multiline()
 # -- 2. Struct except for context-copy (withOwner pattern) --
 
 struct GenCtx
-    var owner   as str
-    var indent_ as int
-    var throws_ as bool
+    var owner  : str
+    var indent_: int
+    var throws_: bool
 
-    cue init(owner as str, indent_ as int, throws_ as bool)
+    cue init(owner: str, indent_: int, throws_: bool)
         this.owner   = owner
         this.indent_ = indent_
         this.throws_ = throws_
 
-    def withOwner(new_owner as str) as GenCtx
+    def withOwner(new_owner: str): GenCtx
         var copy = this except
             owner = new_owner
         return copy
 
-    def withIndent(delta as int) as GenCtx
+    def withIndent(delta: int): GenCtx
         var copy = this except
             indent_ = this.indent_ + delta
         return copy
 
-    def withThrows(t as bool) as GenCtx
+    def withThrows(t: bool): GenCtx
         var copy = this except
             throws_ = t
         return copy
@@ -66,7 +66,7 @@ def test_struct_except()
 # -- 3. StringBuilder for incremental output --
 
 def test_string_builder()
-    var b as StringBuilder = StringBuilder()
+    var b: StringBuilder = StringBuilder()
     b.append('pub fn ')
     b.append('init(')
     b.append(') void {')
@@ -79,24 +79,24 @@ def test_string_builder()
 # -- 4. branch with many union variants --
 
 union CgNode
-    int_lit   as str
-    float_lit as str
-    bool_lit  as bool
-    str_lit   as str
+    int_lit  : str
+    float_lit: str
+    bool_lit : bool
+    str_lit  : str
     nil_lit
-    ident_    as str
-    member_   as str
-    call_     as str
-    binary_   as str
-    unary_    as str
-    cast_     as str
-    if_expr   as str
+    ident_   : str
+    member_  : str
+    call_    : str
+    binary_  : str
+    unary_   : str
+    cast_    : str
+    if_expr  : str
     lambda_
-    list_lit  as int
-    dict_lit  as int
-    zig_lit   as str
+    list_lit : int
+    dict_lit : int
+    zig_lit  : str
 
-def emitNode(node as CgNode) as str
+def emitNode(node: CgNode): str
     branch node
         on CgNode.int_lit as t
             return t
@@ -148,7 +148,7 @@ def test_many_variants()
 
 # -- 5. Long if-else dispatch (genCall stdlib pattern) --
 
-def dispatchMethod(obj_type as str, method as str) as str
+def dispatchMethod(obj_type: str, method: str): str
     if obj_type == 'List'
         if method == 'add'
             return 'list.append'
@@ -190,29 +190,29 @@ def test_dispatch_chain()
 # -- 6. Struct methods returning struct copies --
 
 struct EmitCtx
-    var buf_   as str
-    var depth_ as int
+    var buf_  : str
+    var depth_: int
 
     cue init()
         buf_   = ''
         depth_ = 0
 
-    def write_(s as str) as EmitCtx
+    def write_(s: str): EmitCtx
         var copy = this except
             buf_ = buf_ + s
         return copy
 
-    def indented() as EmitCtx
+    def indented(): EmitCtx
         var copy = this except
             depth_ = depth_ + 1
         return copy
 
-    def dedented() as EmitCtx
+    def dedented(): EmitCtx
         var copy = this except
             depth_ = depth_ - 1
         return copy
 
-    def writeLine(s as str) as EmitCtx
+    def writeLine(s: str): EmitCtx
         var pad = '    '.repeat(depth_)
         var copy = this except
             buf_ = buf_ + pad + s + "\n"
@@ -234,22 +234,22 @@ def test_struct_return()
 # -- 7. Nested struct context propagation --
 
 struct SubCtx
-    var indent_ as int
-    var owner   as str
-    var out_    as str
+    var indent_: int
+    var owner  : str
+    var out_   : str
 
-    cue init(indent_ as int, owner as str)
+    cue init(indent_: int, owner: str)
         this.indent_ = indent_
         this.owner   = owner
         out_         = ''
 
-    def sub(extra as int) as SubCtx
+    def sub(extra: int): SubCtx
         var copy = this except
             indent_ = indent_ + extra
             out_    = ''
         return copy
 
-    def emit_(s as str) as SubCtx
+    def emit_(s: str): SubCtx
         var copy = this except
             out_ = out_ + s
         return copy

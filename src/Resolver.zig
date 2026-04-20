@@ -1082,7 +1082,7 @@ const TestResult = struct {
 test "resolve: primitive type in field" {
     var tr = try resolveSnippet(
         \\class Point
-        \\    var x as int
+        \\    var x: int
         \\
     );
     defer tr.deinit();
@@ -1100,7 +1100,7 @@ test "resolve: class reference in implements" {
         \\interface Printable
         \\    def render
         \\class Doc
-        \\    var name as String
+        \\    var name: String
         \\
     );
     defer tr.deinit();
@@ -1111,7 +1111,7 @@ test "resolve: class reference in implements" {
 test "resolve: method param type and return type" {
     var tr = try resolveSnippet(
         \\class Greeter
-        \\    def greet(name as String) as String
+        \\    def greet(name: String): String
         \\        return name
         \\
     );
@@ -1128,8 +1128,8 @@ test "resolve: method param type and return type" {
 test "resolve: local variable visible after declaration" {
     var tr = try resolveSnippet(
         \\class Foo
-        \\    def run as int
-        \\        var x as int = 0
+        \\    def run: int
+        \\        var x: int = 0
         \\        return x
         \\
     );
@@ -1146,7 +1146,7 @@ test "resolve: local variable visible after declaration" {
 test "resolve: unknown type emits error" {
     var tr = try resolveSnippet(
         \\class Foo
-        \\    var x as NoSuchType
+        \\    var x: NoSuchType
         \\
     );
     defer tr.deinit();
@@ -1159,7 +1159,7 @@ test "resolve: unknown type emits error" {
 test "resolve: unknown ident in body emits error" {
     var tr = try resolveSnippet(
         \\class Foo
-        \\    def run as int
+        \\    def run: int
         \\        return missing
         \\
     );
@@ -1172,9 +1172,9 @@ test "resolve: unknown ident in body emits error" {
 test "resolve: cross-class reference" {
     var tr = try resolveSnippet(
         \\class Animal
-        \\    var name as String
+        \\    var name: String
         \\class Zoo
-        \\    var resident as Animal
+        \\    var resident: Animal
         \\
     );
     defer tr.deinit();

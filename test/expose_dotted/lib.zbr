@@ -7,21 +7,21 @@
 
 class DottedLib
     shared
-        def greet() as str
+        def greet(): str
             return "hello from dotted lib"
 
-        def add(a as int, b as int) as int
+        def add(a: int, b: int): int
             return a + b
 
-        def makePoint() as Point
+        def makePoint(): Point
             return Point(3, 4)
 
 struct Point
-    var x as int
-    var y as int
-    cue init(px as int, py as int)
+    var x: int
+    var y: int
+    cue init(px: int, py: int)
         x = px
         y = py
 
-    def sum() as int
+    def sum(): int
         return x + y

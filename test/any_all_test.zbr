@@ -2,7 +2,7 @@ class Program
     shared
         def main
             # ── non-empty list ──────────────────────────────────────────
-            var nums as List(int) = List()
+            var nums: List(int) = List()
             nums.add(1)
             nums.add(2)
             nums.add(3)
@@ -24,7 +24,7 @@ class Program
             print all_big    # false
 
             # ── empty list ──────────────────────────────────────────────
-            var empty as List(int) = List()
+            var empty: List(int) = List()
 
             # any() on empty — vacuously false
             var empty_any = empty.any(def(x) = x > 0)
@@ -35,7 +35,7 @@ class Program
             print empty_all  # true
 
             # ── single-element list ─────────────────────────────────────
-            var one as List(int) = List()
+            var one: List(int) = List()
             one.add(5)
 
             var one_any_t = one.any(def(x) = x == 5)
@@ -52,7 +52,7 @@ class Program
 
             # ── str list (equality only — string methods inside anytype lambdas
             #    are a known gap, covered separately) ───────────────────
-            var words as List(str) = List()
+            var words: List(str) = List()
             words.add("hello")
             words.add("world")
             words.add("hi")

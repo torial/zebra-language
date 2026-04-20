@@ -1,16 +1,16 @@
-# Cross-module type test: use a type defined in another module as a field type.
+# Cross-module type test: use a type defined in another module: a field type.
 
 use crossmod_types_lib
 
 class Segment
-    var start as crossmod_types_lib.Point
-    var end_  as crossmod_types_lib.Point
+    var start: crossmod_types_lib.Point
+    var end_ : crossmod_types_lib.Point
 
-    cue init(sx as int, sy as int, ex as int, ey as int)
+    cue init(sx: int, sy: int, ex: int, ey: int)
         start = crossmod_types_lib.Point(sx, sy)
         end_  = crossmod_types_lib.Point(ex, ey)
 
-    def label as str
+    def label: str
         return "${start.show()} to ${end_.show()}"
 
 class Main

@@ -20,79 +20,79 @@ use tc_infer  exposing TcInfer, TcExpr
 
 # return expr? — return statement with optional value.
 struct TcStmtReturn
-    var value as ^TcExpr
-    cue init(v as TcExpr)
+    var value: ^TcExpr
+    cue init(v: TcExpr)
         value = v
 
-# var name as Type = expr — variable declaration.
+# var name: Type = expr — variable declaration.
 struct TcStmtVarDecl
-    var name       as str
-    var decl_type  as TcType
-    var init_expr  as ^TcExpr
-    cue init(n as str, t as TcType, e as TcExpr)
+    var name      : str
+    var decl_type : TcType
+    var init_expr : ^TcExpr
+    cue init(n: str, t: TcType, e: TcExpr)
         name      = n
         decl_type = t
         init_expr = e
 
 # target = rhs — assignment.
 struct TcStmtAssign
-    var target_name as str
-    var rhs_expr    as ^TcExpr
-    cue init(name as str, rhs as TcExpr)
+    var target_name: str
+    var rhs_expr   : ^TcExpr
+    cue init(name: str, rhs: TcExpr)
         target_name = name
         rhs_expr    = rhs
 
 # if cond { ... } — condition check only (body not walked here; kept simple).
 struct TcStmtIf
-    var cond as ^TcExpr
-    cue init(c as TcExpr)
+    var cond: ^TcExpr
+    cue init(c: TcExpr)
         cond = c
 
 # assert cond — boolean assertion.
 struct TcStmtAssert
-    var cond as ^TcExpr
-    cue init(c as TcExpr)
+    var cond: ^TcExpr
+    cue init(c: TcExpr)
         cond = c
 
 # ── TcStmt union ─────────────────────────────────────────────────────────────
 
 union TcStmt
     # return expr
-    return_ as TcStmtReturn
+    return_: TcStmtReturn
     # return (void / no value)
     return_void
-    # var name as Type = expr
-    var_decl as TcStmtVarDecl
+    # var name: Type = expr
+    var_decl: TcStmtVarDecl
     # name = rhs
-    assign as TcStmtAssign
+    assign: TcStmtAssign
     # if cond
-    if_ as TcStmtIf
+    if_: TcStmtIf
     # assert cond
-    assert_ as TcStmtAssert
+    assert_: TcStmtAssert
     # pass / break / continue — no type constraints
     pass_
 
 # ── TcCheck class ─────────────────────────────────────────────────────────────
 
 class TcCheck
-    var errors      as List(str)
-    var _infer      as TcInfer
-    var _ret_type   as TcType      # expected return type for the current method
-    cue init(infer as TcInfer, ret_type as TcType)
+    var errors     : List(str)
+    var _infer     : TcInfer
+    var _ret_type  : TcType      # expected return type for the current method
+    cue init(infer: TcInfer, ret_type: TcType)
         errors    = List(str)()
         _infer    = infer
         _ret_type = ret_type
 
     # True if no errors were recorded.
-    def ok() as bool
+    def ok(): bool
         return errors.count() == 0
 
     # Append a diagnostic string.
-    def report(msg as str)
+    def report(msg: str)
         errors.add(msg)
 
     # Type-check a single statement.
-    def checkStmt(s as TcStmt)
+    def checkStmt(s: TcStmt)
         branch s
             on TcStmt.return_ as r
                 var actual = _infer.inferExpr(r.value)
@@ -134,7 +134,7 @@ class TcCheck
                 pass
 
     # Type-check a list of statements.
-    def checkStmts(stmts as List(TcStmt))
+    def checkStmts(stmts: List(TcStmt))
         var i = 0
         while i < stmts.count()
             checkStmt(stmts.at(i))

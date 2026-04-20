@@ -2,18 +2,18 @@
 # List.append allocation issues are a separate pre-existing bug.
 
 class Counter
-    var n as int
+    var n: int
     cue init()
         n = 0
     def inc
         n = n + 1
-    def value as int
+    def value: int
         return n
 
 class Main
     shared
         def main
-            var x as int = 0
+            var x: int = 0
 
             # arena block: verify it compiles, runs, and exits cleanly
             arena
@@ -27,7 +27,7 @@ class Main
             assert x == 3
 
             # nested arena blocks
-            var y as int = 0
+            var y: int = 0
             arena
                 var a = Counter()
                 a.inc()

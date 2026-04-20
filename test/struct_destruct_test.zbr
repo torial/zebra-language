@@ -1,11 +1,11 @@
 class Point
-    var x as int = 0
-    var y as int = 0
-    var z as int = 0
+    var x: int = 0
+    var y: int = 0
+    var z: int = 0
 
 class Person
-    var name as str = ""
-    var age as int = 0
+    var name: str = ""
+    var age: int = 0
 
 class Program
     shared

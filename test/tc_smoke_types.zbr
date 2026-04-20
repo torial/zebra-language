@@ -4,11 +4,11 @@ union TcType
     unknown
     int_
     str_
-    optional as ^TcType
+    optional: ^TcType
 
 class TcTypes
     shared
-        def describe(t as TcType) as str
+        def describe(t: TcType): str
             branch t
                 on TcType.unknown   return "unknown"
                 on TcType.int_      return "int"

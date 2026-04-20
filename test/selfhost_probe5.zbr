@@ -2,7 +2,7 @@
 #
 # Key questions answered by this probe:
 #   1. Can a union variant hold ^T (recursive self-referential payload)?
-#   2. When branch-matching `on Type.optional as inner`, can `inner` be
+#   2. When branch-matching `on Type.optional: inner`, can `inner` be
 #      passed to a function expecting Type (auto-deref of ^T)?
 #   3. Can List(Type) be stored inside a union variant (tuple case)?
 #   4. Can Type values be stored in and retrieved from HashMap(str, Type)?
@@ -23,20 +23,20 @@ union Type
     str_
     void_
     uint_
-    # Sized numeric (carry bit width as int payload)
-    int_n  as int
-    uint_n as int
+    # Sized numeric (carry bit width: int payload)
+    int_n : int
+    uint_n: int
     # Optional and error-union: recursive ^T
-    optional    as ^Type
-    error_union as ^Type
+    optional   : ^Type
+    error_union: ^Type
     # List element type: recursive ^T
-    list_ as ^Type
-    # Named user-defined type (symbol name as str)
-    named as str
+    list_: ^Type
+    # Named user-defined type (symbol name: str)
+    named: str
     # Tuple: list of element types
-    tuple as List(Type)
+    tuple: List(Type)
     # Cross-module: two strings
-    cross_module as CrossModuleRef
+    cross_module: CrossModuleRef
     # Stdlib opaque types (unit variants — no payload needed)
     string_builder
     http_response
@@ -45,9 +45,9 @@ union Type
 
 # Helper struct for cross_module variant (two-string payload).
 struct CrossModuleRef
-    var module    as str
-    var type_name as str
-    cue init(mod as str, tname as str)
+    var module   : str
+    var type_name: str
+    cue init(mod: str, tname: str)
         module    = mod
         type_name = tname
 
@@ -55,9 +55,9 @@ struct CrossModuleRef
 
 class Types
     shared
-        # Describe a Type as a human-readable string.
+        # Describe a Type: a human-readable string.
         # Tests: branch on all variants; recursive call with ^T payload; List(Type) iteration.
-        def describe(t as Type) as str
+        def describe(t: Type): str
             branch t
                 on Type.unknown          return "unknown"
                 on Type.int_             return "int"
@@ -97,8 +97,8 @@ class Types
                 on Type.gui_context      return "Gui"
 
         # Check two Types for equality.
-        # Tests: branch with guard pattern (on X as v if v == ...).
-        def eql(a as Type, b as Type) as bool
+        # Tests: branch with guard pattern (on X: v if v == ...).
+        def eql(a: Type, b: Type): bool
             branch a
                 on Type.int_            return b == Type.int_()
                 on Type.str_            return b == Type.str_()
@@ -128,43 +128,43 @@ class Types
 # Tests: HashMap(str, Type) — store and retrieve complex Type values.
 
 class TypeEnv
-    var types as HashMap(str, Type)
+    var types: HashMap(str, Type)
     cue init()
         types = HashMap()
 
-    def define(name as str, t as Type)
+    def define(name: str, t: Type)
         types.put(name, t)
 
-    def lookup(name as str) as Type
+    def lookup(name: str): Type
         if types.contains(name)
             return types.fetch(name)
         return Type.unknown()
 
-    def contains(name as str) as bool
+    def contains(name: str): bool
         return types.contains(name)
 
 # ── Mutual recursion with throws ──────────────────────────────────────────────
 # Tests: inferExpr / checkStmt mutual call pattern; both throw.
 
 union Expr
-    int_lit  as int
-    str_lit  as str
-    neg      as ^Expr
-    add      as ExprPair
+    int_lit : int
+    str_lit : str
+    neg     : ^Expr
+    add     : ExprPair
 
 struct ExprPair
-    var left  as ^Expr
-    var right as ^Expr
-    cue init(l as Expr, r as Expr)
+    var left : ^Expr
+    var right: ^Expr
+    cue init(l: Expr, r: Expr)
         left  = l
         right = r
 
 class Checker
-    var errors as List(str)
+    var errors: List(str)
     cue init()
         errors = List()
 
-    def inferExpr(e as Expr) as Type throws
+    def inferExpr(e: Expr): Type throws
         branch e
             on Expr.int_lit
                 return Type.int_()
@@ -184,7 +184,7 @@ class Checker
                     raise "add requires int right"
                 return Type.int_()
 
-    def checkExpr(e as Expr, expected as Type) throws
+    def checkExpr(e: Expr, expected: Type) throws
         var actual = inferExpr(e)?
         if not Types.eql(actual, expected)
             raise "type mismatch"

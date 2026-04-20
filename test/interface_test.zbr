@@ -1,23 +1,23 @@
 interface Greetable
-    def greet as str
-    def greetName(name as str) as str
+    def greet: str
+    def greetName(name: str): str
 
 class English implements Greetable
-    def greet as str
+    def greet: str
         return "Hello"
 
-    def greetName(name as str) as str
+    def greetName(name: str): str
         return "Hello, ".concat(name)
 
 class Spanish implements Greetable
-    def greet as str
+    def greet: str
         return "Hola"
 
-    def greetName(name as str) as str
+    def greetName(name: str): str
         return "Hola, ".concat(name)
 
 class Counter
-    var count as int
+    var count: int
 
     cue init()
         count = 0
@@ -25,7 +25,7 @@ class Counter
     def increment
         count = count + 1
 
-    def value as int
+    def value: int
         return count
 
 class Main

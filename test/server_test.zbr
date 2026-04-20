@@ -1,11 +1,11 @@
 class Main
     shared
         def main
-            var handler = def(req as HttpRequest) as HttpResponse
+            var handler = def(req: HttpRequest): HttpResponse
                 if req.path == "/"
                     return HttpResponse.ok("<h1>Hello from Zebra!</h1>")
                 if req.path == "/greet"
-                    var msg as str = "Hello, ${req.method} ${req.path}"
+                    var msg: str = "Hello, ${req.method} ${req.path}"
                     return HttpResponse.ok(msg)
                 if req.path == "/echo"
                     return HttpResponse.ok(req.content)

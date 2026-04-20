@@ -11,24 +11,24 @@ use Token exposing TokenKind
 # -- Named function-type alias for character predicates -------------------------
 #
 # `sig CharPred` lets module-level classifier functions be passed directly to
-# `scanWhile` without wrapping them in lambdas.  Any `shared def f(c as char)
-# as bool` at module scope is assignment-compatible with `CharPred`.
+# `scanWhile` without wrapping them in lambdas.  Any `shared def f(c: char)
+#: bool` at module scope is assignment-compatible with `CharPred`.
 
-sig CharPred(c as char) as bool
+sig CharPred(c: char): bool
 
 # -- Module-level character classifiers -----------------------------------------
 
-shared def isDigit(c as char) as bool
+shared def isDigit(c: char): bool
     branch c
         on c'0'..c'9'
             return true
         else
             return false
 
-shared def isDigitOrUnder(c as char) as bool
+shared def isDigitOrUnder(c: char): bool
     return isDigit(c) or c == c'_'
 
-shared def isHexDigit(c as char) as bool
+shared def isHexDigit(c: char): bool
     branch c
         on c'0'..c'9'
             return true
@@ -39,7 +39,7 @@ shared def isHexDigit(c as char) as bool
         else
             return false
 
-shared def isAlpha(c as char) as bool
+shared def isAlpha(c: char): bool
     branch c
         on c'a'..c'z'
             return true
@@ -48,7 +48,7 @@ shared def isAlpha(c as char) as bool
         else
             return false
 
-shared def isIdentContinue(c as char) as bool
+shared def isIdentContinue(c: char): bool
     return isAlpha(c) or isDigit(c) or c == c'_'
 
 # -------------------------------------------------------------------------------
@@ -60,20 +60,20 @@ union LineKind
     has_content
 
 class Lexer
-    var src              as str
-    var pos              as int
-    var line             as int
-    var lineStart        as int
-    var indentDepth      as int
-    var blockDepth       as int
-    var parenDepth       as int
-    var out              as List(Token.Token)
+    var src             : str
+    var pos             : int
+    var line            : int
+    var lineStart       : int
+    var indentDepth     : int
+    var blockDepth      : int
+    var parenDepth      : int
+    var out             : List(Token.Token)
     # Lambda-in-call-arg state machine
-    var inLambdaParams    as bool
-    var lambdaParamDepth  as int
-    var afterLambdaParams as bool
-    var lambdaBodyActive  as bool
-    var lambdaIndentLevel as int
+    var inLambdaParams   : bool
+    var lambdaParamDepth : int
+    var afterLambdaParams: bool
+    var lambdaBodyActive : bool
+    var lambdaIndentLevel: int
 
     cue init()
         src              = ""
@@ -90,7 +90,7 @@ class Lexer
         lambdaBodyActive  = false
         lambdaIndentLevel = 0
 
-    shared def tokenize(source as str) as List(Token.Token) throws
+    shared def tokenize(source: str): List(Token.Token) throws
         var lex = Lexer()
         lex.src = source
         lex.run()?
@@ -98,20 +98,20 @@ class Lexer
 
     # -- Low-level helpers ---------------------------------------------------
 
-    def col() as int
+    def col(): int
         return pos - lineStart + 1
 
-    def peek() as char
+    def peek(): char
         if pos < src.len
             return src[pos]
         return c'\x00'
 
-    def peek1() as char
+    def peek1(): char
         if pos + 1 < src.len
             return src[pos + 1]
         return c'\x00'
 
-    def peekAt(offset as int) as char
+    def peekAt(offset: int): char
         if pos + offset < src.len
             return src[pos + offset]
         return c'\x00'
@@ -121,18 +121,18 @@ class Lexer
         line      = line + 1
         lineStart = pos
 
-    def emit(kind as TokenKind, text as str, ln as int, cl as int)
+    def emit(kind: TokenKind, text: str, ln: int, cl: int)
         out.add(Token.Token(kind, text, ln, cl))
 
-    # Advance `pos` as long as `pred` holds on the current character.
+    # Advance `pos`: long as `pred` holds on the current character.
     # Uses the `CharPred` sig so any module-level classifier can be passed directly.
-    def scanWhile(pred as CharPred)
+    def scanWhile(pred: CharPred)
         while pos < src.len and pred(src[pos])
             pos = pos + 1
 
     # -- Line classification -------------------------------------------------
 
-    def classifyLine() as LineKind
+    def classifyLine(): LineKind
         var i = pos
         if i >= src.len or src[i] == c'\n'
             return LineKind.empty()
@@ -203,7 +203,7 @@ class Lexer
 
     # -- @ prefix -----------------------------------------------------------
 
-    def scanAt(ln as int, cl as int) throws
+    def scanAt(ln: int, cl: int) throws
         var c1 = peek1()
         if c1 == c'['
             pos = pos + 2
@@ -219,7 +219,7 @@ class Lexer
 
     # -- Identifiers, keywords, string prefixes ------------------------------
 
-    def scanIdentOrKeyword(ln as int, cl as int) throws
+    def scanIdentOrKeyword(ln: int, cl: int) throws
         var start = pos
         scanWhile(isIdentContinue)
         var word = src[start..pos]
@@ -295,7 +295,7 @@ class Lexer
 
     # -- Char literals  c'x'  c"x" ------------------------------------------
 
-    def scanCharLiteral(q as char, start as int, ln as int, cl as int) throws
+    def scanCharLiteral(q: char, start: int, ln: int, cl: int) throws
         pos = pos + 1
         while pos < src.len
             var c = src[pos]
@@ -315,7 +315,7 @@ class Lexer
 
     # -- Simple strings (raw, nosub, zig) ------------------------------------
 
-    def scanSimpleString(q as char, start as int, kind as TokenKind, ln as int, cl as int) throws
+    def scanSimpleString(q: char, start: int, kind: TokenKind, ln: int, cl: int) throws
         pos = pos + 1
         while pos < src.len
             var c = src[pos]
@@ -332,7 +332,7 @@ class Lexer
 
     # -- Interpolated and plain strings --------------------------------------
 
-    def scanString(q as char, ln as int, cl as int) throws
+    def scanString(q: char, ln: int, cl: int) throws
         if q == c'"' and peek1() == c'"' and peekAt(2) == c'"'
             scanDocString(ln, cl)?
             return
@@ -433,7 +433,7 @@ class Lexer
 
     # -- Doc strings  """...""" ----------------------------------------------
 
-    def scanDocString(ln as int, cl as int) throws
+    def scanDocString(ln: int, cl: int) throws
         var start = pos
         pos = pos + 3
 
@@ -468,7 +468,7 @@ class Lexer
 
     # -- Numeric literals ----------------------------------------------------
 
-    def scanNumericLiteral(ln as int, cl as int) throws
+    def scanNumericLiteral(ln: int, cl: int) throws
         var start = pos
 
         if src[pos] == c'0' and pos + 1 < src.len and src[pos + 1] == c'x'
@@ -537,7 +537,7 @@ class Lexer
 
     # -- Operators and punctuation -------------------------------------------
 
-    def scanOperator(ln as int, cl as int) throws
+    def scanOperator(ln: int, cl: int) throws
         var c  = peek()
         var c1 = peek1()
 

@@ -546,7 +546,7 @@ const method_rules: []const Rule = &.{
     } },
 
     .{ .lhs = .ReturnAnnotOpt, .rhs = &.{} }, // ε
-    .{ .lhs = .ReturnAnnotOpt, .rhs = &.{ t(.kw_as), n(.TypeRef) } },
+    .{ .lhs = .ReturnAnnotOpt, .rhs = &.{ t(.colon), n(.TypeRef) } },
 
     .{ .lhs = .ThrowsOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ThrowsOpt, .rhs = &.{ t(.kw_throws) } },
@@ -563,7 +563,7 @@ const var_member_rules: []const Rule = &.{
     } },
 
     .{ .lhs = .VarTypeOpt, .rhs = &.{} }, // ε
-    .{ .lhs = .VarTypeOpt, .rhs = &.{ t(.kw_as), n(.TypeRef) } },
+    .{ .lhs = .VarTypeOpt, .rhs = &.{ t(.colon), n(.TypeRef) } },
 
     .{ .lhs = .VarInitOpt, .rhs = &.{} }, // ε
     .{ .lhs = .VarInitOpt, .rhs = &.{ t(.assign), n(.Expr) } },
@@ -738,12 +738,12 @@ const param_rules: []const Rule = &.{
 
     // param : [mode] name [as Type] [= default]
     .{ .lhs = .Param, .rhs = &.{ n(.ParamModeOpt), t(.id) } },
-    .{ .lhs = .Param, .rhs = &.{ n(.ParamModeOpt), t(.id), t(.kw_as), n(.TypeRef) } },
+    .{ .lhs = .Param, .rhs = &.{ n(.ParamModeOpt), t(.id), t(.colon), n(.TypeRef) } },
     .{ .lhs = .Param, .rhs = &.{
         n(.ParamModeOpt), t(.id), t(.assign), n(.Expr),
     } },
     .{ .lhs = .Param, .rhs = &.{
-        n(.ParamModeOpt), t(.id), t(.kw_as), n(.TypeRef), t(.assign), n(.Expr),
+        n(.ParamModeOpt), t(.id), t(.colon), n(.TypeRef), t(.assign), n(.Expr),
     } },
 };
 
@@ -800,14 +800,14 @@ const stmt_rules: []const Rule = &.{
 
     // if / else if / else
     .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.eol), n(.Block), n(.IfTail) } },
-    // `if x is Variant |r|` — capture form
-    .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.vertical_bar), t(.id), t(.vertical_bar), t(.eol), n(.Block), n(.IfTail) } },
+    // `if x is Variant as r` — capture form
+    .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.kw_as), t(.id), t(.eol), n(.Block), n(.IfTail) } },
     .{ .lhs = .IfTail, .rhs = &.{} }, // ε — no else
     .{ .lhs = .IfTail, .rhs = &.{ n(.ElseIfClause), n(.IfTail) } },
     .{ .lhs = .IfTail, .rhs = &.{ n(.ElseClauseOpt) } },
     .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.eol), n(.Block) } },
-    // `else if x is Variant |r|` — capture form
-    .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.vertical_bar), t(.id), t(.vertical_bar), t(.eol), n(.Block) } },
+    // `else if x is Variant as r` — capture form
+    .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.kw_as), t(.id), t(.eol), n(.Block) } },
     .{ .lhs = .ElseClauseOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ElseClauseOpt, .rhs = &.{ t(.kw_else), t(.eol), n(.Block) } },
 
@@ -936,7 +936,7 @@ const stmt_rules: []const Rule = &.{
     } },
     // catch |e as ErrorInfo(ParseError)| — typed binding
     .{ .lhs = .CatchClause, .rhs = &.{
-        t(.kw_catch), t(.vertical_bar), t(.id), t(.kw_as), n(.TypeRef), t(.vertical_bar), t(.eol), n(.Block),
+        t(.kw_catch), t(.vertical_bar), t(.id), t(.colon), n(.TypeRef), t(.vertical_bar), t(.eol), n(.Block),
     } },
 };
 
@@ -1238,8 +1238,8 @@ const union_rules: []const Rule = &.{
     .{ .lhs = .UnionVariantList, .rhs = &.{ n(.UnionVariantList), t(.eol) } }, // blank lines
     // plain variant (no payload): name eol
     .{ .lhs = .UnionVariant, .rhs = &.{ t(.id), t(.eol) } },
-    // typed variant: name as TypeRef eol
-    .{ .lhs = .UnionVariant, .rhs = &.{ t(.id), t(.kw_as), n(.TypeRef), t(.eol) } },
+    // typed variant: name: TypeRef eol
+    .{ .lhs = .UnionVariant, .rhs = &.{ t(.id), t(.colon), n(.TypeRef), t(.eol) } },
 };
 
 // ── except struct-update ──────────────────────────────────────────────────────

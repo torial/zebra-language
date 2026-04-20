@@ -7,7 +7,7 @@ enum Direction
 class Main
     shared
         def main
-            var d as Direction = Direction.north
+            var d: Direction = Direction.north
             branch d
                 on Direction.north
                     print "north"
@@ -18,14 +18,14 @@ class Main
                 on Direction.west
                     print "west"
 
-            var d2 as Direction = Direction.east
+            var d2: Direction = Direction.east
             branch d2
                 on Direction.east, Direction.west
                     print "horizontal"
                 else
                     print "vertical"
 
-            var d3 as Direction = Direction.south
+            var d3: Direction = Direction.south
             branch d3
                 on Direction.north
                     print "going north"

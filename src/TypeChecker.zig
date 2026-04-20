@@ -2998,7 +2998,7 @@ const TestResult = struct {
 test "typecheck: int literal" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as int
+        \\    def run: int
         \\        return 42
         \\
     );
@@ -3009,7 +3009,7 @@ test "typecheck: int literal" {
 test "typecheck: string literal" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as String
+        \\    def run: String
         \\        return "hello"
         \\
     );
@@ -3032,7 +3032,7 @@ test "typecheck: bool literal in condition" {
 test "typecheck: param type flows to return" {
     var tr = try checkSnippet(
         \\class Greeter
-        \\    def greet(name as String) as String
+        \\    def greet(name: String): String
         \\        return name
         \\
     );
@@ -3043,8 +3043,8 @@ test "typecheck: param type flows to return" {
 test "typecheck: local var type matches init" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as int
-        \\        var x as int = 0
+        \\    def run: int
+        \\        var x: int = 0
         \\        return x
         \\
     );
@@ -3055,7 +3055,7 @@ test "typecheck: local var type matches init" {
 test "typecheck: return type mismatch" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as int
+        \\    def run: int
         \\        return "oops"
         \\
     );
@@ -3070,7 +3070,7 @@ test "typecheck: var decl type mismatch" {
     var tr = try checkSnippet(
         \\class Foo
         \\    def run
-        \\        var x as int = "hello"
+        \\        var x: int = "hello"
         \\
     );
     defer tr.deinit();
@@ -3081,9 +3081,9 @@ test "typecheck: var decl type mismatch" {
 test "typecheck: arithmetic on matching types" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as int
-        \\        var x as int = 1
-        \\        var y as int = 2
+        \\    def run: int
+        \\        var x: int = 1
+        \\        var y: int = 2
         \\        return x + y
         \\
     );
@@ -3094,9 +3094,9 @@ test "typecheck: arithmetic on matching types" {
 test "typecheck: arithmetic type mismatch" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as int
-        \\        var x as int = 1
-        \\        var y as float = 2.0
+        \\    def run: int
+        \\        var x: int = 1
+        \\        var y: float = 2.0
         \\        return x + y
         \\
     );
@@ -3107,7 +3107,7 @@ test "typecheck: arithmetic type mismatch" {
 test "typecheck: logical and on bools" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def run as bool
+        \\    def run: bool
         \\        return true and false
         \\
     );
@@ -3118,9 +3118,9 @@ test "typecheck: logical and on bools" {
 test "typecheck: call return type used in return" {
     var tr = try checkSnippet(
         \\class Foo
-        \\    def id(x as int) as int
+        \\    def id(x: int): int
         \\        return x
-        \\    def run as int
+        \\    def run: int
         \\        return id(1)
         \\
     );

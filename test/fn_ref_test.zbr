@@ -1,7 +1,7 @@
-shared def isAlpha(c as char) as bool
+shared def isAlpha(c: char): bool
     return (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z')
 
-shared def isDigit(c as char) as bool
+shared def isDigit(c: char): bool
     return c >= c'0' and c <= c'9'
 
 class FnRefTest

@@ -8,20 +8,20 @@
 # `this` lowers to `self: *Owner`).
 
 struct Box
-    var v as int
+    var v: int
 
-    cue init(v as int)
+    cue init(v: int)
         this.v = v
 
-    def bumped(delta as int) as Box
+    def bumped(delta: int): Box
         # this except — base is this, needs .* under new gate
         var b = this except
             v = v + delta
         return b
 
-    def viaLocal(delta as int) as Box
+    def viaLocal(delta: int): Box
         # local except — base is a value-typed local, must NOT get .*
-        var tmp as Box = this except
+        var tmp: Box = this except
             v = v + 0
         var out = tmp except
             v = tmp.v + delta

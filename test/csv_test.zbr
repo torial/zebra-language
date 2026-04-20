@@ -37,7 +37,7 @@ class Main
             assert csv.rowCount() - 1 == 3, "dataRows count"
 
             # for-in with where clause
-            var high as int = 0
+            var high: int = 0
             for row in csv.dataRows()
                 var s = csv.get(row, "score")
                 if s == "95" or s == "100"

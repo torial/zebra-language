@@ -1,6 +1,6 @@
 union Expr
-    num as int
-    add as int
+    num: int
+    add: int
     neg
 
 class Main

@@ -2,27 +2,27 @@
 #
 # Key design questions answered here:
 # 1. struct except with 10+ fields (incl. optional str?) — does it work?
-# 2. Class instance (reference type) as shared state across struct copies — confirmed
+# 2. Class instance (reference type): shared state across struct copies — confirmed
 # 3. Writer CLASS (not StringBuilder VALUE) enables shared output across context forks
 # 4. Optional str fields with `to!` unwrap in assertions
 # 5. Indentation via int field in struct
 
-# Writer: wraps StringBuilder as a CLASS so all Generator copies share the same buffer.
+# Writer: wraps StringBuilder: a CLASS so all Generator copies share the same buffer.
 # This is the Zebra equivalent of Zig's `w: std.io.AnyWriter` fat pointer.
 class Writer
-    var buf as StringBuilder
+    var buf: StringBuilder
 
     cue init()
         buf = StringBuilder()
 
-    def append(s as str)
+    def append(s: str)
         buf.append(s)
 
-    def result as str
+    def result: str
         return buf.build()
 
 class SharedState
-    var count as int
+    var count: int
 
     cue init()
         count = 0
@@ -31,17 +31,17 @@ class SharedState
         count += 1
 
 struct Generator
-    var w         as Writer       # shared output (class = reference type)
-    var state     as SharedState  # shared counter (class = reference type)
-    var owner     as str
-    var indent    as int
-    var in_method as bool
-    var is_struct as bool
-    var try_label as str?
-    var catch_var as str
-    var source    as str
+    var w        : Writer       # shared output (class = reference type)
+    var state    : SharedState  # shared counter (class = reference type)
+    var owner    : str
+    var indent   : int
+    var in_method: bool
+    var is_struct: bool
+    var try_label: str?
+    var catch_var: str
+    var source   : str
 
-    cue init(w as Writer, state as SharedState, owner as str, indent as int, in_method as bool, is_struct as bool, try_label as str?, catch_var as str, source as str)
+    cue init(w: Writer, state: SharedState, owner: str, indent: int, in_method: bool, is_struct: bool, try_label: str?, catch_var: str, source: str)
         this.w         = w
         this.state     = state
         this.owner     = owner
@@ -52,31 +52,31 @@ struct Generator
         this.catch_var = catch_var
         this.source    = source
 
-    def withOwner(new_owner as str) as Generator
+    def withOwner(new_owner: str): Generator
         var g = this except
             owner = new_owner
         return g
 
-    def withIndent as Generator
+    def withIndent: Generator
         var g = this except
             indent = indent + 1
         return g
 
-    def withMethod as Generator
+    def withMethod: Generator
         var g = this except
             in_method = true
         return g
 
-    def withTryLabel(label as str, err_var as str) as Generator
+    def withTryLabel(label: str, err_var: str): Generator
         var g = this except
             try_label = label
             catch_var = err_var
         return g
 
-    def emit(s as str)
+    def emit(s: str)
         w.append(s)
 
-    def emitIndented(s as str)
+    def emitIndented(s: str)
         var i = 0
         while i < indent
             w.append("    ")

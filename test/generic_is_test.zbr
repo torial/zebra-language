@@ -1,7 +1,7 @@
 class Box(T)
-    var value as T
+    var value: T
 
-    cue init(v as T)
+    cue init(v: T)
         value = v
 
 class Main

@@ -7,11 +7,11 @@ class Main
             print Math.TAU > 6.28 and Math.TAU < 6.29 # true
 
             # ── Trig ────────────────────────────────────────────────────────
-            var sin90 as float = Math.sin(Math.PI / 2.0)
+            var sin90: float = Math.sin(Math.PI / 2.0)
             print sin90 > 0.999                        # true (≈ 1.0)
-            var cos0 as float = Math.cos(0.0)
+            var cos0: float = Math.cos(0.0)
             print cos0 > 0.999                         # true (≈ 1.0)
-            var atan2_val as float = Math.atan2(1.0, 1.0)
+            var atan2_val: float = Math.atan2(1.0, 1.0)
             print atan2_val > 0.785 and atan2_val < 0.786   # true (≈ π/4)
 
             # ── Power / roots ───────────────────────────────────────────────

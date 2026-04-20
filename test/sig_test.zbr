@@ -1,16 +1,16 @@
-sig CharPred(c as char) as bool
+sig CharPred(c: char): bool
 
-shared def isAlpha(c as char) as bool
+shared def isAlpha(c: char): bool
     return (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z')
 
-shared def isDigit(c as char) as bool
+shared def isDigit(c: char): bool
     return c >= c'0' and c <= c'9'
 
-shared def isAlphaNum(c as char) as bool
+shared def isAlphaNum(c: char): bool
     return isAlpha(c) or isDigit(c)
 
 # Scan src from pos while pred holds; return end index.
-shared def spanWhile(src as String, pos as int, pred as CharPred) as int
+shared def spanWhile(src: String, pos: int, pred: CharPred): int
     var i = pos
     while i < src.len and pred(src[i])
         i = i + 1
@@ -27,7 +27,7 @@ class SigTest
         assert alnum_end == 8
 
         # Store a sig-typed variable with explicit annotation
-        var pred as CharPred = isDigit
+        var pred: CharPred = isDigit
         assert pred(c'7')
         assert not pred(c'z')
 

@@ -1,6 +1,6 @@
 class Main
     shared
-        def check(x as str) as int
+        def check(x: str): int
             var result = 0
             if x.contains("a")
                 result = 1

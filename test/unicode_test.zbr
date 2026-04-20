@@ -2,7 +2,7 @@ class Main
     shared
         def main
             # ── isValidUtf8 ───────────────────────────────────────────────
-            var s as str = "hello"
+            var s: str = "hello"
             print s.isValidUtf8()       # true
 
             # ── codePointCount ────────────────────────────────────────────
@@ -11,15 +11,15 @@ class Main
 
             # ── chars() — Unicode codepoint iteration ─────────────────────
             # Each iteration yields a u21 codepoint
-            var word as str = "abc"
+            var word: str = "abc"
             for c in word.chars()
                 print c                 # 97, 98, 99  (codepoint values)
 
             # ── Char predicates (ASCII-aware) ─────────────────────────────
-            var ca as char = c'A'
-            var cz as char = c'z'
-            var c0 as char = c'0'
-            var sp as char = c' '
+            var ca: char = c'A'
+            var cz: char = c'z'
+            var c0: char = c'0'
+            var sp: char = c' '
 
             print ca.isAlpha()          # true
             print c0.isAlpha()          # false

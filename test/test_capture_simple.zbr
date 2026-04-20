@@ -1,9 +1,9 @@
 class Main
     shared
         def main
-            var x as int = 5
-            var get_x = def() as int
+            var x: int = 5
+            var get_x = def(): int
                 capture
-                    var x as int = x
+                    var x: int = x
                 return x
             print get_x()    # 5

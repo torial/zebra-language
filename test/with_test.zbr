@@ -1,11 +1,11 @@
 class Point
-    var x as int = 0
-    var y as int = 0
+    var x: int = 0
+    var y: int = 0
 
 class Program
     shared
         def main
-            var p as Point = zig"Point{}"
+            var p: Point = zig"Point{}"
             with p
                 x = 10
                 y = 20

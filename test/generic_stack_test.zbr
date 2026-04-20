@@ -1,27 +1,27 @@
 class Stack(T)
-    var items as List(T)
-    var count as int
+    var items: List(T)
+    var count: int
 
     cue init()
         items = List()
         count = 0
 
-    def push(val as T)
+    def push(val: T)
         items.add(val)
         count = count + 1
 
-    def pop() as T?
+    def pop(): T?
         if count == 0
             return nil
         count = count - 1
         return items.at(count)
 
-    def peek() as T?
+    def peek(): T?
         if count == 0
             return nil
         return items.at(count - 1)
 
-    def isEmpty() as bool
+    def isEmpty(): bool
         return count == 0
 
 class Main

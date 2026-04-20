@@ -180,19 +180,19 @@ union TokenKind
     kw_guard
 
 class Token
-    var kind as TokenKind
-    var text as str
-    var line as int
-    var col  as int
+    var kind: TokenKind
+    var text: str
+    var line: int
+    var col : int
 
-    cue init(k as TokenKind, t as str, ln as int, cl as int)
+    cue init(k: TokenKind, t: str, ln: int, cl: int)
         kind = k
         text = t
         line = ln
         col  = cl
 
 class Keywords
-    shared def lookup(word as str) as TokenKind?
+    shared def lookup(word: str): TokenKind?
         if word == "use"
             return TokenKind.kw_use()
         if word == "exposing"

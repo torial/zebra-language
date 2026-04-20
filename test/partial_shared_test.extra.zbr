@@ -3,5 +3,5 @@
 
 class PartialSharedTest
     shared
-        def describe as str
+        def describe: str
             return "PartialSharedTest v1"

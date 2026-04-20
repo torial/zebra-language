@@ -15,10 +15,10 @@
 use cg_helpers exposing StrSet, assignOpStr, binaryOpStr, typeRefStr, exprHasTry, bodyHasRaise, nilNarrowVar, nameUsedInExpr, nameUsedInStmts, collectAllIdents, analyzeEscapes, scanMutations
 use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, DeclVar, Modifiers, Span, ExprIdent, ExprIntLit, ExprBoolLit, ExprBinary, ExprUnary, ExprTry, IntBase, StmtReturn, StmtRaise, StmtAssign
 
-def zspan() as Span
+def zspan(): Span
     return Span(0, 0, 0, 0)
 
-def zmods() as Modifiers
+def zmods(): Modifiers
     return Modifiers(false, false, false, false, false, false)
 
 # ── Part 1: StrSet ────────────────────────────────────────────────────────────

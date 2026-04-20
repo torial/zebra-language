@@ -1,5 +1,5 @@
 class Counter
-    shared var count as int = 0
+    shared var count: int = 0
 
 class Program
     shared

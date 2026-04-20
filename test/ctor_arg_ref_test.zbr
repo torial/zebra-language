@@ -4,9 +4,9 @@
 # call-site arg materialization path in genBoxedArgExpr.
 # Rule: concept_zebra-class-auto-box-rule.
 class Node
-    var value as int
-    var next  as ^Node?
-    cue init(v as int, nxt as ^Node?)
+    var value: int
+    var next : ^Node?
+    cue init(v: int, nxt: ^Node?)
         this.value = v
         this.next  = nxt
 

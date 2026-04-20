@@ -2,10 +2,10 @@
 # A singly-linked list node where `next` points to another Node.
 
 class Node
-    var value as int
-    var next  as ^Node?
+    var value: int
+    var next : ^Node?
 
-    cue init(v as int)
+    cue init(v: int)
         value = v
         next = nil
 
@@ -13,23 +13,23 @@ class Node
 # (the least-confident scenario: `obj.field = x` where field: ^T
 # and obj is a different class than the one being generated).
 class Pair
-    var a as int
-    var b as int
-    cue init(pa as int, pb as int)
+    var a: int
+    var b: int
+    cue init(pa: int, pb: int)
         a = pa
         b = pb
 
 class PairHolder
-    var p as ^Pair
-    cue init(pair as Pair)
+    var p: ^Pair
+    cue init(pair: Pair)
         p = pair
 
 class Tree
-    var value as int
-    var left  as ^Tree?
-    var right as ^Tree?
+    var value: int
+    var left : ^Tree?
+    var right: ^Tree?
 
-    cue init(v as int)
+    cue init(v: int)
         value = v
         left  = nil
         right = nil

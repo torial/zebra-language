@@ -1,5 +1,5 @@
 class BranchRangeTest
-    def classify(c as char) as str
+    def classify(c: char): str
         branch c
             on c'a'..c'z'
                 return "lower"

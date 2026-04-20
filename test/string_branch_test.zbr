@@ -1,6 +1,6 @@
 class Main
     shared
-        def classify(cmd as str) as str
+        def classify(cmd: str): str
             branch cmd
                 on "start", "begin"
                     return "start command"

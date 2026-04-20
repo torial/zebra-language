@@ -201,7 +201,7 @@ test "parse: enum declaration" {
 
 test "parse: class with var member" {
     // Simplest valid non-empty class body: VarMemberDecl with an explicit type
-    try expectAccepts("class Foo\n\tvar x as int\n");
+    try expectAccepts("class Foo\n\tvar x: int\n");
 }
 
 test "parse: method declaration without body" {
@@ -210,8 +210,8 @@ test "parse: method declaration without body" {
 }
 
 test "parse: method with typed parameter and return annotation" {
-    // MethodDecl: open_call ParamList(Param(id as TypeRef)) rparen ReturnAnnotOpt eol
-    try expectAccepts("class Foo\n\tdef greet(name as String) as String\n");
+    // MethodDecl: open_call ParamList(Param(id colon TypeRef)) rparen ReturnAnnotOpt eol
+    try expectAccepts("class Foo\n\tdef greet(name: String): String\n");
 }
 
 test "parse: class implements interface" {
@@ -228,7 +228,7 @@ test "parse: method with pass body" {
 
 test "parse: return with expression" {
     // StmtReturn → kw_return Expr(Atom(string_single)) eol
-    try expectAccepts("class Foo\n\tdef greet as String\n\t\treturn 'hello'\n");
+    try expectAccepts("class Foo\n\tdef greet: String\n\t\treturn 'hello'\n");
 }
 
 test "parse: assignment statement" {
@@ -326,7 +326,7 @@ test "parse: dotted namespace" {
 
 test "parse: extend declaration" {
     // ExtendDecl → kw_extend TypeRef … MemberDeclList
-    try expectAccepts("extend String\n\tdef doubled as String\n\t\treturn this + this\n");
+    try expectAccepts("extend String\n\tdef doubled: String\n\t\treturn this + this\n");
 }
 
 // ── Acceptance: is / has clauses ──────────────────────────────────────────────
@@ -403,11 +403,11 @@ test "parse: to! non-nil assertion" {
 
 test "parse: enum with payload members" {
     // EnumMember → open_call ParamList rparen eol
-    try expectAccepts("enum Shape\n\tcircle(radius as float)\n\trect(w as float, h as float)\n\tpoint\n");
+    try expectAccepts("enum Shape\n\tcircle(radius: float)\n\trect(w: float, h: float)\n\tpoint\n");
 }
 
 test "parse: enum mixing plain and payload members" {
-    try expectAccepts("enum Result\n\tok(value as int)\n\terr(msg as String)\n\tempty\n");
+    try expectAccepts("enum Result\n\tok(value: int)\n\terr(msg: String)\n\tempty\n");
 }
 
 // ── Acceptance: aspect declarations ───────────────────────────────────────────
@@ -449,11 +449,11 @@ test "parse: aspect defined inside a class" {
 
 test "parse: method with weaves clause" {
     // MethodDecl → ... WeavesOpt ...
-    try expectAccepts("class Foo\n\tdef save(data as String) weaves Logging\n");
+    try expectAccepts("class Foo\n\tdef save(data: String) weaves Logging\n");
 }
 
 test "parse: method with weaves clause and body" {
-    try expectAccepts("class Foo\n\tdef save(data as String) weaves Logging\n\t\tpass\n");
+    try expectAccepts("class Foo\n\tdef save(data: String) weaves Logging\n\t\tpass\n");
 }
 
 test "parse: method weaves multiple aspects" {
@@ -482,11 +482,11 @@ test "parse: project-level weave to all public def" {
 
 test "parse: error union type !T in parameter" {
     // TypeRef → bang TypeRef
-    try expectAccepts("class Foo\n\tdef run(x as !int)\n\t\tpass\n");
+    try expectAccepts("class Foo\n\tdef run(x: !int)\n\t\tpass\n");
 }
 
 test "parse: error union type !T as return type" {
-    try expectAccepts("class Foo\n\tdef run as !String\n\t\treturn 'ok'\n");
+    try expectAccepts("class Foo\n\tdef run: !String\n\t\treturn 'ok'\n");
 }
 
 test "parse: orelse operator" {
@@ -528,7 +528,7 @@ test "parse: defer followed by other statements" {
 
 test "parse: old expression in ensure clause" {
     // Expr8 → kw_old Expr9
-    try expectAccepts("class Foo\n\tdef push(x as int)\n\t\tensure\n\t\t\tcount == old count + 1\n");
+    try expectAccepts("class Foo\n\tdef push(x: int)\n\t\tensure\n\t\t\tcount == old count + 1\n");
 }
 
 // ── Rejection cases ────────────────────────────────────────────────────────────

@@ -7,9 +7,9 @@
 #       Pass 1 (bind)    - hoist all top-level class/union names into module scope
 #       Pass 2 (resolve) - walk method bodies; declare locals in source order;
 #                          check every expr_id against the current scope chain
-#   - Scope chain is represented as three flat HashMaps on the Resolver instance
+#   - Scope chain is represented: three flat HashMaps on the Resolver instance
 #     (module / class / method level) rather than a pointer-linked tree.  This
-#     sidesteps the Zebra limitation that ^T cannot be used as a parameter type.
+#     sidesteps the Zebra limitation that ^T cannot be used: a parameter type.
 #   - Helper methods receive individual scalar/list fields extracted from ^T union
 #     payloads (e.g. m.name, m.stmts) rather than the whole struct, avoiding the
 #     need to pass ^PMethod directly.
@@ -24,7 +24,7 @@
 
 use Parser exposing PNode, PParam
 
-# -- Symbol kind encoding (stored as int in scope HashMaps) -------------------
+# -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
 # 0 = class / union
 # 1 = method
 # 2 = field
@@ -35,8 +35,8 @@ use Parser exposing PNode, PParam
 # -- Result types -------------------------------------------------------------
 
 struct ResolveError
-    var message as str
-    cue init(message as str)
+    var message: str
+    cue init(message: str)
         this.message = message
 
 # -- Resolver -----------------------------------------------------------------
@@ -46,12 +46,12 @@ struct ResolveError
 
 class Resolver
     # Scope levels (each maps name - kind-int)
-    var module_scope as HashMap(str, int)   # class and union names + use aliases
-    var class_scope  as HashMap(str, int)   # current class's fields and methods
-    var method_scope as HashMap(str, int)   # current method's locals (params implicit)
+    var module_scope: HashMap(str, int)   # class and union names + use aliases
+    var class_scope : HashMap(str, int)   # current class's fields and methods
+    var method_scope: HashMap(str, int)   # current method's locals (params implicit)
 
-    var errors       as List(ResolveError)
-    var symbol_count as int
+    var errors      : List(ResolveError)
+    var symbol_count: int
 
     cue init()
         this.module_scope  = HashMap()
@@ -62,26 +62,26 @@ class Resolver
 
     # -- Result accessors (return primitives for cross-module use) -------------
 
-    def errorCount() as int
+    def errorCount(): int
         return this.errors.len
 
-    def symbolCount() as int
+    def symbolCount(): int
         return this.symbol_count
 
-    def firstError() as str
+    def firstError(): str
         if this.errors.len > 0
             return this.errors.at(0).message
         return ""
 
     # -- Public entry point ----------------------------------------------------
 
-    def resolve(root as PNode) throws
+    def resolve(root: PNode) throws
         .bindPass1(root)
         .resolvePass2(root)
 
     # -- Pass 1: Bind - hoist all top-level names ------------------------------
 
-    def bindPass1(root as PNode) throws
+    def bindPass1(root: PNode) throws
         branch root
             on PNode.module_ as m
                 for decl in m.decls
@@ -89,7 +89,7 @@ class Resolver
             else
                 pass
 
-    def bindTopDecl(decl as PNode) throws
+    def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
                 this.module_scope.put(c.name, 0)
@@ -118,7 +118,7 @@ class Resolver
 
     # -- Pass 2: Resolve - walk class bodies -----------------------------------
 
-    def resolvePass2(root as PNode) throws
+    def resolvePass2(root: PNode) throws
         branch root
             on PNode.module_ as m
                 for decl in m.decls
@@ -126,7 +126,7 @@ class Resolver
             else
                 pass
 
-    def resolveTopDecl(decl as PNode) throws
+    def resolveTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
                 .enterClass(c.name, c.members, c.type_params)
@@ -140,9 +140,9 @@ class Resolver
     # Enter a class: collect all member names first, then resolve method bodies.
     # `members` is passed by value (shallow copy of the List header) - safe for
     # read-only iteration; the underlying array is shared with the parse tree.
-    def enterClass(name as str, members as List(PNode), type_params as List(str)) throws
+    def enterClass(name: str, members: List(PNode), type_params: List(str)) throws
         this.class_scope = HashMap()
-        # Register generic type params so they resolve as valid names in method bodies
+        # Register generic type params so they resolve: valid names in method bodies
         for tp in type_params
             this.class_scope.put(tp, 6)
             this.symbol_count = this.symbol_count + 1
@@ -153,7 +153,7 @@ class Resolver
         for member in members
             .resolveMember(member)
 
-    def collectMember(member as PNode) throws
+    def collectMember(member: PNode) throws
         branch member
             on PNode.method_ as m
                 this.class_scope.put(m.name, 1)
@@ -164,7 +164,7 @@ class Resolver
             else
                 pass
 
-    def resolveMember(member as PNode) throws
+    def resolveMember(member: PNode) throws
         branch member
             on PNode.method_ as m
                 .enterMethod(m.params, m.stmts)
@@ -174,7 +174,7 @@ class Resolver
                 pass
 
     # Enter a method: reset the method scope, declare params, then walk statements.
-    def enterMethod(params as List(PParam), stmts as List(PNode)) throws
+    def enterMethod(params: List(PParam), stmts: List(PNode)) throws
         this.method_scope = HashMap()
         for p in params
             this.method_scope.put(p.name, 3)
@@ -183,11 +183,11 @@ class Resolver
 
     # -- Statement walking -----------------------------------------------------
 
-    def resolveStmts(stmts as List(PNode)) throws
+    def resolveStmts(stmts: List(PNode)) throws
         for stmt in stmts
             .resolveStmt(stmt)
 
-    def resolveStmt(stmt as PNode) throws
+    def resolveStmt(stmt: PNode) throws
         branch stmt
             on PNode.stmt_var as v
                 # Resolve init before declaring - so `var x = x` errors
@@ -263,7 +263,7 @@ class Resolver
 
     # -- Expression walking ----------------------------------------------------
 
-    def resolveExpr(expr as PNode) throws
+    def resolveExpr(expr: PNode) throws
         branch expr
             on PNode.expr_id as name
                 if not .isInScope(name)
@@ -298,7 +298,7 @@ class Resolver
                     .resolveExpr(e)
                 # member name is accessed via dot notation - not a scope reference
             on PNode.expr_try
-                # ^PNode payload - skip deep resolution (same limitation as stmt_expr)
+                # ^PNode payload - skip deep resolution (same limitation: stmt_expr)
                 pass
             on PNode.expr_to_bang
                 # ^PNode payload - skip deep resolution
@@ -318,7 +318,7 @@ class Resolver
 
     # -- Scope lookup ----------------------------------------------------------
 
-    def isInScope(name as str) as bool
+    def isInScope(name: str): bool
         if this.method_scope.contains(name)
             return true
         if this.class_scope.contains(name)
@@ -329,7 +329,7 @@ class Resolver
             return true
         return false
 
-    def isBuiltin(name as str) as bool
+    def isBuiltin(name: str): bool
         # Language primitives and special names
         if name == "int" or name == "str" or name == "bool" or name == "float"
             return true

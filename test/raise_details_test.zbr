@@ -1,17 +1,17 @@
 class FileInfo
-    var path as str
-    var code as int
+    var path: str
+    var code: int
 
-    cue init(p as str, c as int)
+    cue init(p: str, c: int)
         path = p
         code = c
 
-    def toString as str
+    def toString: str
         return "FileInfo(".concat(path).concat(")")
 
 class Main
     shared
-        def tryRead(path as str) throws
+        def tryRead(path: str) throws
             raise "file not found", FileInfo(path, 404)
 
         def main

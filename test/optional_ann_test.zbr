@@ -4,19 +4,19 @@
 
 class Main
     shared
-        def findFirst(items as List(str), prefix as str) as str?
+        def findFirst(items: List(str), prefix: str): str?
             for item in items
                 if item.contains(prefix)
                     return item
             return nil
 
         def main
-            var items as List(str) = List()
+            var items: List(str) = List()
             items.add("apple")
             items.add("banana")
             items.add("cherry")
 
-            # Optional result — should annotate as ?[]const u8 when mutable
+            # Optional result — should annotate: ?[]const u8 when mutable
             var found = Main.findFirst(items, "ban")
             if found != nil
                 print "found"

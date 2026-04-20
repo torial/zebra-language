@@ -1,6 +1,6 @@
 class Program
     shared
         def main
-            var offset as int = 10
-            var bad = def(x as int)
+            var offset: int = 10
+            var bad = def(x: int)
                 print x + offset

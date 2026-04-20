@@ -4,12 +4,12 @@
 # genType's .ref_to arm MUST NOT fire for struct payloads; structs are
 # value types and need the extra pointer.
 struct Point
-    var x as int
-    var y as int
+    var x: int
+    var y: int
 
 class Holder
-    var p as ^Point
-    cue init(pt as Point)
+    var p: ^Point
+    cue init(pt: Point)
         p = pt
 
 class Main

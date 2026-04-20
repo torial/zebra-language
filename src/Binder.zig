@@ -341,7 +341,7 @@ fn bindSnippet(src: []const u8) anyerror!TestResult {
 test "bind: simple class" {
     var tr = try bindSnippet(
         \\class Dog
-        \\    var name as String
+        \\    var name: String
         \\
     );
     defer tr.deinit();
@@ -362,7 +362,7 @@ test "bind: simple class" {
 test "bind: method with params" {
     var tr = try bindSnippet(
         \\class Greeter
-        \\    def greet(name as String) as String
+        \\    def greet(name: String): String
         \\        return name
         \\
     );
@@ -389,7 +389,7 @@ test "bind: namespace contains class" {
     var tr = try bindSnippet(
         \\namespace Animals
         \\    class Cat
-        \\        var age as int
+        \\        var age: int
         \\
     );
     defer tr.deinit();
@@ -431,9 +431,9 @@ test "bind: enum members in enum scope" {
 test "bind: duplicate class name emits error" {
     var tr = try bindSnippet(
         \\class Foo
-        \\    var x as int
+        \\    var x: int
         \\class Foo
-        \\    var y as int
+        \\    var y: int
         \\
     );
     defer tr.deinit();
@@ -446,7 +446,7 @@ test "bind: duplicate class name emits error" {
 test "bind: scope chain lookup" {
     var tr = try bindSnippet(
         \\class Outer
-        \\    def check(x as int) as bool
+        \\    def check(x: int): bool
         \\        return x > 0
         \\
     );
@@ -474,11 +474,11 @@ test "bind: scope chain lookup" {
 test "bind: multiple classes in one module" {
     var tr = try bindSnippet(
         \\class Point
-        \\    var x as int
-        \\    var y as int
+        \\    var x: int
+        \\    var y: int
         \\class Circle
-        \\    var center as Point
-        \\    var radius as float
+        \\    var center: Point
+        \\    var radius: float
         \\
     );
     defer tr.deinit();
@@ -492,7 +492,7 @@ test "bind: interface with method signatures" {
     var tr = try bindSnippet(
         \\interface Drawable
         \\    def draw
-        \\    def resize(factor as float)
+        \\    def resize(factor: float)
         \\
     );
     defer tr.deinit();

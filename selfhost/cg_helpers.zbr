@@ -20,7 +20,7 @@
 #
 # Note on List(^Expr) elements
 # ----------------------------
-# Zebra's field-read auto-deref applies to struct fields typed as ^T (the
+# Zebra's field-read auto-deref applies to struct fields typed: ^T (the
 # CodeGen emits `.*` for member access).  It does NOT apply to List(^Expr)
 # iteration -- `for elem in list_of_boxed_exprs` yields ^Expr, which cannot
 # be passed to a function expecting Expr.
@@ -43,37 +43,37 @@ use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, A
 # to a helper function and calling .add() is visible at all call sites.
 
 class StrSet
-    var _items as List(str)
+    var _items: List(str)
 
     cue init()
         _items = List(str)()
 
-    def add(s as str)
+    def add(s: str)
         if not contains_(s)
             _items.add(s)
 
-    def contains_(s as str) as bool
+    def contains_(s: str): bool
         for item in _items
             if item == s
                 return true
         return false
 
-    def removeStartingWith(prefix as str)
+    def removeStartingWith(prefix: str)
         var new_items = List(str)()
         for item in _items
             if not item.startsWith(prefix)
                 new_items.add(item)
         _items = new_items
 
-    def count() as int
+    def count(): int
         return _items.count()
 
-    def items() as List(str)
+    def items(): List(str)
         return _items
 
 # ── assignOpStr ───────────────────────────────────────────────────────────────
 
-def assignOpStr(op as AssignOp) as str
+def assignOpStr(op: AssignOp): str
     branch op
         on AssignOp.assign          return "="
         on AssignOp.plus_eq         return "+="
@@ -91,7 +91,7 @@ def assignOpStr(op as AssignOp) as str
 
 # ── binaryOpStr ───────────────────────────────────────────────────────────────
 
-def binaryOpStr(op as BinaryOp) as str
+def binaryOpStr(op: BinaryOp): str
     branch op
         on BinaryOp.add     return "+"
         on BinaryOp.sub     return "-"
@@ -119,7 +119,7 @@ def binaryOpStr(op as BinaryOp) as str
 # Convert a TypeRef to a human-readable string for diagnostics and reflection
 # metadata.  Recurses through nilable / stream / error_union / ref_to / generic.
 
-def typeRefStr(tr as TypeRef) as str
+def typeRefStr(tr: TypeRef): str
     branch tr
         on TypeRef.named as n
             return n.name
@@ -132,7 +132,7 @@ def typeRefStr(tr as TypeRef) as str
         on TypeRef.ref_to as inner
             return "^" + typeRefStr(inner)
         on TypeRef.generic as g
-            var b as StringBuilder = StringBuilder()
+            var b: StringBuilder = StringBuilder()
             b.append(g.name)
             b.append("(")
             var i = 0
@@ -148,7 +148,7 @@ def typeRefStr(tr as TypeRef) as str
         on TypeRef.same_
             return "same"
         on TypeRef.tuple as t
-            var b2 as StringBuilder = StringBuilder()
+            var b2: StringBuilder = StringBuilder()
             b2.append("(")
             var j = 0
             for elem in t.elems
@@ -165,7 +165,7 @@ def typeRefStr(tr as TypeRef) as str
 #
 # List(^Expr) cases (list_lit, array_lit, tuple_lit) are skipped -- see note.
 
-def exprHasTry(expr as Expr) as bool
+def exprHasTry(expr: Expr): bool
     branch expr
         on Expr.try_
             return true
@@ -233,7 +233,7 @@ def exprHasTry(expr as Expr) as bool
 # Returns true if any statement in `stmts` is a raise_ or contains a bare
 # try_ expression.  Used to decide if a method needs anyerror! return type.
 
-def bodyHasRaise(stmts as List(Stmt)) as bool
+def bodyHasRaise(stmts: List(Stmt)): bool
     for s in stmts
         branch s
             on Stmt.raise_
@@ -317,14 +317,14 @@ def bodyHasRaise(stmts as List(Stmt)) as bool
 # Returns true if the body requires a mutable _try_err variable.
 # Identical to bodyHasRaise: both raise_ and bare try_ expressions trigger this.
 
-def bodyNeedsErrVar(stmts as List(Stmt)) as bool
+def bodyNeedsErrVar(stmts: List(Stmt)): bool
     return bodyHasRaise(stmts)
 
 # ── nilNarrowVar ──────────────────────────────────────────────────────────────
 # If `cond` is `x != nil` (for_then=true) or `x == nil` (for_then=false),
 # returns the name of the variable being nil-checked.  Returns nil otherwise.
 
-def nilNarrowVar(cond as Expr, for_then as bool) as str?
+def nilNarrowVar(cond: Expr, for_then: bool): str?
     branch cond
         on Expr.binary as b
             if for_then
@@ -358,10 +358,10 @@ def nilNarrowVar(cond as Expr, for_then as bool) as str?
             return nil
 
 # ── nameUsedInExpr ────────────────────────────────────────────────────────────
-# Returns true if `name` appears as an ExprIdent anywhere in `expr`.
+# Returns true if `name` appears: an ExprIdent anywhere in `expr`.
 # List(^Expr) nodes (list_lit, array_lit, tuple_lit) are skipped conservatively.
 
-def nameUsedInExpr(name as str, expr as Expr) as bool
+def nameUsedInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id
             return id.name == name
@@ -447,13 +447,13 @@ def nameUsedInExpr(name as str, expr as Expr) as bool
 
 # ── nameUsedInStmt / nameUsedInStmts ─────────────────────────────────────────
 
-def nameUsedInStmts(name as str, stmts as List(Stmt)) as bool
+def nameUsedInStmts(name: str, stmts: List(Stmt)): bool
     for s in stmts
         if nameUsedInStmt(name, s)
             return true
     return false
 
-def nameUsedInStmt(name as str, stmt as Stmt) as bool
+def nameUsedInStmt(name: str, stmt: Stmt): bool
     branch stmt
         on Stmt.var_ as n
             if n.init_expr != nil
@@ -552,7 +552,7 @@ def nameUsedInStmt(name as str, stmt as Stmt) as bool
 # Add all ExprIdent names reachable from `expr` into `out`.
 # Used by escape analysis.  List(^Expr) containers are skipped -- see note.
 
-def collectAllIdents(expr as Expr, out as StrSet)
+def collectAllIdents(expr: Expr, out: StrSet)
     branch expr
         on Expr.ident as id
             out.add(id.name)
@@ -607,7 +607,7 @@ def collectAllIdents(expr as Expr, out as StrSet)
 # ── seedEscapedFromReturns ────────────────────────────────────────────────────
 # Add all ident names appearing in return expressions to `out`.
 
-def seedEscapedFromReturns(stmts as List(Stmt), out as StrSet)
+def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
     for s in stmts
         branch s
             on Stmt.return_ as r
@@ -649,7 +649,7 @@ def seedEscapedFromReturns(stmts as List(Stmt), out as StrSet)
 #   escaped_obj.field = e  -- if obj is escaped, add idents in e to set
 # Returns true if the set grew (caller loops until stable).
 
-def propagateEscapesOnce(stmts as List(Stmt), out as StrSet) as bool
+def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
     var grew = false
     for s in stmts
         branch s
@@ -722,7 +722,7 @@ def propagateEscapesOnce(stmts as List(Stmt), out as StrSet) as bool
 # Compute the set of local variable names whose values escape via return.
 # Seed from return expressions, then fixed-point propagate through aliases.
 
-def analyzeEscapes(stmts as List(Stmt)) as StrSet
+def analyzeEscapes(stmts: List(Stmt)): StrSet
     var out = StrSet()
     seedEscapedFromReturns(stmts, out)
     var keep_going = true
@@ -731,12 +731,12 @@ def analyzeEscapes(stmts as List(Stmt)) as StrSet
     return out
 
 # ── scanMutationsInExpr ───────────────────────────────────────────────────────
-# Mark any local variable that is the receiver of a method call as mutated.
+# Mark any local variable that is the receiver of a method call: mutated.
 # This is a conservative over-approximation (no TypeChecker): every method
 # call on a local ident marks it as `var`.  The Zig implementation uses a
 # TC-driven allow-list; we add that refinement when TC integration is wired.
 
-def isReadOnlyMethod(name as str) as bool
+def isReadOnlyMethod(name: str): bool
     # Methods that read but do not structurally mutate their receiver.
     # Calls to these should NOT mark the receiver variable as `var`.
     if name == "count" or name == "len" or name == "at" or name == "get"
@@ -770,7 +770,7 @@ def isReadOnlyMethod(name as str) as bool
         return true
     return false
 
-def scanMutationsInExpr(expr as Expr, out as StrSet)
+def scanMutationsInExpr(expr: Expr, out: StrSet)
     branch expr
         on Expr.call as c
             branch c.callee
@@ -822,7 +822,7 @@ def scanMutationsInExpr(expr as Expr, out as StrSet)
 
 # ── scanMutationsInto / scanMutations ─────────────────────────────────────────
 
-def scanMutationsInto(stmts as List(Stmt), out as StrSet)
+def scanMutationsInto(stmts: List(Stmt), out: StrSet)
     for s in stmts
         branch s
             on Stmt.assign as a
@@ -894,7 +894,7 @@ def scanMutationsInto(stmts as List(Stmt), out as StrSet)
             else
                 pass
 
-def scanMutations(stmts as List(Stmt)) as StrSet
+def scanMutations(stmts: List(Stmt)): StrSet
     var out = StrSet()
     scanMutationsInto(stmts, out)
     return out

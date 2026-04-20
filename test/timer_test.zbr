@@ -2,12 +2,12 @@ class TimerTest
     shared def main
         var t = Timer.start()
 
-        # elapsed returns milliseconds as float (>= 0)
+        # elapsed returns milliseconds: float (>= 0)
         var ms = t.elapsed()
         assert ms >= 0.0
         print "elapsed: OK"
 
-        # elapsedMicros returns microseconds as int (>= 0)
+        # elapsedMicros returns microseconds: int (>= 0)
         var us = t.elapsedMicros()
         assert us >= 0
         print "elapsedMicros: OK"

@@ -1,6 +1,6 @@
 class Main
     shared
-        def frame(g as Gui)
+        def frame(g: Gui)
             g.text("Hello from GUI")
 
         def main

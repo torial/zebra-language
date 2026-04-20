@@ -5,7 +5,7 @@ class Main
             var conn = Tcp.connect("httpbin.org", 80)
             if conn != nil
                 conn.write("GET /get HTTP/1.0\r\nHost: httpbin.org\r\n\r\n")
-                var data as str = conn.read()
+                var data: str = conn.read()
                 conn.close()
                 print data.len              # some positive number
                 print data.startsWith("HTTP/1")   # true

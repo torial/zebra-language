@@ -4,7 +4,7 @@ use StringHelper
 class App
     shared
         def main
-            var n as int = MathUtils.double(3)
+            var n: int = MathUtils.double(3)
             print n
-            var g as str = StringHelper.greet("hello")
+            var g: str = StringHelper.greet("hello")
             print g

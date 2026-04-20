@@ -7,7 +7,7 @@
 use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
 use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
-def check(ok as bool, label as str)
+def check(ok: bool, label: str)
     if ok
         print "PASS " + label
     else
@@ -18,28 +18,28 @@ def check(ok as bool, label as str)
 # lands in Phase 18. For Phase 16a we verify variants construct without error
 # and that `typeFromName` maps the expected primitive names.
 
-def typeIsInt(t as Type_) as bool
+def typeIsInt(t: Type_): bool
     branch t
         on Type_.int_
             return true
         else
             return false
 
-def typeIsString(t as Type_) as bool
+def typeIsString(t: Type_): bool
     branch t
         on Type_.string_
             return true
         else
             return false
 
-def typeIsNamed(t as Type_) as bool
+def typeIsNamed(t: Type_): bool
     branch t
         on Type_.named as _
             return true
         else
             return false
 
-def typeIsUnknown(t as Type_) as bool
+def typeIsUnknown(t: Type_): bool
     branch t
         on Type_.unknown_
             return true
@@ -57,112 +57,112 @@ def testTypeFromName()
 # ── ClassTypes lookups ───────────────────────────────────────────────────────
 
 def testClassTypesFields()
-    var ct as ClassTypes = ClassTypes("Foo")
+    var ct: ClassTypes = ClassTypes("Foo")
     ct.setField("name", Type_.string_)
     ct.setField("count", Type_.int_)
 
-    var ft as Type_? = ct.fieldType("name")
+    var ft: Type_? = ct.fieldType("name")
     check(ft != nil, "ClassTypes.fieldType(name) found")
     if ft != nil
         check(typeIsString(ft to!), "ClassTypes.fieldType(name) is string")
 
-    var ft2 as Type_? = ct.fieldType("count")
+    var ft2: Type_? = ct.fieldType("count")
     if ft2 != nil
         check(typeIsInt(ft2 to!), "ClassTypes.fieldType(count) is int")
 
-    var miss as Type_? = ct.fieldType("absent")
+    var miss: Type_? = ct.fieldType("absent")
     check(miss == nil, "ClassTypes.fieldType(absent) is nil")
 
 def testClassTypesMethods()
-    var ct as ClassTypes = ClassTypes("Bar")
+    var ct: ClassTypes = ClassTypes("Bar")
     ct.setMethodReturn("greet", Type_.string_)
-    var rt as Type_? = ct.methodReturn("greet")
+    var rt: Type_? = ct.methodReturn("greet")
     check(rt != nil, "ClassTypes.methodReturn(greet) found")
     if rt != nil
         check(typeIsString(rt to!), "ClassTypes.methodReturn(greet) is string")
 
 def testClassTypesCtorParams()
-    var ct as ClassTypes = ClassTypes("Baz")
+    var ct: ClassTypes = ClassTypes("Baz")
     ct.addCtorParam(Type_.int_)
     ct.addCtorParam(Type_.string_)
     check(ct.ctorParamCount() == 2, "ClassTypes.ctorParamCount() == 2")
 
-    var p0 as Type_? = ct.ctorParamAt(0)
+    var p0: Type_? = ct.ctorParamAt(0)
     if p0 != nil
         check(typeIsInt(p0 to!), "ctorParamAt(0) is int")
 
-    var p1 as Type_? = ct.ctorParamAt(1)
+    var p1: Type_? = ct.ctorParamAt(1)
     if p1 != nil
         check(typeIsString(p1 to!), "ctorParamAt(1) is string")
 
-    var pn as Type_? = ct.ctorParamAt(2)
+    var pn: Type_? = ct.ctorParamAt(2)
     check(pn == nil, "ctorParamAt(2) is nil (out of range)")
 
-    var pneg as Type_? = ct.ctorParamAt(-1)
+    var pneg: Type_? = ct.ctorParamAt(-1)
     check(pneg == nil, "ctorParamAt(-1) is nil")
 
 # ── ModuleTypes lookups ──────────────────────────────────────────────────────
 
 def testModuleTypesFields()
-    var mt as ModuleTypes = ModuleTypes()
-    var ct as ClassTypes = ClassTypes("Foo")
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Foo")
     ct.setField("name", Type_.string_)
     mt.addClass(ct)
 
     check(mt.hasClass("Foo"), "ModuleTypes.hasClass(Foo)")
     check(not mt.hasClass("Missing"), "ModuleTypes.hasClass(Missing) is false")
 
-    var ft as Type_? = mt.fieldType("Foo", "name")
+    var ft: Type_? = mt.fieldType("Foo", "name")
     check(ft != nil, "ModuleTypes.fieldType(Foo, name) found")
     if ft != nil
         check(typeIsString(ft to!), "ModuleTypes.fieldType(Foo, name) is string")
 
-    var miss_cls as Type_? = mt.fieldType("Missing", "name")
+    var miss_cls: Type_? = mt.fieldType("Missing", "name")
     check(miss_cls == nil, "ModuleTypes.fieldType(Missing, name) is nil")
 
-    var miss_fld as Type_? = mt.fieldType("Foo", "absent")
+    var miss_fld: Type_? = mt.fieldType("Foo", "absent")
     check(miss_fld == nil, "ModuleTypes.fieldType(Foo, absent) is nil")
 
 def testModuleTypesMethods()
-    var mt as ModuleTypes = ModuleTypes()
-    var ct as ClassTypes = ClassTypes("Bar")
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Bar")
     ct.setMethodReturn("go", Type_.int_)
     mt.addClass(ct)
 
-    var rt as Type_? = mt.methodReturn("Bar", "go")
+    var rt: Type_? = mt.methodReturn("Bar", "go")
     check(rt != nil, "ModuleTypes.methodReturn(Bar, go) found")
     if rt != nil
         check(typeIsInt(rt to!), "ModuleTypes.methodReturn(Bar, go) is int")
 
-    var miss as Type_? = mt.methodReturn("Bar", "absent")
+    var miss: Type_? = mt.methodReturn("Bar", "absent")
     check(miss == nil, "ModuleTypes.methodReturn(Bar, absent) is nil")
 
 def testModuleTypesCtorParams()
-    var mt as ModuleTypes = ModuleTypes()
-    var ct as ClassTypes = ClassTypes("Baz")
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Baz")
     ct.addCtorParam(Type_.string_)
     ct.addCtorParam(Type_.int_)
     mt.addClass(ct)
 
-    var p0 as Type_? = mt.ctorParamAt("Baz", 0)
+    var p0: Type_? = mt.ctorParamAt("Baz", 0)
     if p0 != nil
         check(typeIsString(p0 to!), "ModuleTypes.ctorParamAt(Baz, 0) is string")
 
-    var p1 as Type_? = mt.ctorParamAt("Baz", 1)
+    var p1: Type_? = mt.ctorParamAt("Baz", 1)
     if p1 != nil
         check(typeIsInt(p1 to!), "ModuleTypes.ctorParamAt(Baz, 1) is int")
 
-    var miss as Type_? = mt.ctorParamAt("Missing", 0)
+    var miss: Type_? = mt.ctorParamAt("Missing", 0)
     check(miss == nil, "ModuleTypes.ctorParamAt(Missing, 0) is nil")
 
 # ── CrossModuleType smoke ───────────────────────────────────────────────────
 # Phase 16a: just construct. Symmetric equality with named ships in Phase 18.
 
 def testCrossModuleType()
-    var cm as CrossModuleType = CrossModuleType("parser", "PNode")
+    var cm: CrossModuleType = CrossModuleType("parser", "PNode")
     check(cm.module == "parser", "CrossModuleType.module")
     check(cm.type_name == "PNode", "CrossModuleType.type_name")
-    var t as Type_ = Type_.cross_module(cm)
+    var t: Type_ = Type_.cross_module(cm)
     branch t
         on Type_.cross_module as c
             check(c.module == "parser", "Type_.cross_module.module")
@@ -173,24 +173,24 @@ def testCrossModuleType()
 # ── Phase 16b: typeFromRef ──────────────────────────────────────────────────
 # Hand-build TypeRef variants and verify the mapping to Type_.
 
-def mkSpan() as Span
+def mkSpan(): Span
     return Span(1, 1, 1, 1)
 
-def isOptional(t as Type_) as bool
+def isOptional(t: Type_): bool
     branch t
         on Type_.optional
             return true
         else
             return false
 
-def isRefTo(t as Type_) as bool
+def isRefTo(t: Type_): bool
     branch t
         on Type_.ref_to
             return true
         else
             return false
 
-def namedRef(n as str) as TypeRef
+def namedRef(n: str): TypeRef
     return TypeRef.named(NamedTypeRef(mkSpan(), n))
 
 def testTypeFromRef()
@@ -202,7 +202,7 @@ def testTypeFromRef()
     check(isOptional(typeFromRef(TypeRef.nilable(namedRef("int")))), "typeFromRef(nilable) → optional")
 
     # void_ maps to Type_.void_.
-    var t_void as Type_ = typeFromRef(TypeRef.void_)
+    var t_void: Type_ = typeFromRef(TypeRef.void_)
     branch t_void
         on Type_.void_
             check(true, "typeFromRef(void_) → void_")
@@ -216,75 +216,75 @@ def testTypeFromRef()
     check(typeIsUnknown(typeFromRef(TypeRef.same_)), "typeFromRef(same_) → unknown_")
 
 # ── Phase 16b: buildModuleTypes on a hand-built Module ──────────────────────
-# Construct a tiny Module with one class:  class Foo { var name as str }
+# Construct a tiny Module with one class:  class Foo { var name: str }
 
-def emptyMods() as Modifiers
+def emptyMods(): Modifiers
     return Modifiers(false, false, false, false, false, false)
 
-def varDecl(name as str, t as TypeRef) as Decl
+def varDecl(name: str, t: TypeRef): Decl
     return Decl.var_(DeclVar(mkSpan(), emptyMods(), name, t, nil, false))
 
-def classDecl(name as str, members as List(Decl)) as Decl
+def classDecl(name: str, members: List(Decl)): Decl
     return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members))
 
 def testBuildModuleTypesClass()
-    var members as List(Decl) = List(Decl)()
+    var members: List(Decl) = List(Decl)()
     members.add(varDecl("name", namedRef("str")))
     members.add(varDecl("count", namedRef("int")))
-    var decls as List(Decl) = List(Decl)()
+    var decls: List(Decl) = List(Decl)()
     decls.add(classDecl("Foo", members))
-    var m as Module = Module("" + "<test>", decls)
-    var mt as ModuleTypes = buildModuleTypes(m)
+    var m: Module = Module("" + "<test>", decls)
+    var mt: ModuleTypes = buildModuleTypes(m)
 
     check(mt.hasClass("Foo"), "buildModuleTypes: hasClass(Foo)")
-    var ft as Type_? = mt.fieldType("Foo", "name")
+    var ft: Type_? = mt.fieldType("Foo", "name")
     check(ft != nil, "buildModuleTypes: field `name` present")
     if ft != nil
         check(typeIsString(ft to!), "buildModuleTypes: field `name` is string")
-    var ft2 as Type_? = mt.fieldType("Foo", "count")
+    var ft2: Type_? = mt.fieldType("Foo", "count")
     if ft2 != nil
         check(typeIsInt(ft2 to!), "buildModuleTypes: field `count` is int")
 
 def testBuildModuleTypesInit()
-    # class Bar { cue init(x as int, y as str) { ... } }
-    var params as List(Param) = List(Param)()
+    # class Bar { cue init(x: int, y: str) { ... } }
+    var params: List(Param) = List(Param)()
     params.add(Param(mkSpan(), ParamMode.normal, "x", namedRef("int"), nil))
     params.add(Param(mkSpan(), ParamMode.normal, "y", namedRef("str"), nil))
-    var members as List(Decl) = List(Decl)()
+    var members: List(Decl) = List(Decl)()
     members.add(Decl.init(DeclInit(mkSpan(), emptyMods(), params, nil)))
-    var decls as List(Decl) = List(Decl)()
+    var decls: List(Decl) = List(Decl)()
     decls.add(classDecl("Bar", members))
-    var m as Module = Module("" + "<test>", decls)
-    var mt as ModuleTypes = buildModuleTypes(m)
+    var m: Module = Module("" + "<test>", decls)
+    var mt: ModuleTypes = buildModuleTypes(m)
 
-    var p0 as Type_? = mt.ctorParamAt("Bar", 0)
+    var p0: Type_? = mt.ctorParamAt("Bar", 0)
     if p0 != nil
         check(typeIsInt(p0 to!), "buildModuleTypes: ctor param 0 is int")
-    var p1 as Type_? = mt.ctorParamAt("Bar", 1)
+    var p1: Type_? = mt.ctorParamAt("Bar", 1)
     if p1 != nil
         check(typeIsString(p1 to!), "buildModuleTypes: ctor param 1 is string")
 
 # ── Phase 16b: inferExpr ────────────────────────────────────────────────────
 # Construct Expr literals directly; module_types is an empty ModuleTypes.
 
-def mkInt(x as str) as Expr
+def mkInt(x: str): Expr
     return Expr.int_lit(ExprIntLit(mkSpan(), x, IntBase.decimal))
 
-def mkStr(x as str) as Expr
+def mkStr(x: str): Expr
     return Expr.string_lit(ExprStringLit(mkSpan(), StringKind.plain, x))
 
-def mkBool(v as bool) as Expr
+def mkBool(v: bool): Expr
     return Expr.bool_lit(ExprBoolLit(mkSpan(), v))
 
-def mkFloat(x as str) as Expr
+def mkFloat(x: str): Expr
     return Expr.float_lit(ExprFloatLit(mkSpan(), x))
 
-def mkChar(x as str) as Expr
+def mkChar(x: str): Expr
     return Expr.char_lit(ExprCharLit(mkSpan(), x))
 
 def testInferLiterals()
-    var mt as ModuleTypes = ModuleTypes()
-    var ctx as InferCtx = InferCtx(mt, "")
+    var mt: ModuleTypes = ModuleTypes()
+    var ctx: InferCtx = InferCtx(mt, "")
     check(typeIsInt(inferExpr(mkInt("42"), ctx)), "inferExpr(int_lit) → int")
     check(typeIsString(inferExpr(mkStr("hi"), ctx)), "inferExpr(string_lit) → string")
 
@@ -307,22 +307,22 @@ def testInferLiterals()
             check(false, "inferExpr(char_lit) → char")
 
 def testInferBinaryAdd()
-    var mt as ModuleTypes = ModuleTypes()
-    var ctx as InferCtx = InferCtx(mt, "")
+    var mt: ModuleTypes = ModuleTypes()
+    var ctx: InferCtx = InferCtx(mt, "")
     # "foo" + "bar" → string
-    var e as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("foo"), mkStr("bar")))
+    var e: Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("foo"), mkStr("bar")))
     check(typeIsString(inferExpr(e, ctx)), "inferExpr(str + str) → string")
     # 1 + 2 → int
-    var e2 as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkInt("1"), mkInt("2")))
+    var e2: Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkInt("1"), mkInt("2")))
     check(typeIsInt(inferExpr(e2, ctx)), "inferExpr(int + int) → int")
     # "x" + 1 → string (string-concat wins)
-    var e3 as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("x"), mkInt("1")))
+    var e3: Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.add, mkStr("x"), mkInt("1")))
     check(typeIsString(inferExpr(e3, ctx)), "inferExpr(str + int) → string")
 
 def testInferBinaryCompare()
-    var mt as ModuleTypes = ModuleTypes()
-    var ctx as InferCtx = InferCtx(mt, "")
-    var e as Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.eq, mkInt("1"), mkInt("2")))
+    var mt: ModuleTypes = ModuleTypes()
+    var ctx: InferCtx = InferCtx(mt, "")
+    var e: Expr = Expr.binary(ExprBinary(mkSpan(), BinaryOp.eq, mkInt("1"), mkInt("2")))
     branch inferExpr(e, ctx)
         on Type_.bool_
             check(true, "inferExpr(int == int) → bool")
@@ -330,128 +330,128 @@ def testInferBinaryCompare()
             check(false, "inferExpr(int == int) → bool")
 
 def testInferThisField()
-    # module_types for `class Foo { var name as str }` + ctx.current_class = "Foo"
-    var mt as ModuleTypes = ModuleTypes()
-    var ct as ClassTypes = ClassTypes("Foo")
+    # module_types for `class Foo { var name: str }` + ctx.current_class = "Foo"
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Foo")
     ct.setField("name", Type_.string_)
     mt.addClass(ct)
-    var ctx as InferCtx = InferCtx(mt, "Foo")
+    var ctx: InferCtx = InferCtx(mt, "Foo")
     # this.name
-    var this_expr as Expr = Expr.this_(mkSpan())
-    var mem as Expr = Expr.member(ExprMember(mkSpan(), this_expr, "name"))
+    var this_expr: Expr = Expr.this_(mkSpan())
+    var mem: Expr = Expr.member(ExprMember(mkSpan(), this_expr, "name"))
     check(typeIsString(inferExpr(mem, ctx)), "inferExpr(this.name) → string")
     # this.missing → unknown_
-    var mem2 as Expr = Expr.member(ExprMember(mkSpan(), this_expr, "missing"))
+    var mem2: Expr = Expr.member(ExprMember(mkSpan(), this_expr, "missing"))
     check(typeIsUnknown(inferExpr(mem2, ctx)), "inferExpr(this.missing) → unknown_")
 
 def testInferCtorCall()
     # Foo() with ModuleTypes containing Foo → Type_.named("Foo")
-    var mt as ModuleTypes = ModuleTypes()
+    var mt: ModuleTypes = ModuleTypes()
     mt.addClass(ClassTypes("Foo"))
-    var ctx as InferCtx = InferCtx(mt, "")
-    var callee as Expr = Expr.ident(ExprIdent(mkSpan(), "Foo"))
-    var call as Expr = Expr.call(ExprCall(mkSpan(), callee, List(Arg)()))
+    var ctx: InferCtx = InferCtx(mt, "")
+    var callee: Expr = Expr.ident(ExprIdent(mkSpan(), "Foo"))
+    var call: Expr = Expr.call(ExprCall(mkSpan(), callee, List(Arg)()))
     check(typeIsNamed(inferExpr(call, ctx)), "inferExpr(Foo()) → named")
     # int(x) primitive cast → int
-    var callee_int as Expr = Expr.ident(ExprIdent(mkSpan(), "int"))
-    var call_int as Expr = Expr.call(ExprCall(mkSpan(), callee_int, List(Arg)()))
+    var callee_int: Expr = Expr.ident(ExprIdent(mkSpan(), "int"))
+    var call_int: Expr = Expr.call(ExprCall(mkSpan(), callee_int, List(Arg)()))
     check(typeIsInt(inferExpr(call_int, ctx)), "inferExpr(int(x)) → int")
 
 def testInferIdentScope()
-    var mt as ModuleTypes = ModuleTypes()
-    var ctx as InferCtx = InferCtx(mt, "")
+    var mt: ModuleTypes = ModuleTypes()
+    var ctx: InferCtx = InferCtx(mt, "")
     ctx.bind("x", Type_.int_)
-    var e as Expr = Expr.ident(ExprIdent(mkSpan(), "x"))
+    var e: Expr = Expr.ident(ExprIdent(mkSpan(), "x"))
     check(typeIsInt(inferExpr(e, ctx)), "inferExpr(bound ident x) → int")
-    var e2 as Expr = Expr.ident(ExprIdent(mkSpan(), "unbound"))
+    var e2: Expr = Expr.ident(ExprIdent(mkSpan(), "unbound"))
     check(typeIsUnknown(inferExpr(e2, ctx)), "inferExpr(unbound ident) → unknown_")
 
 def testInferMethodCall()
     # Bar.go() where Bar has method go returning int.
-    var mt as ModuleTypes = ModuleTypes()
-    var ct as ClassTypes = ClassTypes("Bar")
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Bar")
     ct.setMethodReturn("go", Type_.int_)
     mt.addClass(ct)
-    var ctx as InferCtx = InferCtx(mt, "")
+    var ctx: InferCtx = InferCtx(mt, "")
     ctx.bind("b", Type_.named("Bar"))
-    var recv as Expr = Expr.ident(ExprIdent(mkSpan(), "b"))
-    var mem as Expr = Expr.member(ExprMember(mkSpan(), recv, "go"))
-    var call as Expr = Expr.call(ExprCall(mkSpan(), mem, List(Arg)()))
+    var recv: Expr = Expr.ident(ExprIdent(mkSpan(), "b"))
+    var mem: Expr = Expr.member(ExprMember(mkSpan(), recv, "go"))
+    var call: Expr = Expr.call(ExprCall(mkSpan(), mem, List(Arg)()))
     check(typeIsInt(inferExpr(call, ctx)), "inferExpr(b.go()) → int")
 
 # ── Phase 17a: union variant payload indexing ───────────────────────────────
-# Build Module with `union Shape { circle as int, square as str, dot }` and
+# Build Module with `union Shape { circle: int, square: str, dot }` and
 # verify populateModuleTypes populates variant_payloads.
 
-def unionDecl(name as str, variants as List(UnionVariant)) as Decl
+def unionDecl(name: str, variants: List(UnionVariant)): Decl
     return Decl.union_(DeclUnion(mkSpan(), emptyMods(), name, variants))
 
 def testUnionVariantIndex()
-    var variants as List(UnionVariant) = List(UnionVariant)()
+    var variants: List(UnionVariant) = List(UnionVariant)()
     variants.add(UnionVariant(mkSpan(), "circle", namedRef("int")))
     variants.add(UnionVariant(mkSpan(), "square", namedRef("str")))
     variants.add(UnionVariant(mkSpan(), "dot", nil))
-    var decls as List(Decl) = List(Decl)()
+    var decls: List(Decl) = List(Decl)()
     decls.add(unionDecl("Shape", variants))
-    var m as Module = Module("" + "<test>", decls)
-    var mt as ModuleTypes = buildModuleTypes(m)
+    var m: Module = Module("" + "<test>", decls)
+    var mt: ModuleTypes = buildModuleTypes(m)
 
     check(mt.hasUnion("Shape"), "buildModuleTypes: hasUnion(Shape)")
     check(not mt.hasUnion("Missing"), "buildModuleTypes: hasUnion(Missing) is false")
 
-    var p_circle as Type_? = mt.variantPayload("Shape", "circle")
+    var p_circle: Type_? = mt.variantPayload("Shape", "circle")
     check(p_circle != nil, "variantPayload(Shape.circle) present")
     if p_circle != nil
         check(typeIsInt(p_circle to!), "variantPayload(Shape.circle) is int")
 
-    var p_square as Type_? = mt.variantPayload("Shape", "square")
+    var p_square: Type_? = mt.variantPayload("Shape", "square")
     if p_square != nil
         check(typeIsString(p_square to!), "variantPayload(Shape.square) is string")
 
-    var p_dot as Type_? = mt.variantPayload("Shape", "dot")
+    var p_dot: Type_? = mt.variantPayload("Shape", "dot")
     check(p_dot != nil, "variantPayload(Shape.dot) present (payload-less)")
     if p_dot != nil
         check(typeIsUnknown(p_dot to!), "variantPayload(Shape.dot) is unknown_ (payload-less)")
 
-    var p_missing as Type_? = mt.variantPayload("Shape", "missing")
+    var p_missing: Type_? = mt.variantPayload("Shape", "missing")
     check(p_missing == nil, "variantPayload(Shape.missing) is nil")
 
 # ── Phase 17b: narrowPayloadFromOnValue ─────────────────────────────────────
-# Build `union Shape { circle as int, dot }` and verify the narrowing
+# Build `union Shape { circle: int, dot }` and verify the narrowing
 # helper returns the payload for `Shape.circle`, nil for `Shape.dot`
 # (payload-less), and nil for shapes not matching the expected form.
 
 def testNarrowPayloadFromOnValue()
     # Build Shape with circle(int) and dot (no payload).
-    var variants as List(UnionVariant) = List(UnionVariant)()
+    var variants: List(UnionVariant) = List(UnionVariant)()
     variants.add(UnionVariant(mkSpan(), "circle", namedRef("int")))
     variants.add(UnionVariant(mkSpan(), "dot", nil))
-    var decls as List(Decl) = List(Decl)()
+    var decls: List(Decl) = List(Decl)()
     decls.add(unionDecl("Shape", variants))
-    var m as Module = Module("" + "<test>", decls)
-    var mt as ModuleTypes = buildModuleTypes(m)
+    var m: Module = Module("" + "<test>", decls)
+    var mt: ModuleTypes = buildModuleTypes(m)
 
-    # Construct `Shape.circle` as Expr.member(ident("Shape"), "circle").
-    var shape_ident as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
-    var circle_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident, "circle"))
-    var nt as Type_? = narrowPayloadFromOnValue(mt, circle_val)
+    # Construct `Shape.circle`: Expr.member(ident("Shape"), "circle").
+    var shape_ident: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var circle_val: Expr = Expr.member(ExprMember(mkSpan(), shape_ident, "circle"))
+    var nt: Type_? = narrowPayloadFromOnValue(mt, circle_val)
     check(nt != nil, "narrowPayloadFromOnValue(Shape.circle) is not nil")
     if nt != nil
         check(typeIsInt(nt to!), "narrowPayloadFromOnValue(Shape.circle) is int")
 
     # `Shape.dot` — payload-less → nil (not bound).
-    var shape_ident2 as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
-    var dot_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident2, "dot"))
-    var nt_dot as Type_? = narrowPayloadFromOnValue(mt, dot_val)
+    var shape_ident2: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var dot_val: Expr = Expr.member(ExprMember(mkSpan(), shape_ident2, "dot"))
+    var nt_dot: Type_? = narrowPayloadFromOnValue(mt, dot_val)
     check(nt_dot == nil, "narrowPayloadFromOnValue(Shape.dot) is nil (payload-less)")
 
     # `Shape.missing` — variant doesn't exist → nil.
-    var shape_ident3 as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
-    var miss_val as Expr = Expr.member(ExprMember(mkSpan(), shape_ident3, "missing"))
+    var shape_ident3: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var miss_val: Expr = Expr.member(ExprMember(mkSpan(), shape_ident3, "missing"))
     check(narrowPayloadFromOnValue(mt, miss_val) == nil, "narrowPayloadFromOnValue(Shape.missing) is nil")
 
     # Non-member expression → nil (e.g., a bare ident).
-    var bare as Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
+    var bare: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
     check(narrowPayloadFromOnValue(mt, bare) == nil, "narrowPayloadFromOnValue(bare ident) is nil")
 
 # ── Main ────────────────────────────────────────────────────────────────────

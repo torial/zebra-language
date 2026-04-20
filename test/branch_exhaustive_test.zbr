@@ -1,6 +1,6 @@
 union Shape
-    circle as float
-    rect as int
+    circle: float
+    rect: int
     point
 
 class Main

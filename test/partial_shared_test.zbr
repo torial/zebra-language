@@ -2,7 +2,7 @@
 
 class PartialSharedTest
     shared
-        def greet(name as str) as str
+        def greet(name: str): str
             return "Hello, " + name
 
 class Main

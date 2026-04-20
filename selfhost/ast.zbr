@@ -13,12 +13,12 @@
 # ── Source location ──────────────────────────────────────────────────────────
 
 struct Span
-    var line as int
-    var col as int
-    var end_line as int
-    var end_col as int
+    var line: int
+    var col: int
+    var end_line: int
+    var end_col: int
 
-    cue init(line as int, col as int, end_line as int, end_col as int)
+    cue init(line: int, col: int, end_line: int, end_col: int)
         this.line = line
         this.col = col
         this.end_line = end_line
@@ -27,41 +27,41 @@ struct Span
 # ── Top-level ────────────────────────────────────────────────────────────────
 
 struct Module
-    var file as String
-    var decls as List(Decl)
+    var file: String
+    var decls: List(Decl)
 
-    cue init(file as String, decls as List(Decl))
+    cue init(file: String, decls: List(Decl))
         this.file = file
         this.decls = decls
 
 # ── Declarations ─────────────────────────────────────────────────────────────
 
 union Decl
-    use_ as ^DeclUse
-    namespace_ as ^DeclNamespace
-    class_ as ^DeclClass
-    interface_ as ^DeclInterface
-    struct_ as ^DeclStruct
-    mixin_ as ^DeclMixin
-    enum_ as ^DeclEnum
-    method as ^DeclMethod
-    var_ as ^DeclVar
-    init as ^DeclInit
-    extend_ as ^DeclExtend
-    union_ as ^DeclUnion
-    sig_ as ^DeclSig
+    use_: ^DeclUse
+    namespace_: ^DeclNamespace
+    class_: ^DeclClass
+    interface_: ^DeclInterface
+    struct_: ^DeclStruct
+    mixin_: ^DeclMixin
+    enum_: ^DeclEnum
+    method: ^DeclMethod
+    var_: ^DeclVar
+    init: ^DeclInit
+    extend_: ^DeclExtend
+    union_: ^DeclUnion
+    sig_: ^DeclSig
 
 # ── Modifiers ────────────────────────────────────────────────────────────────
 
 struct Modifiers
-    var is_public as bool
-    var is_private as bool
-    var is_abstract as bool
-    var is_shared as bool
-    var is_readonly as bool
-    var is_extern as bool
+    var is_public: bool
+    var is_private: bool
+    var is_abstract: bool
+    var is_shared: bool
+    var is_readonly: bool
+    var is_extern: bool
 
-    cue init(is_public as bool, is_private as bool, is_abstract as bool, is_shared as bool, is_readonly as bool, is_extern as bool)
+    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_shared: bool, is_readonly: bool, is_extern: bool)
         this.is_public = is_public
         this.is_private = is_private
         this.is_abstract = is_abstract
@@ -72,21 +72,21 @@ struct Modifiers
 # ── Generic type parameter ────────────────────────────────────────────────────
 
 struct TypeParam
-    var name as String
-    var constraint as String?
+    var name: String
+    var constraint: String?
 
-    cue init(name as String, constraint as String?)
+    cue init(name: String, constraint: String?)
         this.name = name
         this.constraint = constraint
 
 # ── Import ───────────────────────────────────────────────────────────────────
 
 struct DeclUse
-    var span as Span
-    var path as String
-    var exposed as List(String)
+    var span: Span
+    var path: String
+    var exposed: List(String)
 
-    cue init(span as Span, path as String, exposed as List(String))
+    cue init(span: Span, path: String, exposed: List(String))
         this.span = span
         this.path = path
         this.exposed = exposed
@@ -94,11 +94,11 @@ struct DeclUse
 # ── Namespace ────────────────────────────────────────────────────────────────
 
 struct DeclNamespace
-    var span as Span
-    var name as String
-    var decls as List(Decl)
+    var span: Span
+    var name: String
+    var decls: List(Decl)
 
-    cue init(span as Span, name as String, decls as List(Decl))
+    cue init(span: Span, name: String, decls: List(Decl))
         this.span = span
         this.name = name
         this.decls = decls
@@ -106,15 +106,15 @@ struct DeclNamespace
 # ── Class ────────────────────────────────────────────────────────────────────
 
 struct DeclClass
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var type_params as List(TypeParam)
-    var ifaces as List(TypeRef)
-    var mixins as List(TypeRef)
-    var members as List(Decl)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var type_params: List(TypeParam)
+    var ifaces: List(TypeRef)
+    var mixins: List(TypeRef)
+    var members: List(Decl)
 
-    cue init(span as Span, mods as Modifiers, name as String, type_params as List(TypeParam), ifaces as List(TypeRef), mixins as List(TypeRef), members as List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, type_params: List(TypeParam), ifaces: List(TypeRef), mixins: List(TypeRef), members: List(Decl))
         this.span = span
         this.mods = mods
         this.name = name
@@ -126,13 +126,13 @@ struct DeclClass
 # ── Interface ────────────────────────────────────────────────────────────────
 
 struct DeclInterface
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var ifaces as List(TypeRef)
-    var members as List(Decl)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var ifaces: List(TypeRef)
+    var members: List(Decl)
 
-    cue init(span as Span, mods as Modifiers, name as String, ifaces as List(TypeRef), members as List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, ifaces: List(TypeRef), members: List(Decl))
         this.span = span
         this.mods = mods
         this.name = name
@@ -142,13 +142,13 @@ struct DeclInterface
 # ── Struct ───────────────────────────────────────────────────────────────────
 
 struct DeclStruct
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var ifaces as List(TypeRef)
-    var members as List(Decl)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var ifaces: List(TypeRef)
+    var members: List(Decl)
 
-    cue init(span as Span, mods as Modifiers, name as String, ifaces as List(TypeRef), members as List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, ifaces: List(TypeRef), members: List(Decl))
         this.span = span
         this.mods = mods
         this.name = name
@@ -158,12 +158,12 @@ struct DeclStruct
 # ── Mixin ────────────────────────────────────────────────────────────────────
 
 struct DeclMixin
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var members as List(Decl)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var members: List(Decl)
 
-    cue init(span as Span, mods as Modifiers, name as String, members as List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, members: List(Decl))
         this.span = span
         this.mods = mods
         this.name = name
@@ -172,23 +172,23 @@ struct DeclMixin
 # ── Enum ─────────────────────────────────────────────────────────────────────
 
 struct EnumMember
-    var span as Span
-    var name as String
-    var value as ^Expr?
+    var span: Span
+    var name: String
+    var value: ^Expr?
 
-    cue init(span as Span, name as String, value as ^Expr?)
+    cue init(span: Span, name: String, value: ^Expr?)
         this.span = span
         this.name = name
         this.value = value
 
 struct DeclEnum
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var base as TypeRef?
-    var members as List(EnumMember)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var base: TypeRef?
+    var members: List(EnumMember)
 
-    cue init(span as Span, mods as Modifiers, name as String, base as TypeRef?, members as List(EnumMember))
+    cue init(span: Span, mods: Modifiers, name: String, base: TypeRef?, members: List(EnumMember))
         this.span = span
         this.mods = mods
         this.name = name
@@ -198,11 +198,11 @@ struct DeclEnum
 # ── Extend ───────────────────────────────────────────────────────────────────
 
 struct DeclExtend
-    var span as Span
-    var target as TypeRef
-    var members as List(Decl)
+    var span: Span
+    var target: TypeRef
+    var members: List(Decl)
 
-    cue init(span as Span, target as TypeRef, members as List(Decl))
+    cue init(span: Span, target: TypeRef, members: List(Decl))
         this.span = span
         this.target = target
         this.members = members
@@ -210,22 +210,22 @@ struct DeclExtend
 # ── Union ────────────────────────────────────────────────────────────────────
 
 struct UnionVariant
-    var span as Span
-    var name as String
-    var payload as TypeRef?
+    var span: Span
+    var name: String
+    var payload: TypeRef?
 
-    cue init(span as Span, name as String, payload as TypeRef?)
+    cue init(span: Span, name: String, payload: TypeRef?)
         this.span = span
         this.name = name
         this.payload = payload
 
 struct DeclUnion
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var variants as List(UnionVariant)
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var variants: List(UnionVariant)
 
-    cue init(span as Span, mods as Modifiers, name as String, variants as List(UnionVariant))
+    cue init(span: Span, mods: Modifiers, name: String, variants: List(UnionVariant))
         this.span = span
         this.mods = mods
         this.name = name
@@ -234,12 +234,12 @@ struct DeclUnion
 # ── Sig (named function-type alias) ──────────────────────────────────────────
 
 struct DeclSig
-    var span as Span
-    var name as String
-    var params as List(Param)
-    var return_type as TypeRef?
+    var span: Span
+    var name: String
+    var params: List(Param)
+    var return_type: TypeRef?
 
-    cue init(span as Span, name as String, params as List(Param), return_type as TypeRef?)
+    cue init(span: Span, name: String, params: List(Param), return_type: TypeRef?)
         this.span = span
         this.name = name
         this.params = params
@@ -248,16 +248,16 @@ struct DeclSig
 # ── Methods and properties ────────────────────────────────────────────────────
 
 struct DeclMethod
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var params as List(Param)
-    var return_type as TypeRef?
-    var stmts as List(Stmt)?
-    var is_test as bool
-    var throws_ as bool
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var params: List(Param)
+    var return_type: TypeRef?
+    var stmts: List(Stmt)?
+    var is_test: bool
+    var throws_: bool
 
-    cue init(span as Span, mods as Modifiers, name as String, params as List(Param), return_type as TypeRef?, stmts as List(Stmt)?, is_test as bool, throws_ as bool)
+    cue init(span: Span, mods: Modifiers, name: String, params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool)
         this.span = span
         this.mods = mods
         this.name = name
@@ -270,14 +270,14 @@ struct DeclMethod
 # ── Variable / constant ───────────────────────────────────────────────────────
 
 struct DeclVar
-    var span as Span
-    var mods as Modifiers
-    var name as String
-    var type_ as TypeRef?
-    var init_expr as ^Expr?
-    var is_const as bool
+    var span: Span
+    var mods: Modifiers
+    var name: String
+    var type_: TypeRef?
+    var init_expr: ^Expr?
+    var is_const: bool
 
-    cue init(span as Span, mods as Modifiers, name as String, type_ as TypeRef?, init_expr as ^Expr?, is_const as bool)
+    cue init(span: Span, mods: Modifiers, name: String, type_: TypeRef?, init_expr: ^Expr?, is_const: bool)
         this.span = span
         this.mods = mods
         this.name = name
@@ -288,12 +288,12 @@ struct DeclVar
 # ── Constructor ───────────────────────────────────────────────────────────────
 
 struct DeclInit
-    var span as Span
-    var mods as Modifiers
-    var params as List(Param)
-    var stmts as List(Stmt)?
+    var span: Span
+    var mods: Modifiers
+    var params: List(Param)
+    var stmts: List(Stmt)?
 
-    cue init(span as Span, mods as Modifiers, params as List(Param), stmts as List(Stmt)?)
+    cue init(span: Span, mods: Modifiers, params: List(Param), stmts: List(Stmt)?)
         this.span = span
         this.mods = mods
         this.params = params
@@ -306,13 +306,13 @@ enum ParamMode
     variadic
 
 struct Param
-    var span as Span
-    var mode as ParamMode
-    var name as String
-    var type_ as TypeRef?
-    var default_ as ^Expr?
+    var span: Span
+    var mode: ParamMode
+    var name: String
+    var type_: TypeRef?
+    var default_: ^Expr?
 
-    cue init(span as Span, mode as ParamMode, name as String, type_ as TypeRef?, default_ as ^Expr?)
+    cue init(span: Span, mode: ParamMode, name: String, type_: TypeRef?, default_: ^Expr?)
         this.span = span
         this.mode = mode
         this.name = name
@@ -324,39 +324,39 @@ struct Param
 # TypeRef is self-referential: nilable/stream/error_union/ref_to all contain ^TypeRef.
 
 union TypeRef
-    named as NamedTypeRef
-    nilable as ^TypeRef
-    stream as ^TypeRef
-    error_union as ^TypeRef
-    ref_to as ^TypeRef
-    generic as GenericTypeRef
+    named: NamedTypeRef
+    nilable: ^TypeRef
+    stream: ^TypeRef
+    error_union: ^TypeRef
+    ref_to: ^TypeRef
+    generic: GenericTypeRef
     void_
     same_
-    tuple as TupleTypeRef
+    tuple: TupleTypeRef
 
 struct NamedTypeRef
-    var span as Span
-    var name as String
+    var span: Span
+    var name: String
 
-    cue init(span as Span, name as String)
+    cue init(span: Span, name: String)
         this.span = span
         this.name = name
 
 struct GenericTypeRef
-    var span as Span
-    var name as String
-    var args as List(TypeRef)
+    var span: Span
+    var name: String
+    var args: List(TypeRef)
 
-    cue init(span as Span, name as String, args as List(TypeRef))
+    cue init(span: Span, name: String, args: List(TypeRef))
         this.span = span
         this.name = name
         this.args = args
 
 struct TupleTypeRef
-    var span as Span
-    var elems as List(TypeRef)
+    var span: Span
+    var elems: List(TypeRef)
 
-    cue init(span as Span, elems as List(TypeRef))
+    cue init(span: Span, elems: List(TypeRef))
         this.span = span
         this.elems = elems
 
@@ -381,49 +381,49 @@ enum AssignOp
 # Notes: branch/pass/raise/guard are keywords; use branch_/pass_/raise_/guard_.
 
 union Stmt
-    if_ as ^StmtIf
-    while_ as ^StmtWhile
-    for_in as ^StmtForIn
-    for_num as ^StmtForNum
-    branch_ as ^StmtBranch
-    return_ as ^StmtReturn
-    assert_ as ^StmtAssert
-    pass_ as Span
-    break_ as Span
-    continue_ as Span
-    assign as ^StmtAssign
-    var_ as ^DeclVar
-    expr as ^Expr
-    defer_ as ^StmtDefer
-    with_ as ^StmtWith
-    raise_ as ^StmtRaise
-    try_catch as ^StmtTryCatch
-    guard_ as ^StmtGuard
-    destruct as ^StmtDestruct
-    arena_scope as ^StmtArenaScope
-    print_ as ^StmtPrint
+    if_: ^StmtIf
+    while_: ^StmtWhile
+    for_in: ^StmtForIn
+    for_num: ^StmtForNum
+    branch_: ^StmtBranch
+    return_: ^StmtReturn
+    assert_: ^StmtAssert
+    pass_: Span
+    break_: Span
+    continue_: Span
+    assign: ^StmtAssign
+    var_: ^DeclVar
+    expr: ^Expr
+    defer_: ^StmtDefer
+    with_: ^StmtWith
+    raise_: ^StmtRaise
+    try_catch: ^StmtTryCatch
+    guard_: ^StmtGuard
+    destruct: ^StmtDestruct
+    arena_scope: ^StmtArenaScope
+    print_: ^StmtPrint
 
 struct ElseIf
-    var span as Span
-    var cond as Expr
-    var is_capture as String?
-    var stmts as List(Stmt)
+    var span: Span
+    var cond: Expr
+    var is_capture: String?
+    var stmts: List(Stmt)
 
-    cue init(span as Span, cond as Expr, stmts as List(Stmt))
+    cue init(span: Span, cond: Expr, stmts: List(Stmt))
         this.span = span
         this.cond = cond
         this.is_capture = nil
         this.stmts = stmts
 
 struct StmtIf
-    var span as Span
-    var cond as ^Expr
-    var is_capture as String?
-    var then_stmts as List(Stmt)
-    var else_ifs as List(ElseIf)
-    var else_stmts as List(Stmt)?
+    var span: Span
+    var cond: ^Expr
+    var is_capture: String?
+    var then_stmts: List(Stmt)
+    var else_ifs: List(ElseIf)
+    var else_stmts: List(Stmt)?
 
-    cue init(span as Span, cond as ^Expr, then_stmts as List(Stmt), else_ifs as List(ElseIf), else_stmts as List(Stmt)?)
+    cue init(span: Span, cond: ^Expr, then_stmts: List(Stmt), else_ifs: List(ElseIf), else_stmts: List(Stmt)?)
         this.span = span
         this.cond = cond
         this.is_capture = nil
@@ -432,36 +432,36 @@ struct StmtIf
         this.else_stmts = else_stmts
 
 struct StmtWhile
-    var span as Span
-    var cond as ^Expr
-    var stmts as List(Stmt)
+    var span: Span
+    var cond: ^Expr
+    var stmts: List(Stmt)
 
-    cue init(span as Span, cond as ^Expr, stmts as List(Stmt))
+    cue init(span: Span, cond: ^Expr, stmts: List(Stmt))
         this.span = span
         this.cond = cond
         this.stmts = stmts
 
 struct StmtForIn
-    var span as Span
-    var vars as List(String)
-    var iter as ^Expr
-    var stmts as List(Stmt)
+    var span: Span
+    var vars: List(String)
+    var iter: ^Expr
+    var stmts: List(Stmt)
 
-    cue init(span as Span, vars as List(String), iter as ^Expr, stmts as List(Stmt))
+    cue init(span: Span, vars: List(String), iter: ^Expr, stmts: List(Stmt))
         this.span = span
         this.vars = vars
         this.iter = iter
         this.stmts = stmts
 
 struct StmtForNum
-    var span as Span
-    var var_ as String
-    var start as ^Expr
-    var stop_ as ^Expr
-    var step as ^Expr?
-    var stmts as List(Stmt)
+    var span: Span
+    var var_: String
+    var start: ^Expr
+    var stop_: ^Expr
+    var step: ^Expr?
+    var stmts: List(Stmt)
 
-    cue init(span as Span, var_ as String, start as ^Expr, stop_ as ^Expr, step as ^Expr?, stmts as List(Stmt))
+    cue init(span: Span, var_: String, start: ^Expr, stop_: ^Expr, step: ^Expr?, stmts: List(Stmt))
         this.span = span
         this.var_ = var_
         this.start = start
@@ -470,13 +470,13 @@ struct StmtForNum
         this.stmts = stmts
 
 struct BranchOn
-    var span as Span
-    var values as List(Expr)
-    var stmts as List(Stmt)
-    var binding as String?
-    var guard_expr as List(Expr)
+    var span: Span
+    var values: List(Expr)
+    var stmts: List(Stmt)
+    var binding: String?
+    var guard_expr: List(Expr)
 
-    cue init(span as Span, values as List(Expr), stmts as List(Stmt), binding as String?, guard_expr as List(Expr))
+    cue init(span: Span, values: List(Expr), stmts: List(Stmt), binding: String?, guard_expr: List(Expr))
         this.span = span
         this.values = values
         this.stmts = stmts
@@ -484,135 +484,135 @@ struct BranchOn
         this.guard_expr = guard_expr
 
 struct StmtBranch
-    var span as Span
-    var expr as ^Expr
-    var cases as List(BranchOn)
-    var else_ as List(Stmt)?
+    var span: Span
+    var expr: ^Expr
+    var cases: List(BranchOn)
+    var else_: List(Stmt)?
 
-    cue init(span as Span, expr as ^Expr, cases as List(BranchOn), else_ as List(Stmt)?)
+    cue init(span: Span, expr: ^Expr, cases: List(BranchOn), else_: List(Stmt)?)
         this.span = span
         this.expr = expr
         this.cases = cases
         this.else_ = else_
 
 struct StmtReturn
-    var span as Span
-    var value as ^Expr?
+    var span: Span
+    var value: ^Expr?
 
-    cue init(span as Span, value as ^Expr?)
+    cue init(span: Span, value: ^Expr?)
         this.span = span
         this.value = value
 
 struct StmtAssert
-    var span as Span
-    var cond as ^Expr
-    var message as ^Expr?
+    var span: Span
+    var cond: ^Expr
+    var message: ^Expr?
 
-    cue init(span as Span, cond as ^Expr, message as ^Expr?)
+    cue init(span: Span, cond: ^Expr, message: ^Expr?)
         this.span = span
         this.cond = cond
         this.message = message
 
 struct StmtAssign
-    var span as Span
-    var target as ^Expr
-    var op as AssignOp
-    var value as ^Expr
+    var span: Span
+    var target: ^Expr
+    var op: AssignOp
+    var value: ^Expr
 
-    cue init(span as Span, target as ^Expr, op as AssignOp, value as ^Expr)
+    cue init(span: Span, target: ^Expr, op: AssignOp, value: ^Expr)
         this.span = span
         this.target = target
         this.op = op
         this.value = value
 
 struct StmtDefer
-    var span as Span
-    var is_err as bool
-    var stmt as ^Stmt
+    var span: Span
+    var is_err: bool
+    var stmt: ^Stmt
 
-    cue init(span as Span, is_err as bool, stmt as ^Stmt)
+    cue init(span: Span, is_err: bool, stmt: ^Stmt)
         this.span = span
         this.is_err = is_err
         this.stmt = stmt
 
 struct StmtWith
-    var span as Span
-    var target as ^Expr
-    var stmts as List(Stmt)
+    var span: Span
+    var target: ^Expr
+    var stmts: List(Stmt)
 
-    cue init(span as Span, target as ^Expr, stmts as List(Stmt))
+    cue init(span: Span, target: ^Expr, stmts: List(Stmt))
         this.span = span
         this.target = target
         this.stmts = stmts
 
 struct StmtRaise
-    var span as Span
-    var message as ^Expr?
-    var details as ^Expr?
+    var span: Span
+    var message: ^Expr?
+    var details: ^Expr?
 
-    cue init(span as Span, message as ^Expr?, details as ^Expr?)
+    cue init(span: Span, message: ^Expr?, details: ^Expr?)
         this.span = span
         this.message = message
         this.details = details
 
 struct CatchClause
-    var span as Span
-    var binding as String?
-    var type_ as TypeRef?
-    var stmts as List(Stmt)
+    var span: Span
+    var binding: String?
+    var type_: TypeRef?
+    var stmts: List(Stmt)
 
-    cue init(span as Span, binding as String?, type_ as TypeRef?, stmts as List(Stmt))
+    cue init(span: Span, binding: String?, type_: TypeRef?, stmts: List(Stmt))
         this.span = span
         this.binding = binding
         this.type_ = type_
         this.stmts = stmts
 
 struct StmtTryCatch
-    var span as Span
-    var stmts as List(Stmt)
-    var clauses as List(CatchClause)
+    var span: Span
+    var stmts: List(Stmt)
+    var clauses: List(CatchClause)
 
-    cue init(span as Span, stmts as List(Stmt), clauses as List(CatchClause))
+    cue init(span: Span, stmts: List(Stmt), clauses: List(CatchClause))
         this.span = span
         this.stmts = stmts
         this.clauses = clauses
 
 struct StmtGuard
-    var span as Span
-    var cond as ^Expr
-    var else_stmts as List(Stmt)
+    var span: Span
+    var cond: ^Expr
+    var else_stmts: List(Stmt)
 
-    cue init(span as Span, cond as ^Expr, else_stmts as List(Stmt))
+    cue init(span: Span, cond: ^Expr, else_stmts: List(Stmt))
         this.span = span
         this.cond = cond
         this.else_stmts = else_stmts
 
 struct StmtDestruct
-    var span as Span
-    var names as List(String)
-    var init_expr as ^Expr
-    var is_struct as bool
+    var span: Span
+    var names: List(String)
+    var init_expr: ^Expr
+    var is_struct: bool
 
-    cue init(span as Span, names as List(String), init_expr as ^Expr, is_struct as bool)
+    cue init(span: Span, names: List(String), init_expr: ^Expr, is_struct: bool)
         this.span = span
         this.names = names
         this.init_expr = init_expr
         this.is_struct = is_struct
 
 struct StmtArenaScope
-    var span as Span
-    var stmts as List(Stmt)
+    var span: Span
+    var stmts: List(Stmt)
 
-    cue init(span as Span, stmts as List(Stmt))
+    cue init(span: Span, stmts: List(Stmt))
         this.span = span
         this.stmts = stmts
 
 struct StmtPrint
-    var span as Span
-    var args as List(Expr)
-    var newline as bool
+    var span: Span
+    var args: List(Expr)
+    var newline: bool
 
-    cue init(span as Span, args as List(Expr), newline as bool)
+    cue init(span: Span, args: List(Expr), newline: bool)
         this.span = span
         this.args = args
         this.newline = newline
@@ -624,37 +624,37 @@ struct StmtPrint
 # the union size small and to break recursive cycles.
 
 union Expr
-    int_lit as ExprIntLit
-    float_lit as ExprFloatLit
-    bool_lit as ExprBoolLit
-    char_lit as ExprCharLit
-    string_lit as ExprStringLit
-    string_interp as ^ExprStringInterp
-    nil_ as Span
-    this_ as Span
-    ident as ExprIdent
-    member as ^ExprMember
-    call as ^ExprCall
-    index as ^ExprIndex
-    slice as ^ExprSlice
-    binary as ^ExprBinary
-    unary as ^ExprUnary
-    cast as ^ExprCast
-    to_nilable as ^ExprToNilable
-    to_non_nil as ^ExprToNonNil
-    is_nil as ^ExprIsNil
-    orelse_ as ^ExprOrelse
-    catch_ as ^ExprCatch
-    if_expr as ^ExprIf
-    lambda as ^ExprLambda
-    list_lit as ^ExprListLit
-    dict_lit as ^ExprDictLit
-    array_lit as ^ExprArrayLit
-    zig_lit as ExprZigLit
-    try_ as ^ExprTry
-    tuple_lit as ^ExprTuple
-    type_check as ^ExprTypeCheck
-    except_ as ^ExprExcept
+    int_lit: ExprIntLit
+    float_lit: ExprFloatLit
+    bool_lit: ExprBoolLit
+    char_lit: ExprCharLit
+    string_lit: ExprStringLit
+    string_interp: ^ExprStringInterp
+    nil_: Span
+    this_: Span
+    ident: ExprIdent
+    member: ^ExprMember
+    call: ^ExprCall
+    index: ^ExprIndex
+    slice: ^ExprSlice
+    binary: ^ExprBinary
+    unary: ^ExprUnary
+    cast: ^ExprCast
+    to_nilable: ^ExprToNilable
+    to_non_nil: ^ExprToNonNil
+    is_nil: ^ExprIsNil
+    orelse_: ^ExprOrelse
+    catch_: ^ExprCatch
+    if_expr: ^ExprIf
+    lambda: ^ExprLambda
+    list_lit: ^ExprListLit
+    dict_lit: ^ExprDictLit
+    array_lit: ^ExprArrayLit
+    zig_lit: ExprZigLit
+    try_: ^ExprTry
+    tuple_lit: ^ExprTuple
+    type_check: ^ExprTypeCheck
+    except_: ^ExprExcept
 
 # integer literal
 
@@ -663,11 +663,11 @@ enum IntBase
     hex
 
 struct ExprIntLit
-    var span as Span
-    var text as String
-    var base as IntBase
+    var span: Span
+    var text: String
+    var base: IntBase
 
-    cue init(span as Span, text as String, base as IntBase)
+    cue init(span: Span, text: String, base: IntBase)
         this.span = span
         this.text = text
         this.base = base
@@ -675,30 +675,30 @@ struct ExprIntLit
 # float literal
 
 struct ExprFloatLit
-    var span as Span
-    var text as String
+    var span: Span
+    var text: String
 
-    cue init(span as Span, text as String)
+    cue init(span: Span, text: String)
         this.span = span
         this.text = text
 
 # bool literal
 
 struct ExprBoolLit
-    var span as Span
-    var value as bool
+    var span: Span
+    var value: bool
 
-    cue init(span as Span, value as bool)
+    cue init(span: Span, value: bool)
         this.span = span
         this.value = value
 
 # character literal
 
 struct ExprCharLit
-    var span as Span
-    var text as String
+    var span: Span
+    var text: String
 
-    cue init(span as Span, text as String)
+    cue init(span: Span, text: String)
         this.span = span
         this.text = text
 
@@ -711,11 +711,11 @@ enum StringKind
     zig_
 
 struct ExprStringLit
-    var span as Span
-    var kind as StringKind
-    var text as String
+    var span: Span
+    var kind: StringKind
+    var text: String
 
-    cue init(span as Span, kind as StringKind, text as String)
+    cue init(span: Span, kind: StringKind, text: String)
         this.span = span
         this.kind = kind
         this.text = text
@@ -723,34 +723,34 @@ struct ExprStringLit
 # string interpolation
 
 union StringPart
-    literal as String
-    expr_ as ^Expr
-    format as String
+    literal: String
+    expr_: ^Expr
+    format: String
 
 struct ExprStringInterp
-    var span as Span
-    var parts as List(StringPart)
+    var span: Span
+    var parts: List(StringPart)
 
-    cue init(span as Span, parts as List(StringPart))
+    cue init(span: Span, parts: List(StringPart))
         this.span = span
         this.parts = parts
 
 # except (struct update)
 
 struct ExceptField
-    var name as String
-    var value as Expr
+    var name: String
+    var value: Expr
 
-    cue init(name as String, value as Expr)
+    cue init(name: String, value: Expr)
         this.name = name
         this.value = value
 
 struct ExprExcept
-    var span as Span
-    var base as Expr
-    var fields as List(ExceptField)
+    var span: Span
+    var base: Expr
+    var fields: List(ExceptField)
 
-    cue init(span as Span, base as Expr, fields as List(ExceptField))
+    cue init(span: Span, base: Expr, fields: List(ExceptField))
         this.span = span
         this.base = base
         this.fields = fields
@@ -758,21 +758,21 @@ struct ExprExcept
 # identifier
 
 struct ExprIdent
-    var span as Span
-    var name as String
+    var span: Span
+    var name: String
 
-    cue init(span as Span, name as String)
+    cue init(span: Span, name: String)
         this.span = span
         this.name = name
 
 # member access: object.member
 
 struct ExprMember
-    var span as Span
-    var object as ^Expr
-    var member as String
+    var span: Span
+    var object: ^Expr
+    var member: String
 
-    cue init(span as Span, object as ^Expr, member as String)
+    cue init(span: Span, object: ^Expr, member: String)
         this.span = span
         this.object = object
         this.member = member
@@ -780,21 +780,21 @@ struct ExprMember
 # call: callee(args)
 
 struct Arg
-    var span as Span
-    var name as String?
-    var value as Expr
+    var span: Span
+    var name: String?
+    var value: Expr
 
-    cue init(span as Span, name as String?, value as Expr)
+    cue init(span: Span, name: String?, value: Expr)
         this.span = span
         this.name = name
         this.value = value
 
 struct ExprCall
-    var span as Span
-    var callee as Expr
-    var args as List(Arg)
+    var span: Span
+    var callee: Expr
+    var args: List(Arg)
 
-    cue init(span as Span, callee as Expr, args as List(Arg))
+    cue init(span: Span, callee: Expr, args: List(Arg))
         this.span = span
         this.callee = callee
         this.args = args
@@ -802,11 +802,11 @@ struct ExprCall
 # index: object[index]
 
 struct ExprIndex
-    var span as Span
-    var object as ^Expr
-    var index as ^Expr
+    var span: Span
+    var object: ^Expr
+    var index: ^Expr
 
-    cue init(span as Span, object as ^Expr, index as ^Expr)
+    cue init(span: Span, object: ^Expr, index: ^Expr)
         this.span = span
         this.object = object
         this.index = index
@@ -814,12 +814,12 @@ struct ExprIndex
 # slice: object[start:stop]
 
 struct ExprSlice
-    var span as Span
-    var object as ^Expr
-    var start as ^Expr?
-    var stop_ as ^Expr?
+    var span: Span
+    var object: ^Expr
+    var start: ^Expr?
+    var stop_: ^Expr?
 
-    cue init(span as Span, object as ^Expr, start as ^Expr?, stop_ as ^Expr?)
+    cue init(span: Span, object: ^Expr, start: ^Expr?, stop_: ^Expr?)
         this.span = span
         this.object = object
         this.start = start
@@ -852,12 +852,12 @@ enum BinaryOp
     dotdot
 
 struct ExprBinary
-    var span as Span
-    var op as BinaryOp
-    var left as ^Expr
-    var right as ^Expr
+    var span: Span
+    var op: BinaryOp
+    var left: ^Expr
+    var right: ^Expr
 
-    cue init(span as Span, op as BinaryOp, left as ^Expr, right as ^Expr)
+    cue init(span: Span, op: BinaryOp, left: ^Expr, right: ^Expr)
         this.span = span
         this.op = op
         this.left = left
@@ -871,11 +871,11 @@ enum UnaryOp
     bit_not
 
 struct ExprUnary
-    var span as Span
-    var op as UnaryOp
-    var operand as ^Expr
+    var span: Span
+    var op: UnaryOp
+    var operand: ^Expr
 
-    cue init(span as Span, op as UnaryOp, operand as ^Expr)
+    cue init(span: Span, op: UnaryOp, operand: ^Expr)
         this.span = span
         this.op = op
         this.operand = operand
@@ -883,11 +883,11 @@ struct ExprUnary
 # cast: expr to T
 
 struct ExprCast
-    var span as Span
-    var expr as ^Expr
-    var target as TypeRef
+    var span: Span
+    var expr: ^Expr
+    var target: TypeRef
 
-    cue init(span as Span, expr as ^Expr, target as TypeRef)
+    cue init(span: Span, expr: ^Expr, target: TypeRef)
         this.span = span
         this.expr = expr
         this.target = target
@@ -896,12 +896,12 @@ struct ExprCast
 # variant_name is nil for class type checks, non-nil for union variant checks
 
 struct ExprTypeCheck
-    var span as Span
-    var expr as ^Expr
-    var type_name as String
-    var variant_name as String?
+    var span: Span
+    var expr: ^Expr
+    var type_name: String
+    var variant_name: String?
 
-    cue init(span as Span, expr as ^Expr, type_name as String)
+    cue init(span: Span, expr: ^Expr, type_name: String)
         this.span = span
         this.expr = expr
         this.type_name = type_name
@@ -910,48 +910,48 @@ struct ExprTypeCheck
 # nilable / nil-check operators
 
 struct ExprToNilable
-    var span as Span
-    var expr as ^Expr
+    var span: Span
+    var expr: ^Expr
 
-    cue init(span as Span, expr as ^Expr)
+    cue init(span: Span, expr: ^Expr)
         this.span = span
         this.expr = expr
 
 struct ExprToNonNil
-    var span as Span
-    var expr as ^Expr
+    var span: Span
+    var expr: ^Expr
 
-    cue init(span as Span, expr as ^Expr)
+    cue init(span: Span, expr: ^Expr)
         this.span = span
         this.expr = expr
 
 struct ExprIsNil
-    var span as Span
-    var expr as ^Expr
+    var span: Span
+    var expr: ^Expr
 
-    cue init(span as Span, expr as ^Expr)
+    cue init(span: Span, expr: ^Expr)
         this.span = span
         this.expr = expr
 
 # orelse / catch
 
 struct ExprOrelse
-    var span as Span
-    var expr as ^Expr
-    var fallback as ^Expr
+    var span: Span
+    var expr: ^Expr
+    var fallback: ^Expr
 
-    cue init(span as Span, expr as ^Expr, fallback as ^Expr)
+    cue init(span: Span, expr: ^Expr, fallback: ^Expr)
         this.span = span
         this.expr = expr
         this.fallback = fallback
 
 struct ExprCatch
-    var span as Span
-    var expr as ^Expr
-    var err_var as String?
-    var fallback as ^Expr
+    var span: Span
+    var expr: ^Expr
+    var err_var: String?
+    var fallback: ^Expr
 
-    cue init(span as Span, expr as ^Expr, err_var as String?, fallback as ^Expr)
+    cue init(span: Span, expr: ^Expr, err_var: String?, fallback: ^Expr)
         this.span = span
         this.expr = expr
         this.err_var = err_var
@@ -960,12 +960,12 @@ struct ExprCatch
 # ternary if
 
 struct ExprIf
-    var span as Span
-    var cond as ^Expr
-    var then_expr as ^Expr
-    var else_expr as ^Expr
+    var span: Span
+    var cond: ^Expr
+    var then_expr: ^Expr
+    var else_expr: ^Expr
 
-    cue init(span as Span, cond as ^Expr, then_expr as ^Expr, else_expr as ^Expr)
+    cue init(span: Span, cond: ^Expr, then_expr: ^Expr, else_expr: ^Expr)
         this.span = span
         this.cond = cond
         this.then_expr = then_expr
@@ -975,17 +975,17 @@ struct ExprIf
 # 'body' is a keyword; use 'body_' for the LambdaBody field.
 
 union LambdaBody
-    expr_ as Expr
-    stmts as List(Stmt)
+    expr_: Expr
+    stmts: List(Stmt)
 
 struct ExprLambda
-    var span as Span
-    var params as List(Param)
-    var return_type as TypeRef?
-    var body_ as LambdaBody
-    var captures as List(DeclVar)
+    var span: Span
+    var params: List(Param)
+    var return_type: TypeRef?
+    var body_: LambdaBody
+    var captures: List(DeclVar)
 
-    cue init(span as Span, params as List(Param), return_type as TypeRef?, body_ as LambdaBody, captures as List(DeclVar))
+    cue init(span: Span, params: List(Param), return_type: TypeRef?, body_: LambdaBody, captures: List(DeclVar))
         this.span = span
         this.params = params
         this.return_type = return_type
@@ -995,61 +995,61 @@ struct ExprLambda
 # collection literals
 
 struct ExprListLit
-    var span as Span
-    var elem_type as TypeRef?
-    var elems as List(Expr)
+    var span: Span
+    var elem_type: TypeRef?
+    var elems: List(Expr)
 
-    cue init(span as Span, elem_type as TypeRef?, elems as List(Expr))
+    cue init(span: Span, elem_type: TypeRef?, elems: List(Expr))
         this.span = span
         this.elem_type = elem_type
         this.elems = elems
 
 struct DictEntry
-    var key as ^Expr
-    var value as ^Expr
+    var key: ^Expr
+    var value: ^Expr
 
-    cue init(key as ^Expr, value as ^Expr)
+    cue init(key: ^Expr, value: ^Expr)
         this.key = key
         this.value = value
 
 struct ExprDictLit
-    var span as Span
-    var entries as List(DictEntry)
+    var span: Span
+    var entries: List(DictEntry)
 
-    cue init(span as Span, entries as List(DictEntry))
+    cue init(span: Span, entries: List(DictEntry))
         this.span = span
         this.entries = entries
 
 struct ExprArrayLit
-    var span as Span
-    var elems as List(Expr)
+    var span: Span
+    var elems: List(Expr)
 
-    cue init(span as Span, elems as List(Expr))
+    cue init(span: Span, elems: List(Expr))
         this.span = span
         this.elems = elems
 
 # backend / misc
 
 struct ExprZigLit
-    var span as Span
-    var text as String
+    var span: Span
+    var text: String
 
-    cue init(span as Span, text as String)
+    cue init(span: Span, text: String)
         this.span = span
         this.text = text
 
 struct ExprTry
-    var span as Span
-    var expr as ^Expr
+    var span: Span
+    var expr: ^Expr
 
-    cue init(span as Span, expr as ^Expr)
+    cue init(span: Span, expr: ^Expr)
         this.span = span
         this.expr = expr
 
 struct ExprTuple
-    var span as Span
-    var elems as List(Expr)
+    var span: Span
+    var elems: List(Expr)
 
-    cue init(span as Span, elems as List(Expr))
+    cue init(span: Span, elems: List(Expr))
         this.span = span
         this.elems = elems

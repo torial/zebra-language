@@ -43,15 +43,15 @@ use typechecker exposing ModuleTypes, populateModuleTypes
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
 class MultiCompiler
-    var visited as List(str)
-    var dep_class_names as List(str)
-    var dep_types as ModuleTypes
-    var preamble_path as str
-    var output_dir as str
-    var c_sources as List(str)   # paths to .c deps discovered via `use`
-    var c_i_dirs as List(str)    # deduplicated -I dirs for C deps that have a .h
+    var visited: List(str)
+    var dep_class_names: List(str)
+    var dep_types: ModuleTypes
+    var preamble_path: str
+    var output_dir: str
+    var c_sources: List(str)   # paths to .c deps discovered via `use`
+    var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
 
-    cue init(preamble_path as str, output_dir as str)
+    cue init(preamble_path: str, output_dir: str)
         this.visited = List(str)()
         this.dep_class_names = List(str)()
         this.dep_types = ModuleTypes()
@@ -60,22 +60,22 @@ class MultiCompiler
         this.c_sources = List(str)()
         this.c_i_dirs = List(str)()
 
-    def alreadyVisited(p as str) as bool
-        var i as int = 0
+    def alreadyVisited(p: str): bool
+        var i: int = 0
         while i < visited.len
-            var v as str = visited.at(i)
+            var v: str = visited.at(i)
             if v == p
                 return true
             i = i + 1
         return false
 
-    def compileDep(zbr_path as str, is_root as bool) throws
+    def compileDep(zbr_path: str, is_root: bool) throws
         if .alreadyVisited(zbr_path)
             return
         visited.add(zbr_path)
         sys.errln("compiling: " + zbr_path)
 
-        var src as str = File.read(zbr_path)
+        var src: str = File.read(zbr_path)
 
         # Step 1: Parse
         sys.errln("  parsing...")
@@ -97,7 +97,7 @@ class MultiCompiler
                         on PNode.use_ as u
                             .compileDep_use(u, zbr_path)?
                         on PNode.class_ as cls
-                            var cname as str = "" + cls.name
+                            var cname: str = "" + cls.name
                             dep_class_names.add(cname)
                         else
                             pass
@@ -109,16 +109,16 @@ class MultiCompiler
                 const module = ASTBuilder.build(merged_pm, zbr_path)?
 
                 # Step 5: Generate Zig
-                var zig_src as str = ""
+                var zig_src: str = ""
                 if is_root
                     # All transitive deps have been compiled above and are in
                     # `visited`. Pass their module names (basenames without
                     # `.zbr`) so _zbr_error_msg() can walk every module's
                     # _error_ctx, not just the root's direct uses.
-                    var all_deps as List(str) = List(str)()
-                    var vi as int = 0
+                    var all_deps: List(str) = List(str)()
+                    var vi: int = 0
                     while vi < visited.len
-                        var vpath as str = visited.at(vi)
+                        var vpath: str = visited.at(vi)
                         if vpath != zbr_path
                             all_deps.add(.moduleNameOf(vpath))
                         vi = vi + 1
@@ -127,7 +127,7 @@ class MultiCompiler
                     zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
 
                 # Step 6: Write .zig file
-                var zig_path as str = .zbrToZig(zbr_path)
+                var zig_path: str = .zbrToZig(zbr_path)
                 File.write(zig_path, zig_src)
                 sys.errln("wrote " + zig_path)
 
@@ -141,31 +141,31 @@ class MultiCompiler
             else
                 raise "expected module"
 
-    def compileDep_use(u as PUse, parent_path as str) throws
-        # Resolve dep path: same directory as parent. Try .zbr first, then .c.
-        var src_dir as str = .dirOf(parent_path)
-        var dep_name as str = u.path
-        var dep_path as str = dep_name + ".zbr"
+    def compileDep_use(u: PUse, parent_path: str) throws
+        # Resolve dep path: same directory: parent. Try .zbr first, then .c.
+        var src_dir: str = .dirOf(parent_path)
+        var dep_name: str = u.path
+        var dep_path: str = dep_name + ".zbr"
         if src_dir != ""
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if File.exists(dep_path)
             .compileDep(dep_path, false)?
             return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
-        var c_path as str = dep_name + ".c"
+        var c_path: str = dep_name + ".c"
         if src_dir != ""
             c_path = src_dir + "/" + dep_name + ".c"
         if File.exists(c_path)
             c_sources.add(c_path)
-            var h_path as str = dep_name + ".h"
+            var h_path: str = dep_name + ".h"
             if src_dir != ""
                 h_path = src_dir + "/" + dep_name + ".h"
             if File.exists(h_path)
-                var c_dir as str = .dirOf(c_path)
+                var c_dir: str = .dirOf(c_path)
                 if c_dir == ""
                     c_dir = "."
-                var already_added as bool = false
-                var dchk as int = 0
+                var already_added: bool = false
+                var dchk: int = 0
                 while dchk < c_i_dirs.count()
                     if c_i_dirs.at(dchk) == c_dir
                         already_added = true
@@ -173,31 +173,31 @@ class MultiCompiler
                 if not already_added
                     c_i_dirs.add(c_dir)
 
-    def zbrToZig(zbr_path as str) as str
+    def zbrToZig(zbr_path: str): str
         # Replace ".zbr" extension with ".zig"
         # If output_dir is set, write to output_dir/basename.zig
-        var stem as str = zbr_path
+        var stem: str = zbr_path
         if zbr_path.endsWith(".zbr")
             for s in zbr_path.split(".zbr")
                 stem = s
                 break
         if output_dir != ""
             # Extract just the filename part (after last /)
-            var base as str = stem
+            var base: str = stem
             if stem.contains("/")
-                var parts as List(str) = List(str)()
+                var parts: List(str) = List(str)()
                 for p in stem.split("/")
                     parts.add(p)
                 base = parts.at(parts.len - 1)
             return output_dir + "/" + base + ".zig"
         return stem + ".zig"
 
-    def moduleNameOf(zbr_path as str) as str
+    def moduleNameOf(zbr_path: str): str
         # Return the Zig module basename for a .zbr path: strip any dir prefix
         # and the .zbr extension. E.g. "selfhost/Lexer.zbr" -> "Lexer".
-        var base as str = zbr_path
+        var base: str = zbr_path
         if zbr_path.contains("/")
-            var parts as List(str) = List(str)()
+            var parts: List(str) = List(str)()
             for p in zbr_path.split("/")
                 parts.add(p)
             base = parts.at(parts.len - 1)
@@ -207,19 +207,19 @@ class MultiCompiler
                 break
         return base
 
-    def dirOf(path as str) as str
+    def dirOf(path: str): str
         # Find directory part by splitting on "/"
         if not path.contains("/")
             return ""
-        var parts as List(str) = List(str)()
+        var parts: List(str) = List(str)()
         for part in path.split("/")
             parts.add(part)
         if parts.len <= 1
             return ""
         # Rejoin all parts except the last
-        var result as str = parts.at(0)
-        var i as int = 1
-        var last as int = parts.len - 1
+        var result: str = parts.at(0)
+        var i: int = 1
+        var last: int = parts.len - 1
         while i < last
             result = result + "/"
             result = result + parts.at(i)
@@ -234,12 +234,12 @@ class MultiCompiler
     # Duplicate methods (same name already present in root class) are filtered
     # out before merging — matching src/main.zig:415-443.
 
-    def hasDupMethod(method_name as str, root_members as List(PNode)) as bool
-        var i as int = 0
+    def hasDupMethod(method_name: str, root_members: List(PNode)): bool
+        var i: int = 0
         while i < root_members.count()
             branch root_members.at(i)
                 on PNode.method_ as rm
-                    var rm_name as str = rm.name
+                    var rm_name: str = rm.name
                     if rm_name == method_name
                         return true
                 else
@@ -247,8 +247,8 @@ class MultiCompiler
             i = i + 1
         return false
 
-    def mergePartials_pmodule(pm as PModule, zbr_path as str) as PModule throws
-        var base as str = zbr_path
+    def mergePartials_pmodule(pm: PModule, zbr_path: str): PModule throws
+        var base: str = zbr_path
         if zbr_path.contains("/")
             var parts = List(str)()
             for p in zbr_path.split("/")
@@ -257,23 +257,23 @@ class MultiCompiler
         if not base.endsWith(".zbr")
             return pm
         # Get stem via split (avoids str.len arithmetic, which returns uint)
-        var stem as str = base
+        var stem: str = base
         for s in base.split(".zbr")
             stem = s
             break
         if stem.contains(".")
             return pm
-        var list_dir as str = .dirOf(zbr_path)
+        var list_dir: str = .dirOf(zbr_path)
         if list_dir == ""
             list_dir = "."
         var entries = Dir.list(list_dir)
         var partial_paths = List(str)()
-        var prefix as str = stem + "."
+        var prefix: str = stem + "."
         var ei = 0
         while ei < entries.count()
-            var ename as str = entries.at(ei)
+            var ename: str = entries.at(ei)
             if ename.startsWith(prefix) and ename.endsWith(".zbr") and ename != base
-                var full_path as str = ename
+                var full_path: str = ename
                 if list_dir != "."
                     full_path = list_dir + "/" + ename
                 partial_paths.add(full_path)
@@ -285,9 +285,9 @@ class MultiCompiler
         var partial_pms = List(PModule)()
         var pi = 0
         while pi < partial_paths.count()
-            var ppath as str = partial_paths.at(pi)
-            var psrc_raw as str = File.read(ppath)
-            var psrc as str = "" + psrc_raw
+            var ppath: str = partial_paths.at(pi)
+            var psrc_raw: str = File.read(ppath)
+            var psrc: str = "" + psrc_raw
             const ppm_node = Parser.Parser.parse(psrc)?
             branch ppm_node
                 on PNode.module_ as ppm
@@ -303,8 +303,8 @@ class MultiCompiler
             branch rdecl
                 on PNode.class_ as rcls
                     # Collect any extra members from partials with the same class name.
-                    # Extract name as str explicitly so == emits std.mem.eql (not raw ==).
-                    var rcls_name as str = rcls.name
+                    # Extract name: str explicitly so == emits std.mem.eql (not raw ==).
+                    var rcls_name: str = rcls.name
                     var extra_members = List(PNode)()
                     var pmi = 0
                     while pmi < partial_pms.count()
@@ -314,15 +314,15 @@ class MultiCompiler
                             var pdecl = partial_pm.decls.at(pdi)
                             branch pdecl
                                 on PNode.class_ as pcls
-                                    var pcls_name as str = pcls.name
+                                    var pcls_name: str = pcls.name
                                     if pcls_name == rcls_name
                                         var memi = 0
                                         while memi < pcls.members.count()
                                             var pmem = pcls.members.at(memi)
-                                            var keep as bool = true
+                                            var keep: bool = true
                                             branch pmem
                                                 on PNode.method_ as pmth
-                                                    var pmth_name as str = pmth.name
+                                                    var pmth_name: str = pmth.name
                                                     keep = not .hasDupMethod(pmth_name, rcls.members)
                                                 else
                                                     pass
@@ -378,13 +378,13 @@ class Main
         # -- Source path -------------------------------------------------------
         # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
 
-        var src_path as str? = nil
-        var pi as int = 0
+        var src_path: str? = nil
+        var pi: int = 0
         while pi < 10
             var candidate = args.positional(pi)
             if candidate == nil
                 break
-            var cval as str = candidate to!
+            var cval: str = candidate to!
             if cval.endsWith(".zbr") or cval.endsWith(".cobra")
                 src_path = cval
                 break
@@ -415,7 +415,7 @@ class Main
         var release              = args.contains("--release")
         const preamble_path      = "selfhost/stdlib_preamble.zig"
         # --output-dir=DIR style to avoid positional arg confusion
-        var output_dir as str    = args.option("--output-dir", "")
+        var output_dir: str    = args.option("--output-dir", "")
 
         if mode_emit or mode_selfhost
             # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
@@ -427,13 +427,13 @@ class Main
 
                 if mode_emit
                     # --emit-zig: print root file's Zig source to stdout
-                    var zig_path as str = mc.zbrToZig(path)
-                    var zig_src as str = File.read(zig_path)
+                    var zig_path: str = mc.zbrToZig(path)
+                    var zig_src: str = File.read(zig_path)
                     print zig_src
                     sys.exit(0)
 
                 # --selfhost-compile: invoke zig to compile/run the generated file
-                var zig_path as str = mc.zbrToZig(path)
+                var zig_path: str = mc.zbrToZig(path)
 
                 var argv2 = List(str)()
                 argv2.add("zig")
@@ -447,12 +447,12 @@ class Main
                     argv2.add(zig_path)
 
                 # Append any C source files discovered during dep walk
-                var csi as int = 0
+                var csi: int = 0
                 while csi < mc.c_sources.count()
                     argv2.add(mc.c_sources.at(csi))
                     csi = csi + 1
                 # -I flags for C deps that have a matching .h header
-                var idi as int = 0
+                var idi: int = 0
                 while idi < mc.c_i_dirs.count()
                     argv2.add("-I" + mc.c_i_dirs.at(idi))
                     idi = idi + 1

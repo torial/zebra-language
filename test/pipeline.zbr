@@ -1,9 +1,9 @@
 class Math
     shared
-        def add(a as int, b as int) as int
+        def add(a: int, b: int): int
             return a + b
 
-        def double(x as int) as int
+        def double(x: int): int
             return x + x
 
         def main
@@ -12,6 +12,6 @@ class Math
             print result
 
             # Expression-body lambda with explicit return type
-            var triple = def(x as int) as int = x + x + x
+            var triple = def(x: int): int = x + x + x
             var t = triple(7)
             print t

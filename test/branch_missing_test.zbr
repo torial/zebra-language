@@ -6,7 +6,7 @@ union Color
 class Main
     shared
         def main
-            var c as Color = Color.red
+            var c: Color = Color.red
             branch c
                 on Color.red
                     print "red"

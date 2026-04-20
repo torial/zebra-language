@@ -1,10 +1,10 @@
 class Greeter
-    def greet(name as String) as String
+    def greet(name: String): String
         return name
 
 class Program
     shared
         def main
-            var g as Greeter = zig"Greeter{}"
-            var msg as String = g.greet("world")
+            var g: Greeter = zig"Greeter{}"
+            var msg: String = g.greet("world")
             print msg

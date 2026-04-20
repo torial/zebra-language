@@ -1,22 +1,22 @@
 # Zebra IDE — self-hosted, Dear ImGui backend
 # Layout: file browser | code editor | run output (all in one flat frame)
-# State is stored as class-level shared vars (no capture needed).
+# State is stored: class-level shared vars (no capture needed).
 
 class IDE
-    shared var current_file as str = ""
-    shared var source_code  as str = ""
-    shared var run_output   as str = ""
-    shared var file_list    as List(str) = List()
+    shared var current_file: str = ""
+    shared var source_code : str = ""
+    shared var run_output  : str = ""
+    shared var file_list   : List(str) = List()
 
     shared
         def loadFileList
-            var entries as List(str) = File.listDir(".")
+            var entries: List(str) = File.listDir(".")
             IDE.file_list = List()
             for f in entries
                 if f.endsWith(".zbr") and not f.endsWith("zebra_ide.zbr")
                     IDE.file_list.add(f)
 
-        def loadFile(path as str)
+        def loadFile(path: str)
             IDE.current_file = path
             IDE.source_code  = File.read(path)
             IDE.run_output   = ""
@@ -32,7 +32,7 @@ class IDE
             IDE.saveFile()
             IDE.run_output = Shell.run("zebra ${IDE.current_file}")
 
-        def frame(g as Gui)
+        def frame(g: Gui)
             # ── File browser ─────────────────────────────────────────
             g.text("Files")
             g.separator()

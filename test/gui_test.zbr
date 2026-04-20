@@ -1,9 +1,9 @@
 class Main
     shared
         def main
-            var frame = def(g as Gui)
+            var frame = def(g: Gui)
                 capture
-                    var count as int = 0
+                    var count: int = 0
                 g.text("Count: ${count}")
                 if g.button("Increment")
                     count = count + 1

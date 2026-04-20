@@ -28,7 +28,7 @@ class Main
             var arr_json = '{"tags": ["alpha", "beta", "gamma"]}'
             var ad = Json.parse(arr_json) to!
             var tags = ad.getList("tags")
-            var count as int = 0
+            var count: int = 0
             for tag in tags
                 if tag.isNull()
                     count = count + 0

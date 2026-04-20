@@ -31,7 +31,7 @@ use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferEx
 # Given a member-access Expr (self.field), return the field name.
 # Returns nil if the expr is not a member access.
 
-def getMemberFieldName(e as Expr) as str?
+def getMemberFieldName(e: Expr): str?
     branch e
         on Expr.member as m
             return m.member
@@ -45,24 +45,24 @@ def getMemberFieldName(e as Expr) as str?
             pass
     return nil
 
-def makeDottedKey(a as str, b as str) as str
+def makeDottedKey(a: str, b: str): str
     return a + "." + b
 
-def extractAfterDot(s as str) as str
+def extractAfterDot(s: str): str
     # Return the part after the last '.' in a dotted name
     # e.g. "Token.Token" → "Token", "a.b.c" → "c"
-    var result as str = s
+    var result: str = s
     for part in s.split(".")
         result = part
     return result
 
-def isUpperCase(s as str) as bool
+def isUpperCase(s: str): bool
     if s.len == 0
         return false
     var c = s[0]
     return c >= c'A' and c <= c'Z'
 
-def getVariantKey(e as Expr) as str?
+def getVariantKey(e: Expr): str?
     branch e
         on Expr.member as m
             var obj_name = getIdentName(m.object)
@@ -72,7 +72,7 @@ def getVariantKey(e as Expr) as str?
             pass
     return nil
 
-def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
+def addCrossModuleBoxedVariants(bv: StrSet, module_name: str)
     # PNode from Parser module has many boxed variants
     if module_name == "Parser"
         bv.add("PNode.module_")
@@ -179,7 +179,7 @@ def addCrossModuleBoxedVariants(bv as StrSet, module_name as str)
         # StringPart boxed variant
         bv.add("StringPart.expr_")
 
-def addCrossModuleRefFields(rf as StrSet, orf as StrSet, module_name as str)
+def addCrossModuleRefFields(rf: StrSet, orf: StrSet, module_name: str)
     # ^T struct fields from ast.zbr: StructName.fieldName
     # rf = non-optional ^T, orf = optional ^T?
     if module_name == "ast" or module_name == "codegen" or module_name == "astbuilder" or module_name == "cg_helpers"
@@ -231,7 +231,7 @@ def addCrossModuleRefFields(rf as StrSet, orf as StrSet, module_name as str)
         rf.add("DictEntry.key")
         rf.add("DictEntry.value")
 
-def isKnownListField(name as str) as bool
+def isKnownListField(name: str): bool
     # Known List-typed fields on Parser structs and AST types
     if name == "value" or name == "else_stmts" or name == "init_expr"
         return true
@@ -268,7 +268,7 @@ def isKnownListField(name as str) as bool
 # the current-module or dep-module type tables?" Populated at class/
 # struct-build time (typechecker.addClassMembers), so a reverse index
 # without HashMap iteration.
-def fieldIsStrSet(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) as bool
+def fieldIsStrSet(mt: ModuleTypes, dep_mt: ModuleTypes, field_name: str): bool
     if mt.hasStrSetField(field_name)
         return true
     if dep_mt.hasStrSetField(field_name)
@@ -280,27 +280,27 @@ def fieldIsStrSet(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) a
 # fieldIsStrSet; populated at class-build time in typechecker.addClassMembers
 # via isHashMapTypeRef on the raw TypeRef (since typeFromRef maps generics to
 # Type_.unknown_ and would lose the HashMap signal).
-def fieldIsHashMap(mt as ModuleTypes, dep_mt as ModuleTypes, field_name as str) as bool
+def fieldIsHashMap(mt: ModuleTypes, dep_mt: ModuleTypes, field_name: str): bool
     if mt.hasHashMapField(field_name)
         return true
     if dep_mt.hasHashMapField(field_name)
         return true
     return false
 
-def ctorParamAtIsRefTo(mt as ModuleTypes, dep_mt as ModuleTypes, class_name as str, idx as int) as bool
-    var t as Type_? = mt.ctorParamAt(class_name, idx)
+def ctorParamAtIsRefTo(mt: ModuleTypes, dep_mt: ModuleTypes, class_name: str, idx: int): bool
+    var t: Type_? = mt.ctorParamAt(class_name, idx)
     if t == nil
         t = dep_mt.ctorParamAt(class_name, idx)
     if t == nil
         return false
-    var tv as Type_ = t to!
+    var tv: Type_ = t to!
     branch tv
         on Type_.ref_to
             return true
         else
             return false
 
-def shouldBoxCtorArg(e as Expr) as bool
+def shouldBoxCtorArg(e: Expr): bool
     # Returns true if the expression likely produces a union value (Expr/Stmt/TypeRef)
     # that needs to be heap-allocated when passed to a ^T struct parameter
     branch e
@@ -336,7 +336,7 @@ def shouldBoxCtorArg(e as Expr) as bool
             pass
     return false
 
-def variantStructName(union_name as str, variant_name as str) as str?
+def variantStructName(union_name: str, variant_name: str): str?
     # Map union variant to struct type name: Stmt.assign → StmtAssign
     # Use variant_name directly (including trailing underscores)
     if union_name == "Stmt"
@@ -422,7 +422,7 @@ def variantStructName(union_name as str, variant_name as str) as str?
             return "DeclSig"
     return nil
 
-def isUnionLikeName(name as str) as bool
+def isUnionLikeName(name: str): bool
     # Known union type names from cross-module imports
     if name == "PNode" or name == "PParam"
         return true
@@ -432,7 +432,7 @@ def isUnionLikeName(name as str) as bool
         return true
     return false
 
-def isEnumLikeName(name as str) as bool
+def isEnumLikeName(name: str): bool
     # Check if name ends with common enum suffixes: Kind, Mode, Op
     if name == "TokenKind" or name == "LineKind" or name == "StringKind"
         return true
@@ -442,7 +442,7 @@ def isEnumLikeName(name as str) as bool
         return true
     return false
 
-def getIdentName(e as Expr) as str?
+def getIdentName(e: Expr): str?
     branch e
         on Expr.ident as id
             return id.name
@@ -452,7 +452,7 @@ def getIdentName(e as Expr) as str?
             pass
     return nil
 
-def isCrossModuleCtorCall(callee as Expr) as bool
+def isCrossModuleCtorCall(callee: Expr): bool
     # Check if call is Module.ClassName() where module == class name
     branch callee
         on Expr.member as m
@@ -463,7 +463,7 @@ def isCrossModuleCtorCall(callee as Expr) as bool
             pass
     return false
 
-def getMemberObjectIdent(callee as Expr) as str?
+def getMemberObjectIdent(callee: Expr): str?
     # Extract the object ident name from a member expression, e.g. Foo.bar → "Foo"
     branch callee
         on Expr.member as m
@@ -472,7 +472,7 @@ def getMemberObjectIdent(callee as Expr) as str?
             pass
     return nil
 
-def getMemberName(callee as Expr) as str?
+def getMemberName(callee: Expr): str?
     # Extract the member name from a member expression, e.g. Foo.bar → "bar"
     branch callee
         on Expr.member as m
@@ -481,7 +481,7 @@ def getMemberName(callee as Expr) as str?
             pass
     return nil
 
-def getXmUnionParts(callee as Expr) as List(str)?
+def getXmUnionParts(callee: Expr): List(str)?
     # Detect Mod.Union.variant callee shape: member(member(ident(Mod), Union), variant)
     # Returns [mod_name, union_name, variant_name] or nil.
     # Uses a standalone function to avoid nested-branch TC gap (Zig backend doesn't
@@ -505,7 +505,7 @@ def getXmUnionParts(callee as Expr) as List(str)?
 # a member access on "this" (self/this field access).
 # Used to detect whether `self` is used in a method body.
 
-def exprMentionsThis(e as Expr) as bool
+def exprMentionsThis(e: Expr): bool
     branch e
         on Expr.this_
             return true
@@ -555,7 +555,7 @@ def exprMentionsThis(e as Expr) as bool
             pass
     return false
 
-def stmtMentionsThis(s as Stmt) as bool
+def stmtMentionsThis(s: Stmt): bool
     branch s
         on Stmt.assign as a
             return exprMentionsThis(a.target) or exprMentionsThis(a.value)
@@ -612,7 +612,7 @@ def stmtMentionsThis(s as Stmt) as bool
             pass
     return false
 
-def bodyUsesAnyField(stmts as List(Stmt), members as List(Decl)) as bool
+def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl)): bool
     for d in members
         branch d
             on Decl.var_ as fld
@@ -622,7 +622,7 @@ def bodyUsesAnyField(stmts as List(Stmt), members as List(Decl)) as bool
                 pass
     return false
 
-def bodyUsesAnyMethod(stmts as List(Stmt), members as List(Decl)) as bool
+def bodyUsesAnyMethod(stmts: List(Stmt), members: List(Decl)): bool
     for d in members
         branch d
             on Decl.method as dm
@@ -632,7 +632,7 @@ def bodyUsesAnyMethod(stmts as List(Stmt), members as List(Decl)) as bool
                 pass
     return false
 
-def bodyMentionsThis(stmts as List(Stmt)) as bool
+def bodyMentionsThis(stmts: List(Stmt)): bool
     for s in stmts
         if stmtMentionsThis(s)
             return true
@@ -655,7 +655,7 @@ def bodyMentionsThis(stmts as List(Stmt)) as bool
 #   var zig_src = generateFull(module, path, "selfhost/stdlib_preamble.zig")?
 #   File.write(zig_path, zig_src)
 
-def typeRefStr(tr as TypeRef) as str
+def typeRefStr(tr: TypeRef): str
     branch tr
         on TypeRef.named as n
             return n.name
@@ -684,10 +684,10 @@ def typeRefStr(tr as TypeRef) as str
             return "tuple"
     return "unknown"
 
-def generateModule(m as Module, file as str) as str
+def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes())
 
-def generateModuleWith(m as Module, file as str, extra_class_names as List(str), deps_mt as ModuleTypes) as str
+def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes): str
     var w = Writer()
     var cn = StrSet()
     # Pre-populate class_names, union_names, enum_names for forward references.
@@ -698,7 +698,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str),
             else
                 pass
     # Add cross-module class names from dependencies
-    var i as int = 0
+    var i: int = 0
     while i < extra_class_names.len
         cn.add(extra_class_names.at(i))
         i = i + 1
@@ -744,7 +744,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str),
                     # over name heuristics. deps_mt.hasUnion covers any exposed
                     # cross-module union declared in a dep (e.g. Type_ from
                     # typechecker.zbr); the hardcoded isUnionLikeName /
-                    # isEnumLikeName lists remain as a fallback for the
+                    # isEnumLikeName lists remain: a fallback for the
                     # generate-single-file path where deps_mt is empty.
                     if deps_mt.hasUnion(exposed_name)
                         g.union_names.add(exposed_name)
@@ -753,7 +753,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str),
                     else if isUnionLikeName(exposed_name)
                         g.union_names.add(exposed_name)
                     else
-                        # Default: treat exposed uppercase names as struct/class types
+                        # Default: treat exposed uppercase names: struct/class types
                         # Only uppercase names — lowercase are functions, not types
                         if isUpperCase(exposed_name)
                             g.struct_names.add(exposed_name)
@@ -836,7 +836,7 @@ def generateModuleWith(m as Module, file as str, extra_class_names as List(str),
 #   pub fn main() void { _allocator = _arena.allocator(); defer _arena.deinit(); ClassName.main(); }
 # For a throws main, wraps in a catch block for clean error display.
 
-def generateEntryPoint(m as Module) as str
+def generateEntryPoint(m: Module): str
     var main_class = ""
     var main_throws = false
     for decl in m.decls
@@ -858,7 +858,7 @@ def generateEntryPoint(m as Module) as str
                                 branch nmem
                                     on Decl.method as nmth
                                         if nmth.name == "main" and nmth.mods.is_shared
-                                            var qn as str = ns.name
+                                            var qn: str = ns.name
                                             qn = qn + "."
                                             qn = qn + nc.name
                                             main_class = qn
@@ -871,7 +871,7 @@ def generateEntryPoint(m as Module) as str
                 pass
     if main_class == ""
         return ""
-    var sb as StringBuilder = StringBuilder()
+    var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main() void {\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
@@ -900,12 +900,12 @@ def generateEntryPoint(m as Module) as str
 # This solves the cross-module error context isolation problem: when a dep
 # raises, its `_error_ctx` is set in its own module, but the caller's is empty.
 
-def generateErrorMsgHelper(m as Module) as str
+def generateErrorMsgHelper(m: Module): str
     # Back-compat: walk m.decls for direct uses only. Misses transitive deps
     # (e.g. parser.zbr uses Lexer, but main.zbr only uses parser — Lexer's
     # _error_ctx was invisible to main.zig). Prefer generateErrorMsgHelperWith
     # with the full transitive module list from main.zbr's compile graph.
-    var dep_modules as List(str) = List(str)()
+    var dep_modules: List(str) = List(str)()
     for decl in m.decls
         branch decl
             on Decl.use_ as u
@@ -914,11 +914,11 @@ def generateErrorMsgHelper(m as Module) as str
                 pass
     return generateErrorMsgHelperWith(dep_modules)
 
-def generateErrorMsgHelperWith(dep_modules as List(str)) as str
-    var sb as StringBuilder = StringBuilder()
+def generateErrorMsgHelperWith(dep_modules: List(str)): str
+    var sb: StringBuilder = StringBuilder()
     sb.append("fn _zbr_error_msg() []const u8 {\n")
     sb.append("    if (_error_ctx.message.len > 0) return _error_ctx.message;\n")
-    var di as int = 0
+    var di: int = 0
     while di < dep_modules.len
         var dep_name = dep_modules.at(di)
         # For cross-module _error_ctx, always use @import to access the module-level variable
@@ -938,22 +938,22 @@ def generateErrorMsgHelperWith(dep_modules as List(str)) as str
 # Returns a complete, self-contained .zig file.
 # preamble_path must be relative to the current working directory.
 
-def generateFull(m as Module, file as str, preamble_path as str) as str throws
+def generateFull(m: Module, file: str, preamble_path: str): str throws
     return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes())
 
-def generateFullWith(m as Module, file as str, preamble_path as str, extra_class_names as List(str), deps_mt as ModuleTypes) as str throws
+def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes): str throws
     return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)())
 
-def generateFullWithDeps(m as Module, file as str, preamble_path as str, extra_class_names as List(str), deps_mt as ModuleTypes, all_dep_modules as List(str)) as str throws
+def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str)): str throws
     var preamble = File.read(preamble_path)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt)
     var entry = generateEntryPoint(m)
-    var error_helper as str = ""
+    var error_helper: str = ""
     if all_dep_modules.len > 0
         error_helper = generateErrorMsgHelperWith(all_dep_modules)
     else
         error_helper = generateErrorMsgHelper(m)
-    var sb as StringBuilder = StringBuilder()
+    var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost.\n")
     sb.append("// Source: ")
     sb.append(file)
@@ -970,13 +970,13 @@ def generateFullWithDeps(m as Module, file as str, preamble_path as str, extra_c
     return sb.build()
 
 # Generate a dependency file (no entry point thunk, preamble + imports + declarations).
-def generateDep(m as Module, file as str, preamble_path as str) as str throws
+def generateDep(m: Module, file: str, preamble_path: str): str throws
     return generateDepWith(m, file, preamble_path, List(str)(), ModuleTypes())
 
-def generateDepWith(m as Module, file as str, preamble_path as str, extra_class_names as List(str), deps_mt as ModuleTypes) as str throws
+def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes): str throws
     var preamble = File.read(preamble_path)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt)
-    var sb as StringBuilder = StringBuilder()
+    var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost.\n")
     sb.append("// Source: ")
     sb.append(file)
@@ -990,82 +990,82 @@ def generateDepWith(m as Module, file as str, preamble_path as str, extra_class_
 # Reference-type output sink.  All Generator copies share the same Writer.
 
 class Writer
-    var _buf as StringBuilder
-    var _uid as int
+    var _buf: StringBuilder
+    var _uid: int
 
     cue init()
         _buf = StringBuilder()
         _uid = 0
 
-    def emit(s as str)
+    def emit(s: str)
         _buf.append(s)
 
-    def result() as str
+    def result(): str
         return _buf.build()
 
     # Monotonic counter for deterministic unique identifier suffixes in emitted
     # Zig (_rdet_N, _rshim_N, etc). Shared across all Generator copies because
     # Writer is a class — `except`-derived Generators keep the same Writer ref.
-    def nextUid() as int
+    def nextUid(): int
         _uid = _uid + 1
         return _uid
 
 # ── Generator ─────────────────────────────────────────────────────────────────
 
 struct Generator
-    var w                     as Writer   # shared output (class = reference type)
-    var indent                as int      # current indentation depth (4 spaces/level)
-    var owner                 as str      # enclosing type name ("" at module scope)
-    var in_method             as bool     # true inside method/init/property body
-    var is_struct_owner       as bool     # true when owner is a struct (not class)
-    var is_generic            as bool     # true inside a generic class body
-    var current_method_throws as bool     # true when current method is `throws`
-    var try_block_label       as str?     # non-nil inside a `try` block
-    var catch_var             as str      # catch clause binding name ("" if none)
-    var source_file           as str      # source path for comment markers
-    var class_names           as StrSet  # names of classes → emit *ClassName in genType
-    var union_names           as StrSet  # names of unions → emit union construction
-    var enum_names            as StrSet  # names of enums → emit enum construction
-    var struct_names          as StrSet  # names of structs → emit struct.init() construction
-    var boxed_variants        as StrSet  # "UnionName.variant" entries where payload is ^T
-    var ref_fields            as StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
-    var opt_ref_fields        as StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
-    var unwrapped_imports     as StrSet  # module names where genUse did .ModuleName unwrap
+    var w                    : Writer   # shared output (class = reference type)
+    var indent               : int      # current indentation depth (4 spaces/level)
+    var owner                : str      # enclosing type name ("" at module scope)
+    var in_method            : bool     # true inside method/init/property body
+    var is_struct_owner      : bool     # true when owner is a struct (not class)
+    var is_generic           : bool     # true inside a generic class body
+    var current_method_throws: bool     # true when current method is `throws`
+    var try_block_label      : str?     # non-nil inside a `try` block
+    var catch_var            : str      # catch clause binding name ("" if none)
+    var source_file          : str      # source path for comment markers
+    var class_names          : StrSet  # names of classes → emit *ClassName in genType
+    var union_names          : StrSet  # names of unions → emit union construction
+    var enum_names           : StrSet  # names of enums → emit enum construction
+    var struct_names         : StrSet  # names of structs → emit struct.init() construction
+    var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
+    var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
+    var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
+    var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
     # Phase 7b additions
-    var mut_set               as StrSet?  # variables that are mutated
-    var ret_set               as StrSet?  # variables that escape via return
-    var nil_narrowed          as StrSet?  # variables narrowed to non-nil in current scope
-    var try_err_var           as str?     # current try-block error variable name
-    var owner_members         as List(Decl)  # members of current enclosing type
-    var param_names           as StrSet?  # current method parameter names
-    var str_params            as StrSet   # param names with type str
-    var list_locals           as StrSet   # local/param names with type List(*)
-    var list_str_locals       as StrSet   # list_locals whose element type is str
-    var strset_locals         as StrSet   # local/param names with type StrSet
-    var hashmap_locals        as StrSet   # local/param names with type HashMap(K,V)
-    var ptr_field_bindings    as StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
-    var opt_ptr_field_bindings as StrSet  # "bindingName.fieldName" where field is ^T? (optional)
-    var for_loop_deref        as StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
-    var for_loop_vars         as StrSet   # active for-loop variable names (suppress stale branch deref)
-    var in_try_expr           as bool     # suppress auto-try when already inside Expr.try_
-    var self_name             as str      # "self" for methods, "_self" for init
-    var capture_fields        as StrSet   # captured var names → emit self.name in genIdent
-    var closure_vars          as StrSet   # local vars holding capture-lambdas → .call() dispatch
+    var mut_set              : StrSet?  # variables that are mutated
+    var ret_set              : StrSet?  # variables that escape via return
+    var nil_narrowed         : StrSet?  # variables narrowed to non-nil in current scope
+    var try_err_var          : str?     # current try-block error variable name
+    var owner_members        : List(Decl)  # members of current enclosing type
+    var param_names          : StrSet?  # current method parameter names
+    var str_params           : StrSet   # param names with type str
+    var list_locals          : StrSet   # local/param names with type List(*)
+    var list_str_locals      : StrSet   # list_locals whose element type is str
+    var strset_locals        : StrSet   # local/param names with type StrSet
+    var hashmap_locals       : StrSet   # local/param names with type HashMap(K,V)
+    var ptr_field_bindings   : StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
+    var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
+    var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
+    var for_loop_vars        : StrSet   # active for-loop variable names (suppress stale branch deref)
+    var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
+    var self_name            : str      # "self" for methods, "_self" for init
+    var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
+    var closure_vars         : StrSet   # local vars holding capture-lambdas → .call() dispatch
     # Phase 16c additions — ModuleTypes for this module and merged deps.
-    # Plumbed now, consumed incrementally as heuristics retire (16c..17).
-    var module_types          as ModuleTypes
-    var dep_types             as ModuleTypes
+    # Plumbed now, consumed incrementally: heuristics retire (16c..17).
+    var module_types         : ModuleTypes
+    var dep_types            : ModuleTypes
     # Phase 17c addition — per-method inference context. Seeded by genMethod/
     # genInit via walkStmts pre-walk before emit. nil at module scope.
-    var infer_ctx             as InferCtx?
-    var arena_counter         as int      # counter for unique arena scope var names
-    var throws_methods        as StrSet   # "ClassName.methodName" entries for throws methods
+    var infer_ctx            : InferCtx?
+    var arena_counter        : int      # counter for unique arena scope var names
+    var throws_methods       : StrSet   # "ClassName.methodName" entries for throws methods
 
-    cue init(w as Writer, indent as int, owner as str, in_method as bool,
-             is_struct_owner as bool, is_generic as bool,
-             current_method_throws as bool, try_block_label as str?,
-             catch_var as str, source_file as str, class_names as StrSet,
-             module_types as ModuleTypes, dep_types as ModuleTypes)
+    cue init(w: Writer, indent: int, owner: str, in_method: bool,
+             is_struct_owner: bool, is_generic: bool,
+             current_method_throws: bool, try_block_label: str?,
+             catch_var: str, source_file: str, class_names: StrSet,
+             module_types: ModuleTypes, dep_types: ModuleTypes)
         this.w                     = w
         this.indent                = indent
         this.owner                 = owner
@@ -1112,63 +1112,63 @@ struct Generator
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
-    def withOwner(new_owner as str) as Generator
+    def withOwner(new_owner: str): Generator
         var g = this except
             owner = new_owner
         return g
 
-    def asMethod as Generator
+    def asMethod: Generator
         var g = this except
             in_method = true
         return g
 
-    def asStructOwner as Generator
+    def asStructOwner: Generator
         var g = this except
             is_struct_owner = true
         return g
 
-    def indented as Generator
+    def indented: Generator
         var g = this except
             indent = indent + 1
         return g
 
-    def withThrows as Generator
+    def withThrows: Generator
         var g = this except
             current_method_throws = true
         return g
 
-    def withTryLabel(label as str, err_var as str) as Generator
+    def withTryLabel(label: str, err_var: str): Generator
         var g = this except
             try_block_label = label
             try_err_var     = err_var
         return g
 
-    def withCatchVar(name as str) as Generator
+    def withCatchVar(name: str): Generator
         var g = this except
             catch_var = name
         return g
 
-    def withCaptureFields(cf as StrSet) as Generator
+    def withCaptureFields(cf: StrSet): Generator
         var g = this except
             capture_fields = cf
         return g
 
     # Phase 7b context helpers
-    def withOwnerMembers(members as List(Decl)) as Generator
+    def withOwnerMembers(members: List(Decl)): Generator
         var g = this except
             owner_members = members
         return g
 
-    def withSelfName(name as str) as Generator
+    def withSelfName(name: str): Generator
         var g = this except
             self_name = name
         return g
 
-    # Phase 17c — attach an InferCtx. Written as a method on Generator so the
+    # Phase 17c — attach an InferCtx. Written: a method on Generator so the
     # `except`-on-this path goes through the self-pointer (workaround for a
     # selfhost emit bug where `local = local except` emits an illegal
     # `local.*` deref; `this except` is fine because `this` is a pointer).
-    def withInferCtx(ctx as InferCtx) as Generator
+    def withInferCtx(ctx: InferCtx): Generator
         var g = this except
             infer_ctx = ctx
         return g
@@ -1176,7 +1176,7 @@ struct Generator
     # Phase 17c — true iff t is a named union type known in this module or a dep.
     # Used to replace shouldBoxCtorArg (name-pattern heuristic) with a walker-
     # verified answer from inferExpr.
-    def isUnionType(t as Type_) as bool
+    def isUnionType(t: Type_): bool
         branch t
             on Type_.named as tn
                 if this.module_types.hasUnion(tn)
@@ -1189,24 +1189,24 @@ struct Generator
 
     # Phase 17d: walker-derived "is this expression a string?" — replaces the
     # isStringExpr name-pattern heuristic when infer_ctx is populated.
-    def isStringWalker(e as Expr) as bool
+    def isStringWalker(e: Expr): bool
         if this.infer_ctx == nil
             return false
-        var t as Type_ = inferExpr(e, this.infer_ctx to!)
+        var t: Type_ = inferExpr(e, this.infer_ctx to!)
         return isString(t)
 
     # Phase 17d — walker-derived string detection replaces the name-pattern
-    # heuristic. isStringExpr is retained only as a fallback for callers
+    # heuristic. isStringExpr is retained only: a fallback for callers
     # reached before infer_ctx has been seeded (tests, emission paths that
     # bypass genMethod / genInit). Flipped after corpus runs showed the
     # walker is a strict superset of the heuristic over all selfhost files.
-    def isStringBoth(e as Expr, site as str) as bool
+    def isStringBoth(e: Expr, site: str): bool
         if this.infer_ctx != nil
             if this.isStringWalker(e)
                 return true
         return isStringExpr(e)
 
-    def withMethodCtx(ms as StrSet?, rs as StrSet?, throws_ as bool, members as List(Decl), pnames as StrSet?, sparams as StrSet, sname as str) as Generator
+    def withMethodCtx(ms: StrSet?, rs: StrSet?, throws_: bool, members: List(Decl), pnames: StrSet?, sparams: StrSet, sname: str): Generator
         var g = this except
             in_method             = true
             current_method_throws = throws_
@@ -1238,14 +1238,14 @@ struct Generator
             w.emit("    ")
             i += 1
 
-    def line(s as str)
+    def line(s: str)
         writeIndent()
         w.emit(s)
         w.emit("\n")
 
     # ── genType ───────────────────────────────────────────────────────────────
 
-    def genType(tr as TypeRef)
+    def genType(tr: TypeRef)
         branch tr
             on TypeRef.named as n
                 if class_names.contains_(n.name)
@@ -1285,7 +1285,7 @@ struct Generator
                         is_nilable = true
                     else
                         pass
-                var prefix as str
+                var prefix: str
                 if is_nilable
                     prefix = "?*"
                 else
@@ -1358,7 +1358,7 @@ struct Generator
                     j += 1
                 w.emit(" }")
 
-    def genGenericType(gtr as GenericTypeRef)
+    def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN
         if gtr.name == "int" or gtr.name == "uint" or gtr.name == "float"
             if gtr.args.count() >= 1
@@ -1412,7 +1412,7 @@ struct Generator
                 bi += 1
             w.emit(")")
 
-    def zigPrimitive(name as str) as str
+    def zigPrimitive(name: str): str
         if name == "int"
             return "i64"
         if name == "uint"
@@ -1459,7 +1459,7 @@ struct Generator
             return "f128"
         return name
 
-    def isStringTypeRef(tr as TypeRef) as bool
+    def isStringTypeRef(tr: TypeRef): bool
         branch tr
             on TypeRef.named as n
                 return n.name == "str" or n.name == "String"
@@ -1472,11 +1472,11 @@ struct Generator
     # Each dependency .zbr file is compiled to its own .zig file by the multi-file
     # pipeline. The import path uses the module name + ".zig".
 
-    def genUse(n as DeclUse)
+    def genUse(n: DeclUse)
         # Simple module path (no dots) → @import("path.zig")
         # If the module has a sole same-named class (e.g. `use Lexer` where Lexer.zbr
         # defines class Lexer), unwrap the class: const Lexer = @import("Lexer.zig").Lexer;
-        var alias as str = n.path
+        var alias: str = n.path
         var has_same_named_class = class_names.contains_(alias)
         if n.exposed.len == 0
             # `use Mod` — import module (or unwrap same-named class)
@@ -1497,9 +1497,9 @@ struct Generator
             w.emit(" = @import(\"")
             w.emit(n.path)
             w.emit(".zig\");\n")
-            var i as int = 0
+            var i: int = 0
             while i < n.exposed.len
-                var ename as str = n.exposed.at(i)
+                var ename: str = n.exposed.at(i)
                 if ename != alias
                     w.emit("const ")
                     w.emit(ename)
@@ -1512,7 +1512,7 @@ struct Generator
 
     # ── genFieldDecl ──────────────────────────────────────────────────────────
 
-    def genFieldDecl(n as DeclVar)
+    def genFieldDecl(n: DeclVar)
         writeIndent()
         # Shared (static) fields become `pub var name: type = default;` inside the struct.
         if n.mods.is_shared
@@ -1551,7 +1551,7 @@ struct Generator
 
     # ── genEnum ───────────────────────────────────────────────────────────────
 
-    def genEnum(n as DeclEnum)
+    def genEnum(n: DeclEnum)
         enum_names.add(n.name)
         writeIndent()
         w.emit("pub const ")
@@ -1572,7 +1572,7 @@ struct Generator
 
     # ── genUnion ──────────────────────────────────────────────────────────────
 
-    def genUnion(n as DeclUnion)
+    def genUnion(n: DeclUnion)
         union_names.add(n.name)
         # Track boxed variants (^T payloads)
         for v in n.variants
@@ -1599,7 +1599,7 @@ struct Generator
 
     # ── genStruct ─────────────────────────────────────────────────────────────
 
-    def genStruct(n as DeclStruct)
+    def genStruct(n: DeclStruct)
         struct_names.add(n.name)
         # Track ^T fields for auto-deref
         for decl in n.members
@@ -1640,7 +1640,7 @@ struct Generator
 
     # ── genClass ──────────────────────────────────────────────────────────────
 
-    def genClass(n as DeclClass)
+    def genClass(n: DeclClass)
         class_names.add(n.name)
         writeIndent()
         w.emit("pub const ")
@@ -1738,7 +1738,7 @@ struct Generator
 
     # ── genMethod ─────────────────────────────────────────────────────────────
 
-    def genMethod(m as DeclMethod)
+    def genMethod(m: DeclMethod)
         writeIndent()
         w.emit("pub fn ")
         w.emit(m.name)
@@ -1754,7 +1754,7 @@ struct Generator
                 w.emit(", ")
         genParamList(m.params)
         w.emit(") ")
-        var mstmts_pre as List(Stmt)? = m.stmts
+        var mstmts_pre: List(Stmt)? = m.stmts
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre to!))
         if auto_throws
             w.emit("anyerror!")
@@ -1814,12 +1814,12 @@ struct Generator
                             # Seed opt_ptr_field_bindings for ^T? fields of named-type params
                             # BUG-075: nt2.name is String (cross-module type), not str.
                             # `nt2.name + "."` would emit raw Zig + (invalid). Workaround:
-                            # route through makeDottedKey where params are typed as str.
+                            # route through makeDottedKey where params are typed: str.
                             var nt2_dot = makeDottedKey(nt2.name, "")
                             var orf3 = opt_ref_fields.items()
                             var orf3i = 0
                             while orf3i < orf3.count()
-                                var orf3e as str = orf3.at(orf3i)
+                                var orf3e: str = orf3.at(orf3i)
                                 if orf3e.startsWith(nt2_dot)
                                     bg.opt_ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(orf3e)))
                                 orf3i += 1
@@ -1847,7 +1847,7 @@ struct Generator
 
     # ── genInit ───────────────────────────────────────────────────────────────
 
-    def genInit(ini as DeclInit)
+    def genInit(ini: DeclInit)
         writeIndent()
         w.emit("pub fn init(")
         genParamList(ini.params)
@@ -1881,7 +1881,7 @@ struct Generator
             for p in ini.params
                 ps.add(p.name)
             var bg = ig.withMethodCtx(ms, rs, false, owner_members, ps, StrSet(), "_self")
-            # Phase 17c — seed InferCtx for the init body as well (see genMethod).
+            # Phase 17c — seed InferCtx for the init body: well (see genMethod).
             var ctx17ci = InferCtx(this.module_types, owner)
             ctx17ci.withDepTypes(this.dep_types)
             for pp in ini.params
@@ -1899,7 +1899,7 @@ struct Generator
 
     # ── genSig ────────────────────────────────────────────────────────────────
 
-    def genSig(sd as DeclSig)
+    def genSig(sd: DeclSig)
         writeIndent()
         w.emit("const ")
         w.emit(sd.name)
@@ -1922,7 +1922,7 @@ struct Generator
 
     # ── genNamespace ─────────────────────────────────────────────────────────
     # namespace Foo → pub const Foo = struct { ... };
-    def genNamespace(ns as DeclNamespace)
+    def genNamespace(ns: DeclNamespace)
         writeIndent()
         w.emit("pub const ")
         w.emit(ns.name)
@@ -1947,7 +1947,7 @@ struct Generator
 
     # ── genInterface ─────────────────────────────────────────────────────────
     # interface Shape → comptime validation fn: checks @hasDecl on each member
-    def genInterface(ifc as DeclInterface)
+    def genInterface(ifc: DeclInterface)
         writeIndent()
         w.emit("pub fn ")
         w.emit(ifc.name)
@@ -1976,7 +1976,7 @@ struct Generator
 
     # ── genExtend ────────────────────────────────────────────────────────────
     # extend Type → standalone functions prefixed with _ext_Type_
-    def genExtend(ext as DeclExtend)
+    def genExtend(ext: DeclExtend)
         var tname = ""
         branch ext.target
             on TypeRef.named as n
@@ -1995,7 +1995,7 @@ struct Generator
                     pass
         w.emit("\n")
 
-    def genExtMethod(tname as str, mth as DeclMethod)
+    def genExtMethod(tname: str, mth: DeclMethod)
         writeIndent()
         w.emit("fn _ext_")
         w.emit(tname)
@@ -2039,7 +2039,7 @@ struct Generator
 
     # ── genParamList ──────────────────────────────────────────────────────────
 
-    def genParamList(params as List(Param))
+    def genParamList(params: List(Param))
         var first = true
         for p in params
             if not first
@@ -2054,7 +2054,7 @@ struct Generator
 
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
-    def genStmts(stmts as List(Stmt))
+    def genStmts(stmts: List(Stmt))
         # Pre-scan: find lambda-assigned vars that are never referenced in the body.
         # Emit `_ = name;` for those at the end to suppress Zig's unused-const error.
         var unused_lambdas = StrSet()
@@ -2082,7 +2082,7 @@ struct Generator
             w.emit(";\n")
             nm_i = nm_i + 1
 
-    def genStmt(s as Stmt)
+    def genStmt(s: Stmt)
         branch s
             on Stmt.var_ as n
                 genLocalVar(n)
@@ -2145,7 +2145,7 @@ struct Generator
 
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
-    def genLocalVar(n as DeclVar)
+    def genLocalVar(n: DeclVar)
         writeIndent()
         # Determine const vs var
         var is_mut = false
@@ -2248,7 +2248,7 @@ struct Generator
             w.emit("undefined")
         w.emit(";\n")
 
-    def isStringBuilderCtor(e as Expr) as bool
+    def isStringBuilderCtor(e: Expr): bool
         branch e
             on Expr.call as c
                 if c.args.count() == 0
@@ -2261,7 +2261,7 @@ struct Generator
                 pass
         return false
 
-    def isStrSetCtor(e as Expr) as bool
+    def isStrSetCtor(e: Expr): bool
         branch e
             on Expr.call as c
                 if c.args.count() == 0
@@ -2274,7 +2274,7 @@ struct Generator
                 pass
         return false
 
-    def isGenericStdlibCtor(e as Expr) as bool
+    def isGenericStdlibCtor(e: Expr): bool
         # List(T)() or HashMap(K,V)() or StrSet()
         # Also bare List() / HashMap() where type is inferred from the variable annotation
         branch e
@@ -2295,7 +2295,7 @@ struct Generator
                 pass
         return false
 
-    def genGenericCtorExpr(e as Expr, type_hint as TypeRef?)
+    def genGenericCtorExpr(e: Expr, type_hint: TypeRef?)
         branch e
             on Expr.call as outer
                 branch outer.callee
@@ -2382,7 +2382,7 @@ struct Generator
         # Fallback: normal expr
         genExpr(e)
 
-    def isStringArgExpr(e as Expr) as bool
+    def isStringArgExpr(e: Expr): bool
         branch e
             on Expr.ident as id
                 return id.name == "str" or id.name == "String"
@@ -2390,7 +2390,7 @@ struct Generator
                 pass
         return false
 
-    def genTypeFromExpr(e as Expr)
+    def genTypeFromExpr(e: Expr)
         branch e
             on Expr.ident as id
                 w.emit(zigPrimitive(id.name))
@@ -2429,7 +2429,7 @@ struct Generator
 
     # ── genAssign ─────────────────────────────────────────────────────────────
 
-    def genAssign(a as StmtAssign)
+    def genAssign(a: StmtAssign)
         writeIndent()
         if a.op == AssignOp.slashslash_eq
             genExpr(a.target)
@@ -2477,7 +2477,7 @@ struct Generator
         genExpr(a.value)
         w.emit(";\n")
 
-    def genHashMapAssign(target as Expr, value as Expr) as bool
+    def genHashMapAssign(target: Expr, value: Expr): bool
         # Branch directly on target (Expr parameter) so ix.object/ix.index get correct .* deref
         branch target
             on Expr.index as ix
@@ -2495,14 +2495,14 @@ struct Generator
                 pass
         return false
 
-    def getAssignFieldType(a as StmtAssign) as TypeRef?
+    def getAssignFieldType(a: StmtAssign): TypeRef?
         # If target is a member expression (self.field), extract field name and look up type
         var fname = getMemberFieldName(a.target)
         if fname != nil
             return lookupFieldType(fname to!)
         return nil
 
-    def isStringField(e as Expr) as bool
+    def isStringField(e: Expr): bool
         var fname = getMemberFieldName(e)
         if fname != nil
             var ftype = lookupFieldType(fname to!)
@@ -2514,7 +2514,7 @@ struct Generator
                         pass
         return false
 
-    def isListField(field_name as str) as bool
+    def isListField(field_name: str): bool
         var ftype = lookupFieldType(field_name)
         if ftype != nil
             branch ftype to!
@@ -2524,7 +2524,7 @@ struct Generator
                     pass
         return false
 
-    def isOwnerMethod(name as str) as bool
+    def isOwnerMethod(name: str): bool
         for d in owner_members
             branch d
                 on Decl.method as dm
@@ -2534,7 +2534,7 @@ struct Generator
                     pass
         return false
 
-    def isOwnerSharedMethod(name as str) as bool
+    def isOwnerSharedMethod(name: str): bool
         for d in owner_members
             branch d
                 on Decl.method as dm
@@ -2544,7 +2544,7 @@ struct Generator
                     pass
         return false
 
-    def isOwnerMethodThrows(name as str) as bool
+    def isOwnerMethodThrows(name: str): bool
         for d in owner_members
             branch d
                 on Decl.method as dm
@@ -2555,10 +2555,10 @@ struct Generator
         return false
 
     # Look up if a same-module class method throws (pre-populated at module init).
-    def isClassMethodThrows(class_name as str, method_name as str) as bool
+    def isClassMethodThrows(class_name: str, method_name: str): bool
         return throws_methods.contains_(makeDottedKey(class_name, method_name))
 
-    def lookupFieldType(field_name as str) as TypeRef?
+    def lookupFieldType(field_name: str): TypeRef?
         for d in owner_members
             branch d
                 on Decl.var_ as fld
@@ -2568,7 +2568,7 @@ struct Generator
                     pass
         return nil
 
-    def genCallWithTypeHint(e as Expr, hint as TypeRef)
+    def genCallWithTypeHint(e: Expr, hint: TypeRef)
         branch e
             on Expr.call as c
                 if c.args.count() == 0
@@ -2619,7 +2619,7 @@ struct Generator
 
     # ── genReturn ─────────────────────────────────────────────────────────────
 
-    def genReturn(r as StmtReturn)
+    def genReturn(r: StmtReturn)
         writeIndent()
         if r.value != nil
             w.emit("return ")
@@ -2631,7 +2631,7 @@ struct Generator
     # BUG-027 fix: takes object by value so a ^Expr caller auto-derefs at call site.
     # Emits `var _mc_N = obj_call; _mc_N.method(args);` and returns true.
     # Returns false if obj is not a call expression (no hoisting needed).
-    def hoistCallOnTemp(obj as Expr, method_name as String, call_args as List(Arg)) as bool
+    def hoistCallOnTemp(obj: Expr, method_name: String, call_args: List(Arg)): bool
         branch obj
             on Expr.call
                 var uid = w.nextUid()
@@ -2650,7 +2650,7 @@ struct Generator
 
     # ── genIf ─────────────────────────────────────────────────────────────────
 
-    def genIsCaptureThen(cond_expr as Expr, cap as String, stmts as List(Stmt))
+    def genIsCaptureThen(cond_expr: Expr, cap: String, stmts: List(Stmt))
         # Helper called from genIf when is_capture is set.
         # Takes Expr by value so callers with ^Expr get auto-deref at the call site.
         branch cond_expr
@@ -2688,7 +2688,7 @@ struct Generator
                 var ig2 = indented()
                 ig2.genStmts(stmts)
 
-    def genIf(si as StmtIf)
+    def genIf(si: StmtIf)
         writeIndent()
         var ig = indented()
         if si.is_capture != nil
@@ -2721,7 +2721,7 @@ struct Generator
 
     # ── genWhile ──────────────────────────────────────────────────────────────
 
-    def genWhile(ww as StmtWhile)
+    def genWhile(ww: StmtWhile)
         writeIndent()
         w.emit("while (")
         genExpr(ww.cond)
@@ -2734,7 +2734,7 @@ struct Generator
     # ── genForIn ──────────────────────────────────────────────────────────────
     # Conservative: 1 var → List (.items), 2 vars → HashMap iterator.
 
-    def genForIn(fi as StmtForIn)
+    def genForIn(fi: StmtForIn)
         var ig = indented()
         if fi.vars.count() == 2
             var kname = fi.vars.at(0)
@@ -2867,21 +2867,21 @@ struct Generator
                         # List(DictEntry): key and value are ^Expr
                         for_loop_deref.add(makeDottedKey(vname, "key"))
                         for_loop_deref.add(makeDottedKey(vname, "value"))
-                # If iterating a List(str), mark the loop variable as a string
+                # If iterating a List(str), mark the loop variable: a string
                 branch fi.iter
                     on Expr.ident as iter_id
                         if list_str_locals.contains_(iter_id.name)
                             str_params.add(vname)
                     else
                         pass
-                # Mark this variable as a for-loop var to suppress stale branch deref
+                # Mark this variable: a for-loop var to suppress stale branch deref
                 for_loop_vars.add(vname)
                 ig.genStmts(fi.stmts)
                 writeIndent()
                 w.emit("}\n")
 
-    # Detect `str.bytes()` as a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
-    def isBytesIter(e as Expr) as bool
+    # Detect `str.bytes()`: a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
+    def isBytesIter(e: Expr): bool
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2895,7 +2895,7 @@ struct Generator
 
     # Emit the string object from `s.bytes()` — used by genForIn bytes iterator handling.
     # `s.bytes()` call: callee is Expr.member{object: ^s, member:"bytes"}, emit just the object.
-    def emitBytesIterObject(e as Expr)
+    def emitBytesIterObject(e: Expr)
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2906,8 +2906,8 @@ struct Generator
             else
                 genExpr(e)
 
-    # Detect `str.split(sep)` as a for-in iterator (needs special while-loop emission)
-    def isSplitIter(e as Expr) as bool
+    # Detect `str.split(sep)`: a for-in iterator (needs special while-loop emission)
+    def isSplitIter(e: Expr): bool
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2920,7 +2920,7 @@ struct Generator
         return false
 
     # True if the iterable is str.lines() — needs splitScalar('\n') not splitSequence.
-    def isLinesIter(e as Expr) as bool
+    def isLinesIter(e: Expr): bool
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2934,7 +2934,7 @@ struct Generator
 
     # True if the iterable is already a `.items` member access (e.g. `nums.items`).
     # The underlying type is already a slice; adding `.items` again would be wrong.
-    def isItemsMemberAccess(e as Expr) as bool
+    def isItemsMemberAccess(e: Expr): bool
         branch e
             on Expr.member as m
                 return m.member == "items"
@@ -2944,14 +2944,14 @@ struct Generator
 
     # True if the iterable is a Regex method returning a raw slice (not ArrayList).
     # findAll/groups return []const []const u8 — iterate without .items.
-    def isRegexSliceIter(e as Expr) as bool
+    def isRegexSliceIter(e: Expr): bool
         branch e
             on Expr.call as c
                 branch c.callee
                     on Expr.member as m
                         if m.member == "findAll" or m.member == "groups"
                             if this.infer_ctx != nil
-                                var recv_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
+                                var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
                                 branch recv_t
                                     on Type_.regex
                                         return true
@@ -2964,7 +2964,7 @@ struct Generator
         return false
 
     # Emit just the object part of a split call: str.split(sep) → str
-    def genSplitObject(e as Expr)
+    def genSplitObject(e: Expr)
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2976,7 +2976,7 @@ struct Generator
                 pass
 
     # Emit just the separator of a split call: str.split(sep) → sep; lines() → '\n'
-    def genSplitSep(e as Expr)
+    def genSplitSep(e: Expr)
         branch e
             on Expr.call as c
                 branch c.callee
@@ -2993,8 +2993,8 @@ struct Generator
             else
                 w.emit("\" \"")
 
-    # Detect `str.chars()` as a for-in iterator (needs Utf8View while-loop emission)
-    def isCharsIter(e as Expr) as bool
+    # Detect `str.chars()`: a for-in iterator (needs Utf8View while-loop emission)
+    def isCharsIter(e: Expr): bool
         branch e
             on Expr.call as c
                 branch c.callee
@@ -3007,7 +3007,7 @@ struct Generator
         return false
 
     # Emit just the object of a chars() call: str.chars() → str
-    def genCharsObject(e as Expr)
+    def genCharsObject(e: Expr)
         branch e
             on Expr.call as c
                 branch c.callee
@@ -3020,7 +3020,7 @@ struct Generator
 
     # ── genForNum ─────────────────────────────────────────────────────────────
 
-    def genForNum(fn_ as StmtForNum)
+    def genForNum(fn_: StmtForNum)
         var ig = indented()
         writeIndent()
         w.emit("{\n")
@@ -3065,7 +3065,7 @@ struct Generator
 
     # ── genBranch ─────────────────────────────────────────────────────────────
 
-    def genBranch(b as StmtBranch)
+    def genBranch(b: StmtBranch)
         if b.cases.count() == 0
             if b.else_ != nil
                 genStmts(b.else_ to!)
@@ -3094,7 +3094,7 @@ struct Generator
         else
             genBranchTagged(b)
 
-    def genBranchString(b as StmtBranch)
+    def genBranchString(b: StmtBranch)
         var first = true
         for cas in b.cases
             if first
@@ -3128,7 +3128,7 @@ struct Generator
             w.emit("}")
         w.emit("\n")
 
-    def genBranchGuarded(b as StmtBranch)
+    def genBranchGuarded(b: StmtBranch)
         # Lower guarded branch to sequential ifs (Zig switch prongs cannot have guards).
         # const _bv_N = <subject>;  var _bd_N = false;
         # if (!_bd_N and <match>) { [const <binding> = _bv_N.<tag>;]
@@ -3158,7 +3158,7 @@ struct Generator
             if is_union
                 if cas.values.count() > 0
                     var v0 = cas.values.at(0)
-                    var tag_name as str = ""
+                    var tag_name: str = ""
                     branch v0
                         on Expr.member as m
                             tag_name = m.member
@@ -3278,7 +3278,7 @@ struct Generator
                 writeIndent()
                 w.emit("unreachable;\n")
 
-    def genBranchTagged(b as StmtBranch)
+    def genBranchTagged(b: StmtBranch)
         # Determine if any case has a binding (union dispatch vs enum dispatch)
         var has_binding = false
         for cas in b.cases
@@ -3335,7 +3335,7 @@ struct Generator
                     var vk = vkey2 to!
                     # Extract union and variant names from dotted key
                     var vname = extractAfterDot(vk)
-                    var uname as str = ""
+                    var uname: str = ""
                     if vname.len < vk.len
                         # Extract union name: everything before the dot
                         # Use extractAfterDot trick in reverse — split and take first
@@ -3349,18 +3349,18 @@ struct Generator
                             var st_dot = st + "."
                             # Find all non-optional ref_fields for this struct
                             var rf_items = ref_fields.items()
-                            var rfi as int = 0
+                            var rfi: int = 0
                             while rfi < rf_items.count()
-                                var rf_entry as str = rf_items.at(rfi)
+                                var rf_entry: str = rf_items.at(rfi)
                                 if rf_entry.startsWith(st_dot)
                                     var fname2 = extractAfterDot(rf_entry)
                                     iig.ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname2))
                                 rfi += 1
                             # Find all optional ref_fields for this struct
                             var orf_items = opt_ref_fields.items()
-                            var orfi as int = 0
+                            var orfi: int = 0
                             while orfi < orf_items.count()
-                                var orf_entry as str = orf_items.at(orfi)
+                                var orf_entry: str = orf_items.at(orfi)
                                 if orf_entry.startsWith(st_dot)
                                     var fname3 = extractAfterDot(orf_entry)
                                     iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname3))
@@ -3381,7 +3381,7 @@ struct Generator
         writeIndent()
         w.emit("}\n")
 
-    def genSwitchTag(e as Expr)
+    def genSwitchTag(e: Expr)
         branch e
             on Expr.member as m
                 w.emit(".")
@@ -3402,7 +3402,7 @@ struct Generator
 
     # ── genPrint ──────────────────────────────────────────────────────────────
 
-    def genPrint(p as StmtPrint)
+    def genPrint(p: StmtPrint)
         if p.args.count() == 0
             if p.newline
                 line("std.debug.print(\"\\n\", .{});")
@@ -3429,7 +3429,7 @@ struct Generator
             ai2 += 1
         w.emit("});\n")
 
-    def isStringLitArg(e as Expr) as bool
+    def isStringLitArg(e: Expr): bool
         branch e
             on Expr.string_lit
                 return true
@@ -3442,11 +3442,11 @@ struct Generator
     # Returns the Zig format specifier for a print argument, matching
     # src/CodeGen.zig::printFmt. Uses inferExpr when available; falls back to
     # the heuristic. Zig 0.15 requires {s} for slices and {any} for optionals.
-    def printFmtSpec(e as Expr) as str
+    def printFmtSpec(e: Expr): str
         if isStringLitArg(e)
             return "{s}"
         if this.infer_ctx != nil
-            var t as Type_ = inferExpr(e, this.infer_ctx to!)
+            var t: Type_ = inferExpr(e, this.infer_ctx to!)
             branch t
                 on Type_.string_
                     return "{s}"
@@ -3480,7 +3480,7 @@ struct Generator
     # ── genRaise ──────────────────────────────────────────────────────────────
 
     # Best-effort type name for raise details expression (mirrors detailsTypeName in src/CodeGen.zig).
-    def detailsTypeName(det as Expr) as str
+    def detailsTypeName(det: Expr): str
         branch det
             on Expr.ident as id
                 return id.name
@@ -3494,7 +3494,7 @@ struct Generator
                 pass
         return "anyopaque"
 
-    def genRaise(r as StmtRaise)
+    def genRaise(r: StmtRaise)
         writeIndent()
         if r.message != nil and r.details != nil
             # Two-arg form: `raise "msg", details_expr`. Mirrors the three-path
@@ -3502,12 +3502,12 @@ struct Generator
             # Non-primitive details currently raise a selfhost compile error
             # (the object-details path is not ported yet); primitive-only paths
             # cover all current target corpus files (all int details).
-            var det as Expr = r.details to!
-            var det_t as Type_ = Type_.unknown_
+            var det: Expr = r.details to!
+            var det_t: Type_ = Type_.unknown_
             if this.infer_ctx != nil
                 det_t = inferExpr(det, this.infer_ctx to!)
-            var uid as int = w.nextUid()
-            var is_prim as bool = false
+            var uid: int = w.nextUid()
+            var is_prim: bool = false
             branch det_t
                 on Type_.int_
                     is_prim = true
@@ -3527,14 +3527,14 @@ struct Generator
                     is_prim = true
                 else
                     pass
-            var is_string_det as bool = false
+            var is_string_det: bool = false
             branch det_t
                 on Type_.string_
                     is_string_det = true
                 else
                     pass
             if is_prim
-                var fmt as str = "{}"
+                var fmt: str = "{}"
                 branch det_t
                     on Type_.float_
                         fmt = "{d}"
@@ -3699,7 +3699,7 @@ struct Generator
     #   }
     #   if (_try_err != null) { // catch body }
 
-    def genTryCatch(tc as StmtTryCatch)
+    def genTryCatch(tc: StmtTryCatch)
         writeIndent()
         w.emit("{\n")
         var ig = indented()
@@ -3724,7 +3724,7 @@ struct Generator
             # withCatchVar so the catch body can reference the error object.
             var catch_gen = iig
             if cl.binding != nil
-                var bname as str = cl.binding to!
+                var bname: str = cl.binding to!
                 if not bname.startsWith("_")
                     catch_gen = iig.withCatchVar(bname)
             catch_gen.genStmts(cl.stmts)
@@ -3735,7 +3735,7 @@ struct Generator
 
     # ── genAssert ─────────────────────────────────────────────────────────────
 
-    def genAssert(a as StmtAssert)
+    def genAssert(a: StmtAssert)
         writeIndent()
         if a.message != nil
             w.emit("if (!(")
@@ -3750,7 +3750,7 @@ struct Generator
 
     # ── genDefer ──────────────────────────────────────────────────────────────
 
-    def genDefer(d as StmtDefer)
+    def genDefer(d: StmtDefer)
         writeIndent()
         if d.is_err
             w.emit("errdefer {\n")
@@ -3763,7 +3763,7 @@ struct Generator
 
     # ── genWith ───────────────────────────────────────────────────────────────
 
-    def genWith(ww as StmtWith)
+    def genWith(ww: StmtWith)
         writeIndent()
         w.emit("{ // with\n")
         var ig = indented()
@@ -3773,7 +3773,7 @@ struct Generator
 
     # ── genArenaScope ─────────────────────────────────────────────────────────
 
-    def genArenaScope(a as StmtArenaScope)
+    def genArenaScope(a: StmtArenaScope)
         var n = arena_counter
         arena_counter = arena_counter + 1
         var aname = "_scope_arena_".concat(n.toString())
@@ -3792,7 +3792,7 @@ struct Generator
 
     # ── genGuard ──────────────────────────────────────────────────────────────
 
-    def genGuard(g as StmtGuard)
+    def genGuard(g: StmtGuard)
         writeIndent()
         w.emit("if (!(")
         genExpr(g.cond)
@@ -3804,9 +3804,9 @@ struct Generator
 
     # ── genDestruct ───────────────────────────────────────────────────────────
 
-    def genDestruct(d as StmtDestruct)
-        var uid as int = w.nextUid()
-        var tmp as str = "_zbr_dt_" + uid.toString()
+    def genDestruct(d: StmtDestruct)
+        var uid: int = w.nextUid()
+        var tmp: str = "_zbr_dt_" + uid.toString()
         writeIndent()
         w.emit("const ")
         w.emit(tmp)
@@ -3834,7 +3834,7 @@ struct Generator
 
     # ── genExpr ───────────────────────────────────────────────────────────────
 
-    def genExpr(e as Expr)
+    def genExpr(e: Expr)
         branch e
             on Expr.int_lit as il
                 w.emit(il.text)
@@ -3849,16 +3849,16 @@ struct Generator
                 # Raw text is e.g. c'A' or c'\'' — strip leading c, emit rest as-is
                 if cl.text.len > 1 and cl.text.startsWith("c")
                     # cl.text[1..] — use split trick: split on first char, rejoin rest
-                    var parts as List(str) = List(str)()
-                    var first_skipped as bool = false
+                    var parts: List(str) = List(str)()
+                    var first_skipped: bool = false
                     for p in cl.text.split("c")
                         if not first_skipped
                             first_skipped = true
                         else
                             parts.add(p)
                     # Rejoin with "c" in case the inner text contains c
-                    var rest as str = ""
-                    var pi as int = 0
+                    var rest: str = ""
+                    var pi: int = 0
                     while pi < parts.len
                         if pi > 0
                             rest = rest + "c"
@@ -4115,7 +4115,7 @@ struct Generator
 
     # ── genIdent ──────────────────────────────────────────────────────────────
 
-    def genIdent(id as ExprIdent)
+    def genIdent(id: ExprIdent)
         if capture_fields.contains_(id.name)
             w.emit("self.")
             w.emit(id.name)
@@ -4125,7 +4125,7 @@ struct Generator
             w.emit(".")
         w.emit(id.name)
 
-    def isFieldName(name as str) as bool
+    def isFieldName(name: str): bool
         # Not a field if it's a parameter name (params shadow fields)
         if param_names != nil
             if param_names to!.contains_(name)
@@ -4141,7 +4141,7 @@ struct Generator
 
     # ── genBinary ─────────────────────────────────────────────────────────────
 
-    def genBinary(b as ExprBinary)
+    def genBinary(b: ExprBinary)
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
             if this.isStringBoth(b.left, "bin_add_l") or this.isStringBoth(b.right, "bin_add_r")
@@ -4190,7 +4190,7 @@ struct Generator
         if b.op == BinaryOp.eq or b.op == BinaryOp.ne
             # String ==/!= must use std.mem.eql in Zig (slices can't use ==).
             # Skip when either side is nil (null comparison on optionals).
-            var either_nil as bool = false
+            var either_nil: bool = false
             branch b.left
                 on Expr.nil_
                     either_nil = true
@@ -4246,17 +4246,17 @@ struct Generator
         genExpr(b.right)
         w.emit(")")
 
-    def isStringExpr(e as Expr) as bool
+    def isStringExpr(e: Expr): bool
         branch e
             on Expr.string_lit
                 return true
             on Expr.string_interp
                 return true
             on Expr.ident as id
-                # Parameter or local typed as str
+                # Parameter or local typed: str
                 if str_params.contains_(id.name)
                     return true
-                # Owner field typed as str (bare ident = implicit self.field)
+                # Owner field typed: str (bare ident = implicit self.field)
                 var ftype = lookupFieldType(id.name)
                 if ftype != nil
                     branch ftype to!
@@ -4292,7 +4292,7 @@ struct Generator
                 pass
         return false
 
-    def isUnionCtorExpr(e as Expr) as bool
+    def isUnionCtorExpr(e: Expr): bool
         # Detect union variant constructor: UnionName.variant() where UnionName in union_names
         branch e
             on Expr.call as c
@@ -4310,7 +4310,7 @@ struct Generator
 
     # ── genUnary ──────────────────────────────────────────────────────────────
 
-    def genUnary(u as ExprUnary)
+    def genUnary(u: ExprUnary)
         if u.op == UnaryOp.neg
             w.emit("(-")
             genExpr(u.operand)
@@ -4330,7 +4330,7 @@ struct Generator
 
     # ── genStringLit ──────────────────────────────────────────────────────────
 
-    def genStringLit(sl as ExprStringLit)
+    def genStringLit(sl: ExprStringLit)
         if sl.kind == StringKind.zig_
             w.emit(sl.text)
             return
@@ -4340,21 +4340,21 @@ struct Generator
             w.emit("\"")
             return
         # Triple-quoted doc string: sl.text starts with """
-        var sl_text as str = sl.text
+        var sl_text: str = sl.text
         if sl_text.startsWith("\"\"\"")
             .genDocStringLit(sl_text)
             return
-        # plain / nosub: emit as Zig string literal
+        # plain / nosub: emit: Zig string literal
         w.emit("\"")
         w.emit(sl.text)
         w.emit("\"")
 
-    def genDocStringLit(text as str)
+    def genDocStringLit(text: str)
         # Strip """ delimiters, leading newline; escape " and actual newlines for Zig output.
         var dq_parts = List(str)()
         for dqp in text.split("\"\"\"")
             dq_parts.add(dqp)
-        var content as str = ""
+        var content: str = ""
         if dq_parts.count() >= 2
             content = dq_parts.at(1)
         # Strip leading newline (right after opening """)
@@ -4373,7 +4373,7 @@ struct Generator
         var qparts = List(str)()
         for qp in content.split("\"")
             qparts.add(qp)
-        var escaped as str = qparts.at(0)
+        var escaped: str = qparts.at(0)
         var qi = 1
         while qi < qparts.count()
             escaped = escaped + "\\\""
@@ -4383,7 +4383,7 @@ struct Generator
         var nparts = List(str)()
         for np in escaped.split("\n")
             nparts.add(np)
-        var final_str as str = nparts.at(0)
+        var final_str: str = nparts.at(0)
         var ni = 1
         while ni < nparts.count()
             final_str = final_str + "\\n"
@@ -4395,7 +4395,7 @@ struct Generator
 
     # ── genStringInterp ───────────────────────────────────────────────────────
 
-    def genStringInterp(si as ExprStringInterp)
+    def genStringInterp(si: ExprStringInterp)
         w.emit("(std.fmt.allocPrint(_allocator, \"")
         for part in si.parts
             branch part
@@ -4425,7 +4425,7 @@ struct Generator
 
     # ── genCall ───────────────────────────────────────────────────────────────
 
-    def genCall(c as ExprCall)
+    def genCall(c: ExprCall)
         # Closure vars: capture-lambda struct instances use .call()
         branch c.callee
             on Expr.ident as cid
@@ -4590,15 +4590,15 @@ struct Generator
                     w.emit(id.name)
                     w.emit(".init(")
                     var first2 = true
-                    var box_labels as List(str) = List(str)()
+                    var box_labels: List(str) = List(str)()
                     box_labels.add("_bx0")
                     box_labels.add("_bx1")
                     box_labels.add("_bx2")
                     box_labels.add("_bx3")
                     box_labels.add("_bx4")
                     box_labels.add("_bx5")
-                    var box_idx as int = 0
-                    var arg_idx as int = 0
+                    var box_idx: int = 0
+                    var arg_idx: int = 0
                     for a in c.args
                         if not first2
                             w.emit(", ")
@@ -4613,10 +4613,10 @@ struct Generator
                         # of them legitimately require `&local` / boxing since
                         # the receiving ctor param is `^Expr` and Zig does not
                         # implicitly take addresses of values.
-                        var is_ref_param as bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
-                        var should_box as bool = false
+                        var is_ref_param: bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
+                        var should_box: bool = false
                         if is_ref_param and this.infer_ctx != nil
-                            var wt17c as Type_ = inferExpr(a.value, this.infer_ctx to!)
+                            var wt17c: Type_ = inferExpr(a.value, this.infer_ctx to!)
                             should_box = this.isUnionType(wt17c)
                         if is_ref_param and should_box
                             # Box: heap-allocate for ^T parameter
@@ -4673,7 +4673,7 @@ struct Generator
         w.emit(")")
 
     # Returns true if `e` is `catch_var.details` — used to detect e.details.toString() pattern.
-    def isDetailsMemberOnCatchVar(e as Expr, cv as str) as bool
+    def isDetailsMemberOnCatchVar(e: Expr, cv: str): bool
         branch e
             on Expr.member as inner
                 if inner.member == "details"
@@ -4684,7 +4684,7 @@ struct Generator
                 pass
         return false
 
-    def genMemberCall(m as ExprMember, args as List(Arg))
+    def genMemberCall(m: ExprMember, args: List(Arg))
         var mname = m.member
         # e.details.toString() inside a catch block → (if (_error_ctx.details) |_det| _det.toString() else "")
         if mname == "toString" and catch_var != ""
@@ -4693,7 +4693,7 @@ struct Generator
                 return
         # Regex instance methods: re.match/find/findAll/replace/groups
         if this.infer_ctx != nil
-            var recv_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
+            var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
             branch recv_t
                 on Type_.regex
                     if mname == "match"
@@ -4908,7 +4908,7 @@ struct Generator
         # StrSet
         if mname == "contains_"
             genExpr(m.object)
-            # StrSet.contains_ stays as contains_ (user-defined method)
+            # StrSet.contains_ stays: contains_ (user-defined method)
             # Other types: drop the underscore → .contains()
             var cont_obj_name = getMemberFieldName(m.object)
             var is_strset_obj = false
@@ -5082,7 +5082,7 @@ struct Generator
             # Int/other receivers need decimal string via allocPrint.
             var is_char_recv = false
             if this.infer_ctx != nil
-                var recv_t as Type_ = inferExpr(m.object, this.infer_ctx to!)
+                var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
                 branch recv_t
                     on Type_.char_
                         is_char_recv = true
@@ -5408,7 +5408,7 @@ struct Generator
         if callee_throws2 and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
 
-    def genMathCall(mname as str, args as List(Arg))
+    def genMathCall(mname: str, args: List(Arg))
         if mname == "sqrt"
             w.emit("std.math.sqrt(")
             genArgList(args)
@@ -5457,7 +5457,7 @@ struct Generator
         genArgList(args)
         w.emit(")")
 
-    def genArgList(args as List(Arg))
+    def genArgList(args: List(Arg))
         var first = true
         for a in args
             if not first
@@ -5468,7 +5468,7 @@ struct Generator
     # Helper: scan stmts for the first return-with-value and emit @TypeOf(expr).
     # Returns true if emitted. Using a typed parameter avoids resolver type loss
     # that occurs when the stmts come from a union-bound variable.
-    def emitLambdaStmtsRetType(ss as List(Stmt)) as bool
+    def emitLambdaStmtsRetType(ss: List(Stmt)): bool
         for s in ss
             branch s
                 on Stmt.return_ as ret
@@ -5484,7 +5484,7 @@ struct Generator
     # ── genLambda ────────────────────────────────────────────────────────────
     # Emit anonymous struct with a call method.
     # Without capture:   struct { fn call(params) RetT { body } }.call
-    def genLambda(lam as ExprLambda)
+    def genLambda(lam: ExprLambda)
         var has_capture = lam.captures.count() > 0
         if has_capture
             w.emit("(")
@@ -5571,9 +5571,9 @@ struct Generator
             w.emit(".call")
 
     # ── genFileCall ───────────────────────────────────────────────────────────
-    # Emit File.* static calls as inline Zig expressions (no allocation needed).
+    # Emit File.* static calls: inline Zig expressions (no allocation needed).
 
-    def genFileCall(mname as str, args as List(Arg))
+    def genFileCall(mname: str, args: List(Arg))
         if mname == "read"
             w.emit("(std.fs.cwd().readFileAlloc(_allocator, ")
             if args.count() > 0
@@ -5667,7 +5667,7 @@ struct Generator
     # ── genSysCall ────────────────────────────────────────────────────────────
     # Emit sys.* static calls.
 
-    def genSysCall(mname as str, args as List(Arg))
+    def genSysCall(mname: str, args: List(Arg))
         if mname == "errln"
             w.emit("std.debug.print(\"{s}\\n\", .{")
             if args.count() > 0
@@ -5726,7 +5726,7 @@ struct Generator
         w.emit(mname)
         w.emit("\")")
 
-    def genArgCall(mname as str, args as List(Arg))
+    def genArgCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_arg_parse()")
             return
@@ -5736,7 +5736,7 @@ struct Generator
         w.emit("\")")
 
     # ── genJsonCall ──────────────────────────────────────────────────────────
-    def genJsonCall(mname as str, args as List(Arg))
+    def genJsonCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_json_parse(")
             if args.count() > 0
@@ -5764,7 +5764,7 @@ struct Generator
         w.emit("\")")
 
     # ── genHttpCall ──────────────────────────────────────────────────────────
-    def genHttpCall(mname as str, args as List(Arg))
+    def genHttpCall(mname: str, args: List(Arg))
         if mname == "get"
             w.emit("_http_get(")
             if args.count() > 0
@@ -5825,7 +5825,7 @@ struct Generator
         w.emit("\")")
 
     # ── genHttpResponseFactory ───────────────────────────────────────────────
-    def genHttpResponseFactory(mname as str, args as List(Arg))
+    def genHttpResponseFactory(mname: str, args: List(Arg))
         if mname == "ok"
             w.emit("HttpResponse{ .status = 200, .text = ")
             if args.count() > 0
@@ -5868,7 +5868,7 @@ struct Generator
         w.emit("\")")
 
     # ── genRegexCall ─────────────────────────────────────────────────────────
-    def genRegexCall(mname as str, args as List(Arg))
+    def genRegexCall(mname: str, args: List(Arg))
         if mname == "compile"
             w.emit("_regex_compile(")
             if args.count() > 0
@@ -5887,7 +5887,7 @@ struct Generator
         w.emit("\")")
 
     # ── genDateTimeCall ──────────────────────────────────────────────────────
-    def genDateTimeCall(mname as str, args as List(Arg))
+    def genDateTimeCall(mname: str, args: List(Arg))
         if mname == "now"
             w.emit("_dt_now()")
             return
@@ -5917,7 +5917,7 @@ struct Generator
         w.emit("\")")
 
     # ── genHashCall ──────────────────────────────────────────────────────────
-    def genHashCall(mname as str, args as List(Arg))
+    def genHashCall(mname: str, args: List(Arg))
         if mname == "sha256"
             w.emit("_hash_sha256(")
             if args.count() > 0
@@ -5968,7 +5968,7 @@ struct Generator
         w.emit("\")")
 
     # ── genRandomCall ────────────────────────────────────────────────────────
-    def genRandomCall(mname as str, args as List(Arg))
+    def genRandomCall(mname: str, args: List(Arg))
         if mname == "randInt"
             w.emit("_random_int(")
             if args.count() > 0
@@ -6026,7 +6026,7 @@ struct Generator
         w.emit("\")")
 
     # ── genTerminalCall ──────────────────────────────────────────────────────
-    def genTerminalCall(mname as str, args as List(Arg))
+    def genTerminalCall(mname: str, args: List(Arg))
         if mname == "isTty"
             w.emit("_term_is_tty()")
             return
@@ -6058,7 +6058,7 @@ struct Generator
         w.emit("\")")
 
     # ── genLogCall ───────────────────────────────────────────────────────────
-    def genLogCall(mname as str, args as List(Arg))
+    def genLogCall(mname: str, args: List(Arg))
         if mname == "debug"
             w.emit("_log_debug(")
             if args.count() > 0
@@ -6120,7 +6120,7 @@ struct Generator
         w.emit("\")")
 
     # ── genCsvCall ───────────────────────────────────────────────────────────
-    def genCsvCall(mname as str, args as List(Arg))
+    def genCsvCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_csv_parse(")
             if args.count() > 0
@@ -6142,7 +6142,7 @@ struct Generator
         w.emit("\")")
 
     # ── genTimerCall ─────────────────────────────────────────────────────────
-    def genTimerCall(mname as str, args as List(Arg))
+    def genTimerCall(mname: str, args: List(Arg))
         if mname == "start"
             w.emit("_timer_start()")
             return
@@ -6151,7 +6151,7 @@ struct Generator
         w.emit("\")")
 
     # ── genUriCall ───────────────────────────────────────────────────────────
-    def genUriCall(mname as str, args as List(Arg))
+    def genUriCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_uri_parse(")
             if args.count() > 0
@@ -6163,7 +6163,7 @@ struct Generator
         w.emit("\")")
 
     # ── genCompressCall ──────────────────────────────────────────────────────
-    def genCompressCall(mname as str, args as List(Arg))
+    def genCompressCall(mname: str, args: List(Arg))
         if mname == "gzip"
             w.emit("_compress_gzip(")
             if args.count() > 0
@@ -6181,7 +6181,7 @@ struct Generator
         w.emit("\")")
 
     # ── genMimeCall ──────────────────────────────────────────────────────────
-    def genMimeCall(mname as str, args as List(Arg))
+    def genMimeCall(mname: str, args: List(Arg))
         if mname == "fromExt"
             w.emit("_mime_from_ext(")
             if args.count() > 0
@@ -6199,7 +6199,7 @@ struct Generator
         w.emit("\")")
 
     # ── genTcpCall ───────────────────────────────────────────────────────────
-    def genTcpCall(mname as str, args as List(Arg))
+    def genTcpCall(mname: str, args: List(Arg))
         if mname == "connect"
             w.emit("_tcp_connect(")
             if args.count() > 0
@@ -6218,7 +6218,7 @@ struct Generator
         w.emit("\")")
 
     # ── genUdpCall ───────────────────────────────────────────────────────────
-    def genUdpCall(mname as str, args as List(Arg))
+    def genUdpCall(mname: str, args: List(Arg))
         if mname == "socket"
             w.emit("_udp_socket()")
             return
@@ -6227,7 +6227,7 @@ struct Generator
         w.emit("\")")
 
     # ── genNetCall ───────────────────────────────────────────────────────────
-    def genNetCall(mname as str, args as List(Arg))
+    def genNetCall(mname: str, args: List(Arg))
         if mname == "resolve"
             w.emit("_net_resolve(")
             if args.count() > 0
@@ -6241,7 +6241,7 @@ struct Generator
         w.emit("\")")
 
     # ── genGuiCall ───────────────────────────────────────────────────────────
-    def genGuiCall(mname as str, args as List(Arg))
+    def genGuiCall(mname: str, args: List(Arg))
         if mname == "run"
             w.emit("_gui_run(")
             if args.count() > 0
@@ -6270,7 +6270,7 @@ struct Generator
         w.emit("\")")
 
     # ── genShellCall ─────────────────────────────────────────────────────────
-    def genShellCall(mname as str, args as List(Arg))
+    def genShellCall(mname: str, args: List(Arg))
         if mname == "run"
             w.emit("(blk_sh: {\n")
             writeIndent()
@@ -6308,7 +6308,7 @@ struct Generator
         w.emit("\")")
 
     # ── genDirCall ───────────────────────────────────────────────────────────
-    def genDirCall(mname as str, args as List(Arg))
+    def genDirCall(mname: str, args: List(Arg))
         if mname == "create"
             w.emit("(std.fs.cwd().makeDir(")
             if args.count() > 0
@@ -6380,7 +6380,7 @@ struct Generator
         w.emit("\")")
 
     # ── genPathCall ──────────────────────────────────────────────────────────
-    def genPathCall(mname as str, args as List(Arg))
+    def genPathCall(mname: str, args: List(Arg))
         if mname == "join"
             w.emit("(std.fs.path.join(_allocator, &.{")
             if args.count() > 0
@@ -6448,7 +6448,7 @@ struct Generator
         w.emit("\")")
 
     # ── genReflectCall ───────────────────────────────────────────────────────
-    def genReflectCall(mname as str, args as List(Arg))
+    def genReflectCall(mname: str, args: List(Arg))
         if args.count() < 1
             w.emit("@compileError(\"Reflect requires 1 argument\")")
             return
@@ -6471,7 +6471,7 @@ struct Generator
         w.emit(mname)
         w.emit("\")")
 
-    def genGenericCtorCall(name as str, type_args as List(Arg), val_args as List(Arg))
+    def genGenericCtorCall(name: str, type_args: List(Arg), val_args: List(Arg))
         if name == "List"
             w.emit("std.ArrayList(")
             if type_args.count() > 0

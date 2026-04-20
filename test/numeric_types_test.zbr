@@ -2,11 +2,11 @@ class Main
     shared
         def main
             # Named aliases
-            var a as int32 = 42
-            var b as uint8 = 255
-            var c as float32 = 3.14
-            var d as byte = 200
-            var e as int64 = 9000000000
+            var a: int32 = 42
+            var b: uint8 = 255
+            var c: float32 = 3.14
+            var d: byte = 200
+            var e: int64 = 9000000000
 
             print a
             print b
@@ -15,16 +15,16 @@ class Main
             print e
 
             # uint default (u64)
-            var f as uint = 100
+            var f: uint = 100
             print f
 
             # Sized arithmetic
-            var x as int16 = 1000
-            var y as int16 = 24
+            var x: int16 = 1000
+            var y: int16 = 24
             print x + y
 
             # Arbitrary-width via int(N) syntax
-            var p as int(8) = 127
-            var q as uint(16) = 65000
+            var p: int(8) = 127
+            var q: uint(16) = 65000
             print p
             print q

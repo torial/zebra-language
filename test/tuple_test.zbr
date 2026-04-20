@@ -1,5 +1,5 @@
 class Math
-    def minMax(a as int, b as int) as (int, int)
+    def minMax(a: int, b: int) as (int, int)
         if a < b
             return (a, b)
         else

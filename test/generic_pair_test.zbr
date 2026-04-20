@@ -1,12 +1,12 @@
 class Pair(A, B)
-    var first as A
-    var second as B
+    var first: A
+    var second: B
 
-    cue init(a as A, b as B)
+    cue init(a: A, b: B)
         first = a
         second = b
 
-    def swap() as Pair(B, A)
+    def swap(): Pair(B, A)
         return Pair(B, A)(second, first)
 
 class Main

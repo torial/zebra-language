@@ -68,7 +68,7 @@ test "use directive" {
 test "class with var member" {
     try expectPrint(
         \\class Dog
-        \\    var name as String
+        \\    var name: String
         \\
     ,
         \\(module
@@ -80,7 +80,7 @@ test "class with var member" {
 test "class with method" {
     try expectPrint(
         \\class Greeter
-        \\    def greet(name as String) as String
+        \\    def greet(name: String): String
         \\        return name
         \\
     ,
@@ -94,8 +94,8 @@ test "class with method" {
 test "var and const member" {
     try expectPrint(
         \\class Point
-        \\    var x as int
-        \\    const ZERO as int = 0
+        \\    var x: int
+        \\    const ZERO: int = 0
         \\
     ,
         \\(module
@@ -108,7 +108,7 @@ test "var and const member" {
 test "error union type and orelse" {
     try expectPrint(
         \\class Loader
-        \\    def load as !String
+        \\    def load: !String
         \\        return zig"hello"
         \\
     ,
@@ -138,7 +138,7 @@ test "defer and errdefer" {
 test "orelse expression" {
     try expectPrint(
         \\class Opt
-        \\    def fetch as int
+        \\    def fetch: int
         \\        return x orelse 0
         \\
     ,
@@ -152,7 +152,7 @@ test "orelse expression" {
 test "catch expression" {
     try expectPrint(
         \\class Safe
-        \\    def run as int
+        \\    def run: int
         \\        return doIt catch 0
         \\
     ,
@@ -166,7 +166,7 @@ test "catch expression" {
 test "catch with error binding" {
     try expectPrint(
         \\class Safe
-        \\    def run as int
+        \\    def run: int
         \\        return doIt catch |e| 0
         \\
     ,
@@ -180,7 +180,7 @@ test "catch with error binding" {
 test "old expression in ensure" {
     try expectPrint(
         \\class Counter
-        \\    def push(x as int)
+        \\    def push(x: int)
         \\        ensure
         \\            count == old count + 1
         \\
@@ -195,7 +195,7 @@ test "namespace with class" {
     try expectPrint(
         \\namespace Animals
         \\    class Cat
-        \\        var name as String
+        \\        var name: String
         \\
     ,
         \\(module

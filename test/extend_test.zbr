@@ -1,18 +1,18 @@
 extend String
-    def shout as str
+    def shout: str
         return this.upper().concat("!")
 
-    def isLong as bool
+    def isLong: bool
         return this.len > 5
 
-    def greet as str
+    def greet: str
         return "Hello, ".concat(this).concat("!")
 
 class Main
     shared
         def main
-            var s as str = "hello"
-            var t as str = "world"
+            var s: str = "hello"
+            var t: str = "world"
             print s.shout()
             print s.isLong()
             print t.greet()

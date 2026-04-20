@@ -1,15 +1,15 @@
 class Container
-    var items as List(str)
-    var flags as List(bool)
+    var items: List(str)
+    var flags: List(bool)
     cue init()
         items = List()
         flags = List()
-    def add(s as str, flag as bool)
+    def add(s: str, flag: bool)
         items.add(s)
         flags.add(flag)
-    def first() as str
+    def first(): str
         return items.at(0)
-    def firstFlag() as bool
+    def firstFlag(): bool
         return flags.at(0)
 
 class Main

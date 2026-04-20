@@ -1,11 +1,11 @@
 union Shape
-    circle as float   # radius
-    square as float   # side
+    circle: float   # radius
+    square: float   # side
     point
 
 class Main
     shared
-        def checkShape(s as Shape) as str
+        def checkShape(s: Shape): str
             branch s
                 on Shape.circle as r if r > 5.0
                     return "big circle"
@@ -37,7 +37,7 @@ class Main
                 on 7
                     print "seven ok"
 
-            # --- binding guard: on Variant as name if condition ---
+            # --- binding guard: on Variant: name if condition ---
             print Main.checkShape(Shape.circle(8.0))
             print Main.checkShape(Shape.circle(3.0))
             print Main.checkShape(Shape.square(12.0))

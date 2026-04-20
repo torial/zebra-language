@@ -1,15 +1,15 @@
 class Acc
     shared
         # Shared method: Owner.method(args) is the recursive form
-        def sumTo(n as int, acc as int) as int
+        def sumTo(n: int, acc: int): int
             if n <= 0
                 return acc
             return Acc.sumTo(n - 1, acc + n)
 
 class Counter
-    var count as int = 0
+    var count: int = 0
 
-    def countDown(n as int) as int
+    def countDown(n: int): int
         if n <= 0
             return count
         count = count + 1

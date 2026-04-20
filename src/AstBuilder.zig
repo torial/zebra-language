@@ -724,7 +724,7 @@ const Builder = struct {
         var default: ?*Ast.Expr  = null;
         var idx: usize = 2;
 
-        if (idx < kids.len and isLeafKind(kids[idx], .kw_as)) {
+        if (idx < kids.len and isLeafKind(kids[idx], .colon)) {
             idx += 1;
             type_ = try b.buildTypeRef(kids[idx]);
             idx  += 1;
@@ -745,7 +745,7 @@ const Builder = struct {
 
     // ── Return annotation / var type ──────────────────────────────────────────
     //
-    // ReturnAnnotOpt / VarTypeOpt → ε | kw_as TypeRef
+    // ReturnAnnotOpt / VarTypeOpt → ε | colon TypeRef
 
     fn buildReturnAnnotOpt(b: Builder, node: TN) anyerror!?Ast.TypeRef {
         switch (node) {
@@ -990,15 +990,15 @@ const Builder = struct {
         const kids = ch(node);
         var else_ifs  = std.ArrayList(Ast.ElseIf){};
         var else_body: ?[]const Ast.Stmt = null;
-        if (kids.len == 8) {
-            // Capture form: kw_if Expr vertical_bar id vertical_bar eol Block IfTail
-            // [0]kw_if [1]Expr [2]| [3]id [4]| [5]eol [6]Block [7]IfTail
-            try b.collectIfTail(kids[7], &else_ifs, &else_body);
+        if (kids.len == 7) {
+            // Capture form: kw_if Expr kw_as id eol Block IfTail
+            // [0]kw_if [1]Expr [2]kw_as [3]id [4]eol [5]Block [6]IfTail
+            try b.collectIfTail(kids[6], &else_ifs, &else_body);
             return .{
                 .span       = spanOf(node, b.tokens),
                 .cond       = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
                 .is_capture = leafText(kids[3], b.tokens),
-                .then_body  = try b.buildBlock(kids[6]),
+                .then_body  = try b.buildBlock(kids[5]),
                 .else_ifs   = try else_ifs.toOwnedSlice(b.arena),
                 .else_body  = else_body,
             };
@@ -1026,14 +1026,14 @@ const Builder = struct {
                 switch (ntOf(kids[0])) {
                     .ElseIfClause => {
                         const ek = ch(kids[0]);
-                        if (ek.len == 8) {
-                            // Capture form: kw_else kw_if Expr | id | eol Block
-                            // [0]else [1]if [2]Expr [3]| [4]id [5]| [6]eol [7]Block
+                        if (ek.len == 7) {
+                            // Capture form: kw_else kw_if Expr kw_as id eol Block
+                            // [0]else [1]if [2]Expr [3]kw_as [4]id [5]eol [6]Block
                             try else_ifs.append(b.arena, .{
                                 .span       = spanOf(kids[0], b.tokens),
                                 .cond       = try b.box(Ast.Expr, try b.buildExpr(ek[2])),
                                 .is_capture = leafText(ek[4], b.tokens),
-                                .body       = try b.buildBlock(ek[7]),
+                                .body       = try b.buildBlock(ek[6]),
                             });
                         } else {
                             // Standard form: kw_else kw_if Expr eol Block

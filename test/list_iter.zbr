@@ -1,7 +1,7 @@
 class Program
     shared
         def main
-            var nums as List(int) = List()
+            var nums: List(int) = List()
             nums.add(10)
             nums.add(20)
             nums.add(30)

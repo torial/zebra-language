@@ -7,35 +7,35 @@ union TokenKind
     eof
 
 class Span
-    var line as int
-    var col  as int
-    cue init(l as int, c as int)
+    var line: int
+    var col : int
+    cue init(l: int, c: int)
         line = l
         col  = c
 
 class Token
-    var kind as TokenKind
-    var text as str
-    var span as Span
-    cue init(k as TokenKind, t as str, l as int, c as int)
+    var kind: TokenKind
+    var text: str
+    var span: Span
+    cue init(k: TokenKind, t: str, l: int, c: int)
         kind = k
         text = t
         span = Span(l, c)
 
 class Diag
-    var message as str
-    var line    as int
-    var col     as int
-    cue init(msg as str, l as int, c as int)
+    var message: str
+    var line   : int
+    var col    : int
+    cue init(msg: str, l: int, c: int)
         message = msg
         line    = l
         col     = c
-    def show as str
+    def show: str
         return message
 
 class Helper
     shared
-        def kindName(k as TokenKind) as str
+        def kindName(k: TokenKind): str
             branch k
                 on TokenKind.ident  return "ident"
                 on TokenKind.number return "number"
@@ -43,22 +43,22 @@ class Helper
                 on TokenKind.eof    return "eof"
 
 class Lexer
-    var tokens as List(Token)
-    var pos    as int
+    var tokens: List(Token)
+    var pos   : int
 
     cue init()
         tokens = List()
         pos = 0
 
-    def push(k as TokenKind, t as str, l as int, c as int)
+    def push(k: TokenKind, t: str, l: int, c: int)
         tokens.append(Token(k, t, l, c))
 
-    def peek as TokenKind
+    def peek: TokenKind
         if pos < tokens.len
             return tokens[pos].kind
         return TokenKind.eof()
 
-    def advance as Token
+    def advance: Token
         var t = tokens[pos]
         pos = pos + 1
         return t

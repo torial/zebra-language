@@ -1,5 +1,5 @@
 # partial_test.meta.zbr — auto-generated metadata methods (simulates codegen output)
 class PartialTest
     shared
-        def describe(name as str, value as int) as str
+        def describe(name: str, value: int): str
             return name + ": " + value.toString()

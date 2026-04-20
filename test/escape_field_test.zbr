@@ -1,16 +1,16 @@
 # Tests that escape analysis propagates through field writes:
 #   result.items = list; return result
-# should mark `list` as escaped so defer deinit is suppressed.
+# should mark `list`: escaped so defer deinit is suppressed.
 
 class Container
-    var items as List(str)
-    var label  as str
+    var items: List(str)
+    var label : str
 
 class Builder
     shared
-        def build(label as str) as Container
+        def build(label: str): Container
             var c = Container()
-            var items as List(str) = List()
+            var items: List(str) = List()
             items.add("alpha")
             items.add("beta")
             c.items = items     # field write — items should escape with c

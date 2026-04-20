@@ -1,16 +1,16 @@
 class App
     shared
-        def findPositive(x as int) as int?
+        def findPositive(x: int): int?
             if x > 0
                 return x
             return nil
 
-        def orDefault(val as int?, fallback as int) as int
+        def orDefault(val: int?, fallback: int): int
             return val orelse fallback
 
         def main
-            var a as int? = App.findPositive(5)
-            var b as int? = App.findPositive(-1)
+            var a: int? = App.findPositive(5)
+            var b: int? = App.findPositive(-1)
 
             if a == nil
                 print "a is nil"
@@ -20,7 +20,7 @@ class App
             if b == nil
                 print "b is nil"
 
-            var c as int = App.orDefault(a, 99)
-            var d as int = App.orDefault(b, 99)
+            var c: int = App.orDefault(a, 99)
+            var d: int = App.orDefault(b, 99)
             print c
             print d

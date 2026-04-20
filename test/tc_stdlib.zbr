@@ -17,7 +17,7 @@ class TcStdlib
         # Return type of accessing `member` on a value of type `t`.
         # Covers opaque stdlib types (string_builder, http_response, …).
         # User-defined classes are NOT handled here; use TcScope for those.
-        def memberType(t as TcType, member as str) as TcType
+        def memberType(t: TcType, member: str): TcType
             branch t
                 on TcType.string_builder
                     if member == "len"
@@ -114,7 +114,7 @@ class TcStdlib
                         return TcType.int_()
                     if member == "header" or member == "row"
                         return TcType.csv_row()
-                    # rows / dataRows returned as for-in iterables → element type is csv_row
+                    # rows / dataRows returned: for-in iterables → element type is csv_row
                     # (handled by TcInfer.inferForInElem)
                     return TcType.unknown_()
                 on TcType.csv_writer
@@ -158,7 +158,7 @@ class TcStdlib
         # Return type of a STATIC call `class_.method(...)`.
         # class_ is the bare name of the stdlib singleton (e.g. "Http", "Csv").
         # Returns TcType.unknown_() when the combination is not recognised.
-        def staticCall(class_ as str, method as str) as TcType
+        def staticCall(class_: str, method: str): TcType
             if class_ == "Http"
                 if method == "get" or method == "post"
                     return TcType.optional(TcType.http_response())

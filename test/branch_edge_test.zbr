@@ -1,11 +1,11 @@
 union Expr
-    num as int
-    add as int
+    num: int
+    add: int
     neg
 
 class Parser
     shared
-        def makeNum(n as int) as Expr
+        def makeNum(n: int): Expr
             return Expr.num(n)
 
 class Main

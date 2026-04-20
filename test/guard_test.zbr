@@ -1,12 +1,12 @@
 class Validator
     shared
-        def checkPositive(n as int) as int throws
+        def checkPositive(n: int): int throws
             # block form: guard cond else\n    body
             guard n > 0 else
                 raise "expected positive number"
             return n
 
-        def firstChar(s as str) as str
+        def firstChar(s: str): str
             # inline form: guard cond else, return
             guard s.len > 0 else, return "?"
             return s[0..1]

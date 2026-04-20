@@ -5,5 +5,5 @@ class Main
             var n = 42
             print "hello ${name}!"
             print "n = ${n}"
-            var msg as str = "result: ${n} and ${name}"
+            var msg: str = "result: ${n} and ${name}"
             print msg

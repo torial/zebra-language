@@ -24,7 +24,7 @@ class LexerTest
 
         def testClass()
             try
-                var src as str = "class Foo\n    def bar\n        return 1"
+                var src: str = "class Foo\n    def bar\n        return 1"
                 var toks = Lexer.tokenize(src)
                 assert toks.len >= 10, "class: expected >= 10 tokens, got " + toks.len.toString()
                 assert toks.at(0).text == "class", "class: first token should be 'class'"
@@ -35,7 +35,7 @@ class LexerTest
 
         def testIndentation()
             try
-                var src as str = "a\n    b\n        c\n    d\ne"
+                var src: str = "a\n    b\n        c\n    d\ne"
                 var toks = Lexer.tokenize(src)
                 assert toks.len >= 12, "indentation: expected >= 12 tokens, got " + toks.len.toString()
                 print "testIndentation: OK (" + toks.len.toString() + " tokens)"
@@ -44,7 +44,7 @@ class LexerTest
 
         def testLineComment()
             try
-                var src as str = "x # this is a comment\ny"
+                var src: str = "x # this is a comment\ny"
                 var toks = Lexer.tokenize(src)
                 assert toks.len == 5, "comment: expected 5 tokens, got " + toks.len.toString()
                 assert toks.at(0).text == "x", "comment: first token should be 'x'"
@@ -55,7 +55,7 @@ class LexerTest
 
         def testOperators()
             try
-                var src as str = "a + b * c"
+                var src: str = "a + b * c"
                 var toks = Lexer.tokenize(src)
                 assert toks.len == 7, "operators: expected 7 tokens, got " + toks.len.toString()
                 assert toks.at(1).text == "+", "operators: token 1 should be '+'"
@@ -66,7 +66,7 @@ class LexerTest
 
         def testIntLiteral()
             try
-                var src as str = "42"
+                var src: str = "42"
                 var toks = Lexer.tokenize(src)
                 assert toks.len == 3, "int: expected 3 tokens, got " + toks.len.toString()
                 assert toks.at(0).text == "42", "int: text mismatch"
@@ -76,7 +76,7 @@ class LexerTest
 
         def testOpenCall()
             try
-                var src as str = "foo()"
+                var src: str = "foo()"
                 var toks = Lexer.tokenize(src)
                 assert toks.len == 4, "open_call: expected 4 tokens, got " + toks.len.toString()
                 assert toks.at(0).text == "foo", "open_call: text should be 'foo'"
@@ -86,7 +86,7 @@ class LexerTest
 
         def testSourcePositions()
             try
-                var src as str = "x\ny"
+                var src: str = "x\ny"
                 var toks = Lexer.tokenize(src)
                 assert toks.at(0).line == 1, "position: first token on line 1"
                 assert toks.at(0).col  == 1, "position: first token at col 1"

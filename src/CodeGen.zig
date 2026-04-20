@@ -10785,7 +10785,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
 test "codegen: class fields become struct fields" {
     const src =
         \\class Counter
-        \\    var count as int
+        \\    var count: int
         \\
     ;
     const out = try generateSnippet(src, testing.allocator);
@@ -10798,7 +10798,7 @@ test "codegen: class fields become struct fields" {
 test "codegen: method gets self param and field uses self prefix" {
     const src =
         \\class Counter
-        \\    var count as int
+        \\    var count: int
         \\    def increment
         \\        count = count + 1
         \\
@@ -10813,7 +10813,7 @@ test "codegen: method gets self param and field uses self prefix" {
 test "codegen: method params and return type" {
     const src =
         \\class Greeter
-        \\    def greet(name as String) as String
+        \\    def greet(name: String): String
         \\        return name
         \\
     ;
@@ -10860,10 +10860,10 @@ test "codegen: mixin inlined into class, not emitted standalone" {
     // `adds` is part of the class header line, not a body statement.
     const src =
         \\mixin Loggable
-        \\    var log_level as int
+        \\    var log_level: int
         \\
         \\class Service adds Loggable
-        \\    var name as String
+        \\    var name: String
         \\
     ;
     const out = try generateSnippet(src, testing.allocator);
@@ -10878,7 +10878,7 @@ test "codegen: mixin inlined into class, not emitted standalone" {
 test "codegen: nilable type maps to ?T" {
     const src =
         \\class Node
-        \\    var next as Node?
+        \\    var next: Node?
         \\
     ;
     const out = try generateSnippet(src, testing.allocator);

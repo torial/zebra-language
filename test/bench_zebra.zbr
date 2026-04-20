@@ -1,12 +1,12 @@
 class Bench
     shared
-        def fib(n as int) as int
+        def fib(n: int): int
             if n < 2
                 return n
             return Bench.fib(n - 1) + Bench.fib(n - 2)
 
-        def sumLoop(n as int) as int
-            var acc as int = 0
+        def sumLoop(n: int): int
+            var acc: int = 0
             for i in 0 : n
                 acc = acc + i
             return acc

@@ -45,7 +45,7 @@ class ASTBuilderTest
     # -- Helpers -------------------------------------------------------------------
 
     # Build a Module from Zebra source. Explicit ? on cross-module throws calls.
-    def buildModule(src as str) as Module throws
+    def buildModule(src: str): Module throws
         const pm = Parser.Parser.parse(src)?
         branch pm
             on PNode.module_ as m
@@ -53,13 +53,13 @@ class ASTBuilderTest
             else
                 raise "expected module_ from parser"
 
-    def firstDecl(src as str) as Decl throws
+    def firstDecl(src: str): Decl throws
         const mod = .buildModule(src)?
         assert mod.decls.len > 0, "expected at least one decl"
         return mod.decls.at(0)
 
     # Get the first Stmt of the first method member of the first class decl.
-    def firstMethodStmt(src as str) as Stmt throws
+    def firstMethodStmt(src: str): Stmt throws
         const d = .firstDecl(src)?
         branch d
             on Decl.class_ as c
@@ -67,7 +67,7 @@ class ASTBuilderTest
                 const meth_decl = c.members.at(0)
                 branch meth_decl
                     on Decl.method as meth
-                        var stmts as List(Stmt) = meth.stmts to!
+                        var stmts: List(Stmt) = meth.stmts to!
                         assert stmts.len > 0, "expected method stmts"
                         return stmts.at(0)
                     else
@@ -76,7 +76,7 @@ class ASTBuilderTest
                 raise "expected class_ decl"
 
     # Get the Expr from a Stmt.expr (expression statement — value type Expr).
-    def stmtExprValue(s as Stmt) as Expr throws
+    def stmtExprValue(s: Stmt): Expr throws
         branch s
             on Stmt.expr as e
                 return e
@@ -86,7 +86,7 @@ class ASTBuilderTest
     # -- Tests ---------------------------------------------------------------------
 
     def testEmptyClass() throws
-        # Use a class with no body (no members) — same as parser_test.testEmptyClass
+        # Use a class with no body (no members) — same: parser_test.testEmptyClass
         const d = .firstDecl("class Foo\n")?
         branch d
             on Decl.class_ as c
@@ -97,7 +97,7 @@ class ASTBuilderTest
         print "testEmptyClass: OK"
 
     def testClassWithField() throws
-        const d = .firstDecl("class Foo\n    var x as int\n")?
+        const d = .firstDecl("class Foo\n    var x: int\n")?
         branch d
             on Decl.class_ as c
                 assert c.name == "Foo", "expected class name 'Foo'"
@@ -150,7 +150,7 @@ class ASTBuilderTest
         print "testSimpleMethod: OK"
 
     def testMethodWithParams() throws
-        const src = "class Foo\n    def add(x as int, y as int) as int\n        pass\n"
+        const src = "class Foo\n    def add(x: int, y: int): int\n        pass\n"
         const d = .firstDecl(src)?
         branch d
             on Decl.class_ as c
@@ -308,7 +308,7 @@ class ASTBuilderTest
         print "testExprMember: OK"
 
     def testParseTypeRefSimple() throws
-        const src = "class Foo\n    var n as int\n"
+        const src = "class Foo\n    var n: int\n"
         const d = .firstDecl(src)?
         branch d
             on Decl.class_ as c
@@ -329,7 +329,7 @@ class ASTBuilderTest
         print "testParseTypeRefSimple: OK"
 
     def testParseTypeRefNilable() throws
-        const src = "class Foo\n    var n as str?\n"
+        const src = "class Foo\n    var n: str?\n"
         const d = .firstDecl(src)?
         branch d
             on Decl.class_ as c
@@ -351,7 +351,7 @@ class ASTBuilderTest
         print "testParseTypeRefNilable: OK"
 
     def testParseTypeRefGeneric() throws
-        const src = "class Foo\n    var items as List(str)\n"
+        const src = "class Foo\n    var items: List(str)\n"
         const d = .firstDecl(src)?
         branch d
             on Decl.class_ as c
@@ -380,7 +380,7 @@ class ASTBuilderTest
 
     # StmtReturn.value: ^Expr? should carry the return expression.
     def testReturnValue() throws
-        const src = "class Foo\n    def bar() as int\n        return 42\n"
+        const src = "class Foo\n    def bar(): int\n        return 42\n"
         const s = .firstMethodStmt(src)?
         branch s
             on Stmt.return_ as sr
