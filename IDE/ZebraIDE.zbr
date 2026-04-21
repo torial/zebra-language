@@ -4,8 +4,6 @@
 # Demonstrates: stateful GUI, subprocess integration, file I/O, parsing, error handling.
 #
 # Usage: zebra --gui-backend=glfw ZebraIDE.zbr
-# Note: Requires compiler stubs for sys.run, CodeEditor, g.inputMultiline, g.panel
-#       (see _ide_stubs.zbr for placeholder implementations)
 
 # ────────────────────────────────────────────────────────────────────────────
 # Type Definitions
@@ -13,89 +11,71 @@
 
 # Represents a single compiler diagnostic (error or warning)
 class IDEDiagnostic
-    var line     as int = 0
-    var col      as int = 0
-    var end_col  as int = 1
-    var message  as str = ""
-    var is_error as bool = false
+    var line: int = 0
+    var col: int = 0
+    var end_col: int = 1
+    var message: str = ""
+    var is_error: bool = false
 
 # Calls the Zebra compiler as a subprocess and parses diagnostics
 class CompilerBridge
     shared
-        # Run compiler with -c flag to check syntax
-        def check(filepath as str) as List(IDEDiagnostic)
+        def check(filepath: str): List(IDEDiagnostic)
             var argv = List(str)()
             argv.add("zebra")
             argv.add("-c")
             argv.add(filepath)
-
-            var result = sys.run(argv)          # STUB: implemented via genSysCall
+            var result = sys.run(argv)
             return CompilerBridge.parseOutput(result.stderr)
 
-        # Run compiler to execute the program
-        def runFile(filepath as str) as str
+        def runFile(filepath: str): str
             var argv = List(str)()
             argv.add("zebra")
             argv.add(filepath)
-
-            var result = sys.run(argv)          # STUB: implemented via genSysCall
+            var result = sys.run(argv)
             if result.exit_code == 0
                 return result.stdout
             return result.stderr
 
-        # Parse compiler stderr into diagnostics
-        def parseOutput(raw as str) as List(IDEDiagnostic)
+        def parseOutput(raw: str): List(IDEDiagnostic)
             var diags = List(IDEDiagnostic)()
-            for line in raw.split("\n")
-                if line.trim().len == 0
+            for ln in raw.split("\n")
+                if ln.trim().len == 0
                     continue
-                var d = CompilerBridge.parseLine(line)
+                var d = CompilerBridge.parseLine(ln)
                 if d != nil
                     diags.add(d)
             return diags
 
-        # Parse a single diagnostic line
-        # Format: "path:line:col: error: message" or "path:line:col: warning: message"
-        def parseLine(line as str) as IDEDiagnostic?
-            # Find colons; account for Windows drive letter (C:\...)
-            var colon1 = line.indexOf(":")
+        def parseLine(ln: str): IDEDiagnostic?
+            var colon1 = ln.indexOf(":")
             if colon1 < 0
                 return nil
-
-            # Skip Windows drive letter
             var searchFrom = colon1 + 1
             if colon1 == 1
-                var next = line.indexOf(":", 2)
+                var next = ln.indexOf(":", 2)
                 if next < 0
                     return nil
                 searchFrom = next + 1
                 colon1 = next
-
-            var colon2 = line.indexOf(":", searchFrom)
+            var colon2 = ln.indexOf(":", searchFrom)
             if colon2 < 0
                 return nil
-
-            var colon3 = line.indexOf(":", colon2 + 1)
+            var colon3 = ln.indexOf(":", colon2 + 1)
             if colon3 < 0
                 return nil
-
-            # Extract fields
-            var lineStr = line.substring(colon1 + 1, colon2).trim()
-            var colStr = line.substring(colon2 + 1, colon3).trim()
-            var rest = line.substring(colon3 + 1, line.len).trim()
-
+            var lineStr = ln.substring(colon1 + 1, colon2).trim()
+            var colStr = ln.substring(colon2 + 1, colon3).trim()
+            var rest = ln.substring(colon3 + 1, ln.len).trim()
             var lineNum = lineStr.toInt()
             var colNum = colStr.toInt()
-            if lineNum == nil or colNum == nil
+            if lineNum == 0 or colNum == 0
                 return nil
-
-            # Extract message (after "error:" or "warning:")
             var isError = rest.startsWith("error:")
             var message = rest
             var colonPos = message.indexOf(":")
             if colonPos >= 0
                 message = message.substring(colonPos + 1, message.len).trim()
-
             var d = IDEDiagnostic()
             d.line = lineNum
             d.col = colNum
@@ -106,131 +86,96 @@ class CompilerBridge
 
 # All IDE state that persists across frames via capture
 class IDEState
-    var filepath   as str = "untitled.zbr"
-    var diags      as List(IDEDiagnostic) = List(IDEDiagnostic)()
-    var output     as str = ""
-    var dirty      as bool = false
-    var lastCheck  as str = ""
+    var filepath: str = "untitled.zbr"
+    var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
+    var output: str = ""
+    var dirty: bool = false
+    var lastCheck: str = ""
 
 # ────────────────────────────────────────────────────────────────────────────
-# Main IDE
+# Per-frame helpers (called from ideFrame lambda each frame)
 # ────────────────────────────────────────────────────────────────────────────
 
 class Main
     shared
-        # Main frame callback for Gui.run
-        def ideFrame(g as Gui)
-            capture
-                var state   as IDEState = IDEState()
-                var editor  as CodeEditor = CodeEditor.forZebra()
-                var inited  as bool = false
-
-            # One-time initialization: load file if it exists
-            if not inited
-                var existing = File.read(state.filepath)
-                if existing.isOk()
-                    editor.setText(existing.value())
-                    state.lastCheck = existing.value()
-                inited = true
-
-            # Render each section
-            Main.renderToolbar(g, state, editor)
-            g.separator()
-            Main.renderBody(g, state, editor)
-            g.separator()
-            Main.renderOutput(g, state)
-
-        # Toolbar: buttons, file indicator
-        def renderToolbar(g as Gui, state as IDEState, editor as CodeEditor)
+        def renderToolbar(g: Gui, state: IDEState, editor: CodeEditor)
             if g.button("Open")
-                var result = File.read(state.filepath)
-                if result.isOk()
-                    editor.setText(result.value())
+                if File.exists(state.filepath)
+                    editor.setText(File.read(state.filepath))
                     state.diags = List(IDEDiagnostic)()
                     state.output = ""
                     state.dirty = false
-
             g.sameLine()
             if g.button("Save")
                 var src = editor.getText()
-                var result = File.write(state.filepath, src)
-                if result.isOk()
-                    state.dirty = false
-
+                File.write(state.filepath, src)
+                state.dirty = false
             g.sameLine()
             if g.button("Check  (F5)")
                 Main.doCheck(state, editor)
-
             g.sameLine()
             if g.button("Run  (F9)")
                 Main.doRun(state, editor)
-
             g.sameLine()
             var title = state.filepath
             if state.dirty
                 title = "${state.filepath} *"
             g.text(title)
 
-        # Main body: code editor (left) + diagnostics (right)
-        def renderBody(g as Gui, state as IDEState, editor as CodeEditor)
-            # Left pane: code editor
+        def renderBody(g: Gui, state: IDEState, editor: CodeEditor)
             editor.setErrorMarkers(state.diags)
-            editor.render(g, "##code", 700, 500)  # STUB: genCodeEditorCall not yet implemented
-
+            editor.render(g, "##code", 700, 500)
             g.sameLine()
-
-            # Right pane: diagnostics list
-            g.panel("##diags", 280, 500)  # STUB: g.panel not yet implemented
+            g.panel("##diags", def(gc: Gui)
                 var errorCount = 0
                 for d in state.diags
                     if d.is_error
                         errorCount = errorCount + 1
-
-                g.text("Errors: ${errorCount}")
-                g.separator()
-
+                gc.text("Errors: ${errorCount}")
+                gc.separator()
                 for d in state.diags
                     var icon = "!"
                     if d.is_error
                         icon = "X"
-                    g.text("${icon} ${d.line}:${d.col}  ${d.message}")
+                    gc.text("${icon} ${d.line}:${d.col}  ${d.message}")
+            )
 
-        # Output pane: read-only display of program output
-        def renderOutput(g as Gui, state as IDEState)
+        def renderOutput(g: Gui, state: IDEState)
             g.text("Output:")
-
-            # Use a read-only CodeEditor for output display
             var outputEditor = CodeEditor()
             outputEditor.setReadOnly(true)
             outputEditor.setText(state.output)
-            outputEditor.render(g, "##output", 990, 120)  # STUB: CodeEditor.render
+            outputEditor.render(g, "##output", 990, 120)
 
-        # Check button handler: validate syntax, collect diagnostics
-        def doCheck(state as IDEState, editor as CodeEditor)
+        def doCheck(state: IDEState, editor: CodeEditor)
             var src = editor.getText()
             var tmpFile = "_ide_tmp_check.zbr"
-
-            var writeResult = File.write(tmpFile, src)
-            if writeResult.isErr()
-                state.output = "Error writing temp file"
-                return
-
+            File.write(tmpFile, src)
             state.diags = CompilerBridge.check(tmpFile)
             state.lastCheck = src
             state.dirty = true
 
-        # Run button handler: execute the program
-        def doRun(state as IDEState, editor as CodeEditor)
-            # Save current source first
+        def doRun(state: IDEState, editor: CodeEditor)
             var src = editor.getText()
-            var writeResult = File.write(state.filepath, src)
-            if writeResult.isErr()
-                state.output = "Error saving file"
-                return
-
+            File.write(state.filepath, src)
             state.dirty = false
             state.output = CompilerBridge.runFile(state.filepath)
 
-        # Entry point
         def main
-            Gui.run("Zebra IDE", 1000, 750, ideFrame)
+            var frame = def(g: Gui)
+                capture
+                    var state: IDEState = IDEState()
+                    var editor: CodeEditor = CodeEditor.forZebra()
+                    var inited: bool = false
+                if not inited
+                    if File.exists(state.filepath)
+                        var content = File.read(state.filepath)
+                        editor.setText(content)
+                        state.lastCheck = content
+                    inited = true
+                Main.renderToolbar(g, state, editor)
+                g.separator()
+                Main.renderBody(g, state, editor)
+                g.separator()
+                Main.renderOutput(g, state)
+            Gui.run("Zebra IDE", 1000, 750, frame)

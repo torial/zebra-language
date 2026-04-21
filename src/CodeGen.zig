@@ -2575,6 +2575,24 @@ const Generator = struct {
             \\}
             \\
         );
+        // ── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ──
+        try g.w.writeAll(
+            \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+            \\fn _code_editor_new() *_CodeEditor {
+            \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+            \\    _ed.* = .{ .text = "", .read_only = false };
+            \\    return _ed;
+            \\}
+            \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+            \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+            \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+            \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+            \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+            \\    if (!_ed.read_only) { _ed.text = _r; }
+            \\}
+            \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+            \\
+        );
         // ── Backend-specific implementation ────────────────────────────────────
         switch (g.gui_backend) {
             .stub => try g.w.writeAll(
@@ -3546,6 +3564,8 @@ const Generator = struct {
                 const dig = ig.indented();
                 try dig.writeIndent();
                 try dig.w.print("const self = _allocator.create({s}) catch @panic(\"OOM\");\n", .{n.name});
+                try dig.writeIndent();
+                try dig.w.writeAll("self.* = .{};\n");
                 try dig.writeIndent();
                 try dig.w.print("self._type_tag = _ttag_{s};\n", .{n.name});
                 try dig.writeIndent();
@@ -4590,6 +4610,7 @@ const Generator = struct {
                 if (std.mem.eql(u8, n.name, "UdpSocket"))  return g.genUdpMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "Regex"))      return g.genRegexMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "Gui"))        return g.genGuiWidgetMethod(object, method, args);
+                if (std.mem.eql(u8, n.name, "CodeEditor")) return g.genCodeEditorMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "JsonValue"))  return g.genJsonMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "DateTime"))   return g.genDateTimeMethod(object, method, args);
                 // toString() on int/float/bool — format as string.
@@ -5963,6 +5984,49 @@ const Generator = struct {
         return false;
     }
 
+    /// editor.setText / getText / setReadOnly / setErrorMarkers / render
+    fn genCodeEditorMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "setText")) {
+            try g.w.writeAll("_code_editor_set_text(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "getText")) {
+            try g.w.writeAll("_code_editor_get_text(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setReadOnly")) {
+            try g.w.writeAll("_code_editor_set_readonly(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("false");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setErrorMarkers")) {
+            try g.w.writeAll("_code_editor_set_error_markers(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "render")) {
+            try g.w.writeAll("_code_editor_render(");
+            try g.genExpr(obj);
+            // args: g, id, width, height
+            for (args) |a| { try g.w.writeAll(", "); try g.genExpr(a.value); }
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
     /// g.text(s), g.button(label), etc. — pass through directly to GuiContext methods.
     /// Used for expression context (return values like button, checkbox, slider, input).
     /// For void-returning statement calls with allocating string args, use genGuiWidgetStmt.
@@ -6491,6 +6555,16 @@ const Generator = struct {
             try g.w.writeAll(", ");
             if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")) |_i| @as(i64, @intCast(_i)) else @as(i64, -1))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "substring")) {
+            // str.substring(start, end) → str[@intCast(start)..@intCast(end)]
+            try g.genExpr(obj);
+            try g.w.writeAll("[@intCast(");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")..@intCast(");
+            if (args.len > 1) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")]");
             return true;
         }
         if (std.mem.eql(u8, method, "replace")) {
@@ -9168,6 +9242,10 @@ const Generator = struct {
                 try g.w.writeAll("_csv_writer_init()");
                 return;
             }
+            if (std.mem.eql(u8, name, "CodeEditor")) {
+                try g.w.writeAll("_code_editor_new()");
+                return;
+            }
             // StringBuilder() as an assignment RHS (e.g. class field init in `cue init`).
             // Local `var` declarations are intercepted earlier in genLocalVar.
             if (std.mem.eql(u8, name, "StringBuilder")) {
@@ -9446,6 +9524,14 @@ const Generator = struct {
                 if (try g.genGuiCall(mem.member, e.args)) return;
             }
         }
+        // CodeEditor static factory: CodeEditor.forZebra() → _code_editor_new()
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "CodeEditor")) {
+                try g.w.writeAll("_code_editor_new()");
+                return;
+            }
+        }
         // sys static calls: sys.args(), sys.exit(n), sys.err("msg"), etc.
         if (e.callee.* == .member) {
             const mem = e.callee.member;
@@ -9541,6 +9627,7 @@ const Generator = struct {
                     .udp_socket    => if (try g.genUdpMethod(mem.object, mem.member, e.args)) return,
                     .regex         => if (try g.genRegexMethod(mem.object, mem.member, e.args)) return,
                     .gui_context   => if (try g.genGuiWidgetMethod(mem.object, mem.member, e.args)) return,
+                    .code_editor   => if (try g.genCodeEditorMethod(mem.object, mem.member, e.args)) return,
                     .str_slice     => if (try g.genStrSliceMethod(mem.object, mem.member, e.args)) return,
                     .json_value    => if (try g.genJsonMethod(mem.object, mem.member, e.args)) return,
                     .date_time     => if (try g.genDateTimeMethod(mem.object, mem.member, e.args)) return,
@@ -10067,11 +10154,32 @@ const Generator = struct {
             try g.writeIndent();
         }
 
+        // Determine if any capture field is directly reassigned in the body.
+        // If so, `call` takes `self: *@This()` so the mutation is visible to the caller.
+        // If not (or no captures), `self: @This()` (by-value) is used; for class-pointer
+        // captures this is fine because mutation goes through the pointer, not the field.
+        var any_capture_mutated = false;
+        if (has_capture) {
+            const body_stmts_lam: []const Ast.Stmt = switch (e.body) {
+                .stmts => |ss| ss,
+                .expr  => &.{},
+            };
+            var body_mutations_lam = try scanMutations(body_stmts_lam, g.alloc, g.tc);
+            defer body_mutations_lam.deinit();
+            for (e.capture) |cv| {
+                if (body_mutations_lam.contains(cv.name)) { any_capture_mutated = true; break; }
+            }
+        }
+
         // call method
         try g.w.writeAll(" fn call(");
         var first = true;
         if (has_capture) {
-            try g.w.writeAll("self: *@This()");
+            if (any_capture_mutated) {
+                try g.w.writeAll("self: *@This()");
+            } else {
+                try g.w.writeAll("self: @This()");
+            }
             first = false;
         }
         for (e.params) |p| {
@@ -10124,10 +10232,12 @@ const Generator = struct {
                 try lg.w.writeAll(";");
             },
             .stmts => |ss| {
+                var mut_set_lambda = try scanMutations(ss, g.alloc, g.tc);
+                defer mut_set_lambda.deinit();
                 var ret_set_lambda = try analyzeEscapes(ss, g.alloc);
                 defer ret_set_lambda.deinit();
                 try lg.w.writeAll("\n");
-                try lg.indented().withReturnedNames(&ret_set_lambda).genStmts(ss);
+                try lg.indented().withMutated(&mut_set_lambda).withReturnedNames(&ret_set_lambda).genStmts(ss);
                 try lg.writeIndent();
             },
         }
@@ -10136,6 +10246,7 @@ const Generator = struct {
 
         // Capture initialiser
         if (has_capture) {
+            // Emit struct instance; panel/callback sites call .call(arg) on it.
             try g.w.writeAll("{ ");
             for (e.capture) |cv| {
                 try g.w.writeAll(".");
@@ -10145,7 +10256,7 @@ const Generator = struct {
                 try g.w.writeAll(", ");
             }
             try g.w.writeAll("}");
-            try g.w.writeAll(").call");
+            try g.w.writeAll(")");
         } else {
             try g.w.writeAll(".call");
         }
@@ -10169,6 +10280,11 @@ const Generator = struct {
                 //  any other type-annotation context.)
                 if (std.mem.eql(u8, n.name, "StringBuilder")) {
                     try g.w.writeAll("std.ArrayList(u8)");
+                    return;
+                }
+                // CodeEditor is a heap-allocated struct; emit as pointer.
+                if (std.mem.eql(u8, n.name, "CodeEditor")) {
+                    try g.w.writeAll("*_CodeEditor");
                     return;
                 }
                 // Cross-module qualified type: "moduleAlias.TypeName".
@@ -10509,6 +10625,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .arg_result,
         .uri_result,
         .timer_handle,
+        .code_editor,
         .optional,
         .tuple,
         .generic_named,

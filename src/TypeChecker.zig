@@ -110,6 +110,8 @@ pub const Type = union(enum) {
     uri_result,
     /// `TimerHandle` — high-resolution timer from `Timer.start()`.
     timer_handle,
+    /// `CodeEditor` — embeddable code-editor widget (Phase A: backed by inputMultiline).
+    code_editor,
 
     // ── Optional ──────────────────────────────────────────────────────────────
     /// `?T` — nilable wrapper around another type.
@@ -196,6 +198,7 @@ pub const Type = union(enum) {
             .arg_result     => b == .arg_result,
             .uri_result     => b == .uri_result,
             .timer_handle   => b == .timer_handle,
+            .code_editor    => b == .code_editor,
             .json_array     => b == .json_array,
             .tuple => |ea| switch (b) {
                 .tuple => |eb| blk: {
@@ -288,6 +291,7 @@ pub const Type = union(enum) {
             .arg_result     => "ArgResult",
             .uri_result     => "UriResult",
             .timer_handle   => "TimerHandle",
+            .code_editor    => "CodeEditor",
             .optional       => "?T",
             .tuple          => "tuple",
             .cross_module   => |cm| cm.type_name,
@@ -2006,6 +2010,8 @@ const TypeChecker = struct {
             .ident => |*ident| {
                 // CsvWriter() bare constructor call.
                 if (std.mem.eql(u8, ident.name, "CsvWriter")) return .csv_writer;
+                // CodeEditor() bare constructor call.
+                if (std.mem.eql(u8, ident.name, "CodeEditor")) return .code_editor;
                 if (tc.resolve.exprs.get(ident)) |sym| {
                     _ = try tc.inferExpr(e.callee);
                     if (sym.kind == .method) {
@@ -2149,6 +2155,11 @@ const TypeChecker = struct {
                     _ = try tc.inferExpr(mem.object);
                     if (std.mem.eql(u8, mem.member, "resolve")) return .str_slice;
                     return .void_;
+                }
+                // CodeEditor.* static factory methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "CodeEditor")) {
+                    _ = try tc.inferExpr(mem.object);
+                    return .code_editor; // forZebra() and any future factories
                 }
                 // Regex.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Regex")) {
@@ -2493,6 +2504,7 @@ const TypeChecker = struct {
                 .{ "padLeft",   {} }, .{ "padRight",  {} }, .{ "center",    {} }, .{ "bytes",     {} },
                 .{ "join",           {} }, .{ "lines",        {} }, .{ "reverse",    {} },
                 .{ "toHex",          {} }, .{ "fromHex",      {} }, .{ "chars",      {} },
+                .{ "substring",      {} },
             });
             const str_int = std.StaticStringMap(void).initComptime(&.{
                 .{ "toInt",          {} }, .{ "indexOf",      {} }, .{ "count",      {} },
@@ -2534,6 +2546,11 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "groups"))  return .unknown; // []const []const u8 slice — not modelled
             if (std.mem.eql(u8, method, "replace")) return .string;
             return .void_;
+        }
+        // CodeEditor methods
+        if (obj_type == .code_editor) {
+            if (std.mem.eql(u8, method, "getText")) return .string;
+            return .void_; // setText, setErrorMarkers, setReadOnly, render
         }
         // Gui widget methods (on gui_context receiver)
         if (obj_type == .gui_context) {
@@ -3032,6 +3049,7 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "JsonValue"))   return .json_value;
     if (std.mem.eql(u8, n, "DateTime"))    return .date_time;
     if (std.mem.eql(u8, n, "CalendarView")) return .calendar_view;
+    if (std.mem.eql(u8, n, "CodeEditor"))  return .code_editor;
     return switch (Builtins.scalarKind(n)) {
         .int        => .int,
         .uint       => .uint,

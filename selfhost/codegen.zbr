@@ -717,6 +717,116 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     sb.append(decls)
     return sb.build()
 
+# ── Source-map helpers ────────────────────────────────────────────────────────
+# Return the source line number for an Expr or Stmt (0 = no span available).
+# Used by genStmt to emit `// zbr:file:line` markers for error remapping.
+
+def exprLine(e: Expr): int
+    branch e
+        on Expr.int_lit as x
+            return x.span.line
+        on Expr.float_lit as x
+            return x.span.line
+        on Expr.bool_lit as x
+            return x.span.line
+        on Expr.char_lit as x
+            return x.span.line
+        on Expr.string_lit as x
+            return x.span.line
+        on Expr.zig_lit as x
+            return x.span.line
+        on Expr.ident as x
+            return x.span.line
+        on Expr.nil_ as sp
+            return sp.line
+        on Expr.this_ as sp
+            return sp.line
+        on Expr.string_interp as x
+            return x.span.line
+        on Expr.member as x
+            return x.span.line
+        on Expr.call as x
+            return x.span.line
+        on Expr.index as x
+            return x.span.line
+        on Expr.slice as x
+            return x.span.line
+        on Expr.binary as x
+            return x.span.line
+        on Expr.unary as x
+            return x.span.line
+        on Expr.cast as x
+            return x.span.line
+        on Expr.to_nilable as x
+            return x.span.line
+        on Expr.to_non_nil as x
+            return x.span.line
+        on Expr.is_nil as x
+            return x.span.line
+        on Expr.orelse_ as x
+            return x.span.line
+        on Expr.catch_ as x
+            return x.span.line
+        on Expr.if_expr as x
+            return x.span.line
+        on Expr.lambda as x
+            return x.span.line
+        on Expr.list_lit as x
+            return x.span.line
+        on Expr.dict_lit as x
+            return x.span.line
+        on Expr.array_lit as x
+            return x.span.line
+        on Expr.try_ as x
+            return x.span.line
+        on Expr.tuple_lit as x
+            return x.span.line
+        on Expr.type_check as x
+            return x.span.line
+        on Expr.except_ as x
+            return x.span.line
+
+def stmtLine(s: Stmt): int
+    branch s
+        on Stmt.var_ as n
+            return n.span.line
+        on Stmt.assign as a
+            return a.span.line
+        on Stmt.return_ as r
+            return r.span.line
+        on Stmt.if_ as si
+            return si.span.line
+        on Stmt.while_ as ww
+            return ww.span.line
+        on Stmt.for_in as fi
+            return fi.span.line
+        on Stmt.for_num as fn_
+            return fn_.span.line
+        on Stmt.branch_ as b
+            return b.span.line
+        on Stmt.print_ as p
+            return p.span.line
+        on Stmt.raise_ as r
+            return r.span.line
+        on Stmt.try_catch as tc
+            return tc.span.line
+        on Stmt.assert_ as a
+            return a.span.line
+        on Stmt.defer_ as d
+            return d.span.line
+        on Stmt.with_ as ww
+            return ww.span.line
+        on Stmt.arena_scope as a
+            return a.span.line
+        on Stmt.guard_ as g
+            return g.span.line
+        on Stmt.destruct as d
+            return d.span.line
+        on Stmt.expr as e
+            return exprLine(e)
+        else
+            return 0
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -1779,6 +1889,14 @@ struct Generator
             nm_i = nm_i + 1
 
     def genStmt(s: Stmt)
+        if source_file != ""
+            var ln = stmtLine(s)
+            if ln > 0
+                w.emit("// zbr:")
+                w.emit(source_file)
+                w.emit(":")
+                w.emit(ln.toString())
+                w.emit("\n")
         branch s
             on Stmt.var_ as n
                 genLocalVar(n)
@@ -4656,9 +4774,14 @@ struct Generator
             w.emit("))")
             return
         if mname == "toInt"
-            w.emit("@as(i64, @intFromFloat(")
-            genExpr(m.object)
-            w.emit("))")
+            if isStringBoth(m.object, "toInt")
+                w.emit("(std.fmt.parseInt(i64, ")
+                genExpr(m.object)
+                w.emit(", 10) catch 0)")
+            else
+                w.emit("@as(i64, @intFromFloat(")
+                genExpr(m.object)
+                w.emit("))")
             return
         # Math / File / sys namespace dispatch
         if m.object is Expr.ident as id

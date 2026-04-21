@@ -80,6 +80,7 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Regex",         {} },
     // Stdlib UI
     .{ "Gui",           {} },
+    .{ "CodeEditor",    {} },
     // System / process
     .{ "sys",           {} },
     // Result(T, E) — functional error handling

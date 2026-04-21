@@ -724,7 +724,9 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "startsWith" or name == "endsWith" or name == "indexOf" or name == "contains_"
         return true
-    if name == "toStr" or name == "toString" or name == "chars" or name == "concat"
+    if name == "toStr" or name == "toString" or name == "toInt" or name == "toFloat"
+        return true
+    if name == "chars" or name == "concat"
         return true
     if name == "split" or name == "trim" or name == "upper" or name == "lower"
         return true

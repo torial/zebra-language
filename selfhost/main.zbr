@@ -451,7 +451,8 @@ class Main
                 if r2.stdout != ""
                     print r2.stdout
                 if r2.stderr != ""
-                    sys.errln(r2.stderr)
+                    var remapped: str = remapZigErrors(r2.stderr, zig_path)
+                    sys.err(remapped)
                 if r2.exit_code != 0
                     sys.exit(1)
 
@@ -483,3 +484,94 @@ class Main
             sys.errln(r.stderr)
         if r.exit_code != 0
             sys.exit(1)
+
+# ── Error remapping helpers ───────────────────────────────────────────────────
+
+def pathBasename(p: str): str
+    var last: str = p
+    for part in p.split("/")
+        last = part
+    return last
+
+# Walk backward from err_line (1-based) through zig_lines to find the
+# nearest // zbr:filename:N marker. Returns "filename:N" or "".
+def findZbrComment(zig_lines: List(str), err_line: int): str
+    if err_line <= 0 or zig_lines.count() == 0
+        return ""
+    var i: int = err_line - 1
+    if i >= zig_lines.count()
+        i = zig_lines.count() - 1
+    while i >= 0
+        var line: str = zig_lines.at(i)
+        var trimmed: str = line.trimLeft()
+        if trimmed.startsWith("// zbr:")
+            var payload: str = ""
+            var found_pfx: bool = false
+            for seg in trimmed.split("// zbr:")
+                if found_pfx
+                    payload = seg
+                    break
+                found_pfx = true
+            if payload != ""
+                return payload
+        i = i - 1
+    return ""
+
+# Remap Zig compiler error lines referencing zig_path back to Zebra
+# source locations using // zbr: markers embedded in the generated file.
+# Lines that cannot be remapped pass through unchanged.
+# Context lines (indented source + caret) following a remapped error are
+# suppressed since they show Zig internals the user never wrote.
+def remapZigErrors(stderr_text: str, zig_path: str): str
+    var zig_lines: List(str) = File.readLines(zig_path)
+    var zig_base: str = pathBasename(zig_path)
+    var stderr_lines: List(str) = List(str)()
+    for sln in stderr_text.split("\n")
+        stderr_lines.add(sln)
+    var out: str = ""
+    var skip_context: bool = false
+    var li: int = 0
+    while li < stderr_lines.count()
+        var line: str = stderr_lines.at(li)
+        var emit_raw: bool = true
+        if skip_context
+            if line == "" or not line.startsWith(" ")
+                skip_context = false
+            else
+                emit_raw = false
+        if emit_raw
+            if zig_base in line
+                var marker: str = zig_base + ":"
+                var after: str = ""
+                var found_m: bool = false
+                for seg in line.split(marker)
+                    if found_m
+                        after = seg
+                        break
+                    found_m = true
+                if after != ""
+                    var colon_parts: List(str) = List(str)()
+                    for cp in after.split(":")
+                        colon_parts.add(cp)
+                    if colon_parts.count() >= 4
+                        var line_num_str: str = colon_parts.at(0)
+                        var zig_line: int = line_num_str.toInt()
+                        var sev_msg: str = ""
+                        var ai: int = 2
+                        while ai < colon_parts.count()
+                            if ai > 2
+                                sev_msg = sev_msg + ":"
+                            sev_msg = sev_msg + colon_parts.at(ai)
+                            ai = ai + 1
+                        var sev_msg_t: str = sev_msg.trimLeft()
+                        var is_diag: bool = sev_msg_t.startsWith("error:") or sev_msg_t.startsWith("warning:") or sev_msg_t.startsWith("note:")
+                        if is_diag and zig_line > 0
+                            var zbr_loc: str = findZbrComment(zig_lines, zig_line)
+                            if zbr_loc != ""
+                                out = out + zbr_loc + ": " + sev_msg_t + "\n"
+                                skip_context = true
+                                emit_raw = false
+        if emit_raw
+            out = out + line + "\n"
+        li = li + 1
+    return out

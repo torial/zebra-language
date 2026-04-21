@@ -793,11 +793,14 @@ const Resolver = struct {
             },
             .for_in  => |s| {
                 try r.collectFreeVars(s.iter, local, out, seen);
+                // Loop variables are bound inside the body — add to local before scanning.
+                for (s.vars) |v| try local.put(v, {});
                 for (s.body) |st| try r.collectFreeVarsStmt(st, local, out, seen);
             },
             .for_num => |s| {
                 try r.collectFreeVars(s.start, local, out, seen);
                 try r.collectFreeVars(s.stop, local, out, seen);
+                try local.put(s.var_, {});
                 for (s.body) |st| try r.collectFreeVarsStmt(st, local, out, seen);
             },
             .branch  => |s| {
@@ -928,11 +931,13 @@ const Resolver = struct {
             },
             .for_in  => |s| {
                 try r.checkCaptureBoundary(s.iter, lambda_local);
+                for (s.vars) |v| try lambda_local.put(v, {});
                 for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
             },
             .for_num => |s| {
                 try r.checkCaptureBoundary(s.start, lambda_local);
                 try r.checkCaptureBoundary(s.stop, lambda_local);
+                try lambda_local.put(s.var_, {});
                 for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
             },
             .branch  => |s| {
