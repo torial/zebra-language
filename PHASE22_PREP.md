@@ -107,9 +107,9 @@ invocation time. Edit `tools/parity_check.zbr` directly to enable filtering duri
 
 ## Cutover checklist (to fill in after prep is done)
 
-- [ ] All parity runner tests PASS (or known divergences documented)
-- [ ] No BLOCKER bugs open
-- [ ] Error format verified compatible
-- [ ] `zig build selfhost` step clean and documented
-- [ ] Bootstrap 5/5 still green
+- [ ] All parity runner tests PASS (or known divergences documented) — run `zig build run -- tools/parity_check.zbr`
+- [x] No BLOCKER bugs open — confirmed 2026-04-21
+- [x] Error format verified compatible — `bash test/selfhost_compat/run_compat.sh` 2/2 PASS
+- [x] `zig build selfhost` step clean and documented — canonical: `zig build selfhost`
+- [ ] Bootstrap 5/5 still green — run `zig build bootstrap` before cutover
 - [ ] SELFHOST_JOURNAL.md Phase 22 entry drafted
