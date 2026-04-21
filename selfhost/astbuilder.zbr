@@ -359,8 +359,8 @@ class ASTBuilder
             on PNode.stmt_return as pret
                 if pret.value.len > 0
                     const rval = .buildExpr(pret.value.at(0))?
-                    return Stmt.return_(StmtReturn(zspan(), rval))
-                return Stmt.return_(StmtReturn(zspan(), nil))
+                    return Stmt.return_(StmtReturn(Span(pret.line, 0, pret.line, 0), rval))
+                return Stmt.return_(StmtReturn(Span(pret.line, 0, pret.line, 0), nil))
 
             on PNode.stmt_if as pif
                 const cond_expr = .buildExpr(pif.cond.at(0))?
@@ -370,14 +370,14 @@ class ASTBuilder
                 var else_opt: List(Stmt)? = nil
                 if pif.else_stmts.len > 0
                     else_opt = else_stmts_built
-                var si = StmtIf(zspan(), cond_expr, then_stmts, else_ifs, else_opt)
+                var si = StmtIf(Span(pif.line, 0, pif.line, 0), cond_expr, then_stmts, else_ifs, else_opt)
                 si.is_capture = pif.is_capture
                 return Stmt.if_(si)
 
             on PNode.stmt_while as pw
                 const cond_expr = .buildExpr(pw.cond.at(0))?
                 var stmts = .buildStmts(pw.stmts)?
-                return Stmt.while_(StmtWhile(zspan(), cond_expr, stmts))
+                return Stmt.while_(StmtWhile(Span(pw.line, 0, pw.line, 0), cond_expr, stmts))
 
             on PNode.stmt_for_in as pfor
                 const iter_expr = .buildExpr(pfor.iter.at(0))?
@@ -385,7 +385,7 @@ class ASTBuilder
                 var vars: List(str) = List(str)()
                 for vname in pfor.var_names
                     vars.add(vname)
-                return Stmt.for_in(StmtForIn(zspan(), vars, iter_expr, stmts))
+                return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, stmts))
 
             on PNode.stmt_for_num as pfn
                 const start_expr = .buildExpr(pfn.start.at(0))?
@@ -393,38 +393,38 @@ class ASTBuilder
                 var stmts = .buildStmts(pfn.stmts)?
                 if pfn.step.len > 0
                     const step_expr = .buildExpr(pfn.step.at(0))?
-                    return Stmt.for_num(StmtForNum(zspan(), pfn.var_name, start_expr, stop_expr, step_expr, stmts))
-                return Stmt.for_num(StmtForNum(zspan(), pfn.var_name, start_expr, stop_expr, nil, stmts))
+                    return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, step_expr, stmts))
+                return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, nil, stmts))
 
             on PNode.stmt_var as pv
                 const type_ref = .parseTypeRef(pv.type_name)
                 if pv.init_expr.len > 0
                     const initval = .buildExpr(pv.init_expr.at(0))?
-                    return Stmt.var_(DeclVar(zspan(), zmods(), pv.name, type_ref, initval, pv.is_const))
-                return Stmt.var_(DeclVar(zspan(), zmods(), pv.name, type_ref, nil, pv.is_const))
+                    return Stmt.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, initval, pv.is_const))
+                return Stmt.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, nil, pv.is_const))
 
             on PNode.stmt_assign as pa
                 const target_expr = .buildExpr(pa.target.at(0))?
                 const value_expr = .buildExpr(pa.value.at(0))?
                 const op = .toAssignOp(pa.op)?
-                return Stmt.assign(StmtAssign(zspan(), target_expr, op, value_expr))
+                return Stmt.assign(StmtAssign(Span(pa.line, 0, pa.line, 0), target_expr, op, value_expr))
 
             on PNode.stmt_assert as pas
                 const cond_expr = .buildExpr(pas.cond.at(0))?
                 if pas.message.len > 0
                     const msg = .buildExpr(pas.message.at(0))?
-                    return Stmt.assert_(StmtAssert(zspan(), cond_expr, msg))
-                return Stmt.assert_(StmtAssert(zspan(), cond_expr, nil))
+                    return Stmt.assert_(StmtAssert(Span(pas.line, 0, pas.line, 0), cond_expr, msg))
+                return Stmt.assert_(StmtAssert(Span(pas.line, 0, pas.line, 0), cond_expr, nil))
 
             on PNode.stmt_raise as pr
                 if pr.message.len >= 2
                     const msg = .buildExpr(pr.message.at(0))?
                     const det = .buildExpr(pr.message.at(1))?
-                    return Stmt.raise_(StmtRaise(zspan(), msg, det))
+                    return Stmt.raise_(StmtRaise(Span(pr.line, 0, pr.line, 0), msg, det))
                 if pr.message.len == 1
                     const msg = .buildExpr(pr.message.at(0))?
-                    return Stmt.raise_(StmtRaise(zspan(), msg, nil))
-                return Stmt.raise_(StmtRaise(zspan(), nil, nil))
+                    return Stmt.raise_(StmtRaise(Span(pr.line, 0, pr.line, 0), msg, nil))
+                return Stmt.raise_(StmtRaise(Span(pr.line, 0, pr.line, 0), nil, nil))
 
             on PNode.stmt_try_catch as ptc
                 var body_stmts = .buildStmts(ptc.body_stmts)?
@@ -435,19 +435,19 @@ class ASTBuilder
                 var clause = CatchClause(zspan(), binding_opt, nil, catch_stmts)
                 var clauses: List(CatchClause) = List(CatchClause)()
                 clauses.add(clause)
-                return Stmt.try_catch(StmtTryCatch(zspan(), body_stmts, clauses))
+                return Stmt.try_catch(StmtTryCatch(Span(ptc.line, 0, ptc.line, 0), body_stmts, clauses))
 
             on PNode.stmt_branch as pb
                 return .buildBranch(pb)?
 
             on PNode.stmt_arena_scope as pas
                 var stmts = .buildStmts(pas.stmts)?
-                return Stmt.arena_scope(StmtArenaScope(zspan(), stmts))
+                return Stmt.arena_scope(StmtArenaScope(Span(pas.line, 0, pas.line, 0), stmts))
 
             on PNode.stmt_guard as pg
                 const cond_expr = .buildExpr(pg.cond.at(0))?
                 var else_stmts: List(Stmt) = .buildStmts(pg.else_stmts)?
-                return Stmt.guard_(StmtGuard(zspan(), cond_expr, else_stmts))
+                return Stmt.guard_(StmtGuard(Span(pg.line, 0, pg.line, 0), cond_expr, else_stmts))
 
             on PNode.stmt_with as pw
                 const target_expr = .buildExpr(pw.target.at(0))?
@@ -456,11 +456,11 @@ class ASTBuilder
                 var new_body: List(Stmt) = List(Stmt)()
                 for s in raw_body
                     new_body.add(.rewriteWithStmt(s, target_expr))
-                return Stmt.with_(StmtWith(zspan(), target_expr, new_body))
+                return Stmt.with_(StmtWith(Span(pw.line, 0, pw.line, 0), target_expr, new_body))
 
             on PNode.stmt_destruct as pd
                 const init_expr = .buildExpr(pd.init_expr.at(0))?
-                return Stmt.destruct(StmtDestruct(zspan(), pd.names, init_expr, pd.is_struct))
+                return Stmt.destruct(StmtDestruct(Span(pd.line, 0, pd.line, 0), pd.names, init_expr, pd.is_struct))
 
             on PNode.stmt_expr as inner
                 const expr = .buildExpr(inner)?
@@ -525,7 +525,7 @@ class ASTBuilder
         var else_opt: List(Stmt)? = nil
         if pb.else_stmts.len > 0
             else_opt = .buildStmts(pb.else_stmts)?
-        return Stmt.branch_(StmtBranch(zspan(), subject_expr, cases, else_opt))
+        return Stmt.branch_(StmtBranch(Span(pb.line, 0, pb.line, 0), subject_expr, cases, else_opt))
 
     def patternToExpr(pat: str): Expr
         # Convert a branch pattern token to an Expr

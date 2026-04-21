@@ -115,10 +115,12 @@ struct PBranch
     var subject: List(PNode)
     var arms: List(PBranchOn)
     var else_stmts: List(PNode)
-    cue init(subject: List(PNode), arms: List(PBranchOn), else_stmts: List(PNode))
+    var line: int
+    cue init(subject: List(PNode), arms: List(PBranchOn), else_stmts: List(PNode), line: int)
         this.subject = subject
         this.arms = arms
         this.else_stmts = else_stmts
+        this.line = line
 
 struct PBranchOn
     var patterns: List(str)
@@ -269,45 +271,57 @@ struct PInit
 
 struct PReturn
     var value: List(PNode)
-    cue init(value: List(PNode))
+    var line: int
+    cue init(value: List(PNode), line: int)
         this.value = value
+        this.line = line
 
 struct PIf
     var cond: List(PNode)
     var is_capture: String?
     var then_stmts: List(PNode)
     var else_stmts: List(PNode)
-    cue init(cond: List(PNode), then_stmts: List(PNode), else_stmts: List(PNode))
+    var line: int
+    cue init(cond: List(PNode), then_stmts: List(PNode), else_stmts: List(PNode), line: int)
         this.cond = cond
         this.is_capture = nil
         this.then_stmts = then_stmts
         this.else_stmts = else_stmts
+        this.line = line
 
 struct PWhile
     var cond: List(PNode)
     var stmts: List(PNode)
-    cue init(cond: List(PNode), stmts: List(PNode))
+    var line: int
+    cue init(cond: List(PNode), stmts: List(PNode), line: int)
         this.cond = cond
         this.stmts = stmts
+        this.line = line
 
 struct PArenaScope
     var stmts: List(PNode)
-    cue init(stmts: List(PNode))
+    var line: int
+    cue init(stmts: List(PNode), line: int)
         this.stmts = stmts
+        this.line = line
 
 struct PWith
     var target: List(PNode)
     var stmts: List(PNode)
-    cue init(target: List(PNode), stmts: List(PNode))
+    var line: int
+    cue init(target: List(PNode), stmts: List(PNode), line: int)
         this.target = target
         this.stmts = stmts
+        this.line = line
 
 struct PGuard
     var cond: List(PNode)
     var else_stmts: List(PNode)
-    cue init(cond: List(PNode), else_stmts: List(PNode))
+    var line: int
+    cue init(cond: List(PNode), else_stmts: List(PNode), line: int)
         this.cond = cond
         this.else_stmts = else_stmts
+        this.line = line
 
 struct POrelse
     var expr: List(PNode)
@@ -327,10 +341,12 @@ struct PForIn
     var var_names: List(str)
     var iter: List(PNode)
     var stmts: List(PNode)
-    cue init(var_names: List(str), iter: List(PNode), stmts: List(PNode))
+    var line: int
+    cue init(var_names: List(str), iter: List(PNode), stmts: List(PNode), line: int)
         this.var_names = var_names
         this.iter = iter
         this.stmts = stmts
+        this.line = line
 
 struct PForNum
     var var_name: str
@@ -338,62 +354,76 @@ struct PForNum
     var stop_: List(PNode)
     var step: List(PNode)
     var stmts: List(PNode)
-    cue init(var_name: str, start: List(PNode), stop_: List(PNode), step: List(PNode), stmts: List(PNode))
+    var line: int
+    cue init(var_name: str, start: List(PNode), stop_: List(PNode), step: List(PNode), stmts: List(PNode), line: int)
         this.var_name = var_name
         this.start = start
         this.stop_ = stop_
         this.step = step
         this.stmts = stmts
+        this.line = line
 
 struct PVar
     var name: str
     var is_const: bool
     var type_name: str
     var init_expr: List(PNode)
-    cue init(name: str, is_const: bool, type_name: str, init_expr: List(PNode))
+    var line: int
+    cue init(name: str, is_const: bool, type_name: str, init_expr: List(PNode), line: int)
         this.name = name
         this.is_const = is_const
         this.type_name = type_name
         this.init_expr = init_expr
+        this.line = line
 
 struct PDestruct
     var names: List(str)
     var init_expr: List(PNode)
     var is_struct: bool
-    cue init(names: List(str), init_expr: List(PNode), is_struct: bool)
+    var line: int
+    cue init(names: List(str), init_expr: List(PNode), is_struct: bool, line: int)
         this.names = names
         this.init_expr = init_expr
         this.is_struct = is_struct
+        this.line = line
 
 struct PAssign
     var op: str
     var target: List(PNode)
     var value: List(PNode)
-    cue init(op: str, target: List(PNode), value: List(PNode))
+    var line: int
+    cue init(op: str, target: List(PNode), value: List(PNode), line: int)
         this.op = op
         this.target = target
         this.value = value
+        this.line = line
 
 struct PAssert
     var cond: List(PNode)
     var message: List(PNode)
-    cue init(cond: List(PNode), message: List(PNode))
+    var line: int
+    cue init(cond: List(PNode), message: List(PNode), line: int)
         this.cond = cond
         this.message = message
+        this.line = line
 
 struct PRaise
     var message: List(PNode)
-    cue init(message: List(PNode))
+    var line: int
+    cue init(message: List(PNode), line: int)
         this.message = message
+        this.line = line
 
 struct PTryCatch
     var body_stmts: List(PNode)
     var catch_binding: str
     var catch_stmts: List(PNode)
-    cue init(body_stmts: List(PNode), catch_binding: str, catch_stmts: List(PNode))
+    var line: int
+    cue init(body_stmts: List(PNode), catch_binding: str, catch_stmts: List(PNode), line: int)
         this.body_stmts = body_stmts
         this.catch_binding = catch_binding
         this.catch_stmts = catch_stmts
+        this.line = line
 
 struct PMember
     var base: List(PNode)
@@ -1242,14 +1272,16 @@ class Parser
             return .parseExprOrAssignStmt()
 
     def parseReturnStmt(): PNode throws
+        const line = this.peek().line
         .expectText("return")
         var value = List(PNode)()
         if not .isEol() and not .isEof() and not .isDedent()
             value.add(.parseExpr())
         .skipEol()
-        return PNode.stmt_return(PReturn(value))
+        return PNode.stmt_return(PReturn(value, line))
 
     def parseIfStmt(): PNode throws
+        const line = this.peek().line
         .expectText("if")
         const cond_expr = .parseExpr()
         # Optional capture binding: `if x is Variant as name`
@@ -1270,11 +1302,12 @@ class Parser
                 else_stmts = .parseBlock()
         var cond_list = List(PNode)()
         cond_list.add(cond_expr)
-        var pif = PIf(cond_list, then_stmts, else_stmts)
+        var pif = PIf(cond_list, then_stmts, else_stmts, line)
         pif.is_capture = capture_name
         return PNode.stmt_if(pif)
 
     def parseWhileStmt(): PNode throws
+        const line = this.peek().line
         .expectText("while")
         # Bind-and-guard form: `while var id = InitExpr, CondExpr eol Block`.
         # Desugared here to `while true { var id = InitExpr; if not CondExpr: break; body }`
@@ -1298,36 +1331,39 @@ class Parser
             break_list.add(PNode.stmt_break())
             var empty_else = List(PNode)()
             var wrapped = List(PNode)()
-            wrapped.add(PNode.stmt_var(PVar(bind_name, false, "", init_list)))
-            wrapped.add(PNode.stmt_if(PIf(if_cond_list, break_list, empty_else)))
+            wrapped.add(PNode.stmt_var(PVar(bind_name, false, "", init_list, line)))
+            wrapped.add(PNode.stmt_if(PIf(if_cond_list, break_list, empty_else, line)))
             for bs in body_stmts
                 wrapped.add(bs)
             var true_cond = List(PNode)()
             true_cond.add(PNode.expr_bool(true))
-            return PNode.stmt_while(PWhile(true_cond, wrapped))
+            return PNode.stmt_while(PWhile(true_cond, wrapped, line))
         const cond_expr = .parseExpr()
         .skipEol()
         const stmts = .parseBlock()
         var cond_list = List(PNode)()
         cond_list.add(cond_expr)
-        return PNode.stmt_while(PWhile(cond_list, stmts))
+        return PNode.stmt_while(PWhile(cond_list, stmts, line))
 
     def parseArenaScopeStmt(): PNode throws
+        const line = this.peek().line
         .expectText("arena")
         .skipEol()
         const stmts = .parseBlock()
-        return PNode.stmt_arena_scope(PArenaScope(stmts))
+        return PNode.stmt_arena_scope(PArenaScope(stmts, line))
 
     def parseWithStmt(): PNode throws
+        const line = this.peek().line
         .expectText("with")
         const target_expr = .parseExpr()
         .skipEol()
         const stmts = .parseBlock()
         var target_list = List(PNode)()
         target_list.add(target_expr)
-        return PNode.stmt_with(PWith(target_list, stmts))
+        return PNode.stmt_with(PWith(target_list, stmts, line))
 
     def parseGuardStmt(): PNode throws
+        const line = this.peek().line
         .expectText("guard")
         const cond_expr = .parseExpr()
         .expectText("else")
@@ -1342,9 +1378,10 @@ class Parser
             # Block form: `guard Expr else eol Block`
             .skipEol()
             else_stmts = .parseBlock()
-        return PNode.stmt_guard(PGuard(cond_list, else_stmts))
+        return PNode.stmt_guard(PGuard(cond_list, else_stmts, line))
 
     def parseForInStmt(): PNode throws
+        const line = this.peek().line
         .expectText("for")
         var var_names = List(str)()
         var_names.add(.eatId())
@@ -1367,16 +1404,17 @@ class Parser
             start_list.add(start_expr)
             var stop_list = List(PNode)()
             stop_list.add(stop_expr)
-            return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts))
+            return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts, line))
         # Iterator form: for i in expr
         .skipEol()
         const stmts = .parseBlock()
         var iter_list = List(PNode)()
         iter_list.add(start_expr)
-        return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts))
+        return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts, line))
 
     # `var {x, y} = expr` (struct destructure) or `var (x, y) = expr` (tuple)
     def parseDestructStmt(): PNode throws
+        const line = this.peek().line
         .expectText("var")
         var is_struct: bool = false
         var close: str = ")"
@@ -1396,9 +1434,10 @@ class Parser
         var init_expr = List(PNode)()
         init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.stmt_destruct(PDestruct(names, init_expr, is_struct))
+        return PNode.stmt_destruct(PDestruct(names, init_expr, is_struct, line))
 
     def parseVarStmt(is_const: bool): PNode throws
+        const line = this.peek().line
         if is_const
             .expectText("const")
         else
@@ -1427,7 +1466,7 @@ class Parser
                     .skipEol()
                     var lambda_node = PLambda(lam.params, lam.return_type, List(PCaptureVar)(), body_expr, List(PNode)())
                     init_expr.add(PNode.expr_lambda(lambda_node))
-                    return PNode.stmt_var(PVar(name, is_const, type_name, init_expr))
+                    return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
                 # Statement-body: def(params) eol indent [capture] stmts dedent
                 .skipEol()
                 if not .isIndent()
@@ -1446,12 +1485,13 @@ class Parser
                     this.advance()
                 var lambda_node = PLambda(lam.params, lam.return_type, captures, List(PNode)(), body_stmts)
                 init_expr.add(PNode.expr_lambda(lambda_node))
-                return PNode.stmt_var(PVar(name, is_const, type_name, init_expr))
+                return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
             init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.stmt_var(PVar(name, is_const, type_name, init_expr))
+        return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
 
     def parseAssertStmt(): PNode throws
+        const line = this.peek().line
         .expectText("assert")
         const cond_expr = .parseExpr()
         var cond_list = List(PNode)()
@@ -1461,9 +1501,10 @@ class Parser
             this.advance()
             msg_list.add(.parseExpr())
         .skipEol()
-        return PNode.stmt_assert(PAssert(cond_list, msg_list))
+        return PNode.stmt_assert(PAssert(cond_list, msg_list, line))
 
     def parseRaiseStmt(): PNode throws
+        const line = this.peek().line
         .expectText("raise")
         var msg_list = List(PNode)()
         if not .isEol() and not .isEof() and not .isDedent()
@@ -1472,9 +1513,10 @@ class Parser
                 this.advance()
                 msg_list.add(.parseExpr())
         .skipEol()
-        return PNode.stmt_raise(PRaise(msg_list))
+        return PNode.stmt_raise(PRaise(msg_list, line))
 
     def parseTryCatch(): PNode throws
+        const line = this.peek().line
         .expectText("try")
         .skipEol()
         const body_stmts = .parseBlock()
@@ -1486,9 +1528,10 @@ class Parser
             .expectText("|")
         .skipEol()
         const catch_stmts = .parseBlock()
-        return PNode.stmt_try_catch(PTryCatch(body_stmts, catch_binding, catch_stmts))
+        return PNode.stmt_try_catch(PTryCatch(body_stmts, catch_binding, catch_stmts, line))
 
     def parseBranchStmt(): PNode throws
+        const line = this.peek().line
         .expectText("branch")
         const subject = .parseExpr()
         .skipEol()
@@ -1554,7 +1597,7 @@ class Parser
                 this.advance()
         var subj_list = List(PNode)()
         subj_list.add(subject)
-        return PNode.stmt_branch(PBranch(subj_list, arms, else_stmts))
+        return PNode.stmt_branch(PBranch(subj_list, arms, else_stmts, line))
 
     def eatBranchPattern(): str throws
         # Collect pattern text: e.g., "TokenKind.eol", "PNode.class_", "c'0'..c'9'"
@@ -1580,6 +1623,7 @@ class Parser
         return sb.build()
 
     def parseExprOrAssignStmt(): PNode throws
+        const line = this.peek().line
         const target_expr = .parseExpr()
         var op: str = ""
         if this.textIs("=")
@@ -1598,7 +1642,7 @@ class Parser
             tgt.add(target_expr)
             var val = List(PNode)()
             val.add(value_expr)
-            return PNode.stmt_assign(PAssign(op, tgt, val))
+            return PNode.stmt_assign(PAssign(op, tgt, val, line))
         .skipEol()
         return PNode.stmt_expr(target_expr)
 
