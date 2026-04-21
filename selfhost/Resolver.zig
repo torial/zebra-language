@@ -1531,16 +1531,12 @@ pub const Resolver = struct {
     }
 
     pub fn bindPass1(self: *Resolver, root: PNode) anyerror!void {
-        switch (root) {
-            .module_ => |_ptr_m| {
-                const m = _ptr_m.*;
-                for (m.decls.items) |decl| {
-                    try self.bindTopDecl(decl);
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (root == .module_) {
+            const m_ptr = root.module_;
+            const m = m_ptr.*;
+            for (m.decls.items) |decl| {
+                try self.bindTopDecl(decl);
+            }
         }
     }
 
@@ -1590,16 +1586,12 @@ pub const Resolver = struct {
     }
 
     pub fn resolvePass2(self: *Resolver, root: PNode) anyerror!void {
-        switch (root) {
-            .module_ => |_ptr_m| {
-                const m = _ptr_m.*;
-                for (m.decls.items) |decl| {
-                    try self.resolveTopDecl(decl);
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (root == .module_) {
+            const m_ptr = root.module_;
+            const m = m_ptr.*;
+            for (m.decls.items) |decl| {
+                try self.resolveTopDecl(decl);
+            }
         }
     }
 

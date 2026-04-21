@@ -237,13 +237,10 @@ class MultiCompiler
     def hasDupMethod(method_name: str, root_members: List(PNode)): bool
         var i: int = 0
         while i < root_members.count()
-            branch root_members.at(i)
-                on PNode.method_ as rm
-                    var rm_name: str = rm.name
-                    if rm_name == method_name
-                        return true
-                else
-                    pass
+            if root_members.at(i) is PNode.method_ as rm
+                var rm_name: str = rm.name
+                if rm_name == method_name
+                    return true
             i = i + 1
         return false
 
@@ -289,11 +286,8 @@ class MultiCompiler
             var psrc_raw: str = File.read(ppath)
             var psrc: str = "" + psrc_raw
             const ppm_node = Parser.Parser.parse(psrc)?
-            branch ppm_node
-                on PNode.module_ as ppm
-                    partial_pms.add(ppm)
-                else
-                    pass
+            if ppm_node is PNode.module_ as ppm
+                partial_pms.add(ppm)
             pi = pi + 1
         # Rebuild root decl list, merging partial class members into matching classes
         var merged_decls = List(PNode)()
@@ -312,25 +306,19 @@ class MultiCompiler
                         var pdi = 0
                         while pdi < partial_pm.decls.count()
                             var pdecl = partial_pm.decls.at(pdi)
-                            branch pdecl
-                                on PNode.class_ as pcls
-                                    var pcls_name: str = pcls.name
-                                    if pcls_name == rcls_name
-                                        var memi = 0
-                                        while memi < pcls.members.count()
-                                            var pmem = pcls.members.at(memi)
-                                            var keep: bool = true
-                                            branch pmem
-                                                on PNode.method_ as pmth
-                                                    var pmth_name: str = pmth.name
-                                                    keep = not .hasDupMethod(pmth_name, rcls.members)
-                                                else
-                                                    pass
-                                            if keep
-                                                extra_members.add(pmem)
-                                            memi = memi + 1
-                                else
-                                    pass
+                            if pdecl is PNode.class_ as pcls
+                                var pcls_name: str = pcls.name
+                                if pcls_name == rcls_name
+                                    var memi = 0
+                                    while memi < pcls.members.count()
+                                        var pmem = pcls.members.at(memi)
+                                        var keep: bool = true
+                                        if pmem is PNode.method_ as pmth
+                                            var pmth_name: str = pmth.name
+                                            keep = not .hasDupMethod(pmth_name, rcls.members)
+                                        if keep
+                                            extra_members.add(pmem)
+                                        memi = memi + 1
                             pdi = pdi + 1
                         pmi = pmi + 1
                     if extra_members.count() == 0

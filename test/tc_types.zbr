@@ -283,25 +283,17 @@ class TcTypes
 
             # optional(T) <-> optional(U): recursive on inners.
             # nil (optional(void_)) is assignable to any optional.
-            branch a
-                on TcType.optional as a_inner
-                    branch b
-                        on TcType.optional as b_inner
-                            if a_inner == TcType.void_()
-                                return true
-                            return TcTypes.isAssignable(a_inner, b_inner)
-                        else
-                            return false
-                else
-                    pass
-
+            if a is TcType.optional as a_inner
+                branch b
+                    on TcType.optional as b_inner
+                        if a_inner == TcType.void_()
+                            return true
+                        return TcTypes.isAssignable(a_inner, b_inner)
+                    else
+                        return false
             # T -> ?T: any type is assignable into its optional wrapper.
-            branch b
-                on TcType.optional as b_inner
-                    return TcTypes.isAssignable(a, b_inner)
-                else
-                    pass
-
+            if b is TcType.optional as b_inner
+                return TcTypes.isAssignable(a, b_inner)
             return TcTypes.eql(a, b)
 
         # Human-readable type name for diagnostics.

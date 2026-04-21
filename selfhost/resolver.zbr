@@ -82,13 +82,9 @@ class Resolver
     # -- Pass 1: Bind - hoist all top-level names ------------------------------
 
     def bindPass1(root: PNode) throws
-        branch root
-            on PNode.module_ as m
-                for decl in m.decls
-                    .bindTopDecl(decl)
-            else
-                pass
-
+        if root is PNode.module_ as m
+            for decl in m.decls
+                .bindTopDecl(decl)
     def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
@@ -119,13 +115,9 @@ class Resolver
     # -- Pass 2: Resolve - walk class bodies -----------------------------------
 
     def resolvePass2(root: PNode) throws
-        branch root
-            on PNode.module_ as m
-                for decl in m.decls
-                    .resolveTopDecl(decl)
-            else
-                pass
-
+        if root is PNode.module_ as m
+            for decl in m.decls
+                .resolveTopDecl(decl)
     def resolveTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c

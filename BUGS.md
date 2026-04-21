@@ -176,12 +176,11 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-076: `if x is Union.variant |r|` capture binding not registered in TypeChecker `narrowed_types`
 - **Severity:** Medium (TC silent on type errors inside capture body; catches nothing until Zig compile time)
-- **Status:** Open
-- **Target:** Phase 20 or TC hardening wave
+- **Status:** Fixed
+- **Fixed in:** BUG-076 commit — `isCaptureLookup` 3-way payload lookup in TypeChecker.zig; selfhost walker narrowing in typechecker.zbr; `genIsCaptureThen` ptr_field_bindings registration in codegen.zbr; bootstrap 5/5
 - **Symptom:** Inside `if x is Shape.circle |r| { ... }`, the binding `r` has TC type `.unknown`. Any misuse of `r` (wrong method, wrong field) produces no Zebra-level error — the error only surfaces as a Zig compile error after codegen.
 - **Root cause:** `src/TypeChecker.zig::visitIf` and `visitElseIf` do not call `pushNarrowedBinding` (or equivalent) for `is_capture` bindings. The Zig-side code correctly emits `const r = x.circle;` — Zig infers the type — but the TC never records `r → payload_type` in `narrowed_types`.
-- **Fix direction:** In `visitIf`/`visitElseIf`, when `is_capture != null` and the condition is `ExprTypeCheck` with a non-null `variant_name`, look up the union's variant payload type and insert it into `narrowed_types` for the then-block scope. Mirror in `selfhost/codegen.zbr` TypeChecker phase (if one exists) and in `selfhost/resolver.zbr` if scope tracking is needed there.
-- **Selfhost note:** The selfhost TC (`selfhost/codegen.zbr` inference path) has the same gap; `genIsCaptureThen` emits correct Zig but the walker never learns `r`'s type.
+- **Fix:** Added `isCaptureLookup` helper (3-way: same-module union, cross-module alias, direct cross_module) to TypeChecker.zig; updated `.if_` arm to push/pop the capture binding. Selfhost: `typechecker.zbr` walker now populates `cap_t` via `variantPayload`; `codegen.zbr::genIsCaptureThen` now seeds `ptr_field_bindings`/`opt_ptr_field_bindings` for the bound struct's `^T` fields.
 
 ---
 

@@ -169,24 +169,15 @@ class TcInfer
     def inferCall(c: TcExprCall): TcType
         # Static call pattern: `ClassName.method(args)` where the callee is a
         # member expression with an ident receiver that names a stdlib class.
-        branch c.callee
-            on TcExpr.member as m
-                branch m.obj
-                    on TcExpr.ident as class_name
-                        var sc_t = TcStdlib.staticCall(class_name, m.member)
-                        if not TcTypes.eql(sc_t, TcType.unknown_())
-                            return sc_t
-                    else
-                        pass
-            else
-                pass
+        if c.callee is TcExpr.member as m
+            if m.obj is TcExpr.ident as class_name
+                var sc_t = TcStdlib.staticCall(class_name, m.member)
+                if not TcTypes.eql(sc_t, TcType.unknown_())
+                    return sc_t
         # Instance call: infer callee type, dispatch memberType on receiver.
-        branch c.callee
-            on TcExpr.member as m
-                var obj_t = inferExpr(m.obj)
-                return inferMember(obj_t, m.member)
-            else
-                pass
+        if c.callee is TcExpr.member as m
+            var obj_t = inferExpr(m.obj)
+            return inferMember(obj_t, m.member)
         # Bare ident call: look up return type via scope (fn_ref / fn_sig).
         # At this level we only know the function exists, not its return type.
         return TcType.unknown_()

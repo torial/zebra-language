@@ -1135,6 +1135,12 @@ const TypeChecker = struct {
                 // After checkBoolExpr, expr_types has the type of `x` (should be .optional).
                 const narrow_then = nilNarrowedVarExpr(s.cond, true);
                 const narrow_else = nilNarrowedVarExpr(s.cond, false);
+                // is-capture narrowing: `if x is Union.Variant as m` → push m's payload type.
+                const if_cap_type: ?Type = if (s.is_capture != null)
+                    try tc.isCaptureLookup(s.cond)
+                else
+                    null;
+                if (if_cap_type) |ct| try tc.narrowed_types.put(s.is_capture.?, ct);
                 if (narrow_then) |nr| {
                     const opt_type = tc.expr_types.get(nr.expr) orelse .unknown;
                     const inner = if (opt_type == .optional) opt_type.optional.* else .unknown;
@@ -1144,9 +1150,16 @@ const TypeChecker = struct {
                 } else {
                     try tc.checkStmts(s.then_body);
                 }
+                if (if_cap_type != null) _ = tc.narrowed_types.remove(s.is_capture.?);
                 for (s.else_ifs) |ei| {
                     try tc.checkBoolExpr(ei.cond);
+                    const ei_cap_type: ?Type = if (ei.is_capture != null)
+                        try tc.isCaptureLookup(ei.cond)
+                    else
+                        null;
+                    if (ei_cap_type) |ct| try tc.narrowed_types.put(ei.is_capture.?, ct);
                     try tc.checkStmts(ei.body);
+                    if (ei_cap_type != null) _ = tc.narrowed_types.remove(ei.is_capture.?);
                 }
                 if (s.else_body) |eb| {
                     if (narrow_else) |nr| {
@@ -1489,6 +1502,73 @@ const TypeChecker = struct {
         const t = try tc.inferExpr(e);
         if (t != .bool and t != .unknown)
             try tc.emitMismatch(spanOf(e), t, .bool);
+    }
+
+    /// For `if x is Union.Variant as m`, resolve the payload type for `m`.
+    /// Returns null when the condition is not a type-check, has no variant, or
+    /// the payload can't be resolved.  Uses the same 3-way lookup as the branch handler.
+    fn isCaptureLookup(tc: TypeChecker, cond: *const Ast.Expr) anyerror!?Type {
+        if (cond.* != .type_check) return null;
+        const tc_node = cond.type_check;
+        const variant = tc_node.variant_name orelse return null;
+        const subj_type = try tc.inferExpr(tc_node.expr);
+        // ① Same-module union: look up the variant symbol in this file's scope.
+        if (subj_type == .named) {
+            const union_sym = subj_type.named;
+            if (union_sym.kind == .union_) {
+                if (union_sym.own_scope) |sc| {
+                    if (sc.lookupLocal(variant)) |vsym| {
+                        if (vsym.decl == .union_variant) {
+                            const uv = vsym.decl.union_variant;
+                            if (uv.payload) |*payload_ref| {
+                                const pt = tc.typeFromRef(payload_ref);
+                                if (pt != .unknown) return pt;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // ② Cross-module union via named module alias (`use Mod exposing T`).
+        if (subj_type == .named) {
+            const sym = subj_type.named;
+            if (sym.kind == .module) {
+                const type_name = sym.name;
+                const lookup_key = try std.fmt.allocPrint(tc.map_alloc, "{s}.{s}", .{ type_name, variant });
+                defer tc.map_alloc.free(lookup_key);
+                if (tc.imported_modules) |imp| {
+                    var it = imp.iterator();
+                    while (it.next()) |entry| {
+                        if (entry.value_ptr.variant_payload_types.get(lookup_key)) |payload_struct_name| {
+                            if (entry.value_ptr.types.contains(type_name)) {
+                                return Type{ .cross_module = .{
+                                    .module    = entry.key_ptr.*,
+                                    .type_name = payload_struct_name,
+                                }};
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // ③ Subject is already a cross_module type (inferred from a `^T` field etc.).
+        if (subj_type == .cross_module) {
+            const cm = subj_type.cross_module;
+            if (tc.imported_modules) |imp| {
+                if (imp.get(cm.module)) |iface| {
+                    const lookup_key = try std.fmt.allocPrint(tc.map_alloc, "{s}.{s}", .{ cm.type_name, variant });
+                    defer tc.map_alloc.free(lookup_key);
+                    if (iface.variant_payload_types.get(lookup_key)) |payload_struct_name| {
+                        return Type{ .cross_module = .{
+                            .module    = cm.module,
+                            .type_name = payload_struct_name,
+                        }};
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     fn inferNumericExpr(tc: TypeChecker, e: *const Ast.Expr) anyerror!Type {

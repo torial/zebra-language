@@ -210,12 +210,9 @@ def exprHasTry(expr: Expr): bool
             return exprHasTry(i.else_expr)
         on Expr.string_interp as si
             for part in si.parts
-                branch part
-                    on StringPart.expr_ as e
-                        if exprHasTry(e)
-                            return true
-                    else
-                        pass
+                if part is StringPart.expr_ as e
+                    if exprHasTry(e)
+                        return true
             return false
         on Expr.dict_lit as d
             for entry in d.entries
@@ -334,23 +331,17 @@ def nilNarrowVar(cond: Expr, for_then: bool): str?
                 if b.op != BinaryOp.eq
                     return nil
             # Check left=ident, right=nil
-            branch b.left
-                on Expr.ident as id
-                    branch b.right
-                        on Expr.nil_
-                            return id.name
-                        else
-                            pass
-                else
-                    pass
+            if b.left is Expr.ident as id
+                branch b.right
+                    on Expr.nil_
+                        return id.name
+                    else
+                        pass
             # Check left=nil, right=ident
             branch b.left
                 on Expr.nil_
-                    branch b.right
-                        on Expr.ident as id
-                            return id.name
-                        else
-                            pass
+                    if b.right is Expr.ident as id
+                        return id.name
                 else
                     pass
             return nil
@@ -427,12 +418,9 @@ def nameUsedInExpr(name: str, expr: Expr): bool
             return false
         on Expr.string_interp as si
             for part in si.parts
-                branch part
-                    on StringPart.expr_ as e
-                        if nameUsedInExpr(name, e)
-                            return true
-                    else
-                        pass
+                if part is StringPart.expr_ as e
+                    if nameUsedInExpr(name, e)
+                        return true
             return false
         on Expr.except_ as ex
             if nameUsedInExpr(name, ex.base)
@@ -595,11 +583,8 @@ def collectAllIdents(expr: Expr, out: StrSet)
                 collectAllIdents(entry.value, out)
         on Expr.string_interp as si
             for part in si.parts
-                branch part
-                    on StringPart.expr_ as e
-                        collectAllIdents(e, out)
-                    else
-                        pass
+                if part is StringPart.expr_ as e
+                    collectAllIdents(e, out)
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no user idents
             pass
@@ -661,19 +646,13 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                         if out.count() > before
                             grew = true
             on Stmt.assign as a
-                branch a.target
-                    on Expr.member as m
-                        branch m.object
-                            on Expr.ident as id
-                                if out.contains_(id.name)
-                                    var before2 = out.count()
-                                    collectAllIdents(a.value, out)
-                                    if out.count() > before2
-                                        grew = true
-                            else
-                                pass
-                    else
-                        pass
+                if a.target is Expr.member as m
+                    if m.object is Expr.ident as id
+                        if out.contains_(id.name)
+                            var before2 = out.count()
+                            collectAllIdents(a.value, out)
+                            if out.count() > before2
+                                grew = true
             on Stmt.if_ as si
                 if propagateEscapesOnce(si.then_stmts, out)
                     grew = true
@@ -773,16 +752,10 @@ def isReadOnlyMethod(name: str): bool
 def scanMutationsInExpr(expr: Expr, out: StrSet)
     branch expr
         on Expr.call as c
-            branch c.callee
-                on Expr.member as m
-                    if not isReadOnlyMethod(m.member)
-                        branch m.object
-                            on Expr.ident as id
-                                out.add(id.name)
-                            else
-                                pass
-                else
-                    pass
+            if c.callee is Expr.member as m
+                if not isReadOnlyMethod(m.member)
+                    if m.object is Expr.ident as id
+                        out.add(id.name)
             for arg in c.args
                 scanMutationsInExpr(arg.value, out)
         on Expr.binary as b
@@ -812,11 +785,8 @@ def scanMutationsInExpr(expr: Expr, out: StrSet)
                 scanMutationsInExpr(entry.value, out)
         on Expr.string_interp as si
             for part in si.parts
-                branch part
-                    on StringPart.expr_ as e
-                        scanMutationsInExpr(e, out)
-                    else
-                        pass
+                if part is StringPart.expr_ as e
+                    scanMutationsInExpr(e, out)
         else
             pass
 
@@ -830,18 +800,12 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                     on Expr.ident as id
                         out.add(id.name)
                     on Expr.member as m
-                        branch m.object
-                            on Expr.ident as id
-                                out.add(id.name)
-                            else
-                                pass
+                        if m.object is Expr.ident as id
+                            out.add(id.name)
                     on Expr.index as ix
                         # counts[k] = v mutates counts
-                        branch ix.object
-                            on Expr.ident as id
-                                out.add(id.name)
-                            else
-                                pass
+                        if ix.object is Expr.ident as id
+                            out.add(id.name)
                     else
                         pass
             on Stmt.if_ as si
@@ -870,11 +834,8 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
             on Stmt.expr as e
                 scanMutationsInExpr(e, out)
             on Stmt.with_ as w
-                branch w.target
-                    on Expr.ident as id
-                        out.add(id.name)
-                    else
-                        pass
+                if w.target is Expr.ident as id
+                    out.add(id.name)
                 scanMutationsInto(w.stmts, out)
             on Stmt.arena_scope as a
                 scanMutationsInto(a.stmts, out)

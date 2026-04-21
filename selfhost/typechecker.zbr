@@ -641,13 +641,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     obj_t = ot
                 else
                     pass
-            branch obj_t
-                on Type_.named as tn
-                    var ft: Type_? = ctx.fieldTypeAny(tn, "" + m.member)
-                    if ft != nil
-                        return ft to!
-                else
-                    pass
+            if obj_t is Type_.named as tn
+                var ft: Type_? = ctx.fieldTypeAny(tn, "" + m.member)
+                if ft != nil
+                    return ft to!
             # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
             # registered nowhere in user code but widely used as `r.stdout`
             # etc. Recognise by field name when the object type is unknown,
@@ -679,23 +676,17 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         return Type_.string_
                     # Method call: infer receiver type, look up method return.
                     # Builtin type constructors: Regex.compile → regex, etc.
-                    branch mem.object
-                        on Expr.ident as bid
-                            var bname: str = "" + bid.name
-                            if bname == "Regex" and mem.member == "compile"
-                                return Type_.regex
-                        else
-                            pass
+                    if mem.object is Expr.ident as bid
+                        var bname: str = "" + bid.name
+                        if bname == "Regex" and mem.member == "compile"
+                            return Type_.regex
                     # Special case first: `UnionName.variant(args)` — when the
                     # receiver ident names a known union, the call yields a
                     # value of the union's named type.
-                    branch mem.object
-                        on Expr.ident as uid
-                            var uname2: str = "" + uid.name
-                            if ctx.hasUnion(uname2)
-                                return Type_.named(uname2)
-                        else
-                            pass
+                    if mem.object is Expr.ident as uid
+                        var uname2: str = "" + uid.name
+                        if ctx.hasUnion(uname2)
+                            return Type_.named(uname2)
                     # BUG-071: recursive receiver inference (not just this_/ident)
                     # so chained calls like `s.trim().upper()` resolve: inferExpr
                     # of mem.object returns string_ from the inner trim call via
@@ -825,26 +816,20 @@ def narrowPayloadFromOnValue(mt: ModuleTypes, v: Expr): Type_?
 # Stmt / Decl live in ast.zbr; every other selfhost module branches on
 # them) get their payload types narrowed correctly.
 def narrowPayloadFromOnValueDeps(mt: ModuleTypes, dt: ModuleTypes, v: Expr): Type_?
-    branch v
-        on Expr.member as em
-            branch em.object
-                on Expr.ident as oid
-                    var unam: str = "" + oid.name
-                    var vnam: str = "" + em.member
-                    var pt: Type_? = mt.variantPayload(unam, vnam)
-                    if pt == nil
-                        pt = dt.variantPayload(unam, vnam)
-                    if pt != nil
-                        var pt_val: Type_ = pt to!
-                        branch pt_val
-                            on Type_.unknown_
-                                return nil
-                            else
-                                return pt_val
-                else
-                    pass
-        else
-            pass
+    if v is Expr.member as em
+        if em.object is Expr.ident as oid
+            var unam: str = "" + oid.name
+            var vnam: str = "" + em.member
+            var pt: Type_? = mt.variantPayload(unam, vnam)
+            if pt == nil
+                pt = dt.variantPayload(unam, vnam)
+            if pt != nil
+                var pt_val: Type_ = pt to!
+                branch pt_val
+                    on Type_.unknown_
+                        return nil
+                    else
+                        return pt_val
     return nil
 
 # ── Statement walker ─────────────────────────────────────────────────────────
@@ -869,16 +854,10 @@ def walkExpr(e: Expr, ctx: InferCtx)
 # for_in walker to bind the loop variable: char_ so that c.toString()
 # inside the body routes to utf8Encode rather than allocPrint.
 def isCharsCallExpr(e: Expr): bool
-    branch e
-        on Expr.call as cal
-            branch cal.callee
-                on Expr.member as mem
-                    if mem.member == "chars"
-                        return true
-                else
-                    pass
-        else
-            pass
+    if e is Expr.call as cal
+        if cal.callee is Expr.member as mem
+            if mem.member == "chars"
+                return true
     return false
 
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
@@ -890,10 +869,32 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.if_ as si
             walkExpr(si.cond, ctx)
             if si.is_capture != nil
-                ctx.bind(si.is_capture to!, Type_.unknown_)
+                var cap_t: Type_ = Type_.unknown_
+                if si.cond is Expr.type_check as tce
+                    if tce.variant_name != nil
+                        var type_nm: str = "" + tce.type_name
+                        var var_nm: str = "" + tce.variant_name to!
+                        var pt: Type_? = ctx.module_types.variantPayload(type_nm, var_nm)
+                        if pt == nil
+                            pt = ctx.dep_types.variantPayload(type_nm, var_nm)
+                        if pt != nil
+                            cap_t = pt to!
+                ctx.bind(si.is_capture to!, cap_t)
             walkStmts(si.then_stmts, ctx)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
+                if ei.is_capture != nil
+                    var ei_cap_t: Type_ = Type_.unknown_
+                    if ei.cond is Expr.type_check as eice
+                        if eice.variant_name != nil
+                            var e_type_nm: str = "" + eice.type_name
+                            var e_var_nm: str = "" + eice.variant_name to!
+                            var e_pt: Type_? = ctx.module_types.variantPayload(e_type_nm, e_var_nm)
+                            if e_pt == nil
+                                e_pt = ctx.dep_types.variantPayload(e_type_nm, e_var_nm)
+                            if e_pt != nil
+                                ei_cap_t = e_pt to!
+                    ctx.bind(ei.is_capture to!, ei_cap_t)
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts != nil
                 walkStmts(si.else_stmts to!, ctx)

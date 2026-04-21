@@ -1721,17 +1721,13 @@ pub const MultiCompiler = struct {
         _ = self;
         var i: i64 = 0;
         while (_zebra_lt(i, @as(i64, @intCast(root_members.items.len)))) {
-            switch (root_members.items[@intCast(i)]) {
-                .method_ => |_ptr_rm| {
-                    const rm = _ptr_rm.*;
-                    const rm_name: []const u8 = rm.name;
-                    if (std.mem.eql(u8, rm_name, method_name)) {
-                        return true;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (root_members.items[@intCast(i)] == .method_) {
+                const rm_ptr = root_members.items[@intCast(i)].method_;
+                const rm = rm_ptr.*;
+                const rm_name: []const u8 = rm.name;
+                if (std.mem.eql(u8, rm_name, method_name)) {
+                    return true;
+                }
             }
             i = (i + 1);
         }
@@ -1803,14 +1799,10 @@ pub const MultiCompiler = struct {
             const psrc_raw: []const u8 = (std.fs.cwd().readFileAlloc(_allocator, ppath, std.math.maxInt(usize)) catch @panic("File.read error"));
             const psrc: []const u8 = _str_concat("", psrc_raw, _allocator);
             const ppm_node = try Parser.Parser.parse(psrc);
-            switch (ppm_node) {
-                .module_ => |_ptr_ppm| {
-                    const ppm = _ptr_ppm.*;
-                    partial_pms.append(_allocator, ppm) catch @panic("OOM");
-                },
-                else => |_| {
-                    // pass
-                },
+            if (ppm_node == .module_) {
+                const ppm_ptr = ppm_node.module_;
+                const ppm = ppm_ptr.*;
+                partial_pms.append(_allocator, ppm) catch @panic("OOM");
             }
             pi = (pi + 1);
         }
@@ -1829,35 +1821,27 @@ pub const MultiCompiler = struct {
                         var pdi: i64 = 0;
                         while (_zebra_lt(pdi, @as(i64, @intCast(partial_pm.decls.items.len)))) {
                             const pdecl = partial_pm.decls.items[@intCast(pdi)];
-                            switch (pdecl) {
-                                .class_ => |_ptr_pcls| {
-                                    const pcls = _ptr_pcls.*;
-                                    const pcls_name: []const u8 = pcls.name;
-                                    if (std.mem.eql(u8, pcls_name, rcls_name)) {
-                                        var memi: i64 = 0;
-                                        while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
-                                            const pmem = pcls.members.items[@intCast(memi)];
-                                            var keep: bool = true;
-                                            switch (pmem) {
-                                                .method_ => |_ptr_pmth| {
-                                                    const pmth = _ptr_pmth.*;
-                                                    const pmth_name: []const u8 = pmth.name;
-                                                    keep = (!self.hasDupMethod(pmth_name, rcls.members));
-                                                },
-                                                else => |_| {
-                                                    // pass
-                                                },
-                                            }
-                                            if (keep) {
-                                                extra_members.append(_allocator, pmem) catch @panic("OOM");
-                                            }
-                                            memi = (memi + 1);
+                            if (pdecl == .class_) {
+                                const pcls_ptr = pdecl.class_;
+                                const pcls = pcls_ptr.*;
+                                const pcls_name: []const u8 = pcls.name;
+                                if (std.mem.eql(u8, pcls_name, rcls_name)) {
+                                    var memi: i64 = 0;
+                                    while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
+                                        const pmem = pcls.members.items[@intCast(memi)];
+                                        var keep: bool = true;
+                                        if (pmem == .method_) {
+                                            const pmth_ptr = pmem.method_;
+                                            const pmth = pmth_ptr.*;
+                                            const pmth_name: []const u8 = pmth.name;
+                                            keep = (!self.hasDupMethod(pmth_name, rcls.members));
                                         }
+                                        if (keep) {
+                                            extra_members.append(_allocator, pmem) catch @panic("OOM");
+                                        }
+                                        memi = (memi + 1);
                                     }
-                                },
-                                else => |_| {
-                                    // pass
-                                },
+                                }
                             }
                             pdi = (pdi + 1);
                         }

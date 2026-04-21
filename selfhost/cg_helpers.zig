@@ -1789,16 +1789,12 @@ pub fn exprHasTry(expr: Expr) bool {
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
             for (si.parts.items) |part| {
-                switch (part) {
-                    .expr_ => |_ptr_e| {
-                        const e = _ptr_e.*;
-                        if (exprHasTry(e)) {
-                            return true;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (part == .expr_) {
+                    const e_ptr = part.expr_;
+                    const e = e_ptr.*;
+                    if (exprHasTry(e)) {
+                        return true;
+                    }
                 }
             }
             return false;
@@ -1977,30 +1973,22 @@ pub fn nilNarrowVar(cond: Expr, for_then: bool) ?[]const u8 {
                     return null;
                 }
             }
-            switch (b.left.*) {
-                .ident => |id| {
-                    switch (b.right.*) {
-                        .nil_ => {
-                            return id.name;
-                        },
-                        else => {
-                            // pass
-                        },
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (b.left.* == .ident) {
+                const id = b.left.*.ident;
+                switch (b.right.*) {
+                    .nil_ => {
+                        return id.name;
+                    },
+                    else => {
+                        // pass
+                    },
+                }
             }
             switch (b.left.*) {
                 .nil_ => {
-                    switch (b.right.*) {
-                        .ident => |id| {
-                            return id.name;
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (b.right.* == .ident) {
+                        const id = b.right.*.ident;
+                        return id.name;
                     }
                 },
                 else => {
@@ -2130,16 +2118,12 @@ pub fn nameUsedInExpr(name: []const u8, expr: Expr) bool {
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
             for (si.parts.items) |part| {
-                switch (part) {
-                    .expr_ => |_ptr_e| {
-                        const e = _ptr_e.*;
-                        if (nameUsedInExpr(name, e)) {
-                            return true;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (part == .expr_) {
+                    const e_ptr = part.expr_;
+                    const e = e_ptr.*;
+                    if (nameUsedInExpr(name, e)) {
+                        return true;
+                    }
                 }
             }
             return false;
@@ -2408,14 +2392,10 @@ pub fn collectAllIdents(expr: Expr, out: *StrSet) void {
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
             for (si.parts.items) |part| {
-                switch (part) {
-                    .expr_ => |_ptr_e| {
-                        const e = _ptr_e.*;
-                        collectAllIdents(e, out);
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (part == .expr_) {
+                    const e_ptr = part.expr_;
+                    const e = e_ptr.*;
+                    collectAllIdents(e, out);
                 }
             }
         },
@@ -2509,27 +2489,19 @@ pub fn propagateEscapesOnce(stmts: std.ArrayList(Stmt), out: *StrSet) bool {
             },
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
-                switch (a.target.*) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        switch (m.object.*) {
-                            .ident => |id| {
-                                if (out.contains_(id.name)) {
-                                    const before2 = @as(i64, @intCast(out.count()));
-                                    collectAllIdents(a.value.*, out);
-                                    if (_zebra_gt(@as(i64, @intCast(out.count())), before2)) {
-                                        grew = true;
-                                    }
-                                }
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                if (a.target.* == .member) {
+                    const m_ptr = a.target.*.member;
+                    const m = m_ptr.*;
+                    if (m.object.* == .ident) {
+                        const id = m.object.*.ident;
+                        if (out.contains_(id.name)) {
+                            const before2 = @as(i64, @intCast(out.count()));
+                            collectAllIdents(a.value.*, out);
+                            if (_zebra_gt(@as(i64, @intCast(out.count())), before2)) {
+                                grew = true;
+                            }
                         }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                    }
                 }
             },
             .if_ => |_ptr_si| {
@@ -2673,23 +2645,15 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
     switch (expr) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-            switch (c.callee) {
-                .member => |_ptr_m| {
-                    const m = _ptr_m.*;
-                    if ((!isReadOnlyMethod(m.member))) {
-                        switch (m.object.*) {
-                            .ident => |id| {
-                                out.add(id.name);
-                            },
-                            else => |_| {
-                                // pass
-                            },
-                        }
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                if ((!isReadOnlyMethod(m.member))) {
+                    if (m.object.* == .ident) {
+                        const id = m.object.*.ident;
+                        out.add(id.name);
                     }
-                },
-                else => |_| {
-                    // pass
-                },
+                }
             }
             for (c.args.items) |arg| {
                 scanMutationsInExpr(arg.value, out);
@@ -2742,14 +2706,10 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
             for (si.parts.items) |part| {
-                switch (part) {
-                    .expr_ => |_ptr_e| {
-                        const e = _ptr_e.*;
-                        scanMutationsInExpr(e, out);
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (part == .expr_) {
+                    const e_ptr = part.expr_;
+                    const e = e_ptr.*;
+                    scanMutationsInExpr(e, out);
                 }
             }
         },
@@ -2770,24 +2730,16 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                     },
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
-                        switch (m.object.*) {
-                            .ident => |id| {
-                                out.add(id.name);
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                        if (m.object.* == .ident) {
+                            const id = m.object.*.ident;
+                            out.add(id.name);
                         }
                     },
                     .index => |_ptr_ix| {
                         const ix = _ptr_ix.*;
-                        switch (ix.object.*) {
-                            .ident => |id| {
-                                out.add(id.name);
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                        if (ix.object.* == .ident) {
+                            const id = ix.object.*.ident;
+                            out.add(id.name);
                         }
                     },
                     else => |_| {
@@ -2844,13 +2796,9 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-                switch (w.target.*) {
-                    .ident => |id| {
-                        out.add(id.name);
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (w.target.* == .ident) {
+                    const id = w.target.*.ident;
+                    out.add(id.name);
                 }
                 scanMutationsInto(w.stmts, out);
             },

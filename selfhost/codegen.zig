@@ -1600,17 +1600,13 @@ pub fn isUpperCase(s: []const u8) bool {
 }
 
 pub fn getVariantKey(e: Expr) ?[]const u8 {
-    switch (e) {
-        .member => |_ptr_m| {
-            const m = _ptr_m.*;
-            const obj_name = getIdentName(m.object.*);
-            if ((obj_name != null)) {
-                return makeDottedKey(obj_name.?, m.member);
-            }
-        },
-        else => |_| {
-            // pass
-        },
+    if (e == .member) {
+        const m_ptr = e.member;
+        const m = m_ptr.*;
+        const obj_name = getIdentName(m.object.*);
+        if ((obj_name != null)) {
+            return makeDottedKey(obj_name.?, m.member);
+        }
     }
     return null;
 }
@@ -1863,19 +1859,15 @@ pub fn shouldBoxCtorArg(e: Expr) bool {
         },
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-            switch (c.callee) {
-                .member => |_ptr_cm| {
-                    const cm = _ptr_cm.*;
-                    if ((std.mem.eql(u8, cm.member, "buildExpr") or std.mem.eql(u8, cm.member, "buildStmt"))) {
-                        return true;
-                    }
-                    if (std.mem.eql(u8, cm.member, "buildTypeRef")) {
-                        return true;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (c.callee == .member) {
+                const cm_ptr = c.callee.member;
+                const cm = cm_ptr.*;
+                if ((std.mem.eql(u8, cm.member, "buildExpr") or std.mem.eql(u8, cm.member, "buildStmt"))) {
+                    return true;
+                }
+                if (std.mem.eql(u8, cm.member, "buildTypeRef")) {
+                    return true;
+                }
             }
         },
         else => |_| {
@@ -2055,64 +2047,48 @@ pub fn getIdentName(e: Expr) ?[]const u8 {
 }
 
 pub fn isCrossModuleCtorCall(callee: Expr) bool {
-    switch (callee) {
-        .member => |_ptr_m| {
-            const m = _ptr_m.*;
-            const obj_name = getIdentName(m.object.*);
-            if ((obj_name != null)) {
-                return std.mem.eql(u8, obj_name.?, m.member);
-            }
-        },
-        else => |_| {
-            // pass
-        },
+    if (callee == .member) {
+        const m_ptr = callee.member;
+        const m = m_ptr.*;
+        const obj_name = getIdentName(m.object.*);
+        if ((obj_name != null)) {
+            return std.mem.eql(u8, obj_name.?, m.member);
+        }
     }
     return false;
 }
 
 pub fn getMemberObjectIdent(callee: Expr) ?[]const u8 {
-    switch (callee) {
-        .member => |_ptr_m| {
-            const m = _ptr_m.*;
-            return getIdentName(m.object.*);
-        },
-        else => |_| {
-            // pass
-        },
+    if (callee == .member) {
+        const m_ptr = callee.member;
+        const m = m_ptr.*;
+        return getIdentName(m.object.*);
     }
     return null;
 }
 
 pub fn getMemberName(callee: Expr) ?[]const u8 {
-    switch (callee) {
-        .member => |_ptr_m| {
-            const m = _ptr_m.*;
-            return m.member;
-        },
-        else => |_| {
-            // pass
-        },
+    if (callee == .member) {
+        const m_ptr = callee.member;
+        const m = m_ptr.*;
+        return m.member;
     }
     return null;
 }
 
 pub fn getXmUnionParts(callee: Expr) ?std.ArrayList([]const u8) {
-    switch (callee) {
-        .member => |_ptr_outer_m| {
-            const outer_m = _ptr_outer_m.*;
-            const inner_union = getMemberName(outer_m.object.*);
-            const inner_mod = getMemberObjectIdent(outer_m.object.*);
-            if (((inner_union != null) and (inner_mod != null))) {
-                var parts = std.ArrayList([]const u8){};
-                parts.append(_allocator, inner_mod.?) catch @panic("OOM");
-                parts.append(_allocator, inner_union.?) catch @panic("OOM");
-                parts.append(_allocator, outer_m.member) catch @panic("OOM");
-                return parts;
-            }
-        },
-        else => |_| {
-            // pass
-        },
+    if (callee == .member) {
+        const outer_m_ptr = callee.member;
+        const outer_m = outer_m_ptr.*;
+        const inner_union = getMemberName(outer_m.object.*);
+        const inner_mod = getMemberObjectIdent(outer_m.object.*);
+        if (((inner_union != null) and (inner_mod != null))) {
+            var parts = std.ArrayList([]const u8){};
+            parts.append(_allocator, inner_mod.?) catch @panic("OOM");
+            parts.append(_allocator, inner_union.?) catch @panic("OOM");
+            parts.append(_allocator, outer_m.member) catch @panic("OOM");
+            return parts;
+        }
     }
     return null;
 }
@@ -2185,16 +2161,12 @@ pub fn exprMentionsThis(e: Expr) bool {
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
             for (si.parts.items) |part| {
-                switch (part) {
-                    .expr_ => |_ptr_pe| {
-                        const pe = _ptr_pe.*;
-                        if (exprMentionsThis(pe)) {
-                            return true;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (part == .expr_) {
+                    const pe_ptr = part.expr_;
+                    const pe = pe_ptr.*;
+                    if (exprMentionsThis(pe)) {
+                        return true;
+                    }
                 }
             }
             return false;
@@ -2312,16 +2284,12 @@ pub fn stmtMentionsThis(s: Stmt) bool {
 
 pub fn bodyUsesAnyField(stmts: std.ArrayList(Stmt), members: std.ArrayList(Decl)) bool {
     for (members.items) |d| {
-        switch (d) {
-            .var_ => |_ptr_fld| {
-                const fld = _ptr_fld.*;
-                if (nameUsedInStmts(fld.name, stmts)) {
-                    return true;
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (d == .var_) {
+            const fld_ptr = d.var_;
+            const fld = fld_ptr.*;
+            if (nameUsedInStmts(fld.name, stmts)) {
+                return true;
+            }
         }
     }
     return false;
@@ -2329,16 +2297,12 @@ pub fn bodyUsesAnyField(stmts: std.ArrayList(Stmt), members: std.ArrayList(Decl)
 
 pub fn bodyUsesAnyMethod(stmts: std.ArrayList(Stmt), members: std.ArrayList(Decl)) bool {
     for (members.items) |d| {
-        switch (d) {
-            .method => |_ptr_dm| {
-                const dm = _ptr_dm.*;
-                if (nameUsedInStmts(dm.name, stmts)) {
-                    return true;
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (d == .method) {
+            const dm_ptr = d.method;
+            const dm = dm_ptr.*;
+            if (nameUsedInStmts(dm.name, stmts)) {
+                return true;
+            }
         }
     }
     return false;
@@ -2407,14 +2371,10 @@ pub fn generateModuleWith(m: Module, file: []const u8, extra_class_names: std.Ar
     var w = Writer.init();
     var cn = StrSet.init();
     for (m.decls.items) |decl| {
-        switch (decl) {
-            .class_ => |_ptr_c| {
-                const c = _ptr_c.*;
-                cn.add(c.name);
-            },
-            else => |_| {
-                // pass
-            },
+        if (decl == .class_) {
+            const c_ptr = decl.class_;
+            const c = c_ptr.*;
+            cn.add(c.name);
         }
     }
     var i: i64 = 0;
@@ -2438,16 +2398,12 @@ pub fn generateModuleWith(m: Module, file: []const u8, extra_class_names: std.Ar
                         .namespace_ => |_ptr_ns2| {
                             const ns2 = _ptr_ns2.*;
                             for (ns2.decls.items) |nmem| {
-                                switch (nmem) {
-                                    .method => |_ptr_ndm| {
-                                        const ndm = _ptr_ndm.*;
-                                        if (ndm.throws_) {
-                                            g.throws_methods.add(makeDottedKey(c.name, ndm.name));
-                                        }
-                                    },
-                                    else => |_| {
-                                        // pass
-                                    },
+                                if (nmem == .method) {
+                                    const ndm_ptr = nmem.method;
+                                    const ndm = ndm_ptr.*;
+                                    if (ndm.throws_) {
+                                        g.throws_methods.add(makeDottedKey(c.name, ndm.name));
+                                    }
                                 }
                             }
                         },
@@ -2561,14 +2517,10 @@ pub fn generateModuleWith(m: Module, file: []const u8, extra_class_names: std.Ar
     }
     var reflect_classes = std.ArrayList([]const u8){};
     for (m.decls.items) |decl| {
-        switch (decl) {
-            .class_ => |_ptr_rc| {
-                const rc = _ptr_rc.*;
-                reflect_classes.append(_allocator, rc.name) catch @panic("OOM");
-            },
-            else => |_| {
-                // pass
-            },
+        if (decl == .class_) {
+            const rc_ptr = decl.class_;
+            const rc = rc_ptr.*;
+            reflect_classes.append(_allocator, rc.name) catch @panic("OOM");
         }
     }
     if (_zebra_gt(@as(i64, @intCast(reflect_classes.items.len)), 0)) {
@@ -2618,47 +2570,35 @@ pub fn generateEntryPoint(m: Module) []const u8 {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
                 for (c.members.items) |mem| {
-                    switch (mem) {
-                        .method => |_ptr_mth| {
-                            const mth = _ptr_mth.*;
-                            if ((std.mem.eql(u8, mth.name, "main") and mth.mods.is_shared)) {
-                                main_class = c.name;
-                                main_throws = mth.throws_;
-                            }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (mem == .method) {
+                        const mth_ptr = mem.method;
+                        const mth = mth_ptr.*;
+                        if ((std.mem.eql(u8, mth.name, "main") and mth.mods.is_shared)) {
+                            main_class = c.name;
+                            main_throws = mth.throws_;
+                        }
                     }
                 }
             },
             .namespace_ => |_ptr_ns| {
                 const ns = _ptr_ns.*;
                 for (ns.decls.items) |nested| {
-                    switch (nested) {
-                        .class_ => |_ptr_nc| {
-                            const nc = _ptr_nc.*;
-                            for (nc.members.items) |nmem| {
-                                switch (nmem) {
-                                    .method => |_ptr_nmth| {
-                                        const nmth = _ptr_nmth.*;
-                                        if ((std.mem.eql(u8, nmth.name, "main") and nmth.mods.is_shared)) {
-                                            var qn: []const u8 = ns.name;
-                                            qn = _str_concat(qn, ".", _allocator);
-                                            qn = _str_concat(qn, nc.name, _allocator);
-                                            main_class = qn;
-                                            main_throws = nmth.throws_;
-                                        }
-                                    },
-                                    else => |_| {
-                                        // pass
-                                    },
+                    if (nested == .class_) {
+                        const nc_ptr = nested.class_;
+                        const nc = nc_ptr.*;
+                        for (nc.members.items) |nmem| {
+                            if (nmem == .method) {
+                                const nmth_ptr = nmem.method;
+                                const nmth = nmth_ptr.*;
+                                if ((std.mem.eql(u8, nmth.name, "main") and nmth.mods.is_shared)) {
+                                    var qn: []const u8 = ns.name;
+                                    qn = _str_concat(qn, ".", _allocator);
+                                    qn = _str_concat(qn, nc.name, _allocator);
+                                    main_class = qn;
+                                    main_throws = nmth.throws_;
                                 }
                             }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                        }
                     }
                 }
             },
@@ -2697,14 +2637,10 @@ pub fn generateEntryPoint(m: Module) []const u8 {
 pub fn generateErrorMsgHelper(m: Module) []const u8 {
     var dep_modules = std.ArrayList([]const u8){};
     for (m.decls.items) |decl| {
-        switch (decl) {
-            .use_ => |_ptr_u| {
-                const u = _ptr_u.*;
-                dep_modules.append(_allocator, u.path) catch @panic("OOM");
-            },
-            else => |_| {
-                // pass
-            },
+        if (decl == .use_) {
+            const u_ptr = decl.use_;
+            const u = u_ptr.*;
+            dep_modules.append(_allocator, u.path) catch @panic("OOM");
         }
     }
     return generateErrorMsgHelperWith(dep_modules);
@@ -3075,26 +3011,22 @@ pub const Generator = struct {
                 switch (inner) {
                     .nilable => |_ptr_ni2| {
                         const ni2 = _ptr_ni2.*;
-                        switch (ni2) {
-                            .named => |n| {
-                                if (self.class_names.contains_(n.name)) {
-                                    self.w.emit(prefix);
-                                    self.w.emit(n.name);
-                                    handled = true;
-                                } else {
-                                    if ((std.mem.indexOf(u8, n.name, ".") != null)) {
-                                        const class_part = extractAfterDot(n.name);
-                                        if (self.class_names.contains_(class_part)) {
-                                            self.w.emit(prefix);
-                                            self.w.emit(n.name);
-                                            handled = true;
-                                        }
+                        if (ni2 == .named) {
+                            const n = ni2.named;
+                            if (self.class_names.contains_(n.name)) {
+                                self.w.emit(prefix);
+                                self.w.emit(n.name);
+                                handled = true;
+                            } else {
+                                if ((std.mem.indexOf(u8, n.name, ".") != null)) {
+                                    const class_part = extractAfterDot(n.name);
+                                    if (self.class_names.contains_(class_part)) {
+                                        self.w.emit(prefix);
+                                        self.w.emit(n.name);
+                                        handled = true;
                                     }
                                 }
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                            }
                         }
                     },
                     .named => |n| {
@@ -3120,14 +3052,10 @@ pub const Generator = struct {
                 if ((!handled)) {
                     self.w.emit(prefix);
                     if (is_nilable) {
-                        switch (inner) {
-                            .nilable => |_ptr_ni3| {
-                                const ni3 = _ptr_ni3.*;
-                                self.genType(ni3);
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                        if (inner == .nilable) {
+                            const ni3_ptr = inner.nilable;
+                            const ni3 = ni3_ptr.*;
+                            self.genType(ni3);
                         }
                     } else {
                         self.genType(inner);
@@ -3171,23 +3099,19 @@ pub const Generator = struct {
     pub fn genGenericType(self: *Generator, gtr: GenericTypeRef) void {
         if (((std.mem.eql(u8, gtr.name, "int") or std.mem.eql(u8, gtr.name, "uint")) or std.mem.eql(u8, gtr.name, "float"))) {
             if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 1)) {
-                switch (gtr.args.items[@intCast(0)]) {
-                    .named => |an| {
-                        if (std.mem.eql(u8, gtr.name, "uint")) {
-                            self.w.emit("u");
+                if (gtr.args.items[@intCast(0)] == .named) {
+                    const an = gtr.args.items[@intCast(0)].named;
+                    if (std.mem.eql(u8, gtr.name, "uint")) {
+                        self.w.emit("u");
+                    } else {
+                        if (std.mem.eql(u8, gtr.name, "float")) {
+                            self.w.emit("f");
                         } else {
-                            if (std.mem.eql(u8, gtr.name, "float")) {
-                                self.w.emit("f");
-                            } else {
-                                self.w.emit("i");
-                            }
+                            self.w.emit("i");
                         }
-                        self.w.emit(an.name);
-                        return;
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                    }
+                    self.w.emit(an.name);
+                    return;
                 }
             }
         }
@@ -3313,13 +3237,9 @@ pub const Generator = struct {
 
     pub fn isStringTypeRef(self: *Generator, tr: TypeRef) bool {
         _ = self;
-        switch (tr) {
-            .named => |n| {
-                return (std.mem.eql(u8, n.name, "str") or std.mem.eql(u8, n.name, "String"));
-            },
-            else => |_| {
-                // pass
-            },
+        if (tr == .named) {
+            const n = tr.named;
+            return (std.mem.eql(u8, n.name, "str") or std.mem.eql(u8, n.name, "String"));
         }
         return false;
     }
@@ -3386,16 +3306,12 @@ pub const Generator = struct {
         self.w.emit(": ");
         if ((n.type_ != null)) {
             const tr = n.type_.?;
-            switch (tr) {
-                .named => |nt| {
-                    if (std.mem.eql(u8, nt.name, "StringBuilder")) {
-                        self.w.emit("std.ArrayList(u8) = .{},\n");
-                        return;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (tr == .named) {
+                const nt = tr.named;
+                if (std.mem.eql(u8, nt.name, "StringBuilder")) {
+                    self.w.emit("std.ArrayList(u8) = .{},\n");
+                    return;
+                }
             }
             self.genType(tr);
         } else {
@@ -3465,23 +3381,19 @@ pub const Generator = struct {
     pub fn genStruct(self: *Generator, n: DeclStruct) void {
         self.struct_names.add(n.name);
         for (n.members.items) |decl| {
-            switch (decl) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    if ((fld.type_ != null)) {
-                        switch (fld.type_.?) {
-                            .ref_to => {
-                                self.ref_fields.add(makeDottedKey(n.name, fld.name));
-                            },
-                            else => {
-                                // pass
-                            },
-                        }
+            if (decl == .var_) {
+                const fld_ptr = decl.var_;
+                const fld = fld_ptr.*;
+                if ((fld.type_ != null)) {
+                    switch (fld.type_.?) {
+                        .ref_to => {
+                            self.ref_fields.add(makeDottedKey(n.name, fld.name));
+                        },
+                        else => {
+                            // pass
+                        },
                     }
-                },
-                else => |_| {
-                    // pass
-                },
+                }
             }
         }
         self.writeIndent();
@@ -3493,14 +3405,10 @@ pub const Generator = struct {
         var ig2 = ig1.asStructOwner();
         var ig = ig2.withOwnerMembers(n.members);
         for (n.members.items) |decl| {
-            switch (decl) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    ig.genFieldDecl(fld);
-                },
-                else => |_| {
-                    // pass
-                },
+            if (decl == .var_) {
+                const fld_ptr = decl.var_;
+                const fld = fld_ptr.*;
+                ig.genFieldDecl(fld);
             }
         }
         for (n.members.items) |decl| {
@@ -3533,14 +3441,10 @@ pub const Generator = struct {
         var ig = ig1.withOwnerMembers(n.members);
         ig.line(_str_concat(_str_concat("_type_tag: u64 = _ttag_", n.name, _allocator), ",", _allocator));
         for (n.members.items) |decl| {
-            switch (decl) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    ig.genFieldDecl(fld);
-                },
-                else => |_| {
-                    // pass
-                },
+            if (decl == .var_) {
+                const fld_ptr = decl.var_;
+                const fld = fld_ptr.*;
+                ig.genFieldDecl(fld);
             }
         }
         var has_init = false;
@@ -3589,21 +3493,17 @@ pub const Generator = struct {
         var rf_names = std.ArrayList([]const u8){};
         var rf_types = std.ArrayList([]const u8){};
         for (n.members.items) |decl| {
-            switch (decl) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    if ((!fld.mods.is_shared)) {
-                        rf_names.append(_allocator, fld.name) catch @panic("OOM");
-                        if ((fld.type_ != null)) {
-                            rf_types.append(_allocator, typeRefStr(fld.type_.?)) catch @panic("OOM");
-                        } else {
-                            rf_types.append(_allocator, "unknown") catch @panic("OOM");
-                        }
+            if (decl == .var_) {
+                const fld_ptr = decl.var_;
+                const fld = fld_ptr.*;
+                if ((!fld.mods.is_shared)) {
+                    rf_names.append(_allocator, fld.name) catch @panic("OOM");
+                    if ((fld.type_ != null)) {
+                        rf_types.append(_allocator, typeRefStr(fld.type_.?)) catch @panic("OOM");
+                    } else {
+                        rf_types.append(_allocator, "unknown") catch @panic("OOM");
                     }
-                },
-                else => |_| {
-                    // pass
-                },
+                }
             }
         }
         self.w.emit("const _reflect_");
@@ -3679,15 +3579,11 @@ pub const Generator = struct {
             for (m.params.items) |p| {
                 ps.add(p.name);
                 if ((p.type_ != null)) {
-                    switch (p.type_.?) {
-                        .named => |nt| {
-                            if ((std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"))) {
-                                sp.add(p.name);
-                            }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (p.type_.? == .named) {
+                        const nt = p.type_.?.named;
+                        if ((std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"))) {
+                            sp.add(p.name);
+                        }
                     }
                 }
             }
@@ -3711,15 +3607,11 @@ pub const Generator = struct {
                             if (std.mem.eql(u8, gt.name, "List")) {
                                 bg.list_locals.add(p2.name);
                                 if (_zebra_gt(@as(i64, @intCast(gt.args.items.len)), 0)) {
-                                    switch (gt.args.items[@intCast(0)]) {
-                                        .named => |pnt| {
-                                            if ((std.mem.eql(u8, pnt.name, "str") or std.mem.eql(u8, pnt.name, "String"))) {
-                                                bg.list_str_locals.add(p2.name);
-                                            }
-                                        },
-                                        else => |_| {
-                                            // pass
-                                        },
+                                    if (gt.args.items[@intCast(0)] == .named) {
+                                        const pnt = gt.args.items[@intCast(0)].named;
+                                        if ((std.mem.eql(u8, pnt.name, "str") or std.mem.eql(u8, pnt.name, "String"))) {
+                                            bg.list_str_locals.add(p2.name);
+                                        }
                                     }
                                 }
                             }
@@ -3898,21 +3790,17 @@ pub const Generator = struct {
         self.w.emit("comptime {\n");
         var iig = ig.indented();
         for (ifc.members.items) |mem| {
-            switch (mem) {
-                .method => |_ptr_mth| {
-                    const mth = _ptr_mth.*;
-                    iig.writeIndent();
-                    self.w.emit("if (!@hasDecl(T, \"");
-                    self.w.emit(mth.name);
-                    self.w.emit("\")) @compileError(\"type \" ++ @typeName(T) ++ \" does not implement ");
-                    self.w.emit(ifc.name);
-                    self.w.emit(".");
-                    self.w.emit(mth.name);
-                    self.w.emit("\");\n");
-                },
-                else => |_| {
-                    // pass
-                },
+            if (mem == .method) {
+                const mth_ptr = mem.method;
+                const mth = mth_ptr.*;
+                iig.writeIndent();
+                self.w.emit("if (!@hasDecl(T, \"");
+                self.w.emit(mth.name);
+                self.w.emit("\")) @compileError(\"type \" ++ @typeName(T) ++ \" does not implement ");
+                self.w.emit(ifc.name);
+                self.w.emit(".");
+                self.w.emit(mth.name);
+                self.w.emit("\");\n");
             }
         }
         ig.writeIndent();
@@ -3936,14 +3824,10 @@ pub const Generator = struct {
         self.w.emit(tname);
         self.w.emit("\n");
         for (ext.members.items) |mem| {
-            switch (mem) {
-                .method => |_ptr_mth| {
-                    const mth = _ptr_mth.*;
-                    self.genExtMethod(tname, mth);
-                },
-                else => |_| {
-                    // pass
-                },
+            if (mem == .method) {
+                const mth_ptr = mem.method;
+                const mth = mth_ptr.*;
+                self.genExtMethod(tname, mth);
             }
         }
         self.w.emit("\n");
@@ -4023,25 +3907,21 @@ pub const Generator = struct {
     pub fn genStmts(self: *Generator, stmts: std.ArrayList(Stmt)) void {
         var unused_lambdas = StrSet.init();
         for (stmts.items) |s| {
-            switch (s) {
-                .var_ => |_ptr_n| {
-                    const n = _ptr_n.*;
-                    if ((n.init_expr != null)) {
-                        switch (n.init_expr.?.*) {
-                            .lambda => {
-                                if ((!nameUsedInStmts(n.name, stmts))) {
-                                    unused_lambdas.add(n.name);
-                                }
-                            },
-                            else => {
-                                // pass
-                            },
-                        }
+            if (s == .var_) {
+                const n_ptr = s.var_;
+                const n = n_ptr.*;
+                if ((n.init_expr != null)) {
+                    switch (n.init_expr.?.*) {
+                        .lambda => {
+                            if ((!nameUsedInStmts(n.name, stmts))) {
+                                unused_lambdas.add(n.name);
+                            }
+                        },
+                        else => {
+                            // pass
+                        },
                     }
-                },
-                else => |_| {
-                    // pass
-                },
+                }
             }
         }
         for (stmts.items) |s| {
@@ -4132,22 +4012,14 @@ pub const Generator = struct {
             .expr => |_ptr_e| {
                 const e = _ptr_e.*;
                 var hoisted = false;
-                switch (e) {
-                    .call => |_ptr_ec| {
-                        const ec = _ptr_ec.*;
-                        switch (ec.callee) {
-                            .member => |_ptr_mem| {
-                                const mem = _ptr_mem.*;
-                                hoisted = self.hoistCallOnTemp(mem.object.*, mem.member, ec.args);
-                            },
-                            else => |_| {
-                                // pass
-                            },
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (e == .call) {
+                    const ec_ptr = e.call;
+                    const ec = ec_ptr.*;
+                    if (ec.callee == .member) {
+                        const mem_ptr = ec.callee.member;
+                        const mem = mem_ptr.*;
+                        hoisted = self.hoistCallOnTemp(mem.object.*, mem.member, ec.args);
+                    }
                 }
                 if ((!hoisted)) {
                     self.writeIndent();
@@ -4193,15 +4065,11 @@ pub const Generator = struct {
                     if (std.mem.eql(u8, gtn.name, "List")) {
                         self.list_locals.add(n.name);
                         if (_zebra_gt(@as(i64, @intCast(gtn.args.items.len)), 0)) {
-                            switch (gtn.args.items[@intCast(0)]) {
-                                .named => |en| {
-                                    if ((std.mem.eql(u8, en.name, "str") or std.mem.eql(u8, en.name, "String"))) {
-                                        self.list_str_locals.add(n.name);
-                                    }
-                                },
-                                else => |_| {
-                                    // pass
-                                },
+                            if (gtn.args.items[@intCast(0)] == .named) {
+                                const en = gtn.args.items[@intCast(0)].named;
+                                if ((std.mem.eql(u8, en.name, "str") or std.mem.eql(u8, en.name, "String"))) {
+                                    self.list_str_locals.add(n.name);
+                                }
                             }
                         }
                     }
@@ -4225,16 +4093,12 @@ pub const Generator = struct {
             }
         }
         if ((n.init_expr != null)) {
-            switch (n.init_expr.?.*) {
-                .lambda => |_ptr_lam| {
-                    const lam = _ptr_lam.*;
-                    if (_zebra_gt(@as(i64, @intCast(lam.captures.items.len)), 0)) {
-                        self.closure_vars.add(n.name);
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (n.init_expr.?.* == .lambda) {
+                const lam_ptr = n.init_expr.?.*.lambda;
+                const lam = lam_ptr.*;
+                if (_zebra_gt(@as(i64, @intCast(lam.captures.items.len)), 0)) {
+                    self.closure_vars.add(n.name);
+                }
             }
         }
         if ((n.init_expr != null)) {
@@ -4260,15 +4124,11 @@ pub const Generator = struct {
         if (((n.type_ != null) and (n.init_expr != null))) {
             switch (n.init_expr.?.*) {
                 .zig_lit => {
-                    switch (n.type_.?) {
-                        .named => |tn| {
-                            if (self.class_names.contains_(tn.name)) {
-                                skip_type_ann = true;
-                            }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (n.type_.? == .named) {
+                        const tn = n.type_.?.named;
+                        if (self.class_names.contains_(tn.name)) {
+                            skip_type_ann = true;
+                        }
                     }
                 },
                 else => {
@@ -4308,152 +4168,73 @@ pub const Generator = struct {
 
     pub fn isStringBuilderCtor(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
-                    switch (c.callee) {
-                        .ident => |id| {
-                            return std.mem.eql(u8, id.name, "StringBuilder");
-                        },
-                        else => |_| {
-                            // pass
-                        },
-                    }
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
+                if (c.callee == .ident) {
+                    const id = c.callee.ident;
+                    return std.mem.eql(u8, id.name, "StringBuilder");
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
 
     pub fn isStrSetCtor(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
-                    switch (c.callee) {
-                        .ident => |id| {
-                            return std.mem.eql(u8, id.name, "StrSet");
-                        },
-                        else => |_| {
-                            // pass
-                        },
-                    }
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
+                if (c.callee == .ident) {
+                    const id = c.callee.ident;
+                    return std.mem.eql(u8, id.name, "StrSet");
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
 
     pub fn isGenericStdlibCtor(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_outer| {
-                const outer = _ptr_outer.*;
-                if ((@as(i64, @intCast(outer.args.items.len)) == 0)) {
-                    switch (outer.callee) {
-                        .call => |_ptr_inner| {
-                            const inner = _ptr_inner.*;
-                            switch (inner.callee) {
-                                .ident => |id| {
-                                    return (std.mem.eql(u8, id.name, "List") or std.mem.eql(u8, id.name, "HashMap"));
-                                },
-                                else => |_| {
-                                    // pass
-                                },
-                            }
-                        },
-                        .ident => |id| {
-                            return ((std.mem.eql(u8, id.name, "StrSet") or std.mem.eql(u8, id.name, "List")) or std.mem.eql(u8, id.name, "HashMap"));
-                        },
-                        else => |_| {
-                            // pass
-                        },
-                    }
+        if (e == .call) {
+            const outer_ptr = e.call;
+            const outer = outer_ptr.*;
+            if ((@as(i64, @intCast(outer.args.items.len)) == 0)) {
+                switch (outer.callee) {
+                    .call => |_ptr_inner| {
+                        const inner = _ptr_inner.*;
+                        if (inner.callee == .ident) {
+                            const id = inner.callee.ident;
+                            return (std.mem.eql(u8, id.name, "List") or std.mem.eql(u8, id.name, "HashMap"));
+                        }
+                    },
+                    .ident => |id| {
+                        return ((std.mem.eql(u8, id.name, "StrSet") or std.mem.eql(u8, id.name, "List")) or std.mem.eql(u8, id.name, "HashMap"));
+                    },
+                    else => |_| {
+                        // pass
+                    },
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
 
     pub fn genGenericCtorExpr(self: *Generator, e: Expr, type_hint: ?TypeRef) void {
-        switch (e) {
-            .call => |_ptr_outer| {
-                const outer = _ptr_outer.*;
-                switch (outer.callee) {
-                    .call => |_ptr_inner| {
-                        const inner = _ptr_inner.*;
-                        switch (inner.callee) {
-                            .ident => |id| {
-                                if (std.mem.eql(u8, id.name, "List")) {
-                                    self.w.emit("std.ArrayList(");
-                                    if (_zebra_gt(@as(i64, @intCast(inner.args.items.len)), 0)) {
-                                        self.genTypeFromExpr(inner.args.items[@intCast(0)].value);
-                                    } else {
-                                        self.w.emit("anytype");
-                                    }
-                                    self.w.emit("){}");
-                                    return;
-                                }
-                                if (std.mem.eql(u8, id.name, "HashMap")) {
-                                    const key_str = (_zebra_gt(@as(i64, @intCast(inner.args.items.len)), 0) and self.isStringArgExpr(inner.args.items[@intCast(0)].value));
-                                    if (key_str) {
-                                        self.w.emit("std.StringHashMap(");
-                                        if (_zebra_ge(@as(i64, @intCast(inner.args.items.len)), 2)) {
-                                            self.genTypeFromExpr(inner.args.items[@intCast(1)].value);
-                                        } else {
-                                            self.w.emit("anytype");
-                                        }
-                                    } else {
-                                        self.w.emit("std.AutoHashMap(");
-                                        var fi = true;
-                                        for (inner.args.items) |ta| {
-                                            if ((!fi)) {
-                                                self.w.emit(", ");
-                                            }
-                                            fi = false;
-                                            self.genTypeFromExpr(ta.value);
-                                        }
-                                    }
-                                    self.w.emit(").init(_allocator)");
-                                    return;
-                                }
-                            },
-                            else => |_| {
-                                // pass
-                            },
-                        }
-                    },
-                    .ident => |id| {
-                        if (std.mem.eql(u8, id.name, "StrSet")) {
-                            self.w.emit("StrSet.init()");
-                            return;
-                        }
+        if (e == .call) {
+            const outer_ptr = e.call;
+            const outer = outer_ptr.*;
+            switch (outer.callee) {
+                .call => |_ptr_inner| {
+                    const inner = _ptr_inner.*;
+                    if (inner.callee == .ident) {
+                        const id = inner.callee.ident;
                         if (std.mem.eql(u8, id.name, "List")) {
                             self.w.emit("std.ArrayList(");
-                            if ((type_hint != null)) {
-                                switch (type_hint.?) {
-                                    .generic => |gtr| {
-                                        if (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0)) {
-                                            self.genType(gtr.args.items[@intCast(0)]);
-                                        } else {
-                                            self.w.emit("anytype");
-                                        }
-                                    },
-                                    else => |_| {
-                                        self.w.emit("anytype");
-                                    },
-                                }
+                            if (_zebra_gt(@as(i64, @intCast(inner.args.items.len)), 0)) {
+                                self.genTypeFromExpr(inner.args.items[@intCast(0)].value);
                             } else {
                                 self.w.emit("anytype");
                             }
@@ -4461,61 +4242,104 @@ pub const Generator = struct {
                             return;
                         }
                         if (std.mem.eql(u8, id.name, "HashMap")) {
-                            if ((type_hint != null)) {
-                                switch (type_hint.?) {
-                                    .generic => |gtr| {
-                                        const key_is_str = (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0) and self.isStringTypeRef(gtr.args.items[@intCast(0)]));
-                                        if (key_is_str) {
-                                            self.w.emit("std.StringHashMap(");
-                                            if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
-                                                self.genType(gtr.args.items[@intCast(1)]);
-                                            } else {
-                                                self.w.emit("anytype");
-                                            }
-                                        } else {
-                                            self.w.emit("std.AutoHashMap(");
-                                            var fi = true;
-                                            for (gtr.args.items) |ta| {
-                                                if ((!fi)) {
-                                                    self.w.emit(", ");
-                                                }
-                                                fi = false;
-                                                self.genType(ta);
-                                            }
-                                        }
-                                    },
-                                    else => |_| {
-                                        self.w.emit("std.AutoHashMap(anytype, anytype");
-                                    },
+                            const key_str = (_zebra_gt(@as(i64, @intCast(inner.args.items.len)), 0) and self.isStringArgExpr(inner.args.items[@intCast(0)].value));
+                            if (key_str) {
+                                self.w.emit("std.StringHashMap(");
+                                if (_zebra_ge(@as(i64, @intCast(inner.args.items.len)), 2)) {
+                                    self.genTypeFromExpr(inner.args.items[@intCast(1)].value);
+                                } else {
+                                    self.w.emit("anytype");
                                 }
                             } else {
-                                self.w.emit("std.AutoHashMap(anytype, anytype");
+                                self.w.emit("std.AutoHashMap(");
+                                var fi = true;
+                                for (inner.args.items) |ta| {
+                                    if ((!fi)) {
+                                        self.w.emit(", ");
+                                    }
+                                    fi = false;
+                                    self.genTypeFromExpr(ta.value);
+                                }
                             }
                             self.w.emit(").init(_allocator)");
                             return;
                         }
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+                    }
+                },
+                .ident => |id| {
+                    if (std.mem.eql(u8, id.name, "StrSet")) {
+                        self.w.emit("StrSet.init()");
+                        return;
+                    }
+                    if (std.mem.eql(u8, id.name, "List")) {
+                        self.w.emit("std.ArrayList(");
+                        if ((type_hint != null)) {
+                            switch (type_hint.?) {
+                                .generic => |gtr| {
+                                    if (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0)) {
+                                        self.genType(gtr.args.items[@intCast(0)]);
+                                    } else {
+                                        self.w.emit("anytype");
+                                    }
+                                },
+                                else => |_| {
+                                    self.w.emit("anytype");
+                                },
+                            }
+                        } else {
+                            self.w.emit("anytype");
+                        }
+                        self.w.emit("){}");
+                        return;
+                    }
+                    if (std.mem.eql(u8, id.name, "HashMap")) {
+                        if ((type_hint != null)) {
+                            switch (type_hint.?) {
+                                .generic => |gtr| {
+                                    const key_is_str = (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0) and self.isStringTypeRef(gtr.args.items[@intCast(0)]));
+                                    if (key_is_str) {
+                                        self.w.emit("std.StringHashMap(");
+                                        if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
+                                            self.genType(gtr.args.items[@intCast(1)]);
+                                        } else {
+                                            self.w.emit("anytype");
+                                        }
+                                    } else {
+                                        self.w.emit("std.AutoHashMap(");
+                                        var fi = true;
+                                        for (gtr.args.items) |ta| {
+                                            if ((!fi)) {
+                                                self.w.emit(", ");
+                                            }
+                                            fi = false;
+                                            self.genType(ta);
+                                        }
+                                    }
+                                },
+                                else => |_| {
+                                    self.w.emit("std.AutoHashMap(anytype, anytype");
+                                },
+                            }
+                        } else {
+                            self.w.emit("std.AutoHashMap(anytype, anytype");
+                        }
+                        self.w.emit(").init(_allocator)");
+                        return;
+                    }
+                },
+                else => |_| {
+                    // pass
+                },
+            }
         }
         self.genExpr(e);
     }
 
     pub fn isStringArgExpr(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .ident => |id| {
-                return (std.mem.eql(u8, id.name, "str") or std.mem.eql(u8, id.name, "String"));
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .ident) {
+            const id = e.ident;
+            return (std.mem.eql(u8, id.name, "str") or std.mem.eql(u8, id.name, "String"));
         }
         return false;
     }
@@ -4601,29 +4425,21 @@ pub const Generator = struct {
         if ((a.op == AssignOp.assign)) {
             const field_type = self.getAssignFieldType(a);
             if ((field_type != null)) {
-                switch (a.value.*) {
-                    .call => |_ptr_vc| {
-                        const vc = _ptr_vc.*;
-                        if ((@as(i64, @intCast(vc.args.items.len)) == 0)) {
-                            switch (vc.callee) {
-                                .ident => |vid| {
-                                    if (((std.mem.eql(u8, vid.name, "List") or std.mem.eql(u8, vid.name, "HashMap")) or std.mem.eql(u8, vid.name, "StrSet"))) {
-                                        self.genExpr(a.target.*);
-                                        self.w.emit(" = ");
-                                        self.genCallWithTypeHint(a.value.*, field_type.?);
-                                        self.w.emit(";\n");
-                                        return;
-                                    }
-                                },
-                                else => |_| {
-                                    // pass
-                                },
+                if (a.value.* == .call) {
+                    const vc_ptr = a.value.*.call;
+                    const vc = vc_ptr.*;
+                    if ((@as(i64, @intCast(vc.args.items.len)) == 0)) {
+                        if (vc.callee == .ident) {
+                            const vid = vc.callee.ident;
+                            if (((std.mem.eql(u8, vid.name, "List") or std.mem.eql(u8, vid.name, "HashMap")) or std.mem.eql(u8, vid.name, "StrSet"))) {
+                                self.genExpr(a.target.*);
+                                self.w.emit(" = ");
+                                self.genCallWithTypeHint(a.value.*, field_type.?);
+                                self.w.emit(";\n");
+                                return;
                             }
                         }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                    }
                 }
             }
         }
@@ -4636,25 +4452,21 @@ pub const Generator = struct {
     }
 
     pub fn genHashMapAssign(self: *Generator, target: Expr, value: Expr) bool {
-        switch (target) {
-            .index => |_ptr_ix| {
-                const ix = _ptr_ix.*;
-                const nm = getMemberFieldName(ix.object.*);
-                if ((nm != null)) {
-                    if ((self.hashmap_locals.contains_(nm.?) or fieldIsHashMap(self.module_types, self.dep_types, nm.?))) {
-                        self.genExpr(ix.object.*);
-                        self.w.emit(".put(");
-                        self.genExpr(ix.index.*);
-                        self.w.emit(", ");
-                        self.genExpr(value);
-                        self.w.emit(") catch @panic(\"OOM\");\n");
-                        return true;
-                    }
+        if (target == .index) {
+            const ix_ptr = target.index;
+            const ix = ix_ptr.*;
+            const nm = getMemberFieldName(ix.object.*);
+            if ((nm != null)) {
+                if ((self.hashmap_locals.contains_(nm.?) or fieldIsHashMap(self.module_types, self.dep_types, nm.?))) {
+                    self.genExpr(ix.object.*);
+                    self.w.emit(".put(");
+                    self.genExpr(ix.index.*);
+                    self.w.emit(", ");
+                    self.genExpr(value);
+                    self.w.emit(") catch @panic(\"OOM\");\n");
+                    return true;
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
@@ -4672,13 +4484,9 @@ pub const Generator = struct {
         if ((fname != null)) {
             const ftype = self.lookupFieldType(fname.?);
             if ((ftype != null)) {
-                switch (ftype.?) {
-                    .named => |nt| {
-                        return (std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"));
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (ftype.? == .named) {
+                    const nt = ftype.?.named;
+                    return (std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"));
                 }
             }
         }
@@ -4688,13 +4496,9 @@ pub const Generator = struct {
     pub fn isListField(self: *Generator, field_name: []const u8) bool {
         const ftype = self.lookupFieldType(field_name);
         if ((ftype != null)) {
-            switch (ftype.?) {
-                .generic => |gtr| {
-                    return std.mem.eql(u8, gtr.name, "List");
-                },
-                else => |_| {
-                    // pass
-                },
+            if (ftype.? == .generic) {
+                const gtr = ftype.?.generic;
+                return std.mem.eql(u8, gtr.name, "List");
             }
         }
         return false;
@@ -4702,16 +4506,12 @@ pub const Generator = struct {
 
     pub fn isOwnerMethod(self: *Generator, name: []const u8) bool {
         for (self.owner_members.items) |d| {
-            switch (d) {
-                .method => |_ptr_dm| {
-                    const dm = _ptr_dm.*;
-                    if (std.mem.eql(u8, dm.name, name)) {
-                        return true;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (d == .method) {
+                const dm_ptr = d.method;
+                const dm = dm_ptr.*;
+                if (std.mem.eql(u8, dm.name, name)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -4719,16 +4519,12 @@ pub const Generator = struct {
 
     pub fn isOwnerSharedMethod(self: *Generator, name: []const u8) bool {
         for (self.owner_members.items) |d| {
-            switch (d) {
-                .method => |_ptr_dm| {
-                    const dm = _ptr_dm.*;
-                    if (std.mem.eql(u8, dm.name, name)) {
-                        return dm.mods.is_shared;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (d == .method) {
+                const dm_ptr = d.method;
+                const dm = dm_ptr.*;
+                if (std.mem.eql(u8, dm.name, name)) {
+                    return dm.mods.is_shared;
+                }
             }
         }
         return false;
@@ -4736,16 +4532,12 @@ pub const Generator = struct {
 
     pub fn isOwnerMethodThrows(self: *Generator, name: []const u8) bool {
         for (self.owner_members.items) |d| {
-            switch (d) {
-                .method => |_ptr_dm| {
-                    const dm = _ptr_dm.*;
-                    if (std.mem.eql(u8, dm.name, name)) {
-                        return dm.throws_;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (d == .method) {
+                const dm_ptr = d.method;
+                const dm = dm_ptr.*;
+                if (std.mem.eql(u8, dm.name, name)) {
+                    return dm.throws_;
+                }
             }
         }
         return false;
@@ -4757,89 +4549,77 @@ pub const Generator = struct {
 
     pub fn lookupFieldType(self: *Generator, field_name: []const u8) ?TypeRef {
         for (self.owner_members.items) |d| {
-            switch (d) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    if (std.mem.eql(u8, fld.name, field_name)) {
-                        return fld.type_;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (d == .var_) {
+                const fld_ptr = d.var_;
+                const fld = fld_ptr.*;
+                if (std.mem.eql(u8, fld.name, field_name)) {
+                    return fld.type_;
+                }
             }
         }
         return null;
     }
 
     pub fn genCallWithTypeHint(self: *Generator, e: Expr, hint: TypeRef) void {
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
-                    switch (c.callee) {
-                        .ident => |id| {
-                            if (std.mem.eql(u8, id.name, "List")) {
-                                self.w.emit("std.ArrayList(");
-                                switch (hint) {
-                                    .generic => |gtr| {
-                                        if (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0)) {
-                                            self.genType(gtr.args.items[@intCast(0)]);
-                                        } else {
-                                            self.w.emit("anytype");
-                                        }
-                                    },
-                                    else => |_| {
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if ((@as(i64, @intCast(c.args.items.len)) == 0)) {
+                if (c.callee == .ident) {
+                    const id = c.callee.ident;
+                    if (std.mem.eql(u8, id.name, "List")) {
+                        self.w.emit("std.ArrayList(");
+                        switch (hint) {
+                            .generic => |gtr| {
+                                if (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0)) {
+                                    self.genType(gtr.args.items[@intCast(0)]);
+                                } else {
+                                    self.w.emit("anytype");
+                                }
+                            },
+                            else => |_| {
+                                self.w.emit("anytype");
+                            },
+                        }
+                        self.w.emit("){}");
+                        return;
+                    }
+                    if (std.mem.eql(u8, id.name, "HashMap")) {
+                        switch (hint) {
+                            .generic => |gtr| {
+                                const key_is_str = (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0) and self.isStringTypeRef(gtr.args.items[@intCast(0)]));
+                                if (key_is_str) {
+                                    self.w.emit("std.StringHashMap(");
+                                    if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
+                                        self.genType(gtr.args.items[@intCast(1)]);
+                                    } else {
                                         self.w.emit("anytype");
-                                    },
-                                }
-                                self.w.emit("){}");
-                                return;
-                            }
-                            if (std.mem.eql(u8, id.name, "HashMap")) {
-                                switch (hint) {
-                                    .generic => |gtr| {
-                                        const key_is_str = (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0) and self.isStringTypeRef(gtr.args.items[@intCast(0)]));
-                                        if (key_is_str) {
-                                            self.w.emit("std.StringHashMap(");
-                                            if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
-                                                self.genType(gtr.args.items[@intCast(1)]);
-                                            } else {
-                                                self.w.emit("anytype");
-                                            }
-                                        } else {
-                                            self.w.emit("std.AutoHashMap(");
-                                            var fi = true;
-                                            for (gtr.args.items) |ta| {
-                                                if ((!fi)) {
-                                                    self.w.emit(", ");
-                                                }
-                                                fi = false;
-                                                self.genType(ta);
-                                            }
+                                    }
+                                } else {
+                                    self.w.emit("std.AutoHashMap(");
+                                    var fi = true;
+                                    for (gtr.args.items) |ta| {
+                                        if ((!fi)) {
+                                            self.w.emit(", ");
                                         }
-                                    },
-                                    else => |_| {
-                                        self.w.emit("std.AutoHashMap(anytype, anytype");
-                                    },
+                                        fi = false;
+                                        self.genType(ta);
+                                    }
                                 }
-                                self.w.emit(").init(_allocator)");
-                                return;
-                            }
-                            if (std.mem.eql(u8, id.name, "StrSet")) {
-                                self.w.emit("StrSet.init()");
-                                return;
-                            }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                            },
+                            else => |_| {
+                                self.w.emit("std.AutoHashMap(anytype, anytype");
+                            },
+                        }
+                        self.w.emit(").init(_allocator)");
+                        return;
+                    }
+                    if (std.mem.eql(u8, id.name, "StrSet")) {
+                        self.w.emit("StrSet.init()");
+                        return;
                     }
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         self.genExpr(e);
     }
@@ -4906,6 +4686,33 @@ pub const Generator = struct {
                     ig.w.emit(_str_concat(_str_concat("const ", cap, _allocator), " = ", _allocator));
                     ig.genExpr(tc.expr.*);
                     ig.w.emit(_str_concat(_str_concat(".", variant, _allocator), ";\n", _allocator));
+                }
+                if ((_zebra_gt(union_nm.len, 0) and _zebra_gt(variant.len, 0))) {
+                    const stype = variantStructName(union_nm, variant);
+                    if ((stype != null)) {
+                        const st = stype.?;
+                        const st_dot = _str_concat(st, ".", _allocator);
+                        const rf_items = self.ref_fields.items();
+                        var rfi: i64 = 0;
+                        while (_zebra_lt(rfi, @as(i64, @intCast(rf_items.items.len)))) {
+                            const rf_entry: []const u8 = rf_items.items[@intCast(rfi)];
+                            if (std.mem.startsWith(u8, rf_entry, st_dot)) {
+                                const fname2 = extractAfterDot(rf_entry);
+                                ig.ptr_field_bindings.add(makeDottedKey(cap, fname2));
+                            }
+                            rfi += 1;
+                        }
+                        const orf_items = self.opt_ref_fields.items();
+                        var orfi: i64 = 0;
+                        while (_zebra_lt(orfi, @as(i64, @intCast(orf_items.items.len)))) {
+                            const orf_entry: []const u8 = orf_items.items[@intCast(orfi)];
+                            if (std.mem.startsWith(u8, orf_entry, st_dot)) {
+                                const fname3 = extractAfterDot(orf_entry);
+                                ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3));
+                            }
+                            orfi += 1;
+                        }
+                    }
                 }
                 ig.genStmts(stmts);
             },
@@ -5095,15 +4902,11 @@ pub const Generator = struct {
                                     self.for_loop_deref.add(makeDottedKey(vname, "value"));
                                 }
                             }
-                            switch (fi.iter.*) {
-                                .ident => |iter_id| {
-                                    if (self.list_str_locals.contains_(iter_id.name)) {
-                                        self.str_params.add(vname);
-                                    }
-                                },
-                                else => |_| {
-                                    // pass
-                                },
+                            if (fi.iter.* == .ident) {
+                                const iter_id = fi.iter.*.ident;
+                                if (self.list_str_locals.contains_(iter_id.name)) {
+                                    self.str_params.add(vname);
+                                }
                             }
                             self.for_loop_vars.add(vname);
                             ig.genStmts(fi.stmts);
@@ -5118,22 +4921,14 @@ pub const Generator = struct {
 
     pub fn isBytesIter(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        return std.mem.eql(u8, m.member, "bytes");
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                return std.mem.eql(u8, m.member, "bytes");
+            }
         }
         return false;
     }
@@ -5160,112 +4955,76 @@ pub const Generator = struct {
 
     pub fn isSplitIter(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        return (std.mem.eql(u8, m.member, "split") or std.mem.eql(u8, m.member, "lines"));
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                return (std.mem.eql(u8, m.member, "split") or std.mem.eql(u8, m.member, "lines"));
+            }
         }
         return false;
     }
 
     pub fn isLinesIter(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        return std.mem.eql(u8, m.member, "lines");
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                return std.mem.eql(u8, m.member, "lines");
+            }
         }
         return false;
     }
 
     pub fn isItemsMemberAccess(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .member => |_ptr_m| {
-                const m = _ptr_m.*;
-                return std.mem.eql(u8, m.member, "items");
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .member) {
+            const m_ptr = e.member;
+            const m = m_ptr.*;
+            return std.mem.eql(u8, m.member, "items");
         }
         return false;
     }
 
     pub fn isRegexSliceIter(self: *Generator, e: Expr) bool {
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        if ((std.mem.eql(u8, m.member, "findAll") or std.mem.eql(u8, m.member, "groups"))) {
-                            if ((self.infer_ctx != null)) {
-                                const recv_t: Type_ = inferExpr(m.object.*, self.infer_ctx.?);
-                                switch (recv_t) {
-                                    .regex => {
-                                        return true;
-                                    },
-                                    else => {
-                                        // pass
-                                    },
-                                }
-                            }
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                if ((std.mem.eql(u8, m.member, "findAll") or std.mem.eql(u8, m.member, "groups"))) {
+                    if ((self.infer_ctx != null)) {
+                        const recv_t: Type_ = inferExpr(m.object.*, self.infer_ctx.?);
+                        switch (recv_t) {
+                            .regex => {
+                                return true;
+                            },
+                            else => {
+                                // pass
+                            },
                         }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                    }
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
 
     pub fn genSplitObject(self: *Generator, e: Expr) void {
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        self.genExpr(m.object.*);
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                self.genExpr(m.object.*);
+            }
         }
     }
 
@@ -5273,17 +5032,13 @@ pub const Generator = struct {
         switch (e) {
             .call => |_ptr_c| {
                 const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        if (std.mem.eql(u8, m.member, "lines")) {
-                            self.w.emit("'\\n'");
-                            return;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (c.callee == .member) {
+                    const m_ptr = c.callee.member;
+                    const m = m_ptr.*;
+                    if (std.mem.eql(u8, m.member, "lines")) {
+                        self.w.emit("'\\n'");
+                        return;
+                    }
                 }
                 if (_zebra_gt(@as(i64, @intCast(c.args.items.len)), 0)) {
                     self.genExpr(c.args.items[@intCast(0)].value);
@@ -5299,43 +5054,27 @@ pub const Generator = struct {
 
     pub fn isCharsIter(self: *Generator, e: Expr) bool {
         _ = self;
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        return std.mem.eql(u8, m.member, "chars");
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                return std.mem.eql(u8, m.member, "chars");
+            }
         }
         return false;
     }
 
     pub fn genCharsObject(self: *Generator, e: Expr) void {
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        self.genExpr(m.object.*);
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                self.genExpr(m.object.*);
+            }
         }
     }
 
@@ -5492,14 +5231,10 @@ pub const Generator = struct {
                 if (_zebra_gt(@as(i64, @intCast(cas.values.items.len)), 0)) {
                     const v0 = cas.values.items[@intCast(0)];
                     var tag_name: []const u8 = "";
-                    switch (v0) {
-                        .member => |_ptr_m| {
-                            const m = _ptr_m.*;
-                            tag_name = m.member;
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (v0 == .member) {
+                        const m_ptr = v0.member;
+                        const m = m_ptr.*;
+                        tag_name = m.member;
                     }
                     if (_zebra_gt(tag_name.len, 0)) {
                         self.w.emit(" and ");
@@ -5519,14 +5254,10 @@ pub const Generator = struct {
                     ig.w.emit(".");
                     if (_zebra_gt(@as(i64, @intCast(cas.values.items.len)), 0)) {
                         const v0b = cas.values.items[@intCast(0)];
-                        switch (v0b) {
-                            .member => |_ptr_mb| {
-                                const mb = _ptr_mb.*;
-                                ig.w.emit(mb.member);
-                            },
-                            else => |_| {
-                                // pass
-                            },
+                        if (v0b == .member) {
+                            const mb_ptr = v0b.member;
+                            const mb = mb_ptr.*;
+                            ig.w.emit(mb.member);
                         }
                     }
                     ig.w.emit(";\n");
@@ -5898,13 +5629,9 @@ pub const Generator = struct {
             },
             .call => |_ptr_c| {
                 const c = _ptr_c.*;
-                switch (c.callee) {
-                    .ident => |ci| {
-                        return ci.name;
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (c.callee == .ident) {
+                    const ci = c.callee.ident;
+                    return ci.name;
                 }
             },
             else => |_| {
@@ -6323,22 +6050,18 @@ pub const Generator = struct {
             .member => |_ptr_m| {
                 const m = _ptr_m.*;
                 if (!std.mem.eql(u8, self.catch_var, "")) {
-                    switch (m.object.*) {
-                        .ident => |mid| {
-                            if (std.mem.eql(u8, mid.name, self.catch_var)) {
-                                if (std.mem.eql(u8, m.member, "message")) {
-                                    self.w.emit("_zbr_error_msg()");
-                                    return;
-                                }
-                                if (std.mem.eql(u8, m.member, "details")) {
-                                    self.w.emit("_error_ctx.details");
-                                    return;
-                                }
+                    if (m.object.* == .ident) {
+                        const mid = m.object.*.ident;
+                        if (std.mem.eql(u8, mid.name, self.catch_var)) {
+                            if (std.mem.eql(u8, m.member, "message")) {
+                                self.w.emit("_zbr_error_msg()");
+                                return;
                             }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                            if (std.mem.eql(u8, m.member, "details")) {
+                                self.w.emit("_error_ctx.details");
+                                return;
+                            }
+                        }
                     }
                 }
                 if ((std.mem.eql(u8, m.member, "len") or std.mem.eql(u8, m.member, "count"))) {
@@ -6452,20 +6175,16 @@ pub const Generator = struct {
                 const tnn = _ptr_tnn.*;
                 self.genExpr(tnn.expr.*);
                 self.w.emit(".?");
-                switch (tnn.expr.*) {
-                    .member => |_ptr_tnn_m| {
-                        const tnn_m = _ptr_tnn_m.*;
-                        const tnn_obj = getIdentName(tnn_m.object.*);
-                        if ((tnn_obj != null)) {
-                            const tnn_key = makeDottedKey(tnn_obj.?, tnn_m.member);
-                            if (self.opt_ptr_field_bindings.contains_(tnn_key)) {
-                                self.w.emit(".*");
-                            }
+                if (tnn.expr.* == .member) {
+                    const tnn_m_ptr = tnn.expr.*.member;
+                    const tnn_m = tnn_m_ptr.*;
+                    const tnn_obj = getIdentName(tnn_m.object.*);
+                    if ((tnn_obj != null)) {
+                        const tnn_key = makeDottedKey(tnn_obj.?, tnn_m.member);
+                        if (self.opt_ptr_field_bindings.contains_(tnn_key)) {
+                            self.w.emit(".*");
                         }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                    }
                 }
             },
             .is_nil => |_ptr_isn| {
@@ -6640,16 +6359,12 @@ pub const Generator = struct {
             }
         }
         for (self.owner_members.items) |d| {
-            switch (d) {
-                .var_ => |_ptr_fld| {
-                    const fld = _ptr_fld.*;
-                    if (std.mem.eql(u8, fld.name, name)) {
-                        return true;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (d == .var_) {
+                const fld_ptr = d.var_;
+                const fld = fld_ptr.*;
+                if (std.mem.eql(u8, fld.name, name)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -6791,15 +6506,11 @@ pub const Generator = struct {
                 }
                 const ftype = self.lookupFieldType(id.name);
                 if ((ftype != null)) {
-                    switch (ftype.?) {
-                        .named => |nt| {
-                            if ((std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"))) {
-                                return true;
-                            }
-                        },
-                        else => |_| {
-                            // pass
-                        },
+                    if (ftype.? == .named) {
+                        const nt = ftype.?.named;
+                        if ((std.mem.eql(u8, nt.name, "str") or std.mem.eql(u8, nt.name, "String"))) {
+                            return true;
+                        }
                     }
                 }
             },
@@ -6814,16 +6525,12 @@ pub const Generator = struct {
             },
             .call => |_ptr_c| {
                 const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_cm| {
-                        const cm = _ptr_cm.*;
-                        if ((((((((((std.mem.eql(u8, cm.member, "toString") or std.mem.eql(u8, cm.member, "concat")) or std.mem.eql(u8, cm.member, "format")) or std.mem.eql(u8, cm.member, "join")) or std.mem.eql(u8, cm.member, "trim")) or std.mem.eql(u8, cm.member, "upper")) or std.mem.eql(u8, cm.member, "lower")) or std.mem.eql(u8, cm.member, "substring")) or std.mem.eql(u8, cm.member, "replace")) or std.mem.eql(u8, cm.member, "replaceAll"))) {
-                            return true;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+                if (c.callee == .member) {
+                    const cm_ptr = c.callee.member;
+                    const cm = cm_ptr.*;
+                    if ((((((((((std.mem.eql(u8, cm.member, "toString") or std.mem.eql(u8, cm.member, "concat")) or std.mem.eql(u8, cm.member, "format")) or std.mem.eql(u8, cm.member, "join")) or std.mem.eql(u8, cm.member, "trim")) or std.mem.eql(u8, cm.member, "upper")) or std.mem.eql(u8, cm.member, "lower")) or std.mem.eql(u8, cm.member, "substring")) or std.mem.eql(u8, cm.member, "replace")) or std.mem.eql(u8, cm.member, "replaceAll"))) {
+                        return true;
+                    }
                 }
             },
             .to_non_nil => |_ptr_tnn| {
@@ -6846,27 +6553,19 @@ pub const Generator = struct {
     }
 
     pub fn isUnionCtorExpr(self: *Generator, e: Expr) bool {
-        switch (e) {
-            .call => |_ptr_c| {
-                const c = _ptr_c.*;
-                switch (c.callee) {
-                    .member => |_ptr_m| {
-                        const m = _ptr_m.*;
-                        const obj_name = getIdentName(m.object.*);
-                        if ((obj_name != null)) {
-                            if (self.union_names.contains_(obj_name.?)) {
-                                return true;
-                            }
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
+        if (e == .call) {
+            const c_ptr = e.call;
+            const c = c_ptr.*;
+            if (c.callee == .member) {
+                const m_ptr = c.callee.member;
+                const m = m_ptr.*;
+                const obj_name = getIdentName(m.object.*);
+                if ((obj_name != null)) {
+                    if (self.union_names.contains_(obj_name.?)) {
+                        return true;
+                    }
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
@@ -7002,37 +6701,29 @@ pub const Generator = struct {
         self.w.emit("\", .{");
         var first = true;
         for (si.parts.items) |part| {
-            switch (part) {
-                .expr_ => |_ptr_e| {
-                    const e = _ptr_e.*;
-                    if ((!first)) {
-                        self.w.emit(", ");
-                    }
-                    first = false;
-                    self.genExpr(e);
-                },
-                else => |_| {
-                    // pass
-                },
+            if (part == .expr_) {
+                const e_ptr = part.expr_;
+                const e = e_ptr.*;
+                if ((!first)) {
+                    self.w.emit(", ");
+                }
+                first = false;
+                self.genExpr(e);
             }
         }
         self.w.emit("}) catch @panic(\"OOM\"))");
     }
 
     pub fn genCall(self: *Generator, c: ExprCall) void {
-        switch (c.callee) {
-            .ident => |cid| {
-                if (self.closure_vars.contains_(cid.name)) {
-                    self.w.emit(cid.name);
-                    self.w.emit(".call(");
-                    self.genArgList(c.args);
-                    self.w.emit(")");
-                    return;
-                }
-            },
-            else => |_| {
-                // pass
-            },
+        if (c.callee == .ident) {
+            const cid = c.callee.ident;
+            if (self.closure_vars.contains_(cid.name)) {
+                self.w.emit(cid.name);
+                self.w.emit(".call(");
+                self.genArgList(c.args);
+                self.w.emit(")");
+                return;
+            }
         }
         const cm_obj = getMemberObjectIdent(c.callee);
         const cm_mem = getMemberName(c.callee);
@@ -7138,135 +6829,111 @@ pub const Generator = struct {
                 return;
             }
         }
-        switch (c.callee) {
-            .member => |_ptr_m| {
-                const m = _ptr_m.*;
-                self.genMemberCall(m, c.args);
+        if (c.callee == .member) {
+            const m_ptr = c.callee.member;
+            const m = m_ptr.*;
+            self.genMemberCall(m, c.args);
+            return;
+        }
+        if (c.callee == .call) {
+            const inner_ptr = c.callee.call;
+            const inner = inner_ptr.*;
+            if (inner.callee == .ident) {
+                const id = inner.callee.ident;
+                if ((std.mem.eql(u8, id.name, "List") or std.mem.eql(u8, id.name, "HashMap"))) {
+                    self.genGenericCtorCall(id.name, inner.args, c.args);
+                    return;
+                }
+            }
+        }
+        if (c.callee == .ident) {
+            const id = c.callee.ident;
+            if ((std.mem.eql(u8, id.name, "HashMap") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
+                self.w.emit("std.StringHashMap(i64).init(_allocator)");
                 return;
-            },
-            else => |_| {
-                // pass
-            },
+            }
+            if ((std.mem.eql(u8, id.name, "StrSet") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
+                self.w.emit("StrSet.init()");
+                return;
+            }
+            if ((std.mem.eql(u8, id.name, "StringBuilder") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
+                self.w.emit("std.ArrayList(u8){}");
+                return;
+            }
         }
-        switch (c.callee) {
-            .call => |_ptr_inner| {
-                const inner = _ptr_inner.*;
-                switch (inner.callee) {
-                    .ident => |id| {
-                        if ((std.mem.eql(u8, id.name, "List") or std.mem.eql(u8, id.name, "HashMap"))) {
-                            self.genGenericCtorCall(id.name, inner.args, c.args);
-                            return;
-                        }
-                    },
-                    else => |_| {
-                        // pass
-                    },
-                }
-            },
-            else => |_| {
-                // pass
-            },
-        }
-        switch (c.callee) {
-            .ident => |id| {
-                if ((std.mem.eql(u8, id.name, "HashMap") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
-                    self.w.emit("std.StringHashMap(i64).init(_allocator)");
-                    return;
-                }
-                if ((std.mem.eql(u8, id.name, "StrSet") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
-                    self.w.emit("StrSet.init()");
-                    return;
-                }
-                if ((std.mem.eql(u8, id.name, "StringBuilder") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
-                    self.w.emit("std.ArrayList(u8){}");
-                    return;
-                }
-            },
-            else => |_| {
-                // pass
-            },
-        }
-        switch (c.callee) {
-            .ident => |id| {
-                if ((self.class_names.contains_(id.name) or self.struct_names.contains_(id.name))) {
-                    self.w.emit(id.name);
-                    self.w.emit(".init(");
-                    var first2 = true;
-                    var box_labels = std.ArrayList([]const u8){};
-                    box_labels.append(_allocator, "_bx0") catch @panic("OOM");
-                    box_labels.append(_allocator, "_bx1") catch @panic("OOM");
-                    box_labels.append(_allocator, "_bx2") catch @panic("OOM");
-                    box_labels.append(_allocator, "_bx3") catch @panic("OOM");
-                    box_labels.append(_allocator, "_bx4") catch @panic("OOM");
-                    box_labels.append(_allocator, "_bx5") catch @panic("OOM");
-                    var box_idx: i64 = 0;
-                    var arg_idx: i64 = 0;
-                    for (c.args.items) |a| {
-                        if ((!first2)) {
-                            self.w.emit(", ");
-                        }
-                        first2 = false;
-                        const is_ref_param: bool = ctorParamAtIsRefTo(self.module_types, self.dep_types, id.name, arg_idx);
-                        var should_box: bool = false;
-                        if ((is_ref_param and (self.infer_ctx != null))) {
-                            const wt17c: Type_ = inferExpr(a.value, self.infer_ctx.?);
-                            should_box = self.isUnionType(wt17c);
-                        }
-                        if ((is_ref_param and should_box)) {
-                            const lbl = box_labels.items[@intCast(box_idx)];
-                            self.w.emit(lbl);
-                            self.w.emit(": { const _bv = ");
-                            self.genExpr(a.value);
-                            self.w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :");
-                            self.w.emit(lbl);
-                            self.w.emit(" _bp; }");
-                            box_idx = (box_idx + 1);
-                        } else {
-                            self.genExpr(a.value);
-                        }
-                        arg_idx = (arg_idx + 1);
+        if (c.callee == .ident) {
+            const id = c.callee.ident;
+            if ((self.class_names.contains_(id.name) or self.struct_names.contains_(id.name))) {
+                self.w.emit(id.name);
+                self.w.emit(".init(");
+                var first2 = true;
+                var box_labels = std.ArrayList([]const u8){};
+                box_labels.append(_allocator, "_bx0") catch @panic("OOM");
+                box_labels.append(_allocator, "_bx1") catch @panic("OOM");
+                box_labels.append(_allocator, "_bx2") catch @panic("OOM");
+                box_labels.append(_allocator, "_bx3") catch @panic("OOM");
+                box_labels.append(_allocator, "_bx4") catch @panic("OOM");
+                box_labels.append(_allocator, "_bx5") catch @panic("OOM");
+                var box_idx: i64 = 0;
+                var arg_idx: i64 = 0;
+                for (c.args.items) |a| {
+                    if ((!first2)) {
+                        self.w.emit(", ");
                     }
-                    self.w.emit(")");
-                    return;
-                }
-            },
-            else => |_| {
-                // pass
-            },
-        }
-        switch (c.callee) {
-            .ident => |id| {
-                if (((self.in_method and !std.mem.eql(u8, self.owner, "")) and self.isOwnerMethod(id.name))) {
-                    const callee_throws = self.isOwnerMethodThrows(id.name);
-                    if ((((callee_throws and self.current_method_throws) and (self.try_block_label == null)) and (!self.in_try_expr))) {
-                        self.w.emit("try ");
+                    first2 = false;
+                    const is_ref_param: bool = ctorParamAtIsRefTo(self.module_types, self.dep_types, id.name, arg_idx);
+                    var should_box: bool = false;
+                    if ((is_ref_param and (self.infer_ctx != null))) {
+                        const wt17c: Type_ = inferExpr(a.value, self.infer_ctx.?);
+                        should_box = self.isUnionType(wt17c);
                     }
-                    if (self.isOwnerSharedMethod(id.name)) {
-                        self.w.emit(self.owner);
-                        self.w.emit(".");
+                    if ((is_ref_param and should_box)) {
+                        const lbl = box_labels.items[@intCast(box_idx)];
+                        self.w.emit(lbl);
+                        self.w.emit(": { const _bv = ");
+                        self.genExpr(a.value);
+                        self.w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :");
+                        self.w.emit(lbl);
+                        self.w.emit(" _bp; }");
+                        box_idx = (box_idx + 1);
                     } else {
-                        self.w.emit("self.");
-                    }
-                    self.w.emit(id.name);
-                    self.w.emit("(");
-                    var first3 = true;
-                    for (c.args.items) |a| {
-                        if ((!first3)) {
-                            self.w.emit(", ");
-                        }
-                        first3 = false;
                         self.genExpr(a.value);
                     }
-                    self.w.emit(")");
-                    if (((callee_throws and (self.try_block_label != null)) and (!self.in_try_expr))) {
-                        self.emitTryBlockCatch();
-                    }
-                    return;
+                    arg_idx = (arg_idx + 1);
                 }
-            },
-            else => |_| {
-                // pass
-            },
+                self.w.emit(")");
+                return;
+            }
+        }
+        if (c.callee == .ident) {
+            const id = c.callee.ident;
+            if (((self.in_method and !std.mem.eql(u8, self.owner, "")) and self.isOwnerMethod(id.name))) {
+                const callee_throws = self.isOwnerMethodThrows(id.name);
+                if ((((callee_throws and self.current_method_throws) and (self.try_block_label == null)) and (!self.in_try_expr))) {
+                    self.w.emit("try ");
+                }
+                if (self.isOwnerSharedMethod(id.name)) {
+                    self.w.emit(self.owner);
+                    self.w.emit(".");
+                } else {
+                    self.w.emit("self.");
+                }
+                self.w.emit(id.name);
+                self.w.emit("(");
+                var first3 = true;
+                for (c.args.items) |a| {
+                    if ((!first3)) {
+                        self.w.emit(", ");
+                    }
+                    first3 = false;
+                    self.genExpr(a.value);
+                }
+                self.w.emit(")");
+                if (((callee_throws and (self.try_block_label != null)) and (!self.in_try_expr))) {
+                    self.emitTryBlockCatch();
+                }
+                return;
+            }
         }
         self.genExpr(c.callee);
         self.w.emit("(");
@@ -7283,19 +6950,15 @@ pub const Generator = struct {
 
     pub fn isDetailsMemberOnCatchVar(self: *Generator, e: Expr, cv: []const u8) bool {
         _ = self;
-        switch (e) {
-            .member => |_ptr_inner| {
-                const inner = _ptr_inner.*;
-                if (std.mem.eql(u8, inner.member, "details")) {
-                    const obj_name = getIdentName(inner.object.*);
-                    if (((obj_name != null) and std.mem.eql(u8, obj_name.?, cv))) {
-                        return true;
-                    }
+        if (e == .member) {
+            const inner_ptr = e.member;
+            const inner = inner_ptr.*;
+            if (std.mem.eql(u8, inner.member, "details")) {
+                const obj_name = getIdentName(inner.object.*);
+                if (((obj_name != null) and std.mem.eql(u8, obj_name.?, cv))) {
+                    return true;
                 }
-            },
-            else => |_| {
-                // pass
-            },
+            }
         }
         return false;
     }
@@ -7793,118 +7456,114 @@ pub const Generator = struct {
             self.w.emit("))");
             return;
         }
-        switch (m.object.*) {
-            .ident => |id| {
-                if (std.mem.eql(u8, id.name, "Math")) {
-                    if ((!(self.module_types.hasClass("Math") or self.dep_types.hasClass("Math")))) {
-                        self.genMathCall(mname, args);
-                        return;
-                    }
-                }
-                if (std.mem.eql(u8, id.name, "File")) {
-                    self.genFileCall(mname, args);
+        if (m.object.* == .ident) {
+            const id = m.object.*.ident;
+            if (std.mem.eql(u8, id.name, "Math")) {
+                if ((!(self.module_types.hasClass("Math") or self.dep_types.hasClass("Math")))) {
+                    self.genMathCall(mname, args);
                     return;
                 }
-                if (std.mem.eql(u8, id.name, "sys")) {
-                    self.genSysCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Arg")) {
-                    self.genArgCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Json")) {
-                    self.genJsonCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Http")) {
-                    self.genHttpCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "HttpResponse")) {
-                    self.genHttpResponseFactory(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Regex")) {
-                    self.genRegexCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "DateTime")) {
-                    self.genDateTimeCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Hash")) {
-                    self.genHashCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Random")) {
-                    self.genRandomCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Terminal")) {
-                    self.genTerminalCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Log")) {
-                    self.genLogCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Csv")) {
-                    self.genCsvCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Timer")) {
-                    self.genTimerCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Uri")) {
-                    self.genUriCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Compress")) {
-                    self.genCompressCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Mime")) {
-                    self.genMimeCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Tcp")) {
-                    self.genTcpCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Udp")) {
-                    self.genUdpCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Net")) {
-                    self.genNetCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Gui")) {
-                    self.genGuiCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Shell")) {
-                    self.genShellCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Dir")) {
-                    self.genDirCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Path")) {
-                    self.genPathCall(mname, args);
-                    return;
-                }
-                if (std.mem.eql(u8, id.name, "Reflect")) {
-                    self.genReflectCall(mname, args);
-                    return;
-                }
-            },
-            else => |_| {
-                // pass
-            },
+            }
+            if (std.mem.eql(u8, id.name, "File")) {
+                self.genFileCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "sys")) {
+                self.genSysCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Arg")) {
+                self.genArgCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Json")) {
+                self.genJsonCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Http")) {
+                self.genHttpCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "HttpResponse")) {
+                self.genHttpResponseFactory(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Regex")) {
+                self.genRegexCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "DateTime")) {
+                self.genDateTimeCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Hash")) {
+                self.genHashCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Random")) {
+                self.genRandomCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Terminal")) {
+                self.genTerminalCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Log")) {
+                self.genLogCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Csv")) {
+                self.genCsvCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Timer")) {
+                self.genTimerCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Uri")) {
+                self.genUriCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Compress")) {
+                self.genCompressCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Mime")) {
+                self.genMimeCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Tcp")) {
+                self.genTcpCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Udp")) {
+                self.genUdpCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Net")) {
+                self.genNetCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Gui")) {
+                self.genGuiCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Shell")) {
+                self.genShellCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Dir")) {
+                self.genDirCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Path")) {
+                self.genPathCall(mname, args);
+                return;
+            }
+            if (std.mem.eql(u8, id.name, "Reflect")) {
+                self.genReflectCall(mname, args);
+                return;
+            }
         }
         if ((std.mem.eql(u8, mname, "contains") and _zebra_gt(@as(i64, @intCast(args.items.len)), 0))) {
             self.w.emit("(std.mem.indexOf(u8, ");
@@ -8230,19 +7889,15 @@ pub const Generator = struct {
 
     pub fn emitLambdaStmtsRetType(self: *Generator, ss: std.ArrayList(Stmt)) bool {
         for (ss.items) |s| {
-            switch (s) {
-                .return_ => |_ptr_ret| {
-                    const ret = _ptr_ret.*;
-                    if ((ret.value != null)) {
-                        self.w.emit("@TypeOf(");
-                        self.genExpr(ret.value.?.*);
-                        self.w.emit(")");
-                        return true;
-                    }
-                },
-                else => |_| {
-                    // pass
-                },
+            if (s == .return_) {
+                const ret_ptr = s.return_;
+                const ret = ret_ptr.*;
+                if ((ret.value != null)) {
+                    self.w.emit("@TypeOf(");
+                    self.genExpr(ret.value.?.*);
+                    self.w.emit(")");
+                    return true;
+                }
             }
         }
         return false;
