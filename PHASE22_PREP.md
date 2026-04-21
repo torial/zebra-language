@@ -9,10 +9,10 @@ default `zebra` command.  Complete all four items before starting Phase 22.
       label each as BLOCKER or non-blocker for cutover
 - [x] **2. `zig build selfhost` canonicalization** — confirm exact build command,
       canonical output path, add build.zig step if missing, document it
-- [ ] **3. Error format compatibility test** — verify selfhost diagnostic output is
+- [x] **3. Error format compatibility test** — verify selfhost diagnostic output is
       parseable by `CompilerBridge.parseLine()` (ZebraIDE depends on this)
       → fixtures in `test/selfhost_compat/`
-- [ ] **4. Parity runner** — `tools/parity_check.zbr`: compile+run each test/ file
+- [x] **4. Parity runner** — `tools/parity_check.zbr`: compile+run each test/ file
       through both compilers; diff exit codes + stdout; primary cutover safety net
 
 ## Notes (updated as work proceeds)
@@ -59,10 +59,51 @@ Runs all 5 steps: A emits, A builds B, B re-emits, diff A vs B output. Use this 
 `zig build` verified clean (exit 0).
 
 ### Task 3 — error format
-_pending_
+
+**Result: COMPATIBLE** — `zebra-selfhost -c file.zbr` delegates to the Zig backend and
+passes stderr through unchanged. The first diagnostic line is byte-identical to what
+`zebra.exe` emits. Extra Zig build scaffolding in the selfhost output is already filtered
+by `parseLine()` returning nil for non-matching lines.
+
+**Fixtures:** `test/selfhost_compat/` (2 cases: type error, undefined variable)
+**Runner:** `bash test/selfhost_compat/run_compat.sh` → 2/2 PASS
+
+**Known gap (non-blocker):** `--selfhost-compile` mode uses `remapZigErrors()` which emits
+`file:LINE: error: msg` (no column field). `parseLine()` requires `path:LINE:COL:` and
+returns nil for column-less lines. This only matters if `--selfhost-compile` ever becomes
+the default for IDE `-c` checks — it is not the default today.
 
 ### Task 4 — parity runner
-_pending_
+
+**Tool:** `tools/parity_check.zbr`
+
+**How to run:**
+```
+zig build run -- tools/parity_check.zbr
+```
+
+**What it does:**
+- Scans `test/` for `*_test.zbr` and other runnable `.zbr` files
+- Runs each through `zig-out/bin/zebra.exe file` (Zig backend reference)
+- Runs each through `zebra-selfhost --selfhost-compile --output-dir /tmp/parity_sh file`
+  (selfhost pipeline: Lex → Parse → Resolve → TC → CodeGen → zig run)
+- Compares exit codes and program output (stderr, with selfhost debug lines filtered)
+- Reports PASS / BOTH_FAIL / DIVERGE / MISMATCH per file + summary
+
+**Skip list:** `*_lib.zbr` (modules), `bench_zebra.zbr`, `dns_test.zbr`
+
+**Known divergences seen in calibration run:**
+| File | Direction | Cause |
+|------|-----------|-------|
+| `any_all_test.zbr` | zig=0, sh=1 | Selfhost emits `var` where Zig emits `const` (BUG-026 area); Zig tolerates, selfhost rejects |
+| `greet.zbr` | zig=1, sh=0 | Zig backend emits `const g: *Greeter = Greeter{}` (type annotation bug); selfhost emits correct `var g = Greeter{}` |
+| `features.zbr` | zig=1, sh=0 | Similar Zig backend type annotation bug |
+
+**Note:** `zebra.exe` intercepts all `-flags`, so `--filter`/`--quick` cannot be passed at
+invocation time. Edit `tools/parity_check.zbr` directly to enable filtering during development.
+
+**Output routing:** Both compilers send program output to stderr (via Zebra's `print` → `std.debug.print`).
+`sys.run().stderr` captures the program output for comparison.
 
 ## Cutover checklist (to fill in after prep is done)
 

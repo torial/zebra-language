@@ -1,0 +1,174 @@
+# tools/parity_check.zbr — Phase 22 parity runner
+#
+# Compares the Zig-compiled backend against the selfhost compilation pipeline.
+# For each test file: run through both compilers, diff exit codes + program output.
+# Use this immediately before Phase 22 cutover to confirm behavioral parity.
+#
+# Usage (from repo root):
+#   zig build run -- tools/parity_check.zbr
+#
+# Note: zebra.exe intercepts all -flags, so --filter/--quick cannot be passed.
+# To test a subset, set FILTER= in the source or wait until selfhost is the compiler.
+#
+# Prerequisites:
+#   zig build              → zig-out/bin/zebra.exe
+#   zig build selfhost     → zig-out/bin/zebra-selfhost.exe
+#
+# Interpreting results:
+#   PASS       — both compilers agree on exit code and program output
+#   BOTH_FAIL  — both compilers fail (compile error); not a parity issue
+#   DIVERGE    — exit codes differ (one compiles, one does not)
+#   MISMATCH   — both succeed but program output differs
+#   SKIP       — file excluded (library, benchmark, or non-entrypoint)
+
+class RunResult
+    var exit_code: int = 0
+    var output: str = ""   # program output (stderr for both, debug filtered for selfhost)
+    var error_msg: str = ""
+
+class ParityChecker
+    shared
+        # ── Skip list ────────────────────────────────────────────────────────
+        # Files that are not runnable entrypoints or have known environment deps.
+        def shouldSkip(name: str): bool
+            if name.endsWith("_lib.zbr")
+                return true
+            if name == "bench_zebra.zbr"
+                return true
+            if name == "dns_test.zbr"
+                return true
+            if name == "selfhost_compat"    # sub-directory entry from Dir.list
+                return true
+            return false
+
+        # ── Filter selfhost compile stderr ────────────────────────────────────
+        # Strips selfhost debug lines ("compiling:", "  parsing...", etc.)
+        # so the remaining output matches the Zig backend's program output.
+        def filterSelfhostStderr(raw: str): str
+            var out: str = ""
+            var first: bool = true
+            for line in raw.split("\n")
+                var t: str = line.trim()
+                if t.startsWith("compiling: ")
+                    continue
+                if t == "parsing..."
+                    continue
+                if t == "parsed OK"
+                    continue
+                if t == "resolved OK"
+                    continue
+                if t.startsWith("wrote ")
+                    continue
+                if not first
+                    out = out + "\n"
+                out = out + line
+                first = false
+            return out.trim()
+
+        # ── Run Zig backend ──────────────────────────────────────────────────
+        def runZig(file: str): RunResult
+            var argv = List(str)()
+            argv.add("zig-out/bin/zebra.exe")
+            argv.add(file)
+            var r = sys.run(argv)
+            var res = RunResult()
+            res.exit_code = r.exit_code
+            res.output = r.stderr.trim()
+            if r.exit_code != 0
+                res.error_msg = r.stderr.trim()
+            return res
+
+        # ── Run selfhost compile pipeline ─────────────────────────────────────
+        def runSelfhost(file: str): RunResult
+            var argv = List(str)()
+            argv.add("zig-out/bin/zebra-selfhost.exe")
+            argv.add("--selfhost-compile")
+            argv.add("--output-dir")
+            argv.add("/tmp/parity_sh")
+            argv.add(file)
+            var r = sys.run(argv)
+            var res = RunResult()
+            res.exit_code = r.exit_code
+            res.output = ParityChecker.filterSelfhostStderr(r.stderr)
+            if r.exit_code != 0
+                res.error_msg = ParityChecker.filterSelfhostStderr(r.stderr)
+            return res
+
+        def run()
+            # ── Prerequisite check ───────────────────────────────────────────
+            if not File.exists("zig-out/bin/zebra.exe")
+                sys.errln("parity_check: zig-out/bin/zebra.exe not found — run 'zig build'")
+                sys.exit(1)
+            if not File.exists("zig-out/bin/zebra-selfhost.exe")
+                sys.errln("parity_check: zig-out/bin/zebra-selfhost.exe not found — run 'zig build selfhost'")
+                sys.exit(1)
+
+            # Collect and sort test file names
+            var entries_raw = Dir.list("test")
+            var names = List(str)()
+            var ei: int = 0
+            while ei < entries_raw.count()
+                names.add(entries_raw.at(ei))
+                ei = ei + 1
+            names.sort()
+
+            var pass_count: int = 0
+            var diverge_count: int = 0
+            var mismatch_count: int = 0
+            var skip_count: int = 0
+            var both_fail_count: int = 0
+
+            var ni: int = 0
+            while ni < names.count()
+                var name: str = names.at(ni)
+                ni = ni + 1
+                if not name.endsWith(".zbr")
+                    continue
+                if ParityChecker.shouldSkip(name)
+                    skip_count = skip_count + 1
+                    continue
+                var file: str = "test/" + name
+
+                # ── Run both compilers ───────────────────────────────────────
+                sys.err("  " + name + " ... ")
+                var zig_r = ParityChecker.runZig(file)
+                var sh_r = ParityChecker.runSelfhost(file)
+
+                # ── Compare ──────────────────────────────────────────────────
+                if zig_r.exit_code != 0 and sh_r.exit_code != 0
+                    # Both fail — not a parity issue
+                    sys.errln("BOTH_FAIL")
+                    both_fail_count = both_fail_count + 1
+                else if zig_r.exit_code != sh_r.exit_code
+                    # Exit code divergence — one compiles, one does not
+                    sys.errln("DIVERGE  (zig=" + zig_r.exit_code.toString() + " sh=" + sh_r.exit_code.toString() + ")")
+                    if sh_r.exit_code != 0 and sh_r.error_msg != ""
+                        sys.errln("    selfhost error: " + sh_r.error_msg)
+                    if zig_r.exit_code != 0 and zig_r.error_msg != ""
+                        sys.errln("    zig error: " + zig_r.error_msg)
+                    diverge_count = diverge_count + 1
+                else if zig_r.output == sh_r.output
+                    sys.errln("PASS")
+                    pass_count = pass_count + 1
+                else
+                    sys.errln("MISMATCH")
+                    sys.errln("    zig:      " + zig_r.output)
+                    sys.errln("    selfhost: " + sh_r.output)
+                    mismatch_count = mismatch_count + 1
+
+            var total: int = pass_count + both_fail_count + diverge_count + mismatch_count
+            sys.errln("")
+            sys.errln("──────────────────────────────────────────────")
+            sys.errln("Results:  " + total.toString() + " run, " + skip_count.toString() + " skipped")
+            sys.errln("  PASS       " + pass_count.toString())
+            sys.errln("  BOTH_FAIL  " + both_fail_count.toString())
+            sys.errln("  DIVERGE    " + diverge_count.toString())
+            sys.errln("  MISMATCH   " + mismatch_count.toString())
+            sys.errln("──────────────────────────────────────────────")
+
+            if diverge_count > 0 or mismatch_count > 0
+                sys.exit(1)
+
+class Main
+    shared def main()
+        ParityChecker.run()
