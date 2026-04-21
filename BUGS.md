@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-078. Next new bug: BUG-079.**
+**Last bug number generated: BUG-079. Next new bug: BUG-080.**
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
 
@@ -181,6 +181,29 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Symptom:** Inside `if x is Shape.circle |r| { ... }`, the binding `r` has TC type `.unknown`. Any misuse of `r` (wrong method, wrong field) produces no Zebra-level error — the error only surfaces as a Zig compile error after codegen.
 - **Root cause:** `src/TypeChecker.zig::visitIf` and `visitElseIf` do not call `pushNarrowedBinding` (or equivalent) for `is_capture` bindings. The Zig-side code correctly emits `const r = x.circle;` — Zig infers the type — but the TC never records `r → payload_type` in `narrowed_types`.
 - **Fix:** Added `isCaptureLookup` helper (3-way: same-module union, cross-module alias, direct cross_module) to TypeChecker.zig; updated `.if_` arm to push/pop the capture binding. Selfhost: `typechecker.zbr` walker now populates `cap_t` via `variantPayload`; `codegen.zbr::genIsCaptureThen` now seeds `ptr_field_bindings`/`opt_ptr_field_bindings` for the bound struct's `^T` fields.
+
+---
+
+### BUG-079: Method chaining on struct-returning calls silently mis-compiles or is unnecessarily banned
+- **Severity:** Medium (ergonomics + correctness; blocks natural call-chaining style)
+- **Status:** Open — workaround required
+- **Target:** Pre-1.0 (ribbon ceremony blocker)
+- **Symptom:** `f().method()` where `f()` returns a struct type is either silently mis-compiled or must be avoided by convention. The compiler does not enforce materialization; the hazard is invisible to the user until a runtime fault or a wrong-Zig-type error appears.
+- **Example:**
+  ```zebra
+  # Broken — f() returns a struct temporary; .bar() has no stable address
+  var result = makeWidget().label()
+
+  # Required workaround
+  var w = makeWidget()
+  var result = w.label()
+  ```
+- **Root cause:** In the Zig codegen, a struct return value is a temporary on the Zig stack. Methods on Zebra classes/structs are emitted as `fn method(self: *T, ...)` — they require a pointer receiver. Calling `.method()` on a temporary is either rejected by the Zig compiler (`cannot take address of temporary`) or produces a dangling pointer if the optimizer moves the value.
+- **Fix direction (two options):**
+  1. **Compiler error:** In the TypeChecker or Resolver, detect `ExprCall` nodes whose callee is `ExprMember { object: ExprCall }` (chained call on a call result) and emit a hard error: `"method chaining on a struct return value is not allowed — assign to a variable first"`.
+  2. **Auto-materialize:** In CodeGen, when emitting a method call whose object is itself a call expression, auto-insert a `const _tmp = <inner_call>; _tmp.method(...)` — transparent to the user but produces valid Zig.
+- **Preferred fix:** Option 2 (auto-materialize) — better ergonomics, no user-visible restriction. Option 1 is faster to implement and safer as an interim gate.
+- **Note:** This limitation is currently documented as a CLAUDE.md agent convention ("always materialize intermediates") rather than as a language/compiler constraint. That is the wrong layer — the language should either enforce or transparently handle it.
 
 ---
 
