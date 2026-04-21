@@ -137,6 +137,21 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(unit_tests).step);
     test_step.dependOn(&b.addRunArtifact(integ_tests).step);
 
+    // ── Selfhost build ────────────────────────────────────────────────────────
+    //
+    // `zig build selfhost` emits all selfhost/*.zbr files to /tmp/bs-zig via
+    // the Zig-compiled zebra binary, then compiles the resulting main.zig into
+    // zig-out/bin/zebra-selfhost.exe.
+    //
+    // This is equivalent to `bash tools/bootstrap_check.sh --quick` but
+    // callable directly from zig build without requiring bash on PATH.
+    //
+    // Output: zig-out/bin/zebra-selfhost.exe
+    const selfhost_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--quick" });
+    selfhost_run.step.dependOn(b.getInstallStep());
+    const selfhost_step = b.step("selfhost", "Build the selfhost compiler → zig-out/bin/zebra-selfhost.exe");
+    selfhost_step.dependOn(&selfhost_run.step);
+
     // ── Selfhost bootstrap check ──────────────────────────────────────────────
     //
     // `zig build bootstrap` runs tools/bootstrap_check.sh, which verifies that
