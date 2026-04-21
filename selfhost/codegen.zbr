@@ -224,10 +224,8 @@ def shouldBoxCtorArg(e: Expr): bool
     return false
 
 def populateBoxedVariants(bv: StrSet, mt: ModuleTypes)
-    var i = 0
-    while i < mt.boxed_variant_keys.count()
-        bv.add(mt.boxed_variant_keys.at(i))
-        i += 1
+    for key in mt.boxed_variant_keys
+        bv.add(key)
 
 def structNameFromType(t: Type_): str?
     # Unwrap ref_to/optional boxing layers, then return the bare struct name.
