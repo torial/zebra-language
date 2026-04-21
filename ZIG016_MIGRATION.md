@@ -8,6 +8,12 @@
 The I/O overhaul is the largest stdlib break in Zig's history. 0.16.1 will fix
 edge cases before we absorb it. Starting migration mid-Phase-22 cutover is high risk.
 
+**Binary size regression (known issue):** 0.16 has a known binary size increase.
+Do not accept this passively — audit before merging. Accept size growth only if a
+specific feature requires it (e.g. adding `zdt` for IANA timezone support).
+Reject size growth from the `std.Io` threading or other infra changes;
+file an issue upstream if the compiler/linker should dead-strip that code.
+
 ---
 
 ## High-Impact Changes (preamble + src/main.zig)
