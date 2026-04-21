@@ -175,6 +175,10 @@ def addCrossModuleBoxedVariants(bv: StrSet, module_name: str)
         bv.add("Expr.tuple_lit")
         # StringPart boxed variant
         bv.add("StringPart.expr_")
+    # Type_ from typechecker module has two boxed variants
+    if module_name == "typechecker"
+        bv.add("Type_.ref_to")
+        bv.add("Type_.optional")
 
 def addCrossModuleRefFields(rf: StrSet, orf: StrSet, module_name: str)
     # ^T struct fields from ast.zbr: StructName.fieldName
@@ -330,116 +334,19 @@ def shouldBoxCtorArg(e: Expr): bool
             pass
     return false
 
-def variantStructName(union_name: str, variant_name: str): str?
-    # Map union variant to struct type name: Stmt.assign → StmtAssign
-    # Use variant_name directly (including trailing underscores)
-    if union_name == "Stmt"
-        if variant_name == "assign"
-            return "StmtAssign"
-        if variant_name == "return_"
-            return "StmtReturn"
-        if variant_name == "if_"
-            return "StmtIf"
-        if variant_name == "while_"
-            return "StmtWhile"
-        if variant_name == "for_in"
-            return "StmtForIn"
-        if variant_name == "for_num"
-            return "StmtForNum"
-        if variant_name == "branch_"
-            return "StmtBranch"
-        if variant_name == "assert_"
-            return "StmtAssert"
-        if variant_name == "defer_"
-            return "StmtDefer"
-        if variant_name == "with_"
-            return "StmtWith"
-        if variant_name == "raise_"
-            return "StmtRaise"
-        if variant_name == "guard_"
-            return "StmtGuard"
-        if variant_name == "destruct"
-            return "StmtDestruct"
-        if variant_name == "print_"
-            return "StmtPrint"
-        if variant_name == "var_"
-            return "DeclVar"
-        if variant_name == "expr"
+def structNameFromType(t: Type_): str?
+    # Unwrap ref_to/optional boxing layers, then return the bare struct name.
+    branch t
+        on Type_.ref_to as inner
+            return structNameFromType(inner)
+        on Type_.optional as inner
+            return structNameFromType(inner)
+        on Type_.named as sn
+            return "" + sn
+        on Type_.cross_module as cm
+            return "" + cm.type_name
+        else
             return nil
-        if variant_name == "arena_scope"
-            return "StmtArenaScope"
-        if variant_name == "try_catch"
-            return "StmtTryCatch"
-    if union_name == "Expr"
-        if variant_name == "member"
-            return "ExprMember"
-        if variant_name == "call"
-            return "ExprCall"
-        if variant_name == "index"
-            return "ExprIndex"
-        if variant_name == "slice"
-            return "ExprSlice"
-        if variant_name == "binary"
-            return "ExprBinary"
-        if variant_name == "unary"
-            return "ExprUnary"
-        if variant_name == "cast"
-            return "ExprCast"
-        if variant_name == "try_"
-            return "ExprTry"
-        if variant_name == "orelse_"
-            return "ExprOrelse"
-        if variant_name == "catch_"
-            return "ExprCatch"
-        if variant_name == "if_" or variant_name == "if_expr"
-            return "ExprIf"
-        if variant_name == "to_non_nil"
-            return "ExprToNonNil"
-        if variant_name == "to_nilable"
-            return "ExprToNilable"
-        if variant_name == "type_check"
-            return "ExprTypeCheck"
-        if variant_name == "is_nil"
-            return "ExprIsNil"
-        if variant_name == "except_"
-            return "ExprExcept"
-        if variant_name == "string_interp"
-            return "ExprStringInterp"
-    if union_name == "Decl"
-        if variant_name == "var_"
-            return "DeclVar"
-        if variant_name == "method"
-            return "DeclMethod"
-        if variant_name == "init"
-            return "DeclInit"
-        if variant_name == "sig_"
-            return "DeclSig"
-        if variant_name == "class_"
-            return "DeclClass"
-        if variant_name == "interface_"
-            return "DeclInterface"
-        if variant_name == "struct_"
-            return "DeclStruct"
-        if variant_name == "enum_"
-            return "DeclEnum"
-        if variant_name == "use_"
-            return "DeclUse"
-        if variant_name == "extend_"
-            return "DeclExtend"
-        if variant_name == "union_"
-            return "DeclUnion"
-        if variant_name == "mixin_"
-            return "DeclMixin"
-        if variant_name == "namespace_"
-            return "DeclNamespace"
-    if union_name == "TypeRef"
-        if variant_name == "named"
-            return "NamedTypeRef"
-        if variant_name == "generic"
-            return "GenericTypeRef"
-        if variant_name == "tuple"
-            return "TupleTypeRef"
-    return nil
 
 def isUnionLikeName(name: str): bool
     # Known union type names from cross-module imports
@@ -2551,26 +2458,29 @@ struct Generator
                     ig.w.emit("." + variant + ";\n")
                 # Track ^T fields for this binding to enable auto-deref (mirrors genBranch)
                 if union_nm.len > 0 and variant.len > 0
-                    var stype = variantStructName(union_nm, variant)
-                    if stype != nil
-                        var st = stype to!
-                        var st_dot = st + "."
-                        var rf_items = ref_fields.items()
-                        var rfi: int = 0
-                        while rfi < rf_items.count()
-                            var rf_entry: str = rf_items.at(rfi)
-                            if rf_entry.startsWith(st_dot)
-                                var fname2 = extractAfterDot(rf_entry)
-                                ig.ptr_field_bindings.add(makeDottedKey(cap, fname2))
-                            rfi += 1
-                        var orf_items = opt_ref_fields.items()
-                        var orfi: int = 0
-                        while orfi < orf_items.count()
-                            var orf_entry: str = orf_items.at(orfi)
-                            if orf_entry.startsWith(st_dot)
-                                var fname3 = extractAfterDot(orf_entry)
-                                ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3))
-                            orfi += 1
+                    var vp_ = this.module_types.variantPayload(union_nm, variant)
+                    if vp_ == nil
+                        vp_ = this.dep_types.variantPayload(union_nm, variant)
+                    if vp_ != nil
+                        var sname = structNameFromType(vp_ to!)
+                        if sname != nil
+                            var st_dot = sname to! + "."
+                            var rf_items = ref_fields.items()
+                            var rfi: int = 0
+                            while rfi < rf_items.count()
+                                var rf_entry: str = rf_items.at(rfi)
+                                if rf_entry.startsWith(st_dot)
+                                    var fname2 = extractAfterDot(rf_entry)
+                                    ig.ptr_field_bindings.add(makeDottedKey(cap, fname2))
+                                rfi += 1
+                            var orf_items = opt_ref_fields.items()
+                            var orfi: int = 0
+                            while orfi < orf_items.count()
+                                var orf_entry: str = orf_items.at(orfi)
+                                if orf_entry.startsWith(st_dot)
+                                    var fname3 = extractAfterDot(orf_entry)
+                                    ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3))
+                                orfi += 1
                 ig.genStmts(stmts)
                 var ckey = makeDottedKey(cap, "")
                 ig.ptr_field_bindings.removeStartingWith(ckey)
@@ -3179,28 +3089,31 @@ struct Generator
                             uname = upart
                             break
                     if uname.len > 0 and vname.len > 0
-                        var stype = variantStructName(uname, vname)
-                        if stype != nil
-                            var st = stype to!
-                            var st_dot = st + "."
-                            # Find all non-optional ref_fields for this struct
-                            var rf_items = ref_fields.items()
-                            var rfi: int = 0
-                            while rfi < rf_items.count()
-                                var rf_entry: str = rf_items.at(rfi)
-                                if rf_entry.startsWith(st_dot)
-                                    var fname2 = extractAfterDot(rf_entry)
-                                    iig.ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname2))
-                                rfi += 1
-                            # Find all optional ref_fields for this struct
-                            var orf_items = opt_ref_fields.items()
-                            var orfi: int = 0
-                            while orfi < orf_items.count()
-                                var orf_entry: str = orf_items.at(orfi)
-                                if orf_entry.startsWith(st_dot)
-                                    var fname3 = extractAfterDot(orf_entry)
-                                    iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname3))
-                                orfi += 1
+                        var vp_ = this.module_types.variantPayload(uname, vname)
+                        if vp_ == nil
+                            vp_ = this.dep_types.variantPayload(uname, vname)
+                        if vp_ != nil
+                            var sname = structNameFromType(vp_ to!)
+                            if sname != nil
+                                var st_dot = sname to! + "."
+                                # Find all non-optional ref_fields for this struct
+                                var rf_items = ref_fields.items()
+                                var rfi: int = 0
+                                while rfi < rf_items.count()
+                                    var rf_entry: str = rf_items.at(rfi)
+                                    if rf_entry.startsWith(st_dot)
+                                        var fname2 = extractAfterDot(rf_entry)
+                                        iig.ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname2))
+                                    rfi += 1
+                                # Find all optional ref_fields for this struct
+                                var orf_items = opt_ref_fields.items()
+                                var orfi: int = 0
+                                while orfi < orf_items.count()
+                                    var orf_entry: str = orf_items.at(orfi)
+                                    if orf_entry.startsWith(st_dot)
+                                        var fname3 = extractAfterDot(orf_entry)
+                                        iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname3))
+                                    orfi += 1
             iig.genStmts(cas.stmts)
             if cas.binding != nil
                 var bkey = makeDottedKey(cas.binding to!, "")
