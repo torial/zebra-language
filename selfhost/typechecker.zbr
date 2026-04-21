@@ -164,6 +164,9 @@ class ModuleTypes
     # binds n to variant_payloads["Foo.bar"]. Populated by
     # populateModuleTypes on Decl.union_ arms.
     var variant_payloads: HashMap(str, Type_)
+    # Parallel to variant_payloads: keys where the payload type is Type_.ref_to.
+    # Iterable without HashMap key enumeration; used by codegen to seed boxed_variants.
+    var boxed_variant_keys: List(str)
     # Separate set of known union type names — so a caller can ask
     # "is 'Foo' declared: a union in this module?" without enumerating
     # variant_payloads. Populated alongside variant_payloads.
@@ -173,6 +176,7 @@ class ModuleTypes
         strset_field_names = HashMap()
         hashmap_field_names = HashMap()
         variant_payloads = HashMap()
+        boxed_variant_keys = List()
         union_names = HashMap()
 
     def addClass(c: ClassTypes)
@@ -199,7 +203,13 @@ class ModuleTypes
     def addVariantPayload(union_name: str, variant_name: str, t: Type_)
         # Concatenation already produces a fresh owned str, so no additional
         # internString is needed on the composed key.
-        this.variant_payloads.put(union_name + "." + variant_name, t)
+        var key: str = union_name + "." + variant_name
+        this.variant_payloads.put(key, t)
+        branch t
+            on Type_.ref_to
+                this.boxed_variant_keys.add(key)
+            else
+                pass
 
     def variantPayload(union_name: str, variant_name: str): Type_?
         var key: str = union_name + "." + variant_name

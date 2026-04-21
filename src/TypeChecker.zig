@@ -1303,10 +1303,15 @@ const TypeChecker = struct {
                                                     };
                                                     if (actual_mod) |mod| {
                                                         _ = mod_alias; // the path-based alias is less reliable
-                                                        try tc.narrowed_types.put(bname, .{ .cross_module = .{
-                                                            .module    = mod,
-                                                            .type_name = payload_struct_name,
-                                                        }});
+                                                        const primitive = builtinType(payload_struct_name);
+                                                        if (primitive != .unknown) {
+                                                            try tc.narrowed_types.put(bname, primitive);
+                                                        } else {
+                                                            try tc.narrowed_types.put(bname, .{ .cross_module = .{
+                                                                .module    = mod,
+                                                                .type_name = payload_struct_name,
+                                                            }});
+                                                        }
                                                     }
                                                     break;
                                                 }
@@ -1325,10 +1330,15 @@ const TypeChecker = struct {
                                             const lookup_key = std.fmt.allocPrint(tc.map_alloc, "{s}.{s}", .{ cm.type_name, variant }) catch continue;
                                             defer tc.map_alloc.free(lookup_key);
                                             if (iface.variant_payload_types.get(lookup_key)) |payload_struct_name| {
-                                                try tc.narrowed_types.put(bname, .{ .cross_module = .{
-                                                    .module    = cm.module,
-                                                    .type_name = payload_struct_name,
-                                                }});
+                                                const primitive = builtinType(payload_struct_name);
+                                                if (primitive != .unknown) {
+                                                    try tc.narrowed_types.put(bname, primitive);
+                                                } else {
+                                                    try tc.narrowed_types.put(bname, .{ .cross_module = .{
+                                                        .module    = cm.module,
+                                                        .type_name = payload_struct_name,
+                                                    }});
+                                                }
                                             }
                                         }
                                     }
@@ -1541,6 +1551,8 @@ const TypeChecker = struct {
                     while (it.next()) |entry| {
                         if (entry.value_ptr.variant_payload_types.get(lookup_key)) |payload_struct_name| {
                             if (entry.value_ptr.types.contains(type_name)) {
+                                const primitive = builtinType(payload_struct_name);
+                                if (primitive != .unknown) return primitive;
                                 return Type{ .cross_module = .{
                                     .module    = entry.key_ptr.*,
                                     .type_name = payload_struct_name,
@@ -1560,6 +1572,8 @@ const TypeChecker = struct {
                     const lookup_key = try std.fmt.allocPrint(tc.map_alloc, "{s}.{s}", .{ cm.type_name, variant });
                     defer tc.map_alloc.free(lookup_key);
                     if (iface.variant_payload_types.get(lookup_key)) |payload_struct_name| {
+                        const primitive = builtinType(payload_struct_name);
+                        if (primitive != .unknown) return primitive;
                         return Type{ .cross_module = .{
                             .module    = cm.module,
                             .type_name = payload_struct_name,

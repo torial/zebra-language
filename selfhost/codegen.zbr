@@ -69,117 +69,6 @@ def getVariantKey(e: Expr): str?
             return makeDottedKey(obj_name to!, m.member)
     return nil
 
-def addCrossModuleBoxedVariants(bv: StrSet, module_name: str)
-    # PNode from Parser module has many boxed variants
-    if module_name == "Parser"
-        bv.add("PNode.module_")
-        bv.add("PNode.use_")
-        bv.add("PNode.class_")
-        bv.add("PNode.struct_")
-        bv.add("PNode.interface_")
-        bv.add("PNode.extend_")
-        bv.add("PNode.enum_")
-        bv.add("PNode.union_decl")
-        bv.add("PNode.sig_")
-        bv.add("PNode.field_")
-        bv.add("PNode.method_")
-        bv.add("PNode.init_")
-        bv.add("PNode.property_")
-        bv.add("PNode.stmt_return")
-        bv.add("PNode.stmt_if")
-        bv.add("PNode.stmt_while")
-        bv.add("PNode.stmt_for_in")
-        bv.add("PNode.stmt_var")
-        bv.add("PNode.stmt_assign")
-        bv.add("PNode.stmt_assert")
-        bv.add("PNode.stmt_raise")
-        bv.add("PNode.stmt_try_catch")
-        bv.add("PNode.stmt_expr")
-        bv.add("PNode.stmt_print")
-        bv.add("PNode.expr_member")
-        bv.add("PNode.expr_call")
-        bv.add("PNode.expr_index")
-        bv.add("PNode.expr_slice")
-        bv.add("PNode.expr_binary")
-        bv.add("PNode.expr_unary")
-        bv.add("PNode.expr_try")
-        bv.add("PNode.expr_to_bang")
-        bv.add("PNode.stmt_branch")
-        bv.add("PNode.stmt_destruct")
-        bv.add("PNode.expr_except")
-        bv.add("PNode.expr_string_interp")
-        bv.add("PNode.stmt_for_num")
-        bv.add("PNode.expr_tuple_lit")
-    # Decl, Stmt, Expr, TypeRef from ast module
-    if module_name == "ast" or module_name == "codegen" or module_name == "astbuilder" or module_name == "cg_helpers"
-        # Decl variants — all are ^T boxed
-        bv.add("Decl.use_")
-        bv.add("Decl.namespace_")
-        bv.add("Decl.class_")
-        bv.add("Decl.interface_")
-        bv.add("Decl.struct_")
-        bv.add("Decl.mixin_")
-        bv.add("Decl.enum_")
-        bv.add("Decl.method")
-        bv.add("Decl.var_")
-        bv.add("Decl.init")
-        bv.add("Decl.extend_")
-        bv.add("Decl.union_")
-        bv.add("Decl.sig_")
-        # TypeRef boxed variants (nilable, stream, error_union, ref_to are ^TypeRef)
-        bv.add("TypeRef.nilable")
-        bv.add("TypeRef.stream")
-        bv.add("TypeRef.error_union")
-        bv.add("TypeRef.ref_to")
-        # Stmt boxed variants
-        bv.add("Stmt.if_")
-        bv.add("Stmt.while_")
-        bv.add("Stmt.for_in")
-        bv.add("Stmt.for_num")
-        bv.add("Stmt.branch_")
-        bv.add("Stmt.return_")
-        bv.add("Stmt.assert_")
-        bv.add("Stmt.assign")
-        bv.add("Stmt.var_")
-        bv.add("Stmt.expr")
-        bv.add("Stmt.defer_")
-        bv.add("Stmt.with_")
-        bv.add("Stmt.raise_")
-        bv.add("Stmt.try_catch")
-        bv.add("Stmt.guard_")
-        bv.add("Stmt.destruct")
-        bv.add("Stmt.print_")
-        bv.add("Stmt.arena_scope")
-        # Expr boxed variants
-        bv.add("Expr.string_interp")
-        bv.add("Expr.member")
-        bv.add("Expr.call")
-        bv.add("Expr.index")
-        bv.add("Expr.slice")
-        bv.add("Expr.binary")
-        bv.add("Expr.unary")
-        bv.add("Expr.cast")
-        bv.add("Expr.to_nilable")
-        bv.add("Expr.to_non_nil")
-        bv.add("Expr.is_nil")
-        bv.add("Expr.orelse_")
-        bv.add("Expr.catch_")
-        bv.add("Expr.if_expr")
-        bv.add("Expr.lambda")
-        bv.add("Expr.list_lit")
-        bv.add("Expr.dict_lit")
-        bv.add("Expr.array_lit")
-        bv.add("Expr.try_")
-        bv.add("Expr.except_")
-        bv.add("Expr.type_check")
-        bv.add("Expr.tuple_lit")
-        # StringPart boxed variant
-        bv.add("StringPart.expr_")
-    # Type_ from typechecker module has two boxed variants
-    if module_name == "typechecker"
-        bv.add("Type_.ref_to")
-        bv.add("Type_.optional")
-
 def addCrossModuleRefFields(rf: StrSet, orf: StrSet, module_name: str)
     # ^T struct fields from ast.zbr: StructName.fieldName
     # rf = non-optional ^T, orf = optional ^T?
@@ -334,6 +223,12 @@ def shouldBoxCtorArg(e: Expr): bool
             pass
     return false
 
+def populateBoxedVariants(bv: StrSet, mt: ModuleTypes)
+    var i = 0
+    while i < mt.boxed_variant_keys.count()
+        bv.add(mt.boxed_variant_keys.at(i))
+        i += 1
+
 def structNameFromType(t: Type_): str?
     # Unwrap ref_to/optional boxing layers, then return the bare struct name.
     branch t
@@ -342,9 +237,9 @@ def structNameFromType(t: Type_): str?
         on Type_.optional as inner
             return structNameFromType(inner)
         on Type_.named as sn
-            return "" + sn
+            return sn
         on Type_.cross_module as cm
-            return "" + cm.type_name
+            return cm.type_name
         else
             return nil
 
@@ -636,7 +531,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             on Decl.enum_ as e
                 g.enum_names.add(e.name)
             on Decl.use_ as imp
-                addCrossModuleBoxedVariants(g.boxed_variants, imp.path)
+                populateBoxedVariants(g.boxed_variants, deps_mt)
                 addCrossModuleRefFields(g.ref_fields, g.opt_ref_fields, imp.path)
                 for exposed_name in imp.exposed
                     # BUG-034: prefer the dep-module's authoritative type table
