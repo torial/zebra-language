@@ -701,7 +701,8 @@ fn namedTypeStr(tr: *const Ast.TypeRef, resolve: *const Resolver.ResolveResult) 
                 .builtin => null,
             };
         },
-        .ref_to => |inner| namedTypeStr(inner, resolve), // inner is *Ast.TypeRef — unwrap ^T
+        .ref_to  => |inner| namedTypeStr(inner, resolve), // unwrap ^T
+        .nilable => |inner| namedTypeStr(inner, resolve), // unwrap T? — optional wrapping
         else    => null,
     };
 }
@@ -2838,6 +2839,14 @@ const TypeChecker = struct {
                     .symbol  => |s| switch (s.kind) {
                         .type_param => .unknown,
                         .sig_       => .{ .fn_sig = s.decl.sig_ }, // named delegate type
+                        // Exposed cross-module type: `DeclMethod` from `use ast exposing DeclMethod`.
+                        // Return cross_module so field/method lookups use the module interface tables.
+                        .module => blk2: {
+                            const use_decl = s.decl.use;
+                            const last_dot = std.mem.lastIndexOf(u8, use_decl.path, ".");
+                            const mod_alias = if (last_dot) |d| use_decl.path[d + 1..] else use_decl.path;
+                            break :blk2 Type{ .cross_module = .{ .module = mod_alias, .type_name = s.name } };
+                        },
                         else        => .{ .named = s },
                     },
                 };

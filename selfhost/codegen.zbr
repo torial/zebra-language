@@ -69,58 +69,6 @@ def getVariantKey(e: Expr): str?
             return makeDottedKey(obj_name to!, m.member)
     return nil
 
-def addCrossModuleRefFields(rf: StrSet, orf: StrSet, module_name: str)
-    # ^T struct fields from ast.zbr: StructName.fieldName
-    # rf = non-optional ^T, orf = optional ^T?
-    if module_name == "ast" or module_name == "codegen" or module_name == "astbuilder" or module_name == "cg_helpers"
-        # Optional ^T? fields
-        orf.add("DeclVar.init_expr")
-        orf.add("EnumMember.value")
-        orf.add("Param.default_")
-        orf.add("StmtForNum.step")
-        orf.add("StmtReturn.value")
-        orf.add("StmtAssert.message")
-        orf.add("StmtRaise.message")
-        orf.add("StmtRaise.details")
-        orf.add("ExprSlice.start")
-        orf.add("ExprSlice.stop_")
-        # Non-optional ^T fields
-        rf.add("StmtIf.cond")
-        rf.add("StmtWhile.cond")
-        rf.add("StmtForIn.iter")
-        rf.add("StmtForNum.start")
-        rf.add("StmtForNum.stop_")
-        rf.add("StmtBranch.expr")
-        rf.add("StmtAssert.cond")
-        rf.add("StmtAssign.target")
-        rf.add("StmtAssign.value")
-        rf.add("StmtDefer.stmt")
-        rf.add("StmtWith.target")
-        rf.add("StmtGuard.cond")
-        rf.add("StmtDestruct.init_expr")
-        rf.add("ExprMember.object")
-        rf.add("ExprIndex.object")
-        rf.add("ExprIndex.index")
-        rf.add("ExprSlice.object")
-        rf.add("ExprBinary.left")
-        rf.add("ExprBinary.right")
-        rf.add("ExprUnary.operand")
-        rf.add("ExprCast.expr")
-        rf.add("ExprTry.expr")
-        rf.add("ExprToNonNil.expr")
-        rf.add("ExprIsNil.expr")
-        rf.add("ExprToNilable.expr")
-        rf.add("ExprOrelse.expr")
-        rf.add("ExprOrelse.fallback")
-        rf.add("ExprCatch.expr")
-        rf.add("ExprCatch.fallback")
-        rf.add("ExprIf.cond")
-        rf.add("ExprIf.then_expr")
-        rf.add("ExprIf.else_expr")
-        rf.add("ExprTypeCheck.expr")
-        rf.add("DictEntry.key")
-        rf.add("DictEntry.value")
-
 def isKnownListField(name: str): bool
     # Known List-typed fields on Parser structs and AST types
     if name == "value" or name == "else_stmts" or name == "init_expr"
@@ -226,6 +174,12 @@ def shouldBoxCtorArg(e: Expr): bool
 def populateBoxedVariants(bv: StrSet, mt: ModuleTypes)
     for key in mt.boxed_variant_keys
         bv.add(key)
+
+def populateRefFields(rf: StrSet, orf: StrSet, mt: ModuleTypes)
+    for key in mt.ref_field_keys
+        rf.add(key)
+    for key in mt.opt_ref_field_keys
+        orf.add(key)
 
 def structNameFromType(t: Type_): str?
     # Unwrap ref_to/optional boxing layers, then return the bare struct name.
@@ -530,7 +484,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.enum_names.add(e.name)
             on Decl.use_ as imp
                 populateBoxedVariants(g.boxed_variants, deps_mt)
-                addCrossModuleRefFields(g.ref_fields, g.opt_ref_fields, imp.path)
+                populateRefFields(g.ref_fields, g.opt_ref_fields, deps_mt)
                 for exposed_name in imp.exposed
                     # BUG-034: prefer the dep-module's authoritative type table
                     # over name heuristics. deps_mt.hasUnion covers any exposed
@@ -1558,10 +1512,7 @@ struct Generator
                             if nt2.name == "StrSet"
                                 bg.strset_locals.add(p2.name)
                             # Seed opt_ptr_field_bindings for ^T? fields of named-type params
-                            # BUG-075: nt2.name is String (cross-module type), not str.
-                            # `nt2.name + "."` would emit raw Zig + (invalid). Workaround:
-                            # route through makeDottedKey where params are typed: str.
-                            var nt2_dot = makeDottedKey(nt2.name, "")
+                            var nt2_dot = nt2.name + "."
                             var orf3 = opt_ref_fields.items()
                             var orf3i = 0
                             while orf3i < orf3.count()
@@ -1873,8 +1824,15 @@ struct Generator
                         hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
                 if not hoisted
                     writeIndent()
-                    genExpr(e)
-                    w.emit(";\n")
+                    # BUG-006: zig"stmt;" already ends with ";"; skip the extra one.
+                    if e is Expr.zig_lit as zl
+                        w.emit(zl.text)
+                        if not zl.text.endsWith(";")
+                            w.emit(";")
+                        w.emit("\n")
+                    else
+                        genExpr(e)
+                        w.emit(";\n")
             on Stmt.pass_
                 line("// pass")
             on Stmt.break_

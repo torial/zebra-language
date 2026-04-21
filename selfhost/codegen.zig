@@ -1611,159 +1611,6 @@ pub fn getVariantKey(e: Expr) ?[]const u8 {
     return null;
 }
 
-pub fn addCrossModuleBoxedVariants(bv: *StrSet, module_name: []const u8) void {
-    if (std.mem.eql(u8, module_name, "Parser")) {
-        bv.add("PNode.module_");
-        bv.add("PNode.use_");
-        bv.add("PNode.class_");
-        bv.add("PNode.struct_");
-        bv.add("PNode.interface_");
-        bv.add("PNode.extend_");
-        bv.add("PNode.enum_");
-        bv.add("PNode.union_decl");
-        bv.add("PNode.sig_");
-        bv.add("PNode.field_");
-        bv.add("PNode.method_");
-        bv.add("PNode.init_");
-        bv.add("PNode.property_");
-        bv.add("PNode.stmt_return");
-        bv.add("PNode.stmt_if");
-        bv.add("PNode.stmt_while");
-        bv.add("PNode.stmt_for_in");
-        bv.add("PNode.stmt_var");
-        bv.add("PNode.stmt_assign");
-        bv.add("PNode.stmt_assert");
-        bv.add("PNode.stmt_raise");
-        bv.add("PNode.stmt_try_catch");
-        bv.add("PNode.stmt_expr");
-        bv.add("PNode.stmt_print");
-        bv.add("PNode.expr_member");
-        bv.add("PNode.expr_call");
-        bv.add("PNode.expr_index");
-        bv.add("PNode.expr_slice");
-        bv.add("PNode.expr_binary");
-        bv.add("PNode.expr_unary");
-        bv.add("PNode.expr_try");
-        bv.add("PNode.expr_to_bang");
-        bv.add("PNode.stmt_branch");
-        bv.add("PNode.stmt_destruct");
-        bv.add("PNode.expr_except");
-        bv.add("PNode.expr_string_interp");
-        bv.add("PNode.stmt_for_num");
-        bv.add("PNode.expr_tuple_lit");
-    }
-    if ((((std.mem.eql(u8, module_name, "ast") or std.mem.eql(u8, module_name, "codegen")) or std.mem.eql(u8, module_name, "astbuilder")) or std.mem.eql(u8, module_name, "cg_helpers"))) {
-        bv.add("Decl.use_");
-        bv.add("Decl.namespace_");
-        bv.add("Decl.class_");
-        bv.add("Decl.interface_");
-        bv.add("Decl.struct_");
-        bv.add("Decl.mixin_");
-        bv.add("Decl.enum_");
-        bv.add("Decl.method");
-        bv.add("Decl.var_");
-        bv.add("Decl.init");
-        bv.add("Decl.extend_");
-        bv.add("Decl.union_");
-        bv.add("Decl.sig_");
-        bv.add("TypeRef.nilable");
-        bv.add("TypeRef.stream");
-        bv.add("TypeRef.error_union");
-        bv.add("TypeRef.ref_to");
-        bv.add("Stmt.if_");
-        bv.add("Stmt.while_");
-        bv.add("Stmt.for_in");
-        bv.add("Stmt.for_num");
-        bv.add("Stmt.branch_");
-        bv.add("Stmt.return_");
-        bv.add("Stmt.assert_");
-        bv.add("Stmt.assign");
-        bv.add("Stmt.var_");
-        bv.add("Stmt.expr");
-        bv.add("Stmt.defer_");
-        bv.add("Stmt.with_");
-        bv.add("Stmt.raise_");
-        bv.add("Stmt.try_catch");
-        bv.add("Stmt.guard_");
-        bv.add("Stmt.destruct");
-        bv.add("Stmt.print_");
-        bv.add("Stmt.arena_scope");
-        bv.add("Expr.string_interp");
-        bv.add("Expr.member");
-        bv.add("Expr.call");
-        bv.add("Expr.index");
-        bv.add("Expr.slice");
-        bv.add("Expr.binary");
-        bv.add("Expr.unary");
-        bv.add("Expr.cast");
-        bv.add("Expr.to_nilable");
-        bv.add("Expr.to_non_nil");
-        bv.add("Expr.is_nil");
-        bv.add("Expr.orelse_");
-        bv.add("Expr.catch_");
-        bv.add("Expr.if_expr");
-        bv.add("Expr.lambda");
-        bv.add("Expr.list_lit");
-        bv.add("Expr.dict_lit");
-        bv.add("Expr.array_lit");
-        bv.add("Expr.try_");
-        bv.add("Expr.except_");
-        bv.add("Expr.type_check");
-        bv.add("Expr.tuple_lit");
-        bv.add("StringPart.expr_");
-    }
-}
-
-pub fn addCrossModuleRefFields(rf: *StrSet, orf: *StrSet, module_name: []const u8) void {
-    if ((((std.mem.eql(u8, module_name, "ast") or std.mem.eql(u8, module_name, "codegen")) or std.mem.eql(u8, module_name, "astbuilder")) or std.mem.eql(u8, module_name, "cg_helpers"))) {
-        orf.add("DeclVar.init_expr");
-        orf.add("EnumMember.value");
-        orf.add("Param.default_");
-        orf.add("StmtForNum.step");
-        orf.add("StmtReturn.value");
-        orf.add("StmtAssert.message");
-        orf.add("StmtRaise.message");
-        orf.add("StmtRaise.details");
-        orf.add("ExprSlice.start");
-        orf.add("ExprSlice.stop_");
-        rf.add("StmtIf.cond");
-        rf.add("StmtWhile.cond");
-        rf.add("StmtForIn.iter");
-        rf.add("StmtForNum.start");
-        rf.add("StmtForNum.stop_");
-        rf.add("StmtBranch.expr");
-        rf.add("StmtAssert.cond");
-        rf.add("StmtAssign.target");
-        rf.add("StmtAssign.value");
-        rf.add("StmtDefer.stmt");
-        rf.add("StmtWith.target");
-        rf.add("StmtGuard.cond");
-        rf.add("StmtDestruct.init_expr");
-        rf.add("ExprMember.object");
-        rf.add("ExprIndex.object");
-        rf.add("ExprIndex.index");
-        rf.add("ExprSlice.object");
-        rf.add("ExprBinary.left");
-        rf.add("ExprBinary.right");
-        rf.add("ExprUnary.operand");
-        rf.add("ExprCast.expr");
-        rf.add("ExprTry.expr");
-        rf.add("ExprToNonNil.expr");
-        rf.add("ExprIsNil.expr");
-        rf.add("ExprToNilable.expr");
-        rf.add("ExprOrelse.expr");
-        rf.add("ExprOrelse.fallback");
-        rf.add("ExprCatch.expr");
-        rf.add("ExprCatch.fallback");
-        rf.add("ExprIf.cond");
-        rf.add("ExprIf.then_expr");
-        rf.add("ExprIf.else_expr");
-        rf.add("ExprTypeCheck.expr");
-        rf.add("DictEntry.key");
-        rf.add("DictEntry.value");
-    }
-}
-
 pub fn isKnownListField(name: []const u8) bool {
     if (((std.mem.eql(u8, name, "value") or std.mem.eql(u8, name, "else_stmts")) or std.mem.eql(u8, name, "init_expr"))) {
         return true;
@@ -1877,169 +1724,41 @@ pub fn shouldBoxCtorArg(e: Expr) bool {
     return false;
 }
 
-pub fn variantStructName(union_name: []const u8, variant_name: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, union_name, "Stmt")) {
-        if (std.mem.eql(u8, variant_name, "assign")) {
-            return "StmtAssign";
-        }
-        if (std.mem.eql(u8, variant_name, "return_")) {
-            return "StmtReturn";
-        }
-        if (std.mem.eql(u8, variant_name, "if_")) {
-            return "StmtIf";
-        }
-        if (std.mem.eql(u8, variant_name, "while_")) {
-            return "StmtWhile";
-        }
-        if (std.mem.eql(u8, variant_name, "for_in")) {
-            return "StmtForIn";
-        }
-        if (std.mem.eql(u8, variant_name, "for_num")) {
-            return "StmtForNum";
-        }
-        if (std.mem.eql(u8, variant_name, "branch_")) {
-            return "StmtBranch";
-        }
-        if (std.mem.eql(u8, variant_name, "assert_")) {
-            return "StmtAssert";
-        }
-        if (std.mem.eql(u8, variant_name, "defer_")) {
-            return "StmtDefer";
-        }
-        if (std.mem.eql(u8, variant_name, "with_")) {
-            return "StmtWith";
-        }
-        if (std.mem.eql(u8, variant_name, "raise_")) {
-            return "StmtRaise";
-        }
-        if (std.mem.eql(u8, variant_name, "guard_")) {
-            return "StmtGuard";
-        }
-        if (std.mem.eql(u8, variant_name, "destruct")) {
-            return "StmtDestruct";
-        }
-        if (std.mem.eql(u8, variant_name, "print_")) {
-            return "StmtPrint";
-        }
-        if (std.mem.eql(u8, variant_name, "var_")) {
-            return "DeclVar";
-        }
-        if (std.mem.eql(u8, variant_name, "expr")) {
+pub fn populateBoxedVariants(bv: *StrSet, mt: *ModuleTypes) void {
+    for (mt.boxed_variant_keys.items) |key| {
+        bv.add(key);
+    }
+}
+
+pub fn populateRefFields(rf: *StrSet, orf: *StrSet, mt: *ModuleTypes) void {
+    for (mt.ref_field_keys.items) |key| {
+        rf.add(key);
+    }
+    for (mt.opt_ref_field_keys.items) |key| {
+        orf.add(key);
+    }
+}
+
+pub fn structNameFromType(t: Type_) ?[]const u8 {
+    switch (t) {
+        .ref_to => |_ptr_inner| {
+            const inner = _ptr_inner.*;
+            return structNameFromType(inner);
+        },
+        .optional => |_ptr_inner| {
+            const inner = _ptr_inner.*;
+            return structNameFromType(inner);
+        },
+        .named => |sn| {
+            return sn;
+        },
+        .cross_module => |cm| {
+            return cm.type_name;
+        },
+        else => |_| {
             return null;
-        }
-        if (std.mem.eql(u8, variant_name, "arena_scope")) {
-            return "StmtArenaScope";
-        }
-        if (std.mem.eql(u8, variant_name, "try_catch")) {
-            return "StmtTryCatch";
-        }
+        },
     }
-    if (std.mem.eql(u8, union_name, "Expr")) {
-        if (std.mem.eql(u8, variant_name, "member")) {
-            return "ExprMember";
-        }
-        if (std.mem.eql(u8, variant_name, "call")) {
-            return "ExprCall";
-        }
-        if (std.mem.eql(u8, variant_name, "index")) {
-            return "ExprIndex";
-        }
-        if (std.mem.eql(u8, variant_name, "slice")) {
-            return "ExprSlice";
-        }
-        if (std.mem.eql(u8, variant_name, "binary")) {
-            return "ExprBinary";
-        }
-        if (std.mem.eql(u8, variant_name, "unary")) {
-            return "ExprUnary";
-        }
-        if (std.mem.eql(u8, variant_name, "cast")) {
-            return "ExprCast";
-        }
-        if (std.mem.eql(u8, variant_name, "try_")) {
-            return "ExprTry";
-        }
-        if (std.mem.eql(u8, variant_name, "orelse_")) {
-            return "ExprOrelse";
-        }
-        if (std.mem.eql(u8, variant_name, "catch_")) {
-            return "ExprCatch";
-        }
-        if ((std.mem.eql(u8, variant_name, "if_") or std.mem.eql(u8, variant_name, "if_expr"))) {
-            return "ExprIf";
-        }
-        if (std.mem.eql(u8, variant_name, "to_non_nil")) {
-            return "ExprToNonNil";
-        }
-        if (std.mem.eql(u8, variant_name, "to_nilable")) {
-            return "ExprToNilable";
-        }
-        if (std.mem.eql(u8, variant_name, "type_check")) {
-            return "ExprTypeCheck";
-        }
-        if (std.mem.eql(u8, variant_name, "is_nil")) {
-            return "ExprIsNil";
-        }
-        if (std.mem.eql(u8, variant_name, "except_")) {
-            return "ExprExcept";
-        }
-        if (std.mem.eql(u8, variant_name, "string_interp")) {
-            return "ExprStringInterp";
-        }
-    }
-    if (std.mem.eql(u8, union_name, "Decl")) {
-        if (std.mem.eql(u8, variant_name, "var_")) {
-            return "DeclVar";
-        }
-        if (std.mem.eql(u8, variant_name, "method")) {
-            return "DeclMethod";
-        }
-        if (std.mem.eql(u8, variant_name, "init")) {
-            return "DeclInit";
-        }
-        if (std.mem.eql(u8, variant_name, "sig_")) {
-            return "DeclSig";
-        }
-        if (std.mem.eql(u8, variant_name, "class_")) {
-            return "DeclClass";
-        }
-        if (std.mem.eql(u8, variant_name, "interface_")) {
-            return "DeclInterface";
-        }
-        if (std.mem.eql(u8, variant_name, "struct_")) {
-            return "DeclStruct";
-        }
-        if (std.mem.eql(u8, variant_name, "enum_")) {
-            return "DeclEnum";
-        }
-        if (std.mem.eql(u8, variant_name, "use_")) {
-            return "DeclUse";
-        }
-        if (std.mem.eql(u8, variant_name, "extend_")) {
-            return "DeclExtend";
-        }
-        if (std.mem.eql(u8, variant_name, "union_")) {
-            return "DeclUnion";
-        }
-        if (std.mem.eql(u8, variant_name, "mixin_")) {
-            return "DeclMixin";
-        }
-        if (std.mem.eql(u8, variant_name, "namespace_")) {
-            return "DeclNamespace";
-        }
-    }
-    if (std.mem.eql(u8, union_name, "TypeRef")) {
-        if (std.mem.eql(u8, variant_name, "named")) {
-            return "NamedTypeRef";
-        }
-        if (std.mem.eql(u8, variant_name, "generic")) {
-            return "GenericTypeRef";
-        }
-        if (std.mem.eql(u8, variant_name, "tuple")) {
-            return "TupleTypeRef";
-        }
-    }
-    return null;
 }
 
 pub fn isUnionLikeName(name: []const u8) bool {
@@ -2473,8 +2192,8 @@ pub fn generateModuleWith(m: Module, file: []const u8, extra_class_names: std.Ar
             },
             .use_ => |_ptr_imp| {
                 const imp = _ptr_imp.*;
-                addCrossModuleBoxedVariants(g.boxed_variants, imp.path);
-                addCrossModuleRefFields(g.ref_fields, g.opt_ref_fields, imp.path);
+                populateBoxedVariants(g.boxed_variants, deps_mt);
+                populateRefFields(g.ref_fields, g.opt_ref_fields, deps_mt);
                 for (imp.exposed.items) |exposed_name| {
                     if (deps_mt.hasUnion(exposed_name)) {
                         g.union_names.add(exposed_name);
@@ -3661,7 +3380,7 @@ pub const Generator = struct {
                             if (std.mem.eql(u8, nt2.name, "StrSet")) {
                                 bg.strset_locals.add(p2.name);
                             }
-                            const nt2_dot = makeDottedKey(nt2.name, "");
+                            const nt2_dot = _str_concat(nt2.name, ".", _allocator);
                             const orf3 = self.opt_ref_fields.items();
                             var orf3i: i64 = 0;
                             while (_zebra_lt(orf3i, @as(i64, @intCast(orf3.items.len)))) {
@@ -4070,8 +3789,17 @@ pub const Generator = struct {
                 }
                 if ((!hoisted)) {
                     self.writeIndent();
-                    self.genExpr(e);
-                    self.w.emit(";\n");
+                    if (e == .zig_lit) {
+                        const zl = e.zig_lit;
+                        self.w.emit(zl.text);
+                        if ((!std.mem.endsWith(u8, zl.text, ";"))) {
+                            self.w.emit(";");
+                        }
+                        self.w.emit("\n");
+                    } else {
+                        self.genExpr(e);
+                        self.w.emit(";\n");
+                    }
                 }
             },
             .pass_ => |_| {
@@ -4735,29 +4463,34 @@ pub const Generator = struct {
                     ig.w.emit(_str_concat(_str_concat(".", variant, _allocator), ";\n", _allocator));
                 }
                 if ((_zebra_gt(union_nm.len, 0) and _zebra_gt(variant.len, 0))) {
-                    const stype = variantStructName(union_nm, variant);
-                    if ((stype != null)) {
-                        const st = stype.?;
-                        const st_dot = _str_concat(st, ".", _allocator);
-                        const rf_items = self.ref_fields.items();
-                        var rfi: i64 = 0;
-                        while (_zebra_lt(rfi, @as(i64, @intCast(rf_items.items.len)))) {
-                            const rf_entry: []const u8 = rf_items.items[@intCast(rfi)];
-                            if (std.mem.startsWith(u8, rf_entry, st_dot)) {
-                                const fname2 = extractAfterDot(rf_entry);
-                                ig.ptr_field_bindings.add(makeDottedKey(cap, fname2));
+                    var vp_ = self.module_types.variantPayload(union_nm, variant);
+                    if ((vp_ == null)) {
+                        vp_ = self.dep_types.variantPayload(union_nm, variant);
+                    }
+                    if ((vp_ != null)) {
+                        const sname = structNameFromType(vp_.?);
+                        if ((sname != null)) {
+                            const st_dot = _str_concat(sname.?, ".", _allocator);
+                            const rf_items = self.ref_fields.items();
+                            var rfi: i64 = 0;
+                            while (_zebra_lt(rfi, @as(i64, @intCast(rf_items.items.len)))) {
+                                const rf_entry: []const u8 = rf_items.items[@intCast(rfi)];
+                                if (std.mem.startsWith(u8, rf_entry, st_dot)) {
+                                    const fname2 = extractAfterDot(rf_entry);
+                                    ig.ptr_field_bindings.add(makeDottedKey(cap, fname2));
+                                }
+                                rfi += 1;
                             }
-                            rfi += 1;
-                        }
-                        const orf_items = self.opt_ref_fields.items();
-                        var orfi: i64 = 0;
-                        while (_zebra_lt(orfi, @as(i64, @intCast(orf_items.items.len)))) {
-                            const orf_entry: []const u8 = orf_items.items[@intCast(orfi)];
-                            if (std.mem.startsWith(u8, orf_entry, st_dot)) {
-                                const fname3 = extractAfterDot(orf_entry);
-                                ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3));
+                            const orf_items = self.opt_ref_fields.items();
+                            var orfi: i64 = 0;
+                            while (_zebra_lt(orfi, @as(i64, @intCast(orf_items.items.len)))) {
+                                const orf_entry: []const u8 = orf_items.items[@intCast(orfi)];
+                                if (std.mem.startsWith(u8, orf_entry, st_dot)) {
+                                    const fname3 = extractAfterDot(orf_entry);
+                                    ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3));
+                                }
+                                orfi += 1;
                             }
-                            orfi += 1;
                         }
                     }
                 }
@@ -5494,29 +5227,34 @@ pub const Generator = struct {
                         }
                     }
                     if ((_zebra_gt(uname.len, 0) and _zebra_gt(vname.len, 0))) {
-                        const stype = variantStructName(uname, vname);
-                        if ((stype != null)) {
-                            const st = stype.?;
-                            const st_dot = _str_concat(st, ".", _allocator);
-                            const rf_items = self.ref_fields.items();
-                            var rfi: i64 = 0;
-                            while (_zebra_lt(rfi, @as(i64, @intCast(rf_items.items.len)))) {
-                                const rf_entry: []const u8 = rf_items.items[@intCast(rfi)];
-                                if (std.mem.startsWith(u8, rf_entry, st_dot)) {
-                                    const fname2 = extractAfterDot(rf_entry);
-                                    iig.ptr_field_bindings.add(makeDottedKey(cas.binding.?, fname2));
+                        var vp_ = self.module_types.variantPayload(uname, vname);
+                        if ((vp_ == null)) {
+                            vp_ = self.dep_types.variantPayload(uname, vname);
+                        }
+                        if ((vp_ != null)) {
+                            const sname = structNameFromType(vp_.?);
+                            if ((sname != null)) {
+                                const st_dot = _str_concat(sname.?, ".", _allocator);
+                                const rf_items = self.ref_fields.items();
+                                var rfi: i64 = 0;
+                                while (_zebra_lt(rfi, @as(i64, @intCast(rf_items.items.len)))) {
+                                    const rf_entry: []const u8 = rf_items.items[@intCast(rfi)];
+                                    if (std.mem.startsWith(u8, rf_entry, st_dot)) {
+                                        const fname2 = extractAfterDot(rf_entry);
+                                        iig.ptr_field_bindings.add(makeDottedKey(cas.binding.?, fname2));
+                                    }
+                                    rfi += 1;
                                 }
-                                rfi += 1;
-                            }
-                            const orf_items = self.opt_ref_fields.items();
-                            var orfi: i64 = 0;
-                            while (_zebra_lt(orfi, @as(i64, @intCast(orf_items.items.len)))) {
-                                const orf_entry: []const u8 = orf_items.items[@intCast(orfi)];
-                                if (std.mem.startsWith(u8, orf_entry, st_dot)) {
-                                    const fname3 = extractAfterDot(orf_entry);
-                                    iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding.?, fname3));
+                                const orf_items = self.opt_ref_fields.items();
+                                var orfi: i64 = 0;
+                                while (_zebra_lt(orfi, @as(i64, @intCast(orf_items.items.len)))) {
+                                    const orf_entry: []const u8 = orf_items.items[@intCast(orfi)];
+                                    if (std.mem.startsWith(u8, orf_entry, st_dot)) {
+                                        const fname3 = extractAfterDot(orf_entry);
+                                        iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding.?, fname3));
+                                    }
+                                    orfi += 1;
                                 }
-                                orfi += 1;
                             }
                         }
                     }

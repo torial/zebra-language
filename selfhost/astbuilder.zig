@@ -1772,7 +1772,8 @@ pub const ASTBuilder = struct {
                 const u = _ptr_u.*;
                 return Decl{ .use_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "use_")) = DeclUse.init(zspan(), u.path, u.exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
-            .namespace_decl => |ns| {
+            .namespace_decl => |_ptr_ns| {
+                const ns = _ptr_ns.*;
                 const nested: std.ArrayList(Decl) = try self.buildTopDecls(ns.decls);
                 return Decl{ .namespace_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "namespace_")) = DeclNamespace.init(zspan(), ns.name, nested); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
@@ -2102,16 +2103,19 @@ pub const ASTBuilder = struct {
                 const pb = _ptr_pb.*;
                 return try self.buildBranch(pb);
             },
-            .stmt_arena_scope => |pas| {
+            .stmt_arena_scope => |_ptr_pas| {
+                const pas = _ptr_pas.*;
                 const stmts = try self.buildStmts(pas.stmts);
                 return Stmt{ .arena_scope = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "arena_scope")) = StmtArenaScope.init(zspan(), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
-            .stmt_guard => |pg| {
+            .stmt_guard => |_ptr_pg| {
+                const pg = _ptr_pg.*;
                 const cond_expr = try self.buildExpr(pg.cond.items[@intCast(0)]);
                 const else_stmts: std.ArrayList(Stmt) = try self.buildStmts(pg.else_stmts);
                 return Stmt{ .guard_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "guard_")) = StmtGuard.init(zspan(), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
-            .stmt_with => |pw| {
+            .stmt_with => |_ptr_pw| {
+                const pw = _ptr_pw.*;
                 const target_expr = try self.buildExpr(pw.target.items[@intCast(0)]);
                 const raw_body: std.ArrayList(Stmt) = try self.buildStmts(pw.stmts);
                 var new_body = std.ArrayList(Stmt){};
@@ -2310,12 +2314,14 @@ pub const ASTBuilder = struct {
                 const op = try self.toBinaryOp(pb.op);
                 return Expr{ .binary = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "binary")) = ExprBinary.init(zspan(), op, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
-            .expr_orelse => |po| {
+            .expr_orelse => |_ptr_po| {
+                const po = _ptr_po.*;
                 const expr_val = try self.buildExpr(po.expr.items[@intCast(0)]);
                 const fb_val = try self.buildExpr(po.fallback.items[@intCast(0)]);
                 return Expr{ .orelse_ = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "orelse_")) = ExprOrelse.init(zspan(), _bx0: { const _bv = expr_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
             },
-            .expr_pipeline => |pp| {
+            .expr_pipeline => |_ptr_pp| {
+                const pp = _ptr_pp.*;
                 const lhs_expr = try self.buildExpr(pp.lhs.items[@intCast(0)]);
                 const rhs_node = pp.rhs.items[@intCast(0)];
                 switch (rhs_node) {

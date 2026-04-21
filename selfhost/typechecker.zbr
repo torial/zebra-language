@@ -167,6 +167,12 @@ class ModuleTypes
     # Parallel to variant_payloads: keys where the payload type is Type_.ref_to.
     # Iterable without HashMap key enumeration; used by codegen to seed boxed_variants.
     var boxed_variant_keys: List(str)
+    # "ClassName.fieldName" entries for ^T (non-optional ref) fields across all
+    # classes/structs; populated by addClassMembers. Used by codegen to replace
+    # the hardcoded addCrossModuleRefFields table.
+    var ref_field_keys: List(str)
+    # Same as ref_field_keys but for ^T? (optional ref) fields.
+    var opt_ref_field_keys: List(str)
     # Separate set of known union type names — so a caller can ask
     # "is 'Foo' declared: a union in this module?" without enumerating
     # variant_payloads. Populated alongside variant_payloads.
@@ -177,6 +183,8 @@ class ModuleTypes
         hashmap_field_names = HashMap()
         variant_payloads = HashMap()
         boxed_variant_keys = List()
+        ref_field_keys = List()
+        opt_ref_field_keys = List()
         union_names = HashMap()
 
     def addClass(c: ClassTypes)
@@ -343,6 +351,14 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                         mt.addStrSetField("" + v.name)
                     if isHashMapTypeRef(v.type_ to!)
                         mt.addHashMapField("" + v.name)
+                    # Populate ref_field_keys / opt_ref_field_keys for ^T and ^T? fields.
+                    # ^T? parses as ref_to(nilable(inner)); ^T as ref_to(non-nilable inner).
+                    if v.type_ to! is TypeRef.ref_to as refInner
+                        var key: str = ct.name + "." + ("" + v.name)
+                        if refInner is TypeRef.nilable
+                            mt.opt_ref_field_keys.add(key)
+                        else
+                            mt.ref_field_keys.add(key)
                 else
                     ct.setField("" + v.name, Type_.unknown_)
             on Decl.method as m
@@ -503,6 +519,9 @@ def isString(t: Type_): bool
     branch t
         on Type_.string_
             return true
+        on Type_.cross_module as cm
+            # BUG-075: String class imported cross-module yields cross_module, not string_.
+            return cm.type_name == "String"
         else
             return false
 

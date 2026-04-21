@@ -35,13 +35,12 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-006: `zig"..."` expression statement emits double semicolon — FIXED (Zig side), selfhost still open
+### BUG-006: `zig"..."` expression statement emits double semicolon — FIXED both sides
 - **Severity:** Low
-- **Status:** Fixed (Zig backend) 2026-04-17; selfhost side still emits `;;` (cosmetic)
-- **Target:** 0.5 (low priority)
+- **Status:** Fixed — Zig backend 2026-04-17; selfhost fixed 2026-04-20 (Phase 20)
 - **Symptom:** `zig"some_stmt;"` inside a method body emitted `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appended another `;`.
 - **Zig-side fix:** `src/CodeGen.zig::genStmt` `.expr` case detects trailing `;` on `zig_lit` content and skips the appended `;`.
-- **Selfhost residue:** `selfhost/codegen.zbr::genStmt` `on Stmt.expr` unconditionally emits `;\n`. Double `;;` is syntactically valid Zig (empty stmt), so round-trip is still clean. Port when selfhost is next touched.
+- **Selfhost fix:** `selfhost/codegen.zbr::genStmt` `on Stmt.expr` now checks `if e is Expr.zig_lit`: emits content, adds `;` only if content doesn't already end with `;`, then `\n`.
 
 ---
 
@@ -119,17 +118,15 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-035: Selfhost parser has no atom handler for `doc_string_line` (`"""..."""` multi-line strings)
 - **Severity:** High (blocks any `.zbr` using `"""..."""` from compiling under selfhost)
-- **Status:** Open
-- **Target:** Phase 17e or 17f (selfhost-edit wave).
-- **Root cause:** `selfhost/parser.zbr` has no atom case that builds an expression from `doc_string_line` token — `grep doc_string parser.zbr` returns no matches.
-- **Fix direction:** Add a `doc_string_line` case to the atom-building path in `selfhost/parser.zbr` that wraps the token text in `Expr.string_lit` with `kind = plain`.
+- **Status:** Fixed — `selfhost/parser.zbr:1885` handles `isDocString()` → `PNode.expr_str(text)`. Confirmed in selfhost_probe6 (test 1 passes). Closed Phase 20 (2026-04-20).
+- **Original root cause:** `selfhost/parser.zbr` had no atom case for `doc_string_line` tokens.
 
 ---
 
 ### BUG-037: Selfhost corpus-failure triage — RESOLVED 2026-04-19
 - **Severity:** High (headline self-hosting gap)
 - **Status:** Closed — corpus reached 100% (149/149) via BUG-048 through BUG-073 grammar wave. All 47 parser-gap failures driven to zero.
-- **Remaining open work (not tracked here):** BUG-035 (`"""…"""` doc strings).
+- **Remaining open work (not tracked here):** BUG-035 — now also fixed (see above).
 
 ---
 
@@ -146,11 +143,10 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-075: `String + str` concat not routed through `_str_concat` in selfhost TypeChecker
 - **Severity:** TC inference gap (selfhost only)
-- **Status:** Workaround in place; principled fix deferred
-- **Description:** When a struct field has type `String` (the Zebra class) rather than `str` (primitive), cross-module member access yields `Type.cross_module`, not `Type.string`. The `+` operator for a `cross_module` typed value therefore emits raw Zig `+` instead of `_str_concat`, causing a Zig compile error (`invalid operands to binary expression: 'pointer' and 'pointer'`).
-- **Discovered in:** `genMethod` seeding loop for `opt_ptr_field_bindings` (BUG-073 fix). `nt2.name` is `String` (cross-module), so `nt2.name + "."` would emit invalid Zig.
-- **Workaround:** Call `makeDottedKey(nt2.name, "")` instead of `nt2.name + "."`. `makeDottedKey` takes `str`-typed parameters, so inside it `a + "."` correctly routes through `_str_concat`.
-- **Principled fix:** The TC's `inferBinary` should recognise `String + str` (and `str + String` and `String + String`) as string concat, returning `Type.string` and emitting `_str_concat`.
+- **Status:** Fixed — Phase 20 (2026-04-20)
+- **Description:** When a struct field has type `String` (the Zebra class) rather than `str` (primitive), cross-module member access yields `Type.cross_module`, not `Type.string`. The `+` operator for a `cross_module` typed value therefore emitted raw Zig `+` instead of `_str_concat`, causing a Zig compile error (`invalid operands to binary expression: 'pointer' and 'pointer'`).
+- **Fix:** Extended `isString(t: Type_)` in `selfhost/typechecker.zbr` to return `true` for `Type_.cross_module` where `cm.type_name == "String"`. The codegen's `isStringBoth` → `isStringWalker` → `inferExpr` → `isString` chain then correctly routes `String + str` through `_str_concat`. Workaround (`makeDottedKey(nt2.name, "")`) removed; replaced with `nt2.name + "."`.
+- **Discovered in:** `genMethod` seeding loop for `opt_ptr_field_bindings` (BUG-073 fix). `nt2.name` is `String` (cross-module).
 
 ---
 
@@ -217,4 +213,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-20*
+*Last updated: 2026-04-20 — Phase 20 complete (BUG-006/035/075 fixed, addCrossModuleRefFields retired)*
