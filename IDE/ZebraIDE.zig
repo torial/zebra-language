@@ -1121,76 +1121,141 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64
     if (!_ed.read_only) { _ed.text = _r; }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-// ─── Stub backend (single frame, prints to stderr) ───────────────────────────
-fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
-    _ = title; _ = width; _ = height;
+// ─── zgui GLFW+OpenGL3 backend ──────────────────────────────────────────────
+const zgui    = @import("zgui");
+const zglfw   = @import("zglfw");
+const zopengl = @import("zopengl");
+var _gl_window: *zglfw.Window = undefined;
+fn _imgui_init(title: []const u8, width: i64, height: i64) anyerror!void {
+    try zglfw.init();
+    errdefer zglfw.terminate();
+    zglfw.windowHint(.context_version_major, 3);
+    zglfw.windowHint(.context_version_minor, 3);
+    zglfw.windowHint(.opengl_profile, .opengl_core_profile);
+    const _title_z = try _allocator.dupeZ(u8, title);
+    defer _allocator.free(_title_z);
+    _gl_window = try zglfw.createWindow(
+        @intCast(width), @intCast(height), _title_z, null, null,
+    );
+    errdefer _gl_window.destroy();
+    zglfw.makeContextCurrent(_gl_window);
+    zglfw.swapInterval(1);
+    try zopengl.loadCoreProfile(zglfw.getProcAddress, 3, 3);
+    zgui.init(_allocator);
+    zgui.backend.init(_gl_window);
 }
-fn _stub_deinit() void {}
-var _stub_frame_count: u8 = 0;
-fn _stub_new_frame() bool {
-    if (_stub_frame_count >= 1) return false;
-    _stub_frame_count += 1;
+fn _imgui_deinit() void {
+    zgui.backend.deinit();
+    zgui.deinit();
+    _gl_window.destroy();
+    zglfw.terminate();
+}
+fn _imgui_new_frame() bool {
+    zglfw.pollEvents();
+    if (_gl_window.shouldClose()) return false;
+    const _fb = _gl_window.getFramebufferSize();
+    zgui.backend.newFrame(@intCast(_fb[0]), @intCast(_fb[1]));
+    // Auto-wrap all frame widgets in a fullscreen borderless window.
+    zgui.setNextWindowPos(.{ .x = 0, .y = 0 });
+    zgui.setNextWindowSize(.{ .w = @floatFromInt(_fb[0]), .h = @floatFromInt(_fb[1]) });
+    _ = zgui.begin("##_main", .{ .flags = .{
+        .no_title_bar = true, .no_resize = true,
+        .no_move = true,      .no_collapse = true,
+    }});
     return true;
 }
-fn _stub_end_frame() void {}
-fn _stub_text(s: []const u8) void { std.debug.print("[gui] text: {s}\n", .{s}); }
-fn _stub_separator() void { std.debug.print("[gui] ---\n", .{}); }
-fn _stub_same_line() void { std.debug.print("[gui] sameLine\n", .{}); }
-fn _stub_spacing() void { std.debug.print("[gui] spacing\n", .{}); }
-fn _stub_indent() void { std.debug.print("[gui] indent\n", .{}); }
-fn _stub_unindent() void { std.debug.print("[gui] unindent\n", .{}); }
-fn _stub_button(label: []const u8) bool {
-    std.debug.print("[gui] button: {s}\n", .{label});
-    return false;
+fn _imgui_end_frame() void {
+    zgui.end();
+    const _fb = _gl_window.getFramebufferSize();
+    zopengl.bindings.viewport(0, 0, _fb[0], _fb[1]);
+    zopengl.bindings.clearColor(0.1, 0.1, 0.1, 1.0);
+    zopengl.bindings.clear(zopengl.bindings.COLOR_BUFFER_BIT);
+    zgui.backend.draw();
+    _gl_window.swapBuffers();
 }
-fn _stub_checkbox(label: []const u8, value: bool) bool {
-    std.debug.print("[gui] checkbox: {s} = {}\n", .{ label, value });
+fn _imgui_text(s: []const u8) void { zgui.textUnformatted(s); }
+fn _imgui_separator() void { zgui.separator(); }
+fn _imgui_same_line() void { zgui.sameLine(.{}); }
+fn _imgui_spacing() void { zgui.spacing(); }
+fn _imgui_indent() void { zgui.indent(.{}); }
+fn _imgui_unindent() void { zgui.unindent(.{}); }
+fn _imgui_button(label: []const u8) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return false;
+    defer _allocator.free(_z);
+    return zgui.button(_z, .{});
+}
+fn _imgui_checkbox(label: []const u8, value: bool) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return value;
+    defer _allocator.free(_z);
+    var _v = value;
+    _ = zgui.checkbox(_z, .{ .v = &_v });
+    return _v;
+}
+fn _imgui_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
+    const _z = _allocator.dupeZ(u8, label) catch return value;
+    defer _allocator.free(_z);
+    var _v: f32 = @floatCast(value);
+    _ = zgui.sliderFloat(_z, .{ .v = &_v, .min = @floatCast(min), .max = @floatCast(max) });
+    return @floatCast(_v);
+}
+fn _imgui_input(label: []const u8, value: []const u8) []const u8 {
+    const _z = _allocator.dupeZ(u8, label) catch return value;
+    defer _allocator.free(_z);
+    var _buf: [256:0]u8 = @splat(0);
+    const _n = @min(value.len, _buf.len - 1);
+    @memcpy(_buf[0.._n], value[0.._n]);
+    if (zgui.inputText(_z, .{ .buf = &_buf })) {
+        const _len = std.mem.indexOfScalar(u8, &_buf, 0) orelse _buf.len;
+        return _allocator.dupe(u8, _buf[0.._len]) catch value;
+    }
     return value;
 }
-fn _stub_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
-    std.debug.print("[gui] slider: {s} = {d} [{d}, {d}]\n", .{ label, value, min, max });
+fn _imgui_input_multiline(label: []const u8, value: []const u8, width: f64, height: f64) []const u8 {
+    const _z = _allocator.dupeZ(u8, label) catch return value;
+    defer _allocator.free(_z);
+    var _buf: [65536:0]u8 = @splat(0);
+    const _n = @min(value.len, _buf.len - 1);
+    @memcpy(_buf[0.._n], value[0.._n]);
+    if (zgui.inputTextMultiline(_z, .{ .buf = &_buf, .w = @floatCast(width), .h = @floatCast(height) })) {
+        const _len = std.mem.indexOfScalar(u8, &_buf, 0) orelse _buf.len;
+        return _allocator.dupe(u8, _buf[0.._len]) catch value;
+    }
     return value;
 }
-fn _stub_input(label: []const u8, value: []const u8) []const u8 {
-    std.debug.print("[gui] input: {s} = {s}\n", .{ label, value });
-    return value;
+fn _imgui_begin_panel(label: []const u8) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return true;
+    defer _allocator.free(_z);
+    return zgui.collapsingHeader(_z, .{});
 }
-fn _stub_input_multiline(label: []const u8, value: []const u8, width: f64, height: f64) []const u8 {
-    std.debug.print("[gui] inputMultiline: {s} ({d}x{d})\n", .{ label, width, height });
-    return value;
+fn _imgui_end_panel() void {}
+fn _imgui_begin_window(label: []const u8) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return true;
+    defer _allocator.free(_z);
+    return zgui.begin(_z, .{});
 }
-fn _stub_begin_panel(label: []const u8) bool {
-    std.debug.print("[gui] panel: {s}\n", .{label});
-    return true;
-}
-fn _stub_end_panel() void {}
-fn _stub_begin_window(label: []const u8) bool {
-    std.debug.print("[gui] window: {s}\n", .{label});
-    return true;
-}
-fn _stub_end_window() void {}
-const _gui_stub_backend = _GuiBackend{
-    .initFn        = _stub_init,
-    .deinitFn      = _stub_deinit,
-    .newFrameFn    = _stub_new_frame,
-    .endFrameFn    = _stub_end_frame,
-    .textFn        = _stub_text,
-    .separatorFn   = _stub_separator,
-    .sameLineFn    = _stub_same_line,
-    .spacingFn     = _stub_spacing,
-    .indentFn      = _stub_indent,
-    .unindentFn    = _stub_unindent,
-    .buttonFn      = _stub_button,
-    .checkboxFn    = _stub_checkbox,
-    .sliderFn      = _stub_slider,
-    .inputFn       = _stub_input,
-    .inputMultilineFn = _stub_input_multiline,
-    .beginPanelFn  = _stub_begin_panel,
-    .endPanelFn    = _stub_end_panel,
-    .beginWindowFn = _stub_begin_window,
-    .endWindowFn   = _stub_end_window,
+fn _imgui_end_window() void { zgui.end(); }
+const _gui_imgui_backend = _GuiBackend{
+    .initFn        = _imgui_init,
+    .deinitFn      = _imgui_deinit,
+    .newFrameFn    = _imgui_new_frame,
+    .endFrameFn    = _imgui_end_frame,
+    .textFn        = _imgui_text,
+    .separatorFn   = _imgui_separator,
+    .sameLineFn    = _imgui_same_line,
+    .spacingFn     = _imgui_spacing,
+    .indentFn      = _imgui_indent,
+    .unindentFn    = _imgui_unindent,
+    .buttonFn      = _imgui_button,
+    .checkboxFn    = _imgui_checkbox,
+    .sliderFn      = _imgui_slider,
+    .inputFn       = _imgui_input,
+    .inputMultilineFn = _imgui_input_multiline,
+    .beginPanelFn  = _imgui_begin_panel,
+    .endPanelFn    = _imgui_end_panel,
+    .beginWindowFn = _imgui_begin_window,
+    .endWindowFn   = _imgui_end_window,
 };
-const _gui_active_backend: _GuiBackend = _gui_stub_backend;
+const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
 fn _hex_encode(bytes: []const u8) []const u8 {
     const _hx = "0123456789abcdef";
     var out = _allocator.alloc(u8, bytes.len * 2) catch return "";

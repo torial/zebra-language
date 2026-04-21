@@ -2525,6 +2525,7 @@ const Generator = struct {
             \\    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
             \\    inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
             \\    inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
+            \\    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
             \\    beginPanelFn:  *const fn (label: []const u8) bool,
             \\    endPanelFn:    *const fn () void,
             \\    beginWindowFn: *const fn (label: []const u8) bool,
@@ -2587,7 +2588,7 @@ const Generator = struct {
             \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
             \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
             \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-            \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+            \\    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
             \\    if (!_ed.read_only) { _ed.text = _r; }
             \\}
             \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
@@ -2660,6 +2661,7 @@ const Generator = struct {
                 \\    .sliderFn      = _stub_slider,
                 \\    .inputFn       = _stub_input,
                 \\    .inputMultilineFn = _stub_input_multiline,
+                \\    .codeEditorFn  = _stub_input_multiline,
                 \\    .beginPanelFn  = _stub_begin_panel,
                 \\    .endPanelFn    = _stub_end_panel,
                 \\    .beginWindowFn = _stub_begin_window,
@@ -2801,6 +2803,7 @@ const Generator = struct {
                 \\    .sliderFn      = _imgui_slider,
                 \\    .inputFn       = _imgui_input,
                 \\    .inputMultilineFn = _imgui_input_multiline,
+                \\    .codeEditorFn  = _imgui_input_multiline,
                 \\    .beginPanelFn  = _imgui_begin_panel,
                 \\    .endPanelFn    = _imgui_end_panel,
                 \\    .beginWindowFn = _imgui_begin_window,
@@ -2875,6 +2878,7 @@ const Generator = struct {
                 \\    .sliderFn      = _stub_slider,
                 \\    .inputFn       = _stub_input,
                 \\    .inputMultilineFn = _stub_input_multiline,
+                \\    .codeEditorFn  = _stub_input_multiline,
                 \\    .beginPanelFn  = _stub_begin_panel,
                 \\    .endPanelFn    = _stub_end_panel,
                 \\    .beginWindowFn = _stub_begin_window,

@@ -768,3 +768,105 @@ zig build run -- selfhost/codegen_test.zbr   # auto-discovers imports
 ```
 
 The compiler resolves `use module_name` by looking for `module_name.zbr` in the same directory as the input file, then in `selfhost/`, `test/`, and stdlib paths.
+
+---
+
+## 27. GUI programming
+
+Zebra has a built-in immediate-mode GUI API backed by Dear ImGui (via the
+[zgui](https://github.com/zig-gamedev/zgui) bindings).
+
+### Running a GUI program
+
+Pass `--gui-backend=glfw` to the compiler:
+
+```bash
+zebra --gui-backend=glfw myapp.zbr
+```
+
+The compiler auto-scaffolds a `zig build` project (e.g. `myapp_gui/`) next to
+the generated `.zig` file, writes a pinned `build.zig.zon`, and invokes
+`zig build run`. The project directory is reused on subsequent runs.
+
+### Minimal example
+
+```zebra
+class Main
+    shared
+        def main
+            Gui.run("Hello", 400, 300, def(g: Gui)
+                g.text("Hello, Zebra!")
+                if g.button("Click me")
+                    g.text("Clicked!")
+            )
+```
+
+### `Gui.run`
+
+```zebra
+Gui.run(title: str, width: int, height: int, frame: def(g: Gui))
+```
+
+Calls `frame` once per rendered frame until the window is closed. Use a
+`capture` block inside the lambda to keep state alive across frames.
+
+### Widget reference
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `g.text(s)` | void | Displays a text label |
+| `g.button(label)` | bool | Returns true on click |
+| `g.checkbox(label, value)` | bool | Returns new checked state |
+| `g.slider(label, value, min, max)` | float | Drag slider |
+| `g.input(label, value)` | str | Single-line text input |
+| `g.inputMultiline(label, value, w, h)` | str | Multi-line text area |
+| `g.separator()` | void | Horizontal rule |
+| `g.sameLine()` | void | Next widget on same line |
+| `g.spacing()` | void | Extra vertical space |
+| `g.indent()` / `g.unindent()` | void | Indentation level |
+| `g.panel(label, callback)` | void | Collapsible child window |
+| `g.window(label, callback)` | void | Floating sub-window |
+
+### `CodeEditor` widget
+
+`CodeEditor` is a builtin type for editable code panels:
+
+```zebra
+var editor = CodeEditor.forZebra()     # factory — Zebra syntax preset
+editor.setText(File.read("main.zbr"))
+editor.setReadOnly(false)
+
+# Inside frame lambda:
+editor.render(g, "##editor", 700, 500)
+var src = editor.getText()
+editor.setErrorMarkers(diags)          # diags: List(IDEDiagnostic)
+```
+
+### Persistent frame state with `capture`
+
+State that must survive across frames (editor content, file path, loaded flag)
+goes in a `capture` block at the top of the frame lambda:
+
+```zebra
+Gui.run("IDE", 1000, 750, def(g: Gui)
+    capture
+        var state = IDEState()
+        var editor = CodeEditor.forZebra()
+        var inited: bool = false
+    if not inited
+        editor.setText(File.read("main.zbr"))
+        inited = true
+    editor.render(g, "##ed", 800, 600)
+)
+```
+
+The `capture` block is allocated once when the lambda struct is first created
+and reused every frame.
+
+### Backend isolation
+
+The GUI layer uses a `_GuiBackend` fn-pointer struct internally. The current
+backend is `_gui_active_backend`. To add a new backend, implement the fn-ptr
+slots (see `src/CodeGen.zig` preamble) and swap the constant — no changes to
+user Zebra code required. The `codeEditorFn` slot is reserved for a future
+ImGuiColorTextEdit integration.

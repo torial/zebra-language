@@ -1415,3 +1415,114 @@ Runtime test: if_is_capture_test.zbr — 7 lines output, all correct
               (plain payload, non-match, else-if chain, standalone is,
                boxed ^struct payload)
 ```
+
+---
+
+## Phase 20: Cross-module type resolution + retire addCrossModuleRefFields
+**Completed:** 2026-04-21
+
+### Goal
+
+Close the final cross-module type-resolution gaps and retire the
+`addCrossModuleRefFields` heuristic that had been accumulating debt since
+Phase 16.
+
+### What was fixed
+
+**BUG-006** (`addCrossModuleRefFields` heuristic) — removed the heuristic
+entirely and replaced it with proper `cross_module` scope entries produced
+by `typeFromRef`. Every cross-module class field now resolves through the
+full TC chain rather than a name-pattern shortcut.
+
+**BUG-035** (exposed types → TC) — `typeFromRef` was not threading
+`exposed` module types into the `cross_module` scope of the importing
+module. Fixed: `buildModuleTypes` now iterates exposed declarations and
+inserts `cross_module` entries for each.
+
+**BUG-075** (TC fix for exposed types) — the TypeChecker was resolving
+exposed-type references with `.named` scope entries when the correct scope
+kind is `.cross_module`. Corrected the scope-kind predicate so method
+dispatch on imported exposed types works correctly.
+
+### Isolation tactics
+
+`addCrossModuleRefFields` was an isolation shim bridging the gap between the
+partial TypeChecker and the full resolver. Retiring it was possible only after
+Phase 16–17 made `typeFromRef` + `inferExpr` complete enough to cover all
+previously-heuristic cases. The retirement followed the pattern: verify walker
+output matches heuristic output at all 16 known call sites, then delete.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Tests:      74/74 TC tests pass
+Corpus:     152/152 emit-zig pass
+```
+
+---
+
+## Phase 21: GUI/CodeEditor + genLambda mutation analysis
+**Completed:** 2026-04-21
+
+### Goal
+
+Two independent improvements:
+
+1. **CodeEditor widget** — add `CodeEditor` as a builtin type in the Zebra
+   compiler, backed by the `_GuiBackend.codeEditorFn` slot, so `ZebraIDE.zbr`
+   compiles and runs without stubs.
+
+2. **`genLambda` mutation analysis** — fix a codegen bug where implicit
+   capture lambdas always emitted `self: @This()` (by-value), meaning
+   mutations to captured primitive fields had no effect outside the lambda
+   call.
+
+### CodeEditor implementation
+
+`CodeEditor` is a builtin class in `Builtins.zig`. CodeGen emits a
+`_CodeEditor` struct holding `text` and `read_only` state. Five methods are
+dispatched in `genCodeEditorMethod`:
+
+| Zebra | Emits |
+|-------|-------|
+| `editor.setText(s)` | `_code_editor_set_text(ed, s)` |
+| `editor.getText()` | `_code_editor_get_text(ed)` |
+| `editor.setReadOnly(b)` | `_code_editor_set_readonly(ed, b)` |
+| `editor.setErrorMarkers(diags)` | `_code_editor_set_error_markers(ed, diags)` |
+| `editor.render(g, id, w, h)` | `_code_editor_render(ed, g, id, w, h)` |
+
+`CodeEditor.forZebra()` maps to `_code_editor_new()`.
+
+`_code_editor_render` dispatches through `_g._b.codeEditorFn`, which is a
+dedicated slot in `_GuiBackend`. Currently both stub and ImGui backends
+wire this to `inputTextMultiline`; the slot is reserved for a future
+ImGuiColorTextEdit backend.
+
+### `genLambda` mutation analysis
+
+`genCaptureClosureStruct` (explicit `capture` blocks) already emitted
+`self: *@This()` only when a captured field was directly reassigned in the
+body. `genLambda` (implicit auto-capture) was unconditionally emitting
+`self: @This()` (by-value), so `var n = 0; var f = def() -> n = n + 1`
+compiled but `n` never changed.
+
+Fix: mirror the same `scanMutations` analysis in `genLambda`. If any
+captured field name appears in the mutation set, emit `self: *@This()`;
+otherwise emit `self: @This()`.
+
+### glfw backend end-to-end
+
+The glfw build pipeline was verified end-to-end: `zebra --gui-backend=glfw
+IDE/ZebraIDE.zbr` runs to exit code 0, creating `IDE/ZebraIDE_gui/` with a
+working binary. The build.zig.zon template was updated to bake all three
+dependency hashes (zglfw, zopengl, zgui) directly, removing the previous
+`zig fetch --save=zgui` network call.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Tests:      zig build test — all pass
+GUI:        zebra --gui-backend=glfw IDE/ZebraIDE.zbr — exit 0
+```

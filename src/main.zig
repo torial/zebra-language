@@ -880,12 +880,8 @@ fn backend(
 // When using a non-stub GUI backend, the generated .zig file imports zgui,
 // zglfw, and zopengl, which require a `zig build` project with declared
 // dependencies.  `compileGuiProject` creates a minimal project directory
-// alongside the generated .zig file, fetches zgui (to populate its hash), and
-// invokes `zig build run` or `zig build install`.
-
-/// zgui git commit used for the generated GUI project.
-const zgui_commit = "d6c4f53c2fbd54673790dc2a5208160a3586ef29";
-const zgui_url    = "https://github.com/zig-gamedev/zgui/archive/" ++ zgui_commit ++ ".tar.gz";
+// alongside the generated .zig file and invokes `zig build run` or
+// `zig build install`.
 
 /// Minimal `build.zig` written into the generated GUI project.
 const gui_project_build_zig =
@@ -926,7 +922,8 @@ const gui_project_build_zig =
     \\
 ;
 
-/// Initial `build.zig.zon` (without zgui — added by `zig fetch --save=zgui`).
+/// `build.zig.zon` written into the generated GUI project.
+/// All three dependency hashes are pinned to the proven-working commits.
 const gui_project_build_zig_zon =
     \\.{
     \\    .name                 = .app,
@@ -941,6 +938,10 @@ const gui_project_build_zig_zon =
     \\        .zopengl = .{
     \\            .url  = "https://github.com/zig-gamedev/zopengl/archive/db9d615c742086b39954eef064f957e92dafc7e2.tar.gz",
     \\            .hash = "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
+    \\        },
+    \\        .zgui = .{
+    \\            .url  = "https://github.com/zig-gamedev/zgui/archive/d6c4f53c2fbd54673790dc2a5208160a3586ef29.tar.gz",
+    \\            .hash = "zgui-0.6.0-dev--L6sZCJKbgBZGCzVMcwD0bNGmpK6yO-UoIESHX5JiRet",
     \\        },
     \\    },
     \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
@@ -981,23 +982,7 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator)
     const abs_proj = try std.fs.cwd().realpathAlloc(alloc, proj);
     defer alloc.free(abs_proj);
 
-    // 5. zig fetch --save=zgui <url>  (adds zgui entry + hash to build.zig.zon).
-    {
-        const argv = [_][]const u8{ "zig", "fetch", "--save=zgui", zgui_url };
-        var child = std.process.Child.init(&argv, alloc);
-        child.cwd              = abs_proj;
-        child.stdin_behavior   = .Inherit;
-        child.stdout_behavior  = .Inherit;
-        child.stderr_behavior  = .Inherit;
-        const term = try child.spawnAndWait();
-        const code = switch (term) { .Exited => |c| c, else => @as(u8, 1) };
-        if (code != 0) {
-            std.debug.print("zebra: 'zig fetch' failed (exit {d})\n", .{code});
-            return code;
-        }
-    }
-
-    // 6. zig build run / install.
+    // 5. zig build run / install.
     {
         const build_step = if (mode == .run) "run" else "install";
         const argv = [_][]const u8{ "zig", "build", build_step };
