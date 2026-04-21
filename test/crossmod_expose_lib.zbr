@@ -1,0 +1,23 @@
+# crossmod_expose_lib.zbr — library for crossmod_expose_test.zbr.
+# Tests: exposed union branch narrowing, exposed struct field concat,
+# exposed class for-in over List(T) field.
+
+struct Tag
+    var name: str
+    var weight: int
+    cue init(n: str, w: int)
+        name = n
+        weight = w
+
+class Bag
+    var label: str
+    var items: List(Tag)
+    cue init(lbl: str)
+        label = lbl
+        items = List(Tag)()
+    def add(t: Tag)
+        items.add(t)
+
+union Shape
+    dot: int
+    box: Tag

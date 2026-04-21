@@ -1,0 +1,47 @@
+# crossmod_expose_test.zbr — validates typeFromRef fix for exposed types.
+#
+# Three scenarios that previously broke when exposed types were mis-typed as
+# Type.named instead of Type.cross_module (fixed in Phase 20 / typeFromRef):
+#
+#   1. Branch narrowing on exposed union — `on Shape.box as r` binds r: Tag
+#   2. String concat on exposed struct field — r.name + " label"
+#   3. For-in over List(Tag) field on exposed class — iterates Bag.items
+
+use crossmod_expose_lib exposing Tag, Bag, Shape
+
+class Main
+    shared
+        def main
+            test1BranchOnExposedUnion()
+            test2ForInOverExposedClassList()
+            print "crossmod_expose: all OK"
+
+        def test1BranchOnExposedUnion
+            var s: Shape = Shape.box(Tag("hello", 5))
+            branch s
+                on Shape.box as r
+                    # String concat on exposed struct field (BUG-075 regression check)
+                    var label = r.name + " label"
+                    assert label == "hello label", "concat on exposed field: '${label}'"
+                    assert r.weight == 5, "weight: ${r.weight}"
+                on Shape.dot
+                    assert false, "wrong branch"
+            print "test1 OK"
+
+        def test2ForInOverExposedClassList
+            var b = Bag("test-bag")
+            b.add(Tag("alpha", 10))
+            b.add(Tag("beta", 20))
+            b.add(Tag("gamma", 30))
+            var total = 0
+            for t in b.items
+                total += t.weight
+            assert total == 60, "total weight: ${total}"
+            # String concat on loop-bound exposed struct field
+            var names = ""
+            for t in b.items
+                if names != ""
+                    names = names + ","
+                names = names + t.name
+            assert names == "alpha,beta,gamma", "names: '${names}'"
+            print "test2 OK"
