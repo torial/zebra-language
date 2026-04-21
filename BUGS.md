@@ -210,30 +210,10 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-080: `^T?` field assignment emits wrong deref (`x.field.* = v` instead of `x.field = v`)
-- **Severity:** Medium (codegen correctness; wrong Zig that fails to compile or produces UB)
-- **Status:** Open
-- **Target:** CodeGen hardening wave
-- **Symptom:** Assigning to a field declared `^T?` (optional heap-ref, e.g. `var next: ^Node?`) emits `x.field.* = _rp` — which dereferences the `?*Node` optional — instead of `x.field = _rp` (assigning the `*Node` pointer; Zig auto-coerces `*T` → `?*T`).
-- **Minimal repro:**
-  ```zebra
-  class Node
-      var value: int
-      var next: ^Node?
-      cue init(v: int)
-          value = v
-          next = nil
-  
-  class Main
-      shared
-          def main
-              var n = Node(1)
-              var n2 = Node(99)
-              n.next = n2   # BUG: emits n.next.* = _rp
-  ```
-- **Root cause:** In `src/CodeGen.zig` (and mirrored in `selfhost/codegen.zbr`), the assignment handler for `^T?` fields checks `is_ptr_field` and emits `.* =` to dereference. But optional refs (`?*T`) should be assigned directly — only mandatory ref fields (`*T`) need the deref on read, not on assignment.
-- **Fix direction:** In `genAssign` (or wherever field assignments are emitted), when the LHS field is an optional ref (`^T?` → Zig type `?*T`), emit `x.field = rhs` not `x.field.* = rhs`. The optional write doesn't dereference — the pointer value itself is stored into the field slot.
+### BUG-080: `^T?` field assignment (closed — not reproducing)
+- **Severity:** Medium (originally suspected codegen correctness issue)
+- **Status:** Closed — not reproducing as of 2026-04-21. Verified with minimal repro: `n.next = n2` where `next: ^Node?` generates correct `n.next = n2;` in Zig. The BUG-047 class short-circuit in `genAssign` and `field_needs_deref` both correctly suppress the `.*` for class-typed optional ref fields.
 
 ---
 
-*Last updated: 2026-04-21 — BUG-078 fixed (walkUnion double-box error); BUG-077 not reproducing; BUG-080 filed (^T? field assign deref)*
+*Last updated: 2026-04-21 — BUG-078 fixed (walkUnion double-box error); BUG-077 and BUG-080 not reproducing (closed)*
