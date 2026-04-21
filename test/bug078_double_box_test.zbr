@@ -1,0 +1,12 @@
+# bug078_double_box_test.zbr — expects compile error: ^ClassName double-boxes.
+# A union variant whose payload is ^ClassName is an error because class types
+# are already reference types; the ^ adds a redundant indirection (*T → **T).
+
+class Payload
+    var value: int
+    cue init(v: int)
+        value = v
+
+union Wrap
+    unit: int
+    item: ^Payload

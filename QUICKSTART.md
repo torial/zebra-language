@@ -199,10 +199,10 @@ Usage: `Color.red`, `Status.ok`.
 
 ```zebra
 union Expr
-    int_ as int
-    str_ as str
+    int_: int
+    str_: str
     void_                    # payload-less variant
-    node_ as ^Node           # heap-indirection payload
+    node_: ^Node             # heap-indirection payload (^T only valid for structs/primitives)
 
 # Construction:
 var e = Expr.int_(42)
@@ -221,6 +221,7 @@ branch e
 ```
 
 - `^T` payload: the pointer is transparent — the branch-binding variable has type `T`, not `*T`.
+- `^T` is valid only for struct/primitive/union payloads. Using `^ClassName` where `ClassName` is a class is a **compile error** — classes are already reference types; `^ClassName` would double-box to `**T`. Use `item: ClassName` directly.
 - `else` with `pass` is required for non-exhaustive branches.
 
 ```zebra

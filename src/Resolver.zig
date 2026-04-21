@@ -196,7 +196,29 @@ const Resolver = struct {
     fn walkUnion(r: Resolver, n: *Ast.DeclUnion, scope: *Scope) anyerror!void {
         // Resolve each variant's payload TypeRef so TypeChecker can infer branch binding types.
         for (n.variants) |*v| {
-            if (v.payload) |*payload| try r.resolveTypeRef(payload, scope);
+            if (v.payload) |*payload| {
+                try r.resolveTypeRef(payload, scope);
+                // BUG-078: ^ClassName double-boxes — class types are already reference
+                // types (*T on the heap); adding ^T produces **T at runtime.
+                switch (payload.*) {
+                    .ref_to => |inner| switch (inner.*) {
+                        .named => |*ntr| {
+                            if (r.types.get(ntr)) |resolved| {
+                                if (resolved == .symbol and resolved.symbol.kind == .class) {
+                                    const msg = try std.fmt.allocPrint(
+                                        r.diag_alloc,
+                                        "'^{s}' double-boxes — '{s}' is already a reference type; use '{s}: {s}' directly",
+                                        .{ resolved.symbol.name, resolved.symbol.name, v.name, resolved.symbol.name },
+                                    );
+                                    try r.diags.append(r.diag_alloc, .{ .span = v.span, .kind = .err, .message = msg });
+                                }
+                            }
+                        },
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
         }
     }
 

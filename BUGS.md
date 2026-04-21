@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-079. Next new bug: BUG-080.**
+**Last bug number generated: BUG-080. Next new bug: BUG-081.**
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
 
@@ -152,21 +152,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-077: TC doesn't record inferred type for `?`-propagated throws-call assignments
 - **Severity:** Medium (selfhost-code quality; type errors inside capture/post-throws code go uncaught until Zig compile time)
-- **Status:** Open
-- **Target:** TC hardening wave
-- **Symptom:** `var x = foo()?` where `foo` returns `T throws` — TC type of `x` is `.unknown`. Downstream `x.field` where `field: ^T` silently omits the `.*` auto-deref. Also affects `if x is Union.variant as r`: the binding `r` has type `.unknown` (see BUG-076).
-- **Root cause:** `inferCall` in the TypeChecker doesn't write the resolved return type into `expr_types` for the receiving local after `?` propagation. TC for explicit type annotations (`var x as T = foo()?`) works because the annotation is used directly.
-- **Fix direction:** In `visitVarDecl` / `inferExpr` for `?`-postfix, look up the callee's declared return type from the resolve result and store it in `expr_types[init_expr]`. Mirror in selfhost TC inference path.
+- **Status:** Not reproducing as originally described — likely resolved indirectly by BUG-076 (capture binding narrowed_types fix) and Phase 20 typeFromRef exposed-type fix (2026-04-20).
+- **Original symptom:** `var x = foo()?` where `foo` returns `T throws` — TC type of `x` might be `.unknown`. Downstream `x.field` where `field: ^T` might omit the `.*` auto-deref.
+- **Verified (2026-04-21):** Both `src/TypeChecker.zig` and `selfhost/typechecker.zbr` correctly handle the `.try_` case — `inferExpr` on a `try` node returns `inferExpr(e.expr)`, and `checkVarDecl`/`walkStmt(.var_)` stores the result. The `?`-propagated type is correctly recorded. No fix needed; mark as resolved-by-inference.
 
 ---
 
-### BUG-078: `^ClassName` in union variant double-boxes (`**T`)
+### BUG-078: `^ClassName` in union variant double-boxes (`**T`) — FIXED
 - **Severity:** Medium (silent codegen bug; payload pointer is one level too deep)
-- **Status:** Open — needs compiler error
-- **Target:** Resolver or TypeChecker pass
-- **Symptom:** `union Wrap { item as ^Payload }` where `Payload` is a class: class constructors already return `*Payload`, so boxed-variant codegen emits `_allocator.create(*Payload)` → `**Payload`. Struct payloads are unaffected.
+- **Status:** Fixed — `src/Resolver.zig::walkUnion` emits a hard error; test `test/bug078_double_box_test.zbr` is the intentional-error fixture
+- **Symptom:** `union Wrap { item: ^Payload }` where `Payload` is a class: class constructors already return `*Payload`, so boxed-variant codegen would emit `_allocator.create(*Payload)` → `**Payload`. Struct payloads are unaffected.
 - **Root cause:** The `^T` ref-boxing convention was designed for struct/union/primitive payloads. Classes are already reference types; `^ClassName` adds a redundant indirection level.
-- **Fix direction:** In the Resolver or TypeChecker, when a union variant's payload type is `.ref_to` and the inner type resolves to a class name, emit a hard error: `'^ClassName' double-boxes — ClassName is already a reference type; use 'item as ClassName' directly`. Add a note to QUICKSTART.md under union variants.
+- **Fix:** In `walkUnion`, after resolving each variant's payload TypeRef, check if the payload is `.ref_to` wrapping a `.named` that resolves to a `.class` symbol. If so, emit: `'^ClassName' double-boxes — 'ClassName' is already a reference type; use 'item: ClassName' directly`. Note added to QUICKSTART.md under union variants.
 
 ---
 
@@ -213,4 +210,30 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-20 — Phase 20 complete (BUG-006/035/075 fixed, addCrossModuleRefFields retired)*
+### BUG-080: `^T?` field assignment emits wrong deref (`x.field.* = v` instead of `x.field = v`)
+- **Severity:** Medium (codegen correctness; wrong Zig that fails to compile or produces UB)
+- **Status:** Open
+- **Target:** CodeGen hardening wave
+- **Symptom:** Assigning to a field declared `^T?` (optional heap-ref, e.g. `var next: ^Node?`) emits `x.field.* = _rp` — which dereferences the `?*Node` optional — instead of `x.field = _rp` (assigning the `*Node` pointer; Zig auto-coerces `*T` → `?*T`).
+- **Minimal repro:**
+  ```zebra
+  class Node
+      var value: int
+      var next: ^Node?
+      cue init(v: int)
+          value = v
+          next = nil
+  
+  class Main
+      shared
+          def main
+              var n = Node(1)
+              var n2 = Node(99)
+              n.next = n2   # BUG: emits n.next.* = _rp
+  ```
+- **Root cause:** In `src/CodeGen.zig` (and mirrored in `selfhost/codegen.zbr`), the assignment handler for `^T?` fields checks `is_ptr_field` and emits `.* =` to dereference. But optional refs (`?*T`) should be assigned directly — only mandatory ref fields (`*T`) need the deref on read, not on assignment.
+- **Fix direction:** In `genAssign` (or wherever field assignments are emitted), when the LHS field is an optional ref (`^T?` → Zig type `?*T`), emit `x.field = rhs` not `x.field.* = rhs`. The optional write doesn't dereference — the pointer value itself is stored into the field slot.
+
+---
+
+*Last updated: 2026-04-21 — BUG-078 fixed (walkUnion double-box error); BUG-077 not reproducing; BUG-080 filed (^T? field assign deref)*
