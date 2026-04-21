@@ -414,6 +414,31 @@ def variantStructName(union_name: str, variant_name: str): str?
             return "DeclInit"
         if variant_name == "sig_"
             return "DeclSig"
+        if variant_name == "class_"
+            return "DeclClass"
+        if variant_name == "interface_"
+            return "DeclInterface"
+        if variant_name == "struct_"
+            return "DeclStruct"
+        if variant_name == "enum_"
+            return "DeclEnum"
+        if variant_name == "use_"
+            return "DeclUse"
+        if variant_name == "extend_"
+            return "DeclExtend"
+        if variant_name == "union_"
+            return "DeclUnion"
+        if variant_name == "mixin_"
+            return "DeclMixin"
+        if variant_name == "namespace_"
+            return "DeclNamespace"
+    if union_name == "TypeRef"
+        if variant_name == "named"
+            return "NamedTypeRef"
+        if variant_name == "generic"
+            return "GenericTypeRef"
+        if variant_name == "tuple"
+            return "TupleTypeRef"
     return nil
 
 def isUnionLikeName(name: str): bool
@@ -1160,17 +1185,19 @@ struct Generator
 
     def withMethodCtx(ms: StrSet?, rs: StrSet?, throws_: bool, members: List(Decl), pnames: StrSet?, sparams: StrSet, sname: str): Generator
         var g = this except
-            in_method             = true
-            current_method_throws = throws_
-            mut_set               = ms
-            ret_set               = rs
-            owner_members         = members
-            param_names           = pnames
-            str_params            = sparams
-            self_name             = sname
-            indent                = indent + 1
-            for_loop_deref        = StrSet()
-            for_loop_vars         = StrSet()
+            in_method              = true
+            current_method_throws  = throws_
+            mut_set                = ms
+            ret_set                = rs
+            owner_members          = members
+            param_names            = pnames
+            str_params             = sparams
+            self_name              = sname
+            indent                 = indent + 1
+            for_loop_deref         = StrSet()
+            for_loop_vars          = StrSet()
+            ptr_field_bindings     = StrSet()
+            opt_ptr_field_bindings = StrSet()
         return g
 
     # ── Output helpers ────────────────────────────────────────────────────────
@@ -1742,6 +1769,14 @@ struct Generator
                                 if orf3e.startsWith(nt2_dot)
                                     bg.opt_ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(orf3e)))
                                 orf3i += 1
+                            # Seed ptr_field_bindings for non-optional ^T fields of named-type params
+                            var rf3 = ref_fields.items()
+                            var rf3i = 0
+                            while rf3i < rf3.count()
+                                var rf3e: str = rf3.at(rf3i)
+                                if rf3e.startsWith(nt2_dot)
+                                    bg.ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(rf3e)))
+                                rf3i += 1
                         else
                             pass
             # Suppress unused-parameter errors for self and params
@@ -2537,6 +2572,9 @@ struct Generator
                                 ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3))
                             orfi += 1
                 ig.genStmts(stmts)
+                var ckey = makeDottedKey(cap, "")
+                ig.ptr_field_bindings.removeStartingWith(ckey)
+                ig.opt_ptr_field_bindings.removeStartingWith(ckey)
             else
                 # Fallback: emit a plain if (should not happen for well-formed is-capture)
                 w.emit("if (")
@@ -3164,6 +3202,10 @@ struct Generator
                                     iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname3))
                                 orfi += 1
             iig.genStmts(cas.stmts)
+            if cas.binding != nil
+                var bkey = makeDottedKey(cas.binding to!, "")
+                iig.ptr_field_bindings.removeStartingWith(bkey)
+                iig.opt_ptr_field_bindings.removeStartingWith(bkey)
             ig.writeIndent()
             ig.w.emit("},\n")
         if b.else_ != nil

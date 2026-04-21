@@ -224,9 +224,9 @@ branch e
 - `else` with `pass` is required for non-exhaustive branches.
 
 ```zebra
-# `if x is Union.variant |r|` — inline single-variant check with payload binding
+# Single-variant check with payload binding — use `if x is Union.Variant as r`
 var e = Expr.int_(42)
-if e is Expr.int_ |n|
+if e is Expr.int_ as n
     print "got int: ${n}"    # n is the int payload
 else
     print "not int"
@@ -234,6 +234,24 @@ else
 # Standalone `is` check (no binding):
 var ok = e is Expr.int_          # true — union variant check
 var ok2 = e is MyClass           # true — class type-tag check
+```
+
+**Style rule — `if ... is ... as` vs `branch`:**
+- Use `if x is Union.Variant as r` when checking a **single variant** and binding its payload.
+  This is more concise and reads naturally ("if x is a Member expression, bind it as m").
+- Use `branch x` when dispatching across **multiple variants** of a union.
+  `branch` is exhaustive-by-default and enforces complete coverage with `else`.
+
+```zebra
+# ✓ Single-variant: use if-is
+if e is Expr.member as m
+    genMember(m)
+
+# ✓ Multi-variant: use branch
+branch e
+    on Expr.int_ as n    print "int: ${n}"
+    on Expr.str_ as s    print "str: ${s}"
+    else                 pass
 ```
 
 ---

@@ -2000,6 +2000,44 @@ pub fn variantStructName(union_name: []const u8, variant_name: []const u8) ?[]co
         if (std.mem.eql(u8, variant_name, "sig_")) {
             return "DeclSig";
         }
+        if (std.mem.eql(u8, variant_name, "class_")) {
+            return "DeclClass";
+        }
+        if (std.mem.eql(u8, variant_name, "interface_")) {
+            return "DeclInterface";
+        }
+        if (std.mem.eql(u8, variant_name, "struct_")) {
+            return "DeclStruct";
+        }
+        if (std.mem.eql(u8, variant_name, "enum_")) {
+            return "DeclEnum";
+        }
+        if (std.mem.eql(u8, variant_name, "use_")) {
+            return "DeclUse";
+        }
+        if (std.mem.eql(u8, variant_name, "extend_")) {
+            return "DeclExtend";
+        }
+        if (std.mem.eql(u8, variant_name, "union_")) {
+            return "DeclUnion";
+        }
+        if (std.mem.eql(u8, variant_name, "mixin_")) {
+            return "DeclMixin";
+        }
+        if (std.mem.eql(u8, variant_name, "namespace_")) {
+            return "DeclNamespace";
+        }
+    }
+    if (std.mem.eql(u8, union_name, "TypeRef")) {
+        if (std.mem.eql(u8, variant_name, "named")) {
+            return "NamedTypeRef";
+        }
+        if (std.mem.eql(u8, variant_name, "generic")) {
+            return "GenericTypeRef";
+        }
+        if (std.mem.eql(u8, variant_name, "tuple")) {
+            return "TupleTypeRef";
+        }
     }
     return null;
 }
@@ -2932,7 +2970,7 @@ pub const Generator = struct {
     }
 
     pub fn withMethodCtx(self: *Generator, ms: ?*StrSet, rs: ?*StrSet, throws_: bool, members: std.ArrayList(Decl), pnames: ?*StrSet, sparams: *StrSet, sname: []const u8) Generator {
-        const g = blk: { var _except_tmp = self.*; _except_tmp.in_method = true; _except_tmp.current_method_throws = throws_; _except_tmp.mut_set = ms; _except_tmp.ret_set = rs; _except_tmp.owner_members = members; _except_tmp.param_names = pnames; _except_tmp.str_params = sparams; _except_tmp.self_name = sname; _except_tmp.indent = (self.indent + 1); _except_tmp.for_loop_deref = StrSet.init(); _except_tmp.for_loop_vars = StrSet.init(); break :blk _except_tmp; };
+        const g = blk: { var _except_tmp = self.*; _except_tmp.in_method = true; _except_tmp.current_method_throws = throws_; _except_tmp.mut_set = ms; _except_tmp.ret_set = rs; _except_tmp.owner_members = members; _except_tmp.param_names = pnames; _except_tmp.str_params = sparams; _except_tmp.self_name = sname; _except_tmp.indent = (self.indent + 1); _except_tmp.for_loop_deref = StrSet.init(); _except_tmp.for_loop_vars = StrSet.init(); _except_tmp.ptr_field_bindings = StrSet.init(); _except_tmp.opt_ptr_field_bindings = StrSet.init(); break :blk _except_tmp; };
         return g;
     }
 
@@ -3632,6 +3670,15 @@ pub const Generator = struct {
                                     bg.opt_ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(orf3e)));
                                 }
                                 orf3i += 1;
+                            }
+                            const rf3 = self.ref_fields.items();
+                            var rf3i: i64 = 0;
+                            while (_zebra_lt(rf3i, @as(i64, @intCast(rf3.items.len)))) {
+                                const rf3e: []const u8 = rf3.items[@intCast(rf3i)];
+                                if (std.mem.startsWith(u8, rf3e, nt2_dot)) {
+                                    bg.ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(rf3e)));
+                                }
+                                rf3i += 1;
                             }
                         },
                         else => |_| {
@@ -4715,6 +4762,9 @@ pub const Generator = struct {
                     }
                 }
                 ig.genStmts(stmts);
+                const ckey = makeDottedKey(cap, "");
+                ig.ptr_field_bindings.removeStartingWith(ckey);
+                ig.opt_ptr_field_bindings.removeStartingWith(ckey);
             },
             else => |_| {
                 self.w.emit("if (");
@@ -5473,6 +5523,11 @@ pub const Generator = struct {
                 }
             }
             iig.genStmts(cas.stmts);
+            if ((cas.binding != null)) {
+                const bkey = makeDottedKey(cas.binding.?, "");
+                iig.ptr_field_bindings.removeStartingWith(bkey);
+                iig.opt_ptr_field_bindings.removeStartingWith(bkey);
+            }
             ig.writeIndent();
             ig.w.emit("},\n");
         }
