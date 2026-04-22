@@ -35,15 +35,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-006: `zig"..."` expression statement emits double semicolon — FIXED both sides
-- **Severity:** Low
-- **Status:** Fixed — Zig backend 2026-04-17; selfhost fixed 2026-04-20 (Phase 20)
-- **Symptom:** `zig"some_stmt;"` inside a method body emitted `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appended another `;`.
-- **Zig-side fix:** `src/CodeGen.zig::genStmt` `.expr` case detects trailing `;` on `zig_lit` content and skips the appended `;`.
-- **Selfhost fix:** `selfhost/codegen.zbr::genStmt` `on Stmt.expr` now checks `if e is Expr.zig_lit`: emits content, adds `;` only if content doesn't already end with `;`, then `\n`.
-
----
-
 ### BUG-014: Regex lazy match is global, not per-quantifier
 - **Severity:** Medium
 - **Status:** Open — architectural limitation
@@ -116,67 +107,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-035: Selfhost parser has no atom handler for `doc_string_line` (`"""..."""` multi-line strings)
-- **Severity:** High (blocks any `.zbr` using `"""..."""` from compiling under selfhost)
-- **Status:** Fixed — `selfhost/parser.zbr:1885` handles `isDocString()` → `PNode.expr_str(text)`. Confirmed in selfhost_probe6 (test 1 passes). Closed Phase 20 (2026-04-20).
-- **Original root cause:** `selfhost/parser.zbr` had no atom case for `doc_string_line` tokens.
-
----
-
-### BUG-037: Selfhost corpus-failure triage — RESOLVED 2026-04-19
-- **Severity:** High (headline self-hosting gap)
-- **Status:** Closed — corpus reached 100% (149/149) via BUG-048 through BUG-073 grammar wave. All 47 parser-gap failures driven to zero.
-- **Remaining open work (not tracked here):** BUG-035 — now also fixed (see above).
-
----
-
----
-
-### BUG-046: Selfhost does not discover or merge partial-class sibling files — FIXED 2026-04-19
-- **Severity:** Medium (selfhost-only parity gap; members added in `<stem>.*.zbr` partials are silently dropped)
-- **Status:** Fixed — committed 2026-04-19
-- **Root cause:** `selfhost/main.zbr` had no sibling-file discovery or partial merge logic.
-- **Fix:** Added `mergePartials_pmodule` in `selfhost/main.zbr` — scans the directory for `<stem>.*.zbr` siblings, parses each, and merges matching class members into the root module before codegen. Key implementation detail: `File.read` generates `defer _allocator.free(src)`, which in Zig 0.15 can rewind the arena if the buffer is the last allocation. Fix uses `"" + psrc_raw` (Zebra string concat → `_str_concat`) to make a permanent arena copy before parsing.
-- **Gate:** bootstrap 5/5 + `zig build test` green.
-
----
-
-### BUG-075: `String + str` concat not routed through `_str_concat` in selfhost TypeChecker
-- **Severity:** TC inference gap (selfhost only)
-- **Status:** Fixed — Phase 20 (2026-04-20)
-- **Description:** When a struct field has type `String` (the Zebra class) rather than `str` (primitive), cross-module member access yields `Type.cross_module`, not `Type.string`. The `+` operator for a `cross_module` typed value therefore emitted raw Zig `+` instead of `_str_concat`, causing a Zig compile error (`invalid operands to binary expression: 'pointer' and 'pointer'`).
-- **Fix:** Extended `isString(t: Type_)` in `selfhost/typechecker.zbr` to return `true` for `Type_.cross_module` where `cm.type_name == "String"`. The codegen's `isStringBoth` → `isStringWalker` → `inferExpr` → `isString` chain then correctly routes `String + str` through `_str_concat`. Workaround (`makeDottedKey(nt2.name, "")`) removed; replaced with `nt2.name + "."`.
-- **Discovered in:** `genMethod` seeding loop for `opt_ptr_field_bindings` (BUG-073 fix). `nt2.name` is `String` (cross-module).
-
----
-
-### BUG-077: TC doesn't record inferred type for `?`-propagated throws-call assignments
-- **Severity:** Medium (selfhost-code quality; type errors inside capture/post-throws code go uncaught until Zig compile time)
-- **Status:** Not reproducing as originally described — likely resolved indirectly by BUG-076 (capture binding narrowed_types fix) and Phase 20 typeFromRef exposed-type fix (2026-04-20).
-- **Original symptom:** `var x = foo()?` where `foo` returns `T throws` — TC type of `x` might be `.unknown`. Downstream `x.field` where `field: ^T` might omit the `.*` auto-deref.
-- **Verified (2026-04-21):** Both `src/TypeChecker.zig` and `selfhost/typechecker.zbr` correctly handle the `.try_` case — `inferExpr` on a `try` node returns `inferExpr(e.expr)`, and `checkVarDecl`/`walkStmt(.var_)` stores the result. The `?`-propagated type is correctly recorded. No fix needed; mark as resolved-by-inference.
-
----
-
-### BUG-078: `^ClassName` in union variant double-boxes (`**T`) — FIXED
-- **Severity:** Medium (silent codegen bug; payload pointer is one level too deep)
-- **Status:** Fixed — `src/Resolver.zig::walkUnion` emits a hard error; test `test/bug078_double_box_test.zbr` is the intentional-error fixture
-- **Symptom:** `union Wrap { item: ^Payload }` where `Payload` is a class: class constructors already return `*Payload`, so boxed-variant codegen would emit `_allocator.create(*Payload)` → `**Payload`. Struct payloads are unaffected.
-- **Root cause:** The `^T` ref-boxing convention was designed for struct/union/primitive payloads. Classes are already reference types; `^ClassName` adds a redundant indirection level.
-- **Fix:** In `walkUnion`, after resolving each variant's payload TypeRef, check if the payload is `.ref_to` wrapping a `.named` that resolves to a `.class` symbol. If so, emit: `'^ClassName' double-boxes — 'ClassName' is already a reference type; use 'item: ClassName' directly`. Note added to QUICKSTART.md under union variants.
-
----
-
-### BUG-076: `if x is Union.variant |r|` capture binding not registered in TypeChecker `narrowed_types`
-- **Severity:** Medium (TC silent on type errors inside capture body; catches nothing until Zig compile time)
-- **Status:** Fixed
-- **Fixed in:** BUG-076 commit — `isCaptureLookup` 3-way payload lookup in TypeChecker.zig; selfhost walker narrowing in typechecker.zbr; `genIsCaptureThen` ptr_field_bindings registration in codegen.zbr; bootstrap 5/5
-- **Symptom:** Inside `if x is Shape.circle |r| { ... }`, the binding `r` has TC type `.unknown`. Any misuse of `r` (wrong method, wrong field) produces no Zebra-level error — the error only surfaces as a Zig compile error after codegen.
-- **Root cause:** `src/TypeChecker.zig::visitIf` and `visitElseIf` do not call `pushNarrowedBinding` (or equivalent) for `is_capture` bindings. The Zig-side code correctly emits `const r = x.circle;` — Zig infers the type — but the TC never records `r → payload_type` in `narrowed_types`.
-- **Fix:** Added `isCaptureLookup` helper (3-way: same-module union, cross-module alias, direct cross_module) to TypeChecker.zig; updated `.if_` arm to push/pop the capture binding. Selfhost: `typechecker.zbr` walker now populates `cap_t` via `variantPayload`; `codegen.zbr::genIsCaptureThen` now seeds `ptr_field_bindings`/`opt_ptr_field_bindings` for the bound struct's `^T` fields.
-
----
-
 ### BUG-079: Method chaining on struct-returning calls silently mis-compiles or is unnecessarily banned
 - **Severity:** Medium (ergonomics + correctness; blocks natural call-chaining style)
 - **Status:** Open — workaround required
@@ -210,10 +140,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-080: `^T?` field assignment (closed — not reproducing)
-- **Severity:** Medium (originally suspected codegen correctness issue)
-- **Status:** Closed — not reproducing as of 2026-04-21. Verified with minimal repro: `n.next = n2` where `next: ^Node?` generates correct `n.next = n2;` in Zig. The BUG-047 class short-circuit in `genAssign` and `field_needs_deref` both correctly suppress the `.*` for class-typed optional ref fields.
-
----
-
-*Last updated: 2026-04-21 — BUG-078 fixed (walkUnion double-box error); BUG-077 and BUG-080 not reproducing (closed)*
+*Last updated: 2026-04-21 — BUG-006/035/037/046/075/076/077/078/080 moved to FixedBugs.md*

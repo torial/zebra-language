@@ -1857,14 +1857,14 @@ pub const ASTBuilder = struct {
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
 // zbr:selfhost/astbuilder.zbr:175
-                return Decl{ .use_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "use_")) = DeclUse.init(zspan(), u.path, u.exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Decl{ .use_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(Decl, "use_")) = DeclUse.init(zspan(), u.path, u.exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
             },
             .namespace_decl => |_ptr_ns| {
                 const ns = _ptr_ns.*;
 // zbr:selfhost/astbuilder.zbr:177
                 const nested: std.ArrayList(Decl) = try self.buildTopDecls(ns.decls);
 // zbr:selfhost/astbuilder.zbr:178
-                return Decl{ .namespace_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "namespace_")) = DeclNamespace.init(zspan(), ns.name, nested); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Decl{ .namespace_ = blk_box_2: { const _bv: std.meta.Child(@FieldType(Decl, "namespace_")) = DeclNamespace.init(zspan(), ns.name, nested); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
             },
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
@@ -1935,7 +1935,7 @@ pub const ASTBuilder = struct {
             tparams.append(_allocator, TypeParam.init(tp, null)) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:211
-        return Decl{ .class_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "class_")) = DeclClass.init(zspan(), zmods(), c.name, tparams, ifaces, mixins, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .class_ = blk_box_3: { const _bv: std.meta.Child(@FieldType(Decl, "class_")) = DeclClass.init(zspan(), zmods(), c.name, tparams, ifaces, mixins, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
     }
 
     pub fn buildInterface(self: *ASTBuilder, c: PClass) anyerror!Decl {
@@ -1952,7 +1952,7 @@ pub const ASTBuilder = struct {
             ifaces.append(_allocator, TypeRef{ .named = NamedTypeRef.init(zspan(), iface) }) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:222
-        return Decl{ .interface_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "interface_")) = DeclInterface.init(zspan(), zmods(), c.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .interface_ = blk_box_4: { const _bv: std.meta.Child(@FieldType(Decl, "interface_")) = DeclInterface.init(zspan(), zmods(), c.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
     }
 
     pub fn buildExtend(self: *ASTBuilder, ex: PExtend) anyerror!Decl {
@@ -1965,7 +1965,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:230
         const target = self.parseTypeRefRequired(ex.target_name);
 // zbr:selfhost/astbuilder.zbr:231
-        return Decl{ .extend_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "extend_")) = DeclExtend.init(zspan(), target, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .extend_ = blk_box_5: { const _bv: std.meta.Child(@FieldType(Decl, "extend_")) = DeclExtend.init(zspan(), target, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
     }
 
     pub fn buildStruct(self: *ASTBuilder, s: PClass) anyerror!Decl {
@@ -1982,7 +1982,7 @@ pub const ASTBuilder = struct {
             ifaces.append(_allocator, TypeRef{ .named = NamedTypeRef.init(zspan(), iface) }) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:242
-        return Decl{ .struct_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "struct_")) = DeclStruct.init(zspan(), zmods(), s.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(Decl, "struct_")) = DeclStruct.init(zspan(), zmods(), s.name, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
     }
 
     pub fn buildUnion(self: *ASTBuilder, u: PUnionDecl) anyerror!Decl {
@@ -2000,7 +2000,7 @@ pub const ASTBuilder = struct {
             variants.append(_allocator, UnionVariant.init(zspan(), pv.name, payload)) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:253
-        return Decl{ .union_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "union_")) = DeclUnion.init(zspan(), zmods(), u.name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .union_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(Decl, "union_")) = DeclUnion.init(zspan(), zmods(), u.name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
     }
 
     pub fn buildSig(self: *ASTBuilder, sg: PSig) anyerror!Decl {
@@ -2015,7 +2015,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:262
         const ret_type = self.parseTypeRef(sg.return_type);
 // zbr:selfhost/astbuilder.zbr:263
-        return Decl{ .sig_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "sig_")) = DeclSig.init(zspan(), sg.name, params, ret_type); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .sig_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(Decl, "sig_")) = DeclSig.init(zspan(), sg.name, params, ret_type); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
     }
 
     pub fn buildMember(self: *ASTBuilder, pn: PNode) anyerror!Decl {
@@ -2037,10 +2037,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:276
                     const initval = try self.buildExpr(f.init_expr.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:277
-                    return Decl{ .var_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "var_")) = DeclVar.init(zspan(), fmods, f.name, type_ref, _bx0: { const _bv = initval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Decl{ .var_ = blk_box_9: { const _bv: std.meta.Child(@FieldType(Decl, "var_")) = DeclVar.init(zspan(), fmods, f.name, type_ref, _bx0: { const _bv = initval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_9 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:278
-                return Decl{ .var_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "var_")) = DeclVar.init(zspan(), fmods, f.name, type_ref, null, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Decl{ .var_ = blk_box_10: { const _bv: std.meta.Child(@FieldType(Decl, "var_")) = DeclVar.init(zspan(), fmods, f.name, type_ref, null, f.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } };
             },
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
@@ -2068,7 +2068,7 @@ pub const ASTBuilder = struct {
             members.append(_allocator, EnumMember.init(zspan(), v, null)) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:292
-        return Decl{ .enum_ = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "enum_")) = DeclEnum.init(zspan(), zmods(), e.name, null, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .enum_ = blk_box_11: { const _bv: std.meta.Child(@FieldType(Decl, "enum_")) = DeclEnum.init(zspan(), zmods(), e.name, null, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_11 _bp; } };
     }
 
     pub fn buildMethod(self: *ASTBuilder, m: PMethod, is_member: bool) anyerror!Decl {
@@ -2095,7 +2095,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:307
         const mods = Modifiers.init(false, false, false, m.is_shared, false, false);
 // zbr:selfhost/astbuilder.zbr:309
-        return Decl{ .method = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "method")) = DeclMethod.init(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .method = blk_box_12: { const _bv: std.meta.Child(@FieldType(Decl, "method")) = DeclMethod.init(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_12 _bp; } };
     }
 
     pub fn buildInit(self: *ASTBuilder, pinit: PInit) anyerror!Decl {
@@ -2117,7 +2117,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:322
         const stmts_list = try self.buildStmts(pinit.stmts);
 // zbr:selfhost/astbuilder.zbr:323
-        return Decl{ .init = blk_box: { const _bv: std.meta.Child(@FieldType(Decl, "init")) = DeclInit.init(zspan(), zmods(), params, stmts_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Decl{ .init = blk_box_13: { const _bv: std.meta.Child(@FieldType(Decl, "init")) = DeclInit.init(zspan(), zmods(), params, stmts_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
     }
 
     pub fn buildStmts(self: *ASTBuilder, nodes: std.ArrayList(PNode)) anyerror!std.ArrayList(Stmt) {
@@ -2141,11 +2141,11 @@ pub const ASTBuilder = struct {
                 switch (sa.target.*) {
                     .ident => |ei| {
 // zbr:selfhost/astbuilder.zbr:340
-                        const new_target: Expr = Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        const new_target: Expr = Expr{ .member = blk_box_14: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_14 _bp; } };
 // zbr:selfhost/astbuilder.zbr:341
                         const val_copy: Expr = sa.value.*;
 // zbr:selfhost/astbuilder.zbr:342
-                        return Stmt{ .assign = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "assign")) = StmtAssign.init(zspan(), _bx0: { const _bv = new_target; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, sa.op, _bx1: { const _bv = val_copy; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        return Stmt{ .assign = blk_box_15: { const _bv: std.meta.Child(@FieldType(Stmt, "assign")) = StmtAssign.init(zspan(), _bx0: { const _bv = new_target; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, sa.op, _bx1: { const _bv = val_copy; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_15 _bp; } };
                     },
                     else => |_| {
 // zbr:selfhost/astbuilder.zbr:344
@@ -2182,10 +2182,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:361
                     const rval = try self.buildExpr(pret.value.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:362
-                    return Stmt{ .return_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "return_")) = StmtReturn.init(Span.init(pret.line, 0, pret.line, 0), _bx0: { const _bv = rval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .return_ = blk_box_16: { const _bv: std.meta.Child(@FieldType(Stmt, "return_")) = StmtReturn.init(Span.init(pret.line, 0, pret.line, 0), _bx0: { const _bv = rval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_16 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:363
-                return Stmt{ .return_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "return_")) = StmtReturn.init(Span.init(pret.line, 0, pret.line, 0), null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .return_ = blk_box_17: { const _bv: std.meta.Child(@FieldType(Stmt, "return_")) = StmtReturn.init(Span.init(pret.line, 0, pret.line, 0), null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
             },
             .stmt_if => |_ptr_pif| {
                 const pif = _ptr_pif.*;
@@ -2209,7 +2209,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:374
                 si.is_capture = pif.is_capture;
 // zbr:selfhost/astbuilder.zbr:375
-                return Stmt{ .if_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "if_")) = si; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .if_ = blk_box_18: { const _bv: std.meta.Child(@FieldType(Stmt, "if_")) = si; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_18 _bp; } };
             },
             .stmt_while => |_ptr_pw| {
                 const pw = _ptr_pw.*;
@@ -2218,7 +2218,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:379
                 const stmts = try self.buildStmts(pw.stmts);
 // zbr:selfhost/astbuilder.zbr:380
-                return Stmt{ .while_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "while_")) = StmtWhile.init(Span.init(pw.line, 0, pw.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .while_ = blk_box_19: { const _bv: std.meta.Child(@FieldType(Stmt, "while_")) = StmtWhile.init(Span.init(pw.line, 0, pw.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_19 _bp; } };
             },
             .stmt_for_in => |_ptr_pfor| {
                 const pfor = _ptr_pfor.*;
@@ -2233,7 +2233,7 @@ pub const ASTBuilder = struct {
                     vars.append(_allocator, vname) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:388
-                return Stmt{ .for_in = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "for_in")) = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _bx0: { const _bv = iter_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .for_in = blk_box_20: { const _bv: std.meta.Child(@FieldType(Stmt, "for_in")) = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _bx0: { const _bv = iter_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } };
             },
             .stmt_for_num => |_ptr_pfn| {
                 const pfn = _ptr_pfn.*;
@@ -2248,10 +2248,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:395
                     const step_expr = try self.buildExpr(pfn.step.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:396
-                    return Stmt{ .for_num = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = step_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .for_num = blk_box_21: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = step_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:397
-                return Stmt{ .for_num = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, null, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .for_num = blk_box_22: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, null, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_22 _bp; } };
             },
             .stmt_var => |_ptr_pv| {
                 const pv = _ptr_pv.*;
@@ -2262,10 +2262,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:402
                     const initval = try self.buildExpr(pv.init_expr.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:403
-                    return Stmt{ .var_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "var_")) = DeclVar.init(Span.init(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, _bx0: { const _bv = initval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pv.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .var_ = blk_box_23: { const _bv: std.meta.Child(@FieldType(Stmt, "var_")) = DeclVar.init(Span.init(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, _bx0: { const _bv = initval; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pv.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_23 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:404
-                return Stmt{ .var_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "var_")) = DeclVar.init(Span.init(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, null, pv.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .var_ = blk_box_24: { const _bv: std.meta.Child(@FieldType(Stmt, "var_")) = DeclVar.init(Span.init(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, null, pv.is_const); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_24 _bp; } };
             },
             .stmt_assign => |_ptr_pa| {
                 const pa = _ptr_pa.*;
@@ -2276,7 +2276,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:409
                 const op = try self.toAssignOp(pa.op);
 // zbr:selfhost/astbuilder.zbr:410
-                return Stmt{ .assign = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "assign")) = StmtAssign.init(Span.init(pa.line, 0, pa.line, 0), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, op, _bx1: { const _bv = value_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .assign = blk_box_25: { const _bv: std.meta.Child(@FieldType(Stmt, "assign")) = StmtAssign.init(Span.init(pa.line, 0, pa.line, 0), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, op, _bx1: { const _bv = value_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_25 _bp; } };
             },
             .stmt_assert => |_ptr_pas| {
                 const pas = _ptr_pas.*;
@@ -2287,10 +2287,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:415
                     const msg = try self.buildExpr(pas.message.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:416
-                    return Stmt{ .assert_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "assert_")) = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .assert_ = blk_box_26: { const _bv: std.meta.Child(@FieldType(Stmt, "assert_")) = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_26 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:417
-                return Stmt{ .assert_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "assert_")) = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .assert_ = blk_box_27: { const _bv: std.meta.Child(@FieldType(Stmt, "assert_")) = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_27 _bp; } };
             },
             .stmt_raise => |_ptr_pr| {
                 const pr = _ptr_pr.*;
@@ -2301,17 +2301,17 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:422
                     const det = try self.buildExpr(pr.message.items[@intCast(1)]);
 // zbr:selfhost/astbuilder.zbr:423
-                    return Stmt{ .raise_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = det; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .raise_ = blk_box_28: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = det; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_28 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:424
                 if ((@as(i64, @intCast(pr.message.items.len)) == 1)) {
 // zbr:selfhost/astbuilder.zbr:425
                     const msg = try self.buildExpr(pr.message.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:426
-                    return Stmt{ .raise_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Stmt{ .raise_ = blk_box_29: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _bx0: { const _bv = msg; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_29 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:427
-                return Stmt{ .raise_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), null, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .raise_ = blk_box_30: { const _bv: std.meta.Child(@FieldType(Stmt, "raise_")) = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), null, null); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_30 _bp; } };
             },
             .stmt_try_catch => |_ptr_ptc| {
                 const ptc = _ptr_ptc.*;
@@ -2332,7 +2332,7 @@ pub const ASTBuilder = struct {
                 var clauses = std.ArrayList(CatchClause){};
                 clauses.append(_allocator, clause) catch @panic("OOM");
 // zbr:selfhost/astbuilder.zbr:438
-                return Stmt{ .try_catch = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "try_catch")) = StmtTryCatch.init(Span.init(ptc.line, 0, ptc.line, 0), body_stmts, clauses); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .try_catch = blk_box_31: { const _bv: std.meta.Child(@FieldType(Stmt, "try_catch")) = StmtTryCatch.init(Span.init(ptc.line, 0, ptc.line, 0), body_stmts, clauses); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_31 _bp; } };
             },
             .stmt_branch => |_ptr_pb| {
                 const pb = _ptr_pb.*;
@@ -2344,7 +2344,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:444
                 const stmts = try self.buildStmts(pas.stmts);
 // zbr:selfhost/astbuilder.zbr:445
-                return Stmt{ .arena_scope = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "arena_scope")) = StmtArenaScope.init(Span.init(pas.line, 0, pas.line, 0), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .arena_scope = blk_box_32: { const _bv: std.meta.Child(@FieldType(Stmt, "arena_scope")) = StmtArenaScope.init(Span.init(pas.line, 0, pas.line, 0), stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_32 _bp; } };
             },
             .stmt_guard => |_ptr_pg| {
                 const pg = _ptr_pg.*;
@@ -2353,7 +2353,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:449
                 const else_stmts: std.ArrayList(Stmt) = try self.buildStmts(pg.else_stmts);
 // zbr:selfhost/astbuilder.zbr:450
-                return Stmt{ .guard_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "guard_")) = StmtGuard.init(Span.init(pg.line, 0, pg.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .guard_ = blk_box_33: { const _bv: std.meta.Child(@FieldType(Stmt, "guard_")) = StmtGuard.init(Span.init(pg.line, 0, pg.line, 0), _bx0: { const _bv = cond_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_33 _bp; } };
             },
             .stmt_with => |_ptr_pw| {
                 const pw = _ptr_pw.*;
@@ -2368,21 +2368,21 @@ pub const ASTBuilder = struct {
                     new_body.append(_allocator, self.rewriteWithStmt(s, target_expr)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:459
-                return Stmt{ .with_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "with_")) = StmtWith.init(Span.init(pw.line, 0, pw.line, 0), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, new_body); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .with_ = blk_box_34: { const _bv: std.meta.Child(@FieldType(Stmt, "with_")) = StmtWith.init(Span.init(pw.line, 0, pw.line, 0), _bx0: { const _bv = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, new_body); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_34 _bp; } };
             },
             .stmt_destruct => |_ptr_pd| {
                 const pd = _ptr_pd.*;
 // zbr:selfhost/astbuilder.zbr:462
                 const init_expr = try self.buildExpr(pd.init_expr.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:463
-                return Stmt{ .destruct = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "destruct")) = StmtDestruct.init(Span.init(pd.line, 0, pd.line, 0), pd.names, _bx0: { const _bv = init_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pd.is_struct); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .destruct = blk_box_35: { const _bv: std.meta.Child(@FieldType(Stmt, "destruct")) = StmtDestruct.init(Span.init(pd.line, 0, pd.line, 0), pd.names, _bx0: { const _bv = init_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pd.is_struct); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_35 _bp; } };
             },
             .stmt_expr => |_ptr_inner| {
                 const inner = _ptr_inner.*;
 // zbr:selfhost/astbuilder.zbr:466
                 const expr = try self.buildExpr(inner);
 // zbr:selfhost/astbuilder.zbr:467
-                return Stmt{ .expr = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "expr")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .expr = blk_box_36: { const _bv: std.meta.Child(@FieldType(Stmt, "expr")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
             },
             .stmt_print => |_ptr_inner| {
                 const inner = _ptr_inner.*;
@@ -2392,7 +2392,7 @@ pub const ASTBuilder = struct {
                 var args = std.ArrayList(Expr){};
                 args.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/astbuilder.zbr:473
-                return Stmt{ .print_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "print_")) = StmtPrint.init(zspan(), args, true); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Stmt{ .print_ = blk_box_37: { const _bv: std.meta.Child(@FieldType(Stmt, "print_")) = StmtPrint.init(zspan(), args, true); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_37 _bp; } };
             },
             else => |_| {
 // zbr:selfhost/astbuilder.zbr:476
@@ -2431,7 +2431,7 @@ pub const ASTBuilder = struct {
                         const left_expr = self.patternToExpr(range_parts.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:496
                         const right_expr = self.patternToExpr(range_parts.items[@intCast(1)]);
-                        values.append(_allocator, Expr{ .binary = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "binary")) = ExprBinary.init(zspan(), BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                        values.append(_allocator, Expr{ .binary = blk_box_38: { const _bv: std.meta.Child(@FieldType(Expr, "binary")) = ExprBinary.init(zspan(), BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } }) catch @panic("OOM");
                     } else {
                         values.append(_allocator, Expr{ .ident = ExprIdent.init(zspan(), pat) }) catch @panic("OOM");
                     }
@@ -2458,7 +2458,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:510
                         while (_zebra_lt(i_pat, @as(i64, @intCast(parts.items.len)))) {
 // zbr:selfhost/astbuilder.zbr:511
-                            built_expr = Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = built_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, parts.items[@intCast(i_pat)]); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                            built_expr = Expr{ .member = blk_box_39: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = built_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, parts.items[@intCast(i_pat)]); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_39 _bp; } };
 // zbr:selfhost/astbuilder.zbr:512
                             i_pat = (i_pat + 1);
                         }
@@ -2495,7 +2495,7 @@ pub const ASTBuilder = struct {
             else_opt = try self.buildStmts(pb.else_stmts);
         }
 // zbr:selfhost/astbuilder.zbr:528
-        return Stmt{ .branch_ = blk_box: { const _bv: std.meta.Child(@FieldType(Stmt, "branch_")) = StmtBranch.init(Span.init(pb.line, 0, pb.line, 0), _bx0: { const _bv = subject_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, cases, else_opt); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Stmt{ .branch_ = blk_box_40: { const _bv: std.meta.Child(@FieldType(Stmt, "branch_")) = StmtBranch.init(Span.init(pb.line, 0, pb.line, 0), _bx0: { const _bv = subject_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, cases, else_opt); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
     }
 
     pub fn patternToExpr(self: *ASTBuilder, pat: []const u8) Expr {
@@ -2564,12 +2564,12 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:580
                     const this_expr = Expr{ .this_ = zspan() };
 // zbr:selfhost/astbuilder.zbr:581
-                    return Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = this_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return Expr{ .member = blk_box_41: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = this_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:582
                 const base_expr = try self.buildExpr(pm.base.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:583
-                return Expr{ .member = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = base_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .member = blk_box_42: { const _bv: std.meta.Child(@FieldType(Expr, "member")) = ExprMember.init(zspan(), _bx0: { const _bv = base_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } };
             },
             .expr_call => |_ptr_pc| {
                 const pc = _ptr_pc.*;
@@ -2584,7 +2584,7 @@ pub const ASTBuilder = struct {
                     args.append(_allocator, Arg.init(zspan(), null, av)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:591
-                return Expr{ .call = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "call")) = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .call = blk_box_43: { const _bv: std.meta.Child(@FieldType(Expr, "call")) = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_43 _bp; } };
             },
             .expr_index => |_ptr_pix| {
                 const pix = _ptr_pix.*;
@@ -2593,7 +2593,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:595
                 const idx_expr = try self.buildExpr(pix.index.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:596
-                return Expr{ .index = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "index")) = ExprIndex.init(zspan(), _bx0: { const _bv = obj_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = idx_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .index = blk_box_44: { const _bv: std.meta.Child(@FieldType(Expr, "index")) = ExprIndex.init(zspan(), _bx0: { const _bv = obj_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = idx_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_44 _bp; } };
             },
             .expr_slice => |_ptr_psl| {
                 const psl = _ptr_psl.*;
@@ -2604,7 +2604,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:602
                 const stop_expr = try self.buildExpr(psl.stop_.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:603
-                return Expr{ .slice = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "slice")) = ExprSlice.init(zspan(), _bx0: { const _bv = obj_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .slice = blk_box_45: { const _bv: std.meta.Child(@FieldType(Expr, "slice")) = ExprSlice.init(zspan(), _bx0: { const _bv = obj_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
             },
             .expr_binary => |_ptr_pb| {
                 const pb = _ptr_pb.*;
@@ -2618,7 +2618,7 @@ pub const ASTBuilder = struct {
                     switch (right_expr) {
                         .ident => |ei| {
 // zbr:selfhost/astbuilder.zbr:613
-                            return Expr{ .type_check = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "type_check")) = ExprTypeCheck.init(zspan(), _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                            return Expr{ .type_check = blk_box_46: { const _bv: std.meta.Child(@FieldType(Expr, "type_check")) = ExprTypeCheck.init(zspan(), _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_46 _bp; } };
                         },
                         .member => |_ptr_em| {
                             const em = _ptr_em.*;
@@ -2631,7 +2631,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:619
                                 tc.variant_name = em.member;
 // zbr:selfhost/astbuilder.zbr:620
-                                return Expr{ .type_check = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "type_check")) = tc; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                return Expr{ .type_check = blk_box_47: { const _bv: std.meta.Child(@FieldType(Expr, "type_check")) = tc; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_47 _bp; } };
                             } else {
 // zbr:selfhost/astbuilder.zbr:622
                                 { _error_ctx = .{ .message = "buildExpr: `is` member object must be a plain identifier" }; return error.ZebraError; }
@@ -2646,7 +2646,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:625
                 const op = try self.toBinaryOp(pb.op);
 // zbr:selfhost/astbuilder.zbr:626
-                return Expr{ .binary = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "binary")) = ExprBinary.init(zspan(), op, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .binary = blk_box_48: { const _bv: std.meta.Child(@FieldType(Expr, "binary")) = ExprBinary.init(zspan(), op, _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
             },
             .expr_orelse => |_ptr_po| {
                 const po = _ptr_po.*;
@@ -2655,7 +2655,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:630
                 const fb_val = try self.buildExpr(po.fallback.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:631
-                return Expr{ .orelse_ = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "orelse_")) = ExprOrelse.init(zspan(), _bx0: { const _bv = expr_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .orelse_ = blk_box_49: { const _bv: std.meta.Child(@FieldType(Expr, "orelse_")) = ExprOrelse.init(zspan(), _bx0: { const _bv = expr_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_49 _bp; } };
             },
             .expr_pipeline => |_ptr_pp| {
                 const pp = _ptr_pp.*;
@@ -2679,7 +2679,7 @@ pub const ASTBuilder = struct {
                             args.append(_allocator, Arg.init(zspan(), null, av)) catch @panic("OOM");
                         }
 // zbr:selfhost/astbuilder.zbr:645
-                        return Expr{ .call = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "call")) = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        return Expr{ .call = blk_box_50: { const _bv: std.meta.Child(@FieldType(Expr, "call")) = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_50 _bp; } };
                     },
                     else => |_| {
 // zbr:selfhost/astbuilder.zbr:647
@@ -2694,21 +2694,21 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:651
                 const op = try self.toUnaryOp(pu.op);
 // zbr:selfhost/astbuilder.zbr:652
-                return Expr{ .unary = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "unary")) = ExprUnary.init(zspan(), op, _bx0: { const _bv = operand_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .unary = blk_box_51: { const _bv: std.meta.Child(@FieldType(Expr, "unary")) = ExprUnary.init(zspan(), op, _bx0: { const _bv = operand_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_51 _bp; } };
             },
             .expr_try => |_ptr_inner| {
                 const inner = _ptr_inner.*;
 // zbr:selfhost/astbuilder.zbr:655
                 const inner_expr = try self.buildExpr(inner);
 // zbr:selfhost/astbuilder.zbr:656
-                return Expr{ .try_ = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "try_")) = ExprTry.init(zspan(), _bx0: { const _bv = inner_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .try_ = blk_box_52: { const _bv: std.meta.Child(@FieldType(Expr, "try_")) = ExprTry.init(zspan(), _bx0: { const _bv = inner_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_52 _bp; } };
             },
             .expr_to_bang => |_ptr_inner| {
                 const inner = _ptr_inner.*;
 // zbr:selfhost/astbuilder.zbr:659
                 const inner_expr = try self.buildExpr(inner);
 // zbr:selfhost/astbuilder.zbr:660
-                return Expr{ .to_non_nil = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "to_non_nil")) = ExprToNonNil.init(zspan(), _bx0: { const _bv = inner_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .to_non_nil = blk_box_53: { const _bv: std.meta.Child(@FieldType(Expr, "to_non_nil")) = ExprToNonNil.init(zspan(), _bx0: { const _bv = inner_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_53 _bp; } };
             },
             .expr_except => |_ptr_pex| {
                 const pex = _ptr_pex.*;
@@ -2723,7 +2723,7 @@ pub const ASTBuilder = struct {
                     fields.append(_allocator, ExceptField.init(pf.name, fval)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:668
-                return Expr{ .except_ = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "except_")) = ExprExcept.init(zspan(), base_expr, fields); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .except_ = blk_box_54: { const _bv: std.meta.Child(@FieldType(Expr, "except_")) = ExprExcept.init(zspan(), base_expr, fields); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_54 _bp; } };
             },
             .expr_string_interp => |_ptr_psi| {
                 const psi = _ptr_psi.*;
@@ -2739,12 +2739,12 @@ pub const ASTBuilder = struct {
                         else => |_| {
 // zbr:selfhost/astbuilder.zbr:677
                             const part_expr = try self.buildExpr(part);
-                            parts.append(_allocator, StringPart{ .expr_ = blk_box: { const _bv: std.meta.Child(@FieldType(StringPart, "expr_")) = part_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                            parts.append(_allocator, StringPart{ .expr_ = blk_box_55: { const _bv: std.meta.Child(@FieldType(StringPart, "expr_")) = part_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_55 _bp; } }) catch @panic("OOM");
                         },
                     }
                 }
 // zbr:selfhost/astbuilder.zbr:679
-                return Expr{ .string_interp = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "string_interp")) = ExprStringInterp.init(zspan(), parts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .string_interp = blk_box_56: { const _bv: std.meta.Child(@FieldType(Expr, "string_interp")) = ExprStringInterp.init(zspan(), parts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_56 _bp; } };
             },
             .expr_lambda => |pl| {
 // zbr:selfhost/astbuilder.zbr:682
@@ -2759,7 +2759,7 @@ pub const ASTBuilder = struct {
                     elems.append(_allocator, try self.buildExpr(e)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:688
-                return Expr{ .tuple_lit = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "tuple_lit")) = ExprTuple.init(zspan(), elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return Expr{ .tuple_lit = blk_box_57: { const _bv: std.meta.Child(@FieldType(Expr, "tuple_lit")) = ExprTuple.init(zspan(), elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_57 _bp; } };
             },
             else => |_| {
 // zbr:selfhost/astbuilder.zbr:691
@@ -2843,7 +2843,7 @@ pub const ASTBuilder = struct {
             captures.append(_allocator, dv) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:730
-        return Expr{ .lambda = blk_box: { const _bv: std.meta.Child(@FieldType(Expr, "lambda")) = ExprLambda.init(zspan(), params, ret_type, lbody, captures); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return Expr{ .lambda = blk_box_58: { const _bv: std.meta.Child(@FieldType(Expr, "lambda")) = ExprLambda.init(zspan(), params, ret_type, lbody, captures); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_58 _bp; } };
     }
 
     pub fn toAssignOp(self: *ASTBuilder, op: []const u8) anyerror!AssignOp {
@@ -3106,7 +3106,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:865
             const inner = self.parseTypeRefRequired(rest_s);
 // zbr:selfhost/astbuilder.zbr:866
-            return TypeRef{ .ref_to = blk_box: { const _bv: std.meta.Child(@FieldType(TypeRef, "ref_to")) = inner; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return TypeRef{ .ref_to = blk_box_59: { const _bv: std.meta.Child(@FieldType(TypeRef, "ref_to")) = inner; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_59 _bp; } };
         }
 // zbr:selfhost/astbuilder.zbr:869
         if (std.mem.endsWith(u8, s, "?")) {
@@ -3124,7 +3124,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:875
             const inner = self.parseTypeRefRequired(base_s);
 // zbr:selfhost/astbuilder.zbr:876
-            return TypeRef{ .nilable = blk_box: { const _bv: std.meta.Child(@FieldType(TypeRef, "nilable")) = inner; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return TypeRef{ .nilable = blk_box_60: { const _bv: std.meta.Child(@FieldType(TypeRef, "nilable")) = inner; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_60 _bp; } };
         }
 // zbr:selfhost/astbuilder.zbr:879
         if ((std.mem.indexOf(u8, s, "(") != null)) {

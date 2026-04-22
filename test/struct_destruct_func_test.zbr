@@ -1,0 +1,19 @@
+class Person
+    var name: str = ""
+    var age: int = 0
+
+def makePerson(): Person
+    var p = Person()
+    p.name = "Bob"
+    p.age = 25
+    return p
+
+class Program
+    shared
+        def main
+            # Destructure the return value of a top-level function directly.
+            # Tests that inferExpr resolves module-level def return types so
+            # the string field gets {s} format spec, not {any}.
+            var {name, age} = makePerson()
+            print name
+            print age

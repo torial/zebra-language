@@ -870,3 +870,68 @@ backend is `_gui_active_backend`. To add a new backend, implement the fn-ptr
 slots (see `src/CodeGen.zig` preamble) and swap the constant — no changes to
 user Zebra code required. The `codeEditorFn` slot is reserved for a future
 ImGuiColorTextEdit integration.
+
+---
+
+## 28. Standard library API reference
+
+### `sys` — process / OS
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `sys.args()` | `List(str)` | Raw command-line arguments |
+| `sys.exit(code)` | noreturn | Exit with given code |
+| `sys.err(msg)` | void | Write to stderr (no newline) |
+| `sys.errln(msg)` | void | Write to stderr + newline |
+| `sys.getenv(name)` | `str?` | Environment variable or nil |
+| `sys.run(argv)` | `SysRunResult` | Spawn subprocess; returns `{stdout, stderr, exit_code}` |
+| `sys.sleep(ms)` | void | Sleep for `ms` milliseconds |
+
+### `File` — file I/O (static)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `File.read(path)` | `str` | Read entire file as string |
+| `File.write(path, data)` | void | Write string to file (creates or truncates) |
+| `File.append(path, data)` | void | Append string to file |
+| `File.readLines(path)` | `List(str)` | Read file as list of lines |
+| `File.exists(path)` | `bool` | True if file exists |
+| `File.delete(path)` | void | Delete file (no-op if missing) |
+| `File.rename(src, dst)` | void | Rename/move file |
+| `File.copy(src, dst)` | void | Copy file |
+| `File.listDir(path)` | `List(str)` | List entry names in directory |
+| `File.modtime(path)` | `int` | Modification time in ms since epoch; -1 if missing |
+
+### `Dir` — directory operations (static)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `Dir.create(path)` | void | Create directory (no-op if exists) |
+| `Dir.createAll(path)` | void | Create directory tree |
+| `Dir.delete(path)` | void | Delete empty directory |
+| `Dir.deleteAll(path)` | void | Delete directory tree recursively |
+| `Dir.exists(path)` | `bool` | True if directory exists |
+
+### `Arg` — command-line argument parsing
+
+```zebra
+var args = Arg.parse()
+var path       = args.positional(0)   # ?str — nth positional (0-based)
+var verbose    = args.flag("--verbose")    # bool
+var output     = args.option("--out", "")  # str with default
+var present    = args.contains("--dry-run") # bool
+```
+
+### `Math` — mathematics
+
+| Call | Returns |
+|------|---------|
+| `Math.sin/cos/tan(x)` | float |
+| `Math.asin/acos/atan(x)` | float |
+| `Math.atan2(y, x)` | float |
+| `Math.sqrt/exp/log/log2/log10(x)` | float |
+| `Math.floor/ceil/round/trunc(x)` | float |
+| `Math.pow(x, y)` | float |
+| `Math.abs(x)` | numeric |
+| `Math.min(a, b)` / `Math.max(a, b)` | numeric |
+| `Math.PI`, `Math.E`, `Math.TAU` | float constants |

@@ -454,6 +454,69 @@ def testNarrowPayloadFromOnValue()
     var bare: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))
     check(narrowPayloadFromOnValue(mt, bare) == nil, "narrowPayloadFromOnValue(bare ident) is nil")
 
+# ── Module-level function inference ─────────────────────────────────────────
+# Verifies that top-level `def` functions are registered under the "" sentinel
+# in ModuleTypes and that inferExpr resolves bare calls to them correctly.
+
+def moduleFuncDecl(name: str, ret: TypeRef): Decl
+    return Decl.method(DeclMethod(mkSpan(), emptyMods(), name, List(Param)(), ret, nil, false, false))
+
+def testInferModuleFuncCall()
+    # Module: struct Point { var x: int }  +  def makePoint(): Point
+    var point_members: List(Decl) = List(Decl)()
+    point_members.add(varDecl("x", namedRef("int")))
+    var decls: List(Decl) = List(Decl)()
+    decls.add(classDecl("Point", point_members))
+    decls.add(moduleFuncDecl("makePoint", namedRef("Point")))
+    var m: Module = Module("" + "<test>", decls)
+    var mt: ModuleTypes = buildModuleTypes(m)
+
+    # Sentinel "" entry is populated.
+    var mr: Type_? = mt.methodReturn("", "makePoint")
+    check(mr != nil, "buildModuleTypes: module func makePoint registered under sentinel")
+
+    # inferExpr on `makePoint()` with no current class → named(Point)
+    var ctx: InferCtx = InferCtx(mt, "")
+    var callee: Expr = Expr.ident(ExprIdent(mkSpan(), "makePoint"))
+    var call: Expr = Expr.call(ExprCall(mkSpan(), callee, List(Arg)()))
+    check(typeIsNamed(inferExpr(call, ctx)), "inferExpr(makePoint()) → named")
+
+    # Same lookup from inside a class body (sibling path, current_class = Point)
+    var ctx2: InferCtx = InferCtx(mt, "Point")
+    check(typeIsNamed(inferExpr(call, ctx2)), "inferExpr(makePoint()) from inside Point → named")
+
+def testInferDepModuleFuncCall()
+    # Simulate a dep module that exports `def helper(): str` at top level.
+    # This exercises the dep_types.methodReturn("", ...) path — the risk noted
+    # after the sentinel design was committed.
+    var dep_decls: List(Decl) = List(Decl)()
+    dep_decls.add(moduleFuncDecl("helper", namedRef("str")))
+    var dep_m: Module = Module("" + "<dep>", dep_decls)
+    var dep_mt: ModuleTypes = buildModuleTypes(dep_m)
+
+    # Verify sentinel is populated in the dep module's own ModuleTypes.
+    var dep_mr: Type_? = dep_mt.methodReturn("", "helper")
+    check(dep_mr != nil, "dep buildModuleTypes: helper registered under sentinel")
+
+    # Importing module has class Caller with no methods.
+    var caller_decls: List(Decl) = List(Decl)()
+    caller_decls.add(classDecl("Caller", List(Decl)()))
+    var caller_m: Module = Module("" + "<caller>", caller_decls)
+    var caller_mt: ModuleTypes = buildModuleTypes(caller_m)
+
+    # Wire dep_types into InferCtx — same path as codegen.zbr ctx17c.withDepTypes.
+    var ctx: InferCtx = InferCtx(caller_mt, "Caller")
+    ctx.withDepTypes(dep_mt)
+
+    # Bare call to `helper()` inside Caller — should resolve via dep sentinel.
+    var callee: Expr = Expr.ident(ExprIdent(mkSpan(), "helper"))
+    var call: Expr = Expr.call(ExprCall(mkSpan(), callee, List(Arg)()))
+    check(typeIsString(inferExpr(call, ctx)), "inferExpr(helper()) via dep_types sentinel → string")
+
+    # Without dep_types wired, the same call should return unknown_.
+    var ctx_nodep: InferCtx = InferCtx(caller_mt, "Caller")
+    check(typeIsUnknown(inferExpr(call, ctx_nodep)), "inferExpr(helper()) without dep_types → unknown_")
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 class Main
@@ -478,4 +541,6 @@ class Main
         testInferMethodCall()
         testUnionVariantIndex()
         testNarrowPayloadFromOnValue()
+        testInferModuleFuncCall()
+        testInferDepModuleFuncCall()
         print "typechecker_test: done"

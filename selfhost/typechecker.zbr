@@ -304,8 +304,21 @@ def typeFromRef(tr: TypeRef): Type_
             return Type_.ref_to(typeFromRef(inner))
         on TypeRef.void_
             return Type_.void_
+        on TypeRef.generic as g
+            # Recognise List(str) / List(String) as str_slice for inference.
+            var gname: str = "" + g.name
+            if gname == "List" and g.args.count() == 1
+                var arg_t: Type_ = typeFromRef(g.args.at(0))
+                if arg_t is Type_.string_
+                    return Type_.str_slice
+            # HashMap(K, str) — value type is string; reuse str_slice as sentinel.
+            if gname == "HashMap" and g.args.count() == 2
+                var val_t: Type_ = typeFromRef(g.args.at(1))
+                if val_t is Type_.string_
+                    return Type_.str_slice
+            return Type_.unknown_
         else
-            # error_union, stream, generic, same_, tuple — Phase 17 handles these.
+            # error_union, stream, same_, tuple — Phase 17 handles these.
             return Type_.unknown_
 
 # ── ModuleTypes builder ──────────────────────────────────────────────────────
@@ -378,6 +391,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 pass
 
 def populateModuleTypes(mt: ModuleTypes, m: Module)
+    # "" sentinel collects module-level def return types for sibling lookup.
+    var module_fns = ClassTypes("")
     for decl in m.decls
         branch decl
             on Decl.class_ as c
@@ -397,8 +412,16 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         mt.addVariantPayload(uname, "" + variant.name, typeFromRef(variant.payload to!))
                     else
                         mt.addVariantPayload(uname, "" + variant.name, Type_.unknown_)
+            on Decl.method as topfn
+                # Top-level def: register under "" sentinel so bare calls inside
+                # class methods can resolve the return type via methodReturnAny.
+                if topfn.return_type != nil
+                    module_fns.setMethodReturn("" + topfn.name, typeFromRef(topfn.return_type to!))
+                else
+                    module_fns.setMethodReturn("" + topfn.name, Type_.void_)
             else
                 pass
+    mt.addClass(module_fns)
 
 def buildModuleTypes(m: Module): ModuleTypes
     var mt = ModuleTypes()
@@ -693,9 +716,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     var as_name: Type_ = typeFromName(cname)
                     branch as_name
                         on Type_.named as _
-                            return Type_.unknown_
+                            pass
                         else
                             return as_name
+                    # Bare call: check current class first, then module-level
+                    # functions registered under the "" sentinel in ModuleTypes.
+                    if ctx.current_class != ""
+                        var mr: Type_? = ctx.methodReturnAny(ctx.current_class, cname)
+                        if mr != nil
+                            return mr to!
+                    var mf: Type_? = ctx.methodReturnAny("", cname)
+                    if mf != nil
+                        return mf to!
+                    return Type_.unknown_
                 on Expr.member as mem
                     # Universal primitive conversion: `x.toString()` yields str
                     # regardless of x's static type (int/float/char/bool all
@@ -738,6 +771,24 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var srt: Type_? = stringMethodReturn("" + mem.member)
                             if srt != nil
                                 return srt to!
+                        on Type_.regex
+                            var mname: str = "" + mem.member
+                            if mname == "find"
+                                return Type_.string_
+                            if mname == "test" or mname == "match"
+                                return Type_.bool_
+                        on Type_.string_builder
+                            var sbmname: str = "" + mem.member
+                            if sbmname == "build" or sbmname == "toString"
+                                return Type_.string_
+                            if sbmname == "len"
+                                return Type_.int_
+                        on Type_.str_slice
+                            var slmname: str = "" + mem.member
+                            if slmname == "at" or slmname == "join" or slmname == "fetch"
+                                return Type_.string_
+                            if slmname == "count" or slmname == "len"
+                                return Type_.int_
                         else
                             pass
                     return Type_.unknown_
@@ -827,6 +878,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 else
                     return Type_.unknown_
+        on Expr.index as ei
+            # s[i] — element type depends on receiver type.
+            var idx_recv: Type_ = inferExpr(ei.object, ctx)
+            branch idx_recv
+                on Type_.string_
+                    return Type_.char_
+                on Type_.str_slice
+                    return Type_.string_
+                else
+                    return Type_.unknown_
+        on Expr.slice as esl
+            # s[a..b] — slice type depends on receiver type.
+            var sl_recv: Type_ = inferExpr(esl.object, ctx)
+            branch sl_recv
+                on Type_.string_
+                    return Type_.string_
+                on Type_.str_slice
+                    return Type_.str_slice
+                else
+                    return Type_.unknown_
         else
             return Type_.unknown_
 
@@ -889,6 +960,20 @@ def isCharsCallExpr(e: Expr): bool
                 return true
     return false
 
+# Detects iterators whose elements are known to be strings:
+# .split()/.lines() return string slices; .keys()/.items()/.values() on str containers;
+# .groups()/.findAll() on Regex return string slices.
+def isStrListCallExpr(e: Expr): bool
+    if e is Expr.call as cal
+        if cal.callee is Expr.member as mem
+            if mem.member == "split" or mem.member == "lines"
+                return true
+            if mem.member == "keys" or mem.member == "items" or mem.member == "values"
+                return true
+            if mem.member == "groups" or mem.member == "findAll"
+                return true
+    return false
+
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -941,6 +1026,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             var loop_var_t: Type_ = Type_.unknown_
             if fi.vars.count() == 1 and isCharsCallExpr(fi.iter)
                 loop_var_t = Type_.char_
+            else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
+                loop_var_t = Type_.string_
             for v in fi.vars
                 ctx.bind("" + v, loop_var_t)
             walkStmts(fi.stmts, ctx)
@@ -1027,8 +1114,20 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkStmts(sg.else_stmts, ctx)
         on Stmt.destruct as sds
             walkExpr(sds.init_expr, ctx)
+            var destruct_recv_t: Type_ = inferExpr(sds.init_expr, ctx)
+            if destruct_recv_t is Type_.ref_to as dr
+                destruct_recv_t = dr
+            var destruct_class: str = ""
+            if destruct_recv_t is Type_.named as dtn
+                destruct_class = "" + dtn
             for nm in sds.names
-                ctx.bind("" + nm, Type_.unknown_)
+                var nm_s: str = "" + nm
+                var ftype: Type_ = Type_.unknown_
+                if destruct_class != ""
+                    var ft: Type_? = ctx.fieldTypeAny(destruct_class, nm_s)
+                    if ft != nil
+                        ftype = ft to!
+                ctx.bind(nm_s, ftype)
         on Stmt.arena_scope as sas
             walkStmts(sas.stmts, ctx)
         on Stmt.print_ as sp

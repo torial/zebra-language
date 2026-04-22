@@ -4836,6 +4836,20 @@ const Generator = struct {
             try g.w.writeAll("})");
             return true;
         }
+        if (std.mem.eql(u8, method, "modtime")) {
+            // File.modtime(path: str) → int  — mtime in milliseconds since epoch, or -1 if missing
+            try g.w.writeAll("(blk: {\n");
+            const bg = g.indented();
+            try bg.writeIndent();
+            try bg.w.writeAll("const _mt_stat = std.fs.cwd().statFile(");
+            if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
+            try bg.w.writeAll(") catch break :blk @as(i64, -1);\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("break :blk @as(i64, @intCast(@divTrunc(_mt_stat.mtime, std.time.ns_per_ms)));\n");
+            try g.writeIndent();
+            try g.w.writeAll("})");
+            return true;
+        }
         if (std.mem.eql(u8, method, "listDir")) {
             // File.listDir(path) → ArrayList([]const u8) of entry names in directory.
             try g.w.writeAll("(blk: {\n");
@@ -5143,6 +5157,13 @@ const Generator = struct {
             try g.w.writeAll("_sys_run(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
             try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "sleep")) {
+            // sys.sleep(ms: int) — sleep for the given number of milliseconds
+            try g.w.writeAll("std.Thread.sleep(@as(u64, @intCast(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")) * std.time.ns_per_ms)");
             return true;
         }
         return false;

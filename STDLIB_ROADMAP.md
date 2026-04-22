@@ -182,6 +182,23 @@ Needs: `zebra test` subcommand, test discovery by naming convention.
 
 ---
 
+### Builtins added 2026-04-21
+
+Two new builtin methods added directly to the `sys` and `File` namespaces
+(no separate module needed — they fit naturally alongside existing calls):
+
+| Call | Returns | Zig backing |
+|------|---------|-------------|
+| `sys.sleep(ms: int)` | void | `std.time.sleep(ms * ns_per_ms)` |
+| `File.modtime(path: str)` | `int` | `statFile().mtime / ns_per_ms`; -1 if missing |
+
+`sys.sleep` enables polling loops (e.g. `tools/watch.zbr`).
+`File.modtime` enables change detection without shelling out to `stat`.
+
+Both implemented in `src/CodeGen.zig` + `selfhost/codegen.zbr`.
+
+---
+
 ## Design Notes
 
 **Pattern all stdlib modules follow:**
@@ -204,6 +221,37 @@ the same pattern used for `Http`, `File`, `Json`, `Math`, etc.
 - Grammar: new infix/prefix operator; TypeChecker needs to know LHS/RHS roles
 - CodeGen: emits mutex lock/unlock + queue push/pop + condvar wait/signal
 - This is 1.0 work — needs thread model decision first
+
+---
+
+### Deferred — `Progress` — tqdm-equivalent progress bar
+
+**Motivation:** Long-running Zebra tools (parity checker, corpus runners, batch
+compilers) produce no feedback during multi-minute runs. A tqdm-style module
+would make tool progress transparent without requiring manual `print` calls.
+
+**Proposed API:**
+```zebra
+var p = Progress.bar(total: 152, label: "files")
+for f in files
+    p.tick()                # increment + redraw in place
+p.done()                    # close bar, move to next line
+
+# Iterable form (avoids manual .tick)
+for f in Progress.wrap(files, label: "files")
+    process(f)
+```
+
+**Zig backing:** `std.Progress` (already exists in Zig 0.13+).
+
+**Notes:**
+- Needs `std.io.getStdErr()` write access; on Windows, VT100 ANSI codes for
+  cursor-up redraws — check `std.io.tty.Config` support.
+- The parity runner (`tools/parity_check.zbr`) is the primary motivation:
+  a 30–60 min run with no output is opaque.
+- Deferred until after Phase 22 cutover; low-effort once stdlib I/O path is clear.
+- Target: `Progress` module in 0.x stdlib, after `sys.err` / terminal-detection
+  infrastructure is confirmed on Windows.
 
 ---
 

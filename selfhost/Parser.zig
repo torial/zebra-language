@@ -2900,7 +2900,7 @@ pub const Parser = struct {
             self.skipEol();
         }
 // zbr:selfhost/Parser.zbr:829
-        return PNode{ .module_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "module_")) = PModule.init(decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .module_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(PNode, "module_")) = PModule.init(decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
     }
 
     pub fn parseTopDecl(self: *Parser) anyerror!PNode {
@@ -3008,7 +3008,7 @@ pub const Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:878
-        return PNode{ .namespace_decl = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "namespace_decl")) = PNamespace.init(name, decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .namespace_decl = blk_box_2: { const _bv: std.meta.Child(@FieldType(PNode, "namespace_decl")) = PNamespace.init(name, decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
     }
 
     pub fn parseUseDecl(self: *Parser) anyerror!PNode {
@@ -3037,7 +3037,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:895
-        return PNode{ .use_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "use_")) = PUse.init(path, exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .use_ = blk_box_3: { const _bv: std.meta.Child(@FieldType(PNode, "use_")) = PUse.init(path, exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
     }
 
     pub fn parseClassDecl(self: *Parser) anyerror!PNode {
@@ -3137,7 +3137,7 @@ pub const Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:955
-        return PNode{ .class_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .class_ = blk_box_4: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
     }
 
     pub fn parseEnumDecl(self: *Parser) anyerror!PNode {
@@ -3166,7 +3166,7 @@ pub const Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:972
-        return PNode{ .enum_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "enum_")) = PEnum.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .enum_ = blk_box_5: { const _bv: std.meta.Child(@FieldType(PNode, "enum_")) = PEnum.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
     }
 
     pub fn parseStructDecl(self: *Parser) anyerror!PNode {
@@ -3198,7 +3198,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:989
         const type_params = std.ArrayList([]const u8){};
 // zbr:selfhost/Parser.zbr:990
-        return PNode{ .struct_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "struct_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(PNode, "struct_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
     }
 
     pub fn parseInterfaceDecl(self: *Parser) anyerror!PNode {
@@ -3240,7 +3240,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1013
         const type_params = std.ArrayList([]const u8){};
 // zbr:selfhost/Parser.zbr:1014
-        return PNode{ .interface_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "interface_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(PNode, "interface_")) = PClass.init(name, type_params, ifaces, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
     }
 
     pub fn parseExtendDecl(self: *Parser) anyerror!PNode {
@@ -3268,7 +3268,7 @@ pub const Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:1030
-        return PNode{ .extend_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "extend_")) = PExtend.init(target_name, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .extend_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(PNode, "extend_")) = PExtend.init(target_name, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
     }
 
     pub fn parseUnionDecl(self: *Parser) anyerror!PNode {
@@ -3320,7 +3320,7 @@ pub const Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:1060
-        return PNode{ .union_decl = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "union_decl")) = PUnionDecl.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .union_decl = blk_box_9: { const _bv: std.meta.Child(@FieldType(PNode, "union_decl")) = PUnionDecl.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_9 _bp; } };
     }
 
     pub fn parseSigDecl(self: *Parser) anyerror!PNode {
@@ -3382,7 +3382,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1094
-        return PNode{ .sig_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "sig_")) = PSig.init(name, params, return_type); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .sig_ = blk_box_10: { const _bv: std.meta.Child(@FieldType(PNode, "sig_")) = PSig.init(name, params, return_type); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } };
     }
 
     pub fn parseMemberDecl(self: *Parser, is_shared: bool) anyerror!PNode {
@@ -3445,7 +3445,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1127
-        return PNode{ .field_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "field_")) = PField.init(name, type_name, is_const, is_shared, init_expr); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .field_ = blk_box_11: { const _bv: std.meta.Child(@FieldType(PNode, "field_")) = PField.init(name, type_name, is_const, is_shared, init_expr); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_11 _bp; } };
     }
 
     pub fn parseDeclInit(self: *Parser) anyerror!PNode {
@@ -3506,7 +3506,7 @@ pub const Parser = struct {
             stmts = try self.parseBlock();
         }
 // zbr:selfhost/Parser.zbr:1160
-        return PNode{ .init_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "init_")) = PInit.init(params, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .init_ = blk_box_12: { const _bv: std.meta.Child(@FieldType(PNode, "init_")) = PInit.init(params, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_12 _bp; } };
     }
 
     pub fn parseMethodDecl(self: *Parser, is_shared: bool) anyerror!PNode {
@@ -3595,7 +3595,7 @@ pub const Parser = struct {
             stmts = try self.parseBlock();
         }
 // zbr:selfhost/Parser.zbr:1207
-        return PNode{ .method_ = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "method_")) = PMethod.init(name, is_shared, throws_, params, return_type, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .method_ = blk_box_13: { const _bv: std.meta.Child(@FieldType(PNode, "method_")) = PMethod.init(name, is_shared, throws_, params, return_type, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
     }
 
     pub fn parseBlock(self: *Parser) anyerror!std.ArrayList(PNode) {
@@ -3723,7 +3723,7 @@ pub const Parser = struct {
                                                                             const expr = try self.parseExpr();
                                                                             self.skipEol();
 // zbr:selfhost/Parser.zbr:1270
-                                                                            return PNode{ .stmt_print = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_print")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                            return PNode{ .stmt_print = blk_box_14: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_print")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_14 _bp; } };
                                                                         } else {
 // zbr:selfhost/Parser.zbr:1272
                                                                             return try self.parseExprOrAssignStmt();
@@ -3758,7 +3758,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1281
-        return PNode{ .stmt_return = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_return")) = PReturn.init(value, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_return = blk_box_15: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_return")) = PReturn.init(value, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_15 _bp; } };
     }
 
     pub fn parseIfStmt(self: *Parser) anyerror!PNode {
@@ -3800,7 +3800,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1306
         pif.is_capture = capture_name;
 // zbr:selfhost/Parser.zbr:1307
-        return PNode{ .stmt_if = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = pif; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_if = blk_box_16: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = pif; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_16 _bp; } };
     }
 
     pub fn parseWhileStmt(self: *Parser) anyerror!PNode {
@@ -3829,7 +3829,7 @@ pub const Parser = struct {
             guard_operand.append(_allocator, guard_expr_pn) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1328
             var if_cond_list = std.ArrayList(PNode){};
-            if_cond_list.append(_allocator, PNode{ .expr_unary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", guard_operand); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+            if_cond_list.append(_allocator, PNode{ .expr_unary = blk_box_17: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", guard_operand); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1330
             var break_list = std.ArrayList(PNode){};
             break_list.append(_allocator, PNode{ .stmt_break = {} }) catch @panic("OOM");
@@ -3837,8 +3837,8 @@ pub const Parser = struct {
             const empty_else = std.ArrayList(PNode){};
 // zbr:selfhost/Parser.zbr:1333
             var wrapped = std.ArrayList(PNode){};
-            wrapped.append(_allocator, PNode{ .stmt_var = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(bind_name, false, "", init_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
-            wrapped.append(_allocator, PNode{ .stmt_if = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = PIf.init(if_cond_list, break_list, empty_else, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+            wrapped.append(_allocator, PNode{ .stmt_var = blk_box_18: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(bind_name, false, "", init_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_18 _bp; } }) catch @panic("OOM");
+            wrapped.append(_allocator, PNode{ .stmt_if = blk_box_19: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = PIf.init(if_cond_list, break_list, empty_else, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_19 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1336
             for (body_stmts.items) |bs| {
                 wrapped.append(_allocator, bs) catch @panic("OOM");
@@ -3847,7 +3847,7 @@ pub const Parser = struct {
             var true_cond = std.ArrayList(PNode){};
             true_cond.append(_allocator, PNode{ .expr_bool = true }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1340
-            return PNode{ .stmt_while = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(true_cond, wrapped, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .stmt_while = blk_box_20: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(true_cond, wrapped, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1341
         const cond_expr = try self.parseExpr();
@@ -3858,7 +3858,7 @@ pub const Parser = struct {
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1346
-        return PNode{ .stmt_while = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(cond_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_while = blk_box_21: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(cond_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } };
     }
 
     pub fn parseArenaScopeStmt(self: *Parser) anyerror!PNode {
@@ -3869,7 +3869,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1352
         const stmts = try self.parseBlock();
 // zbr:selfhost/Parser.zbr:1353
-        return PNode{ .stmt_arena_scope = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_arena_scope")) = PArenaScope.init(stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_arena_scope = blk_box_22: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_arena_scope")) = PArenaScope.init(stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_22 _bp; } };
     }
 
     pub fn parseWithStmt(self: *Parser) anyerror!PNode {
@@ -3885,7 +3885,7 @@ pub const Parser = struct {
         var target_list = std.ArrayList(PNode){};
         target_list.append(_allocator, target_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1363
-        return PNode{ .stmt_with = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_with")) = PWith.init(target_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_with = blk_box_23: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_with")) = PWith.init(target_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_23 _bp; } };
     }
 
     pub fn parseGuardStmt(self: *Parser) anyerror!PNode {
@@ -3910,7 +3910,7 @@ pub const Parser = struct {
             else_stmts = try self.parseBlock();
         }
 // zbr:selfhost/Parser.zbr:1381
-        return PNode{ .stmt_guard = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_guard")) = PGuard.init(cond_list, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_guard = blk_box_24: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_guard")) = PGuard.init(cond_list, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_24 _bp; } };
     }
 
     pub fn parseForInStmt(self: *Parser) anyerror!PNode {
@@ -3950,7 +3950,7 @@ pub const Parser = struct {
             var stop_list = std.ArrayList(PNode){};
             stop_list.append(_allocator, stop_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1407
-            return PNode{ .stmt_for_num = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_num")) = PForNum.init(var_names.items[@intCast(0)], start_list, stop_list, step_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .stmt_for_num = blk_box_25: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_num")) = PForNum.init(var_names.items[@intCast(0)], start_list, stop_list, step_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_25 _bp; } };
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1410
@@ -3959,7 +3959,7 @@ pub const Parser = struct {
         var iter_list = std.ArrayList(PNode){};
         iter_list.append(_allocator, start_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1413
-        return PNode{ .stmt_for_in = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_in")) = PForIn.init(var_names, iter_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_for_in = blk_box_26: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_in")) = PForIn.init(var_names, iter_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_26 _bp; } };
     }
 
     pub fn parseDestructStmt(self: *Parser) anyerror!PNode {
@@ -3995,7 +3995,7 @@ pub const Parser = struct {
         init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1437
-        return PNode{ .stmt_destruct = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_destruct")) = PDestruct.init(names, init_expr, is_struct, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_destruct = blk_box_27: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_destruct")) = PDestruct.init(names, init_expr, is_struct, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_27 _bp; } };
     }
 
     pub fn parseVarStmt(self: *Parser, is_const: bool) anyerror!PNode {
@@ -4043,7 +4043,7 @@ pub const Parser = struct {
                     const lambda_node = PLambda.init(lam.params, lam.return_type, std.ArrayList(PCaptureVar){}, body_expr, std.ArrayList(PNode){});
                     init_expr.append(_allocator, PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1469
-                    return PNode{ .stmt_var = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    return PNode{ .stmt_var = blk_box_28: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_28 _bp; } };
                 }
                 self.skipEol();
 // zbr:selfhost/Parser.zbr:1472
@@ -4078,13 +4078,13 @@ pub const Parser = struct {
                 const lambda_node = PLambda.init(lam.params, lam.return_type, captures, std.ArrayList(PNode){}, body_stmts);
                 init_expr.append(_allocator, PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1488
-                return PNode{ .stmt_var = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                return PNode{ .stmt_var = blk_box_29: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_29 _bp; } };
             }
             init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1491
-        return PNode{ .stmt_var = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_var = blk_box_30: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_30 _bp; } };
     }
 
     pub fn parseAssertStmt(self: *Parser) anyerror!PNode {
@@ -4105,7 +4105,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1504
-        return PNode{ .stmt_assert = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assert")) = PAssert.init(cond_list, msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_assert = blk_box_31: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assert")) = PAssert.init(cond_list, msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_31 _bp; } };
     }
 
     pub fn parseRaiseStmt(self: *Parser) anyerror!PNode {
@@ -4125,7 +4125,7 @@ pub const Parser = struct {
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1516
-        return PNode{ .stmt_raise = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_raise")) = PRaise.init(msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_raise = blk_box_32: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_raise")) = PRaise.init(msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_32 _bp; } };
     }
 
     pub fn parseTryCatch(self: *Parser) anyerror!PNode {
@@ -4149,7 +4149,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1530
         const catch_stmts = try self.parseBlock();
 // zbr:selfhost/Parser.zbr:1531
-        return PNode{ .stmt_try_catch = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_try_catch")) = PTryCatch.init(body_stmts, catch_binding, catch_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_try_catch = blk_box_33: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_try_catch")) = PTryCatch.init(body_stmts, catch_binding, catch_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_33 _bp; } };
     }
 
     pub fn parseBranchStmt(self: *Parser) anyerror!PNode {
@@ -4261,7 +4261,7 @@ pub const Parser = struct {
         var subj_list = std.ArrayList(PNode){};
         subj_list.append(_allocator, subject) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1600
-        return PNode{ .stmt_branch = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_branch")) = PBranch.init(subj_list, arms, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_branch = blk_box_34: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_branch")) = PBranch.init(subj_list, arms, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_34 _bp; } };
     }
 
     pub fn eatBranchPattern(self: *Parser) anyerror![]const u8 {
@@ -4339,11 +4339,11 @@ pub const Parser = struct {
             var val = std.ArrayList(PNode){};
             val.append(_allocator, value_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1645
-            return PNode{ .stmt_assign = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assign")) = PAssign.init(op, tgt, val, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .stmt_assign = blk_box_35: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assign")) = PAssign.init(op, tgt, val, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_35 _bp; } };
         }
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1647
-        return PNode{ .stmt_expr = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_expr")) = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .stmt_expr = blk_box_36: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_expr")) = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
     }
 
     pub fn parseExpr(self: *Parser) anyerror!PNode {
@@ -4366,7 +4366,7 @@ pub const Parser = struct {
             var rhs_list = std.ArrayList(PNode){};
             rhs_list.append(_allocator, rhs) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1665
-            left = PNode{ .expr_pipeline = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_pipeline")) = PPipeline.init(lhs_list, rhs_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            left = PNode{ .expr_pipeline = blk_box_37: { const _bv: std.meta.Child(@FieldType(PNode, "expr_pipeline")) = PPipeline.init(lhs_list, rhs_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_37 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1666
         return left;
@@ -4391,10 +4391,10 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1678
             if (is_orelse) {
 // zbr:selfhost/Parser.zbr:1679
-                left = PNode{ .expr_orelse = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_orelse")) = POrelse.init(l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                left = PNode{ .expr_orelse = blk_box_38: { const _bv: std.meta.Child(@FieldType(PNode, "expr_orelse")) = POrelse.init(l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } };
             } else {
 // zbr:selfhost/Parser.zbr:1681
-                left = PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("or", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                left = PNode{ .expr_binary = blk_box_39: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("or", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_39 _bp; } };
             }
         }
 // zbr:selfhost/Parser.zbr:1682
@@ -4416,7 +4416,7 @@ pub const Parser = struct {
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1693
-            left = PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("and", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            left = PNode{ .expr_binary = blk_box_40: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("and", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1694
         return left;
@@ -4432,7 +4432,7 @@ pub const Parser = struct {
             var ops = std.ArrayList(PNode){};
             ops.append(_allocator, operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1702
-            return PNode{ .expr_unary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .expr_unary = blk_box_41: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1703
         return try self.parseComparison();
@@ -4508,9 +4508,9 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1740
                                             var rc = std.ArrayList(PNode){};
                                             rc.append(_allocator, right) catch @panic("OOM");
-                                            inner.append(_allocator, PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("in", lc, rc); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                                            inner.append(_allocator, PNode{ .expr_binary = blk_box_42: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("in", lc, rc); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1743
-                                            return PNode{ .expr_unary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                            return PNode{ .expr_unary = blk_box_43: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_43 _bp; } };
                                         }
                                     }
                                 }
@@ -4532,7 +4532,7 @@ pub const Parser = struct {
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1751
-            return PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .expr_binary = blk_box_44: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_44 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1752
         return left;
@@ -4555,7 +4555,7 @@ pub const Parser = struct {
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1764
-            left = PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            left = PNode{ .expr_binary = blk_box_45: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1765
         return left;
@@ -4578,7 +4578,7 @@ pub const Parser = struct {
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1777
-            left = PNode{ .expr_binary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            left = PNode{ .expr_binary = blk_box_46: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_46 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1778
         return left;
@@ -4594,7 +4594,7 @@ pub const Parser = struct {
             var ops = std.ArrayList(PNode){};
             ops.append(_allocator, operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1786
-            return PNode{ .expr_unary = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("-", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .expr_unary = blk_box_47: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("-", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_47 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1787
         if (self.textIs("try")) {
@@ -4602,7 +4602,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1792
             const operand = try self.parseUnary();
 // zbr:selfhost/Parser.zbr:1793
-            return PNode{ .expr_try = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = operand; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+            return PNode{ .expr_try = blk_box_48: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = operand; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:1794
         return try self.parsePostfix();
@@ -4630,9 +4630,9 @@ pub const Parser = struct {
                     base.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1809
                     var callee = std.ArrayList(PNode){};
-                    callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                    callee.append(_allocator, PNode{ .expr_member = blk_box_49: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_49 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1811
-                    expr = PNode{ .expr_call = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    expr = PNode{ .expr_call = blk_box_50: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_50 _bp; } };
                 } else {
 // zbr:selfhost/Parser.zbr:1812
                     if (self.isIntLit()) {
@@ -4643,7 +4643,7 @@ pub const Parser = struct {
                         var base = std.ArrayList(PNode){};
                         base.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1818
-                        expr = PNode{ .expr_member = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        expr = PNode{ .expr_member = blk_box_51: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_51 _bp; } };
                     } else {
 // zbr:selfhost/Parser.zbr:1821
                         const field = try self.eatId();
@@ -4651,7 +4651,7 @@ pub const Parser = struct {
                         var base = std.ArrayList(PNode){};
                         base.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1824
-                        expr = PNode{ .expr_member = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        expr = PNode{ .expr_member = blk_box_52: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_52 _bp; } };
                     }
                 }
             } else {
@@ -4659,14 +4659,14 @@ pub const Parser = struct {
                 if (self.textIs("?")) {
                     self.advance();
 // zbr:selfhost/Parser.zbr:1827
-                    expr = PNode{ .expr_try = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                    expr = PNode{ .expr_try = blk_box_53: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_53 _bp; } };
                 } else {
 // zbr:selfhost/Parser.zbr:1828
                     if (self.textIs("to")) {
                         self.advance();
                         try self.expectText("!");
 // zbr:selfhost/Parser.zbr:1832
-                        expr = PNode{ .expr_to_bang = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_to_bang")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                        expr = PNode{ .expr_to_bang = blk_box_54: { const _bv: std.meta.Child(@FieldType(PNode, "expr_to_bang")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_54 _bp; } };
                     } else {
 // zbr:selfhost/Parser.zbr:1833
                         if (self.textIs("except")) {
@@ -4704,7 +4704,7 @@ pub const Parser = struct {
                             var base_list = std.ArrayList(PNode){};
                             base_list.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1855
-                            expr = PNode{ .expr_except = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_except")) = PExcept.init(base_list, fields); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                            expr = PNode{ .expr_except = blk_box_55: { const _bv: std.meta.Child(@FieldType(PNode, "expr_except")) = PExcept.init(base_list, fields); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_55 _bp; } };
                         } else {
 // zbr:selfhost/Parser.zbr:1856
                             if (self.textIs("[")) {
@@ -4727,7 +4727,7 @@ pub const Parser = struct {
                                     var stop_list = std.ArrayList(PNode){};
                                     stop_list.append(_allocator, stop_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1871
-                                    expr = PNode{ .expr_slice = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_slice")) = PSlice.init(obj, start_list, stop_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                    expr = PNode{ .expr_slice = blk_box_56: { const _bv: std.meta.Child(@FieldType(PNode, "expr_slice")) = PSlice.init(obj, start_list, stop_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_56 _bp; } };
                                 } else {
                                     try self.expectText("]");
 // zbr:selfhost/Parser.zbr:1874
@@ -4737,7 +4737,7 @@ pub const Parser = struct {
                                     var idx_list = std.ArrayList(PNode){};
                                     idx_list.append(_allocator, first) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1878
-                                    expr = PNode{ .expr_index = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_index")) = PIndex.init(obj, idx_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                    expr = PNode{ .expr_index = blk_box_57: { const _bv: std.meta.Child(@FieldType(PNode, "expr_index")) = PIndex.init(obj, idx_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_57 _bp; } };
                                 }
                             } else {
 // zbr:selfhost/Parser.zbr:1879
@@ -4749,7 +4749,7 @@ pub const Parser = struct {
                                     var callee = std.ArrayList(PNode){};
                                     callee.append(_allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1885
-                                    expr = PNode{ .expr_call = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                    expr = PNode{ .expr_call = blk_box_58: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_58 _bp; } };
                                 } else {
 // zbr:selfhost/Parser.zbr:1887
                                     going = false;
@@ -4867,7 +4867,7 @@ pub const Parser = struct {
                                                                 }
                                                                 try self.expectText(")");
 // zbr:selfhost/Parser.zbr:1944
-                                                                return PNode{ .expr_tuple_lit = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_tuple_lit")) = PTupleLit.init(elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                return PNode{ .expr_tuple_lit = blk_box_59: { const _bv: std.meta.Child(@FieldType(PNode, "expr_tuple_lit")) = PTupleLit.init(elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_59 _bp; } };
                                                             }
                                                             try self.expectText(")");
 // zbr:selfhost/Parser.zbr:1946
@@ -4884,7 +4884,7 @@ pub const Parser = struct {
                                                                 var callee = std.ArrayList(PNode){};
                                                                 callee.append(_allocator, PNode{ .expr_id = name }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1954
-                                                                return PNode{ .expr_call = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                return PNode{ .expr_call = blk_box_60: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_60 _bp; } };
                                                             } else {
 // zbr:selfhost/Parser.zbr:1955
                                                                 if (self.textIs(".")) {
@@ -4900,16 +4900,16 @@ pub const Parser = struct {
                                                                         const base = std.ArrayList(PNode){};
 // zbr:selfhost/Parser.zbr:1963
                                                                         var callee = std.ArrayList(PNode){};
-                                                                        callee.append(_allocator, PNode{ .expr_member = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } }) catch @panic("OOM");
+                                                                        callee.append(_allocator, PNode{ .expr_member = blk_box_61: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_61 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1965
-                                                                        return PNode{ .expr_call = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                        return PNode{ .expr_call = blk_box_62: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_62 _bp; } };
                                                                     } else {
 // zbr:selfhost/Parser.zbr:1967
                                                                         const field = try self.eatId();
 // zbr:selfhost/Parser.zbr:1968
                                                                         const base = std.ArrayList(PNode){};
 // zbr:selfhost/Parser.zbr:1969
-                                                                        return PNode{ .expr_member = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+                                                                        return PNode{ .expr_member = blk_box_63: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_63 _bp; } };
                                                                     }
                                                                 } else {
 // zbr:selfhost/Parser.zbr:1970
@@ -5154,7 +5154,7 @@ pub const Parser = struct {
             self.advance();
         }
 // zbr:selfhost/Parser.zbr:2111
-        return PNode{ .expr_string_interp = blk_box: { const _bv: std.meta.Child(@FieldType(PNode, "expr_string_interp")) = PStringInterp.init(parts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box _bp; } };
+        return PNode{ .expr_string_interp = blk_box_64: { const _bv: std.meta.Child(@FieldType(PNode, "expr_string_interp")) = PStringInterp.init(parts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_64 _bp; } };
     }
 
     pub fn parseCallArgs(self: *Parser) anyerror!std.ArrayList(PNode) {

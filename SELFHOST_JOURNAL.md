@@ -1526,3 +1526,107 @@ Bootstrap:  5/5 PASS (byte-identical round-trip)
 Tests:      zig build test — all pass
 GUI:        zebra --gui-backend=glfw IDE/ZebraIDE.zbr — exit 0
 ```
+
+---
+
+## Phase 22: Selfhost Cutover
+**Completed:** 2026-04-21
+
+### Goal
+
+Make the selfhost binary the production `zebra` compiler. The Zig-implemented
+backend (`src/`) becomes a bootstrap artifact only. Gate: `zebra --version`
+reports from the selfhost binary.
+
+### What changed
+
+**`build.zig` restructure**
+
+| Old | New |
+|-----|-----|
+| `zebra.exe` ← `src/main.zig` (Zig compiler) | `zebra.exe` ← `selfhost/main.zig` (selfhost binary) |
+| *(none)* | `zebra-bootstrap.exe` ← `src/main.zig` (bootstrap only) |
+
+The selfhost `main.zig` uses only relative `@import` paths to sibling `.zig`
+files, so no explicit module graph is needed in `build.zig` — Zig resolves
+them automatically from the root file location.
+
+**`selfhost/main.zbr` mode switch**
+
+The selfhost pipeline (Lex → Parse → Resolve → TC → CodeGen → `zig run`) is
+now the default when no mode flag is given. `--selfhost-compile` is accepted
+silently as a backward-compatibility alias. A new `--zig-backend` flag
+explicitly delegates to `zig-out/bin/zebra-bootstrap.exe` (the old default).
+
+The infinite-loop hazard (selfhost binary calling `zig build run` which
+rebuilds and re-invokes the selfhost binary) is eliminated because the default
+path no longer calls `zig build run`.
+
+**`tools/bootstrap_check.sh` update**
+
+`ZEBRA` variable updated to `zig-out/bin/zebra-bootstrap.exe` so Step 1
+(emitting `selfhost/*.zig` from the Zig compiler) still uses the Zig-compiled
+backend, not the selfhost one (which would be circular).
+
+**`tools/parity_check.zbr` update**
+
+The parity runner's "Zig backend reference" invocation updated from
+`zig-out/bin/zebra.exe` to `zig-out/bin/zebra-bootstrap.exe`. The selfhost
+invocation simplified to `zig-out/bin/zebra.exe` (no `--selfhost-compile` flag
+needed now that it is the default).
+
+### Build sequence
+
+Phase 22 had a sequencing constraint: the selfhost binary must not default to
+calling `zig build run` (would loop), so `selfhost/main.zbr` must be regenerated
+*before* `build.zig` points `zebra.exe` at `selfhost/main.zig`. Actual order:
+
+1. Add `zebra-bootstrap.exe` to `build.zig` (alongside existing `zebra.exe`)
+2. `zig build` → both binaries exist
+3. Update `selfhost/main.zbr`: selfhost pipeline as default, `--zig-backend` escape hatch
+4. Update `bootstrap_check.sh`: ZEBRA = `zebra-bootstrap.exe`
+5. `zig build selfhost` → regenerates `selfhost/main.zig` from updated `.zbr`
+6. Flip `build.zig`: `zebra.exe` ← `selfhost/main.zig`
+7. `zig build` → `zebra.exe` is now selfhost binary
+8. `zig build bootstrap` → 5/5 green with new binary layout
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip — with new binary names)
+Tests:      zig build test — all pass
+Gate:       zebra --version → selfhost binary (Phase 22 cutover complete)
+Parity (at cutover):  PASS 67, BOTH_FAIL 23, DIVERGE 45, MISMATCH 13
+```
+
+### Phase 22 Parity Sprint (2026-04-21)
+
+After cutover, a focused sprint reduced MISMATCH from 13 → 3 by improving
+type inference in `selfhost/typechecker.zbr`. All fixes were in `inferExpr` /
+`walkStmt` / `typeFromRef` — no changes to `codegen.zbr`.
+
+**Root cause of most MISMATCHes:** `inferExpr` returning `Type_.unknown_` for
+expressions that yield strings, causing `printFmtSpec` to fall back to `{any}`
+instead of `{s}` — producing byte-array output rather than human-readable strings.
+
+**Fixes applied (typechecker.zbr only):**
+
+| Fix | Tests fixed |
+|-----|-------------|
+| `Type_.regex` arm in `branch recv` — `.find`→string_, `.test`/`.match`→bool_ | `raw_string_test`, `regex_test`, `regex_anchors_test`, `regex_flags_test` |
+| `Type_.string_builder` arm — `.build`/`.toString`→string_, `.len`→int_ | `string_builder_test` |
+| `Type_.str_slice` arm — `.at`/`.join`/`.fetch`→string_, `.count`/`.len`→int_ | `escape_field_test`, `typed_collections_test` |
+| `typeFromRef` for `TypeRef.generic`: `List(str)`→str_slice, `HashMap(K,str)`→str_slice | `escape_field_test`, `typed_collections_test` |
+| Sibling method return-type lookup in bare `Expr.call` (current class method table) | `string_branch_test` |
+| `Stmt.destruct` field-type binding in `walkStmt` | `struct_destruct_test` |
+| `Expr.index` / `Expr.slice` arms in `inferExpr` | `string_index_test` |
+
+**Final parity:**
+```
+PASS 77 (+10), BOTH_FAIL 23, DIVERGE 45, MISMATCH 3
+```
+
+**3 deferred MISMATCHes (different bug classes — intentionally left for next wave):**
+- `string_format_test.zbr` — format specifier arguments (`{:08x}`, width/align) in string interpolation; different code path entirely
+- `named_args_infer_test.zbr` — uninitialized field defaults produce garbage values; named-arg/field-init bug
+- `terminal_test.zbr` — `Terminal.write` emits text when piped (selfhost) vs suppressed (Zig); stdlib behavioral difference

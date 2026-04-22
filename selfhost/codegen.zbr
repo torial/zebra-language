@@ -1500,6 +1500,16 @@ struct Generator
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
+            for fdecl in n.members
+                if fdecl is Decl.var_ as fld
+                    if not fld.mods.is_shared
+                        if fld.init_expr != nil
+                            dig.writeIndent()
+                            dig.w.emit("self.")
+                            dig.w.emit(fld.name)
+                            dig.w.emit(" = ")
+                            dig.genExpr(fld.init_expr to!)
+                            dig.w.emit(";\n")
             dig.writeIndent()
             dig.w.emit("return self;\n")
             ig.writeIndent()
@@ -2575,6 +2585,8 @@ struct Generator
                 ig.w.emit(".next()) |")
                 ig.w.emit(vname)
                 ig.w.emit("| {\n")
+                # split() elements are []const u8 — mark loop var as string for printFmtSpec
+                str_params.add(vname)
                 var iig = ig.indented()
                 iig.genStmts(fi.stmts)
                 ig.writeIndent()
@@ -2624,6 +2636,9 @@ struct Generator
                 w.emit(vname)
                 w.emit("| {\n")
                 for_loop_vars.add(vname)
+                # Regex groups/findAll yield []const u8 elements — mark loop var as string
+                if isRegexSliceIter(fi.iter)
+                    str_params.add(vname)
                 ig.genStmts(fi.stmts)
                 writeIndent()
                 w.emit("}\n")
@@ -3147,7 +3162,18 @@ struct Generator
         while ai2 < p.args.count()
             if ai2 > 0
                 w.emit(", ")
-            genExpr(p.args.at(ai2))
+            var parg = p.args.at(ai2)
+            var needs_unwrap = false
+            if this.infer_ctx != nil
+                var pt: Type_ = inferExpr(parg, this.infer_ctx to!)
+                if pt is Type_.optional as poi
+                    if poi is Type_.string_ or poi is Type_.str_slice
+                        needs_unwrap = true
+                    else if poi is Type_.int_ or poi is Type_.uint_ or poi is Type_.bool_ or poi is Type_.float_ or poi is Type_.char_
+                        needs_unwrap = true
+            genExpr(parg)
+            if needs_unwrap
+                w.emit(".?")
             ai2 += 1
         w.emit("});\n")
 
@@ -3169,6 +3195,10 @@ struct Generator
             return "{s}"
         if this.infer_ctx != nil
             var t: Type_ = inferExpr(e, this.infer_ctx to!)
+            # Unwrap one optional layer: inside nil-check bodies the value is
+            # guaranteed non-nil; genPrint will emit `.?` on the Zig value.
+            if t is Type_.optional as opt_inner
+                t = opt_inner
             branch t
                 on Type_.string_
                     return "{s}"
@@ -3984,6 +4014,11 @@ struct Generator
                 if c.callee is Expr.member as cm
                     if cm.member == "toString" or cm.member == "concat" or cm.member == "format" or cm.member == "join" or cm.member == "trim" or cm.member == "upper" or cm.member == "lower" or cm.member == "substring" or cm.member == "replace" or cm.member == "replaceAll"
                         return true
+                    # .at(i) on a List(str) local returns a string
+                    if cm.member == "at"
+                        if cm.object is Expr.ident as lid
+                            if list_str_locals.contains_(lid.name)
+                                return true
             on Expr.to_non_nil as tnn
                 # x to! where x is a string? → still a string
                 return isStringExpr(tnn.expr)
@@ -4192,13 +4227,18 @@ struct Generator
                             # payload-less-tag args (e.g. Type_.string_) coerce
                             # from tag to union at the _bv binding rather than
                             # at @TypeOf(_bv), which would return the tag type.
-                            w.emit("blk_box: { const _bv: std.meta.Child(@FieldType(")
+                            var box_uid: int = w.nextUid()
+                            var box_lbl: str = "blk_box_" + box_uid.toString()
+                            w.emit(box_lbl)
+                            w.emit(": { const _bv: std.meta.Child(@FieldType(")
                             w.emit(oname)
                             w.emit(", \"")
                             w.emit(mname2)
                             w.emit("\")) = ")
                             genExpr(c.args.at(0).value)
-                            w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :blk_box _bp; }")
+                            w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :")
+                            w.emit(box_lbl)
+                            w.emit(" _bp; }")
                         else
                             genExpr(c.args.at(0).value)
                     else
@@ -4224,7 +4264,10 @@ struct Generator
                 w.emit(" = ")
                 if c.args.count() > 0
                     if xmu_boxed
-                        w.emit("blk_box: { const _bv: std.meta.Child(@FieldType(")
+                        var xmu_box_uid: int = w.nextUid()
+                        var xmu_box_lbl: str = "blk_box_" + xmu_box_uid.toString()
+                        w.emit(xmu_box_lbl)
+                        w.emit(": { const _bv: std.meta.Child(@FieldType(")
                         w.emit(xmu_mod)
                         w.emit(".")
                         w.emit(xmu_union)
@@ -4232,7 +4275,9 @@ struct Generator
                         w.emit(xmu_variant)
                         w.emit("\")) = ")
                         genExpr(c.args.at(0).value)
-                        w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :blk_box _bp; }")
+                        w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :")
+                        w.emit(xmu_box_lbl)
+                        w.emit(" _bp; }")
                     else
                         genExpr(c.args.at(0).value)
                 else
@@ -5329,6 +5374,20 @@ struct Generator
                 w.emit("\"\"")
             w.emit(") catch @panic(\"File.delete error\"))")
             return
+        if mname == "modtime"
+            w.emit("(blk_mt: {\n")
+            writeIndent()
+            w.emit("    const _mt_stat = std.fs.cwd().statFile(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(") catch break :blk_mt @as(i64, -1);\n")
+            writeIndent()
+            w.emit("    break :blk_mt @as(i64, @intCast(@divTrunc(_mt_stat.mtime, std.time.ns_per_ms)));\n")
+            writeIndent()
+            w.emit("})")
+            return
         # Fallback: unknown File method
         w.emit("@compileError(\"selfhost: unknown File.")
         w.emit(mname)
@@ -5390,6 +5449,14 @@ struct Generator
             else
                 w.emit("\"\"")
             w.emit(")")
+            return
+        if mname == "sleep"
+            w.emit("std.Thread.sleep(@as(u64, @intCast(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")) * std.time.ns_per_ms)")
             return
         # Fallback: unknown sys method
         w.emit("@compileError(\"selfhost: unknown sys.")

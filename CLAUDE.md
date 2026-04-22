@@ -10,7 +10,7 @@ and Cobra; language design draws on Python, Cobra, and Eiffel (contracts, nil
 tracking) with a Zig runtime and error model.
 
 History note: this repo was split out from the archived `torial/cobra-language`
-repo on 2026-04-16. See `HERITAGE.md` for the background and where the older
+repo on 2026-04-16. See `docs/archive/HERITAGE.md` for the background and where the older
 history lives.
 
 ## Repository layout
@@ -80,11 +80,12 @@ Key idioms worth remembering up front:
 3. Update `selfhost/` to keep parity, or file a gap note in `SELFHOST_JOURNAL.md`.
 4. Update `QUICKSTART.md` if user-visible syntax or semantics change.
 
-**Debugging a self-hosted phase:**
-- Self-hosted compiler binaries typically go to `selfhost/zebra-selfhost.exe`
-  via `zig build`.
-- Keep intermediate Zig files from the selfhost pipeline using the CLI flags
-  documented in `selfhost/main.zbr`.
+**Self-hosting (Phase 22 complete):**
+- `zig build` now produces `zig-out/bin/zebra.exe` from `selfhost/main.zig` (primary).
+- `zig-out/bin/zebra-bootstrap.exe` is the Zig-implemented compiler, used by
+  `tools/bootstrap_check.sh` to regenerate `selfhost/*.zig` from `*.zbr` sources.
+- Keep intermediate Zig files using `zebra --emit-zig` or `--output-dir DIR`.
+- Escape hatch: `zebra --zig-backend file.zbr` delegates to `zebra-bootstrap.exe`.
 
 ## Notes
 

@@ -117,10 +117,10 @@ class Main
             if g.button("Run  (F9)")
                 Main.doRun(state, editor)
             g.sameLine()
-            var title = state.filepath
+            state.filepath = g.input("##filepath", state.filepath)
             if state.dirty
-                title = "${state.filepath} *"
-            g.text(title)
+                g.sameLine()
+                g.text("*")
 
         def renderBody(g: Gui, state: IDEState, editor: CodeEditor)
             editor.setErrorMarkers(state.diags)

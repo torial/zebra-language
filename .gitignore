@@ -9,7 +9,12 @@ zig-out/
 selfhost/*_err.txt
 selfhost/codegen_roundtrip.zig
 
-# Phase 16a+ typechecker port — .zig outputs are ephemeral until Phase 16c
-# wires typechecker.zbr into the bootstrap FILES list.
-selfhost/typechecker.zig
-selfhost/typechecker_test.zig
+# tools/*.zig — generated when running tools/*.zbr via zig build run
+tools/*.zig
+
+# Generated parity-check outputs
+_parity_sh/
+
+# Generated IDE project (Zig output from IDE/ZebraIDE.zbr)
+IDE/ZebraIDE_gui/
+

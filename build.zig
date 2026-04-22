@@ -7,11 +7,11 @@ pub fn build(b: *std.Build) void {
     const earley_dep = b.dependency("earley", .{ .target = target, .optimize = optimize });
     const earley_mod = earley_dep.module("earley");
 
-    // ── Compiler executable ───────────────────────────────────────────────────
+    // ── Bootstrap compiler: Zig-implemented backend ──────────────────────────
     //
-    // The compiler_mod root is src/main.zig; all src/*.zig files are imported
-    // via relative paths and belong to a single module — only 'earley' needs
-    // explicit wiring.
+    // After Phase 22 cutover, this is NOT the primary `zebra` binary.
+    // Primary use: bootstrap_check.sh Step 1 (emit selfhost/*.zig from *.zbr).
+    // Installed as zebra-bootstrap.exe; used via --zig-backend escape hatch.
 
     const compiler_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -20,9 +20,26 @@ pub fn build(b: *std.Build) void {
     });
     compiler_mod.addImport("earley", earley_mod);
 
+    const bootstrap_exe = b.addExecutable(.{
+        .name        = "zebra-bootstrap",
+        .root_module = compiler_mod,
+    });
+    b.installArtifact(bootstrap_exe);
+
+    // ── Primary zebra binary: selfhost pipeline (Phase 22 cutover) ──────────
+    //
+    // Compiled from selfhost/main.zig (checked-in fixed point from the
+    // bootstrap round-trip). Default mode: Lex → Parse → Resolve → TC →
+    // CodeGen → zig run. No external module deps — uses relative @imports.
+
+    const selfhost_mod = b.createModule(.{
+        .root_source_file = b.path("selfhost/main.zig"),
+        .target   = target,
+        .optimize = optimize,
+    });
     const exe = b.addExecutable(.{
         .name        = "zebra",
-        .root_module = compiler_mod,
+        .root_module = selfhost_mod,
     });
     b.installArtifact(exe);
 

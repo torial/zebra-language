@@ -431,3 +431,54 @@ Open bugs live in `BUGS.md`.
 ### BUG-074: `Result.ok` / `Result.err` constructor syntax — REMOVED 2026-04-19
 - **Status:** Removed from language and compiler
 - `Result(T, E)` as a language-level generic type is removed. Both the Zig compiler (`src/CodeGen.zig`, `src/TypeChecker.zig`) and the selfhost port (`selfhost/codegen.zbr`, `selfhost/resolver.zbr`) had their Result-specific handling excised. The `_Result` preamble helper, `genResultMethod`, and `genResultCall` are all deleted. Test files `result_test.zbr` and `result_methods_test.zbr` (which exercised the constructor syntax) are deleted. Bootstrap: 5/5 steps pass, byte-identical round-trip.
+
+---
+
+### BUG-006: `zig"..."` expression statement emits double semicolon — FIXED both sides
+- **Status:** Fixed — Zig backend 2026-04-17; selfhost fixed 2026-04-20 (Phase 20)
+- `zig"some_stmt;"` inside a method body emitted `some_stmt;;` — the zig literal already ends with `;`, and `genStmt` for `.expr` always appended another `;`.
+- Zig-side fix: `src/CodeGen.zig::genStmt` `.expr` case detects trailing `;` on `zig_lit` content and skips the appended `;`.
+- Selfhost fix: `selfhost/codegen.zbr::genStmt` `on Stmt.expr` now checks `if e is Expr.zig_lit`: emits content, adds `;` only if content doesn't already end with `;`.
+
+---
+
+### BUG-035: Selfhost parser has no atom handler for `doc_string_line` (`"""..."""` multi-line strings) — FIXED
+- **Status:** Fixed Phase 20 (2026-04-20)
+- `selfhost/parser.zbr:1885` handles `isDocString()` → `PNode.expr_str(text)`.
+
+---
+
+### BUG-037: Selfhost corpus-failure triage — RESOLVED 2026-04-19
+- **Status:** Closed — corpus reached 100% (149/149) via BUG-048 through BUG-073 grammar wave.
+
+---
+
+### BUG-046: Selfhost partial-class sibling file merge — FIXED 2026-04-19
+- **Status:** Fixed — committed 2026-04-19
+- Added `mergePartials_pmodule` in `selfhost/main.zbr`. Key detail: `"" + psrc_raw` copies the read buffer into permanent arena storage before parsing (Zig 0.15 `File.read` defer can rewind arena).
+
+---
+
+### BUG-075: `String + str` concat not routed through `_str_concat` in selfhost TypeChecker — FIXED
+- **Status:** Fixed Phase 20 (2026-04-20)
+- Extended `isString(t)` in `selfhost/typechecker.zbr` to accept `Type_.cross_module` where `cm.type_name == "String"`.
+
+---
+
+### BUG-076: `if x is Union.variant |r|` capture binding not in TypeChecker `narrowed_types` — FIXED
+- **Status:** Fixed — `isCaptureLookup` 3-way payload lookup in TypeChecker.zig; selfhost walker narrowing in typechecker.zbr; `genIsCaptureThen` ptr_field_bindings seeding in codegen.zbr; bootstrap 5/5.
+
+---
+
+### BUG-077: TC doesn't record inferred type for `?`-propagated throws-call assignments — RESOLVED
+- **Status:** Not reproducing — resolved indirectly by BUG-076 + Phase 20 typeFromRef fix (2026-04-21). Verified both `src/TypeChecker.zig` and `selfhost/typechecker.zbr` correctly propagate through `.try_` nodes.
+
+---
+
+### BUG-078: `^ClassName` in union variant double-boxes (`**T`) — FIXED
+- **Status:** Fixed — `src/Resolver.zig::walkUnion` emits a hard error when payload is a class type. Test: `test/bug078_double_box_test.zbr` (intentional-error fixture).
+
+---
+
+### BUG-080: `^T?` field assignment — CLOSED NOT REPRODUCING
+- **Status:** Closed 2026-04-21. Verified: `n.next = n2` where `next: ^Node?` generates correct `n.next = n2;` — BUG-047 class short-circuit in `genAssign` and `field_needs_deref` both correctly suppress the `.*` for class-typed optional ref fields.

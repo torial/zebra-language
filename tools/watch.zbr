@@ -1,0 +1,57 @@
+# watch.zbr — recompile and run a .zbr file whenever it changes on disk.
+#
+# Usage:
+#   zig build run -- tools/watch.zbr path/to/file.zbr
+#   zig build run -- tools/watch.zbr path/to/file.zbr --interval 500
+#   zig build run -- tools/watch.zbr path/to/file.zbr --check
+#
+# Options:
+#   --interval N   poll interval in milliseconds (default: 300)
+#   --check        compile-check only, don't execute
+
+class Main
+    shared
+        def main
+            var args = Arg.parse()
+
+            var path_opt      = args.positional(0)
+            var interval_str: str = args.option("--interval", "300")
+            var interval: int     = interval_str.toInt()
+            var check_only    = args.contains("--check")
+
+            if path_opt == nil
+                sys.errln("usage: watch.zbr <file.zbr> [--interval N] [--check]")
+                sys.exit(1)
+
+            var path: str = path_opt to!
+
+            if not File.exists(path)
+                sys.errln("watch: file not found: ${path}")
+                sys.exit(1)
+
+            sys.errln("watching ${path}  (interval ${interval}ms, Ctrl-C to stop)")
+
+            var last_mtime = File.modtime(path)
+            Main.runFile(path, check_only)
+
+            while true
+                sys.sleep(interval)
+                var mtime = File.modtime(path)
+                if mtime != last_mtime
+                    last_mtime = mtime
+                    sys.errln("--- changed ---")
+                    Main.runFile(path, check_only)
+
+        def runFile(path: str, check_only: bool)
+            var argv = List(str)()
+            argv.add("zig-out/bin/zebra.exe")
+            if check_only
+                argv.add("-c")
+            argv.add(path)
+            var result = sys.run(argv)
+            if result.stdout.len > 0
+                sys.err(result.stdout)
+            if result.stderr.len > 0
+                sys.err(result.stderr)
+            if result.exit_code != 0
+                sys.errln("[exit ${result.exit_code}]")

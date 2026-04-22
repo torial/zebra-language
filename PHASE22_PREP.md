@@ -5,8 +5,8 @@ default `zebra` command.  Complete all four items before starting Phase 22.
 
 ## Tasks
 
-- [ ] **1. BUGS.md triage** — scan for open selfhost-only or parity-affecting bugs;
-      label each as BLOCKER or non-blocker for cutover
+- [x] **1. BUGS.md triage** — scan for open selfhost-only or parity-affecting bugs;
+      label each as BLOCKER or non-blocker for cutover — confirmed 2026-04-21
 - [x] **2. `zig build selfhost` canonicalization** — confirm exact build command,
       canonical output path, add build.zig step if missing, document it
 - [x] **3. Error format compatibility test** — verify selfhost diagnostic output is
@@ -111,5 +111,5 @@ invocation time. Edit `tools/parity_check.zbr` directly to enable filtering duri
 - [x] No BLOCKER bugs open — confirmed 2026-04-21
 - [x] Error format verified compatible — `bash test/selfhost_compat/run_compat.sh` 2/2 PASS
 - [x] `zig build selfhost` step clean and documented — canonical: `zig build selfhost`
-- [ ] Bootstrap 5/5 still green — run `zig build bootstrap` before cutover
-- [ ] SELFHOST_JOURNAL.md Phase 22 entry drafted
+- [x] Bootstrap 5/5 still green — confirmed 2026-04-21 (`bash tools/bootstrap_check.sh`)
+- [x] SELFHOST_JOURNAL.md Phase 22 entry drafted — 2026-04-21
