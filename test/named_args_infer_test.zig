@@ -1518,7 +1518,7 @@ pub const Program = struct {
         std.debug.print("{s}\n", .{p.describe()});
 // zbr:test/named_args_infer_test.zbr:21
         var q: *Point = Point.init();
-        q.move(10, 2);
+        q.move(2, 10);
         std.debug.print("{s}\n", .{q.describe()});
     }
 

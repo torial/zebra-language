@@ -74,6 +74,7 @@ union PNode
     # Expressions (heap-boxed - recursive)
     expr_member: ^PMember
     expr_call: ^PCall
+    expr_named_arg: ^PNamedArg
     expr_index: ^PIndex
     expr_slice: ^PSlice
     expr_binary: ^PBinary
@@ -438,6 +439,13 @@ struct PCall
     cue init(callee: List(PNode), args: List(PNode))
         this.callee = callee
         this.args = args
+
+struct PNamedArg
+    var name: str
+    var value: List(PNode)
+    cue init(name: str, value: List(PNode))
+        this.name = name
+        this.value = value
 
 struct PIndex
     var object: List(PNode)
@@ -2113,14 +2121,18 @@ class Parser
     def parseCallArgs(): List(PNode) throws
         var args = List(PNode)()
         while not this.textIs(")")
-            # Named-arg label `name:` is consumed and ignored — the selfhost
-            # call-site emitter is positional, so we still forward the value
-            # expression in source order. Matches the Zig backend which
-            # attaches `name` to Ast.Arg but emits positional Zig calls.
+            # Named-arg label `name:` — preserve the name in PNode.expr_named_arg
+            # so astbuilder can populate Arg.name for named-arg reordering in codegen.
             if .isId() and this.peekAt(1).text == ":"
+                var label: str = this.peek().text
                 this.advance()  # consume the id (label)
                 this.advance()  # consume ':'
-            args.add(.parseExpr())
+                var val_pn = .parseExpr()
+                var val_list = List(PNode)()
+                val_list.add(val_pn)
+                args.add(PNode.expr_named_arg(PNamedArg(label, val_list)))
+            else
+                args.add(.parseExpr())
             if this.textIs(",")
                 this.advance()
         .expectText(")")

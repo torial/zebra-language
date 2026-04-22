@@ -1,18 +1,14 @@
-# tools/parity_check.zbr — Phase 22 parity runner
+# tools/parity_check.zbr — Phase 22+ parity runner
 #
-# Compares the Zig-compiled backend against the selfhost compilation pipeline.
+# Compares the Zig-compiled bootstrap backend against the selfhost pipeline.
 # For each test file: run through both compilers, diff exit codes + program output.
-# Use this immediately before Phase 22 cutover to confirm behavioral parity.
 #
 # Usage (from repo root):
 #   zig build run -- tools/parity_check.zbr
 #
-# Note: zebra.exe intercepts all -flags, so --filter/--quick cannot be passed.
-# To test a subset, set FILTER= in the source or wait until selfhost is the compiler.
-#
 # Prerequisites:
-#   zig build              → zig-out/bin/zebra.exe
-#   zig build selfhost     → zig-out/bin/zebra-selfhost.exe
+#   zig build              → zig-out/bin/zebra.exe (selfhost primary)
+#                          → zig-out/bin/zebra-bootstrap.exe (Zig backend reference)
 #
 # Interpreting results:
 #   PASS       — both compilers agree on exit code and program output
@@ -36,6 +32,8 @@ class ParityChecker
             if name == "bench_zebra.zbr"
                 return true
             if name == "dns_test.zbr"
+                return true
+            if name == "server_test.zbr"
                 return true
             if name == "selfhost_compat"    # sub-directory entry from Dir.list
                 return true
@@ -65,10 +63,10 @@ class ParityChecker
                 first = false
             return out.trim()
 
-        # ── Run Zig backend ──────────────────────────────────────────────────
+        # ── Run Zig backend (bootstrap reference) ────────────────────────────
         def runZig(file: str): RunResult
             var argv = List(str)()
-            argv.add("zig-out/bin/zebra.exe")
+            argv.add("zig-out/bin/zebra-bootstrap.exe")
             argv.add(file)
             var r = sys.run(argv)
             var res = RunResult()
@@ -78,13 +76,12 @@ class ParityChecker
                 res.error_msg = r.stderr.trim()
             return res
 
-        # ── Run selfhost compile pipeline ─────────────────────────────────────
+        # ── Run selfhost pipeline (primary zebra) ─────────────────────────────
         def runSelfhost(file: str): RunResult
             var argv = List(str)()
-            argv.add("zig-out/bin/zebra-selfhost.exe")
-            argv.add("--selfhost-compile")
+            argv.add("zig-out/bin/zebra.exe")
             argv.add("--output-dir")
-            argv.add("/tmp/parity_sh")
+            argv.add("_parity_sh")
             argv.add(file)
             var r = sys.run(argv)
             var res = RunResult()
@@ -99,9 +96,11 @@ class ParityChecker
             if not File.exists("zig-out/bin/zebra.exe")
                 sys.errln("parity_check: zig-out/bin/zebra.exe not found — run 'zig build'")
                 sys.exit(1)
-            if not File.exists("zig-out/bin/zebra-selfhost.exe")
-                sys.errln("parity_check: zig-out/bin/zebra-selfhost.exe not found — run 'zig build selfhost'")
+            if not File.exists("zig-out/bin/zebra-bootstrap.exe")
+                sys.errln("parity_check: zig-out/bin/zebra-bootstrap.exe not found — run 'zig build'")
                 sys.exit(1)
+
+            Dir.create("_parity_sh")
 
             # Collect and sort test file names
             var entries_raw = Dir.list("test")

@@ -5116,12 +5116,57 @@ struct Generator
         w.emit(".")
         w.emit(mname)
         w.emit("(")
-        var first = true
+        # Named-arg reordering: if any arg is labeled and we can find param order, emit in param order.
+        var did_reorder = false
+        var has_named = false
         for a in args
-            if not first
-                w.emit(", ")
-            first = false
-            genExpr(a.value)
+            if a.name != nil
+                has_named = true
+                break
+        if has_named and this.infer_ctx != nil
+            var rt: Type_ = inferExpr(m.object, this.infer_ctx to!)
+            if rt is Type_.named as recv_cn
+                var recv_class: str = "" + recv_cn
+                var pcsv: str? = module_types.methodParamsCsv(recv_class, mname)
+                if pcsv == nil
+                    pcsv = dep_types.methodParamsCsv(recv_class, mname)
+                if pcsv != nil
+                    var first2 = true
+                    var pos_idx: int = 0
+                    for pname in (pcsv to!).split(",")
+                        if not first2
+                            w.emit(", ")
+                        first2 = false
+                        # Find named arg matching this param first.
+                        var found = false
+                        var ai: int = 0
+                        while ai < args.count()
+                            var a = args.at(ai)
+                            if a.name != nil
+                                if (a.name to!) == pname
+                                    genExpr(a.value)
+                                    found = true
+                                    break
+                            ai += 1
+                        # Fall back to next unfilled positional arg.
+                        if not found
+                            while pos_idx < args.count()
+                                var pa = args.at(pos_idx)
+                                pos_idx += 1
+                                if pa.name == nil
+                                    genExpr(pa.value)
+                                    found = true
+                                    break
+                        if not found
+                            w.emit("undefined")
+                    did_reorder = true
+        if not did_reorder
+            var first = true
+            for a in args
+                if not first
+                    w.emit(", ")
+                first = false
+                genExpr(a.value)
         w.emit(")")
         if callee_throws2 and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()

@@ -53,7 +53,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
+ZEBRA="$REPO/zig-out/bin/zebra-bootstrap.exe"
 SELFHOST_A="$REPO/zig-out/bin/zebra-selfhost.exe"
 SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
 
@@ -62,7 +62,7 @@ SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
 FILES=(Token Lexer ast parser resolver astbuilder cg_helpers typechecker codegen main)
 
 if [[ ! -x "$ZEBRA" ]]; then
-    echo "bootstrap_check: $ZEBRA missing. Run 'zbuild' first." >&2
+    echo "bootstrap_check: $ZEBRA missing. Run 'zig build' first." >&2
     exit 1
 fi
 

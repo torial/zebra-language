@@ -105,12 +105,14 @@ class ClassTypes
     var name: str
     var field_types: HashMap(str, Type_)
     var method_returns: HashMap(str, Type_)
+    var method_params: HashMap(str, str)
     var ctor_params: List(Type_)
 
     cue init(name: str)
         this.name = internString(name)
         field_types = HashMap()
         method_returns = HashMap()
+        method_params = HashMap()
         ctor_params = List(Type_)()
 
     def setField(field_name: str, t: Type_)
@@ -118,6 +120,9 @@ class ClassTypes
 
     def setMethodReturn(method_name: str, t: Type_)
         this.method_returns.put(internString(method_name), t)
+
+    def setMethodParams(method_name: str, params_csv: str)
+        this.method_params.put(internString(method_name), internString(params_csv))
 
     def addCtorParam(t: Type_)
         this.ctor_params.add(t)
@@ -130,6 +135,11 @@ class ClassTypes
     def methodReturn(method_name: str): Type_?
         if this.method_returns.contains(method_name)
             return this.method_returns.fetch(method_name)
+        return nil
+
+    def methodParamsCsv(method_name: str): str?
+        if this.method_params.contains(method_name)
+            return this.method_params.fetch(method_name)
         return nil
 
     def ctorParamAt(idx: int): Type_?
@@ -244,6 +254,12 @@ class ModuleTypes
             return nil
         var c: ClassTypes = this.classes.fetch(class_name)
         return c.methodReturn(method_name)
+
+    def methodParamsCsv(class_name: str, method_name: str): str?
+        if not this.classes.contains(class_name)
+            return nil
+        var c: ClassTypes = this.classes.fetch(class_name)
+        return c.methodParamsCsv(method_name)
 
     def ctorParamAt(class_name: str, idx: int): Type_?
         if not this.classes.contains(class_name)
@@ -379,6 +395,17 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     ct.setMethodReturn("" + m.name, typeFromRef(m.return_type to!))
                 else
                     ct.setMethodReturn("" + m.name, Type_.void_)
+                # Collect param names as CSV for named-arg reordering in codegen.
+                var pcsv: str = ""
+                var pi: int = 0
+                while pi < m.params.count()
+                    var p = m.params.at(pi)
+                    if pi > 0
+                        pcsv = pcsv + ","
+                    pcsv = pcsv + ("" + p.name)
+                    pi += 1
+                if pcsv != ""
+                    ct.setMethodParams("" + m.name, pcsv)
             on Decl.init as ini
                 # Ctor params — first init wins (Zebra supports only one cue init per class).
                 if ct.ctorParamCount() == 0
