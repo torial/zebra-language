@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# selfhost_smoke.sh — quick sanity check for the selfhost compiler pipeline.
+#
+# Runs zebra.exe (the selfhost primary binary) through --emit-zig on a small
+# set of representative fixtures.  Each test passes if the emit exits 0 (full
+# lex→parse→resolve→TC→codegen pipeline succeeded).  No Zig compilation is
+# performed so this runs fast (~0.5–2 s per test, shared Zig cache).
+#
+# Called by: `zig build test` (via the selfhost_smoke build step).
+# Also safe to run manually: bash tools/selfhost_smoke.sh
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO"
+
+ZEBRA="$REPO/zig-out/bin/zebra.exe"
+if [[ ! -x "$ZEBRA" ]]; then
+    echo "selfhost_smoke: $ZEBRA missing. Run 'zig build' first." >&2
+    exit 1
+fi
+
+TMPDIR_OUT="/tmp/selfhost-smoke"
+rm -rf "$TMPDIR_OUT"
+mkdir -p "$TMPDIR_OUT"
+trap 'rm -rf "$TMPDIR_OUT"' EXIT
+
+PASS=0
+FAIL=0
+
+smoke() {
+    local zbr="$1"
+    local label
+    label="$(basename "$zbr" .zbr)"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label" >&2
+        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+        FAIL=$((FAIL + 1))
+    fi
+    # Clear between tests so dep files don't bleed across
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
+echo "── Selfhost smoke tests (emit-zig pipeline)"
+
+# Pure arithmetic / branching
+smoke test/branch_edge_test.zbr
+smoke test/branch_range_test.zbr
+
+# Language features
+smoke test/arena_scope_test.zbr
+smoke test/char_tostring_test.zbr
+smoke test/string_format_test.zbr
+
+# Cross-module dep graph walk
+smoke test/crossmod_arith_test.zbr
+smoke test/crossmod_types_test.zbr
+
+# Struct + union features
+smoke test/ctor_arg_ref_test.zbr
+smoke test/dispatch_diag.zbr
+
+# Lambda capture
+smoke test/any_all_test.zbr
+
+echo ""
+if [[ $FAIL -eq 0 ]]; then
+    echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
+else
+    echo "selfhost smoke: $PASS passed, $FAIL FAILED" >&2
+    exit 1
+fi

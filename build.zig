@@ -154,6 +154,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(unit_tests).step);
     test_step.dependOn(&b.addRunArtifact(integ_tests).step);
 
+    // Selfhost smoke: run tools/selfhost_smoke.sh after building zebra.exe.
+    // Exercises the full lex→parse→resolve→TC→codegen pipeline on 10 fixtures
+    // without invoking `zig run` — fast enough for the default test step.
+    const smoke_run = b.addSystemCommand(&.{ "bash", "tools/selfhost_smoke.sh" });
+    smoke_run.step.dependOn(&exe.step);
+    test_step.dependOn(&smoke_run.step);
+
     // ── Selfhost build ────────────────────────────────────────────────────────
     //
     // `zig build selfhost` emits all selfhost/*.zbr files to /tmp/bs-zig via
