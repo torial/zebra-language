@@ -2140,8 +2140,3 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
     if (tag == _ttag_Keywords) return .{ .items = _reflect_Keywords_field_types };
     return .{ .items = &.{} };
 }
-
-fn _zbr_error_msg() []const u8 {
-    if (_error_ctx.message.len > 0) return _error_ctx.message;
-    return "";
-}
