@@ -1387,7 +1387,10 @@ const Generator = struct {
         // For leak detection during development, swap to GeneralPurposeAllocator.
         try g.w.writeAll("var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);\n");
         // `var` (not `const`) so that `arena` blocks can save/restore it.
-        try g.w.writeAll("var _allocator: std.mem.Allocator = undefined;\n");
+        // Pre-initialised from `_arena` so modules are usable without an explicit
+        // `_initAllocator` call — safe because each module owns its own arena.
+        // `_initAllocator` overrides this with a shared allocator when needed.
+        try g.w.writeAll("var _allocator: std.mem.Allocator = _arena.allocator();\n");
         // `_initAllocator` sets this module's allocator AND propagates to every
         // directly-imported Zebra module, so transitive deps are always initialised
         // even when the root `main` only calls it for direct imports.

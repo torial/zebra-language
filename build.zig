@@ -179,4 +179,16 @@ pub fn build(b: *std.Build) void {
     bootstrap_run.step.dependOn(b.getInstallStep());
     const bootstrap_step = b.step("bootstrap", "Verify selfhost round-trip + level-2 fixed point");
     bootstrap_step.dependOn(&bootstrap_run.step);
+
+    // ── Selfhost update ───────────────────────────────────────────────────────
+    //
+    // `zig build update-selfhost` runs bootstrap steps 1+2 then re-emits all
+    // selfhost/*.zig via the freshly-built selfhost-A binary.  After this step,
+    // run `zig build` again to rebuild zebra.exe from the refreshed .zig files.
+    // Does NOT call zig build recursively — that would cause a recursive build
+    // error; the two-step idiom is intentional.
+    const update_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--update" });
+    update_run.step.dependOn(b.getInstallStep());
+    const update_selfhost_step = b.step("update-selfhost", "Regenerate selfhost/*.zig from .zbr sources (then run 'zig build')");
+    update_selfhost_step.dependOn(&update_run.step);
 }

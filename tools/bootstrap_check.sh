@@ -4,6 +4,7 @@
 # Usage:
 #   tools/bootstrap_check.sh           # full 5-step round-trip (commit gate)
 #   tools/bootstrap_check.sh --quick   # stop after step 2 (iterative rebuild)
+#   tools/bootstrap_check.sh --update  # steps 1+2, then update selfhost/*.zig
 #
 # What it does (full mode):
 #   1. Regenerates all selfhost .zig files from the Zig-compiled zebra into
@@ -18,10 +19,16 @@
 # the A/B round-trip. selfhost/*.zig is never touched in quick mode, so the
 # working tree stays clean. Run full mode before commit.
 #
-# Why this flag exists: running `zebra --emit-zig selfhost/X.zbr` manually and
-# copying into selfhost/X.zig mixes zebra-shape output (with prologue/
-# entry-thunk) against selfhost-shape neighbors (dep-shape), causing runtime
-# crashes. Always regenerate the whole set; --quick is the guarded way.
+# Update mode (--update) runs steps 1+2 then has the freshly-built selfhost-A
+# re-emit all selfhost/*.zig in place. Equivalent to `zig build update-selfhost`.
+# Use after editing selfhost/*.zbr when you need zebra.exe to reflect the
+# changes: run --update, then `zig build`.  selfhost/main.zig is emitted last
+# so it retains its root-mode shape (pub fn main + _initAllocator chain);
+# the other files land in dep-mode, which is correct for @import by main.
+#
+# Why these flags exist: running `zebra --emit-zig selfhost/X.zbr` manually and
+# copying into selfhost/X.zig mixes emit shapes (root vs dep), causing runtime
+# crashes. Always regenerate the whole set; --update is the safe, fast path.
 #
 # Prerequisites: zig build has already produced zig-out/bin/zebra.exe.
 #
@@ -34,16 +41,18 @@
 set -euo pipefail
 
 QUICK=0
+UPDATE=0
 for arg in "$@"; do
     case "$arg" in
-        --quick) QUICK=1 ;;
+        --quick)  QUICK=1 ;;
+        --update) QUICK=1; UPDATE=1 ;;
         -h|--help)
-            sed -n '2,32p' "$0"
+            sed -n '2,40p' "$0"
             exit 0
             ;;
         *)
             echo "bootstrap_check: unknown argument: $arg" >&2
-            echo "  usage: $0 [--quick]" >&2
+            echo "  usage: $0 [--quick | --update]" >&2
             exit 2
             ;;
     esac
@@ -112,7 +121,18 @@ if ! zig build-exe "$BS_ZIG/main.zig" -femit-bin="$SELFHOST_A" 2>/tmp/bs-rebuild
 fi
 
 if [[ $QUICK -eq 1 ]]; then
-    echo "PASS: quick rebuild — zebra-selfhost.exe rebuilt from selfhost/*.zbr (round-trip skipped)"
+    if [[ $UPDATE -eq 1 ]]; then
+        echo "── Step 3 (update): re-emitting selfhost/*.zig via selfhost-A"
+        # Emit files in FILES order.  main is last, so it lands in root-mode
+        # (pub fn main, _initAllocator chain); earlier files end up in dep-mode
+        # as side-effects of compiling main's dep graph — both shapes are safe.
+        for f in "${FILES[@]}"; do
+            "$SELFHOST_A" --emit-zig "selfhost/$f.zbr" >/dev/null 2>/dev/null
+        done
+        echo "PASS: selfhost/*.zig updated — run 'zig build' to rebuild zebra.exe"
+    else
+        echo "PASS: quick rebuild — zebra-selfhost.exe rebuilt (selfhost/*.zig not updated; use --update to refresh)"
+    fi
     exit 0
 fi
 
