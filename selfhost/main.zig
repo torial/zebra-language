@@ -2208,7 +2208,7 @@ pub const Main = struct {
                     const r2 = _sys_run(argv2);
 // zbr:selfhost/main.zbr:453
                     if (!std.mem.eql(u8, r2.stdout, "")) {
-                        std.debug.print("{s}\n", .{r2.stdout});
+                        _term_print(r2.stdout, "", false);
                     }
 // zbr:selfhost/main.zbr:455
                     if (!std.mem.eql(u8, r2.stderr, "")) {

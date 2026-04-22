@@ -451,7 +451,7 @@ class Main
 
                 var r2 = sys.run(argv2)
                 if r2.stdout != ""
-                    print r2.stdout
+                    Terminal.write(r2.stdout, "")
                 if r2.stderr != ""
                     var remapped: str = remapZigErrors(r2.stderr, zig_path)
                     sys.err(remapped)

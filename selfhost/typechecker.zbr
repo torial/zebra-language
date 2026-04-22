@@ -296,6 +296,35 @@ def typeFromName(n: str): Type_
         return Type_.regex
     if n == "StrSet"
         return Type_.str_set
+    # Sized numeric types — enable format-spec inference for int32, float64, etc.
+    if n == "int8"
+        return Type_.int_n(8)
+    if n == "int16"
+        return Type_.int_n(16)
+    if n == "int32"
+        return Type_.int_n(32)
+    if n == "int64"
+        return Type_.int_n(64)
+    if n == "int128"
+        return Type_.int_n(128)
+    if n == "uint8"
+        return Type_.uint_n(8)
+    if n == "uint16"
+        return Type_.uint_n(16)
+    if n == "uint32"
+        return Type_.uint_n(32)
+    if n == "uint64"
+        return Type_.uint_n(64)
+    if n == "uint128"
+        return Type_.uint_n(128)
+    if n == "float32"
+        return Type_.float_n(32)
+    if n == "float64"
+        return Type_.float_n(64)
+    if n == "byte"
+        return Type_.uint_n(8)
+    if n == "usize"
+        return Type_.uint_n(64)
     return Type_.named(internString(n))
 
 # ── TypeRef → Type_ mapping ──────────────────────────────────────────────────

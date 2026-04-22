@@ -69,6 +69,7 @@ union PNode
     expr_char: str
     expr_zig_lit: str
     expr_raw_str: str
+    expr_format: str
     expr_id: str
 
     # Expressions (heap-boxed - recursive)
@@ -2104,6 +2105,7 @@ class Parser
             parts.add(.parseExpr())
             # Consume optional format spec token `:spec` (e.g. `:08x`, `:.2f`)
             if .isStringPartFormat()
+                parts.add(PNode.expr_format(this.peek().text))
                 this.advance()
             # Consume rcurly_special (the closing } of ${...})
             if .isRcurlySpecial()

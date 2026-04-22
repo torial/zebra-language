@@ -62,6 +62,126 @@ def isUpperCase(s: str): bool
     var c = s[0]
     return c >= c'A' and c <= c'Z'
 
+def isAlignChar(c: char): bool
+    return c == c'<' or c == c'>' or c == c'^'
+
+def zigFmtSpec(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var i: int = 0
+    var fill_s: str = ""
+    var align_s: str = ""
+    var width_s: str = ""
+    var prec_s: str = ""
+    var type_s: str = ""
+    # Fill + align
+    var i_next: int = i + 1
+    if i_next < spec.len and not isAlignChar(spec[i]) and isAlignChar(spec[i_next])
+        fill_s = spec[i..i_next]
+        align_s = spec[i_next..i+2]
+        i = i + 2
+    else if i < spec.len and isAlignChar(spec[i])
+        align_s = spec[i..i+1]
+        i = i + 1
+    # Skip sign (+ - space)
+    if i < spec.len and (spec[i] == c'+' or spec[i] == c'-' or spec[i] == c' ')
+        i = i + 1
+    # Skip alternate form #
+    if i < spec.len and spec[i] == c'#'
+        i = i + 1
+    # Zero-pad
+    if i < spec.len and spec[i] == c'0' and align_s == ""
+        fill_s = "0"
+        align_s = ">"
+        i = i + 1
+    # Width digits
+    var w_start: int = i
+    while i < spec.len and spec[i] >= c'0' and spec[i] <= c'9'
+        i = i + 1
+    width_s = spec[w_start..i]
+    # Grouping option
+    if i < spec.len and (spec[i] == c'_' or spec[i] == c',')
+        i = i + 1
+    # Precision (.digits)
+    if i < spec.len and spec[i] == c'.'
+        var p_start: int = i
+        i = i + 1
+        while i < spec.len and spec[i] >= c'0' and spec[i] <= c'9'
+            i = i + 1
+        prec_s = spec[p_start..i]
+    # Type char
+    if i < spec.len
+        type_s = spec[i..i+1]
+    # Map Python type char to Zig type prefix
+    var result: str = ""
+    if type_s == "s"
+        result = "s"
+    else if type_s == "c"
+        result = "c"
+    else if type_s == "u"
+        result = "u"
+    else if type_s == "d" or type_s == "i" or type_s == "n"
+        result = "d"
+    else if type_s == "f" or type_s == "g" or type_s == "G" or type_s == "%"
+        result = "d"
+    else if type_s == "e" or type_s == "E"
+        result = "e"
+    else if type_s == "x"
+        result = "x"
+    else if type_s == "X"
+        result = "X"
+    else if type_s == "o"
+        result = "o"
+    else if type_s == "b"
+        result = "b"
+    else if type_s != ""
+        result = "d"
+    else
+        # Infer from TC type when no type char given
+        if isString(ex_type)
+            result = "s"
+        else
+            branch ex_type
+                on Type_.float_
+                    result = "d"
+                on Type_.float_n as _
+                    result = "d"
+                on Type_.char_
+                    result = "u"
+                on Type_.int_n as _
+                    result = "d"
+                on Type_.int_
+                    result = "d"
+                else
+                    pass
+    var has_opts: bool = fill_s != "" or align_s != "" or width_s != "" or prec_s != ""
+    if has_opts
+        result = result + ":" + fill_s + align_s + width_s + prec_s
+    return result
+
+def bitCastType(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    if not (spec.endsWith("x") or spec.endsWith("X") or spec.endsWith("o") or spec.endsWith("b"))
+        return ""
+    branch ex_type
+        on Type_.int_
+            return "u64"
+        on Type_.int_n as n
+            if n == 8
+                return "u8"
+            if n == 16
+                return "u16"
+            if n == 32
+                return "u32"
+            if n == 64
+                return "u64"
+            if n == 128
+                return "u128"
+            return ""
+        else
+            return ""
+
 def getVariantKey(e: Expr): str?
     if e is Expr.member as m
         var obj_name = getIdentName(m.object)
@@ -4129,28 +4249,61 @@ struct Generator
     # ── genStringInterp ───────────────────────────────────────────────────────
 
     def genStringInterp(si: ExprStringInterp)
-        w.emit("(std.fmt.allocPrint(_allocator, \"")
-        for part in si.parts
+        # First pass: build format string and collect cast types for each expr slot
+        var fmt_str: str = ""
+        var cast_types: List(str) = List(str)()
+        var i: int = 0
+        while i < si.parts.count()
+            var part = si.parts.at(i)
             branch part
                 on StringPart.literal as lit
-                    w.emit(lit)
-                on StringPart.format as fmt
-                    w.emit("{")
-                    w.emit(fmt)
-                    w.emit("}")
-                on StringPart.expr_ as e_chk
-                    if this.isStringBoth(e_chk, "interp_fmt")
-                        w.emit("{s}")
+                    fmt_str = fmt_str + lit
+                on StringPart.expr_ as e
+                    var has_fmt: bool = false
+                    var fmt_spec: str = ""
+                    if i + 1 < si.parts.count()
+                        var np = si.parts.at(i + 1)
+                        if np is StringPart.format as fs
+                            has_fmt = true
+                            fmt_spec = fs
+                            i = i + 1
+                    if has_fmt
+                        var ex_type: Type_ = Type_.unknown_
+                        if this.infer_ctx != nil
+                            ex_type = inferExpr(e, this.infer_ctx to!)
+                        var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
+                        fmt_str = fmt_str + "{" + zig_spec + "}"
+                        cast_types.add(bitCastType(fmt_spec, ex_type))
                     else
-                        w.emit("{}")
+                        if this.isStringBoth(e, "interp_fmt")
+                            fmt_str = fmt_str + "{s}"
+                        else
+                            fmt_str = fmt_str + "{}"
+                        cast_types.add("")
+                on StringPart.format as _
+                    pass
+            i = i + 1
+        # Second pass: emit the allocPrint call
+        w.emit("(std.fmt.allocPrint(_allocator, \"")
+        w.emit(fmt_str)
         w.emit("\", .{")
-        var first = true
+        var first: bool = true
+        var arg_idx: int = 0
         for part in si.parts
             if part is StringPart.expr_ as e
                 if not first
                     w.emit(", ")
                 first = false
-                genExpr(e)
+                var cast: str = cast_types.at(arg_idx)
+                if cast != ""
+                    w.emit("@as(")
+                    w.emit(cast)
+                    w.emit(", @bitCast(")
+                    genExpr(e)
+                    w.emit("))")
+                else
+                    genExpr(e)
+                arg_idx = arg_idx + 1
         w.emit("}) catch @panic(\"OOM\"))")
 
     # ── genCall ───────────────────────────────────────────────────────────────

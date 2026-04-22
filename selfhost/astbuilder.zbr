@@ -681,6 +681,8 @@ class ASTBuilder
                     branch part
                         on PNode.expr_str as text
                             parts.add(StringPart.literal(stripStringQuotes(text)))
+                        on PNode.expr_format as fspec
+                            parts.add(StringPart.format(fspec[1..fspec.len]))
                         else
                             const part_expr = .buildExpr(part)?
                             parts.add(StringPart.expr_(part_expr))
