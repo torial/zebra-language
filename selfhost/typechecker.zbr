@@ -28,7 +28,7 @@ use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclI
 # callers cannot forget. Implementation is a simple `""+ s` concat; dedup /
 # invariant checks can be layered on later if profiling motivates them.
 def internString(s: str): str
-    return "" + s
+    return s
 
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
@@ -334,15 +334,7 @@ def typeFromName(n: str): Type_
 def typeFromRef(tr: TypeRef): Type_
     branch tr
         on TypeRef.named as n
-            # Storage-boundary copy. typeFromName interns its Type_.named
-            # fallback (see internString at the top of this file). We keep
-            # the `"" + n.name` here: defense-in-depth: it guarantees the
-            # string handed to typeFromName is owned even if a future edit
-            # short-circuits the intern inside typeFromName for a built-in
-            # name. n.name itself is a slice whose backing traces to the
-            # dep's `src` local (File.read result) in compileDep and must
-            # not be stored directly in long-lived dep_types.
-            return typeFromName("" + n.name)
+            return typeFromName(n.name)
         on TypeRef.nilable as inner
             return Type_.optional(typeFromRef(inner))
         on TypeRef.ref_to as inner
@@ -351,7 +343,7 @@ def typeFromRef(tr: TypeRef): Type_
             return Type_.void_
         on TypeRef.generic as g
             # Recognise List(str) / List(String) as str_slice for inference.
-            var gname: str = "" + g.name
+            var gname: str = g.name
             if gname == "List" and g.args.count() == 1
                 var arg_t: Type_ = typeFromRef(g.args.at(0))
                 if arg_t is Type_.string_
@@ -404,26 +396,26 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
             on Decl.var_ as v
                 if v.type_ != nil
                     var ft: Type_ = typeFromRef(v.type_ to!)
-                    ct.setField("" + v.name, ft)
+                    ct.setField(v.name, ft)
                     if isStrSetOrWrapped(ft)
-                        mt.addStrSetField("" + v.name)
+                        mt.addStrSetField(v.name)
                     if isHashMapTypeRef(v.type_ to!)
-                        mt.addHashMapField("" + v.name)
+                        mt.addHashMapField(v.name)
                     # Populate ref_field_keys / opt_ref_field_keys for ^T and ^T? fields.
                     # ^T? parses as ref_to(nilable(inner)); ^T as ref_to(non-nilable inner).
                     if v.type_ to! is TypeRef.ref_to as refInner
-                        var key: str = ct.name + "." + ("" + v.name)
+                        var key: str = ct.name + "." + (v.name)
                         if refInner is TypeRef.nilable
                             mt.opt_ref_field_keys.add(key)
                         else
                             mt.ref_field_keys.add(key)
                 else
-                    ct.setField("" + v.name, Type_.unknown_)
+                    ct.setField(v.name, Type_.unknown_)
             on Decl.method as m
                 if m.return_type != nil
-                    ct.setMethodReturn("" + m.name, typeFromRef(m.return_type to!))
+                    ct.setMethodReturn(m.name, typeFromRef(m.return_type to!))
                 else
-                    ct.setMethodReturn("" + m.name, Type_.void_)
+                    ct.setMethodReturn(m.name, Type_.void_)
                 # Collect param names as CSV for named-arg reordering in codegen.
                 var pcsv: str = ""
                 var pi: int = 0
@@ -431,10 +423,10 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     var p = m.params.at(pi)
                     if pi > 0
                         pcsv = pcsv + ","
-                    pcsv = pcsv + ("" + p.name)
+                    pcsv = pcsv + (p.name)
                     pi += 1
                 if pcsv != ""
-                    ct.setMethodParams("" + m.name, pcsv)
+                    ct.setMethodParams(m.name, pcsv)
             on Decl.init as ini
                 # Ctor params — first init wins (Zebra supports only one cue init per class).
                 if ct.ctorParamCount() == 0
@@ -452,29 +444,29 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
     for decl in m.decls
         branch decl
             on Decl.class_ as c
-                var ct = ClassTypes("" + c.name)
+                var ct = ClassTypes(c.name)
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
             on Decl.struct_ as s
-                var ct2 = ClassTypes("" + s.name)
+                var ct2 = ClassTypes(s.name)
                 addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
             on Decl.union_ as u
                 # Index variant → payload Type_ for branch-on narrowing (17b).
-                var uname: str = "" + u.name
+                var uname: str = u.name
                 mt.addUnion(uname)
                 for variant in u.variants
                     if variant.payload != nil
-                        mt.addVariantPayload(uname, "" + variant.name, typeFromRef(variant.payload to!))
+                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload to!))
                     else
-                        mt.addVariantPayload(uname, "" + variant.name, Type_.unknown_)
+                        mt.addVariantPayload(uname, variant.name, Type_.unknown_)
             on Decl.method as topfn
                 # Top-level def: register under "" sentinel so bare calls inside
                 # class methods can resolve the return type via methodReturnAny.
                 if topfn.return_type != nil
-                    module_fns.setMethodReturn("" + topfn.name, typeFromRef(topfn.return_type to!))
+                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type to!))
                 else
-                    module_fns.setMethodReturn("" + topfn.name, Type_.void_)
+                    module_fns.setMethodReturn(topfn.name, Type_.void_)
             else
                 pass
     mt.addClass(module_fns)
@@ -719,7 +711,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 return Type_.unknown_
             return Type_.named(ctx.current_class)
         on Expr.ident as id
-            var nm: str = "" + id.name
+            var nm: str = id.name
             if ctx.hasLocal(nm)
                 return ctx.localType(nm)
             # Ident referencing a class name — treat: the class type so a
@@ -750,14 +742,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 else
                     pass
             if obj_t is Type_.named as tn
-                var ft: Type_? = ctx.fieldTypeAny(tn, "" + m.member)
+                var ft: Type_? = ctx.fieldTypeAny(tn, m.member)
                 if ft != nil
                     return ft to!
             # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
             # registered nowhere in user code but widely used as `r.stdout`
             # etc. Recognise by field name when the object type is unknown,
             # so equality emits std.mem.eql instead of a broken slice ==.
-            var mm: str = "" + m.member
+            var mm: str = m.member
             if mm == "stdout" or mm == "stderr"
                 return Type_.string_
             return Type_.unknown_
@@ -765,7 +757,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # Constructor or class name used: callee: `Foo(args)` → named("Foo").
             branch c.callee
                 on Expr.ident as id
-                    var cname: str = "" + id.name
+                    var cname: str = id.name
                     if ctx.hasClassAny(cname)
                         return Type_.named(cname)
                     # Primitive-name ctors like `int(x)` cast to that primitive.
@@ -795,14 +787,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # Method call: infer receiver type, look up method return.
                     # Builtin type constructors: Regex.compile → regex, etc.
                     if mem.object is Expr.ident as bid
-                        var bname: str = "" + bid.name
+                        var bname: str = bid.name
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
                     # Special case first: `UnionName.variant(args)` — when the
                     # receiver ident names a known union, the call yields a
                     # value of the union's named type.
                     if mem.object is Expr.ident as uid
-                        var uname2: str = "" + uid.name
+                        var uname2: str = uid.name
                         if ctx.hasUnion(uname2)
                             return Type_.named(uname2)
                     # BUG-071: recursive receiver inference (not just this_/ident)
@@ -820,27 +812,27 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             pass
                     branch recv
                         on Type_.named as tn
-                            var rt: Type_? = ctx.methodReturnAny(tn, "" + mem.member)
+                            var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt != nil
                                 return rt to!
                         on Type_.string_
-                            var srt: Type_? = stringMethodReturn("" + mem.member)
+                            var srt: Type_? = stringMethodReturn(mem.member)
                             if srt != nil
                                 return srt to!
                         on Type_.regex
-                            var mname: str = "" + mem.member
+                            var mname: str = mem.member
                             if mname == "find"
                                 return Type_.string_
                             if mname == "test" or mname == "match"
                                 return Type_.bool_
                         on Type_.string_builder
-                            var sbmname: str = "" + mem.member
+                            var sbmname: str = mem.member
                             if sbmname == "build" or sbmname == "toString"
                                 return Type_.string_
                             if sbmname == "len"
                                 return Type_.int_
                         on Type_.str_slice
-                            var slmname: str = "" + mem.member
+                            var slmname: str = mem.member
                             if slmname == "at" or slmname == "join" or slmname == "fetch"
                                 return Type_.string_
                             if slmname == "count" or slmname == "len"
@@ -974,8 +966,8 @@ def narrowPayloadFromOnValue(mt: ModuleTypes, v: Expr): Type_?
 def narrowPayloadFromOnValueDeps(mt: ModuleTypes, dt: ModuleTypes, v: Expr): Type_?
     if v is Expr.member as em
         if em.object is Expr.ident as oid
-            var unam: str = "" + oid.name
-            var vnam: str = "" + em.member
+            var unam: str = oid.name
+            var vnam: str = em.member
             var pt: Type_? = mt.variantPayload(unam, vnam)
             if pt == nil
                 pt = dt.variantPayload(unam, vnam)
@@ -1104,18 +1096,18 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
                 loop_var_t = Type_.string_
             for v in fi.vars
-                ctx.bind("" + v, loop_var_t)
+                ctx.bind(v, loop_var_t)
             walkStmts(fi.stmts, ctx)
             # Keep the loop var binding at its typed value (not reset to unknown_)
             # so the single-pass ctx persists the correct type for code generation.
             for v2 in fi.vars
-                ctx.bind("" + v2, loop_var_t)
+                ctx.bind(v2, loop_var_t)
         on Stmt.for_num as fnum
             walkExpr(fnum.start, ctx)
             walkExpr(fnum.stop_, ctx)
             if fnum.step != nil
                 walkExpr(fnum.step to!, ctx)
-            ctx.bind("" + fnum.var_, Type_.int_)
+            ctx.bind(fnum.var_, Type_.int_)
             walkStmts(fnum.stmts, ctx)
         on Stmt.branch_ as sb
             walkExpr(sb.expr, ctx)
@@ -1138,7 +1130,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     var val: Expr = c.values.at(0)
                     var payload: Type_? = narrowPayloadFromOnValueDeps(ctx.module_types, ctx.dep_types, val)
                     if payload != nil
-                        ctx.bind("" + c.binding to!, payload to!)
+                        ctx.bind(c.binding to!, payload to!)
                 walkStmts(c.stmts, ctx)
             if sb.else_ != nil
                 walkStmts(sb.else_ to!, ctx)
@@ -1167,7 +1159,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             else
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr to!, ctx)
-            ctx.bind("" + dv.name, t)
+            ctx.bind(dv.name, t)
         on Stmt.expr as e
             walkExpr(e, ctx)
         on Stmt.defer_ as sd
@@ -1194,9 +1186,9 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 destruct_recv_t = dr
             var destruct_class: str = ""
             if destruct_recv_t is Type_.named as dtn
-                destruct_class = "" + dtn
+                destruct_class = dtn
             for nm in sds.names
-                var nm_s: str = "" + nm
+                var nm_s: str = nm
                 var ftype: Type_ = Type_.unknown_
                 if destruct_class != ""
                     var ft: Type_? = ctx.fieldTypeAny(destruct_class, nm_s)

@@ -99,7 +99,7 @@ class MultiCompiler
                         on PNode.use_ as u
                             .compileDep_use(u, zbr_path)?
                         on PNode.class_ as cls
-                            var cname: str = "" + cls.name
+                            var cname: str = cls.name
                             dep_class_names.add(cname)
                         else
                             pass
@@ -286,7 +286,7 @@ class MultiCompiler
         while pi < partial_paths.count()
             var ppath: str = partial_paths.at(pi)
             var psrc_raw: str = File.read(ppath)
-            var psrc: str = "" + psrc_raw
+            var psrc: str = psrc_raw
             const ppm_node = Parser.Parser.parse(psrc)?
             if ppm_node is PNode.module_ as ppm
                 partial_pms.add(ppm)
