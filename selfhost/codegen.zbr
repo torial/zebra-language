@@ -2206,6 +2206,17 @@ struct Generator
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
     def genLocalVar(n: DeclVar)
+        # BUG-079: auto-hoist method chains on call temporaries.
+        # If init_expr is `someCall().method(args)`, materialize someCall() first.
+        var mc_recv = ""
+        var mc_field = ""
+        if n.init_expr != nil
+            var _hie = n.init_expr to!
+            if _hie is Expr.call as _hc
+                if _hc.callee is Expr.member as _hm
+                    if _hm.object is Expr.call
+                        mc_recv = hoistCallChain(_hm.object)
+                        mc_field = _hm.member
         writeIndent()
         # Determine const vs var
         var is_mut = false
@@ -2293,7 +2304,14 @@ struct Generator
                 else
                     pass
         w.emit(" = ")
-        if n.init_expr != nil
+        if mc_recv.len > 0
+            w.emit(mc_recv + "." + mc_field + "(")
+            if n.init_expr != nil
+                var _fie = n.init_expr to!
+                if _fie is Expr.call as _fc
+                    genArgList(_fc.args)
+            w.emit(")")
+        else if n.init_expr != nil
             genExpr(n.init_expr to!)
         else
             w.emit("undefined")
@@ -2638,6 +2656,31 @@ struct Generator
                 return true
             else
                 return false
+
+    # BUG-079: Recursively hoist a call chain to temporaries, returning the last temp name.
+    # For a plain call (not a method-on-call), emits `var _mc_N = <expr>;` and returns "_mc_N".
+    # For MethodCall(object=Call, ...), hoists the inner chain first, then hoists this level.
+    # Takes expr by value so ^Expr callers auto-deref at the call site.
+    def hoistCallChain(expr: Expr): String
+        if expr is Expr.call as c
+            if c.callee is Expr.member as m
+                if m.object is Expr.call
+                    var inner = hoistCallChain(m.object)
+                    var uid = w.nextUid()
+                    var mc = "_mc_" + uid.toString()
+                    writeIndent()
+                    w.emit("var " + mc + " = " + inner + "." + m.member + "(")
+                    genArgList(c.args)
+                    w.emit(");\n")
+                    return mc
+        # Base case: emit a temp for the plain expression
+        var uid = w.nextUid()
+        var mc = "_mc_" + uid.toString()
+        writeIndent()
+        w.emit("var " + mc + " = ")
+        genExpr(expr)
+        w.emit(";\n")
+        return mc
 
     # ── genIf ─────────────────────────────────────────────────────────────────
 

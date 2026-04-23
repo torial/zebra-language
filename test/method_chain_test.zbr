@@ -1,0 +1,36 @@
+struct Builder
+    var value: int
+
+    cue init(v: int)
+        value = v
+
+    def withVal(n: int): Builder
+        var r = this except
+            value = n
+        return r
+
+    def doubled(): Builder
+        var r = this except
+            value = value * 2
+        return r
+
+    def result(): int
+        return value
+
+def makeBuilder(n: int): Builder
+    return Builder(n)
+
+def main()
+    # Pattern 1: var result = makeBuilder(5).withVal(10)
+    var r1 = makeBuilder(5).withVal(10)
+    print r1.result()       # 10
+
+    # Pattern 2: var r2 = makeBuilder(3).doubled().withVal(99)  (deep chain)
+    var r2 = makeBuilder(3).doubled().withVal(99)
+    print r2.result()       # 99
+
+    # Pattern 3: non-chain (control case — should not be touched)
+    var r3 = r1.withVal(42)
+    print r3.result()       # 42
+
+    print "ok"

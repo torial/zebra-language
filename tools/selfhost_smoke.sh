@@ -77,6 +77,9 @@ smoke test/generic_invariant_test.zbr
 # Type-directed HashMap.set() → .put() rewrite; user-defined .set() must pass through unchanged.
 smoke test/hashmap_set_test.zbr
 
+# BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
+smoke test/method_chain_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
