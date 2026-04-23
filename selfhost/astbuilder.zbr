@@ -208,7 +208,10 @@ class ASTBuilder
         var tparams: List(TypeParam) = List(TypeParam)()
         for tp in c.type_params
             tparams.add(TypeParam(tp, nil))
-        return Decl.class_(DeclClass(zspan(), zmods(), c.name, tparams, ifaces, mixins, members))
+        var inv_exprs: List(Expr) = List(Expr)()
+        for inv_pn in c.invs
+            inv_exprs.add(.buildExpr(inv_pn)?)
+        return Decl.class_(DeclClass(zspan(), zmods(), c.name, tparams, ifaces, mixins, members, inv_exprs))
 
     # ── Interface ─────────────────────────────────────────────────────────────
 
@@ -239,7 +242,10 @@ class ASTBuilder
         var ifaces: List(TypeRef) = List(TypeRef)()
         for iface in s.ifaces
             ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
-        return Decl.struct_(DeclStruct(zspan(), zmods(), s.name, ifaces, members))
+        var inv_exprs: List(Expr) = List(Expr)()
+        for inv_pn in s.invs
+            inv_exprs.add(.buildExpr(inv_pn)?)
+        return Decl.struct_(DeclStruct(zspan(), zmods(), s.name, ifaces, members, inv_exprs))
 
     # ── Union ─────────────────────────────────────────────────────────────────
 

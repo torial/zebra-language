@@ -1255,6 +1255,9 @@ const Generator = struct {
     /// look up whether a self-method called via `.method()` syntax is `throws`.
     /// Empty slice at module scope or when owner is a namespace.
     owner_members: []const Ast.Decl = &.{},
+    /// Invariant expressions for the current class or struct.
+    /// Empty when the owner has no `invariant` block.
+    owner_invariants: []const *Ast.Expr = &.{},
     /// Incremented each time we enter an `arena` block so nested scopes get
     /// unique variable names (_arena_scope_1, _arena_scope_2, …).
     arena_depth: u32 = 0,
@@ -1281,13 +1284,13 @@ const Generator = struct {
     /// Set owner name + owner_class pointer for a non-generic concrete class.
     /// This enables `resolveFieldTypeRef` for `^T` boxing in the class body.
     fn withClass(g: Generator, cls: *const Ast.DeclClass) Generator {
-        var c = g; c.owner = cls.name; c.owner_class = cls; c.owner_members = cls.members; return c;
+        var c = g; c.owner = cls.name; c.owner_class = cls; c.owner_members = cls.members; c.owner_invariants = cls.invariants; return c;
     }
     /// Set owner name + owner_members for a struct body.
     /// Mirrors `withClass` so that `exprCallIsThrows` and `genCall`'s auto-try
     /// logic can look up throws status for `self.method()` calls inside struct methods.
     fn withStruct(g: Generator, s: *const Ast.DeclStruct) Generator {
-        var c = g; c.owner = s.name; c.owner_members = s.members; c.is_struct_owner = true; return c;
+        var c = g; c.owner = s.name; c.owner_members = s.members; c.is_struct_owner = true; c.owner_invariants = s.invariants; return c;
     }
     fn withGeneric(g: Generator, cls: *const Ast.DeclClass) Generator {
         var c = g; c.is_generic = true; c.owner_class = cls; return c;
@@ -3582,6 +3585,9 @@ const Generator = struct {
             }
         }
 
+        // ⑤ Invariant checker — private fn called at end of init and exit of instance methods.
+        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
+
         // ④ Interface conformance checks.
         //    `class Foo implements IBar` → `comptime { IBar(@This()); }`
         if (n.implements.len > 0) {
@@ -3754,6 +3760,7 @@ const Generator = struct {
         try g.w.print("pub const {s} = struct {{\n", .{n.name});
         const ig = sg.indented();
         for (n.members) |decl| try ig.genMember(decl);
+        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
         if (n.implements.len > 0) {
             try ig.w.writeAll("\n");
             try ig.writeIndent();
@@ -4030,6 +4037,15 @@ const Generator = struct {
 
             try g.w.writeAll(" {\n");
 
+            // Invariant deferred exit check — public instance methods only.
+            // Private helpers may temporarily break invariants; shared methods have no `self`.
+            // Note: `defer` also runs on error exit paths — callers see the panic before
+            // the original error.  Acceptable for v1; document for future errdefer refinement.
+            if (has_self and !n.mods.shared and !n.mods.private and g.owner_invariants.len > 0) {
+                try mg.indented().writeIndent();
+                try mg.indented().w.writeAll("defer self._check_invariant();\n");
+            }
+
             if (is_tco) {
                 // TCO preamble: mutable shadow copies of params + `while (true)`.
                 // The body generator uses one extra indent level for the loop body.
@@ -4134,6 +4150,10 @@ const Generator = struct {
         }
         try bg.genRequireChecks(n.require, "init");
         try bg.genStmts(body);
+        if (g.owner_invariants.len > 0) {
+            try bg.writeIndent();
+            try bg.w.writeAll("self._check_invariant();\n");
+        }
         try bg.writeIndent();
         try bg.w.writeAll("return self;\n");
         try g.writeIndent();
@@ -8070,6 +8090,23 @@ const Generator = struct {
         try bg.w.writeAll("});\n");
         try g.writeIndent();
         try g.w.writeAll("}\n");
+    }
+
+    /// Emit a private `_check_invariant` method that panics when any invariant expression
+    /// evaluates to false.  Called inside the struct definition (g is the indented class/struct
+    /// generator context).  The method takes `self: *Owner` for both classes and structs.
+    fn genInvariantCheckFn(g: Generator) anyerror!void {
+        try g.writeIndent();
+        try g.w.print("fn _check_invariant(self: *{s}) void {{\n", .{g.owner});
+        const ig = g.indented().asMethod();
+        for (g.owner_invariants) |inv_expr| {
+            try ig.writeIndent();
+            try ig.w.writeAll("if (!(");
+            try ig.genExpr(inv_expr);
+            try ig.w.print(")) std.debug.panic(\"invariant failed in '{s}'\\n\", .{{}});\n", .{g.owner});
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n\n");
     }
 
     fn genRequireChecks(g: Generator, require: []const *Ast.Expr, context: []const u8) anyerror!void {

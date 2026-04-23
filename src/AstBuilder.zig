@@ -211,6 +211,8 @@ const Builder = struct {
         if (is_generic) {
             try b.collectTypeParamListNE(kids[3], &type_params);
             try b.collectClassHeader(kids[5], &implements, &adds);
+            var invs = std.ArrayList(*Ast.Expr){};
+            try b.collectClassInvariants(kids[11], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
                 .mods        = b.buildModList(kids[0]),
@@ -218,11 +220,13 @@ const Builder = struct {
                 .type_params = try type_params.toOwnedSlice(b.arena),
                 .implements  = try implements.toOwnedSlice(b.arena),
                 .adds        = try adds.toOwnedSlice(b.arena),
-                .invariants  = &.{},
+                .invariants  = try invs.toOwnedSlice(b.arena),
                 .members     = try b.buildMemberDeclList(kids[11]),
             };
         } else {
             try b.collectClassHeader(kids[3], &implements, &adds);
+            var invs = std.ArrayList(*Ast.Expr){};
+            try b.collectClassInvariants(kids[9], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
                 .mods        = b.buildModList(kids[0]),
@@ -230,7 +234,7 @@ const Builder = struct {
                 .type_params = &.{},
                 .implements  = try implements.toOwnedSlice(b.arena),
                 .adds        = try adds.toOwnedSlice(b.arena),
-                .invariants  = &.{},
+                .invariants  = try invs.toOwnedSlice(b.arena),
                 .members     = try b.buildMemberDeclList(kids[9]),
             };
         }
@@ -339,12 +343,14 @@ const Builder = struct {
             },
             else => {},
         }
+        var invs = std.ArrayList(*Ast.Expr){};
+        try b.collectClassInvariants(kids[9], &invs);
         return .{
             .span       = spanOf(node, b.tokens),
             .mods       = b.buildModList(kids[0]),
             .name       = leafText(kids[2], b.tokens),
             .implements = try implements.toOwnedSlice(b.arena),
-            .invariants = &.{},
+            .invariants = try invs.toOwnedSlice(b.arena),
             .members    = try b.buildMemberDeclList(kids[9]),
         };
     }
@@ -1418,6 +1424,36 @@ const Builder = struct {
             .kind  = kind,
             .exprs = try exprs.toOwnedSlice(b.arena),
         };
+    }
+
+    /// Extract boolean expressions from an `InvariantDecl` member node.
+    /// InvariantDecl → kw_invariant eol indent StmtList dedent
+    fn buildInvariantExprs(b: Builder, node: TN) anyerror![]const *Ast.Expr {
+        const stmts = try b.buildStmtList(ch(node)[3]);
+        var exprs = std.ArrayList(*Ast.Expr){};
+        for (stmts) |s| {
+            if (s == .expr) try exprs.append(b.arena, s.expr);
+        }
+        return exprs.toOwnedSlice(b.arena);
+    }
+
+    /// Walk a MemberDeclList node and collect expressions from every InvariantDecl.
+    fn collectClassInvariants(b: Builder, node: TN, inv_out: *std.ArrayList(*Ast.Expr)) anyerror!void {
+        switch (node) {
+            .epsilon => return,
+            .inner => |inner| {
+                const kids = inner.children;
+                if (kids.len < 2) return;
+                try b.collectClassInvariants(kids[0], inv_out);
+                if (kids[1] == .leaf) return; // blank eol
+                const inner_decl = singleChild(kids[1]);
+                if (ntOf(inner_decl) == .InvariantDecl) {
+                    const inv_exprs = try b.buildInvariantExprs(inner_decl);
+                    try inv_out.appendSlice(b.arena, inv_exprs);
+                }
+            },
+            .leaf => {},
+        }
     }
 
     fn buildStmtRaise(b: Builder, node: TN) anyerror!Ast.StmtRaise {

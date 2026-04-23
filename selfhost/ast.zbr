@@ -113,8 +113,9 @@ struct DeclClass
     var ifaces: List(TypeRef)
     var mixins: List(TypeRef)
     var members: List(Decl)
+    var invariants: List(Expr)
 
-    cue init(span: Span, mods: Modifiers, name: String, type_params: List(TypeParam), ifaces: List(TypeRef), mixins: List(TypeRef), members: List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, type_params: List(TypeParam), ifaces: List(TypeRef), mixins: List(TypeRef), members: List(Decl), inv_exprs: List(Expr))
         this.span = span
         this.mods = mods
         this.name = name
@@ -122,6 +123,7 @@ struct DeclClass
         this.ifaces = ifaces
         this.mixins = mixins
         this.members = members
+        this.invariants = inv_exprs
 
 # ── Interface ────────────────────────────────────────────────────────────────
 
@@ -147,13 +149,15 @@ struct DeclStruct
     var name: String
     var ifaces: List(TypeRef)
     var members: List(Decl)
+    var invariants: List(Expr)
 
-    cue init(span: Span, mods: Modifiers, name: String, ifaces: List(TypeRef), members: List(Decl))
+    cue init(span: Span, mods: Modifiers, name: String, ifaces: List(TypeRef), members: List(Decl), inv_exprs: List(Expr))
         this.span = span
         this.mods = mods
         this.name = name
         this.ifaces = ifaces
         this.members = members
+        this.invariants = inv_exprs
 
 # ── Mixin ────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,45 @@
+class Account
+    var balance: int = 0
+
+    invariant
+        balance >= 0
+
+    cue init(starting: int)
+        balance = starting
+
+    def deposit(amount: int)
+        require
+            amount > 0
+        balance = balance + amount
+
+    def withdraw(amount: int)
+        require
+            amount > 0
+            amount <= balance
+        balance = balance - amount
+
+struct Gauge
+    var value: int = 0
+    var max_: int = 100
+
+    invariant
+        value >= 0
+        value <= max_
+
+    cue init(initial: int, cap: int)
+        value = initial
+        max_ = cap
+
+    def set(v: int)
+        require
+            v >= 0
+            v <= max_
+        value = v
+
+def main()
+    var a = Account(10)
+    a.deposit(5)
+    a.withdraw(3)
+    var g = Gauge(50, 100)
+    g.set(75)
+    print "ok"

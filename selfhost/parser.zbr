@@ -58,6 +58,7 @@ union PNode
     stmt_destruct: ^PDestruct
     stmt_require: List(PNode)
     stmt_ensure: List(PNode)
+    invariant_decl: List(PNode)
     expr_orelse: ^POrelse
     expr_pipeline: ^PPipeline
 
@@ -218,11 +219,13 @@ struct PClass
     var type_params: List(str)
     var ifaces: List(str)
     var members: List(PNode)
-    cue init(name: str, type_params: List(str), ifaces: List(str), members: List(PNode))
+    var invs: List(PNode)
+    cue init(name: str, type_params: List(str), ifaces: List(str), members: List(PNode), invs: List(PNode))
         this.name = name
         this.type_params = type_params
         this.ifaces = ifaces
         this.members = members
+        this.invs = invs
 
 struct PExtend
     var target_name: str
@@ -938,6 +941,7 @@ class Parser
                 ifaces.add(.eatId())
         .skipEol()
         var members = List(PNode)()
+        var invs = List(PNode)()
         if .isIndent()
             this.advance()
             while not .isDedent() and not .isEof()
@@ -960,10 +964,16 @@ class Parser
                         # Inline `shared def foo()` — no indented block
                         members.add(.parseMemberDecl(true))
                 else
-                    members.add(.parseMemberDecl(false))
+                    var pd = .parseMemberDecl(false)
+                    if pd is PNode.invariant_decl as inv_exprs
+                        var inv_list: List(PNode) = inv_exprs
+                        for inv_e in inv_list
+                            invs.add(inv_e)
+                    else
+                        members.add(pd)
             if .isDedent()
                 this.advance()
-        return PNode.class_(PClass(name, type_params, ifaces, members))
+        return PNode.class_(PClass(name, type_params, ifaces, members, invs))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")
@@ -987,18 +997,25 @@ class Parser
         const name = .eatId()
         .skipEol()
         var members = List(PNode)()
+        var invs = List(PNode)()
         if .isIndent()
             this.advance()
             while not .isDedent() and not .isEof()
                 .skipEol()
                 if .isDedent()
                     break
-                members.add(.parseMemberDecl(false))
+                var pd = .parseMemberDecl(false)
+                if pd is PNode.invariant_decl as inv_exprs
+                    var inv_list: List(PNode) = inv_exprs
+                    for inv_e in inv_list
+                        invs.add(inv_e)
+                else
+                    members.add(pd)
             if .isDedent()
                 this.advance()
         var ifaces = List(str)()
         var type_params = List(str)()
-        return PNode.struct_(PClass(name, type_params, ifaces, members))
+        return PNode.struct_(PClass(name, type_params, ifaces, members, invs))
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")
@@ -1022,7 +1039,7 @@ class Parser
             if .isDedent()
                 this.advance()
         var type_params = List(str)()
-        return PNode.interface_(PClass(name, type_params, ifaces, members))
+        return PNode.interface_(PClass(name, type_params, ifaces, members, List(PNode)()))
 
     def parseExtendDecl(): PNode throws
         .expectText("extend")
@@ -1115,7 +1132,25 @@ class Parser
             return .parseDeclField(true, is_shared)
         else if this.textIs("cue")
             return .parseDeclInit()
+        else if this.textIs("invariant")
+            return .parseInvariantDecl()
         raise "unexpected member: '" + this.peek().text + "' at line " + this.peek().line.toString()
+
+    def parseInvariantDecl(): PNode throws
+        this.advance()
+        .skipEol()
+        var expr_nodes = List(PNode)()
+        if .isIndent()
+            this.advance()
+            while not .isDedent() and not .isEof()
+                .skipEol()
+                if .isDedent()
+                    break
+                expr_nodes.add(.parseExpr())
+                .skipEol()
+            if .isDedent()
+                this.advance()
+        return PNode.invariant_decl(expr_nodes)
 
     def parseDeclField(is_const: bool, is_shared: bool): PNode throws
         if is_const

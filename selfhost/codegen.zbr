@@ -998,6 +998,7 @@ struct Generator
     var nil_narrowed         : StrSet?  # variables narrowed to non-nil in current scope
     var try_err_var          : str?     # current try-block error variable name
     var owner_members        : List(Decl)  # members of current enclosing type
+    var owner_invariants     : List(Expr)  # invariant exprs of current class/struct
     var param_names          : StrSet?  # current method parameter names
     var str_params           : StrSet   # param names with type str
     var list_locals          : StrSet   # local/param names with type List(*)
@@ -1051,6 +1052,7 @@ struct Generator
         this.nil_narrowed          = nil
         this.try_err_var           = nil
         this.owner_members         = List(Decl)()
+        this.owner_invariants      = List(Expr)()
         this.param_names           = nil
         this.str_params            = StrSet()
         this.list_locals           = StrSet()
@@ -1118,6 +1120,11 @@ struct Generator
     def withOwnerMembers(members: List(Decl)): Generator
         var g = this except
             owner_members = members
+        return g
+
+    def withOwnerInvariants(invs: List(Expr)): Generator
+        var g = this except
+            owner_invariants = invs
         return g
 
     def withSelfName(name: str): Generator
@@ -1565,7 +1572,8 @@ struct Generator
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
         var ig2 = ig1.asStructOwner()
-        var ig  = ig2.withOwnerMembers(n.members)
+        var ig3 = ig2.withOwnerMembers(n.members)
+        var ig  = ig3.withOwnerInvariants(n.invariants)
         for decl in n.members
             if decl is Decl.var_ as fld
                 ig.genFieldDecl(fld)
@@ -1577,6 +1585,8 @@ struct Generator
                     ig.genInit(ini)
                 else
                     pass
+        if n.invariants.count() > 0
+            ig.genInvariantCheckFn()
         writeIndent()
         w.emit("};\n\n")
 
@@ -1590,7 +1600,8 @@ struct Generator
         w.emit(" = struct {\n")
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
-        var ig  = ig1.withOwnerMembers(n.members)
+        var ig2 = ig1.withOwnerMembers(n.members)
+        var ig  = ig2.withOwnerInvariants(n.invariants)
         ig.line("_type_tag: u64 = _ttag_" + n.name + ",")
         for decl in n.members
             if decl is Decl.var_ as fld
@@ -1634,6 +1645,8 @@ struct Generator
             dig.w.emit("return self;\n")
             ig.writeIndent()
             ig.w.emit("}\n\n")
+        if n.invariants.count() > 0
+            ig.genInvariantCheckFn()
         writeIndent()
         w.emit("};\n")
         w.emit("const _ttag_")
@@ -1721,6 +1734,12 @@ struct Generator
                         if nt.name == "str" or nt.name == "String"
                             sp.add(p.name)
             w.emit(" {\n")
+            # Invariant exit check — public instance methods only.
+            # Private helpers may temporarily break invariants; shared methods have no `self`.
+            if has_self and not m.mods.is_shared and not m.mods.is_private and owner_invariants.count() > 0
+                var inv_ig = indented()
+                inv_ig.writeIndent()
+                inv_ig.w.emit("defer self._check_invariant();\n")
             var bg = withMethodCtx(ms, rs, auto_throws, owner_members, ps, sp, "self")
             # Phase 17c — seed a per-method InferCtx and pre-walk statements so
             # expression-level type inference has a populated scope map. Used
@@ -1841,6 +1860,9 @@ struct Generator
             bg.genStmts(istmts)
         else
             ig.genRequireChecks(ini.require_, "init")
+        if owner_invariants.count() > 0
+            ig.writeIndent()
+            ig.w.emit("_self._check_invariant();\n")
         ig.writeIndent()
         ig.w.emit("return _self;\n")
         writeIndent()
@@ -3610,6 +3632,23 @@ struct Generator
 
     # ── genAssert ─────────────────────────────────────────────────────────────
 
+    def genInvariantCheckFn()
+        writeIndent()
+        w.emit("fn _check_invariant(self: *")
+        w.emit(owner)
+        w.emit(") void {\n")
+        var ig0 = indented()
+        var mg = ig0.asMethod()
+        for inv_expr in owner_invariants
+            mg.writeIndent()
+            mg.w.emit("if (!(")
+            mg.genExpr(inv_expr)
+            mg.w.emit(")) std.debug.panic(\"invariant failed in '")
+            mg.w.emit(owner)
+            mg.w.emit("'\\n\", .{});\n")
+        writeIndent()
+        w.emit("}\n\n")
+
     def genRequireChecks(req_list: List(Expr), context: str)
         for req_expr in req_list
             writeIndent()
@@ -4807,8 +4846,8 @@ struct Generator
                 genExpr(args.at(0).value)
             w.emit(")")
             return
-        # HashMap
-        if mname == "set"
+        # HashMap.set(key, value) → .put(key, value) — only for 2-arg form (HashMap arity)
+        if mname == "set" and args.count() == 2
             genExpr(m.object)
             w.emit(".put(")
             var fi = true

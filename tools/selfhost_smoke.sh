@@ -69,6 +69,7 @@ smoke test/any_all_test.zbr
 
 # Contracts
 smoke test/contract_require.zbr
+smoke test/contract_invariant.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
