@@ -1525,6 +1525,7 @@ const StmtGuard = ast.StmtGuard;
 const StmtDestruct = ast.StmtDestruct;
 const StmtArenaScope = ast.StmtArenaScope;
 const StmtPrint = ast.StmtPrint;
+const StmtContract = ast.StmtContract;
 const BranchOn = ast.BranchOn;
 const ElseIf = ast.ElseIf;
 const CatchClause = ast.CatchClause;
@@ -3454,19 +3455,26 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
                 walkExpr(a, ctx);
             }
         },
+        .contract => |_ptr_sc| {
+            const sc = _ptr_sc.*;
+// zbr:selfhost/typechecker.zbr:1193
+            for (sc.exprs.items) |e| {
+                walkExpr(e, ctx);
+            }
+        },
     }
 }
 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
-// zbr:selfhost/typechecker.zbr:1197
+// zbr:selfhost/typechecker.zbr:1200
         var mt: *ModuleTypes = ModuleTypes.init();
-// zbr:selfhost/typechecker.zbr:1198
+// zbr:selfhost/typechecker.zbr:1201
         var ct: *ClassTypes = ClassTypes.init("Foo");
         ct.setField("name", Type_.string_);
         mt.addClass(ct);
-// zbr:selfhost/typechecker.zbr:1201
+// zbr:selfhost/typechecker.zbr:1204
         if (mt.hasClass("Foo")) {
             std.debug.print("{s}\n", .{"ok"});
         } else {

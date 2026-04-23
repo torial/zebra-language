@@ -56,6 +56,8 @@ union PNode
     stmt_with: ^PWith
     stmt_guard: ^PGuard
     stmt_destruct: ^PDestruct
+    stmt_require: List(PNode)
+    stmt_ensure: List(PNode)
     expr_orelse: ^POrelse
     expr_pipeline: ^PPipeline
 
@@ -1272,6 +1274,10 @@ class Parser
             return .parseWithStmt()
         else if this.textIs("guard")
             return .parseGuardStmt()
+        else if this.textIs("require")
+            return .parseContractStmt("require")
+        else if this.textIs("ensure")
+            return .parseContractStmt("ensure")
         else if this.textIs("print")
             this.advance()
             const expr = .parseExpr()
@@ -1353,6 +1359,22 @@ class Parser
         var cond_list = List(PNode)()
         cond_list.add(cond_expr)
         return PNode.stmt_while(PWhile(cond_list, stmts, line))
+
+    def parseContractStmt(kw: str): PNode throws
+        this.advance()
+        .skipEol()
+        var stmts: List(PNode) = .parseBlock()
+        # Unwrap stmt_expr wrappers to get raw expression PNodes.
+        var expr_nodes = List(PNode)()
+        for s in stmts
+            branch s
+                on PNode.stmt_expr as inner
+                    expr_nodes.add(inner)
+                else
+                    expr_nodes.add(s)
+        if kw == "ensure"
+            return PNode.stmt_ensure(expr_nodes)
+        return PNode.stmt_require(expr_nodes)
 
     def parseArenaScopeStmt(): PNode throws
         const line = this.peek().line

@@ -234,6 +234,10 @@ pub const NT = enum {
     StmtGuard,          // guard Expr else eol Block  (block form)
     StmtGuardInline,    // guard Expr else, Stmt       (inline form)
 
+    // ── Contract sub-statements (require/ensure as inline stmts) ──────────
+    StmtRequire,        // require eol Block  — precondition
+    StmtEnsure,         // ensure eol Block   — postcondition
+
     // ── Error propagation / try-catch ─────────────────────────────────────
     ThrowsOpt,          // ε | kw_throws  (method annotation)
     StmtRaise,          // raise [Expr [, Expr]] eol
@@ -786,6 +790,8 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtTryCatch) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtGuard) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtGuardInline) } },
+    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtRequire) } },
+    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtEnsure) } },
 
     // Simple one-liner statements
     .{ .lhs = .StmtReturn,   .rhs = &.{ t(.kw_return), t(.eol) } },
@@ -912,7 +918,9 @@ const stmt_rules: []const Rule = &.{
 
     // with obj eol Block — contextual self
     .{ .lhs = .StmtWith,       .rhs = &.{ t(.kw_with),  n(.Expr), t(.eol), n(.Block) } },
-    .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena), t(.eol), n(.Block) } },
+    .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),   t(.eol), n(.Block) } },
+    .{ .lhs = .StmtRequire,   .rhs = &.{ t(.kw_require), t(.eol), n(.Block) } },
+    .{ .lhs = .StmtEnsure,    .rhs = &.{ t(.kw_ensure),  t(.eol), n(.Block) } },
 
     // guard Expr else eol Block     — block form: guard x > 0 else\n    return
     // guard Expr else, Stmt         — inline form: guard x > 0 else, return

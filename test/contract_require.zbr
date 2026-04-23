@@ -1,0 +1,30 @@
+class Counter
+    var count: int = 0
+
+    def push(n: int)
+        require
+            n > 0
+        count = count + n
+
+    def reset(limit: int)
+        require
+            limit >= 0
+            limit <= count
+        count = limit
+
+struct Box
+    var value: int = 0
+
+    def set(v: int)
+        require
+            v >= 0
+        value = v
+
+def main()
+    var c = Counter()
+    c.push(5)
+    c.push(3)
+    c.reset(2)
+    var b = Box()
+    b.set(10)
+    print "ok"

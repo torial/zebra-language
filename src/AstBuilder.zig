@@ -534,7 +534,27 @@ const Builder = struct {
             if (kid != .inner) continue;
             switch (ntOf(kid)) {
                 .ThrowsOpt     => throws = ch(kid).len > 0,
-                .Block         => body = try b.buildBlock(kid),
+                .Block         => {
+                    const all_stmts = try b.buildBlock(kid);
+                    // Partition require/ensure contract stmts out of the body.
+                    var req_exprs  = std.ArrayList(*Ast.Expr){};
+                    var ens_exprs  = std.ArrayList(*Ast.Expr){};
+                    var body_stmts = std.ArrayList(Ast.Stmt){};
+                    for (all_stmts) |s| {
+                        if (s == .contract) {
+                            switch (s.contract.kind) {
+                                .require   => try req_exprs.appendSlice(b.arena, s.contract.exprs),
+                                .ensure    => try ens_exprs.appendSlice(b.arena, s.contract.exprs),
+                                .invariant => try body_stmts.append(b.arena, s),
+                            }
+                        } else {
+                            try body_stmts.append(b.arena, s);
+                        }
+                    }
+                    require_ = try req_exprs.toOwnedSlice(b.arena);
+                    ensure_  = try ens_exprs.toOwnedSlice(b.arena);
+                    body     = try body_stmts.toOwnedSlice(b.arena);
+                },
                 .ContractBlock => {
                     const cb = try b.buildContractBlock(kid);
                     require_ = cb.require;
@@ -978,6 +998,8 @@ const Builder = struct {
             .StmtRaise    => .{ .raise     = try b.box(Ast.StmtRaise,    try b.buildStmtRaise(inner)) },
             .StmtTryCatch => .{ .try_catch = try b.box(Ast.StmtTryCatch, try b.buildStmtTryCatch(inner)) },
             .StmtGuard, .StmtGuardInline => .{ .guard = try b.box(Ast.StmtGuard, try b.buildStmtGuard(inner)) },
+            .StmtRequire  => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .require)) },
+            .StmtEnsure   => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .ensure)) },
             .StmtExpect   => @panic("TODO: StmtExpect"),
             .StmtLock     => @panic("TODO: StmtLock"),
             else => std.debug.panic("buildStmt: unexpected NT {s}", .{@tagName(ntOf(inner))}),
@@ -1379,6 +1401,22 @@ const Builder = struct {
         return .{
             .span = spanOf(node, b.tokens),
             .body = try b.buildStmtList(block_kids[1]),
+        };
+    }
+
+    fn buildStmtContract(b: Builder, node: TN, kind: Ast.ContractKind) anyerror!Ast.StmtContract {
+        // kw_require/kw_ensure eol Block
+        // Extract each expression-statement from the block as a condition.
+        const kids  = ch(node);
+        const stmts = try b.buildBlock(kids[2]);
+        var exprs   = std.ArrayList(*Ast.Expr){};
+        for (stmts) |s| {
+            if (s == .expr) try exprs.append(b.arena, s.expr);
+        }
+        return .{
+            .span  = spanOf(node, b.tokens),
+            .kind  = kind,
+            .exprs = try exprs.toOwnedSlice(b.arena),
         };
     }
 

@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit
 
 def zspan(): Span
@@ -303,10 +303,28 @@ class ASTBuilder
             else
                 params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
         var ret_type = .parseTypeRef(m.return_type)
-        var stmts_list = .buildStmts(m.stmts)?
+        var all_stmts: List(Stmt) = .buildStmts(m.stmts)?
+        # Partition require/ensure contract stmts out of the body.
+        var req_exprs = List(Expr)()
+        var ens_exprs = List(Expr)()
+        var body_stmts = List(Stmt)()
+        for s in all_stmts
+            branch s
+                on Stmt.contract as sc
+                    branch sc.kind
+                        on ContractKind.precond
+                            for e in sc.exprs
+                                req_exprs.add(e)
+                        on ContractKind.postcond
+                            for e in sc.exprs
+                                ens_exprs.add(e)
+                        else
+                            body_stmts.add(s)
+                else
+                    body_stmts.add(s)
+        var stmts_list: List(Stmt)? = body_stmts
         var mods = Modifiers(false, false, false, m.is_shared, false, false)
-        # stmts: List(Stmt)? — pass directly; List(Stmt) → List(Stmt)? coercion
-        return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_))
+        return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
 
@@ -319,8 +337,26 @@ class ASTBuilder
                 params.add(Param(zspan(), ParamMode.normal, p.name, ptype, defval))
             else
                 params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
-        var stmts_list = .buildStmts(pinit.stmts)?
-        return Decl.init(DeclInit(zspan(), zmods(), params, stmts_list))
+        var all_stmts: List(Stmt) = .buildStmts(pinit.stmts)?
+        var req_exprs = List(Expr)()
+        var ens_exprs = List(Expr)()
+        var body_stmts = List(Stmt)()
+        for s in all_stmts
+            branch s
+                on Stmt.contract as sc
+                    branch sc.kind
+                        on ContractKind.precond
+                            for e in sc.exprs
+                                req_exprs.add(e)
+                        on ContractKind.postcond
+                            for e in sc.exprs
+                                ens_exprs.add(e)
+                        else
+                            body_stmts.add(s)
+                else
+                    body_stmts.add(s)
+        var stmts_list: List(Stmt)? = body_stmts
+        return Decl.init(DeclInit(zspan(), zmods(), params, stmts_list, req_exprs, ens_exprs))
 
     # ── Statements ────────────────────────────────────────────────────────────
 
@@ -471,6 +507,20 @@ class ASTBuilder
                 var args = List(Expr)()
                 args.add(expr)
                 return Stmt.print_(StmtPrint(zspan(), args, true))
+
+            on PNode.stmt_require as cond_nodes
+                var cond_list: List(PNode) = cond_nodes
+                var exprs = List(Expr)()
+                for pn2 in cond_list
+                    exprs.add(.buildExpr(pn2)?)
+                return Stmt.contract(StmtContract(zspan(), ContractKind.precond, exprs))
+
+            on PNode.stmt_ensure as cond_nodes
+                var cond_list: List(PNode) = cond_nodes
+                var exprs = List(Expr)()
+                for pn2 in cond_list
+                    exprs.add(.buildExpr(pn2)?)
+                return Stmt.contract(StmtContract(zspan(), ContractKind.postcond, exprs))
 
             else
                 raise "buildStmt: unexpected PNode variant"

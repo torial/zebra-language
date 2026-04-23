@@ -67,6 +67,9 @@ smoke test/dispatch_diag.zbr
 # Lambda capture
 smoke test/any_all_test.zbr
 
+# Contracts
+smoke test/contract_require.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

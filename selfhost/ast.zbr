@@ -256,8 +256,10 @@ struct DeclMethod
     var stmts: List(Stmt)?
     var is_test: bool
     var throws_: bool
+    var require_: List(Expr)
+    var ensure_: List(Expr)
 
-    cue init(span: Span, mods: Modifiers, name: String, params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool)
+    cue init(span: Span, mods: Modifiers, name: String, params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool, require_: List(Expr), ensure_: List(Expr))
         this.span = span
         this.mods = mods
         this.name = name
@@ -266,6 +268,8 @@ struct DeclMethod
         this.stmts = stmts
         this.is_test = is_test
         this.throws_ = throws_
+        this.require_ = require_
+        this.ensure_ = ensure_
 
 # ── Variable / constant ───────────────────────────────────────────────────────
 
@@ -292,12 +296,16 @@ struct DeclInit
     var mods: Modifiers
     var params: List(Param)
     var stmts: List(Stmt)?
+    var require_: List(Expr)
+    var ensure_: List(Expr)
 
-    cue init(span: Span, mods: Modifiers, params: List(Param), stmts: List(Stmt)?)
+    cue init(span: Span, mods: Modifiers, params: List(Param), stmts: List(Stmt)?, require_: List(Expr), ensure_: List(Expr))
         this.span = span
         this.mods = mods
         this.params = params
         this.stmts = stmts
+        this.require_ = require_
+        this.ensure_ = ensure_
 
 # ── Parameters ───────────────────────────────────────────────────────────────
 
@@ -402,6 +410,7 @@ union Stmt
     destruct: ^StmtDestruct
     arena_scope: ^StmtArenaScope
     print_: ^StmtPrint
+    contract: ^StmtContract
 
 struct ElseIf
     var span: Span
@@ -606,6 +615,21 @@ struct StmtArenaScope
     cue init(span: Span, stmts: List(Stmt))
         this.span = span
         this.stmts = stmts
+
+enum ContractKind
+    precond
+    postcond
+    classinv
+
+struct StmtContract
+    var span: Span
+    var kind: ContractKind
+    var exprs: List(Expr)
+
+    cue init(span: Span, kind: ContractKind, exprs: List(Expr))
+        this.span = span
+        this.kind = kind
+        this.exprs = exprs
 
 struct StmtPrint
     var span: Span

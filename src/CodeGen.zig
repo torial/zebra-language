@@ -4051,6 +4051,7 @@ const Generator = struct {
                     .withTco(n.name, tco_pnames.items, n.mods.shared);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 if (has_self and !refs.uses_self) try bg.line("_ = self;");
+                try bg.genRequireChecks(n.require, n.name);
                 try bg.genStmts(body);
 
                 // Close the while loop.
@@ -4066,6 +4067,7 @@ const Generator = struct {
                         try bg.w.print("_ = {s};\n", .{p.name});
                     }
                 }
+                try bg.genRequireChecks(n.require, n.name);
                 try bg.genStmts(body);
             }
 
@@ -4130,6 +4132,7 @@ const Generator = struct {
                 try bg.w.print("_ = {s};\n", .{p.name});
             }
         }
+        try bg.genRequireChecks(n.require, "init");
         try bg.genStmts(body);
         try bg.writeIndent();
         try bg.w.writeAll("return self;\n");
@@ -8067,6 +8070,15 @@ const Generator = struct {
         try bg.w.writeAll("});\n");
         try g.writeIndent();
         try g.w.writeAll("}\n");
+    }
+
+    fn genRequireChecks(g: Generator, require: []const *Ast.Expr, context: []const u8) anyerror!void {
+        for (require) |req_expr| {
+            try g.writeIndent();
+            try g.w.writeAll("if (!(");
+            try g.genExpr(req_expr);
+            try g.w.print(")) std.debug.panic(\"require failed in '{s}'\\n\", .{{}});\n", .{context});
+        }
     }
 
     fn genAssert(g: Generator, s: *Ast.StmtAssert) anyerror!void {

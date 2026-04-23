@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef, isString
 
@@ -1780,6 +1780,7 @@ struct Generator
                     bg.w.emit("_ = ")
                     bg.w.emit(p.name)
                     bg.w.emit(";\n")
+            bg.genRequireChecks(m.require_, m.name)
             bg.genStmts(mstmts)
             writeIndent()
             w.emit("}\n\n")
@@ -1836,7 +1837,10 @@ struct Generator
                     ctx17ci.bind(pp.name, Type_.unknown_)
             walkStmts(istmts, ctx17ci)
             bg = bg.withInferCtx(ctx17ci)
+            bg.genRequireChecks(ini.require_, "init")
             bg.genStmts(istmts)
+        else
+            ig.genRequireChecks(ini.require_, "init")
         ig.writeIndent()
         ig.w.emit("return _self;\n")
         writeIndent()
@@ -2087,6 +2091,8 @@ struct Generator
                 line("break;")
             on Stmt.continue_
                 line("continue;")
+            on Stmt.contract
+                pass  # partitioned out in buildMethod; no-op if residual
 
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
@@ -3603,6 +3609,15 @@ struct Generator
         w.emit("}\n")
 
     # ── genAssert ─────────────────────────────────────────────────────────────
+
+    def genRequireChecks(req_list: List(Expr), context: str)
+        for req_expr in req_list
+            writeIndent()
+            w.emit("if (!(")
+            genExpr(req_expr)
+            w.emit(")) std.debug.panic(\"require failed in '")
+            w.emit(context)
+            w.emit("'\\n\", .{});\n")
 
     def genAssert(a: StmtAssert)
         writeIndent()
