@@ -30,6 +30,7 @@ history lives.
   writing or reading `.zbr` code.
 - `SELFHOST_JOURNAL.md` — phase-by-phase notes on porting the compiler to Zebra.
 - `BUGS.md` — active compiler bug tracker.
+- `NEXT_STEPS.md` — **authoritative priority queue** for upcoming work. Read this before generating a new task list.
 - `STDLIB_ROADMAP.md` — standard library plan.
 - `grammar.txt` — language grammar reference.
 
