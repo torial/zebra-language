@@ -1394,10 +1394,13 @@ const Generator = struct {
         // `_initAllocator` call — safe because each module owns its own arena.
         // `_initAllocator` overrides this with a shared allocator when needed.
         try g.w.writeAll("var _allocator: std.mem.Allocator = _arena.allocator();\n");
+        // String intern pool — backed by page_allocator so interned strings
+        // survive arena_scope rewinds.  _intern() is the only public entry point.
+        try g.w.writeAll("var _str_pool: std.StringHashMap([]const u8) = undefined;\n");
         // `_initAllocator` sets this module's allocator AND propagates to every
         // directly-imported Zebra module, so transitive deps are always initialised
         // even when the root `main` only calls it for direct imports.
-        try g.w.writeAll("pub fn _initAllocator(a: std.mem.Allocator) void {\n    _allocator = a;\n");
+        try g.w.writeAll("pub fn _initAllocator(a: std.mem.Allocator) void {\n    _allocator = a;\n    _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);\n");
         for (module.decls) |decl| {
             const u = switch (decl) { .use => |u| u, else => continue };
             if (g.native_uses) |nu| if (nu.get(u.path) != null) continue;
@@ -1405,7 +1408,17 @@ const Generator = struct {
             defer g.alloc.free(imp_path);
             try g.w.print("    @import(\"{s}.zig\")._initAllocator(a);\n", .{imp_path});
         }
-        try g.w.writeAll("}\n\n");
+        try g.w.writeAll("}\n");
+        try g.w.writeAll(
+            \\fn _intern(s: []const u8) []const u8 {
+            \\    if (_str_pool.get(s)) |existing| return existing;
+            \\    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+            \\    _str_pool.put(owned, owned) catch @panic("OOM");
+            \\    return owned;
+            \\}
+            \\
+            \\
+        );
         // Thread-local error context — populated by `raise` statements.
         try g.w.writeAll("const _Stringable = struct {\n");
         try g.w.writeAll("    ptr:         *anyopaque,\n");
