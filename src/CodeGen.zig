@@ -1396,11 +1396,13 @@ const Generator = struct {
         try g.w.writeAll("var _allocator: std.mem.Allocator = _arena.allocator();\n");
         // String intern pool — backed by page_allocator so interned strings
         // survive arena_scope rewinds.  _intern() is the only public entry point.
-        try g.w.writeAll("var _str_pool: std.StringHashMap([]const u8) = undefined;\n");
+        // Initialized eagerly at declaration so main modules (which never receive
+        // an _initAllocator call) can use _intern before any explicit init.
+        try g.w.writeAll("var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);\n");
         // `_initAllocator` sets this module's allocator AND propagates to every
         // directly-imported Zebra module, so transitive deps are always initialised
         // even when the root `main` only calls it for direct imports.
-        try g.w.writeAll("pub fn _initAllocator(a: std.mem.Allocator) void {\n    _allocator = a;\n    _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);\n");
+        try g.w.writeAll("pub fn _initAllocator(a: std.mem.Allocator) void {\n    _allocator = a;\n");
         for (module.decls) |decl| {
             const u = switch (decl) { .use => |u| u, else => continue };
             if (g.native_uses) |nu| if (nu.get(u.path) != null) continue;
@@ -6278,9 +6280,9 @@ const Generator = struct {
             try g.w.writeAll(".append(_allocator, ");
             if (args.len > 0) {
                 if (item_is_str) {
-                    try g.w.writeAll("(_allocator.dupe(u8, ");
+                    try g.w.writeAll("_intern(");
                     try g.genExpr(args[0].value);
-                    try g.w.writeAll(") catch @panic(\"OOM\"))");
+                    try g.w.writeAll(")");
                 } else {
                     try g.genExpr(args[0].value);
                 }
@@ -6387,9 +6389,9 @@ const Generator = struct {
                 if (i > 0) try g.w.writeAll(", ");
                 const need_dupe = (i == 0 and key_is_str) or (i == 1 and val_is_str);
                 if (need_dupe) {
-                    try g.w.writeAll("(_allocator.dupe(u8, ");
+                    try g.w.writeAll("_intern(");
                     try g.genExpr(a.value);
-                    try g.w.writeAll(") catch @panic(\"OOM\"))");
+                    try g.w.writeAll(")");
                 } else {
                     try g.genExpr(a.value);
                 }

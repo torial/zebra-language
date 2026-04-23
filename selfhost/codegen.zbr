@@ -4982,9 +4982,9 @@ struct Generator
                 w.emit(".append(_allocator, ")
                 if args.count() > 0
                     if add_item_is_str
-                        w.emit("(_allocator.dupe(u8, ")
+                        w.emit("_intern(")
                         genExpr(args.at(0).value)
-                        w.emit(") catch @panic(\"OOM\"))")
+                        w.emit(")")
                     else
                         genExpr(args.at(0).value)
                 w.emit(") catch @panic(\"OOM\")")
@@ -5149,9 +5149,9 @@ struct Generator
                             w.emit(", ")
                         fi = false
                         if (ai == 0 and key_is_str) or (ai == 1 and val_is_str)
-                            w.emit("(_allocator.dupe(u8, ")
+                            w.emit("_intern(")
                             genExpr(a.value)
-                            w.emit(") catch @panic(\"OOM\"))")
+                            w.emit(")")
                         else
                             genExpr(a.value)
                         ai += 1
@@ -5207,9 +5207,9 @@ struct Generator
                     w.emit(", ")
                 pfi = false
                 if (pai == 0 and put_key_is_str) or (pai == 1 and put_val_is_str)
-                    w.emit("(_allocator.dupe(u8, ")
+                    w.emit("_intern(")
                     genExpr(a.value)
-                    w.emit(") catch @panic(\"OOM\"))")
+                    w.emit(")")
                 else
                     genExpr(a.value)
                 pai += 1
