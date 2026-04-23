@@ -6352,8 +6352,8 @@ const Generator = struct {
     // ── HashMap methods ───────────────────────────────────────────────────────
 
     fn genHashMapMethod(g: Generator, obj: *const Ast.Expr, key_is_str: bool, method: []const u8, args: []const Ast.Arg) anyerror!bool {
-        if (std.mem.eql(u8, method, "put")) {
-            // map.put(k, v) — note: 'set' is a keyword, use 'put'
+        if (std.mem.eql(u8, method, "set") or std.mem.eql(u8, method, "put")) {
+            // HashMap.set(k, v) / HashMap.put(k, v) — both spellings accepted; Zig uses put().
             // For string-keyed maps, dupe the key so the map owns it (caller's string
             // may be freed by defer _allocator.free after this call).
             try g.genExpr(obj);

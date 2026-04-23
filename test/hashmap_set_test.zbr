@@ -1,0 +1,25 @@
+# Exercises HashMap.set() (type-directed rewrite to .put()) and a user-defined
+# struct .set() method (must NOT be rewritten — fall-through path).
+
+class Gauge
+    var value: int
+    cue init(v: int)
+        value = v
+    def set(v: int)
+        value = v
+    def get(): int
+        return value
+
+def main()
+    # User-defined .set() — must reach as-is (not rewritten to .put())
+    var g = Gauge(10)
+    g.set(42)
+    print g.get()
+
+    # HashMap.set() — type-directed rewrite to .put()
+    var scores = HashMap(str, int)()
+    scores.set("alice", 95)
+    scores.set("bob", 87)
+    print scores.fetch("alice")
+    print scores.fetch("bob")
+    print "ok"

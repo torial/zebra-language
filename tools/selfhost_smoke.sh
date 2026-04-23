@@ -74,6 +74,9 @@ smoke test/contract_invariant.zbr
 # Selfhost emits-zig exits 0 (pipeline succeeds); full binary is verified via bootstrap path.
 smoke test/generic_invariant_test.zbr
 
+# Type-directed HashMap.set() → .put() rewrite; user-defined .set() must pass through unchanged.
+smoke test/hashmap_set_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

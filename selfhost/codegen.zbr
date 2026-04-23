@@ -4849,18 +4849,23 @@ struct Generator
                 genExpr(args.at(0).value)
             w.emit(")")
             return
-        # HashMap.set(key, value) → .put(key, value) — only for 2-arg form (HashMap arity)
-        if mname == "set" and args.count() == 2
-            genExpr(m.object)
-            w.emit(".put(")
-            var fi = true
-            for a in args
-                if not fi
-                    w.emit(", ")
-                fi = false
-                genExpr(a.value)
-            w.emit(") catch @panic(\"OOM\")")
-            return
+        # HashMap.set(key, value) → .put(key, value) — type-directed: only when receiver is a
+        # confirmed HashMap.  Falls through to user-defined .set() when receiver is unknown.
+        if mname == "set"
+            var set_recv = getMemberFieldName(m.object)
+            if set_recv != nil
+                var sname = set_recv to!
+                if hashmap_locals.contains_(sname) or fieldIsHashMap(this.module_types, this.dep_types, sname)
+                    genExpr(m.object)
+                    w.emit(".put(")
+                    var fi = true
+                    for a in args
+                        if not fi
+                            w.emit(", ")
+                        fi = false
+                        genExpr(a.value)
+                    w.emit(") catch @panic(\"OOM\")")
+                    return
         if mname == "get"
             genExpr(m.object)
             w.emit(".get(")
