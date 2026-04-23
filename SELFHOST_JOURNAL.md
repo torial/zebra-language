@@ -1776,3 +1776,70 @@ which was fixed by field-initializer work in preceding commits).
 Bootstrap:  5/5 PASS (byte-identical round-trip)
 Smoke:      19/19 PASS
 ```
+
+## Phase 25: String Interning (`_intern`) (2026-04-23)
+
+**Goal:** Eliminate use-after-free hazards for strings stored in collections and struct
+fields. Previously, users (and the selfhost compiler itself) needed to write `"" + expr`
+at storage boundaries to create arena-owned copies. Now the compiler inserts interning
+automatically.
+
+### Architecture
+
+**`_str_pool` + `_intern()`** (commit A — `src/CodeGen.zig`, `selfhost/stdlib_preamble.zig`):
+
+Every generated Zig file now gets a `page_allocator`-backed `std.StringHashMap([]const u8)`
+called `_str_pool`, initialized eagerly at declaration so main modules (which never receive
+an `_initAllocator` call) can use it immediately. The `_intern(s)` helper does
+lookup-or-insert: returning the existing pool slice if found, or page-allocating a new copy
+and inserting it.
+
+Pool lifetime is `page_allocator` (process lifetime), so interned strings survive any
+`arena_scope` block rewinds.
+
+**Collection sinks** (commit B — `src/CodeGen.zig`, `selfhost/codegen.zbr`):
+
+`List(str).add()` and `HashMap(K=str or V=str).set()/put()` now emit `_intern(arg)` in
+place of the previous `_allocator.dupe(u8, arg) catch @panic("OOM")` wrappers added in
+Option 1. Both Zig backend and selfhost codegen updated.
+
+**Struct/class `str` field assignments** (commit C — `src/CodeGen.zig`, `selfhost/codegen.zbr`):
+
+When `this.field = expr` or `obj.field = expr` is emitted and the field's TC type is
+`string`, the RHS is wrapped with `_intern(...)`. Zig backend uses TC `expr_types` to check
+the target type; selfhost uses the existing `isStringField` helper (checks `owner_members`
+for the current class). Local `var x: str = ...` is intentionally NOT interned — only
+storage that outlives the call site.
+
+**Remove `"" +` copies** (commit D — `selfhost/typechecker.zbr`, `selfhost/main.zbr`):
+
+`internString()` changed to `return s` (no-op). All 37 empty-concat prefixes removed from
+typechecker.zbr (at `ctx.bind`, `ct.setField`, `ct.setMethodReturn`, `ct.setMethodParams`,
+`ClassTypes(...)` constructor calls, local var temps, etc.) and 2 from main.zbr. Bootstrap
+passing after removal confirms Option 2 coverage is complete.
+
+### Key decisions
+
+- **`_str_pool` initialized at declaration, not in `_initAllocator`:** Main modules (the
+  entry-point `main.zig`) never receive an `_initAllocator` call — they set up `_allocator`
+  directly in `main()`. Initializing eagerly (`= undefined` would crash; `= .init(pa)` is
+  free until first insert).
+
+- **`page_allocator` for pool, not `_allocator`:** The arena-backed `_allocator` can be
+  rewound by `arena_scope` blocks. Interned strings must outlive any rewind, so
+  `page_allocator` is the right choice.
+
+- **Local `var x: str = expr` NOT auto-interned:** Local vars don't escape their scope
+  directly; interning happens at the storage site (List.add, HashMap.put, field assign) which
+  covers all meaningful persistence.
+
+- **Python CRLF pitfall:** The batch sed/Python replacement wrote CRLF line endings (Windows
+  default). The Zebra tokenizer treats `\r` as `UnexpectedCharacter`. Fix: always pass
+  `newline='\n'` when writing `.zbr` files with Python.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      19/19 PASS
+```
