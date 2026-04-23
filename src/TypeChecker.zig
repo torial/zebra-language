@@ -1537,6 +1537,10 @@ const TypeChecker = struct {
             if (tc_node.variant_name == null) {
                 const subj = try tc.inferExpr(tc_node.expr);
                 if (subj == .optional) return subj.optional.*;
+                if (subj != .unknown)
+                    try tc.emitError(spanOf(cond),
+                        "`if x is {s} as n` requires x to be {s}? (got '{s}')",
+                        .{ tc_node.type_name, tc_node.type_name, subj.name() });
                 return null;
             }
         }
@@ -1544,6 +1548,10 @@ const TypeChecker = struct {
             // Option B: `if x as n` — condition itself must be optional.
             const t = try tc.inferExpr(cond);
             if (t == .optional) return t.optional.*;
+            if (t != .unknown)
+                try tc.emitError(spanOf(cond),
+                    "`if x as n` requires an optional type, got '{s}'",
+                    .{t.name()});
             return null;
         }
         const tc_node = cond.type_check;
