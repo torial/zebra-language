@@ -1293,7 +1293,7 @@ const Generator = struct {
         var c = g; c.owner = s.name; c.owner_members = s.members; c.is_struct_owner = true; c.owner_invariants = s.invariants; return c;
     }
     fn withGeneric(g: Generator, cls: *const Ast.DeclClass) Generator {
-        var c = g; c.is_generic = true; c.owner_class = cls; return c;
+        var c = g; c.is_generic = true; c.owner_class = cls; c.owner_members = cls.members; c.owner_invariants = cls.invariants; return c;
     }
     fn withExtSelf(g: Generator, t: TypeChecker.Type) Generator {
         var c = g; c.ext_self_type = t; return c;
@@ -3507,6 +3507,9 @@ const Generator = struct {
                 try ig.w.writeAll("}\n\n");
             }
         }
+
+        // ④ Invariant checker — same as non-generic path.
+        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
 
         try fg.writeIndent();
         try fg.w.writeAll("};\n");
@@ -8094,10 +8097,14 @@ const Generator = struct {
 
     /// Emit a private `_check_invariant` method that panics when any invariant expression
     /// evaluates to false.  Called inside the struct definition (g is the indented class/struct
-    /// generator context).  The method takes `self: *Owner` for both classes and structs.
+    /// generator context).  Inside a generic class the struct is `@This()`, not the class name.
     fn genInvariantCheckFn(g: Generator) anyerror!void {
         try g.writeIndent();
-        try g.w.print("fn _check_invariant(self: *{s}) void {{\n", .{g.owner});
+        if (g.is_generic) {
+            try g.w.writeAll("fn _check_invariant(self: *@This()) void {\n");
+        } else {
+            try g.w.print("fn _check_invariant(self: *{s}) void {{\n", .{g.owner});
+        }
         const ig = g.indented().asMethod();
         for (g.owner_invariants) |inv_expr| {
             try ig.writeIndent();

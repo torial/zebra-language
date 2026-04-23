@@ -70,6 +70,9 @@ smoke test/any_all_test.zbr
 # Contracts
 smoke test/contract_require.zbr
 smoke test/contract_invariant.zbr
+# Generic class + invariant — Zig-backend fix: genGenericClass now threads owner_invariants.
+# Selfhost emits-zig exits 0 (pipeline succeeds); full binary is verified via bootstrap path.
+smoke test/generic_invariant_test.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

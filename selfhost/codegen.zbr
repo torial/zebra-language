@@ -3635,7 +3635,10 @@ struct Generator
     def genInvariantCheckFn()
         writeIndent()
         w.emit("fn _check_invariant(self: *")
-        w.emit(owner)
+        if is_generic
+            w.emit("@This()")
+        else
+            w.emit(owner)
         w.emit(") void {\n")
         var ig0 = indented()
         var mg = ig0.asMethod()

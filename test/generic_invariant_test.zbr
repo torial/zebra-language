@@ -1,0 +1,38 @@
+# Generic class with invariant — verifies that _check_invariant is emitted
+# inside the comptime-function struct body and wired into init + methods.
+# T is the element type held by the slot; invariant constrains the slot count.
+
+class BoundedSlot(T)
+    var item: T?
+    var count: int
+    var limit: int
+    invariant
+        count >= 0
+        count <= limit
+    cue init(cap: int)
+        item  = nil
+        count = 0
+        limit = cap
+    def store(v: T)
+        require
+            count < limit
+        item  = v
+        count = count + 1
+    def clear()
+        item  = nil
+        count = 0
+    def full(): bool
+        return count >= limit
+
+class Tag
+    var id: int
+    cue init(n: int)
+        id = n
+
+def main()
+    var s = BoundedSlot(Tag)(2)
+    s.store(Tag(1))
+    s.store(Tag(2))
+    s.clear()
+    print s.full()
+    print "ok"
