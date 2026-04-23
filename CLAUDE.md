@@ -69,8 +69,9 @@ Key idioms worth remembering up front:
 - `this except field = value, ...` is the immutable-update idiom for structs.
 - `throws` methods return `anyerror!T` in Zig; same-file throws-to-throws calls
   auto-propagate, cross-module/local-variable calls need explicit `expr?`.
-- Method chaining on struct temporaries is banned — always materialize
-  intermediates (`var c1 = foo(); var c2 = c1.bar()`).
+- Method chaining on struct temporaries (`f().method()`) is auto-materialized
+  by the compiler in var-init, return, and assignment positions. Expression-
+  position chains (call args, compound expressions) still need a manual temp.
 
 ## Common workflows
 

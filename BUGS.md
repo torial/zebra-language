@@ -109,7 +109,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-079: Method chaining on struct-returning calls silently mis-compiles or is unnecessarily banned
 - **Severity:** Medium (ergonomics + correctness; blocks natural call-chaining style)
-- **Status:** Fixed — commit de0ec8e; auto-hoist in selfhost `genLocalVar` (`hoistCallChain`)
+- **Status:** Fixed — commits de0ec8e + 8c16fd9; auto-hoist in `genLocalVar`, `genReturn`, `genAssign` via `hoistCallChain`; expression-position (call args, compound expressions) remains open (BUG-027)
 - **Target:** Pre-1.0 (ribbon ceremony blocker)
 - **Symptom:** `f().method()` where `f()` returns a struct type is either silently mis-compiled or must be avoided by convention. The compiler does not enforce materialization; the hazard is invisible to the user until a runtime fault or a wrong-Zig-type error appears.
 - **Example:**
