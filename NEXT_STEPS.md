@@ -15,10 +15,6 @@ Top-level `try Main.main()` panics with `error: ZebraError` instead of clean dis
 Test fixtures need `try/catch` wrapping; may also need a top-level error display fix in `src/main.zig`.
 Files: `test/guard_test.zbr`, `test/try_postfix_test.zbr`
 
-**BUG-019** — `fn_ref` assignment terminator asymmetry  
-Trivial: `genAssign`'s fn-ref path short-circuits with its own `;\n` instead of the shared terminator.
-File: `src/CodeGen.zig` → `genAssign`
-
 **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains  
 Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`

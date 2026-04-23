@@ -57,11 +57,12 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-019: `fn_ref` assignment in `genAssign` owns its own `;\n` terminator
+### BUG-019: `fn_ref` assignment missing `&` prefix in selfhost codegen
 - **Severity:** Low
-- **Status:** Open
+- **Status:** Fixed — selfhost `codegen.zbr` `isTopLevelMethod` + `genLocalVar`/`genAssign` fn-ref paths; see `test/fn_ref_test.zbr`
 - **Target:** 0.5 (cleanup)
-- **Symptom:** The `fn_ref_emitted` block inside `genAssign`'s `else` branch short-circuits with its own `try g.w.writeAll(";\n"); return;` instead of falling through to the shared terminator. Asymmetry means any post-processing added after the shared terminator would be silently skipped by the fn-ref path.
+- **Root cause:** `selfhost/codegen.zbr` lacked the fn-ref detection that `src/CodeGen.zig` has. Mutable local vars initialized from a bare top-level function name (e.g. `var pred = isAlpha`) must emit `var pred: @TypeOf(&isAlpha) = &isAlpha;`, and reassignment (`pred = isDigit`) must emit `pred = &isDigit;`. The Zig backend had this via `tc_init_type == .fn_ref`; the selfhost now uses `isTopLevelMethod()`.
+- **Original symptom:** `var pred = isAlpha` compiled by selfhost zebra.exe produced Zig `var pred = isAlpha;` which Zig rejects ("variable of type 'fn(u21) bool' must be const or comptime").
 
 ---
 

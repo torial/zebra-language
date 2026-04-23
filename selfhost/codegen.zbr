@@ -2254,13 +2254,22 @@ struct Generator
                 var chain = ch to!
                 mc_recv = hoistCallChain(chain.recv)
                 mc_field = chain.method
-        writeIndent()
-        # Determine const vs var
+        # Mutable fn-ref vars: Zig requires `*const fn(P) R` type.
+        # Detect `var pred = isAlpha` where isAlpha is a top-level def,
+        # and emit `var pred: @TypeOf(&isAlpha) = &isAlpha;` instead.
         var is_mut = false
         if mut_set != nil
             is_mut = mut_set to!.contains_(n.name)
         if n.is_const
             is_mut = false
+        if is_mut and n.init_expr != nil and not n.is_const
+            if n.init_expr to! is Expr.ident as fid
+                if isTopLevelMethod(fid.name)
+                    writeIndent()
+                    w.emit("var " + n.name + ": @TypeOf(&" + fid.name + ") = &" + fid.name + ";\n")
+                    return
+        writeIndent()
+        # const vs var already computed above
         if is_mut
             w.emit("var ")
         else
@@ -2362,6 +2371,16 @@ struct Generator
         else
             w.emit("undefined")
         w.emit(";\n")
+
+    # Returns true if `name` is a top-level `def` in the current module.
+    # Used to detect bare function-name expressions (fn_ref) in local var inits
+    # and assignments — Zig requires `&funcName` / `@TypeOf(&funcName)` for those.
+    def isTopLevelMethod(name: str): bool
+        for decl in module_decls
+            if decl is Decl.method as m
+                if m.name == name
+                    return true
+        return false
 
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
@@ -2568,6 +2587,16 @@ struct Generator
         w.emit(" ")
         w.emit(assignOpStr(a.op))
         w.emit(" ")
+        # fn-ref reassignment: `pred = isDigit` → `pred = &isDigit`
+        # Mutable fn-ref vars have type `*const fn(P) R`; bare function
+        # names are function values, so we need `&` to take a pointer.
+        if a.op == AssignOp.assign
+            if a.value is Expr.ident as vid
+                if isTopLevelMethod(vid.name)
+                    w.emit("&")
+                    w.emit(vid.name)
+                    w.emit(";\n")
+                    return
         if a.op == AssignOp.assign and isStringField(a.target)
             w.emit("_intern(")
             genExpr(a.value)
