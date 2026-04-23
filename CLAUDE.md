@@ -95,3 +95,28 @@ Key idioms worth remembering up front:
   gitignored — do not commit them.
 - The `archive/pre-zebra-split` tag in the old cobra-language repo records
   the state at split time.
+
+## Line endings — CRLF hazard for `.zbr` files
+
+The Zebra tokenizer requires **LF-only** (`\n`) line endings. A `\r` character is
+treated as an unexpected character and causes a tokenizer crash with the message
+`internal compiler error: error.UnexpectedCharacter` — no source location is
+reported, making the failure look unrelated.
+
+**How this bites you on Windows:** Python's `open(..., 'w')` writes CRLF by
+default. Any script that reads and rewrites a `.zbr` file must pass
+`newline='\n'` explicitly:
+
+```python
+# CORRECT — LF only
+with open('file.zbr', 'w', encoding='utf-8', newline='\n') as f:
+    f.write(content)
+
+# WRONG on Windows — writes CRLF, crashes the tokenizer
+with open('file.zbr', 'w', encoding='utf-8') as f:
+    f.write(content)
+```
+
+Git `core.autocrlf` can mask this on checkout, but the repo `.gitattributes`
+normalises `.zbr` to LF. If you suspect CRLF: `file selfhost/foo.zbr` will
+report `CRLF line terminators` vs `ASCII text`.
