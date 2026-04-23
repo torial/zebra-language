@@ -952,6 +952,23 @@ def stmtLine(s: Stmt): int
         else
             return 0
 
+struct CallChain
+    var recv: Expr
+    var method: String
+    var args: List(Arg)
+
+    cue init(recv: Expr, method: String, args: List(Arg))
+        this.recv = recv
+        this.method = method
+        this.args = args
+
+def tryChain(e: Expr): CallChain?
+    if e is Expr.call as c
+        if c.callee is Expr.member as m
+            if m.object is Expr.call
+                return CallChain(m.object, m.member, c.args)
+    return nil
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -2211,12 +2228,11 @@ struct Generator
         var mc_recv = ""
         var mc_field = ""
         if n.init_expr != nil
-            var _hie = n.init_expr to!
-            if _hie is Expr.call as _hc
-                if _hc.callee is Expr.member as _hm
-                    if _hm.object is Expr.call
-                        mc_recv = hoistCallChain(_hm.object)
-                        mc_field = _hm.member
+            var ch = tryChain(n.init_expr to!)
+            if ch != nil
+                var chain = ch to!
+                mc_recv = hoistCallChain(chain.recv)
+                mc_field = chain.method
         writeIndent()
         # Determine const vs var
         var is_mut = false
@@ -2307,9 +2323,10 @@ struct Generator
         if mc_recv.len > 0
             w.emit(mc_recv + "." + mc_field + "(")
             if n.init_expr != nil
-                var _fie = n.init_expr to!
-                if _fie is Expr.call as _fc
-                    genArgList(_fc.args)
+                var ch2 = tryChain(n.init_expr to!)
+                if ch2 != nil
+                    var chain2 = ch2 to!
+                    genArgList(chain2.args)
             w.emit(")")
         else if n.init_expr != nil
             genExpr(n.init_expr to!)
@@ -2474,16 +2491,16 @@ struct Generator
     def genAssign(a: StmtAssign)
         # BUG-079: auto-hoist method chain on struct temporary in assignment RHS
         if a.op == AssignOp.assign
-            if a.value is Expr.call as _ac
-                if _ac.callee is Expr.member as _am
-                    if _am.object is Expr.call
-                        var mc_recv = hoistCallChain(_am.object)
-                        writeIndent()
-                        genExpr(a.target)
-                        w.emit(" = " + mc_recv + "." + _am.member + "(")
-                        genArgList(_ac.args)
-                        w.emit(");\n")
-                        return
+            var ch = tryChain(a.value)
+            if ch != nil
+                var chain = ch to!
+                var mc_recv = hoistCallChain(chain.recv)
+                writeIndent()
+                genExpr(a.target)
+                w.emit(" = " + mc_recv + "." + chain.method + "(")
+                genArgList(chain.args)
+                w.emit(");\n")
+                return
         writeIndent()
         if a.op == AssignOp.slashslash_eq
             genExpr(a.target)
@@ -2643,16 +2660,15 @@ struct Generator
     def genReturn(r: StmtReturn)
         # BUG-079: auto-hoist method chain on struct temporary in return position
         if r.value != nil
-            var _rv = r.value to!
-            if _rv is Expr.call as _rc
-                if _rc.callee is Expr.member as _rm
-                    if _rm.object is Expr.call
-                        var mc_recv = hoistCallChain(_rm.object)
-                        writeIndent()
-                        w.emit("return " + mc_recv + "." + _rm.member + "(")
-                        genArgList(_rc.args)
-                        w.emit(");\n")
-                        return
+            var ch = tryChain(r.value to!)
+            if ch != nil
+                var chain = ch to!
+                var mc_recv = hoistCallChain(chain.recv)
+                writeIndent()
+                w.emit("return " + mc_recv + "." + chain.method + "(")
+                genArgList(chain.args)
+                w.emit(");\n")
+                return
         writeIndent()
         if r.value != nil
             w.emit("return ")
@@ -2686,17 +2702,17 @@ struct Generator
     # For MethodCall(object=Call, ...), hoists the inner chain first, then hoists this level.
     # Takes expr by value so ^Expr callers auto-deref at the call site.
     def hoistCallChain(expr: Expr): String
-        if expr is Expr.call as c
-            if c.callee is Expr.member as m
-                if m.object is Expr.call
-                    var inner = hoistCallChain(m.object)
-                    var uid = w.nextUid()
-                    var mc = "_mc_" + uid.toString()
-                    writeIndent()
-                    w.emit("var " + mc + " = " + inner + "." + m.member + "(")
-                    genArgList(c.args)
-                    w.emit(");\n")
-                    return mc
+        var ch = tryChain(expr)
+        if ch != nil
+            var chain = ch to!
+            var inner = hoistCallChain(chain.recv)
+            var uid = w.nextUid()
+            var mc = "_mc_" + uid.toString()
+            writeIndent()
+            w.emit("var " + mc + " = " + inner + "." + chain.method + "(")
+            genArgList(chain.args)
+            w.emit(");\n")
+            return mc
         # Base case: emit a temp for the plain expression
         var uid = w.nextUid()
         var mc = "_mc_" + uid.toString()

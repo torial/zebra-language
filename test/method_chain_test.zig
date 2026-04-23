@@ -1492,20 +1492,39 @@ pub fn makeBuilder(n: i64) Builder {
     return Builder.init(n);
 }
 
-pub fn main() void {
+pub fn testVarInit() i64 {
 // zbr:test/method_chain_test.zbr:25
     var r1 = makeBuilder(5).withVal(10);
 // zbr:test/method_chain_test.zbr:26
-    std.debug.print("{}\n", .{r1.result()});
-// zbr:test/method_chain_test.zbr:29
     var r2 = makeBuilder(3).doubled().withVal(99);
-// zbr:test/method_chain_test.zbr:30
-    std.debug.print("{}\n", .{r2.result()});
-// zbr:test/method_chain_test.zbr:33
-    var r3 = r1.withVal(42);
-// zbr:test/method_chain_test.zbr:34
-    std.debug.print("{}\n", .{r3.result()});
+// zbr:test/method_chain_test.zbr:27
+    return (r1.result() + r2.result());
+}
+
+pub fn testReturn() Builder {
+// zbr:test/method_chain_test.zbr:31
+    return makeBuilder(7).withVal(42);
+}
+
+pub fn testAssign() i64 {
+// zbr:test/method_chain_test.zbr:35
+    var r = makeBuilder(0);
 // zbr:test/method_chain_test.zbr:36
+    r = makeBuilder(5).withVal(20);
+// zbr:test/method_chain_test.zbr:37
+    return r.result();
+}
+
+pub fn main() void {
+// zbr:test/method_chain_test.zbr:40
+    std.debug.print("{}\n", .{testVarInit()});
+// zbr:test/method_chain_test.zbr:41
+    var rb = testReturn();
+// zbr:test/method_chain_test.zbr:42
+    std.debug.print("{}\n", .{rb.result()});
+// zbr:test/method_chain_test.zbr:43
+    std.debug.print("{}\n", .{testAssign()});
+// zbr:test/method_chain_test.zbr:44
     std.debug.print("{s}\n", .{"ok"});
 }
 
