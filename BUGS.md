@@ -2,6 +2,8 @@
 
 **Last bug number generated: BUG-080. Next new bug: BUG-081.**
 
+> BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
+
 Fixed / closed bugs have been moved to `FixedBugs.md`.
 
 ---
@@ -88,25 +90,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-029: Class field init with non-int-valued HashMap defaults to i64
-- **Severity:** Medium (blocks several TypeChecker port idioms until worked around)
-- **Status:** Open
-- **Target:** Phase 16c or Phase 17 — fix on Zig side, then port to selfhost
-- **Symptom:** `this.field = HashMap()` on a field declared `HashMap(str, T)` for non-int `T` emits `std.StringHashMap(i64).init(_allocator)`.
-- **Root cause:** `src/CodeGen.zig::genAssign` generic-RHS field-type resolver accepts only target `.ident` or `.member` with `.ident{name="self"}`. Zebra's `this.` parses as `.member` with `.object.* == .this`, so the resolver bails out.
-- **Workaround:** Use implicit-self form (`field_types = HashMap()`) in class cue/init bodies.
-
----
-
-### BUG-030: `.contains()` on param-of-class HashMap field emits List.contains
-- **Severity:** Medium
-- **Status:** Open
-- **Target:** Phase 17 — fix on Zig side, then port to selfhost
-- **Symptom:** `param.field.contains(key)` where `param` is typed as a class and `field` is `HashMap(K, V)` generates the List/array `in` idiom instead of `HashMap.contains(key)`.
-- **Workaround:** Add a wrapper method on the containing class (e.g. `def hasLocal(name) as bool; return scope.contains(name)`).
-
----
-
 ### BUG-079: Method chaining on struct-returning calls silently mis-compiles or is unnecessarily banned
 - **Severity:** Medium (ergonomics + correctness; blocks natural call-chaining style)
 - **Status:** Fixed — commits de0ec8e + 8c16fd9; auto-hoist in `genLocalVar`, `genReturn`, `genAssign` via `hoistCallChain`; expression-position (call args, compound expressions) remains open (BUG-027)
@@ -160,4 +143,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-22 — INFRA-001 added; BUG-006/035/037/046/075/076/077/078/080 moved to FixedBugs.md*
+*Last updated: 2026-04-23 — BUG-029/030 closed (fixed in selfhost, regression tests added); INFRA-001 added; BUG-006/035/037/046/075/076/077/078/080 moved to FixedBugs.md*

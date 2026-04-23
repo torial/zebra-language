@@ -5,6 +5,22 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-029: Class field init with non-int-valued HashMap defaults to i64 — FIXED
+- **Status:** Fixed in selfhost — resolved incidentally during selfhost implementation
+- **Was:** `this.field = HashMap()` on a field declared `HashMap(str, T)` for non-int `T` emitted `std.StringHashMap(i64).init(_allocator)` in the Zig-backend compiler. Root cause: Zig-backend `genAssign` resolved field types only for `.ident` targets or `.member` with `.ident{name="self"}`, bailing out for `this.` which parses as `.member { object: .this }`.
+- **Fix:** Selfhost `getAssignFieldType` uses `getMemberFieldName` which handles `Expr.member` generically (returns `m.member` for any member expression). Combined with `genCallWithTypeHint`, emits the correct Zig type.
+- **Regression test:** `test/hashmap_this_field_test.zbr`
+
+---
+
+### BUG-030: `.contains()` on param-of-class HashMap field emits List.contains — FIXED
+- **Status:** Fixed in selfhost — resolved incidentally during selfhost implementation
+- **Was:** `param.field.contains(key)` where `param` is a local of a class type and `field` is `HashMap(K,V)` generated incorrect contains dispatch in the Zig-backend compiler.
+- **Fix:** Selfhost `genCall` dispatches `.contains()` on all non-string receivers via `.contains(key)` — correct for Zig HashMap. The `getMemberFieldName`-based path handles chained member access.
+- **Regression test:** `test/hashmap_param_field_test.zbr`
+
+---
+
 ### BUG-001: Shared method calling shared method emits `self.` prefix — FIXED
 - **Status:** Fixed (prior session — TCO work fixed bare shared method calls)
 - Was: `testHelper()` inside a shared method generated `self.testHelper()`.

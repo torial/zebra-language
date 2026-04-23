@@ -77,6 +77,11 @@ smoke test/generic_invariant_test.zbr
 # Type-directed HashMap.set() → .put() rewrite; user-defined .set() must pass through unchanged.
 smoke test/hashmap_set_test.zbr
 
+# BUG-029: this.field = HashMap() with non-int value type must use field type as hint.
+smoke test/hashmap_this_field_test.zbr
+# BUG-030: param.field.contains(key) on HashMap must emit .contains(), not List idiom.
+smoke test/hashmap_param_field_test.zbr
+
 # BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
 smoke test/method_chain_test.zbr
 

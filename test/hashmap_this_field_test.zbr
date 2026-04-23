@@ -1,0 +1,27 @@
+# BUG-029 regression: this.field = HashMap() with non-int value type
+# Should emit std.StringHashMap(*Sym), not std.StringHashMap(i64)
+
+class Sym
+    var name: str
+
+    cue init(n: str)
+        name = n
+
+class Env
+    var vars: HashMap(str, Sym)
+
+    cue init()
+        this.vars = HashMap()
+
+    def define(k: str, v: Sym)
+        vars.set(k, v)
+
+    def lookup(k: str): Sym
+        return vars.get(k) to!
+
+def main()
+    var e = Env()
+    e.define("hello", Sym("world"))
+    var s = e.lookup("hello")
+    print s.name
+    print "ok"

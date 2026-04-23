@@ -1,0 +1,23 @@
+# BUG-030 regression: param.field.contains(key) on HashMap field
+# Should emit sc.vars.contains(name), not List-style contains
+
+class Scope
+    var vars: HashMap(str, int)
+
+    cue init()
+        vars = HashMap()
+
+    def define(k: str, v: int)
+        vars.set(k, v)
+
+class Checker
+    def hasVar(sc: Scope, name: str): bool
+        return sc.vars.contains(name)
+
+def main()
+    var sc = Scope()
+    sc.define("x", 1)
+    var chk = Checker()
+    print chk.hasVar(sc, "x")
+    print chk.hasVar(sc, "y")
+    print "ok"
