@@ -85,6 +85,12 @@ smoke test/hashmap_param_field_test.zbr
 # BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
 smoke test/method_chain_test.zbr
 
+# Named/default parameters: named args + reordering + default insertion.
+smoke test/named_default_test.zbr
+
+# Optional-unwrap: `if x as n` and `if x is C as n` binding forms.
+smoke test/if_unwrap_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

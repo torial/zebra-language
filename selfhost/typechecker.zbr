@@ -1042,13 +1042,24 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 var cap_t: Type_ = Type_.unknown_
                 if si.cond is Expr.type_check as tce
                     if tce.variant_name != nil
-                        var type_nm: str = "" + tce.type_name
-                        var var_nm: str = "" + tce.variant_name to!
+                        # Union-variant capture: look up payload type.
+                        var type_nm: str = tce.type_name
+                        var var_nm: str = tce.variant_name to!
                         var pt: Type_? = ctx.module_types.variantPayload(type_nm, var_nm)
                         if pt == nil
                             pt = ctx.dep_types.variantPayload(type_nm, var_nm)
                         if pt != nil
                             cap_t = pt to!
+                    else
+                        # Option A: `if x is T as n` -- subject is T?, bind inner T.
+                        var subj_t: Type_ = inferExpr(tce.expr, ctx)
+                        if subj_t is Type_.optional as inner
+                            cap_t = inner
+                else
+                    # Option B: `if x as n` -- condition is T?, bind inner T.
+                    var cond_t: Type_ = inferExpr(si.cond, ctx)
+                    if cond_t is Type_.optional as inner
+                        cap_t = inner
                 ctx.bind(si.is_capture to!, cap_t)
             walkStmts(si.then_stmts, ctx)
             for ei in si.else_ifs
@@ -1057,13 +1068,21 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     var ei_cap_t: Type_ = Type_.unknown_
                     if ei.cond is Expr.type_check as eice
                         if eice.variant_name != nil
-                            var e_type_nm: str = "" + eice.type_name
-                            var e_var_nm: str = "" + eice.variant_name to!
+                            var e_type_nm: str = eice.type_name
+                            var e_var_nm: str = eice.variant_name to!
                             var e_pt: Type_? = ctx.module_types.variantPayload(e_type_nm, e_var_nm)
                             if e_pt == nil
                                 e_pt = ctx.dep_types.variantPayload(e_type_nm, e_var_nm)
                             if e_pt != nil
                                 ei_cap_t = e_pt to!
+                        else
+                            var ei_subj_t: Type_ = inferExpr(eice.expr, ctx)
+                            if ei_subj_t is Type_.optional as ei_inner
+                                ei_cap_t = ei_inner
+                    else
+                        var ei_cond_t: Type_ = inferExpr(ei.cond, ctx)
+                        if ei_cond_t is Type_.optional as ei_inner
+                            ei_cap_t = ei_inner
                     ctx.bind(ei.is_capture to!, ei_cap_t)
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts != nil

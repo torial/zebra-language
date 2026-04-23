@@ -1630,3 +1630,149 @@ PASS 77 (+10), BOTH_FAIL 23, DIVERGE 45, MISMATCH 3
 - `string_format_test.zbr` — format specifier arguments (`{:08x}`, width/align) in string interpolation; different code path entirely
 - `named_args_infer_test.zbr` — uninitialized field defaults produce garbage values; named-arg/field-init bug
 - `terminal_test.zbr` — `Terminal.write` emits text when piped (selfhost) vs suppressed (Zig); stdlib behavioral difference
+
+---
+
+## Phase 23: Named/Default Parameter Codegen Parity (2026-04-23)
+
+### Goal
+
+Port named/default argument dispatch from the Zig backend (`src/CodeGen.zig` `genArgs`) to
+the selfhost codegen (`selfhost/codegen.zbr`). The Zig backend had this since early language
+development; the selfhost port had a gap: all args were emitted positionally, with named labels
+silently dropped and defaults never inserted.
+
+### What changed
+
+**`selfhost/codegen.zbr`:**
+
+- Added `var module_decls: List(Decl)` field to `Generator`. Threaded through `cue init` and
+  populated from `m.decls` in `generateModuleWith`.
+
+- Added `lookupFnParams(key: str): List(Param)?` — linear scan over `module_decls` for
+  top-level methods, class constructors, class methods, and class-nested namespaces.
+
+- Added `genArgListFull(args, params?)` — nil-guard delegating to `genArgListNamed` when params
+  are available, falling through to `genArgList` (plain positional) otherwise.
+
+- Added `genArgListNamed(args: List(Arg), ps: List(Param))` — full dispatch: for each param
+  in declaration order, try a named-arg match first, then the next positional arg, then the
+  default expression. Byte-identical to `genArgList` for purely positional calls with no defaults.
+
+- Added `genParamDefault(p: Param)` — extracted the default-emit block into a helper where
+  `p: Param` is a *named-type function parameter*. This triggers the selfhost's `genMethod`
+  to seed `opt_ptr_field_bindings` with `"p.default_"` (since `Param.default_: ^Expr?`),
+  enabling `.*` deref emission for `p.default_ to!`. Without this extraction, `p` would be a
+  for-loop variable and the seeding would not occur.
+
+- Updated the regular-call path in `genCall` to route through `lookupFnParams` + `genArgListFull`.
+
+**`test/named_default_test.zbr`:** New integration test covering all six named/default
+combinations — both defaults used; positional with one default; named in order; named reversed;
+positional; mixed positional+named reversed.
+
+**`tools/selfhost_smoke.sh`:** Added `named_default_test` smoke entry.
+
+### Scope and gaps
+
+`lookupFnParams` fires for `Expr.ident` callees only (direct name calls: top-level functions,
+bare same-class method calls that fall through to the regular-call path). It does **not** fire
+for member-call callees (`obj.method(name: val)`), which are handled by the pre-existing
+`methodParamsCsv`-based reordering in `genMemberCall` (lines 5560-5592). That path handles
+named args for class instance methods but does not insert defaults.
+
+Cross-module named args (`Mod.fn(name: val)`) and top-level namespace methods are not covered.
+
+### Key bug: `^Expr?` deref in for-loop variable
+
+The selfhost only emits `.*` after `.?` for `^T?` field access when the receiver binding is in
+`opt_ptr_field_bindings`. That set is seeded during `genMethod` parameter scanning for
+*named-type* parameters (`TypeRef.named`). A for-loop variable (`for p in ps`) is **not** a
+named-type parameter — it has no TypeRef annotation in the Zebra source — so `opt_ptr_field_bindings`
+was never seeded for it, and `p.default_ to!` emitted `p.default_.?` (missing `.*`).
+
+Fix: extract the body into `genParamDefault(p: Param)` where `p: Param` is an explicit
+named-type parameter. `genMethod` then seeds `"p.default_"` automatically.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      18/18 PASS
+Parity:     PASS 86, BOTH_FAIL 25, DIVERGE 46, MISMATCH 0
+```
+
+All 3 deferred MISMATCHes from Phase 22 resolved (including `named_args_infer_test.zbr`,
+which was fixed by field-initializer work in preceding commits).
+
+## Phase 24: Optional-Unwrap `as` Binding + `"" +` Cleanup (2026-04-23)
+
+### Goals
+
+1. **Fix 1 — Remove spurious `"" +` prefixes** from `selfhost/codegen.zbr` and
+   `selfhost/typechecker.zbr`. These were added as a workaround when string equality on
+   struct fields was believed to require a heap copy, but diagnostics confirmed the underlying
+   `std.mem.eql` path works correctly without the copy. Only pure comparison/lookup contexts
+   were cleaned; intentional storage-boundary copies (owned string sinks) were preserved.
+
+2. **Fix 2 — Optional-unwrap `as` binding** (two forms):
+   - **Option A**: `if x is ClassName as n` — subject of `is` must be `ClassName?`; emits
+     Zig `if (x) |n| { ... }` after unwrapping the `is`-expression's subject.
+   - **Option B**: `if x as n` — condition must be `T?`; emits Zig `if (x) |n| { ... }`.
+   Both forms work in `else if` chains. The existing union-variant capture
+   (`if x is Union.Variant as r`) is unchanged.
+
+   Note: keyword types (`int`, `str`, `char`) are **not** valid in option A's `is` position
+   because the parser parses the RHS of `is` as an expression, and keywords aren't valid
+   expression atoms. Option B is the correct form for primitive optionals.
+
+### Changes
+
+**`src/TypeChecker.zig`:**
+
+- Extended `isCaptureLookup` to handle the two new cases. When `cond` is a `type_check` node
+  with `variant_name == null` (option A), infers the subject expression's type and returns its
+  inner type if it is `?T`. When `cond` is not a `type_check` node at all (option B), infers
+  the condition's type and returns its inner type if it is `?T`.
+
+- In `checkStmt`, added `is_opt_capture` detection to skip `checkBoolExpr` when the condition
+  is an optional rather than a bool. Applied to both the main `if` condition and `else if`
+  conditions.
+
+**`src/CodeGen.zig`:**
+
+- Restructured the `is_capture` block in `genIf`. Detects whether the capture is a
+  union-variant check (existing path) vs. an optional-unwrap. For optional-unwraps, determines
+  the inner expression (`type_check.expr` for option A, the condition itself for option B) and
+  emits `if (inner) |cap| { ... }`. Same dispatch added for `else_if` entries with `is_capture`.
+
+**`selfhost/typechecker.zbr`:**
+
+- Extended `walkStmt` `on Stmt.if_ as si` arm to bind the capture variable's type for all
+  three cases: union-variant (unchanged), option A (infer subject, unwrap optional), option B
+  (infer condition, unwrap optional). Same logic added for `else_if` captures.
+
+- Removed 4 spurious `"" +` prefixes in `walkStmt`.
+
+**`selfhost/codegen.zbr`:**
+
+- Restructured `genIsCaptureThen` to split the `Expr.type_check` arm on `variant_name != nil`
+  (union) vs. nil (option A optional-unwrap). The `else` arm (previously an unreachable fallback)
+  now handles option B optional-unwrap. Both new paths emit `if (inner) |cap| {\n`.
+
+- Updated `genIf`'s `else_ifs` loop to check `ei.is_capture != nil`, dispatching through
+  `genIsCaptureThen` with a leading ` else ` prefix when set.
+
+- Removed 9 spurious `"" +` prefixes in comparison/lookup contexts.
+
+**`test/if_unwrap_test.zbr`:** New integration test covering `int?` unwrap present/absent,
+`else if` optional chain, `str?` direct unwrap, and option A `Wrapper?` struct unwrap.
+
+**`tools/selfhost_smoke.sh`:** Added `if_unwrap_test` smoke entry.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      19/19 PASS
+```

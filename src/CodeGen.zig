@@ -7095,68 +7095,105 @@ const Generator = struct {
         try g.writeIndent();
         // `if x is Union.variant |r|` — emit tag check + payload binding.
         if (s.is_capture) |cap| {
-            // cond must be type_check with variant_name set (x is Union.variant).
-            const tc_node = s.cond.type_check;
-            const variant = tc_node.variant_name orelse tc_node.type_name;
-            const union_nm = if (tc_node.variant_name != null) tc_node.type_name else "";
-            try g.w.writeAll("if (");
-            try g.genExpr(tc_node.expr);
-            try g.w.print(" == .{s}) {{\n", .{variant});
-            const pk = if (union_nm.len > 0)
-                g.unionPayloadKind(union_nm, variant)
-            else
-                PayloadKind.other;
-            const bg = g.indented();
-            try bg.writeIndent();
-            if (pk == .ref_payload) {
-                try bg.w.print("const {s}_ptr = ", .{cap});
-                try bg.genExpr(tc_node.expr);
-                try bg.w.print(".{s};\n", .{variant});
+            const is_union_check = s.cond.* == .type_check and s.cond.type_check.variant_name != null;
+            if (is_union_check) {
+                // `if x is Union.variant as r` — emit tag check + payload binding.
+                const tc_node = s.cond.type_check;
+                const variant = tc_node.variant_name orelse tc_node.type_name;
+                const union_nm = if (tc_node.variant_name != null) tc_node.type_name else "";
+                try g.w.writeAll("if (");
+                try g.genExpr(tc_node.expr);
+                try g.w.print(" == .{s}) {{\n", .{variant});
+                const pk = if (union_nm.len > 0)
+                    g.unionPayloadKind(union_nm, variant)
+                else
+                    PayloadKind.other;
+                const bg = g.indented();
                 try bg.writeIndent();
-                try bg.w.print("const {s} = {s}_ptr.*;\n", .{ cap, cap });
-            } else {
-                try bg.w.print("const {s} = ", .{cap});
-                try bg.genExpr(tc_node.expr);
-                try bg.w.print(".{s};\n", .{variant});
-            }
-            try bg.genStmts(s.then_body);
-            try g.writeIndent();
-            try g.w.writeAll("}");
-            for (s.else_ifs) |ei| {
-                if (ei.is_capture) |ei_cap| {
-                    const ei_tc = ei.cond.type_check;
-                    const ei_variant = ei_tc.variant_name orelse ei_tc.type_name;
-                    const ei_union = if (ei_tc.variant_name != null) ei_tc.type_name else "";
-                    try g.w.writeAll(" else if (");
-                    try g.genExpr(ei_tc.expr);
-                    try g.w.print(" == .{s}) {{\n", .{ei_variant});
-                    const ei_pk = if (ei_union.len > 0)
-                        g.unionPayloadKind(ei_union, ei_variant)
-                    else
-                        PayloadKind.other;
-                    const ei_bg = g.indented();
-                    try ei_bg.writeIndent();
-                    if (ei_pk == .ref_payload) {
-                        try ei_bg.w.print("const {s}_ptr = ", .{ei_cap});
-                        try ei_bg.genExpr(ei_tc.expr);
-                        try ei_bg.w.print(".{s};\n", .{ei_variant});
-                        try ei_bg.writeIndent();
-                        try ei_bg.w.print("const {s} = {s}_ptr.*;\n", .{ ei_cap, ei_cap });
-                    } else {
-                        try ei_bg.w.print("const {s} = ", .{ei_cap});
-                        try ei_bg.genExpr(ei_tc.expr);
-                        try ei_bg.w.print(".{s};\n", .{ei_variant});
-                    }
-                    try ei_bg.genStmts(ei.body);
-                    try g.writeIndent();
-                    try g.w.writeAll("}");
+                if (pk == .ref_payload) {
+                    try bg.w.print("const {s}_ptr = ", .{cap});
+                    try bg.genExpr(tc_node.expr);
+                    try bg.w.print(".{s};\n", .{variant});
+                    try bg.writeIndent();
+                    try bg.w.print("const {s} = {s}_ptr.*;\n", .{ cap, cap });
                 } else {
-                    try g.w.writeAll(" else if (");
-                    try g.genExpr(ei.cond);
-                    try g.w.writeAll(") {\n");
-                    try g.indented().genStmts(ei.body);
-                    try g.writeIndent();
-                    try g.w.writeAll("}");
+                    try bg.w.print("const {s} = ", .{cap});
+                    try bg.genExpr(tc_node.expr);
+                    try bg.w.print(".{s};\n", .{variant});
+                }
+                try bg.genStmts(s.then_body);
+                try g.writeIndent();
+                try g.w.writeAll("}");
+                for (s.else_ifs) |ei| {
+                    if (ei.is_capture) |ei_cap| {
+                        const ei_tc = ei.cond.type_check;
+                        const ei_variant = ei_tc.variant_name orelse ei_tc.type_name;
+                        const ei_union = if (ei_tc.variant_name != null) ei_tc.type_name else "";
+                        try g.w.writeAll(" else if (");
+                        try g.genExpr(ei_tc.expr);
+                        try g.w.print(" == .{s}) {{\n", .{ei_variant});
+                        const ei_pk = if (ei_union.len > 0)
+                            g.unionPayloadKind(ei_union, ei_variant)
+                        else
+                            PayloadKind.other;
+                        const ei_bg = g.indented();
+                        try ei_bg.writeIndent();
+                        if (ei_pk == .ref_payload) {
+                            try ei_bg.w.print("const {s}_ptr = ", .{ei_cap});
+                            try ei_bg.genExpr(ei_tc.expr);
+                            try ei_bg.w.print(".{s};\n", .{ei_variant});
+                            try ei_bg.writeIndent();
+                            try ei_bg.w.print("const {s} = {s}_ptr.*;\n", .{ ei_cap, ei_cap });
+                        } else {
+                            try ei_bg.w.print("const {s} = ", .{ei_cap});
+                            try ei_bg.genExpr(ei_tc.expr);
+                            try ei_bg.w.print(".{s};\n", .{ei_variant});
+                        }
+                        try ei_bg.genStmts(ei.body);
+                        try g.writeIndent();
+                        try g.w.writeAll("}");
+                    } else {
+                        try g.w.writeAll(" else if (");
+                        try g.genExpr(ei.cond);
+                        try g.w.writeAll(") {\n");
+                        try g.indented().genStmts(ei.body);
+                        try g.writeIndent();
+                        try g.w.writeAll("}");
+                    }
+                }
+            } else {
+                // Optional-unwrap: `if x as n` or `if x is T as n` — emit Zig optional capture.
+                // For the `is T` form the inner expression is the subject; for bare `as` it's cond.
+                const inner: *const Ast.Expr = if (s.cond.* == .type_check)
+                    s.cond.type_check.expr
+                else
+                    s.cond;
+                try g.w.writeAll("if (");
+                try g.genExpr(inner);
+                try g.w.print(") |{s}| {{\n", .{cap});
+                try g.indented().genStmts(s.then_body);
+                try g.writeIndent();
+                try g.w.writeAll("}");
+                for (s.else_ifs) |ei| {
+                    if (ei.is_capture) |ei_cap| {
+                        const ei_inner: *const Ast.Expr = if (ei.cond.* == .type_check)
+                            ei.cond.type_check.expr
+                        else
+                            ei.cond;
+                        try g.w.writeAll(" else if (");
+                        try g.genExpr(ei_inner);
+                        try g.w.print(") |{s}| {{\n", .{ei_cap});
+                        try g.indented().genStmts(ei.body);
+                        try g.writeIndent();
+                        try g.w.writeAll("}");
+                    } else {
+                        try g.w.writeAll(" else if (");
+                        try g.genExpr(ei.cond);
+                        try g.w.writeAll(") {\n");
+                        try g.indented().genStmts(ei.body);
+                        try g.writeIndent();
+                        try g.w.writeAll("}");
+                    }
                 }
             }
             if (s.else_body) |eb| {

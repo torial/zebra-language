@@ -1135,12 +1135,15 @@ const TypeChecker = struct {
     fn checkStmt(tc: TypeChecker, stmt: Ast.Stmt) anyerror!void {
         switch (stmt) {
             .if_      => |s| {
-                try tc.checkBoolExpr(s.cond);
+                // Optional-unwrap capture (`if x as n` or `if x is T as n`): cond is T?, not bool.
+                const is_opt_capture = s.is_capture != null and
+                    !(s.cond.* == .type_check and s.cond.type_check.variant_name != null);
+                if (!is_opt_capture) try tc.checkBoolExpr(s.cond);
                 // Nil narrowing: if `x != nil`, unwrap `x` inside then_body.
                 // After checkBoolExpr, expr_types has the type of `x` (should be .optional).
                 const narrow_then = nilNarrowedVarExpr(s.cond, true);
                 const narrow_else = nilNarrowedVarExpr(s.cond, false);
-                // is-capture narrowing: `if x is Union.Variant as m` → push m's payload type.
+                // is-capture narrowing: push binding type for capture (union payload or optional inner).
                 const if_cap_type: ?Type = if (s.is_capture != null)
                     try tc.isCaptureLookup(s.cond)
                 else
@@ -1157,7 +1160,9 @@ const TypeChecker = struct {
                 }
                 if (if_cap_type != null) _ = tc.narrowed_types.remove(s.is_capture.?);
                 for (s.else_ifs) |ei| {
-                    try tc.checkBoolExpr(ei.cond);
+                    const ei_is_opt_capture = ei.is_capture != null and
+                        !(ei.cond.* == .type_check and ei.cond.type_check.variant_name != null);
+                    if (!ei_is_opt_capture) try tc.checkBoolExpr(ei.cond);
                     const ei_cap_type: ?Type = if (ei.is_capture != null)
                         try tc.isCaptureLookup(ei.cond)
                     else
@@ -1519,11 +1524,28 @@ const TypeChecker = struct {
             try tc.emitMismatch(spanOf(e), t, .bool);
     }
 
-    /// For `if x is Union.Variant as m`, resolve the payload type for `m`.
-    /// Returns null when the condition is not a type-check, has no variant, or
-    /// the payload can't be resolved.  Uses the same 3-way lookup as the branch handler.
+    /// Resolve the binding type for an `if <cond> as <name>` capture.
+    /// Three cases:
+    ///   • `if x is Union.Variant as n` — variant_name set → union payload type
+    ///   • `if x is T as n`            — variant_name null, subject T? → T  (option A)
+    ///   • `if x as n`                 — cond is T? directly           → T  (option B)
+    /// Returns null when none of the above apply.
     fn isCaptureLookup(tc: TypeChecker, cond: *const Ast.Expr) anyerror!?Type {
-        if (cond.* != .type_check) return null;
+        if (cond.* == .type_check) {
+            const tc_node = cond.type_check;
+            // Option A: bare type annotation — no variant, subject must be optional.
+            if (tc_node.variant_name == null) {
+                const subj = try tc.inferExpr(tc_node.expr);
+                if (subj == .optional) return subj.optional.*;
+                return null;
+            }
+        }
+        if (cond.* != .type_check) {
+            // Option B: `if x as n` — condition itself must be optional.
+            const t = try tc.inferExpr(cond);
+            if (t == .optional) return t.optional.*;
+            return null;
+        }
         const tc_node = cond.type_check;
         const variant = tc_node.variant_name orelse return null;
         const subj_type = try tc.inferExpr(tc_node.expr);

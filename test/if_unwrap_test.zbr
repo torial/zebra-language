@@ -1,0 +1,55 @@
+struct Wrapper
+    var value: int
+    cue init(v: int)
+        this.value = v
+
+def tryParse(s: str): int?
+    if s == "42"
+        return 42
+    return nil
+
+def tryParseStr(s: str): str?
+    if s.len > 0
+        return s
+    return nil
+
+def tryWrap(s: str): Wrapper?
+    if s == "ok"
+        return Wrapper(99)
+    return nil
+
+def main()
+    var v1 = tryParse("42")
+    if v1 as n
+        print "got: " + n.toString()
+    else
+        print "none"
+    var v2 = tryParse("bad")
+    if v2 as n
+        print "got: " + n.toString()
+    else
+        print "none"
+    var a = tryParse("bad")
+    var b = tryParse("42")
+    if a as x
+        print "a: " + x.toString()
+    else if b as y
+        print "b: " + y.toString()
+    else
+        print "neither"
+    var s1 = tryParseStr("hello")
+    if s1 as ss
+        print "str: " + ss
+    if tryParseStr("") as ss
+        print "str: " + ss
+    else
+        print "empty"
+    var w1 = tryWrap("ok")
+    if w1 is Wrapper as w
+        print "wrap: " + w.value.toString()
+    var w2 = tryWrap("nope")
+    if w2 is Wrapper as w
+        print "wrap: " + w.value.toString()
+    else
+        print "no wrap"
+    print "ok"
