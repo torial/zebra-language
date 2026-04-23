@@ -657,7 +657,8 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     var reflect_classes = List(str)()
     for decl in m.decls
         if decl is Decl.class_ as rc
-            reflect_classes.add(rc.name)
+            if rc.type_params.count() == 0
+                reflect_classes.add(rc.name)
     if reflect_classes.count() > 0
         # Emit a wrapper struct so that reflect slices work with .items.len and .items[i]
         w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };\n")
@@ -1134,6 +1135,13 @@ struct Generator
             owner_invariants = invs
         return g
 
+    def withGeneric(n: DeclClass): Generator
+        var g = this except
+            is_generic       = true
+            owner_members    = n.members
+            owner_invariants = n.invariants
+        return g
+
     def withSelfName(name: str): Generator
         var g = this except
             self_name = name
@@ -1597,9 +1605,75 @@ struct Generator
         writeIndent()
         w.emit("};\n\n")
 
+    # ── genGenericClass ───────────────────────────────────────────────────────
+
+    def genGenericClass(n: DeclClass)
+        class_names.add(n.name)
+        writeIndent()
+        w.emit("pub fn ")
+        w.emit(n.name)
+        w.emit("(")
+        var i = 0
+        while i < n.type_params.count()
+            if i > 0
+                w.emit(", ")
+            w.emit("comptime ")
+            w.emit(n.type_params.at(i).name)
+            w.emit(": type")
+            i = i + 1
+        w.emit(") type {\n")
+        var fg = indented()
+        fg.writeIndent()
+        fg.w.emit("return struct {\n")
+        var ig0 = fg.indented()
+        var ig1 = ig0.withOwner(n.name)
+        var ig  = ig1.withGeneric(n)
+        ig.line("_type_tag: u64 = _ttag_" + n.name + ",")
+        for decl in n.members
+            if decl is Decl.var_ as fld
+                ig.genFieldDecl(fld)
+        var has_init = false
+        for decl in n.members
+            branch decl
+                on Decl.method as m
+                    ig.genMethod(m)
+                on Decl.init as ini
+                    ig.genInit(ini)
+                    has_init = true
+                else
+                    pass
+        if not has_init
+            ig.writeIndent()
+            ig.w.emit("pub fn init() @This() {\n")
+            var dig = ig.indented()
+            dig.writeIndent()
+            dig.w.emit("var self: @This() = undefined;\n")
+            dig.writeIndent()
+            dig.w.emit("self._type_tag = _ttag_")
+            dig.w.emit(n.name)
+            dig.w.emit(";\n")
+            dig.writeIndent()
+            dig.w.emit("return self;\n")
+            ig.writeIndent()
+            ig.w.emit("}\n\n")
+        if n.invariants.count() > 0
+            ig.genInvariantCheckFn()
+        fg.writeIndent()
+        fg.w.emit("};\n")
+        writeIndent()
+        w.emit("}\n\n")
+        w.emit("const _ttag_")
+        w.emit(n.name)
+        w.emit(": u64 = _zbr_hash(\"")
+        w.emit(n.name)
+        w.emit("\");\n\n")
+
     # ── genClass ──────────────────────────────────────────────────────────────
 
     def genClass(n: DeclClass)
+        if n.type_params.count() > 0
+            genGenericClass(n)
+            return
         class_names.add(n.name)
         writeIndent()
         w.emit("pub const ")
@@ -1826,14 +1900,20 @@ struct Generator
         w.emit(") ")
         if not is_struct_owner
             w.emit("*")
-        w.emit(owner)
+        if is_generic
+            w.emit("@This()")
+        else
+            w.emit(owner)
         w.emit(" {\n")
         var ig = indented()
         if not is_struct_owner
             # Class init: allocate on arena
             ig.writeIndent()
             ig.w.emit("const _self = _allocator.create(")
-            ig.w.emit(owner)
+            if is_generic
+                ig.w.emit("@This()")
+            else
+                ig.w.emit(owner)
             ig.w.emit(") catch @panic(\"OOM\");\n")
             ig.writeIndent()
             ig.w.emit("_self._type_tag = _zbr_hash(\"")
@@ -4506,10 +4586,36 @@ struct Generator
             genMemberCall(m, c.args)
             return
         # Generic stdlib ctor: List(T)(), HashMap(K,V)()
+        # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
             if inner.callee is Expr.ident as id
                 if id.name == "List" or id.name == "HashMap"
                     genGenericCtorCall(id.name, inner.args, c.args)
+                    return
+                if class_names.contains_(id.name)
+                    w.emit(id.name)
+                    w.emit("(")
+                    var gci = 0
+                    while gci < inner.args.count()
+                        if gci > 0
+                            w.emit(", ")
+                        var gca = inner.args.at(gci).value
+                        if gca is Expr.ident as gcid
+                            var gca_nm: str = "" + gcid.name
+                            if class_names.contains_(gca_nm)
+                                w.emit("*")
+                            w.emit(gca_nm)
+                        else
+                            genExpr(gca)
+                        gci += 1
+                    w.emit(").init(")
+                    var gci2 = 0
+                    while gci2 < c.args.count()
+                        if gci2 > 0
+                            w.emit(", ")
+                        genExpr(c.args.at(gci2).value)
+                        gci2 += 1
+                    w.emit(")")
                     return
         # Bare stdlib ctor: HashMap() or StrSet() without type params
         if c.callee is Expr.ident as id
@@ -4798,9 +4904,27 @@ struct Generator
                 w.emit("))")
             return
         if mname == "clear"
-            genExpr(m.object)
-            w.emit(".clearRetainingCapacity()")
-            return
+            var clr_obj_name = getMemberFieldName(m.object)
+            var is_list_like = true
+            if clr_obj_name != nil
+                var clr_nm = clr_obj_name to!
+                if list_locals.contains_(clr_nm)
+                    is_list_like = true
+                else if this.infer_ctx != nil
+                    var clr_t = inferExpr(m.object, this.infer_ctx to!)
+                    branch clr_t
+                        on Type_.string_builder
+                            is_list_like = true
+                        on Type_.str_slice
+                            is_list_like = true
+                        else
+                            is_list_like = false
+                else
+                    is_list_like = false
+            if is_list_like
+                genExpr(m.object)
+                w.emit(".clearRetainingCapacity()")
+                return
         if mname == "sort"
             w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
             genExpr(m.object)
