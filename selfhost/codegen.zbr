@@ -2568,7 +2568,12 @@ struct Generator
         w.emit(" ")
         w.emit(assignOpStr(a.op))
         w.emit(" ")
-        genExpr(a.value)
+        if a.op == AssignOp.assign and isStringField(a.target)
+            w.emit("_intern(")
+            genExpr(a.value)
+            w.emit(")")
+        else
+            genExpr(a.value)
         w.emit(";\n")
 
     def genHashMapAssign(target: Expr, value: Expr): bool

@@ -7049,7 +7049,24 @@ const Generator = struct {
                         try g.genStdlibInit(gtr);
                         break :emit true;
                     };
-                    if (!generic_emitted) try g.genExpr(s.value);
+                    // Auto-intern when assigning to a struct/class str field so the
+                    // stored slice outlives any enclosing arena_scope block.
+                    const rhs_is_field_str: bool = blk: {
+                        if (s.op != .assign) break :blk false;
+                        if (s.target.* != .member) break :blk false;
+                        const tc = g.tc orelse break :blk false;
+                        const lhs_t = tc.expr_types.get(s.target) orelse break :blk false;
+                        break :blk lhs_t == .string;
+                    };
+                    if (!generic_emitted) {
+                        if (rhs_is_field_str) {
+                            try g.w.writeAll("_intern(");
+                            try g.genExpr(s.value);
+                            try g.w.writeAll(")");
+                        } else {
+                            try g.genExpr(s.value);
+                        }
+                    }
                 }
             },
         }
