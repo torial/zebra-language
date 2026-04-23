@@ -1027,6 +1027,8 @@ struct Generator
     var list_str_locals      : StrSet   # list_locals whose element type is str
     var strset_locals        : StrSet   # local/param names with type StrSet
     var hashmap_locals       : StrSet   # local/param names with type HashMap(K,V)
+    var hashmap_str_key_locals: StrSet  # hashmap_locals whose key type is str/String
+    var hashmap_str_val_locals: StrSet  # hashmap_locals whose value type is str/String
     var ptr_field_bindings   : StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
     var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
@@ -1086,6 +1088,8 @@ struct Generator
         this.list_str_locals       = StrSet()
         this.strset_locals         = StrSet()
         this.hashmap_locals        = StrSet()
+        this.hashmap_str_key_locals = StrSet()
+        this.hashmap_str_val_locals = StrSet()
         this.ptr_field_bindings    = StrSet()
         this.opt_ptr_field_bindings = StrSet()
         this.for_loop_deref        = StrSet()
@@ -1224,6 +1228,12 @@ struct Generator
             for_loop_vars          = StrSet()
             ptr_field_bindings     = StrSet()
             opt_ptr_field_bindings = StrSet()
+            list_locals            = StrSet()
+            list_str_locals        = StrSet()
+            strset_locals          = StrSet()
+            hashmap_locals         = StrSet()
+            hashmap_str_key_locals = StrSet()
+            hashmap_str_val_locals = StrSet()
         return g
 
     # ── Output helpers ────────────────────────────────────────────────────────
@@ -1868,6 +1878,14 @@ struct Generator
                                             bg.list_str_locals.add(p2.name)
                             if gt.name == "HashMap"
                                 bg.hashmap_locals.add(p2.name)
+                                if gt.args.count() > 0
+                                    if gt.args.at(0) is TypeRef.named as hkp
+                                        if hkp.name == "str" or hkp.name == "String"
+                                            bg.hashmap_str_key_locals.add(p2.name)
+                                if gt.args.count() > 1
+                                    if gt.args.at(1) is TypeRef.named as hvp
+                                        if hvp.name == "str" or hvp.name == "String"
+                                            bg.hashmap_str_val_locals.add(p2.name)
                         on TypeRef.named as nt2
                             if nt2.name == "StrSet"
                                 bg.strset_locals.add(p2.name)
@@ -2264,6 +2282,14 @@ struct Generator
                                     list_str_locals.add(n.name)
                     if gtn.name == "HashMap"
                         hashmap_locals.add(n.name)
+                        if gtn.args.count() > 0
+                            if gtn.args.at(0) is TypeRef.named as hkn
+                                if hkn.name == "str" or hkn.name == "String"
+                                    hashmap_str_key_locals.add(n.name)
+                        if gtn.args.count() > 1
+                            if gtn.args.at(1) is TypeRef.named as hvn
+                                if hvn.name == "str" or hvn.name == "String"
+                                    hashmap_str_val_locals.add(n.name)
                 else
                     pass
         # Detect StrSet from init expression (StrSet() has no type annotation)
@@ -4941,10 +4967,26 @@ struct Generator
                 is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(this.module_types, this.dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
             if not is_strset and not is_class_ref
+                var add_item_is_str = false
+                if add_obj_name != nil
+                    var add_nm2 = add_obj_name to!
+                    if list_str_locals.contains_(add_nm2)
+                        add_item_is_str = true
+                    else
+                        var aftype = lookupFieldType(add_nm2)
+                        if aftype != nil
+                            if aftype to! is TypeRef.generic as agtr
+                                if agtr.name == "List" and agtr.args.count() > 0
+                                    add_item_is_str = isStringTypeRef(agtr.args.at(0))
                 genExpr(m.object)
                 w.emit(".append(_allocator, ")
                 if args.count() > 0
-                    genExpr(args.at(0).value)
+                    if add_item_is_str
+                        w.emit("(_allocator.dupe(u8, ")
+                        genExpr(args.at(0).value)
+                        w.emit(") catch @panic(\"OOM\"))")
+                    else
+                        genExpr(args.at(0).value)
                 w.emit(") catch @panic(\"OOM\")")
                 return
         if mname == "count"
@@ -5081,19 +5123,38 @@ struct Generator
             return
         # HashMap.set(key, value) → .put(key, value) — type-directed: only when receiver is a
         # confirmed HashMap.  Falls through to user-defined .set() when receiver is unknown.
+        # Key and value are duped when their type is str/String so the map owns the strings.
         if mname == "set"
             var set_recv = getMemberFieldName(m.object)
             if set_recv != nil
                 var sname = set_recv to!
                 if hashmap_locals.contains_(sname) or fieldIsHashMap(this.module_types, this.dep_types, sname)
+                    var key_is_str = hashmap_str_key_locals.contains_(sname)
+                    var val_is_str = hashmap_str_val_locals.contains_(sname)
+                    if not key_is_str or not val_is_str
+                        var ftype = lookupFieldType(sname)
+                        if ftype != nil
+                            if ftype to! is TypeRef.generic as gtr
+                                if gtr.name == "HashMap"
+                                    if gtr.args.count() > 0
+                                        key_is_str = isStringTypeRef(gtr.args.at(0))
+                                    if gtr.args.count() > 1
+                                        val_is_str = isStringTypeRef(gtr.args.at(1))
                     genExpr(m.object)
                     w.emit(".put(")
+                    var ai = 0
                     var fi = true
                     for a in args
                         if not fi
                             w.emit(", ")
                         fi = false
-                        genExpr(a.value)
+                        if (ai == 0 and key_is_str) or (ai == 1 and val_is_str)
+                            w.emit("(_allocator.dupe(u8, ")
+                            genExpr(a.value)
+                            w.emit(") catch @panic(\"OOM\"))")
+                        else
+                            genExpr(a.value)
+                        ai += 1
                     w.emit(") catch @panic(\"OOM\")")
                     return
         if mname == "get"
@@ -5120,15 +5181,38 @@ struct Generator
             w.emit(") orelse undefined)")
             return
         if mname == "put"
-            # HashMap.put(key, value) — allocator stored internally
+            # HashMap.put(key, value) — same dupe logic as .set above.
+            var put_recv = getMemberFieldName(m.object)
+            var put_key_is_str = false
+            var put_val_is_str = false
+            if put_recv != nil
+                var pname = put_recv to!
+                put_key_is_str = hashmap_str_key_locals.contains_(pname)
+                put_val_is_str = hashmap_str_val_locals.contains_(pname)
+                if not put_key_is_str or not put_val_is_str
+                    var pftype = lookupFieldType(pname)
+                    if pftype != nil
+                        if pftype to! is TypeRef.generic as pgtr
+                            if pgtr.name == "HashMap"
+                                if pgtr.args.count() > 0
+                                    put_key_is_str = isStringTypeRef(pgtr.args.at(0))
+                                if pgtr.args.count() > 1
+                                    put_val_is_str = isStringTypeRef(pgtr.args.at(1))
             genExpr(m.object)
             w.emit(".put(")
-            var fi = true
+            var pai = 0
+            var pfi = true
             for a in args
-                if not fi
+                if not pfi
                     w.emit(", ")
-                fi = false
-                genExpr(a.value)
+                pfi = false
+                if (pai == 0 and put_key_is_str) or (pai == 1 and put_val_is_str)
+                    w.emit("(_allocator.dupe(u8, ")
+                    genExpr(a.value)
+                    w.emit(") catch @panic(\"OOM\"))")
+                else
+                    genExpr(a.value)
+                pai += 1
             w.emit(") catch @panic(\"OOM\")")
             return
         if mname == "entries"

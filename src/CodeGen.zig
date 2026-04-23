@@ -4630,11 +4630,13 @@ const Generator = struct {
         switch (tr) {
             .generic => |gtr| {
                 if (std.mem.eql(u8, gtr.name, "List")) {
-                    return g.genListMethod(object, method, args);
+                    const item_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
+                    return g.genListMethod(object, item_is_str, method, args);
                 }
                 if (std.mem.eql(u8, gtr.name, "HashMap")) {
                     const key_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
-                    return g.genHashMapMethod(object, key_is_str, method, args);
+                    const val_is_str = gtr.args.len >= 2 and isStringTypeRef(gtr.args[1]);
+                    return g.genHashMapMethod(object, key_is_str, val_is_str, method, args);
                 }
             },
             .named => |n| {
@@ -4682,7 +4684,7 @@ const Generator = struct {
                     .{ "any", {} }, .{ "all", {} },
                 });
                 if (list_methods.get(method) != null) {
-                    return g.genListMethod(object, method, args);
+                    return g.genListMethod(object, false, method, args);
                 }
             },
         }
@@ -6255,12 +6257,21 @@ const Generator = struct {
 
     // ── List methods ──────────────────────────────────────────────────────────
 
-    fn genListMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+    fn genListMethod(g: Generator, obj: *const Ast.Expr, item_is_str: bool, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "add")) {
             // list.add(x) → list.append(_allocator, x) catch unreachable  (Zig 0.15)
+            // For List(str), dupe the item so the list owns it.
             try g.genExpr(obj);
             try g.w.writeAll(".append(_allocator, ");
-            if (args.len > 0) try g.genExpr(args[0].value);
+            if (args.len > 0) {
+                if (item_is_str) {
+                    try g.w.writeAll("(_allocator.dupe(u8, ");
+                    try g.genExpr(args[0].value);
+                    try g.w.writeAll(") catch @panic(\"OOM\"))");
+                } else {
+                    try g.genExpr(args[0].value);
+                }
+            }
             try g.w.writeAll(") catch unreachable");
             return true;
         }
@@ -6353,16 +6364,16 @@ const Generator = struct {
 
     // ── HashMap methods ───────────────────────────────────────────────────────
 
-    fn genHashMapMethod(g: Generator, obj: *const Ast.Expr, key_is_str: bool, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+    fn genHashMapMethod(g: Generator, obj: *const Ast.Expr, key_is_str: bool, val_is_str: bool, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "set") or std.mem.eql(u8, method, "put")) {
             // HashMap.set(k, v) / HashMap.put(k, v) — both spellings accepted; Zig uses put().
-            // For string-keyed maps, dupe the key so the map owns it (caller's string
-            // may be freed by defer _allocator.free after this call).
+            // Dupe key and/or value when they are strings so the map owns them.
             try g.genExpr(obj);
             try g.w.writeAll(".put(");
             for (args, 0..) |a, i| {
                 if (i > 0) try g.w.writeAll(", ");
-                if (i == 0 and key_is_str) {
+                const need_dupe = (i == 0 and key_is_str) or (i == 1 and val_is_str);
+                if (need_dupe) {
                     try g.w.writeAll("(_allocator.dupe(u8, ");
                     try g.genExpr(a.value);
                     try g.w.writeAll(") catch @panic(\"OOM\"))");
@@ -9757,10 +9768,10 @@ const Generator = struct {
                     .http_response => if (try g.genHttpResponseMethod(mem.object, mem.member, e.args)) return,
                     .csv_table     => if (try g.genCsvMethod(mem.object, mem.member, e.args)) return,
                     .csv_writer    => if (try g.genCsvWriterMethod(mem.object, mem.member, e.args)) return,
-                    .csv_row       => if (try g.genListMethod(mem.object, mem.member, e.args)) return,
+                    .csv_row       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     .arg_result    => if (try g.genArgResultMethod(mem.object, mem.member, e.args)) return,
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
-                    .unknown       => if (try g.genListMethod(mem.object, mem.member, e.args)) return,
+                    .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     else           => {},
                 }
             }
