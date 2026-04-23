@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1553,7 +1562,7 @@ pub const PUnionDecl = struct {
     pub fn init(name: []const u8, variants: std.ArrayList(PUnionVariant)) PUnionDecl {
         var _self: PUnionDecl = undefined;
 // zbr:selfhost/Parser.zbr:100
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:101
             _self.variants = variants;
         return _self;
@@ -1567,9 +1576,9 @@ pub const PUnionVariant = struct {
     pub fn init(name: []const u8, type_name: []const u8) PUnionVariant {
         var _self: PUnionVariant = undefined;
 // zbr:selfhost/Parser.zbr:107
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:108
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
         return _self;
     }
 
@@ -1582,11 +1591,11 @@ pub const PSig = struct {
     pub fn init(name: []const u8, params: std.ArrayList(PParam), return_type: []const u8) PSig {
         var _self: PSig = undefined;
 // zbr:selfhost/Parser.zbr:115
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:116
             _self.params = params;
 // zbr:selfhost/Parser.zbr:117
-            _self.return_type = return_type;
+            _self.return_type = _intern(return_type);
         return _self;
     }
 
@@ -1622,7 +1631,7 @@ pub const PBranchOn = struct {
 // zbr:selfhost/Parser.zbr:136
             _self.patterns = patterns;
 // zbr:selfhost/Parser.zbr:137
-            _self.binding = binding;
+            _self.binding = _intern(binding);
 // zbr:selfhost/Parser.zbr:138
             _self.guard_cond = guard_cond;
 // zbr:selfhost/Parser.zbr:139
@@ -1663,7 +1672,7 @@ pub const PExceptField = struct {
     pub fn init(name: []const u8, value: std.ArrayList(PNode)) PExceptField {
         var _self: PExceptField = undefined;
 // zbr:selfhost/Parser.zbr:157
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:158
             _self.value = value;
         return _self;
@@ -1693,7 +1702,7 @@ pub const PLambda = struct {
 // zbr:selfhost/Parser.zbr:172
             _self.params = params;
 // zbr:selfhost/Parser.zbr:173
-            _self.return_type = return_type;
+            _self.return_type = _intern(return_type);
 // zbr:selfhost/Parser.zbr:174
             _self.captures = captures;
 // zbr:selfhost/Parser.zbr:175
@@ -1713,9 +1722,9 @@ pub const PCaptureVar = struct {
     pub fn init(name: []const u8, type_name: []const u8, init_expr: std.ArrayList(PNode), is_const: bool) PCaptureVar {
         var _self: PCaptureVar = undefined;
 // zbr:selfhost/Parser.zbr:184
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:185
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:186
             _self.init_expr = init_expr;
 // zbr:selfhost/Parser.zbr:187
@@ -1731,7 +1740,7 @@ pub const PUse = struct {
     pub fn init(path: []const u8, exposed: std.ArrayList([]const u8)) PUse {
         var _self: PUse = undefined;
 // zbr:selfhost/Parser.zbr:193
-            _self.path = path;
+            _self.path = _intern(path);
 // zbr:selfhost/Parser.zbr:194
             _self.exposed = exposed;
         return _self;
@@ -1756,7 +1765,7 @@ pub const PNamespace = struct {
     pub fn init(name: []const u8, decls: std.ArrayList(PNode)) PNamespace {
         var _self: PNamespace = undefined;
 // zbr:selfhost/Parser.zbr:205
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:206
             _self.decls = decls;
         return _self;
@@ -1771,9 +1780,9 @@ pub const PParam = struct {
     pub fn init(name: []const u8, type_name: []const u8, default_expr: std.ArrayList(PNode)) PParam {
         var _self: PParam = undefined;
 // zbr:selfhost/Parser.zbr:213
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:214
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:215
             _self.default_expr = default_expr;
         return _self;
@@ -1790,7 +1799,7 @@ pub const PClass = struct {
     pub fn init(name: []const u8, type_params: std.ArrayList([]const u8), ifaces: std.ArrayList([]const u8), members: std.ArrayList(PNode), invs: std.ArrayList(PNode)) PClass {
         var _self: PClass = undefined;
 // zbr:selfhost/Parser.zbr:224
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:225
             _self.type_params = type_params;
 // zbr:selfhost/Parser.zbr:226
@@ -1810,7 +1819,7 @@ pub const PExtend = struct {
     pub fn init(target_name: []const u8, members: std.ArrayList(PNode)) PExtend {
         var _self: PExtend = undefined;
 // zbr:selfhost/Parser.zbr:234
-            _self.target_name = target_name;
+            _self.target_name = _intern(target_name);
 // zbr:selfhost/Parser.zbr:235
             _self.members = members;
         return _self;
@@ -1824,7 +1833,7 @@ pub const PEnum = struct {
     pub fn init(name: []const u8, variants: std.ArrayList([]const u8)) PEnum {
         var _self: PEnum = undefined;
 // zbr:selfhost/Parser.zbr:241
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:242
             _self.variants = variants;
         return _self;
@@ -1841,9 +1850,9 @@ pub const PField = struct {
     pub fn init(name: []const u8, type_name: []const u8, is_const: bool, is_shared: bool, init_expr: std.ArrayList(PNode)) PField {
         var _self: PField = undefined;
 // zbr:selfhost/Parser.zbr:251
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:252
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:253
             _self.is_const = is_const;
 // zbr:selfhost/Parser.zbr:254
@@ -1865,7 +1874,7 @@ pub const PMethod = struct {
     pub fn init(name: []const u8, is_shared: bool, throws_: bool, params: std.ArrayList(PParam), return_type: []const u8, stmts: std.ArrayList(PNode)) PMethod {
         var _self: PMethod = undefined;
 // zbr:selfhost/Parser.zbr:265
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:266
             _self.is_shared = is_shared;
 // zbr:selfhost/Parser.zbr:267
@@ -1873,7 +1882,7 @@ pub const PMethod = struct {
 // zbr:selfhost/Parser.zbr:268
             _self.params = params;
 // zbr:selfhost/Parser.zbr:269
-            _self.return_type = return_type;
+            _self.return_type = _intern(return_type);
 // zbr:selfhost/Parser.zbr:270
             _self.stmts = stmts;
         return _self;
@@ -2055,7 +2064,7 @@ pub const PForNum = struct {
     pub fn init(var_name: []const u8, start: std.ArrayList(PNode), stop_: std.ArrayList(PNode), step: std.ArrayList(PNode), stmts: std.ArrayList(PNode), line: i64) PForNum {
         var _self: PForNum = undefined;
 // zbr:selfhost/Parser.zbr:366
-            _self.var_name = var_name;
+            _self.var_name = _intern(var_name);
 // zbr:selfhost/Parser.zbr:367
             _self.start = start;
 // zbr:selfhost/Parser.zbr:368
@@ -2080,11 +2089,11 @@ pub const PVar = struct {
     pub fn init(name: []const u8, is_const: bool, type_name: []const u8, init_expr: std.ArrayList(PNode), line: i64) PVar {
         var _self: PVar = undefined;
 // zbr:selfhost/Parser.zbr:380
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:381
             _self.is_const = is_const;
 // zbr:selfhost/Parser.zbr:382
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:383
             _self.init_expr = init_expr;
 // zbr:selfhost/Parser.zbr:384
@@ -2122,7 +2131,7 @@ pub const PAssign = struct {
     pub fn init(op: []const u8, target: std.ArrayList(PNode), value: std.ArrayList(PNode), line: i64) PAssign {
         var _self: PAssign = undefined;
 // zbr:selfhost/Parser.zbr:403
-            _self.op = op;
+            _self.op = _intern(op);
 // zbr:selfhost/Parser.zbr:404
             _self.target = target;
 // zbr:selfhost/Parser.zbr:405
@@ -2175,7 +2184,7 @@ pub const PTryCatch = struct {
 // zbr:selfhost/Parser.zbr:430
             _self.body_stmts = body_stmts;
 // zbr:selfhost/Parser.zbr:431
-            _self.catch_binding = catch_binding;
+            _self.catch_binding = _intern(catch_binding);
 // zbr:selfhost/Parser.zbr:432
             _self.catch_stmts = catch_stmts;
 // zbr:selfhost/Parser.zbr:433
@@ -2193,7 +2202,7 @@ pub const PMember = struct {
 // zbr:selfhost/Parser.zbr:439
             _self.base = base;
 // zbr:selfhost/Parser.zbr:440
-            _self.member = member;
+            _self.member = _intern(member);
         return _self;
     }
 
@@ -2219,7 +2228,7 @@ pub const PNamedArg = struct {
     pub fn init(name: []const u8, value: std.ArrayList(PNode)) PNamedArg {
         var _self: PNamedArg = undefined;
 // zbr:selfhost/Parser.zbr:453
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:454
             _self.value = value;
         return _self;
@@ -2265,7 +2274,7 @@ pub const PBinary = struct {
     pub fn init(op: []const u8, left: std.ArrayList(PNode), right: std.ArrayList(PNode)) PBinary {
         var _self: PBinary = undefined;
 // zbr:selfhost/Parser.zbr:477
-            _self.op = op;
+            _self.op = _intern(op);
 // zbr:selfhost/Parser.zbr:478
             _self.left = left;
 // zbr:selfhost/Parser.zbr:479
@@ -2281,7 +2290,7 @@ pub const PUnary = struct {
     pub fn init(op: []const u8, operand: std.ArrayList(PNode)) PUnary {
         var _self: PUnary = undefined;
 // zbr:selfhost/Parser.zbr:485
-            _self.op = op;
+            _self.op = _intern(op);
 // zbr:selfhost/Parser.zbr:486
             _self.operand = operand;
         return _self;
@@ -2783,7 +2792,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:753
                         arg = _str_concat(arg, "?", _allocator);
                     }
-                    args.append(_allocator, arg) catch @panic("OOM");
+                    args.append(_allocator, _intern(arg)) catch @panic("OOM");
                 }
             }
             try self.expectText(")");

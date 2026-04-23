@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1531,7 +1540,7 @@ const ElseIf = ast.ElseIf;
 const CatchClause = ast.CatchClause;
 pub fn internString(s: []const u8) []const u8 {
 // zbr:selfhost/typechecker.zbr:31
-    return _str_concat("", s, _allocator);
+    return s;
 }
 
 pub const CrossModuleType = struct {
@@ -1540,9 +1549,9 @@ pub const CrossModuleType = struct {
     pub fn init(module: []const u8, type_name: []const u8) CrossModuleType {
         var _self: CrossModuleType = undefined;
 // zbr:selfhost/typechecker.zbr:43
-            _self.module = internString(module);
+            _self.module = _intern(internString(module));
 // zbr:selfhost/typechecker.zbr:44
-            _self.type_name = internString(type_name);
+            _self.type_name = _intern(internString(type_name));
         return _self;
     }
 
@@ -1581,7 +1590,7 @@ pub const ClassTypes = struct {
         const _self = _allocator.create(ClassTypes) catch @panic("OOM");
         _self._type_tag = _zbr_hash("ClassTypes");
 // zbr:selfhost/typechecker.zbr:112
-            _self.name = internString(name);
+            _self.name = _intern(internString(name));
 // zbr:selfhost/typechecker.zbr:113
             _self.field_types = std.StringHashMap(Type_).init(_allocator);
 // zbr:selfhost/typechecker.zbr:114
@@ -1594,15 +1603,15 @@ pub const ClassTypes = struct {
     }
 
     pub fn setField(self: *ClassTypes, field_name: []const u8, t: Type_) void {
-        self.field_types.put(internString(field_name), t) catch @panic("OOM");
+        self.field_types.put(_intern(internString(field_name)), t) catch @panic("OOM");
     }
 
     pub fn setMethodReturn(self: *ClassTypes, method_name: []const u8, t: Type_) void {
-        self.method_returns.put(internString(method_name), t) catch @panic("OOM");
+        self.method_returns.put(_intern(internString(method_name)), t) catch @panic("OOM");
     }
 
     pub fn setMethodParams(self: *ClassTypes, method_name: []const u8, params_csv: []const u8) void {
-        self.method_params.put(internString(method_name), internString(params_csv)) catch @panic("OOM");
+        self.method_params.put(_intern(internString(method_name)), _intern(internString(params_csv))) catch @panic("OOM");
     }
 
     pub fn addCtorParam(self: *ClassTypes, t: Type_) void {
@@ -1698,11 +1707,11 @@ pub const ModuleTypes = struct {
     }
 
     pub fn addClass(self: *ModuleTypes, c: *ClassTypes) void {
-        self.classes.put(c.name, c) catch @panic("OOM");
+        self.classes.put(_intern(c.name), c) catch @panic("OOM");
     }
 
     pub fn addStrSetField(self: *ModuleTypes, field_name: []const u8) void {
-        self.strset_field_names.put(internString(field_name), true) catch @panic("OOM");
+        self.strset_field_names.put(_intern(internString(field_name)), true) catch @panic("OOM");
     }
 
     pub fn hasStrSetField(self: *ModuleTypes, field_name: []const u8) bool {
@@ -1711,7 +1720,7 @@ pub const ModuleTypes = struct {
     }
 
     pub fn addHashMapField(self: *ModuleTypes, field_name: []const u8) void {
-        self.hashmap_field_names.put(internString(field_name), true) catch @panic("OOM");
+        self.hashmap_field_names.put(_intern(internString(field_name)), true) catch @panic("OOM");
     }
 
     pub fn hasHashMapField(self: *ModuleTypes, field_name: []const u8) bool {
@@ -1720,7 +1729,7 @@ pub const ModuleTypes = struct {
     }
 
     pub fn addUnion(self: *ModuleTypes, name: []const u8) void {
-        self.union_names.put(internString(name), true) catch @panic("OOM");
+        self.union_names.put(_intern(internString(name)), true) catch @panic("OOM");
     }
 
     pub fn hasUnion(self: *ModuleTypes, name: []const u8) bool {
@@ -1731,11 +1740,11 @@ pub const ModuleTypes = struct {
     pub fn addVariantPayload(self: *ModuleTypes, union_name: []const u8, variant_name: []const u8, t: Type_) void {
 // zbr:selfhost/typechecker.zbr:224
         const key: []const u8 = _str_concat(_str_concat(union_name, ".", _allocator), variant_name, _allocator);
-        self.variant_payloads.put(key, t) catch @panic("OOM");
+        self.variant_payloads.put(_intern(key), t) catch @panic("OOM");
 // zbr:selfhost/typechecker.zbr:226
         switch (t) {
             .ref_to => {
-                self.boxed_variant_keys.append(_allocator, key) catch @panic("OOM");
+                self.boxed_variant_keys.append(_allocator, _intern(key)) catch @panic("OOM");
             },
             else => {
                 // pass
@@ -1953,131 +1962,131 @@ pub fn typeFromRef(tr: TypeRef) Type_ {
 // zbr:selfhost/typechecker.zbr:335
     switch (tr) {
         .named => |n| {
-// zbr:selfhost/typechecker.zbr:345
-            return typeFromName(_str_concat("", n.name, _allocator));
+// zbr:selfhost/typechecker.zbr:337
+            return typeFromName(n.name);
         },
         .nilable => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:347
+// zbr:selfhost/typechecker.zbr:339
             return Type_{ .optional = blk_box_1: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = typeFromRef(inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
         },
         .ref_to => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:349
+// zbr:selfhost/typechecker.zbr:341
             return Type_{ .ref_to = blk_box_2: { const _bv: std.meta.Child(@FieldType(Type_, "ref_to")) = typeFromRef(inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
         },
         .void_ => |_| {
-// zbr:selfhost/typechecker.zbr:351
+// zbr:selfhost/typechecker.zbr:343
             return Type_.void_;
         },
         .generic => |g| {
-// zbr:selfhost/typechecker.zbr:354
-            const gname: []const u8 = _str_concat("", g.name, _allocator);
-// zbr:selfhost/typechecker.zbr:355
+// zbr:selfhost/typechecker.zbr:346
+            const gname: []const u8 = g.name;
+// zbr:selfhost/typechecker.zbr:347
             if ((std.mem.eql(u8, gname, "List") and (@as(i64, @intCast(g.args.items.len)) == 1))) {
-// zbr:selfhost/typechecker.zbr:356
+// zbr:selfhost/typechecker.zbr:348
                 const arg_t: Type_ = typeFromRef(g.args.items[@intCast(0)]);
-// zbr:selfhost/typechecker.zbr:357
+// zbr:selfhost/typechecker.zbr:349
                 if ((arg_t == .string_)) {
-// zbr:selfhost/typechecker.zbr:358
+// zbr:selfhost/typechecker.zbr:350
                     return Type_.str_slice;
                 }
             }
-// zbr:selfhost/typechecker.zbr:360
+// zbr:selfhost/typechecker.zbr:352
             if ((std.mem.eql(u8, gname, "HashMap") and (@as(i64, @intCast(g.args.items.len)) == 2))) {
-// zbr:selfhost/typechecker.zbr:361
+// zbr:selfhost/typechecker.zbr:353
                 const val_t: Type_ = typeFromRef(g.args.items[@intCast(1)]);
-// zbr:selfhost/typechecker.zbr:362
+// zbr:selfhost/typechecker.zbr:354
                 if ((val_t == .string_)) {
-// zbr:selfhost/typechecker.zbr:363
+// zbr:selfhost/typechecker.zbr:355
                     return Type_.str_slice;
                 }
             }
-// zbr:selfhost/typechecker.zbr:364
+// zbr:selfhost/typechecker.zbr:356
             return Type_.unknown_;
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:367
+// zbr:selfhost/typechecker.zbr:359
             return Type_.unknown_;
         },
     }
 }
 
 pub fn isStrSetOrWrapped(t: Type_) bool {
-// zbr:selfhost/typechecker.zbr:377
+// zbr:selfhost/typechecker.zbr:369
     switch (t) {
         .str_set => |_| {
-// zbr:selfhost/typechecker.zbr:379
+// zbr:selfhost/typechecker.zbr:371
             return true;
         },
         .optional => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:381
+// zbr:selfhost/typechecker.zbr:373
             return isStrSetOrWrapped(inner);
         },
         .ref_to => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:383
+// zbr:selfhost/typechecker.zbr:375
             return isStrSetOrWrapped(inner);
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:385
+// zbr:selfhost/typechecker.zbr:377
             return false;
         },
     }
 }
 
 pub fn isHashMapTypeRef(tr: TypeRef) bool {
-// zbr:selfhost/typechecker.zbr:391
+// zbr:selfhost/typechecker.zbr:383
     switch (tr) {
         .generic => |gtr| {
-// zbr:selfhost/typechecker.zbr:393
+// zbr:selfhost/typechecker.zbr:385
             return std.mem.eql(u8, gtr.name, "HashMap");
         },
         .nilable => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:395
+// zbr:selfhost/typechecker.zbr:387
             return isHashMapTypeRef(inner);
         },
         .ref_to => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/typechecker.zbr:397
+// zbr:selfhost/typechecker.zbr:389
             return isHashMapTypeRef(inner);
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:399
+// zbr:selfhost/typechecker.zbr:391
             return false;
         },
     }
 }
 
 pub fn addClassMembers(mt: *ModuleTypes, ct: *ClassTypes, members: std.ArrayList(Decl)) void {
-// zbr:selfhost/typechecker.zbr:402
+// zbr:selfhost/typechecker.zbr:394
     for (members.items) |member| {
-// zbr:selfhost/typechecker.zbr:403
+// zbr:selfhost/typechecker.zbr:395
         switch (member) {
             .var_ => |_ptr_v| {
                 const v = _ptr_v.*;
-// zbr:selfhost/typechecker.zbr:405
+// zbr:selfhost/typechecker.zbr:397
                 if ((v.type_ != null)) {
-// zbr:selfhost/typechecker.zbr:406
+// zbr:selfhost/typechecker.zbr:398
                     const ft: Type_ = typeFromRef(v.type_.?);
-                    ct.setField(_str_concat("", v.name, _allocator), ft);
-// zbr:selfhost/typechecker.zbr:408
+                    ct.setField(v.name, ft);
+// zbr:selfhost/typechecker.zbr:400
                     if (isStrSetOrWrapped(ft)) {
-                        mt.addStrSetField(_str_concat("", v.name, _allocator));
+                        mt.addStrSetField(v.name);
                     }
-// zbr:selfhost/typechecker.zbr:410
+// zbr:selfhost/typechecker.zbr:402
                     if (isHashMapTypeRef(v.type_.?)) {
-                        mt.addHashMapField(_str_concat("", v.name, _allocator));
+                        mt.addHashMapField(v.name);
                     }
-// zbr:selfhost/typechecker.zbr:414
+// zbr:selfhost/typechecker.zbr:406
                     if (v.type_.? == .ref_to) {
                         const refInner_ptr = v.type_.?.ref_to;
                         const refInner = refInner_ptr.*;
-// zbr:selfhost/typechecker.zbr:415
-                        const key: []const u8 = _str_concat(_str_concat(ct.name, ".", _allocator), _str_concat("", v.name, _allocator), _allocator);
-// zbr:selfhost/typechecker.zbr:416
+// zbr:selfhost/typechecker.zbr:407
+                        const key: []const u8 = _str_concat(_str_concat(ct.name, ".", _allocator), v.name, _allocator);
+// zbr:selfhost/typechecker.zbr:408
                         if ((refInner == .nilable)) {
                             mt.opt_ref_field_keys.append(_allocator, key) catch @panic("OOM");
                         } else {
@@ -2085,47 +2094,47 @@ pub fn addClassMembers(mt: *ModuleTypes, ct: *ClassTypes, members: std.ArrayList
                         }
                     }
                 } else {
-                    ct.setField(_str_concat("", v.name, _allocator), Type_.unknown_);
+                    ct.setField(v.name, Type_.unknown_);
                 }
             },
             .method => |_ptr_m| {
                 const m = _ptr_m.*;
-// zbr:selfhost/typechecker.zbr:423
+// zbr:selfhost/typechecker.zbr:415
                 if ((m.return_type != null)) {
-                    ct.setMethodReturn(_str_concat("", m.name, _allocator), typeFromRef(m.return_type.?));
+                    ct.setMethodReturn(m.name, typeFromRef(m.return_type.?));
                 } else {
-                    ct.setMethodReturn(_str_concat("", m.name, _allocator), Type_.void_);
+                    ct.setMethodReturn(m.name, Type_.void_);
                 }
-// zbr:selfhost/typechecker.zbr:428
+// zbr:selfhost/typechecker.zbr:420
                 var pcsv: []const u8 = "";
-// zbr:selfhost/typechecker.zbr:429
+// zbr:selfhost/typechecker.zbr:421
                 var pi: i64 = 0;
-// zbr:selfhost/typechecker.zbr:430
+// zbr:selfhost/typechecker.zbr:422
                 while (_zebra_lt(pi, @as(i64, @intCast(m.params.items.len)))) {
-// zbr:selfhost/typechecker.zbr:431
+// zbr:selfhost/typechecker.zbr:423
                     const p = m.params.items[@intCast(pi)];
-// zbr:selfhost/typechecker.zbr:432
+// zbr:selfhost/typechecker.zbr:424
                     if (_zebra_gt(pi, 0)) {
-// zbr:selfhost/typechecker.zbr:433
+// zbr:selfhost/typechecker.zbr:425
                         pcsv = _str_concat(pcsv, ",", _allocator);
                     }
-// zbr:selfhost/typechecker.zbr:434
-                    pcsv = _str_concat(pcsv, _str_concat("", p.name, _allocator), _allocator);
-// zbr:selfhost/typechecker.zbr:435
+// zbr:selfhost/typechecker.zbr:426
+                    pcsv = _str_concat(pcsv, p.name, _allocator);
+// zbr:selfhost/typechecker.zbr:427
                     pi += 1;
                 }
-// zbr:selfhost/typechecker.zbr:436
+// zbr:selfhost/typechecker.zbr:428
                 if (!std.mem.eql(u8, pcsv, "")) {
-                    ct.setMethodParams(_str_concat("", m.name, _allocator), pcsv);
+                    ct.setMethodParams(m.name, pcsv);
                 }
             },
             .init => |_ptr_ini| {
                 const ini = _ptr_ini.*;
-// zbr:selfhost/typechecker.zbr:440
+// zbr:selfhost/typechecker.zbr:432
                 if ((ct.ctorParamCount() == 0)) {
-// zbr:selfhost/typechecker.zbr:441
+// zbr:selfhost/typechecker.zbr:433
                     for (ini.params.items) |p| {
-// zbr:selfhost/typechecker.zbr:442
+// zbr:selfhost/typechecker.zbr:434
                         if ((p.type_ != null)) {
                             ct.addCtorParam(typeFromRef(p.type_.?));
                         } else {
@@ -2142,48 +2151,48 @@ pub fn addClassMembers(mt: *ModuleTypes, ct: *ClassTypes, members: std.ArrayList
 }
 
 pub fn populateModuleTypes(mt: *ModuleTypes, m: Module) void {
-// zbr:selfhost/typechecker.zbr:451
+// zbr:selfhost/typechecker.zbr:443
     var module_fns = ClassTypes.init("");
-// zbr:selfhost/typechecker.zbr:452
+// zbr:selfhost/typechecker.zbr:444
     for (m.decls.items) |decl| {
-// zbr:selfhost/typechecker.zbr:453
+// zbr:selfhost/typechecker.zbr:445
         switch (decl) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
-// zbr:selfhost/typechecker.zbr:455
-                const ct = ClassTypes.init(_str_concat("", c.name, _allocator));
+// zbr:selfhost/typechecker.zbr:447
+                const ct = ClassTypes.init(c.name);
                 addClassMembers(mt, ct, c.members);
                 mt.addClass(ct);
             },
             .struct_ => |_ptr_s| {
                 const s = _ptr_s.*;
-// zbr:selfhost/typechecker.zbr:459
-                const ct2 = ClassTypes.init(_str_concat("", s.name, _allocator));
+// zbr:selfhost/typechecker.zbr:451
+                const ct2 = ClassTypes.init(s.name);
                 addClassMembers(mt, ct2, s.members);
                 mt.addClass(ct2);
             },
             .union_ => |_ptr_u| {
                 const u = _ptr_u.*;
-// zbr:selfhost/typechecker.zbr:464
-                const uname: []const u8 = _str_concat("", u.name, _allocator);
+// zbr:selfhost/typechecker.zbr:456
+                const uname: []const u8 = u.name;
                 mt.addUnion(uname);
-// zbr:selfhost/typechecker.zbr:466
+// zbr:selfhost/typechecker.zbr:458
                 for (u.variants.items) |variant| {
-// zbr:selfhost/typechecker.zbr:467
+// zbr:selfhost/typechecker.zbr:459
                     if ((variant.payload != null)) {
-                        mt.addVariantPayload(uname, _str_concat("", variant.name, _allocator), typeFromRef(variant.payload.?));
+                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload.?));
                     } else {
-                        mt.addVariantPayload(uname, _str_concat("", variant.name, _allocator), Type_.unknown_);
+                        mt.addVariantPayload(uname, variant.name, Type_.unknown_);
                     }
                 }
             },
             .method => |_ptr_topfn| {
                 const topfn = _ptr_topfn.*;
-// zbr:selfhost/typechecker.zbr:474
+// zbr:selfhost/typechecker.zbr:466
                 if ((topfn.return_type != null)) {
-                    module_fns.setMethodReturn(_str_concat("", topfn.name, _allocator), typeFromRef(topfn.return_type.?));
+                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type.?));
                 } else {
-                    module_fns.setMethodReturn(_str_concat("", topfn.name, _allocator), Type_.void_);
+                    module_fns.setMethodReturn(topfn.name, Type_.void_);
                 }
             },
             else => |_| {
@@ -2195,10 +2204,10 @@ pub fn populateModuleTypes(mt: *ModuleTypes, m: Module) void {
 }
 
 pub fn buildModuleTypes(m: Module) *ModuleTypes {
-// zbr:selfhost/typechecker.zbr:483
+// zbr:selfhost/typechecker.zbr:475
     const mt = ModuleTypes.init();
     populateModuleTypes(mt, m);
-// zbr:selfhost/typechecker.zbr:485
+// zbr:selfhost/typechecker.zbr:477
     return mt;
 }
 
@@ -2211,143 +2220,143 @@ pub const InferCtx = struct {
     pub fn init(module_types: *ModuleTypes, current_class: []const u8) *InferCtx {
         const _self = _allocator.create(InferCtx) catch @panic("OOM");
         _self._type_tag = _zbr_hash("InferCtx");
-// zbr:selfhost/typechecker.zbr:499
+// zbr:selfhost/typechecker.zbr:491
             _self.module_types = module_types;
-// zbr:selfhost/typechecker.zbr:500
+// zbr:selfhost/typechecker.zbr:492
             _self.dep_types = ModuleTypes.init();
-// zbr:selfhost/typechecker.zbr:501
-            _self.current_class = current_class;
-// zbr:selfhost/typechecker.zbr:502
+// zbr:selfhost/typechecker.zbr:493
+            _self.current_class = _intern(current_class);
+// zbr:selfhost/typechecker.zbr:494
             _self.scope = std.StringHashMap(Type_).init(_allocator);
         return _self;
     }
 
     pub fn withDepTypes(self: *InferCtx, dt: *ModuleTypes) void {
-// zbr:selfhost/typechecker.zbr:509
+// zbr:selfhost/typechecker.zbr:501
         self.dep_types = dt;
     }
 
     pub fn hasUnion(self: *InferCtx, name: []const u8) bool {
-// zbr:selfhost/typechecker.zbr:513
+// zbr:selfhost/typechecker.zbr:505
         if (self.module_types.hasUnion(name)) {
-// zbr:selfhost/typechecker.zbr:514
+// zbr:selfhost/typechecker.zbr:506
             return true;
         }
-// zbr:selfhost/typechecker.zbr:515
+// zbr:selfhost/typechecker.zbr:507
         return self.dep_types.hasUnion(name);
     }
 
     pub fn bind(self: *InferCtx, name: []const u8, t: Type_) void {
-        self.scope.put(name, t) catch @panic("OOM");
+        self.scope.put(_intern(name), t) catch @panic("OOM");
     }
 
     pub fn unbind(self: *InferCtx, name: []const u8) void {
-// zbr:selfhost/typechecker.zbr:525
+// zbr:selfhost/typechecker.zbr:517
         if (self.scope.contains(name)) {
-            self.scope.put(name, Type_.unknown_) catch @panic("OOM");
+            self.scope.put(_intern(name), Type_.unknown_) catch @panic("OOM");
         }
     }
 
     pub fn hasLocal(self: *InferCtx, name: []const u8) bool {
-// zbr:selfhost/typechecker.zbr:529
+// zbr:selfhost/typechecker.zbr:521
         return self.scope.contains(name);
     }
 
     pub fn localType(self: *InferCtx, name: []const u8) Type_ {
-// zbr:selfhost/typechecker.zbr:532
+// zbr:selfhost/typechecker.zbr:524
         return (self.scope.get(name) orelse undefined);
     }
 
     pub fn fieldTypeAny(self: *InferCtx, class_name: []const u8, field_name: []const u8) ?Type_ {
-// zbr:selfhost/typechecker.zbr:540
+// zbr:selfhost/typechecker.zbr:532
         var ft: ?Type_ = self.module_types.fieldType(class_name, field_name);
-// zbr:selfhost/typechecker.zbr:541
+// zbr:selfhost/typechecker.zbr:533
         if ((ft != null)) {
-// zbr:selfhost/typechecker.zbr:542
+// zbr:selfhost/typechecker.zbr:534
             return ft;
         }
-// zbr:selfhost/typechecker.zbr:543
+// zbr:selfhost/typechecker.zbr:535
         ft = self.dep_types.fieldType(class_name, field_name);
-// zbr:selfhost/typechecker.zbr:544
+// zbr:selfhost/typechecker.zbr:536
         if ((ft != null)) {
-// zbr:selfhost/typechecker.zbr:545
+// zbr:selfhost/typechecker.zbr:537
             return ft;
         }
-// zbr:selfhost/typechecker.zbr:550
+// zbr:selfhost/typechecker.zbr:542
         const bare: []const u8 = stripModulePrefix(class_name);
-// zbr:selfhost/typechecker.zbr:551
+// zbr:selfhost/typechecker.zbr:543
         if (!std.mem.eql(u8, bare, class_name)) {
-// zbr:selfhost/typechecker.zbr:552
+// zbr:selfhost/typechecker.zbr:544
             ft = self.module_types.fieldType(bare, field_name);
-// zbr:selfhost/typechecker.zbr:553
+// zbr:selfhost/typechecker.zbr:545
             if ((ft != null)) {
-// zbr:selfhost/typechecker.zbr:554
+// zbr:selfhost/typechecker.zbr:546
                 return ft;
             }
-// zbr:selfhost/typechecker.zbr:555
+// zbr:selfhost/typechecker.zbr:547
             return self.dep_types.fieldType(bare, field_name);
         }
-// zbr:selfhost/typechecker.zbr:556
+// zbr:selfhost/typechecker.zbr:548
         return null;
     }
 
     pub fn methodReturnAny(self: *InferCtx, class_name: []const u8, method_name: []const u8) ?Type_ {
-// zbr:selfhost/typechecker.zbr:559
+// zbr:selfhost/typechecker.zbr:551
         var mr: ?Type_ = self.module_types.methodReturn(class_name, method_name);
-// zbr:selfhost/typechecker.zbr:560
+// zbr:selfhost/typechecker.zbr:552
         if ((mr != null)) {
-// zbr:selfhost/typechecker.zbr:561
+// zbr:selfhost/typechecker.zbr:553
             return mr;
         }
-// zbr:selfhost/typechecker.zbr:562
+// zbr:selfhost/typechecker.zbr:554
         mr = self.dep_types.methodReturn(class_name, method_name);
-// zbr:selfhost/typechecker.zbr:563
+// zbr:selfhost/typechecker.zbr:555
         if ((mr != null)) {
-// zbr:selfhost/typechecker.zbr:564
+// zbr:selfhost/typechecker.zbr:556
             return mr;
         }
-// zbr:selfhost/typechecker.zbr:565
+// zbr:selfhost/typechecker.zbr:557
         const bare: []const u8 = stripModulePrefix(class_name);
-// zbr:selfhost/typechecker.zbr:566
+// zbr:selfhost/typechecker.zbr:558
         if (!std.mem.eql(u8, bare, class_name)) {
-// zbr:selfhost/typechecker.zbr:567
+// zbr:selfhost/typechecker.zbr:559
             mr = self.module_types.methodReturn(bare, method_name);
-// zbr:selfhost/typechecker.zbr:568
+// zbr:selfhost/typechecker.zbr:560
             if ((mr != null)) {
-// zbr:selfhost/typechecker.zbr:569
+// zbr:selfhost/typechecker.zbr:561
                 return mr;
             }
-// zbr:selfhost/typechecker.zbr:570
+// zbr:selfhost/typechecker.zbr:562
             return self.dep_types.methodReturn(bare, method_name);
         }
-// zbr:selfhost/typechecker.zbr:571
+// zbr:selfhost/typechecker.zbr:563
         return null;
     }
 
     pub fn hasClassAny(self: *InferCtx, class_name: []const u8) bool {
-// zbr:selfhost/typechecker.zbr:574
+// zbr:selfhost/typechecker.zbr:566
         if (self.module_types.hasClass(class_name)) {
-// zbr:selfhost/typechecker.zbr:575
+// zbr:selfhost/typechecker.zbr:567
             return true;
         }
-// zbr:selfhost/typechecker.zbr:576
+// zbr:selfhost/typechecker.zbr:568
         if (self.dep_types.hasClass(class_name)) {
-// zbr:selfhost/typechecker.zbr:577
+// zbr:selfhost/typechecker.zbr:569
             return true;
         }
-// zbr:selfhost/typechecker.zbr:578
+// zbr:selfhost/typechecker.zbr:570
         const bare: []const u8 = stripModulePrefix(class_name);
-// zbr:selfhost/typechecker.zbr:579
+// zbr:selfhost/typechecker.zbr:571
         if (!std.mem.eql(u8, bare, class_name)) {
-// zbr:selfhost/typechecker.zbr:580
+// zbr:selfhost/typechecker.zbr:572
             if (self.module_types.hasClass(bare)) {
-// zbr:selfhost/typechecker.zbr:581
+// zbr:selfhost/typechecker.zbr:573
                 return true;
             }
-// zbr:selfhost/typechecker.zbr:582
+// zbr:selfhost/typechecker.zbr:574
             return self.dep_types.hasClass(bare);
         }
-// zbr:selfhost/typechecker.zbr:583
+// zbr:selfhost/typechecker.zbr:575
         return false;
     }
 
@@ -2358,480 +2367,480 @@ const _reflect_InferCtx_fields: []const []const u8 = &.{"module_types", "dep_typ
 const _reflect_InferCtx_field_types: []const []const u8 = &.{"ModuleTypes", "ModuleTypes", "str", "HashMap(str, Type_)"};
 
 pub fn stripModulePrefix(name: []const u8) []const u8 {
-// zbr:selfhost/typechecker.zbr:589
+// zbr:selfhost/typechecker.zbr:581
     if ((!(std.mem.indexOf(u8, name, ".") != null))) {
-// zbr:selfhost/typechecker.zbr:590
+// zbr:selfhost/typechecker.zbr:582
         return name;
     }
-// zbr:selfhost/typechecker.zbr:591
+// zbr:selfhost/typechecker.zbr:583
     var last: []const u8 = name;
-// zbr:selfhost/typechecker.zbr:592
+// zbr:selfhost/typechecker.zbr:584
     {
         var _it_p = std.mem.splitSequence(u8, name, ".");
         while (_it_p.next()) |p| {
-// zbr:selfhost/typechecker.zbr:593
+// zbr:selfhost/typechecker.zbr:585
             last = p;
         }
     }
-// zbr:selfhost/typechecker.zbr:594
+// zbr:selfhost/typechecker.zbr:586
     return last;
 }
 
 pub fn isString(t: Type_) bool {
-// zbr:selfhost/typechecker.zbr:598
+// zbr:selfhost/typechecker.zbr:590
     switch (t) {
         .string_ => |_| {
-// zbr:selfhost/typechecker.zbr:600
+// zbr:selfhost/typechecker.zbr:592
             return true;
         },
         .cross_module => |cm| {
-// zbr:selfhost/typechecker.zbr:603
+// zbr:selfhost/typechecker.zbr:595
             return std.mem.eql(u8, cm.type_name, "String");
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:605
+// zbr:selfhost/typechecker.zbr:597
             return false;
         },
     }
 }
 
 pub fn stringMethodReturn(name: []const u8) ?Type_ {
-// zbr:selfhost/typechecker.zbr:613
+// zbr:selfhost/typechecker.zbr:605
     if (((std.mem.eql(u8, name, "trim") or std.mem.eql(u8, name, "trimLeft")) or std.mem.eql(u8, name, "trimRight"))) {
+// zbr:selfhost/typechecker.zbr:606
+        return Type_.string_;
+    }
+// zbr:selfhost/typechecker.zbr:607
+    if ((((std.mem.eql(u8, name, "replace") or std.mem.eql(u8, name, "replaceAll")) or std.mem.eql(u8, name, "reverse")) or std.mem.eql(u8, name, "repeat"))) {
+// zbr:selfhost/typechecker.zbr:608
+        return Type_.string_;
+    }
+// zbr:selfhost/typechecker.zbr:609
+    if ((((std.mem.eql(u8, name, "concat") or std.mem.eql(u8, name, "format")) or std.mem.eql(u8, name, "upper")) or std.mem.eql(u8, name, "lower"))) {
+// zbr:selfhost/typechecker.zbr:610
+        return Type_.string_;
+    }
+// zbr:selfhost/typechecker.zbr:611
+    if ((((std.mem.eql(u8, name, "toHex") or std.mem.eql(u8, name, "padLeft")) or std.mem.eql(u8, name, "padRight")) or std.mem.eql(u8, name, "center"))) {
+// zbr:selfhost/typechecker.zbr:612
+        return Type_.string_;
+    }
+// zbr:selfhost/typechecker.zbr:613
+    if ((std.mem.eql(u8, name, "substring") or std.mem.eql(u8, name, "charAt"))) {
 // zbr:selfhost/typechecker.zbr:614
         return Type_.string_;
     }
 // zbr:selfhost/typechecker.zbr:615
-    if ((((std.mem.eql(u8, name, "replace") or std.mem.eql(u8, name, "replaceAll")) or std.mem.eql(u8, name, "reverse")) or std.mem.eql(u8, name, "repeat"))) {
+    if ((std.mem.eql(u8, name, "join") or std.mem.eql(u8, name, "toString"))) {
 // zbr:selfhost/typechecker.zbr:616
         return Type_.string_;
     }
 // zbr:selfhost/typechecker.zbr:617
-    if ((((std.mem.eql(u8, name, "concat") or std.mem.eql(u8, name, "format")) or std.mem.eql(u8, name, "upper")) or std.mem.eql(u8, name, "lower"))) {
+    if (std.mem.eql(u8, name, "count")) {
 // zbr:selfhost/typechecker.zbr:618
-        return Type_.string_;
+        return Type_.int_;
     }
 // zbr:selfhost/typechecker.zbr:619
-    if ((((std.mem.eql(u8, name, "toHex") or std.mem.eql(u8, name, "padLeft")) or std.mem.eql(u8, name, "padRight")) or std.mem.eql(u8, name, "center"))) {
-// zbr:selfhost/typechecker.zbr:620
-        return Type_.string_;
-    }
-// zbr:selfhost/typechecker.zbr:621
-    if ((std.mem.eql(u8, name, "substring") or std.mem.eql(u8, name, "charAt"))) {
-// zbr:selfhost/typechecker.zbr:622
-        return Type_.string_;
-    }
-// zbr:selfhost/typechecker.zbr:623
-    if ((std.mem.eql(u8, name, "join") or std.mem.eql(u8, name, "toString"))) {
-// zbr:selfhost/typechecker.zbr:624
-        return Type_.string_;
-    }
-// zbr:selfhost/typechecker.zbr:625
-    if (std.mem.eql(u8, name, "count")) {
-// zbr:selfhost/typechecker.zbr:626
-        return Type_.int_;
-    }
-// zbr:selfhost/typechecker.zbr:627
     if ((std.mem.eql(u8, name, "indexOf") or std.mem.eql(u8, name, "lastIndexOf"))) {
-// zbr:selfhost/typechecker.zbr:628
+// zbr:selfhost/typechecker.zbr:620
         return Type_{ .optional = blk_box_3: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = Type_.int_; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
     }
-// zbr:selfhost/typechecker.zbr:629
+// zbr:selfhost/typechecker.zbr:621
     if ((std.mem.eql(u8, name, "codePointCount") or std.mem.eql(u8, name, "toInt"))) {
-// zbr:selfhost/typechecker.zbr:630
+// zbr:selfhost/typechecker.zbr:622
         return Type_.int_;
     }
-// zbr:selfhost/typechecker.zbr:631
+// zbr:selfhost/typechecker.zbr:623
     if (std.mem.eql(u8, name, "toFloat")) {
-// zbr:selfhost/typechecker.zbr:632
+// zbr:selfhost/typechecker.zbr:624
         return Type_.float_;
     }
-// zbr:selfhost/typechecker.zbr:633
+// zbr:selfhost/typechecker.zbr:625
     if (((std.mem.eql(u8, name, "contains") or std.mem.eql(u8, name, "startsWith")) or std.mem.eql(u8, name, "endsWith"))) {
-// zbr:selfhost/typechecker.zbr:634
+// zbr:selfhost/typechecker.zbr:626
         return Type_.bool_;
     }
-// zbr:selfhost/typechecker.zbr:635
+// zbr:selfhost/typechecker.zbr:627
     if ((((std.mem.eql(u8, name, "isEmpty") or std.mem.eql(u8, name, "isAlpha")) or std.mem.eql(u8, name, "isNumeric")) or std.mem.eql(u8, name, "isValidUtf8"))) {
-// zbr:selfhost/typechecker.zbr:636
+// zbr:selfhost/typechecker.zbr:628
         return Type_.bool_;
     }
-// zbr:selfhost/typechecker.zbr:637
+// zbr:selfhost/typechecker.zbr:629
     if (std.mem.eql(u8, name, "fromHex")) {
-// zbr:selfhost/typechecker.zbr:638
+// zbr:selfhost/typechecker.zbr:630
         return Type_{ .optional = blk_box_4: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = Type_.string_; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
     }
-// zbr:selfhost/typechecker.zbr:639
+// zbr:selfhost/typechecker.zbr:631
     return null;
 }
 
 pub fn typeTag(t: Type_) []const u8 {
-// zbr:selfhost/typechecker.zbr:643
+// zbr:selfhost/typechecker.zbr:635
     switch (t) {
         .int_ => |_| {
-// zbr:selfhost/typechecker.zbr:645
+// zbr:selfhost/typechecker.zbr:637
             return "int";
         },
         .uint_ => |_| {
-// zbr:selfhost/typechecker.zbr:647
+// zbr:selfhost/typechecker.zbr:639
             return "uint";
         },
         .float_ => |_| {
-// zbr:selfhost/typechecker.zbr:649
+// zbr:selfhost/typechecker.zbr:641
             return "flt";
         },
         .bool_ => |_| {
-// zbr:selfhost/typechecker.zbr:651
+// zbr:selfhost/typechecker.zbr:643
             return "bool";
         },
         .char_ => |_| {
-// zbr:selfhost/typechecker.zbr:653
+// zbr:selfhost/typechecker.zbr:645
             return "char";
         },
         .string_ => |_| {
-// zbr:selfhost/typechecker.zbr:655
+// zbr:selfhost/typechecker.zbr:647
             return "str";
         },
         .void_ => |_| {
-// zbr:selfhost/typechecker.zbr:657
+// zbr:selfhost/typechecker.zbr:649
             return "void";
         },
         .named => |n| {
-// zbr:selfhost/typechecker.zbr:659
+// zbr:selfhost/typechecker.zbr:651
             return _str_concat(_str_concat("named(", n, _allocator), ")", _allocator);
         },
         .optional => |_| {
-// zbr:selfhost/typechecker.zbr:661
+// zbr:selfhost/typechecker.zbr:653
             return "opt";
         },
         .ref_to => |_| {
-// zbr:selfhost/typechecker.zbr:663
+// zbr:selfhost/typechecker.zbr:655
             return "ref";
         },
         .cross_module => |_| {
-// zbr:selfhost/typechecker.zbr:665
+// zbr:selfhost/typechecker.zbr:657
             return "crossmod";
         },
         .str_slice => |_| {
-// zbr:selfhost/typechecker.zbr:667
+// zbr:selfhost/typechecker.zbr:659
             return "slice";
         },
         .string_builder => |_| {
-// zbr:selfhost/typechecker.zbr:669
+// zbr:selfhost/typechecker.zbr:661
             return "sbld";
         },
         .regex => |_| {
-// zbr:selfhost/typechecker.zbr:671
+// zbr:selfhost/typechecker.zbr:663
             return "rgx";
         },
         .str_set => |_| {
-// zbr:selfhost/typechecker.zbr:673
+// zbr:selfhost/typechecker.zbr:665
             return "sset";
         },
         .unknown_ => |_| {
-// zbr:selfhost/typechecker.zbr:675
+// zbr:selfhost/typechecker.zbr:667
             return "unk";
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:677
+// zbr:selfhost/typechecker.zbr:669
             return "?";
         },
     }
 }
 
 pub fn isNumeric(t: Type_) bool {
-// zbr:selfhost/typechecker.zbr:681
+// zbr:selfhost/typechecker.zbr:673
     switch (t) {
         .int_ => |_| {
-// zbr:selfhost/typechecker.zbr:683
+// zbr:selfhost/typechecker.zbr:675
             return true;
         },
         .uint_ => |_| {
-// zbr:selfhost/typechecker.zbr:685
+// zbr:selfhost/typechecker.zbr:677
             return true;
         },
         .float_ => |_| {
-// zbr:selfhost/typechecker.zbr:687
+// zbr:selfhost/typechecker.zbr:679
             return true;
         },
         .int_n => |_| {
-// zbr:selfhost/typechecker.zbr:689
+// zbr:selfhost/typechecker.zbr:681
             return true;
         },
         .uint_n => |_| {
-// zbr:selfhost/typechecker.zbr:691
+// zbr:selfhost/typechecker.zbr:683
             return true;
         },
         .float_n => |_| {
-// zbr:selfhost/typechecker.zbr:693
+// zbr:selfhost/typechecker.zbr:685
             return true;
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:695
+// zbr:selfhost/typechecker.zbr:687
             return false;
         },
     }
 }
 
 pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
-// zbr:selfhost/typechecker.zbr:698
+// zbr:selfhost/typechecker.zbr:690
     switch (e) {
         .int_lit => |_| {
-// zbr:selfhost/typechecker.zbr:700
+// zbr:selfhost/typechecker.zbr:692
             return Type_.int_;
         },
         .float_lit => |_| {
-// zbr:selfhost/typechecker.zbr:702
+// zbr:selfhost/typechecker.zbr:694
             return Type_.float_;
         },
         .bool_lit => |_| {
-// zbr:selfhost/typechecker.zbr:704
+// zbr:selfhost/typechecker.zbr:696
             return Type_.bool_;
         },
         .char_lit => |_| {
-// zbr:selfhost/typechecker.zbr:706
+// zbr:selfhost/typechecker.zbr:698
             return Type_.char_;
         },
         .string_lit => |_| {
-// zbr:selfhost/typechecker.zbr:708
+// zbr:selfhost/typechecker.zbr:700
             return Type_.string_;
         },
         .string_interp => |_| {
-// zbr:selfhost/typechecker.zbr:710
+// zbr:selfhost/typechecker.zbr:702
             return Type_.string_;
         },
         .nil_ => |_| {
-// zbr:selfhost/typechecker.zbr:715
+// zbr:selfhost/typechecker.zbr:707
             const inner_unk: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:716
+// zbr:selfhost/typechecker.zbr:708
             return Type_{ .optional = blk_box_5: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = inner_unk; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
         },
         .this_ => |_| {
-// zbr:selfhost/typechecker.zbr:718
+// zbr:selfhost/typechecker.zbr:710
             if (std.mem.eql(u8, ctx.current_class, "")) {
-// zbr:selfhost/typechecker.zbr:719
+// zbr:selfhost/typechecker.zbr:711
                 return Type_.unknown_;
             }
-// zbr:selfhost/typechecker.zbr:720
+// zbr:selfhost/typechecker.zbr:712
             return Type_{ .named = ctx.current_class };
         },
         .ident => |id| {
-// zbr:selfhost/typechecker.zbr:722
-            const nm: []const u8 = _str_concat("", id.name, _allocator);
-// zbr:selfhost/typechecker.zbr:723
+// zbr:selfhost/typechecker.zbr:714
+            const nm: []const u8 = id.name;
+// zbr:selfhost/typechecker.zbr:715
             if (ctx.hasLocal(nm)) {
-// zbr:selfhost/typechecker.zbr:724
+// zbr:selfhost/typechecker.zbr:716
                 return ctx.localType(nm);
             }
-// zbr:selfhost/typechecker.zbr:728
+// zbr:selfhost/typechecker.zbr:720
             if (ctx.module_types.hasClass(nm)) {
-// zbr:selfhost/typechecker.zbr:729
+// zbr:selfhost/typechecker.zbr:721
                 return Type_{ .named = nm };
             }
-// zbr:selfhost/typechecker.zbr:733
+// zbr:selfhost/typechecker.zbr:725
             if (!std.mem.eql(u8, ctx.current_class, "")) {
-// zbr:selfhost/typechecker.zbr:734
+// zbr:selfhost/typechecker.zbr:726
                 const fft: ?Type_ = ctx.module_types.fieldType(ctx.current_class, nm);
-// zbr:selfhost/typechecker.zbr:735
+// zbr:selfhost/typechecker.zbr:727
                 if ((fft != null)) {
-// zbr:selfhost/typechecker.zbr:736
+// zbr:selfhost/typechecker.zbr:728
                     return fft.?;
                 }
             }
-// zbr:selfhost/typechecker.zbr:737
+// zbr:selfhost/typechecker.zbr:729
             return Type_.unknown_;
         },
         .member => |_ptr_m| {
             const m = _ptr_m.*;
-// zbr:selfhost/typechecker.zbr:744
+// zbr:selfhost/typechecker.zbr:736
             var obj_t: Type_ = inferExpr(m.object.*, ctx);
-// zbr:selfhost/typechecker.zbr:745
+// zbr:selfhost/typechecker.zbr:737
             switch (obj_t) {
                 .ref_to => |_ptr_rt| {
                     const rt = _ptr_rt.*;
-// zbr:selfhost/typechecker.zbr:747
+// zbr:selfhost/typechecker.zbr:739
                     obj_t = rt;
                 },
                 .optional => |_ptr_ot| {
                     const ot = _ptr_ot.*;
-// zbr:selfhost/typechecker.zbr:749
+// zbr:selfhost/typechecker.zbr:741
                     obj_t = ot;
                 },
                 else => |_| {
                     // pass
                 },
             }
-// zbr:selfhost/typechecker.zbr:752
+// zbr:selfhost/typechecker.zbr:744
             if (obj_t == .named) {
                 const tn = obj_t.named;
-// zbr:selfhost/typechecker.zbr:753
-                const ft: ?Type_ = ctx.fieldTypeAny(tn, _str_concat("", m.member, _allocator));
-// zbr:selfhost/typechecker.zbr:754
+// zbr:selfhost/typechecker.zbr:745
+                const ft: ?Type_ = ctx.fieldTypeAny(tn, m.member);
+// zbr:selfhost/typechecker.zbr:746
                 if ((ft != null)) {
-// zbr:selfhost/typechecker.zbr:755
+// zbr:selfhost/typechecker.zbr:747
                     return ft.?;
                 }
             }
-// zbr:selfhost/typechecker.zbr:760
-            const mm: []const u8 = _str_concat("", m.member, _allocator);
-// zbr:selfhost/typechecker.zbr:761
+// zbr:selfhost/typechecker.zbr:752
+            const mm: []const u8 = m.member;
+// zbr:selfhost/typechecker.zbr:753
             if ((std.mem.eql(u8, mm, "stdout") or std.mem.eql(u8, mm, "stderr"))) {
-// zbr:selfhost/typechecker.zbr:762
+// zbr:selfhost/typechecker.zbr:754
                 return Type_.string_;
             }
-// zbr:selfhost/typechecker.zbr:763
+// zbr:selfhost/typechecker.zbr:755
             return Type_.unknown_;
         },
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/typechecker.zbr:766
+// zbr:selfhost/typechecker.zbr:758
             switch (c.callee) {
                 .ident => |id| {
-// zbr:selfhost/typechecker.zbr:768
-                    const cname: []const u8 = _str_concat("", id.name, _allocator);
-// zbr:selfhost/typechecker.zbr:769
+// zbr:selfhost/typechecker.zbr:760
+                    const cname: []const u8 = id.name;
+// zbr:selfhost/typechecker.zbr:761
                     if (ctx.hasClassAny(cname)) {
-// zbr:selfhost/typechecker.zbr:770
+// zbr:selfhost/typechecker.zbr:762
                         return Type_{ .named = cname };
                     }
-// zbr:selfhost/typechecker.zbr:772
+// zbr:selfhost/typechecker.zbr:764
                     const as_name: Type_ = typeFromName(cname);
-// zbr:selfhost/typechecker.zbr:773
+// zbr:selfhost/typechecker.zbr:765
                     switch (as_name) {
                         .named => |_| {
                             // pass
                         },
                         else => |_| {
-// zbr:selfhost/typechecker.zbr:777
+// zbr:selfhost/typechecker.zbr:769
                             return as_name;
                         },
                     }
-// zbr:selfhost/typechecker.zbr:780
+// zbr:selfhost/typechecker.zbr:772
                     if (!std.mem.eql(u8, ctx.current_class, "")) {
-// zbr:selfhost/typechecker.zbr:781
+// zbr:selfhost/typechecker.zbr:773
                         const mr: ?Type_ = ctx.methodReturnAny(ctx.current_class, cname);
-// zbr:selfhost/typechecker.zbr:782
+// zbr:selfhost/typechecker.zbr:774
                         if ((mr != null)) {
-// zbr:selfhost/typechecker.zbr:783
+// zbr:selfhost/typechecker.zbr:775
                             return mr.?;
                         }
                     }
-// zbr:selfhost/typechecker.zbr:784
+// zbr:selfhost/typechecker.zbr:776
                     const mf: ?Type_ = ctx.methodReturnAny("", cname);
-// zbr:selfhost/typechecker.zbr:785
+// zbr:selfhost/typechecker.zbr:777
                     if ((mf != null)) {
-// zbr:selfhost/typechecker.zbr:786
+// zbr:selfhost/typechecker.zbr:778
                         return mf.?;
                     }
-// zbr:selfhost/typechecker.zbr:787
+// zbr:selfhost/typechecker.zbr:779
                     return Type_.unknown_;
                 },
                 .member => |_ptr_mem| {
                     const mem = _ptr_mem.*;
-// zbr:selfhost/typechecker.zbr:793
+// zbr:selfhost/typechecker.zbr:785
                     if (std.mem.eql(u8, mem.member, "toString")) {
-// zbr:selfhost/typechecker.zbr:794
+// zbr:selfhost/typechecker.zbr:786
                         return Type_.string_;
                     }
-// zbr:selfhost/typechecker.zbr:797
+// zbr:selfhost/typechecker.zbr:789
                     if (mem.object.* == .ident) {
                         const bid = mem.object.*.ident;
-// zbr:selfhost/typechecker.zbr:798
-                        const bname: []const u8 = _str_concat("", bid.name, _allocator);
-// zbr:selfhost/typechecker.zbr:799
+// zbr:selfhost/typechecker.zbr:790
+                        const bname: []const u8 = bid.name;
+// zbr:selfhost/typechecker.zbr:791
                         if ((std.mem.eql(u8, bname, "Regex") and std.mem.eql(u8, mem.member, "compile"))) {
-// zbr:selfhost/typechecker.zbr:800
+// zbr:selfhost/typechecker.zbr:792
                             return Type_.regex;
                         }
                     }
-// zbr:selfhost/typechecker.zbr:804
+// zbr:selfhost/typechecker.zbr:796
                     if (mem.object.* == .ident) {
                         const uid = mem.object.*.ident;
-// zbr:selfhost/typechecker.zbr:805
-                        const uname2: []const u8 = _str_concat("", uid.name, _allocator);
-// zbr:selfhost/typechecker.zbr:806
+// zbr:selfhost/typechecker.zbr:797
+                        const uname2: []const u8 = uid.name;
+// zbr:selfhost/typechecker.zbr:798
                         if (ctx.hasUnion(uname2)) {
-// zbr:selfhost/typechecker.zbr:807
+// zbr:selfhost/typechecker.zbr:799
                             return Type_{ .named = uname2 };
                         }
                     }
-// zbr:selfhost/typechecker.zbr:813
+// zbr:selfhost/typechecker.zbr:805
                     var recv: Type_ = inferExpr(mem.object.*, ctx);
-// zbr:selfhost/typechecker.zbr:814
+// zbr:selfhost/typechecker.zbr:806
                     switch (recv) {
                         .ref_to => |_ptr_rrt| {
                             const rrt = _ptr_rrt.*;
-// zbr:selfhost/typechecker.zbr:816
+// zbr:selfhost/typechecker.zbr:808
                             recv = rrt;
                         },
                         .optional => |_ptr_rro| {
                             const rro = _ptr_rro.*;
-// zbr:selfhost/typechecker.zbr:818
+// zbr:selfhost/typechecker.zbr:810
                             recv = rro;
                         },
                         else => |_| {
                             // pass
                         },
                     }
-// zbr:selfhost/typechecker.zbr:821
+// zbr:selfhost/typechecker.zbr:813
                     switch (recv) {
                         .named => |tn| {
-// zbr:selfhost/typechecker.zbr:823
-                            const rt: ?Type_ = ctx.methodReturnAny(tn, _str_concat("", mem.member, _allocator));
-// zbr:selfhost/typechecker.zbr:824
+// zbr:selfhost/typechecker.zbr:815
+                            const rt: ?Type_ = ctx.methodReturnAny(tn, mem.member);
+// zbr:selfhost/typechecker.zbr:816
                             if ((rt != null)) {
-// zbr:selfhost/typechecker.zbr:825
+// zbr:selfhost/typechecker.zbr:817
                                 return rt.?;
                             }
                         },
                         .string_ => |_| {
-// zbr:selfhost/typechecker.zbr:827
-                            const srt: ?Type_ = stringMethodReturn(_str_concat("", mem.member, _allocator));
-// zbr:selfhost/typechecker.zbr:828
+// zbr:selfhost/typechecker.zbr:819
+                            const srt: ?Type_ = stringMethodReturn(mem.member);
+// zbr:selfhost/typechecker.zbr:820
                             if ((srt != null)) {
-// zbr:selfhost/typechecker.zbr:829
+// zbr:selfhost/typechecker.zbr:821
                                 return srt.?;
                             }
                         },
                         .regex => |_| {
-// zbr:selfhost/typechecker.zbr:831
-                            const mname: []const u8 = _str_concat("", mem.member, _allocator);
-// zbr:selfhost/typechecker.zbr:832
+// zbr:selfhost/typechecker.zbr:823
+                            const mname: []const u8 = mem.member;
+// zbr:selfhost/typechecker.zbr:824
                             if (std.mem.eql(u8, mname, "find")) {
-// zbr:selfhost/typechecker.zbr:833
+// zbr:selfhost/typechecker.zbr:825
                                 return Type_.string_;
                             }
-// zbr:selfhost/typechecker.zbr:834
+// zbr:selfhost/typechecker.zbr:826
                             if ((std.mem.eql(u8, mname, "test") or std.mem.eql(u8, mname, "match"))) {
-// zbr:selfhost/typechecker.zbr:835
+// zbr:selfhost/typechecker.zbr:827
                                 return Type_.bool_;
                             }
                         },
                         .string_builder => |_| {
-// zbr:selfhost/typechecker.zbr:837
-                            const sbmname: []const u8 = _str_concat("", mem.member, _allocator);
-// zbr:selfhost/typechecker.zbr:838
+// zbr:selfhost/typechecker.zbr:829
+                            const sbmname: []const u8 = mem.member;
+// zbr:selfhost/typechecker.zbr:830
                             if ((std.mem.eql(u8, sbmname, "build") or std.mem.eql(u8, sbmname, "toString"))) {
-// zbr:selfhost/typechecker.zbr:839
+// zbr:selfhost/typechecker.zbr:831
                                 return Type_.string_;
                             }
-// zbr:selfhost/typechecker.zbr:840
+// zbr:selfhost/typechecker.zbr:832
                             if (std.mem.eql(u8, sbmname, "len")) {
-// zbr:selfhost/typechecker.zbr:841
+// zbr:selfhost/typechecker.zbr:833
                                 return Type_.int_;
                             }
                         },
                         .str_slice => |_| {
-// zbr:selfhost/typechecker.zbr:843
-                            const slmname: []const u8 = _str_concat("", mem.member, _allocator);
-// zbr:selfhost/typechecker.zbr:844
+// zbr:selfhost/typechecker.zbr:835
+                            const slmname: []const u8 = mem.member;
+// zbr:selfhost/typechecker.zbr:836
                             if (((std.mem.eql(u8, slmname, "at") or std.mem.eql(u8, slmname, "join")) or std.mem.eql(u8, slmname, "fetch"))) {
-// zbr:selfhost/typechecker.zbr:845
+// zbr:selfhost/typechecker.zbr:837
                                 return Type_.string_;
                             }
-// zbr:selfhost/typechecker.zbr:846
+// zbr:selfhost/typechecker.zbr:838
                             if ((std.mem.eql(u8, slmname, "count") or std.mem.eql(u8, slmname, "len"))) {
-// zbr:selfhost/typechecker.zbr:847
+// zbr:selfhost/typechecker.zbr:839
                                 return Type_.int_;
                             }
                         },
@@ -2839,114 +2848,132 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                             // pass
                         },
                     }
-// zbr:selfhost/typechecker.zbr:850
+// zbr:selfhost/typechecker.zbr:842
                     return Type_.unknown_;
                 },
                 else => |_| {
-// zbr:selfhost/typechecker.zbr:852
+// zbr:selfhost/typechecker.zbr:844
                     return Type_.unknown_;
                 },
             }
         },
         .try_ => |_ptr_et| {
             const et = _ptr_et.*;
-// zbr:selfhost/typechecker.zbr:856
+// zbr:selfhost/typechecker.zbr:848
             return inferExpr(et.expr.*, ctx);
         },
         .to_non_nil => |_ptr_etn| {
             const etn = _ptr_etn.*;
-// zbr:selfhost/typechecker.zbr:859
+// zbr:selfhost/typechecker.zbr:851
             const inner: Type_ = inferExpr(etn.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:860
+// zbr:selfhost/typechecker.zbr:852
             switch (inner) {
                 .optional => |_ptr_opt| {
                     const opt = _ptr_opt.*;
-// zbr:selfhost/typechecker.zbr:862
+// zbr:selfhost/typechecker.zbr:854
                     return opt;
                 },
                 else => |_| {
-// zbr:selfhost/typechecker.zbr:864
+// zbr:selfhost/typechecker.zbr:856
                     return inner;
                 },
             }
         },
         .to_nilable => |_ptr_etl| {
             const etl = _ptr_etl.*;
-// zbr:selfhost/typechecker.zbr:867
+// zbr:selfhost/typechecker.zbr:859
             const inner_t: Type_ = inferExpr(etl.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:868
+// zbr:selfhost/typechecker.zbr:860
             return Type_{ .optional = blk_box_6: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = inner_t; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
         },
         .orelse_ => |_ptr_eo| {
             const eo = _ptr_eo.*;
-// zbr:selfhost/typechecker.zbr:872
+// zbr:selfhost/typechecker.zbr:864
             const lt_o: Type_ = inferExpr(eo.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:873
+// zbr:selfhost/typechecker.zbr:865
             switch (lt_o) {
                 .optional => |_ptr_opt_o| {
                     const opt_o = _ptr_opt_o.*;
-// zbr:selfhost/typechecker.zbr:875
+// zbr:selfhost/typechecker.zbr:867
                     return opt_o;
                 },
                 else => |_| {
-// zbr:selfhost/typechecker.zbr:877
+// zbr:selfhost/typechecker.zbr:869
                     return lt_o;
                 },
             }
         },
         .catch_ => |_ptr_ec| {
             const ec = _ptr_ec.*;
-// zbr:selfhost/typechecker.zbr:880
+// zbr:selfhost/typechecker.zbr:872
             return inferExpr(ec.expr.*, ctx);
         },
         .except_ => |_ptr_ee| {
             const ee = _ptr_ee.*;
-// zbr:selfhost/typechecker.zbr:883
+// zbr:selfhost/typechecker.zbr:875
             return inferExpr(ee.base, ctx);
         },
         .if_expr => |_ptr_eif| {
             const eif = _ptr_eif.*;
-// zbr:selfhost/typechecker.zbr:886
+// zbr:selfhost/typechecker.zbr:878
             return inferExpr(eif.then_expr.*, ctx);
         },
         .cast => |_ptr_ect| {
             const ect = _ptr_ect.*;
-// zbr:selfhost/typechecker.zbr:889
+// zbr:selfhost/typechecker.zbr:881
             return typeFromRef(ect.target);
         },
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/typechecker.zbr:891
+// zbr:selfhost/typechecker.zbr:883
             const lt: Type_ = inferExpr(b.left.*, ctx);
-// zbr:selfhost/typechecker.zbr:892
+// zbr:selfhost/typechecker.zbr:884
             const rt: Type_ = inferExpr(b.right.*, ctx);
-// zbr:selfhost/typechecker.zbr:893
+// zbr:selfhost/typechecker.zbr:885
             switch (b.op) {
                 .add => {
-// zbr:selfhost/typechecker.zbr:896
+// zbr:selfhost/typechecker.zbr:888
                     if (isString(lt)) {
-// zbr:selfhost/typechecker.zbr:897
+// zbr:selfhost/typechecker.zbr:889
                         return Type_.string_;
                     }
-// zbr:selfhost/typechecker.zbr:898
+// zbr:selfhost/typechecker.zbr:890
                     if (isString(rt)) {
-// zbr:selfhost/typechecker.zbr:899
+// zbr:selfhost/typechecker.zbr:891
                         return Type_.string_;
                     }
-// zbr:selfhost/typechecker.zbr:900
+// zbr:selfhost/typechecker.zbr:892
                     if (isNumeric(lt)) {
-// zbr:selfhost/typechecker.zbr:901
+// zbr:selfhost/typechecker.zbr:893
                         return lt;
                     }
-// zbr:selfhost/typechecker.zbr:902
+// zbr:selfhost/typechecker.zbr:894
                     if (isNumeric(rt)) {
-// zbr:selfhost/typechecker.zbr:903
+// zbr:selfhost/typechecker.zbr:895
                         return rt;
                     }
-// zbr:selfhost/typechecker.zbr:904
+// zbr:selfhost/typechecker.zbr:896
                     return Type_.unknown_;
                 },
                 .sub => {
+// zbr:selfhost/typechecker.zbr:898
+                    if (isNumeric(lt)) {
+// zbr:selfhost/typechecker.zbr:899
+                        return lt;
+                    }
+// zbr:selfhost/typechecker.zbr:900
+                    return rt;
+                },
+                .mul => {
+// zbr:selfhost/typechecker.zbr:902
+                    if (isNumeric(lt)) {
+// zbr:selfhost/typechecker.zbr:903
+                        return lt;
+                    }
+// zbr:selfhost/typechecker.zbr:904
+                    return rt;
+                },
+                .div => {
 // zbr:selfhost/typechecker.zbr:906
                     if (isNumeric(lt)) {
 // zbr:selfhost/typechecker.zbr:907
@@ -2955,332 +2982,314 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:908
                     return rt;
                 },
-                .mul => {
-// zbr:selfhost/typechecker.zbr:910
-                    if (isNumeric(lt)) {
-// zbr:selfhost/typechecker.zbr:911
-                        return lt;
-                    }
-// zbr:selfhost/typechecker.zbr:912
-                    return rt;
-                },
-                .div => {
-// zbr:selfhost/typechecker.zbr:914
-                    if (isNumeric(lt)) {
-// zbr:selfhost/typechecker.zbr:915
-                        return lt;
-                    }
-// zbr:selfhost/typechecker.zbr:916
-                    return rt;
-                },
                 .eq => {
-// zbr:selfhost/typechecker.zbr:918
+// zbr:selfhost/typechecker.zbr:910
                     return Type_.bool_;
                 },
                 .ne => {
-// zbr:selfhost/typechecker.zbr:920
+// zbr:selfhost/typechecker.zbr:912
                     return Type_.bool_;
                 },
                 .lt => {
-// zbr:selfhost/typechecker.zbr:922
+// zbr:selfhost/typechecker.zbr:914
                     return Type_.bool_;
                 },
                 .le => {
-// zbr:selfhost/typechecker.zbr:924
+// zbr:selfhost/typechecker.zbr:916
                     return Type_.bool_;
                 },
                 .gt => {
-// zbr:selfhost/typechecker.zbr:926
+// zbr:selfhost/typechecker.zbr:918
                     return Type_.bool_;
                 },
                 .ge => {
-// zbr:selfhost/typechecker.zbr:928
+// zbr:selfhost/typechecker.zbr:920
                     return Type_.bool_;
                 },
                 .and_ => {
-// zbr:selfhost/typechecker.zbr:930
+// zbr:selfhost/typechecker.zbr:922
                     return Type_.bool_;
                 },
                 .or_ => {
-// zbr:selfhost/typechecker.zbr:932
+// zbr:selfhost/typechecker.zbr:924
                     return Type_.bool_;
                 },
                 .in_ => {
-// zbr:selfhost/typechecker.zbr:934
+// zbr:selfhost/typechecker.zbr:926
                     return Type_.bool_;
                 },
                 else => {
-// zbr:selfhost/typechecker.zbr:936
+// zbr:selfhost/typechecker.zbr:928
                     return Type_.unknown_;
                 },
             }
         },
         .index => |_ptr_ei| {
             const ei = _ptr_ei.*;
-// zbr:selfhost/typechecker.zbr:939
+// zbr:selfhost/typechecker.zbr:931
             const idx_recv: Type_ = inferExpr(ei.object.*, ctx);
-// zbr:selfhost/typechecker.zbr:940
+// zbr:selfhost/typechecker.zbr:932
             switch (idx_recv) {
                 .string_ => {
-// zbr:selfhost/typechecker.zbr:942
+// zbr:selfhost/typechecker.zbr:934
                     return Type_.char_;
                 },
                 .str_slice => {
-// zbr:selfhost/typechecker.zbr:944
+// zbr:selfhost/typechecker.zbr:936
                     return Type_.string_;
                 },
                 else => {
-// zbr:selfhost/typechecker.zbr:946
+// zbr:selfhost/typechecker.zbr:938
                     return Type_.unknown_;
                 },
             }
         },
         .slice => |_ptr_esl| {
             const esl = _ptr_esl.*;
-// zbr:selfhost/typechecker.zbr:949
+// zbr:selfhost/typechecker.zbr:941
             const sl_recv: Type_ = inferExpr(esl.object.*, ctx);
-// zbr:selfhost/typechecker.zbr:950
+// zbr:selfhost/typechecker.zbr:942
             switch (sl_recv) {
                 .string_ => {
-// zbr:selfhost/typechecker.zbr:952
+// zbr:selfhost/typechecker.zbr:944
                     return Type_.string_;
                 },
                 .str_slice => {
-// zbr:selfhost/typechecker.zbr:954
+// zbr:selfhost/typechecker.zbr:946
                     return Type_.str_slice;
                 },
                 else => {
-// zbr:selfhost/typechecker.zbr:956
+// zbr:selfhost/typechecker.zbr:948
                     return Type_.unknown_;
                 },
             }
         },
         else => |_| {
-// zbr:selfhost/typechecker.zbr:958
+// zbr:selfhost/typechecker.zbr:950
             return Type_.unknown_;
         },
     }
 }
 
 pub fn narrowPayloadFromOnValue(mt: *ModuleTypes, v: Expr) ?Type_ {
-// zbr:selfhost/typechecker.zbr:968
+// zbr:selfhost/typechecker.zbr:960
     return narrowPayloadFromOnValueDeps(mt, ModuleTypes.init(), v);
 }
 
 pub fn narrowPayloadFromOnValueDeps(mt: *ModuleTypes, dt: *ModuleTypes, v: Expr) ?Type_ {
-// zbr:selfhost/typechecker.zbr:975
+// zbr:selfhost/typechecker.zbr:967
     if (v == .member) {
         const em_ptr = v.member;
         const em = em_ptr.*;
-// zbr:selfhost/typechecker.zbr:976
+// zbr:selfhost/typechecker.zbr:968
         if (em.object.* == .ident) {
             const oid = em.object.*.ident;
-// zbr:selfhost/typechecker.zbr:977
-            const unam: []const u8 = _str_concat("", oid.name, _allocator);
-// zbr:selfhost/typechecker.zbr:978
-            const vnam: []const u8 = _str_concat("", em.member, _allocator);
-// zbr:selfhost/typechecker.zbr:979
+// zbr:selfhost/typechecker.zbr:969
+            const unam: []const u8 = oid.name;
+// zbr:selfhost/typechecker.zbr:970
+            const vnam: []const u8 = em.member;
+// zbr:selfhost/typechecker.zbr:971
             var pt: ?Type_ = mt.variantPayload(unam, vnam);
-// zbr:selfhost/typechecker.zbr:980
+// zbr:selfhost/typechecker.zbr:972
             if ((pt == null)) {
-// zbr:selfhost/typechecker.zbr:981
+// zbr:selfhost/typechecker.zbr:973
                 pt = dt.variantPayload(unam, vnam);
             }
-// zbr:selfhost/typechecker.zbr:982
+// zbr:selfhost/typechecker.zbr:974
             if ((pt != null)) {
-// zbr:selfhost/typechecker.zbr:983
+// zbr:selfhost/typechecker.zbr:975
                 const pt_val: Type_ = pt.?;
-// zbr:selfhost/typechecker.zbr:984
+// zbr:selfhost/typechecker.zbr:976
                 switch (pt_val) {
                     .unknown_ => {
-// zbr:selfhost/typechecker.zbr:986
+// zbr:selfhost/typechecker.zbr:978
                         return null;
                     },
                     else => {
-// zbr:selfhost/typechecker.zbr:988
+// zbr:selfhost/typechecker.zbr:980
                         return pt_val;
                     },
                 }
             }
         }
     }
-// zbr:selfhost/typechecker.zbr:989
+// zbr:selfhost/typechecker.zbr:981
     return null;
 }
 
 pub fn walkExpr(e: Expr, ctx: *InferCtx) void {
-// zbr:selfhost/typechecker.zbr:1003
+// zbr:selfhost/typechecker.zbr:995
     const t_ign: Type_ = inferExpr(e, ctx);
-// zbr:selfhost/typechecker.zbr:1005
+// zbr:selfhost/typechecker.zbr:997
     const used: bool = isString(t_ign);
-// zbr:selfhost/typechecker.zbr:1006
+// zbr:selfhost/typechecker.zbr:998
     if (used) {
         // pass
     }
 }
 
 pub fn isCharsCallExpr(e: Expr) bool {
-// zbr:selfhost/typechecker.zbr:1013
+// zbr:selfhost/typechecker.zbr:1005
     if (e == .call) {
         const cal_ptr = e.call;
         const cal = cal_ptr.*;
-// zbr:selfhost/typechecker.zbr:1014
+// zbr:selfhost/typechecker.zbr:1006
         if (cal.callee == .member) {
             const mem_ptr = cal.callee.member;
             const mem = mem_ptr.*;
-// zbr:selfhost/typechecker.zbr:1015
+// zbr:selfhost/typechecker.zbr:1007
             if (std.mem.eql(u8, mem.member, "chars")) {
-// zbr:selfhost/typechecker.zbr:1016
+// zbr:selfhost/typechecker.zbr:1008
                 return true;
             }
         }
     }
-// zbr:selfhost/typechecker.zbr:1017
+// zbr:selfhost/typechecker.zbr:1009
     return false;
 }
 
 pub fn isStrListCallExpr(e: Expr) bool {
-// zbr:selfhost/typechecker.zbr:1023
+// zbr:selfhost/typechecker.zbr:1015
     if (e == .call) {
         const cal_ptr = e.call;
         const cal = cal_ptr.*;
-// zbr:selfhost/typechecker.zbr:1024
+// zbr:selfhost/typechecker.zbr:1016
         if (cal.callee == .member) {
             const mem_ptr = cal.callee.member;
             const mem = mem_ptr.*;
-// zbr:selfhost/typechecker.zbr:1025
+// zbr:selfhost/typechecker.zbr:1017
             if ((std.mem.eql(u8, mem.member, "split") or std.mem.eql(u8, mem.member, "lines"))) {
-// zbr:selfhost/typechecker.zbr:1026
+// zbr:selfhost/typechecker.zbr:1018
                 return true;
             }
-// zbr:selfhost/typechecker.zbr:1027
+// zbr:selfhost/typechecker.zbr:1019
             if (((std.mem.eql(u8, mem.member, "keys") or std.mem.eql(u8, mem.member, "items")) or std.mem.eql(u8, mem.member, "values"))) {
-// zbr:selfhost/typechecker.zbr:1028
+// zbr:selfhost/typechecker.zbr:1020
                 return true;
             }
-// zbr:selfhost/typechecker.zbr:1029
+// zbr:selfhost/typechecker.zbr:1021
             if ((std.mem.eql(u8, mem.member, "groups") or std.mem.eql(u8, mem.member, "findAll"))) {
-// zbr:selfhost/typechecker.zbr:1030
+// zbr:selfhost/typechecker.zbr:1022
                 return true;
             }
         }
     }
-// zbr:selfhost/typechecker.zbr:1031
+// zbr:selfhost/typechecker.zbr:1023
     return false;
 }
 
 pub fn walkStmts(stmts: std.ArrayList(Stmt), ctx: *InferCtx) void {
-// zbr:selfhost/typechecker.zbr:1034
+// zbr:selfhost/typechecker.zbr:1026
     for (stmts.items) |s| {
         walkStmt(s, ctx);
     }
 }
 
 pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
-// zbr:selfhost/typechecker.zbr:1038
+// zbr:selfhost/typechecker.zbr:1030
     switch (s) {
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
             walkExpr(si.cond.*, ctx);
-// zbr:selfhost/typechecker.zbr:1041
+// zbr:selfhost/typechecker.zbr:1033
             if ((si.is_capture != null)) {
-// zbr:selfhost/typechecker.zbr:1042
+// zbr:selfhost/typechecker.zbr:1034
                 var cap_t: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:1043
+// zbr:selfhost/typechecker.zbr:1035
                 if (si.cond.* == .type_check) {
                     const tce_ptr = si.cond.*.type_check;
                     const tce = tce_ptr.*;
-// zbr:selfhost/typechecker.zbr:1044
+// zbr:selfhost/typechecker.zbr:1036
                     if ((tce.variant_name != null)) {
-// zbr:selfhost/typechecker.zbr:1046
+// zbr:selfhost/typechecker.zbr:1038
                         const type_nm: []const u8 = tce.type_name;
-// zbr:selfhost/typechecker.zbr:1047
+// zbr:selfhost/typechecker.zbr:1039
                         const var_nm: []const u8 = tce.variant_name.?;
-// zbr:selfhost/typechecker.zbr:1048
+// zbr:selfhost/typechecker.zbr:1040
                         var pt: ?Type_ = ctx.module_types.variantPayload(type_nm, var_nm);
-// zbr:selfhost/typechecker.zbr:1049
+// zbr:selfhost/typechecker.zbr:1041
                         if ((pt == null)) {
-// zbr:selfhost/typechecker.zbr:1050
+// zbr:selfhost/typechecker.zbr:1042
                             pt = ctx.dep_types.variantPayload(type_nm, var_nm);
                         }
-// zbr:selfhost/typechecker.zbr:1051
+// zbr:selfhost/typechecker.zbr:1043
                         if ((pt != null)) {
-// zbr:selfhost/typechecker.zbr:1052
+// zbr:selfhost/typechecker.zbr:1044
                             cap_t = pt.?;
                         }
                     } else {
-// zbr:selfhost/typechecker.zbr:1055
+// zbr:selfhost/typechecker.zbr:1047
                         const subj_t: Type_ = inferExpr(tce.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:1056
+// zbr:selfhost/typechecker.zbr:1048
                         if (subj_t == .optional) {
                             const inner_ptr = subj_t.optional;
                             const inner = inner_ptr.*;
-// zbr:selfhost/typechecker.zbr:1057
+// zbr:selfhost/typechecker.zbr:1049
                             cap_t = inner;
                         }
                     }
                 } else {
-// zbr:selfhost/typechecker.zbr:1060
+// zbr:selfhost/typechecker.zbr:1052
                     const cond_t: Type_ = inferExpr(si.cond.*, ctx);
-// zbr:selfhost/typechecker.zbr:1061
+// zbr:selfhost/typechecker.zbr:1053
                     if (cond_t == .optional) {
                         const inner_ptr = cond_t.optional;
                         const inner = inner_ptr.*;
-// zbr:selfhost/typechecker.zbr:1062
+// zbr:selfhost/typechecker.zbr:1054
                         cap_t = inner;
                     }
                 }
                 ctx.bind(si.is_capture.?, cap_t);
             }
             walkStmts(si.then_stmts, ctx);
-// zbr:selfhost/typechecker.zbr:1065
+// zbr:selfhost/typechecker.zbr:1057
             for (si.else_ifs.items) |ei| {
                 walkExpr(ei.cond, ctx);
-// zbr:selfhost/typechecker.zbr:1067
+// zbr:selfhost/typechecker.zbr:1059
                 if ((ei.is_capture != null)) {
-// zbr:selfhost/typechecker.zbr:1068
+// zbr:selfhost/typechecker.zbr:1060
                     var ei_cap_t: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:1069
+// zbr:selfhost/typechecker.zbr:1061
                     if (ei.cond == .type_check) {
                         const eice_ptr = ei.cond.type_check;
                         const eice = eice_ptr.*;
-// zbr:selfhost/typechecker.zbr:1070
+// zbr:selfhost/typechecker.zbr:1062
                         if ((eice.variant_name != null)) {
-// zbr:selfhost/typechecker.zbr:1071
+// zbr:selfhost/typechecker.zbr:1063
                             const e_type_nm: []const u8 = eice.type_name;
-// zbr:selfhost/typechecker.zbr:1072
+// zbr:selfhost/typechecker.zbr:1064
                             const e_var_nm: []const u8 = eice.variant_name.?;
-// zbr:selfhost/typechecker.zbr:1073
+// zbr:selfhost/typechecker.zbr:1065
                             var e_pt: ?Type_ = ctx.module_types.variantPayload(e_type_nm, e_var_nm);
-// zbr:selfhost/typechecker.zbr:1074
+// zbr:selfhost/typechecker.zbr:1066
                             if ((e_pt == null)) {
-// zbr:selfhost/typechecker.zbr:1075
+// zbr:selfhost/typechecker.zbr:1067
                                 e_pt = ctx.dep_types.variantPayload(e_type_nm, e_var_nm);
                             }
-// zbr:selfhost/typechecker.zbr:1076
+// zbr:selfhost/typechecker.zbr:1068
                             if ((e_pt != null)) {
-// zbr:selfhost/typechecker.zbr:1077
+// zbr:selfhost/typechecker.zbr:1069
                                 ei_cap_t = e_pt.?;
                             }
                         } else {
-// zbr:selfhost/typechecker.zbr:1079
+// zbr:selfhost/typechecker.zbr:1071
                             const ei_subj_t: Type_ = inferExpr(eice.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:1080
+// zbr:selfhost/typechecker.zbr:1072
                             if (ei_subj_t == .optional) {
                                 const ei_inner_ptr = ei_subj_t.optional;
                                 const ei_inner = ei_inner_ptr.*;
-// zbr:selfhost/typechecker.zbr:1081
+// zbr:selfhost/typechecker.zbr:1073
                                 ei_cap_t = ei_inner;
                             }
                         }
                     } else {
-// zbr:selfhost/typechecker.zbr:1083
+// zbr:selfhost/typechecker.zbr:1075
                         const ei_cond_t: Type_ = inferExpr(ei.cond, ctx);
-// zbr:selfhost/typechecker.zbr:1084
+// zbr:selfhost/typechecker.zbr:1076
                         if (ei_cond_t == .optional) {
                             const ei_inner_ptr = ei_cond_t.optional;
                             const ei_inner = ei_inner_ptr.*;
-// zbr:selfhost/typechecker.zbr:1085
+// zbr:selfhost/typechecker.zbr:1077
                             ei_cap_t = ei_inner;
                         }
                     }
@@ -3288,7 +3297,7 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
                 }
                 walkStmts(ei.stmts, ctx);
             }
-// zbr:selfhost/typechecker.zbr:1088
+// zbr:selfhost/typechecker.zbr:1080
             if ((si.else_stmts != null)) {
                 walkStmts(si.else_stmts.?, ctx);
             }
@@ -3301,70 +3310,70 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         .for_in => |_ptr_fi| {
             const fi = _ptr_fi.*;
             walkExpr(fi.iter.*, ctx);
-// zbr:selfhost/typechecker.zbr:1101
+// zbr:selfhost/typechecker.zbr:1093
             var loop_var_t: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:1102
+// zbr:selfhost/typechecker.zbr:1094
             if (((@as(i64, @intCast(fi.vars.items.len)) == 1) and isCharsCallExpr(fi.iter.*))) {
-// zbr:selfhost/typechecker.zbr:1103
+// zbr:selfhost/typechecker.zbr:1095
                 loop_var_t = Type_.char_;
             } else {
-// zbr:selfhost/typechecker.zbr:1104
+// zbr:selfhost/typechecker.zbr:1096
                 if (((@as(i64, @intCast(fi.vars.items.len)) == 1) and isStrListCallExpr(fi.iter.*))) {
-// zbr:selfhost/typechecker.zbr:1105
+// zbr:selfhost/typechecker.zbr:1097
                     loop_var_t = Type_.string_;
                 }
             }
-// zbr:selfhost/typechecker.zbr:1106
+// zbr:selfhost/typechecker.zbr:1098
             for (fi.vars.items) |v| {
-                ctx.bind(_str_concat("", v, _allocator), loop_var_t);
+                ctx.bind(v, loop_var_t);
             }
             walkStmts(fi.stmts, ctx);
-// zbr:selfhost/typechecker.zbr:1111
+// zbr:selfhost/typechecker.zbr:1103
             for (fi.vars.items) |v2| {
-                ctx.bind(_str_concat("", v2, _allocator), loop_var_t);
+                ctx.bind(v2, loop_var_t);
             }
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
             walkExpr(fnum.start.*, ctx);
             walkExpr(fnum.stop_.*, ctx);
-// zbr:selfhost/typechecker.zbr:1116
+// zbr:selfhost/typechecker.zbr:1108
             if ((fnum.step != null)) {
                 walkExpr(fnum.step.?.*, ctx);
             }
-            ctx.bind(_str_concat("", fnum.var_, _allocator), Type_.int_);
+            ctx.bind(fnum.var_, Type_.int_);
             walkStmts(fnum.stmts, ctx);
         },
         .branch_ => |_ptr_sb| {
             const sb = _ptr_sb.*;
             walkExpr(sb.expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:1134
+// zbr:selfhost/typechecker.zbr:1126
             for (sb.cases.items) |c| {
-// zbr:selfhost/typechecker.zbr:1135
+// zbr:selfhost/typechecker.zbr:1127
                 for (c.values.items) |v| {
                     walkExpr(v, ctx);
                 }
-// zbr:selfhost/typechecker.zbr:1137
+// zbr:selfhost/typechecker.zbr:1129
                 if (((c.binding != null) and (@as(i64, @intCast(c.values.items.len)) == 1))) {
-// zbr:selfhost/typechecker.zbr:1138
+// zbr:selfhost/typechecker.zbr:1130
                     const val: Expr = c.values.items[@intCast(0)];
-// zbr:selfhost/typechecker.zbr:1139
+// zbr:selfhost/typechecker.zbr:1131
                     const payload: ?Type_ = narrowPayloadFromOnValueDeps(ctx.module_types, ctx.dep_types, val);
-// zbr:selfhost/typechecker.zbr:1140
+// zbr:selfhost/typechecker.zbr:1132
                     if ((payload != null)) {
-                        ctx.bind(_str_concat("", c.binding.?, _allocator), payload.?);
+                        ctx.bind(c.binding.?, payload.?);
                     }
                 }
                 walkStmts(c.stmts, ctx);
             }
-// zbr:selfhost/typechecker.zbr:1143
+// zbr:selfhost/typechecker.zbr:1135
             if ((sb.else_ != null)) {
                 walkStmts(sb.else_.?, ctx);
             }
         },
         .return_ => |_ptr_sr| {
             const sr = _ptr_sr.*;
-// zbr:selfhost/typechecker.zbr:1146
+// zbr:selfhost/typechecker.zbr:1138
             if ((sr.value != null)) {
                 walkExpr(sr.value.?.*, ctx);
             }
@@ -3372,7 +3381,7 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         .assert_ => |_ptr_sa| {
             const sa = _ptr_sa.*;
             walkExpr(sa.cond.*, ctx);
-// zbr:selfhost/typechecker.zbr:1150
+// zbr:selfhost/typechecker.zbr:1142
             if ((sa.message != null)) {
                 walkExpr(sa.message.?.*, ctx);
             }
@@ -3393,20 +3402,20 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         },
         .var_ => |_ptr_dv| {
             const dv = _ptr_dv.*;
-// zbr:selfhost/typechecker.zbr:1164
+// zbr:selfhost/typechecker.zbr:1156
             var t: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:1165
+// zbr:selfhost/typechecker.zbr:1157
             if ((dv.type_ != null)) {
-// zbr:selfhost/typechecker.zbr:1166
+// zbr:selfhost/typechecker.zbr:1158
                 t = typeFromRef(dv.type_.?);
             } else {
-// zbr:selfhost/typechecker.zbr:1168
+// zbr:selfhost/typechecker.zbr:1160
                 if ((dv.init_expr != null)) {
-// zbr:selfhost/typechecker.zbr:1169
+// zbr:selfhost/typechecker.zbr:1161
                     t = inferExpr(dv.init_expr.?.*, ctx);
                 }
             }
-            ctx.bind(_str_concat("", dv.name, _allocator), t);
+            ctx.bind(dv.name, t);
         },
         .expr => |_ptr_e| {
             const e = _ptr_e.*;
@@ -3423,11 +3432,11 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         },
         .raise_ => |_ptr_sra| {
             const sra = _ptr_sra.*;
-// zbr:selfhost/typechecker.zbr:1179
+// zbr:selfhost/typechecker.zbr:1171
             if ((sra.message != null)) {
                 walkExpr(sra.message.?.*, ctx);
             }
-// zbr:selfhost/typechecker.zbr:1181
+// zbr:selfhost/typechecker.zbr:1173
             if ((sra.details != null)) {
                 walkExpr(sra.details.?.*, ctx);
             }
@@ -3435,7 +3444,7 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         .try_catch => |_ptr_stc| {
             const stc = _ptr_stc.*;
             walkStmts(stc.stmts, ctx);
-// zbr:selfhost/typechecker.zbr:1185
+// zbr:selfhost/typechecker.zbr:1177
             for (stc.clauses.items) |cc| {
                 walkStmts(cc.stmts, ctx);
             }
@@ -3448,36 +3457,36 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         .destruct => |_ptr_sds| {
             const sds = _ptr_sds.*;
             walkExpr(sds.init_expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:1192
+// zbr:selfhost/typechecker.zbr:1184
             var destruct_recv_t: Type_ = inferExpr(sds.init_expr.*, ctx);
-// zbr:selfhost/typechecker.zbr:1193
+// zbr:selfhost/typechecker.zbr:1185
             if (destruct_recv_t == .ref_to) {
                 const dr_ptr = destruct_recv_t.ref_to;
                 const dr = dr_ptr.*;
-// zbr:selfhost/typechecker.zbr:1194
+// zbr:selfhost/typechecker.zbr:1186
                 destruct_recv_t = dr;
             }
-// zbr:selfhost/typechecker.zbr:1195
+// zbr:selfhost/typechecker.zbr:1187
             var destruct_class: []const u8 = "";
-// zbr:selfhost/typechecker.zbr:1196
+// zbr:selfhost/typechecker.zbr:1188
             if (destruct_recv_t == .named) {
                 const dtn = destruct_recv_t.named;
-// zbr:selfhost/typechecker.zbr:1197
-                destruct_class = _str_concat("", dtn, _allocator);
+// zbr:selfhost/typechecker.zbr:1189
+                destruct_class = dtn;
             }
-// zbr:selfhost/typechecker.zbr:1198
+// zbr:selfhost/typechecker.zbr:1190
             for (sds.names.items) |nm| {
-// zbr:selfhost/typechecker.zbr:1199
-                const nm_s: []const u8 = _str_concat("", nm, _allocator);
-// zbr:selfhost/typechecker.zbr:1200
+// zbr:selfhost/typechecker.zbr:1191
+                const nm_s: []const u8 = nm;
+// zbr:selfhost/typechecker.zbr:1192
                 var ftype: Type_ = Type_.unknown_;
-// zbr:selfhost/typechecker.zbr:1201
+// zbr:selfhost/typechecker.zbr:1193
                 if (!std.mem.eql(u8, destruct_class, "")) {
-// zbr:selfhost/typechecker.zbr:1202
+// zbr:selfhost/typechecker.zbr:1194
                     const ft: ?Type_ = ctx.fieldTypeAny(destruct_class, nm_s);
-// zbr:selfhost/typechecker.zbr:1203
+// zbr:selfhost/typechecker.zbr:1195
                     if ((ft != null)) {
-// zbr:selfhost/typechecker.zbr:1204
+// zbr:selfhost/typechecker.zbr:1196
                         ftype = ft.?;
                     }
                 }
@@ -3490,14 +3499,14 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
         },
         .print_ => |_ptr_sp| {
             const sp = _ptr_sp.*;
-// zbr:selfhost/typechecker.zbr:1209
+// zbr:selfhost/typechecker.zbr:1201
             for (sp.args.items) |a| {
                 walkExpr(a, ctx);
             }
         },
         .contract => |_ptr_sc| {
             const sc = _ptr_sc.*;
-// zbr:selfhost/typechecker.zbr:1212
+// zbr:selfhost/typechecker.zbr:1204
             for (sc.exprs.items) |e| {
                 walkExpr(e, ctx);
             }
@@ -3508,13 +3517,13 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,
     pub fn main() void {
-// zbr:selfhost/typechecker.zbr:1219
+// zbr:selfhost/typechecker.zbr:1211
         var mt: *ModuleTypes = ModuleTypes.init();
-// zbr:selfhost/typechecker.zbr:1220
+// zbr:selfhost/typechecker.zbr:1212
         var ct: *ClassTypes = ClassTypes.init("Foo");
         ct.setField("name", Type_.string_);
         mt.addClass(ct);
-// zbr:selfhost/typechecker.zbr:1223
+// zbr:selfhost/typechecker.zbr:1215
         if (mt.hasClass("Foo")) {
             std.debug.print("{s}\n", .{"ok"});
         } else {

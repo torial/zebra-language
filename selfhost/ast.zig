@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1505,7 +1514,7 @@ pub const Module = struct {
     pub fn init(file: []const u8, decls: std.ArrayList(Decl)) Module {
         var _self: Module = undefined;
 // zbr:selfhost/ast.zbr:34
-            _self.file = file;
+            _self.file = _intern(file);
 // zbr:selfhost/ast.zbr:35
             _self.decls = decls;
         return _self;
@@ -1561,7 +1570,7 @@ pub const TypeParam = struct {
     pub fn init(name: []const u8, constraint: ?[]const u8) TypeParam {
         var _self: TypeParam = undefined;
 // zbr:selfhost/ast.zbr:79
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:80
             _self.constraint = constraint;
         return _self;
@@ -1578,7 +1587,7 @@ pub const DeclUse = struct {
 // zbr:selfhost/ast.zbr:90
             _self.span = span;
 // zbr:selfhost/ast.zbr:91
-            _self.path = path;
+            _self.path = _intern(path);
 // zbr:selfhost/ast.zbr:92
             _self.exposed = exposed;
         return _self;
@@ -1595,7 +1604,7 @@ pub const DeclNamespace = struct {
 // zbr:selfhost/ast.zbr:102
             _self.span = span;
 // zbr:selfhost/ast.zbr:103
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:104
             _self.decls = decls;
         return _self;
@@ -1619,7 +1628,7 @@ pub const DeclClass = struct {
 // zbr:selfhost/ast.zbr:120
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:121
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:122
             _self.type_params = type_params;
 // zbr:selfhost/ast.zbr:123
@@ -1648,7 +1657,7 @@ pub const DeclInterface = struct {
 // zbr:selfhost/ast.zbr:139
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:140
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:141
             _self.ifaces = ifaces;
 // zbr:selfhost/ast.zbr:142
@@ -1672,7 +1681,7 @@ pub const DeclStruct = struct {
 // zbr:selfhost/ast.zbr:156
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:157
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:158
             _self.ifaces = ifaces;
 // zbr:selfhost/ast.zbr:159
@@ -1696,7 +1705,7 @@ pub const DeclMixin = struct {
 // zbr:selfhost/ast.zbr:172
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:173
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:174
             _self.members = members;
         return _self;
@@ -1713,7 +1722,7 @@ pub const EnumMember = struct {
 // zbr:selfhost/ast.zbr:184
             _self.span = span;
 // zbr:selfhost/ast.zbr:185
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:186
             _self.value = value;
         return _self;
@@ -1734,7 +1743,7 @@ pub const DeclEnum = struct {
 // zbr:selfhost/ast.zbr:197
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:198
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:199
             _self.base = base;
 // zbr:selfhost/ast.zbr:200
@@ -1770,7 +1779,7 @@ pub const UnionVariant = struct {
 // zbr:selfhost/ast.zbr:222
             _self.span = span;
 // zbr:selfhost/ast.zbr:223
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:224
             _self.payload = payload;
         return _self;
@@ -1790,7 +1799,7 @@ pub const DeclUnion = struct {
 // zbr:selfhost/ast.zbr:234
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:235
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:236
             _self.variants = variants;
         return _self;
@@ -1808,7 +1817,7 @@ pub const DeclSig = struct {
 // zbr:selfhost/ast.zbr:247
             _self.span = span;
 // zbr:selfhost/ast.zbr:248
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:249
             _self.params = params;
 // zbr:selfhost/ast.zbr:250
@@ -1836,7 +1845,7 @@ pub const DeclMethod = struct {
 // zbr:selfhost/ast.zbr:268
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:269
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:270
             _self.params = params;
 // zbr:selfhost/ast.zbr:271
@@ -1870,7 +1879,7 @@ pub const DeclVar = struct {
 // zbr:selfhost/ast.zbr:290
             _self.mods = mods;
 // zbr:selfhost/ast.zbr:291
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:292
             _self.type_ = type_;
 // zbr:selfhost/ast.zbr:293
@@ -1926,7 +1935,7 @@ pub const Param = struct {
 // zbr:selfhost/ast.zbr:329
             _self.mode = mode;
 // zbr:selfhost/ast.zbr:330
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:331
             _self.type_ = type_;
 // zbr:selfhost/ast.zbr:332
@@ -1956,7 +1965,7 @@ pub const NamedTypeRef = struct {
 // zbr:selfhost/ast.zbr:354
             _self.span = span;
 // zbr:selfhost/ast.zbr:355
-            _self.name = name;
+            _self.name = _intern(name);
         return _self;
     }
 
@@ -1971,7 +1980,7 @@ pub const GenericTypeRef = struct {
 // zbr:selfhost/ast.zbr:363
             _self.span = span;
 // zbr:selfhost/ast.zbr:364
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:365
             _self.args = args;
         return _self;
@@ -2129,7 +2138,7 @@ pub const StmtForNum = struct {
 // zbr:selfhost/ast.zbr:478
             _self.span = span;
 // zbr:selfhost/ast.zbr:479
-            _self.var_ = var_;
+            _self.var_ = _intern(var_);
 // zbr:selfhost/ast.zbr:480
             _self.start = start;
 // zbr:selfhost/ast.zbr:481
@@ -2464,7 +2473,7 @@ pub const ExprIntLit = struct {
 // zbr:selfhost/ast.zbr:699
             _self.span = span;
 // zbr:selfhost/ast.zbr:700
-            _self.text = text;
+            _self.text = _intern(text);
 // zbr:selfhost/ast.zbr:701
             _self.base = base;
         return _self;
@@ -2480,7 +2489,7 @@ pub const ExprFloatLit = struct {
 // zbr:selfhost/ast.zbr:710
             _self.span = span;
 // zbr:selfhost/ast.zbr:711
-            _self.text = text;
+            _self.text = _intern(text);
         return _self;
     }
 
@@ -2508,7 +2517,7 @@ pub const ExprCharLit = struct {
 // zbr:selfhost/ast.zbr:730
             _self.span = span;
 // zbr:selfhost/ast.zbr:731
-            _self.text = text;
+            _self.text = _intern(text);
         return _self;
     }
 
@@ -2532,7 +2541,7 @@ pub const ExprStringLit = struct {
 // zbr:selfhost/ast.zbr:748
             _self.kind = kind;
 // zbr:selfhost/ast.zbr:749
-            _self.text = text;
+            _self.text = _intern(text);
         return _self;
     }
 
@@ -2564,7 +2573,7 @@ pub const ExceptField = struct {
     pub fn init(name: []const u8, value: Expr) ExceptField {
         var _self: ExceptField = undefined;
 // zbr:selfhost/ast.zbr:773
-            _self.name = name;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:774
             _self.value = value;
         return _self;
@@ -2597,7 +2606,7 @@ pub const ExprIdent = struct {
 // zbr:selfhost/ast.zbr:793
             _self.span = span;
 // zbr:selfhost/ast.zbr:794
-            _self.name = name;
+            _self.name = _intern(name);
         return _self;
     }
 
@@ -2614,7 +2623,7 @@ pub const ExprMember = struct {
 // zbr:selfhost/ast.zbr:805
             _self.object = object;
 // zbr:selfhost/ast.zbr:806
-            _self.member = member;
+            _self.member = _intern(member);
         return _self;
     }
 
@@ -2788,7 +2797,7 @@ pub const ExprTypeCheck = struct {
 // zbr:selfhost/ast.zbr:934
             _self.expr = expr;
 // zbr:selfhost/ast.zbr:935
-            _self.type_name = type_name;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/ast.zbr:936
             _self.variant_name = null;
         return _self;
@@ -2990,7 +2999,7 @@ pub const ExprZigLit = struct {
 // zbr:selfhost/ast.zbr:1066
             _self.span = span;
 // zbr:selfhost/ast.zbr:1067
-            _self.text = text;
+            _self.text = _intern(text);
         return _self;
     }
 

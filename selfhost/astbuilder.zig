@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1646,7 +1655,7 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
         {
             var _it_p = std.mem.splitSequence(u8, text, quote);
             while (_it_p.next()) |p| {
-                parts.append(_allocator, p) catch @panic("OOM");
+                parts.append(_allocator, _intern(p)) catch @panic("OOM");
             }
         }
 // zbr:selfhost/astbuilder.zbr:57
@@ -1698,7 +1707,7 @@ pub fn stripZigQuotes(text: []const u8) []const u8 {
     {
         var _it_p = std.mem.splitSequence(u8, text, quote);
         while (_it_p.next()) |p| {
-            parts.append(_allocator, p) catch @panic("OOM");
+            parts.append(_allocator, _intern(p)) catch @panic("OOM");
         }
     }
 // zbr:selfhost/astbuilder.zbr:85
@@ -1742,7 +1751,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
     {
         var _it_p = std.mem.splitSequence(u8, text, quote);
         while (_it_p.next()) |p| {
-            parts.append(_allocator, p) catch @panic("OOM");
+            parts.append(_allocator, _intern(p)) catch @panic("OOM");
         }
     }
 // zbr:selfhost/astbuilder.zbr:109
@@ -1769,7 +1778,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
     {
         var _it_bp = std.mem.splitSequence(u8, content, "\\");
         while (_it_bp.next()) |bp| {
-            bs_parts.append(_allocator, bp) catch @panic("OOM");
+            bs_parts.append(_allocator, _intern(bp)) catch @panic("OOM");
         }
     }
 // zbr:selfhost/astbuilder.zbr:122
@@ -1806,7 +1815,7 @@ pub fn stripCharQuotes(text: []const u8) []const u8 {
     {
         var _it_p = std.mem.splitSequence(u8, text, "'");
         while (_it_p.next()) |p| {
-            parts.append(_allocator, p) catch @panic("OOM");
+            parts.append(_allocator, _intern(p)) catch @panic("OOM");
         }
     }
 // zbr:selfhost/astbuilder.zbr:142
@@ -2321,7 +2330,7 @@ pub const ASTBuilder = struct {
                 var vars = std.ArrayList([]const u8){};
 // zbr:selfhost/astbuilder.zbr:428
                 for (pfor.var_names.items) |vname| {
-                    vars.append(_allocator, vname) catch @panic("OOM");
+                    vars.append(_allocator, _intern(vname)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:430
                 return Stmt{ .for_in = blk_box_20: { const _bv: std.meta.Child(@FieldType(Stmt, "for_in")) = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _bx0: { const _bv = iter_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } };
@@ -2537,7 +2546,7 @@ pub const ASTBuilder = struct {
                     {
                         var _it_rp = std.mem.splitSequence(u8, pat, "..");
                         while (_it_rp.next()) |rp| {
-                            range_parts.append(_allocator, rp) catch @panic("OOM");
+                            range_parts.append(_allocator, _intern(rp)) catch @panic("OOM");
                         }
                     }
 // zbr:selfhost/astbuilder.zbr:550
@@ -2559,7 +2568,7 @@ pub const ASTBuilder = struct {
                         {
                             var _it_p = std.mem.splitSequence(u8, pat, ".");
                             while (_it_p.next()) |p| {
-                                parts.append(_allocator, p) catch @panic("OOM");
+                                parts.append(_allocator, _intern(p)) catch @panic("OOM");
                             }
                         }
 // zbr:selfhost/astbuilder.zbr:560
@@ -3128,7 +3137,7 @@ pub const ASTBuilder = struct {
                     } else {
 // zbr:selfhost/astbuilder.zbr:876
                         if (((gch == ',') and (depth == 0))) {
-                            result.append(_allocator, current) catch @panic("OOM");
+                            result.append(_allocator, _intern(current)) catch @panic("OOM");
 // zbr:selfhost/astbuilder.zbr:878
                             current = "";
                         } else {
@@ -3141,7 +3150,7 @@ pub const ASTBuilder = struct {
         }
 // zbr:selfhost/astbuilder.zbr:881
         if (!std.mem.eql(u8, current, "")) {
-            result.append(_allocator, current) catch @panic("OOM");
+            result.append(_allocator, _intern(current)) catch @panic("OOM");
         }
 // zbr:selfhost/astbuilder.zbr:883
         return result;
@@ -3166,7 +3175,7 @@ pub const ASTBuilder = struct {
             {
                 var _it_p = std.mem.splitSequence(u8, s, ",");
                 while (_it_p.next()) |p| {
-                    inner_parts.append(_allocator, p) catch @panic("OOM");
+                    inner_parts.append(_allocator, _intern(p)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/astbuilder.zbr:899
@@ -3185,7 +3194,7 @@ pub const ASTBuilder = struct {
                     {
                         var _it_sp = std.mem.splitSequence(u8, part, "(");
                         while (_it_sp.next()) |sp| {
-                            stripped.append(_allocator, sp) catch @panic("OOM");
+                            stripped.append(_allocator, _intern(sp)) catch @panic("OOM");
                         }
                     }
 // zbr:selfhost/astbuilder.zbr:909
@@ -3202,7 +3211,7 @@ pub const ASTBuilder = struct {
                     {
                         var _it_sp = std.mem.splitSequence(u8, part, ")");
                         while (_it_sp.next()) |sp| {
-                            stripped.append(_allocator, sp) catch @panic("OOM");
+                            stripped.append(_allocator, _intern(sp)) catch @panic("OOM");
                         }
                     }
 // zbr:selfhost/astbuilder.zbr:915
@@ -3229,7 +3238,7 @@ pub const ASTBuilder = struct {
             {
                 var _it_p = std.mem.splitSequence(u8, s, "^");
                 while (_it_p.next()) |p| {
-                    rest_parts.append(_allocator, p) catch @panic("OOM");
+                    rest_parts.append(_allocator, _intern(p)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/astbuilder.zbr:928
@@ -3252,7 +3261,7 @@ pub const ASTBuilder = struct {
             {
                 var _it_p = std.mem.splitSequence(u8, s, "?");
                 while (_it_p.next()) |p| {
-                    parts.append(_allocator, p) catch @panic("OOM");
+                    parts.append(_allocator, _intern(p)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/astbuilder.zbr:940
@@ -3270,7 +3279,7 @@ pub const ASTBuilder = struct {
             {
                 var _it_p = std.mem.splitSequence(u8, s, "(");
                 while (_it_p.next()) |p| {
-                    name_parts.append(_allocator, p) catch @panic("OOM");
+                    name_parts.append(_allocator, _intern(p)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/astbuilder.zbr:949
@@ -3297,7 +3306,7 @@ pub const ASTBuilder = struct {
             {
                 var _it_q = std.mem.splitSequence(u8, rest, ")");
                 while (_it_q.next()) |q| {
-                    rparts.append(_allocator, q) catch @panic("OOM");
+                    rparts.append(_allocator, _intern(q)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/astbuilder.zbr:962

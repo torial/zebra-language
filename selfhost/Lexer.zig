@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1572,7 +1581,7 @@ pub const Lexer = struct {
         const _self = _allocator.create(Lexer) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Lexer");
 // zbr:selfhost/Lexer.zbr:79
-            _self.src = "";
+            _self.src = _intern("");
 // zbr:selfhost/Lexer.zbr:80
             _self.pos = 0;
 // zbr:selfhost/Lexer.zbr:81
@@ -1604,7 +1613,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:94
         var lex = Lexer.init();
 // zbr:selfhost/Lexer.zbr:95
-        lex.src = source;
+        lex.src = _intern(source);
         try lex.run();
 // zbr:selfhost/Lexer.zbr:97
         return lex.out;

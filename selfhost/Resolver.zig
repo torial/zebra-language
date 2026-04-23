@@ -14,8 +14,17 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -1487,7 +1496,7 @@ pub const ResolveError = struct {
     pub fn init(message: []const u8) ResolveError {
         var _self: ResolveError = undefined;
 // zbr:selfhost/Resolver.zbr:40
-            _self.message = message;
+            _self.message = _intern(message);
         return _self;
     }
 
@@ -1558,46 +1567,46 @@ pub const Resolver = struct {
         switch (decl) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
-                self.module_scope.put(c.name, 0) catch @panic("OOM");
+                self.module_scope.put(_intern(c.name), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:92
                 self.symbol_count = (self.symbol_count + 1);
             },
             .struct_ => |_ptr_s| {
                 const s = _ptr_s.*;
-                self.module_scope.put(s.name, 0) catch @panic("OOM");
+                self.module_scope.put(_intern(s.name), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:95
                 self.symbol_count = (self.symbol_count + 1);
             },
             .union_decl => |_ptr_u| {
                 const u = _ptr_u.*;
-                self.module_scope.put(u.name, 0) catch @panic("OOM");
+                self.module_scope.put(_intern(u.name), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:98
                 self.symbol_count = (self.symbol_count + 1);
             },
             .enum_ => |_ptr_e| {
                 const e = _ptr_e.*;
-                self.module_scope.put(e.name, 0) catch @panic("OOM");
+                self.module_scope.put(_intern(e.name), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:101
                 self.symbol_count = (self.symbol_count + 1);
             },
             .sig_ => |_ptr_sg| {
                 const sg = _ptr_sg.*;
-                self.module_scope.put(sg.name, 0) catch @panic("OOM");
+                self.module_scope.put(_intern(sg.name), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:104
                 self.symbol_count = (self.symbol_count + 1);
             },
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
-                self.module_scope.put(m.name, 1) catch @panic("OOM");
+                self.module_scope.put(_intern(m.name), 1) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:107
                 self.symbol_count = (self.symbol_count + 1);
             },
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
-                self.module_scope.put(u.path, 5) catch @panic("OOM");
+                self.module_scope.put(_intern(u.path), 5) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:110
                 for (u.exposed.items) |name| {
-                    self.module_scope.put(name, 5) catch @panic("OOM");
+                    self.module_scope.put(_intern(name), 5) catch @panic("OOM");
                 }
             },
             else => |_| {
@@ -1645,7 +1654,7 @@ pub const Resolver = struct {
         self.class_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:138
         for (type_params.items) |tp| {
-            self.class_scope.put(tp, 6) catch @panic("OOM");
+            self.class_scope.put(_intern(tp), 6) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:140
             self.symbol_count = (self.symbol_count + 1);
         }
@@ -1664,13 +1673,13 @@ pub const Resolver = struct {
         switch (member) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
-                self.class_scope.put(m.name, 1) catch @panic("OOM");
+                self.class_scope.put(_intern(m.name), 1) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:152
                 self.symbol_count = (self.symbol_count + 1);
             },
             .field_ => |_ptr_f| {
                 const f = _ptr_f.*;
-                self.class_scope.put(f.name, 2) catch @panic("OOM");
+                self.class_scope.put(_intern(f.name), 2) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:155
                 self.symbol_count = (self.symbol_count + 1);
             },
@@ -1702,7 +1711,7 @@ pub const Resolver = struct {
         self.method_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:171
         for (params.items) |p| {
-            self.method_scope.put(p.name, 3) catch @panic("OOM");
+            self.method_scope.put(_intern(p.name), 3) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:173
             self.symbol_count = (self.symbol_count + 1);
         }
@@ -1725,7 +1734,7 @@ pub const Resolver = struct {
                 for (v.init_expr.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-                self.method_scope.put(v.name, 4) catch @panic("OOM");
+                self.method_scope.put(_intern(v.name), 4) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:189
                 self.symbol_count = (self.symbol_count + 1);
             },
@@ -1737,7 +1746,7 @@ pub const Resolver = struct {
                 }
 // zbr:selfhost/Resolver.zbr:193
                 for (d.names.items) |nm| {
-                    self.method_scope.put(nm, 4) catch @panic("OOM");
+                    self.method_scope.put(_intern(nm), 4) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:195
                     self.symbol_count = (self.symbol_count + 1);
                 }
@@ -1757,7 +1766,7 @@ pub const Resolver = struct {
                 }
 // zbr:selfhost/Resolver.zbr:202
                 if ((i.is_capture != null)) {
-                    self.method_scope.put(i.is_capture.?, 4) catch @panic("OOM");
+                    self.method_scope.put(_intern(i.is_capture.?), 4) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:204
                     self.symbol_count = (self.symbol_count + 1);
                 }
@@ -1780,7 +1789,7 @@ pub const Resolver = struct {
                 }
 // zbr:selfhost/Resolver.zbr:214
                 for (f.var_names.items) |var_name| {
-                    self.method_scope.put(var_name, 4) catch @panic("OOM");
+                    self.method_scope.put(_intern(var_name), 4) catch @panic("OOM");
                 }
                 try self.resolveStmts(f.stmts);
             },
@@ -1818,7 +1827,7 @@ pub const Resolver = struct {
                 try self.resolveStmts(tc.body_stmts);
 // zbr:selfhost/Resolver.zbr:232
                 if (!std.mem.eql(u8, tc.catch_binding, "")) {
-                    self.method_scope.put(tc.catch_binding, 4) catch @panic("OOM");
+                    self.method_scope.put(_intern(tc.catch_binding), 4) catch @panic("OOM");
                 }
                 try self.resolveStmts(tc.catch_stmts);
             },
@@ -1832,7 +1841,7 @@ pub const Resolver = struct {
                 for (br.arms.items) |arm| {
 // zbr:selfhost/Resolver.zbr:239
                     if (!std.mem.eql(u8, arm.binding, "")) {
-                        self.method_scope.put(arm.binding, 4) catch @panic("OOM");
+                        self.method_scope.put(_intern(arm.binding), 4) catch @panic("OOM");
                     }
                     try self.resolveStmts(arm.stmts);
                 }
