@@ -63,6 +63,7 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Target:** 0.5 (cleanup)
 - **Root cause:** `selfhost/codegen.zbr` lacked the fn-ref detection that `src/CodeGen.zig` has. Mutable local vars initialized from a bare top-level function name (e.g. `var pred = isAlpha`) must emit `var pred: @TypeOf(&isAlpha) = &isAlpha;`, and reassignment (`pred = isDigit`) must emit `pred = &isDigit;`. The Zig backend had this via `tc_init_type == .fn_ref`; the selfhost now uses `isTopLevelMethod()`.
 - **Original symptom:** `var pred = isAlpha` compiled by selfhost zebra.exe produced Zig `var pred = isAlpha;` which Zig rejects ("variable of type 'fn(u21) bool' must be const or comptime").
+- **Known limitation:** `isTopLevelMethod()` only scans the current module's `module_decls`. Cross-module fn_ref (`var cb = OtherModule.func`) will still emit `cb = OtherModule.func;` without `&` in selfhost. Not yet seen in practice.
 
 ---
 

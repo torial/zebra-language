@@ -33,11 +33,7 @@ File: `src/CodeGen.zig` NFA preamble. Effort: L
 Python-style `for x in list\n    body\nelse\n    fallback` — else block runs when the iterable
 was empty (or loop never broke). Needs: grammar rule, AST node, Resolver walk, CodeGen.
 
-### 3. `for-num` step support
-`for i = 0 to 100 by 2` — numeric range loop with custom step value.
-Currently the `by` clause is parsed but ignored or absent. Needs: grammar + CodeGen.
-
-### 4. `interface` codegen
+### 3. `interface` codegen
 Parser/AST/Resolver for `interface` declarations are done. CodeGen needs to emit:
 - A vtable struct from the interface declaration
 - Method dispatch through the vtable (fat-pointer or explicit passing)
