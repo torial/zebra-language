@@ -2472,6 +2472,18 @@ struct Generator
     # ── genAssign ─────────────────────────────────────────────────────────────
 
     def genAssign(a: StmtAssign)
+        # BUG-079: auto-hoist method chain on struct temporary in assignment RHS
+        if a.op == AssignOp.assign
+            if a.value is Expr.call as _ac
+                if _ac.callee is Expr.member as _am
+                    if _am.object is Expr.call
+                        var mc_recv = hoistCallChain(_am.object)
+                        writeIndent()
+                        genExpr(a.target)
+                        w.emit(" = " + mc_recv + "." + _am.member + "(")
+                        genArgList(_ac.args)
+                        w.emit(");\n")
+                        return
         writeIndent()
         if a.op == AssignOp.slashslash_eq
             genExpr(a.target)
@@ -2629,6 +2641,18 @@ struct Generator
     # ── genReturn ─────────────────────────────────────────────────────────────
 
     def genReturn(r: StmtReturn)
+        # BUG-079: auto-hoist method chain on struct temporary in return position
+        if r.value != nil
+            var _rv = r.value to!
+            if _rv is Expr.call as _rc
+                if _rc.callee is Expr.member as _rm
+                    if _rm.object is Expr.call
+                        var mc_recv = hoistCallChain(_rm.object)
+                        writeIndent()
+                        w.emit("return " + mc_recv + "." + _rm.member + "(")
+                        genArgList(_rc.args)
+                        w.emit(");\n")
+                        return
         writeIndent()
         if r.value != nil
             w.emit("return ")

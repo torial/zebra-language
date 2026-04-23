@@ -5,7 +5,7 @@ const std     = @import("std");
 const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = undefined;
+var _allocator: std.mem.Allocator = _arena.allocator();
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
     @import("MathUtils.zig")._initAllocator(a);

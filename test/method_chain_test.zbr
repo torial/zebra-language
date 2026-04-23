@@ -20,17 +20,25 @@ struct Builder
 def makeBuilder(n: int): Builder
     return Builder(n)
 
-def main()
-    # Pattern 1: var result = makeBuilder(5).withVal(10)
+# Pattern A: var-initializer position
+def testVarInit(): int
     var r1 = makeBuilder(5).withVal(10)
-    print r1.result()       # 10
-
-    # Pattern 2: var r2 = makeBuilder(3).doubled().withVal(99)  (deep chain)
     var r2 = makeBuilder(3).doubled().withVal(99)
-    print r2.result()       # 99
+    return r1.result() + r2.result()   # 10 + 99 = 109
 
-    # Pattern 3: non-chain (control case — should not be touched)
-    var r3 = r1.withVal(42)
-    print r3.result()       # 42
+# Pattern B: return position
+def testReturn(): Builder
+    return makeBuilder(7).withVal(42)
 
+# Pattern C: assignment position
+def testAssign(): int
+    var r = makeBuilder(0)
+    r = makeBuilder(5).withVal(20)
+    return r.result()   # 20
+
+def main()
+    print testVarInit()        # 109
+    var rb = testReturn()
+    print rb.result()          # 42
+    print testAssign()         # 20
     print "ok"
