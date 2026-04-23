@@ -796,6 +796,8 @@ def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names
     return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)())
 
 def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str)): str throws
+    require
+        preamble_path.len > 0
     var preamble = File.read(preamble_path)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt)
     var entry = generateEntryPoint(m)
@@ -825,6 +827,8 @@ def generateDep(m: Module, file: str, preamble_path: str): str throws
     return generateDepWith(m, file, preamble_path, List(str)(), ModuleTypes())
 
 def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes): str throws
+    require
+        preamble_path.len > 0
     var preamble = File.read(preamble_path)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt)
     var sb: StringBuilder = StringBuilder()
@@ -1022,6 +1026,9 @@ struct Generator
     var infer_ctx            : InferCtx?
     var arena_counter        : int      # counter for unique arena scope var names
     var throws_methods       : StrSet   # "ClassName.methodName" entries for throws methods
+
+    invariant
+        indent >= 0
 
     cue init(w: Writer, indent: int, owner: str, in_method: bool,
              is_struct_owner: bool, is_generic: bool,
@@ -1791,7 +1798,7 @@ struct Generator
                             pass
             # Suppress unused-parameter errors for self and params
             # Check explicit Expr.this_ usage AND implicit field access (bare ident matching a field)
-            if has_self and not bodyMentionsThis(mstmts) and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members)
+            if has_self and not bodyMentionsThis(mstmts) and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and owner_invariants.count() == 0
                 bg.line("_ = self;")
             for p in m.params
                 if not nameUsedInStmts(p.name, mstmts)

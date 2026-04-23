@@ -4069,7 +4069,8 @@ const Generator = struct {
                     .withMutated(&mut_set).withClosureVars(&cv_map).withReturnedNames(&ret_set)
                     .withTco(n.name, tco_pnames.items, n.mods.shared);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
-                if (has_self and !refs.uses_self) try bg.line("_ = self;");
+                // Skip `_ = self` when invariant defer already references self.
+                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
                 try bg.genRequireChecks(n.require, n.name);
                 try bg.genStmts(body);
 
@@ -4079,7 +4080,8 @@ const Generator = struct {
             } else {
                 const bg = mg.indented().withMutated(&mut_set).withClosureVars(&cv_map).withReturnedNames(&ret_set);
                 // Emit `_ = x;` only for params that are NOT referenced in the body.
-                if (has_self and !refs.uses_self) try bg.line("_ = self;");
+                // Skip when invariant defer already references self (avoids "pointless discard" in Zig 0.15).
+                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
                 for (n.params) |p| {
                     if (!refs.param_names.contains(p.name)) {
                         try bg.writeIndent();

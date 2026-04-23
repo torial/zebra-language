@@ -49,6 +49,8 @@ class StrSet
         _items = List(str)()
 
     def add(s: str)
+        require
+            s.len > 0
         if not contains_(s)
             _items.add(s)
 

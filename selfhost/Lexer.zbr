@@ -112,6 +112,8 @@ class Lexer
         return c'\x00'
 
     def peekAt(offset: int): char
+        require
+            offset >= 0
         if pos + offset < src.len
             return src[pos + offset]
         return c'\x00'
