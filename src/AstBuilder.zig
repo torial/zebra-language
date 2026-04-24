@@ -2046,8 +2046,7 @@ const Builder = struct {
                     .hex_lit, .hex_lit_unsign, .hex_lit_explicit
                               => .{ .int_lit = .{ .span = s, .text = text,
                                     .base = if (std.mem.startsWith(u8, text, "0x")) .hex else .decimal } },
-                    .float_lit, .float_lit_exp, .fractional_lit
-                              => .{ .float_lit = .{ .span = s, .text = text } },
+                    .float_lit => .{ .float_lit = .{ .span = s, .text = text } },
                     .char_lit_single, .char_lit_double
                               => .{ .char_lit = .{ .span = s, .text = text } },
                     .string_single, .string_double

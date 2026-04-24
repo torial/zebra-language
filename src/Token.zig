@@ -55,12 +55,8 @@ pub const TokenKind = enum {
     hex_lit_unsign,
     /// Hex sized: `0xFF_8`
     hex_lit_explicit,
-    /// Float with decimal point: `3.14`, `1.0_f32`
+    /// Float literal: `3.14`, `1.0_f32`, `1_f64` (all variants unified)
     float_lit,
-    /// Float without decimal: `1_f64`
-    float_lit_exp,
-    /// Fractional: `3.14` (not typed float, defaults to float64)
-    fractional_lit,
     /// Decimal (high-precision): `3.14_d`
     decimal_lit,
     /// Number (default number type): `3.14_n`

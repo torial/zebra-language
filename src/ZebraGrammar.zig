@@ -1062,8 +1062,6 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Atom, .rhs = &.{ t(.hex_lit_unsign) } },
     .{ .lhs = .Atom, .rhs = &.{ t(.hex_lit_explicit) } },
     .{ .lhs = .Atom, .rhs = &.{ t(.float_lit) } },
-    .{ .lhs = .Atom, .rhs = &.{ t(.float_lit_exp) } },
-    .{ .lhs = .Atom, .rhs = &.{ t(.fractional_lit) } },
     .{ .lhs = .Atom, .rhs = &.{ t(.decimal_lit) } },
     .{ .lhs = .Atom, .rhs = &.{ t(.number_lit) } },
     // — Boolean / nil

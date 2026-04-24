@@ -760,8 +760,7 @@ const Tokenizer = struct {
             {
                 self.pos += 2;
             }
-            const kind: TokenKind = if (has_dot) .float_lit else .float_lit_exp;
-            try self.emit(kind, self.src[start..self.pos], ln, cl);
+            try self.emit(.float_lit, self.src[start..self.pos], ln, cl);
             return;
         }
 
@@ -776,7 +775,7 @@ const Tokenizer = struct {
 
         // Plain number
         if (has_dot) {
-            try self.emit(.fractional_lit, self.src[start..self.pos], ln, cl);
+            try self.emit(.float_lit, self.src[start..self.pos], ln, cl);
         } else {
             try self.emit(.integer_lit, self.src[start..self.pos], ln, cl);
         }

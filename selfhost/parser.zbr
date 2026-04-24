@@ -608,15 +608,7 @@ class Parser
                 return false
 
     def isFloatLit(): bool
-        branch this.peek().kind
-            on TokenKind.float_lit
-                return true
-            on TokenKind.fractional_lit
-                return true
-            on TokenKind.float_lit_exp
-                return true
-            else
-                return false
+        return this.peek().kind == TokenKind.float_lit
 
     def isStringSingle(): bool
         branch this.peek().kind

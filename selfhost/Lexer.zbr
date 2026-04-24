@@ -518,10 +518,7 @@ class Lexer
             pos = pos + 1
             if (peek() == c'3' and peekAt(1) == c'2') or (peek() == c'6' and peekAt(1) == c'4')
                 pos = pos + 2
-            var kind = TokenKind.float_lit()
-            if not hasDot
-                kind = TokenKind.float_lit_exp()
-            emit(kind, src[start..pos], ln, cl)
+            emit(TokenKind.float_lit(), src[start..pos], ln, cl)
             return
 
         if (sc == c'_' and (sc1 == c'i' or sc1 == c'u')) or sc == c'i' or sc == c'u'
@@ -533,7 +530,7 @@ class Lexer
             return
 
         if hasDot
-            emit(TokenKind.fractional_lit(), src[start..pos], ln, cl)
+            emit(TokenKind.float_lit(), src[start..pos], ln, cl)
         else
             emit(TokenKind.integer_lit(), src[start..pos], ln, cl)
 

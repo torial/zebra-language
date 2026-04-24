@@ -13,8 +13,6 @@ union TokenKind
     hex_lit_unsign
     hex_lit_explicit
     float_lit
-    float_lit_exp
-    fractional_lit
     decimal_lit
     number_lit
     int_size
