@@ -372,6 +372,8 @@ pub const StmtForIn = struct {
     iter: *Expr,
     where: ?*Expr,
     body: []const Stmt,
+    /// Optional else clause — runs when the loop completes without a `break`.
+    else_: ?[]const Stmt = null,
 };
 
 pub const StmtForNum = struct {
@@ -382,6 +384,8 @@ pub const StmtForNum = struct {
     stop: *Expr,
     step: ?*Expr,
     body: []const Stmt,
+    /// Optional else clause — runs when the loop completes without a `break`.
+    else_: ?[]const Stmt = null,
 };
 
 pub const BranchOn = struct {

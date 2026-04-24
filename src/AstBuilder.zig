@@ -1112,7 +1112,7 @@ const Builder = struct {
     }
 
     fn buildStmtForIn(b: Builder, node: TN) anyerror!Ast.StmtForIn {
-        // kw_for ForVarList kw_in Expr eol Block
+        // kw_for ForVarList kw_in Expr eol Block ForElseOpt
         const kids = ch(node);
         var vars = std.ArrayList([]const u8){};
         try b.collectForVarList(kids[1], &vars);
@@ -1122,6 +1122,7 @@ const Builder = struct {
             .iter  = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
             .where = null,
             .body  = try b.buildBlock(kids[5]),
+            .else_ = try b.buildForElseOpt(kids[6]),
         };
     }
 
@@ -1136,18 +1137,27 @@ const Builder = struct {
         }
     }
 
-    fn buildStmtForNum(b: Builder, node: TN) anyerror!Ast.StmtForNum {
-        // kw_for id kw_in Expr : Expr eol Block
-        // kw_for id kw_in Expr : Expr : Expr eol Block
+    /// ForElseOpt → ε  |  kw_else eol Block
+    fn buildForElseOpt(b: Builder, node: TN) anyerror!?[]const Ast.Stmt {
+        if (node == .epsilon) return null;
         const kids = ch(node);
-        const has_step = kids.len > 8;
+        // kids[0]=kw_else  kids[1]=eol  kids[2]=Block
+        return try b.buildBlock(kids[2]);
+    }
+
+    fn buildStmtForNum(b: Builder, node: TN) anyerror!Ast.StmtForNum {
+        // kw_for id kw_in Expr : Expr eol Block ForElseOpt          (9 kids)
+        // kw_for id kw_in Expr : Expr : Expr eol Block ForElseOpt   (11 kids)
+        const kids = ch(node);
+        const has_step = kids.len > 9;
         return .{
             .span  = spanOf(node, b.tokens),
             .var_  = leafText(kids[1], b.tokens),
             .start = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
             .stop  = try b.box(Ast.Expr, try b.buildExpr(kids[5])),
             .step  = if (has_step) try b.box(Ast.Expr, try b.buildExpr(kids[7])) else null,
-            .body  = try b.buildBlock(kids[kids.len - 1]),
+            .body  = try b.buildBlock(kids[kids.len - 2]),
+            .else_ = try b.buildForElseOpt(kids[kids.len - 1]),
         };
     }
 

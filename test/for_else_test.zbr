@@ -1,7 +1,8 @@
 class Main
     shared
         def main
-            # else runs when no break occurred (search fails — loop completes)
+            # ── Path 1: list .items — native for...else ──────────────────────
+            # else runs when no break (search fails)
             var nums = List(int)()
             nums.add(1)
             nums.add(2)
@@ -33,5 +34,70 @@ class Main
             else
                 found3 = 42
             print found3
+
+            # ── Path 2: for-num while loop ───────────────────────────────────
+            # else runs when no break
+            var found_n: int = -1
+            for i in 0:5
+                if i == 99
+                    found_n = i
+                    break
+            else
+                found_n = 0
+            print found_n
+
+            # else suppressed when break occurs
+            var found_n2: int = -1
+            for i in 0:5
+                if i == 3
+                    found_n2 = i
+                    break
+            else
+                found_n2 = 0
+            print found_n2
+
+            # ── Path 2: split while loop ─────────────────────────────────────
+            # else runs when no break
+            var text = "hello world foo"
+            var found_s = "not found"
+            for word in text.split(" ")
+                if word == "bar"
+                    found_s = word
+                    break
+            else
+                found_s = "default"
+            print found_s
+
+            # else suppressed when break occurs
+            var found_s2 = "not found"
+            for word2 in text.split(" ")
+                if word2 == "world"
+                    found_s2 = word2
+                    break
+            else
+                found_s2 = "default"
+            print found_s2
+
+            # ── Path 2: chars while loop ─────────────────────────────────────
+            # else runs when no break (char not present)
+            var found_c: int = -1
+            var cs = "hello"
+            for cp in cs.chars()
+                if cp == 120  # 'x' not in "hello"
+                    found_c = cp
+                    break
+            else
+                found_c = 42
+            print found_c
+
+            # else suppressed when break occurs ('h' = 104)
+            var found_c2: int = -1
+            for cp2 in cs.chars()
+                if cp2 == 104  # 'h'
+                    found_c2 = cp2
+                    break
+            else
+                found_c2 = 42
+            print found_c2
 
             print "ok"

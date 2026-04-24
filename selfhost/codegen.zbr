@@ -1015,7 +1015,7 @@ struct Generator
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
     var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
     # Phase 7b additions
-    var mut_set              : StrSet?  # variables that are mutated
+    var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
     var ret_set              : StrSet?  # variables that escape via return
     var nil_narrowed         : StrSet?  # variables narrowed to non-nil in current scope
     var try_err_var          : str?     # current try-block error variable name
@@ -1033,6 +1033,7 @@ struct Generator
     var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
     var for_loop_vars        : StrSet   # active for-loop variable names (suppress stale branch deref)
+    var for_else_label       : str?     # while-based for-else label; nil → plain break; set per-loop
     var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
@@ -1094,6 +1095,7 @@ struct Generator
         this.opt_ptr_field_bindings = StrSet()
         this.for_loop_deref        = StrSet()
         this.for_loop_vars         = StrSet()
+        this.for_else_label        = nil
         this.in_try_expr           = false
         this.self_name             = "self"
         this.capture_fields        = StrSet()
@@ -2239,7 +2241,10 @@ struct Generator
             on Stmt.pass_
                 line("// pass")
             on Stmt.break_
-                line("break;")
+                if for_else_label != nil
+                    line("break :" + for_else_label to! + " false;")
+                else
+                    line("break;")
             on Stmt.continue_
                 line("continue;")
             on Stmt.contract
@@ -2949,43 +2954,51 @@ struct Generator
 
     def genForIn(fi: StmtForIn)
         var ig = indented()
+        # Nested loops must not inherit the enclosing for-else label — their breaks are plain.
+        ig.for_else_label = nil
         if fi.vars.count() == 2
+            # HashMap two-var iterator: `for k, v in map`
             var kname = fi.vars.at(0)
             var vname = fi.vars.at(1)
             writeIndent()
             w.emit("{\n")
             ig.writeIndent()
-            ig.w.emit("var _it_")
-            ig.w.emit(kname)
-            ig.w.emit(" = ")
+            ig.w.emit("var _it_" + kname + " = ")
             genExpr(fi.iter)
             ig.w.emit(".iterator();\n")
-            ig.writeIndent()
-            ig.w.emit("while (_it_")
-            ig.w.emit(kname)
-            ig.w.emit(".next()) |_ent_")
-            ig.w.emit(kname)
-            ig.w.emit("| {\n")
-            var iig = ig.indented()
-            iig.writeIndent()
-            iig.w.emit("const ")
-            iig.w.emit(kname)
-            iig.w.emit(" = _ent_")
-            iig.w.emit(kname)
-            iig.w.emit(".key_ptr.*;\n")
-            iig.writeIndent()
-            iig.w.emit("_ = ")
-            iig.w.emit(kname)
-            iig.w.emit(";\n")
-            iig.writeIndent()
-            iig.w.emit("const ")
-            iig.w.emit(vname)
-            iig.w.emit(" = _ent_")
-            iig.w.emit(kname)
-            iig.w.emit(".value_ptr.*;\n")
-            iig.genStmts(fi.stmts)
-            ig.writeIndent()
-            ig.w.emit("}\n")
+            # for-else: wrap while in labeled block so break suppresses else.
+            var label: str? = nil
+            var wg = ig
+            var bg = ig.indented()
+            if fi.else_ != nil
+                var uid = w.nextUid()
+                label = "_fels_" + uid.toString()
+                ig.writeIndent()
+                ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                wg = ig.indented()
+                bg = wg.indented()
+                bg.for_else_label = label to!
+            wg.writeIndent()
+            wg.w.emit("while (_it_" + kname + ".next()) |_ent_" + kname + "| {\n")
+            bg.writeIndent()
+            bg.w.emit("const " + kname + " = _ent_" + kname + ".key_ptr.*;\n")
+            bg.writeIndent()
+            bg.w.emit("_ = " + kname + ";\n")
+            bg.writeIndent()
+            bg.w.emit("const " + vname + " = _ent_" + kname + ".value_ptr.*;\n")
+            bg.genStmts(fi.stmts)
+            wg.writeIndent()
+            wg.w.emit("}\n")
+            if label != nil
+                wg.writeIndent()
+                wg.w.emit("break :" + label to! + " true;\n")
+                ig.writeIndent()
+                ig.w.emit("};\n")
+                ig.writeIndent()
+                ig.w.emit("if (" + label to! + ") {\n")
+                wg.genStmts(fi.else_ to!)
+                ig.writeIndent()
+                ig.w.emit("}\n")
             writeIndent()
             w.emit("}\n")
         else
@@ -3000,26 +3013,39 @@ struct Generator
                 writeIndent()
                 w.emit("{\n")
                 ig.writeIndent()
-                ig.w.emit("var _it_")
-                ig.w.emit(vname)
-                ig.w.emit(" = ")
-                ig.w.emit(split_fn)
+                ig.w.emit("var _it_" + vname + " = " + split_fn)
                 genSplitObject(fi.iter)
                 ig.w.emit(", ")
                 genSplitSep(fi.iter)
                 ig.w.emit(");\n")
-                ig.writeIndent()
-                ig.w.emit("while (_it_")
-                ig.w.emit(vname)
-                ig.w.emit(".next()) |")
-                ig.w.emit(vname)
-                ig.w.emit("| {\n")
+                var label: str? = nil
+                var wg = ig
+                var bg = ig.indented()
+                if fi.else_ != nil
+                    var uid = w.nextUid()
+                    label = "_fels_" + uid.toString()
+                    ig.writeIndent()
+                    ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                    wg = ig.indented()
+                    bg = wg.indented()
+                    bg.for_else_label = label to!
+                wg.writeIndent()
+                wg.w.emit("while (_it_" + vname + ".next()) |" + vname + "| {\n")
                 # split() elements are []const u8 — mark loop var as string for printFmtSpec
                 str_params.add(vname)
-                var iig = ig.indented()
-                iig.genStmts(fi.stmts)
-                ig.writeIndent()
-                ig.w.emit("}\n")
+                bg.genStmts(fi.stmts)
+                wg.writeIndent()
+                wg.w.emit("}\n")
+                if label != nil
+                    wg.writeIndent()
+                    wg.w.emit("break :" + label to! + " true;\n")
+                    ig.writeIndent()
+                    ig.w.emit("};\n")
+                    ig.writeIndent()
+                    ig.w.emit("if (" + label to! + ") {\n")
+                    wg.genStmts(fi.else_ to!)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
                 writeIndent()
                 w.emit("}\n")
             else if isCharsIter(fi.iter)
@@ -3027,57 +3053,73 @@ struct Generator
                 writeIndent()
                 w.emit("{\n")
                 ig.writeIndent()
-                ig.w.emit("var _cp_it_")
-                ig.w.emit(vname)
-                ig.w.emit(" = std.unicode.Utf8View.initUnchecked(")
+                ig.w.emit("var _cp_it_" + vname + " = std.unicode.Utf8View.initUnchecked(")
                 genCharsObject(fi.iter)
                 ig.w.emit(").iterator();\n")
-                ig.writeIndent()
-                ig.w.emit("while (_cp_it_")
-                ig.w.emit(vname)
-                ig.w.emit(".nextCodepoint()) |")
-                ig.w.emit(vname)
-                ig.w.emit("| {\n")
-                var iig = ig.indented()
-                iig.genStmts(fi.stmts)
-                ig.writeIndent()
-                ig.w.emit("}\n")
+                var label: str? = nil
+                var wg = ig
+                var bg = ig.indented()
+                if fi.else_ != nil
+                    var uid = w.nextUid()
+                    label = "_fels_" + uid.toString()
+                    ig.writeIndent()
+                    ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                    wg = ig.indented()
+                    bg = wg.indented()
+                    bg.for_else_label = label to!
+                wg.writeIndent()
+                wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + vname + "| {\n")
+                bg.genStmts(fi.stmts)
+                wg.writeIndent()
+                wg.w.emit("}\n")
+                if label != nil
+                    wg.writeIndent()
+                    wg.w.emit("break :" + label to! + " true;\n")
+                    ig.writeIndent()
+                    ig.w.emit("};\n")
+                    ig.writeIndent()
+                    ig.w.emit("if (" + label to! + ") {\n")
+                    wg.genStmts(fi.else_ to!)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
                 writeIndent()
                 w.emit("}\n")
             else if isBytesIter(fi.iter)
-                # str.bytes() → iterate directly over the string bytes: `for (s) |c|`
+                # str.bytes() → native Zig for loop; for-else uses native `} else {`
                 writeIndent()
                 w.emit("for (")
                 emitBytesIterObject(fi.iter)
-                w.emit(") |")
-                w.emit(vname)
-                w.emit("| {\n")
+                w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
                 ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
             else if isRegexSliceIter(fi.iter) or isItemsMemberAccess(fi.iter)
-                # findAll/groups or .items accessor already return a slice — no .items needed
+                # findAll/groups or .items accessor: native Zig for; for-else uses native `} else {`
                 writeIndent()
                 w.emit("for (")
                 genExpr(fi.iter)
-                w.emit(") |")
-                w.emit(vname)
-                w.emit("| {\n")
+                w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
                 # Regex groups/findAll yield []const u8 elements — mark loop var as string
                 if isRegexSliceIter(fi.iter)
                     str_params.add(vname)
                 ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
             else
                 writeIndent()
                 w.emit("for (")
                 genExpr(fi.iter)
-                w.emit(".items) |")
-                w.emit(vname)
-                w.emit("| {\n")
+                w.emit(".items) |" + vname + "| {\n")
                 # Track for-loop variable deref fields based on element type
                 var iter_member = getMemberFieldName(fi.iter)
                 if iter_member != nil
@@ -3093,7 +3135,7 @@ struct Generator
                 for_loop_vars.add(vname)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
-                    # for-else: Zig's native for...else runs when no break occurred
+                    # for-else: Zig native for...else runs when no break occurred
                     writeIndent()
                     w.emit("} else {\n")
                     ig.genStmts(fi.else_ to!)
@@ -3192,44 +3234,52 @@ struct Generator
 
     def genForNum(fn_: StmtForNum)
         var ig = indented()
+        # Nested loops must not inherit the enclosing for-else label.
+        ig.for_else_label = nil
         writeIndent()
         w.emit("{\n")
         ig.writeIndent()
-        ig.w.emit("var ")
-        ig.w.emit(fn_.var_)
-        ig.w.emit(": i64 = ")
+        ig.w.emit("var " + fn_.var_ + ": i64 = ")
         genExpr(fn_.start)
         ig.w.emit(";\n")
         ig.writeIndent()
-        ig.w.emit("const _stop_")
-        ig.w.emit(fn_.var_)
-        ig.w.emit(": i64 = ")
+        ig.w.emit("const _stop_" + fn_.var_ + ": i64 = ")
         genExpr(fn_.stop_)
         ig.w.emit(";\n")
         if fn_.step != nil
             ig.writeIndent()
-            ig.w.emit("const _step_")
-            ig.w.emit(fn_.var_)
-            ig.w.emit(": i64 = ")
+            ig.w.emit("const _step_" + fn_.var_ + ": i64 = ")
             ig.genExpr(fn_.step to!)
             ig.w.emit(";\n")
-        ig.writeIndent()
-        ig.w.emit("while (")
-        ig.w.emit(fn_.var_)
-        ig.w.emit(" < _stop_")
-        ig.w.emit(fn_.var_)
-        ig.w.emit(") : (")
-        ig.w.emit(fn_.var_)
+        var step_clause = " += 1"
         if fn_.step != nil
-            ig.w.emit(" += _step_")
-            ig.w.emit(fn_.var_)
-        else
-            ig.w.emit(" += 1")
-        ig.w.emit(") {\n")
-        var iig = ig.indented()
-        iig.genStmts(fn_.stmts)
-        ig.writeIndent()
-        ig.w.emit("}\n")
+            step_clause = " += _step_" + fn_.var_
+        var label: str? = nil
+        var wg = ig
+        var bg = ig.indented()
+        if fn_.else_ != nil
+            var uid = w.nextUid()
+            label = "_fels_" + uid.toString()
+            ig.writeIndent()
+            ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+            wg = ig.indented()
+            bg = wg.indented()
+            bg.for_else_label = label to!
+        wg.writeIndent()
+        wg.w.emit("while (" + fn_.var_ + " < _stop_" + fn_.var_ + ") : (" + fn_.var_ + step_clause + ") {\n")
+        bg.genStmts(fn_.stmts)
+        wg.writeIndent()
+        wg.w.emit("}\n")
+        if label != nil
+            wg.writeIndent()
+            wg.w.emit("break :" + label to! + " true;\n")
+            ig.writeIndent()
+            ig.w.emit("};\n")
+            ig.writeIndent()
+            ig.w.emit("if (" + label to! + ") {\n")
+            wg.genStmts(fn_.else_ to!)
+            ig.writeIndent()
+            ig.w.emit("}\n")
         writeIndent()
         w.emit("}\n")
 

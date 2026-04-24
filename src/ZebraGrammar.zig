@@ -142,6 +142,7 @@ pub const NT = enum {
     StmtForIn,
     StmtForNum,
     ForVarList,          // id | ForVarList , id
+    ForElseOpt,          // ε | kw_else eol Block
 
     StmtBranch,
     BranchOnList,        // one or more on-clauses
@@ -824,21 +825,24 @@ const stmt_rules: []const Rule = &.{
         t(.kw_while), t(.kw_var), t(.id), t(.assign), n(.Expr), t(.comma), n(.Expr), t(.eol), n(.Block),
     } },
 
-    // for x in collection
+    // for x in collection [else Block]
     .{ .lhs = .StmtForIn, .rhs = &.{
-        t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.eol), n(.Block),
+        t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.eol), n(.Block), n(.ForElseOpt),
     } },
     .{ .lhs = .ForVarList, .rhs = &.{ t(.id) } },
     .{ .lhs = .ForVarList, .rhs = &.{ n(.ForVarList), t(.comma), t(.id) } },
+    // ForElseOpt: optional else clause for for-in / for-num loops
+    .{ .lhs = .ForElseOpt, .rhs = &.{} },
+    .{ .lhs = .ForElseOpt, .rhs = &.{ t(.kw_else), t(.eol), n(.Block) } },
 
-    // for i in start:stop[:step]
+    // for i in start:stop[:step] [else Block]
     .{ .lhs = .StmtForNum, .rhs = &.{
-        t(.kw_for), t(.id), t(.kw_in), n(.Expr), t(.colon), n(.Expr), t(.eol), n(.Block),
+        t(.kw_for), t(.id), t(.kw_in), n(.Expr), t(.colon), n(.Expr), t(.eol), n(.Block), n(.ForElseOpt),
     } },
     .{ .lhs = .StmtForNum, .rhs = &.{
         t(.kw_for), t(.id), t(.kw_in),
         n(.Expr), t(.colon), n(.Expr), t(.colon), n(.Expr),
-        t(.eol), n(.Block),
+        t(.eol), n(.Block), n(.ForElseOpt),
     } },
 
     // branch x \n on ... on ... [else ...]

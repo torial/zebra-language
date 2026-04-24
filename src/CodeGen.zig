@@ -1148,7 +1148,8 @@ const Generator = struct {
     /// Allocator used for per-method mutation analysis.
     alloc:     Allocator,
     /// Names of local variables that are assigned to somewhere in the current
-    /// method body.  Null at module scope.  Used to emit `const` vs `var`.
+    /// block.  Null means "no mutation data" → all locals emitted as `const`.
+    /// Set by `genStmts` from a per-block scan; not set at method or module scope.
     mutated:   ?*const std.StringHashMap(void),
     /// Names of locals that are lambdas with capture blocks (struct-instance
     /// closures).  Call sites emit `name.call(args)` instead of `name(args)`.
@@ -1268,6 +1269,10 @@ const Generator = struct {
     /// suffixes in emitted Zig (e.g. `_box_3`, `_bp_3`).  Replaces pointer-address
     /// based names which varied across runs.
     box_counter_ptr: *u32,
+    /// Non-null when inside a while-based for-else body.  `break` emits
+    /// `break :label false` instead of `break;` to suppress the else clause.
+    /// Nested loops clear this to null so their own breaks stay plain.
+    for_else_label: ?[]const u8 = null,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -4327,7 +4332,10 @@ const Generator = struct {
                 try g.w.writeAll("\n");
             },
             .pass      => try g.line("// pass"),
-            .break_    => try g.line("break;"),
+            .break_    => if (g.for_else_label) |lbl| {
+                try g.writeIndent();
+                try g.w.print("break :{s} false;\n", .{lbl});
+            } else try g.line("break;"),
             .continue_ => try g.line("continue;"),
             .defer_    => |s| try g.genDefer(s),
             .contract  => {}, // contracts not emitted (runtime verification out of scope)
@@ -7484,7 +7492,8 @@ const Generator = struct {
             try g.w.writeAll(v);
         }
         try g.w.writeAll("| {\n");
-        const bg = g.indented();
+        var bg = g.indented();
+        bg.for_else_label = null;  // don't inherit outer for-else label
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -7492,6 +7501,11 @@ const Generator = struct {
             try bg.w.writeAll(")) continue;\n");
         }
         try bg.genStmts(s.body);
+        if (s.else_) |else_body| {
+            try g.writeIndent();
+            try g.w.writeAll("} else {\n");
+            try g.indented().genStmts(else_body);
+        }
         try g.writeIndent();
         try g.w.writeAll("}\n");
     }
@@ -7507,7 +7521,8 @@ const Generator = struct {
             try g.w.writeAll(v);
         }
         try g.w.writeAll("| {\n");
-        const bg = g.indented();
+        var bg = g.indented();
+        bg.for_else_label = null;  // don't inherit outer for-else label
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -7515,6 +7530,11 @@ const Generator = struct {
             try bg.w.writeAll(")) continue;\n");
         }
         try bg.genStmts(s.body);
+        if (s.else_) |else_body| {
+            try g.writeIndent();
+            try g.w.writeAll("} else {\n");
+            try g.indented().genStmts(else_body);
+        }
         try g.writeIndent();
         try g.w.writeAll("}\n");
     }
@@ -7525,7 +7545,19 @@ const Generator = struct {
         const iter_var   = try std.fmt.allocPrint(g.alloc, "_it_{s}",  .{first_var});
         defer g.alloc.free(iter_var);
 
-        try g.writeIndent();
+        // for-else: wrap while in a labeled block that evaluates to bool
+        var fels_lbl: ?[]const u8 = null;
+        if (s.else_ != null) {
+            const uid = g.nextUid();
+            fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
+            try g.writeIndent();
+            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+        }
+        defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
+        // wg = level where `var _it_` and `while` are emitted
+        const wg = if (fels_lbl != null) g.indented() else g;
+
+        try wg.writeIndent();
         if (s.vars.len >= 2) {
             // Two-variable form: unpack key and value from iterator entry.
             const entry_var = try std.fmt.allocPrint(g.alloc, "_e_{s}", .{first_var});
@@ -7535,7 +7567,8 @@ const Generator = struct {
             // so that nested `for elem in v` loops dispatch to genForInList.
             var val_list_vars = std.StringHashMap(void).init(g.alloc);
             defer val_list_vars.deinit();
-            var body_gen = g;
+            var body_gen = wg;
+            body_gen.for_else_label = null;
             if (g.getExprDeclaredType(s.iter)) |tr| {
                 if (tr == .generic and
                     std.mem.eql(u8, tr.generic.name, "HashMap") and
@@ -7551,12 +7584,13 @@ const Generator = struct {
                 }
             }
 
-            try g.w.print("var {s} = ", .{iter_var});
+            try wg.w.print("var {s} = ", .{iter_var});
             try g.genExpr(s.iter);
-            try g.w.writeAll(".iterator();\n");
-            try g.writeIndent();
-            try g.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, entry_var});
-            const bg = body_gen.indented();
+            try wg.w.writeAll(".iterator();\n");
+            try wg.writeIndent();
+            try wg.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, entry_var});
+            var bg = body_gen.indented();
+            if (fels_lbl) |lbl| bg.for_else_label = lbl;
             try bg.writeIndent();
             try bg.w.print("const {s} = {s}.key_ptr.*;\n",   .{s.vars[0], entry_var});
             if (!nameUsedInStmts(s.vars[0], s.body)) {
@@ -7581,12 +7615,14 @@ const Generator = struct {
             const kptr_var = try std.fmt.allocPrint(g.alloc, "_kp_{s}", .{first_var});
             defer g.alloc.free(kptr_var);
 
-            try g.w.print("var {s} = ", .{iter_var});
+            try wg.w.print("var {s} = ", .{iter_var});
             try g.genExpr(s.iter);
-            try g.w.writeAll(".keyIterator();\n");
-            try g.writeIndent();
-            try g.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, kptr_var});
-            const bg = g.indented();
+            try wg.w.writeAll(".keyIterator();\n");
+            try wg.writeIndent();
+            try wg.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, kptr_var});
+            var bg = wg.indented();
+            bg.for_else_label = null;
+            if (fels_lbl) |lbl| bg.for_else_label = lbl;
             try bg.writeIndent();
             try bg.w.print("const {s} = {s}.*;\n", .{first_var, kptr_var});
             if (!nameUsedInStmts(first_var, s.body)) {
@@ -7601,8 +7637,19 @@ const Generator = struct {
             }
             try bg.genStmts(s.body);
         }
-        try g.writeIndent();
-        try g.w.writeAll("}\n");
+        try wg.writeIndent();
+        try wg.w.writeAll("}\n");
+        if (s.else_) |else_body| {
+            try wg.writeIndent();
+            try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
+            try g.writeIndent();
+            try g.w.writeAll("};\n");
+            try g.writeIndent();
+            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try g.indented().genStmts(else_body);
+            try g.writeIndent();
+            try g.w.writeAll("}\n");
+        }
     }
 
     /// `for row in csv.rows()` / `for col in csv.header()` etc.
@@ -7617,14 +7664,16 @@ const Generator = struct {
         // errors when the same loop-variable name is used in multiple CSV for-in loops.
         try g.writeIndent();
         try g.w.writeAll("{\n");
-        const bg = g.indented();
+        var bg = g.indented();
+        bg.for_else_label = null;  // don't inherit outer for-else label
         try bg.writeIndent();
         try bg.w.print("const {s} = ", .{iter_var});
         try bg.genExpr(s.iter);
         try bg.w.writeAll(";\n");
         try bg.writeIndent();
         try bg.w.print("for ({s}.items) |{s}| {{\n", .{iter_var, var_name});
-        const bg2 = bg.indented();
+        var bg2 = bg.indented();
+        bg2.for_else_label = null;
         if (s.where) |w| {
             try bg2.writeIndent();
             try bg2.w.writeAll("if (!(");
@@ -7649,22 +7698,35 @@ const Generator = struct {
         const s_args = s.iter.call.args;
         const is_lines = std.mem.eql(u8, method, "lines");
 
-        try g.writeIndent();
+        // for-else: wrap while in a labeled block that evaluates to bool
+        var fels_lbl: ?[]const u8 = null;
+        if (s.else_ != null) {
+            const uid = g.nextUid();
+            fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
+            try g.writeIndent();
+            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+        }
+        defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
+        const wg = if (fels_lbl != null) g.indented() else g;
+
+        try wg.writeIndent();
         if (is_lines) {
             // lines() splits on '\n' using the scalar splitter (no allocation)
-            try g.w.print("var {s} = std.mem.splitScalar(u8, ", .{iter_var});
+            try wg.w.print("var {s} = std.mem.splitScalar(u8, ", .{iter_var});
             try g.genExpr(recv);
-            try g.w.writeAll(", '\\n');\n");
+            try wg.w.writeAll(", '\\n');\n");
         } else {
-            try g.w.print("var {s} = std.mem.splitSequence(u8, ", .{iter_var});
+            try wg.w.print("var {s} = std.mem.splitSequence(u8, ", .{iter_var});
             try g.genExpr(recv);
-            try g.w.writeAll(", ");
-            if (s_args.len > 0) try g.genExpr(s_args[0].value) else try g.w.writeAll("\" \"");
-            try g.w.writeAll(");\n");
+            try wg.w.writeAll(", ");
+            if (s_args.len > 0) try g.genExpr(s_args[0].value) else try wg.w.writeAll("\" \"");
+            try wg.w.writeAll(");\n");
         }
-        try g.writeIndent();
-        try g.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, var_name});
-        const bg = g.indented();
+        try wg.writeIndent();
+        try wg.w.print("while ({s}.next()) |{s}| {{\n", .{iter_var, var_name});
+        var bg = wg.indented();
+        bg.for_else_label = null;
+        if (fels_lbl) |lbl| bg.for_else_label = lbl;
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -7672,8 +7734,19 @@ const Generator = struct {
             try bg.w.writeAll(")) continue;\n");
         }
         try bg.genStmts(s.body);
-        try g.writeIndent();
-        try g.w.writeAll("}\n");
+        try wg.writeIndent();
+        try wg.w.writeAll("}\n");
+        if (s.else_) |else_body| {
+            try wg.writeIndent();
+            try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
+            try g.writeIndent();
+            try g.w.writeAll("};\n");
+            try g.writeIndent();
+            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try g.indented().genStmts(else_body);
+            try g.writeIndent();
+            try g.w.writeAll("}\n");
+        }
     }
 
     /// True when `expr` is a call to `str.chars()` on a string — codepoint iteration.
@@ -7704,13 +7777,26 @@ const Generator = struct {
 
         const recv = s.iter.call.callee.member.object;
 
-        try g.writeIndent();
-        try g.w.print("var {s} = std.unicode.Utf8View.initUnchecked(", .{iter_var});
+        // for-else: wrap while in a labeled block that evaluates to bool
+        var fels_lbl: ?[]const u8 = null;
+        if (s.else_ != null) {
+            const fels_uid = g.nextUid();
+            fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{fels_uid});
+            try g.writeIndent();
+            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+        }
+        defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
+        const wg = if (fels_lbl != null) g.indented() else g;
+
+        try wg.writeIndent();
+        try wg.w.print("var {s} = std.unicode.Utf8View.initUnchecked(", .{iter_var});
         try g.genExpr(recv);
-        try g.w.writeAll(").iterator();\n");
-        try g.writeIndent();
-        try g.w.print("while ({s}.nextCodepoint()) |{s}| {{\n", .{iter_var, var_name});
-        const bg = g.indented();
+        try wg.w.writeAll(").iterator();\n");
+        try wg.writeIndent();
+        try wg.w.print("while ({s}.nextCodepoint()) |{s}| {{\n", .{iter_var, var_name});
+        var bg = wg.indented();
+        bg.for_else_label = null;
+        if (fels_lbl) |lbl| bg.for_else_label = lbl;
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -7718,8 +7804,19 @@ const Generator = struct {
             try bg.w.writeAll(")) continue;\n");
         }
         try bg.genStmts(s.body);
-        try g.writeIndent();
-        try g.w.writeAll("}\n");
+        try wg.writeIndent();
+        try wg.w.writeAll("}\n");
+        if (s.else_) |else_body| {
+            try wg.writeIndent();
+            try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
+            try g.writeIndent();
+            try g.w.writeAll("};\n");
+            try g.writeIndent();
+            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try g.indented().genStmts(else_body);
+            try g.writeIndent();
+            try g.w.writeAll("}\n");
+        }
     }
 
     /// True when `expr` is a call to `str.split(delim)` or `str.lines()` on a string.
@@ -7741,20 +7838,45 @@ const Generator = struct {
     }
 
     fn genForNum(g: Generator, s: *Ast.StmtForNum) anyerror!void {
+        // for-else: wrap while in a labeled block that evaluates to bool
+        var fels_lbl: ?[]const u8 = null;
+        if (s.else_ != null) {
+            const uid = g.nextUid();
+            fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
+            try g.writeIndent();
+            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+        }
+        defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
+        const wg = if (fels_lbl != null) g.indented() else g;
+
         // `for i in start : stop : step` → Zig while loop with explicit counter.
-        try g.writeIndent();
-        try g.w.print("var {s}: i64 = ", .{s.var_});
+        try wg.writeIndent();
+        try wg.w.print("var {s}: i64 = ", .{s.var_});
         try g.genExpr(s.start);
-        try g.w.writeAll(";\n");
-        try g.writeIndent();
-        try g.w.print("while ({s} < ", .{s.var_});
+        try wg.w.writeAll(";\n");
+        try wg.writeIndent();
+        try wg.w.print("while ({s} < ", .{s.var_});
         try g.genExpr(s.stop);
-        try g.w.print(") : ({s} += ", .{s.var_});
-        if (s.step) |step| try g.genExpr(step) else try g.w.writeAll("1");
-        try g.w.writeAll(") {\n");
-        try g.indented().genStmts(s.body);
-        try g.writeIndent();
-        try g.w.writeAll("}\n");
+        try wg.w.print(") : ({s} += ", .{s.var_});
+        if (s.step) |step| try g.genExpr(step) else try wg.w.writeAll("1");
+        try wg.w.writeAll(") {\n");
+        var bg = wg.indented();
+        bg.for_else_label = null;
+        if (fels_lbl) |lbl| bg.for_else_label = lbl;
+        try bg.genStmts(s.body);
+        try wg.writeIndent();
+        try wg.w.writeAll("}\n");
+        if (s.else_) |else_body| {
+            try wg.writeIndent();
+            try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
+            try g.writeIndent();
+            try g.w.writeAll("};\n");
+            try g.writeIndent();
+            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try g.indented().genStmts(else_body);
+            try g.writeIndent();
+            try g.w.writeAll("}\n");
+        }
     }
 
     // Classifies the payload of a union variant for binding purposes.
