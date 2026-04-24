@@ -61,10 +61,16 @@ Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
 Depends on `interface` codegen (step 4 above) and a thin `DynLib` stdlib wrapper.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 11. Contracts runtime (Milestone 0.12)
-`require`/`ensure`/`invariant`/`old` emit runtime checks. AST, parser, and TypeChecker
-are already done — only CodeGen emission is missing.
-`-turbo` flag strips contracts for production builds.
+### 11. Contracts: `ensure` + `old` (Milestone 0.12)
+**Partial:** `require` and `invariant` already emit runtime checks (panic on violation).
+`ensure` is silently dropped by CodeGen; `old` is a passthrough (emits inner expr, no snapshot).
+Remaining decisions before implementing:
+- Scope: void-only `ensure` first (defer-based) vs. full non-void + `result` capture (labeled block)?
+- Partial `ensure` without `old`/`result` acceptable stepping stone, or confusingly inconsistent?
+- `-turbo` flag: strip contracts for release builds
+- Selfhost parity timing: same PR or separate phase?
+Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — it says
+require/invariant are not yet done, but they are. Update the wiki alongside the decision.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
