@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 7)
+**Last updated:** 2026-04-24 (session 8)
 
 ---
 
@@ -74,9 +74,9 @@ require/invariant are not yet done, but they are. Update the wiki alongside the 
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
-- Audit which reserved keywords (`set`/`get`/`body`/`same`) are actually grammar-load-bearing
-- `implements IfaceName` on the class declaration line (not a separate indented block)
-- Float token merge (integer + `.` + integer as one token in more contexts)
+- ~~Audit which reserved keywords (`set`/`get`/`body`/`same`) are grammar-load-bearing~~ ✓ DONE (`set`/`get`/`body`/`post`/`pro` removed 2026-04-19; `same` kept — TypeRef)
+- ~~`implements IfaceName` on the class declaration line~~ ✓ DONE (already on class line; old nested form was never the real parser)
+- ~~Float token merge~~ ✓ DONE — `float_lit`/`float_lit_exp`/`fractional_lit` → `float_lit`; bootstrap 5/5. Note: `_f32`/`_f64` suffix literals (`1.0_f32`) still don't codegen correctly (raw text emitted → Zig rejects); codegen transformation needed separately.
 - `^T` auto-boxing edge case fixes
 - Book documentation for `sig`, raw strings, `"""`
 See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`
@@ -137,6 +137,8 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-027 throws sub-issue: `exprCallIsThrows` handles call receivers; `try` emitted in labeled block + statement-position hoist; selfhost parity via `inferExpr`+`isClassMethodThrows`; bootstrap 5/5 | 2026-04-23 |
 | BUG-082: selfhost `inferExpr` cross-module constructor gap — `SomeMod.Class(args)` → `Type_.named` | 2026-04-24 |
 | `interface` codegen: fat-pointer vtable struct (`ptr`/`vtable`/`check()`); `implements` sites → `.check(@This())`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
+| BUG-083: `genGenericClass` now emits `comptime { IFoo.check(@This()); }` for `implements`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
+| Float token merge: `float_lit`/`float_lit_exp`/`fractional_lit` → single `float_lit`; `isFloatLit()` simplified; bootstrap 5/5 | 2026-04-24 |
 
 ---
 
