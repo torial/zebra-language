@@ -124,22 +124,18 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-083: `genGenericClass` skips `implements` conformance checks
 - **Severity:** Low (conformance gap, not correctness gap — the class still compiles)
-- **Status:** Open
+- **Status:** Fixed — `src/CodeGen.zig` and `selfhost/codegen.zbr` both emit `comptime { IFoo.check(@This()); }` in `genGenericClass`; `test/generic_iface_test.zbr` covers this; bootstrap 5/5.
 - **Symptom:** A generic class declared `class Stack(T) implements IFoo` does not emit a `comptime { IFoo.check(@This()); }` block inside the generated Zig struct. The missing check means the compiler won't catch at compile time that `Stack(T)` is missing a required method — the error will only surface when a caller tries to use a `Stack(T)` value through the interface (if ever).
 - **Root cause:** `genGenericClass` in both `src/CodeGen.zig` and `selfhost/codegen.zbr` handles `invariants` but has no `implements`/`ifaces` block. `genClass` delegates to `genGenericClass` early and never runs its own `implements` block. This was a pre-existing gap before interface vtable codegen was added.
-- **Fix:** After `if (n.invariants.len > 0) try ig.genInvariantCheckFn();` in `genGenericClass`, add the same `implements.len > 0 → comptime { IFoo.check(@This()); }` block that exists in `genClass` and `genStruct`. Mirror in `selfhost/codegen.zbr`.
-- **Note:** No current test exercises a generic class with `implements`. The gap is benign until someone writes `class Foo(T) implements IBar`.
+- **Fix:** Added `implements.len > 0 → comptime { IFoo.check(@This()); }` block in `genGenericClass` (both backends), parallel to `genClass` and `genStruct`.
 
 ---
 
 ### BUG-084: Selfhost `Lexer.zbr` tracks `[`/`]` in `parenDepth`; Zig `Tokenizer.zig` does not
-- **Severity:** Low — partially mitigated; no currently-failing tests; root divergence remains
-- **Status:** Partially mitigated — `scanAt` now increments `parenDepth` before emitting `at_lbracket`; full parity audit deferred
-- **Symptom (fixed):** `if name in @["a", "b"]` caused `expected indent, got 'print'` in the selfhost compiler. The `@[` two-char path in `scanAt` consumed `[` without incrementing `parenDepth`, so the subsequent `]` decremented it to -1. EOL/indent tokens are only emitted when `parenDepth == 0`, so the newline after the `]` was swallowed, confusing the parser.
-- **Root cause:** Selfhost `Lexer.zbr` tracks both `[`/`]` and `(`/`)` in `parenDepth`. Zig `Tokenizer.zig` only tracks `(`/`)`. The two strategies diverge silently: any `[` not followed by a matching `]` on the same line in selfhost will suppress the EOL, which may be correct for index expressions (`a[i]\n`) but creates parity risk with the Zig backend for unusual code shapes.
-- **Fix applied (2026-04-24):** Added `parenDepth = parenDepth + 1` in `scanAt` when emitting `at_lbracket`, so `@[...]` increments and decrements balance correctly. Committed as part of `feat: @[...] array literal + in @[...] membership test`.
-- **Remaining work:** Audit whether `[`/`]` tracking in selfhost `Lexer.zbr` is intentional or accidental. If intentional (suppresses EOL inside multi-line index expressions), document it explicitly and verify all `[` paths increment. If unintentional, align with Zig Tokenizer and track only `(`/`)` — this would simplify parity analysis but requires removing `[`/`]` handling from `parenDepth` in `Lexer.zbr`.
-- **Risk:** No current test exercises a multi-line bare index expression (`a[\n  i\n]`). If selfhost suppresses EOL there (because `parenDepth > 0`) but Zig doesn't, the two backends parse it differently.
+- **Severity:** Low — root divergence fixed; both backends now behave identically
+- **Status:** Fixed — removed `[`/`]` and `@[` from `parenDepth` tracking in `selfhost/Lexer.zbr`; aligned with `src/Tokenizer.zig` (only `(`/`)` tracked); 26/26 smoke tests pass; bootstrap 5/5
+- **Root cause:** Selfhost `Lexer.zbr` tracked both `[`/`]` and `(`/`)` in `parenDepth`. Zig `Tokenizer.zig` only tracks `(`/`)`. The divergence was accidental — the original selfhost port added `[`/`]` tracking without a design reason, and the `@[` emit path (added for array literals) was patched to compensate rather than root-cause fixed.
+- **Fix:** Removed `parenDepth = parenDepth ± 1` from the `[`/`]` handling and the `@[` `scanAt` path in `selfhost/Lexer.zbr`. Both backends now only suppress EOL inside `(`...`)`. Multi-line `@[...]` is consistently unsupported in both backends (same behavior).
 
 ---
 
@@ -173,4 +169,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-084 filed: selfhost Lexer parenDepth tracks `[`/`]` but Zig Tokenizer does not; `@[` symptom patched, root divergence deferred*
+*Last updated: 2026-04-24 — BUG-084 closed: selfhost Lexer `[`/`]` parenDepth divergence fixed; BUG-083 closed: genGenericClass implements block confirmed present*

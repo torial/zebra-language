@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 8 — BUG-084 filed)
+**Last updated:** 2026-04-24 (session 8 — BUG-083/084 closed)
 
 ---
 
@@ -14,16 +14,11 @@ Authoritative priority queue for the project. Update this file rather than regen
 Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`
 
-**BUG-083** — `genGenericClass` skips `implements` conformance checks  
-`class Foo(T) implements IBar` won't emit `comptime { IBar.check(@This()); }`.  
-File: `src/CodeGen.zig` `genGenericClass` + `selfhost/codegen.zbr` `genGenericClass`
+~~**BUG-083** — `genGenericClass` skips `implements` conformance checks~~ ✓ DONE  
+~~**BUG-084** — Selfhost `Lexer.zbr` `parenDepth` tracks `[`/`]`; Zig Tokenizer does not~~ ✓ DONE
 
 ~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
 Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` extended to handle call receivers; `break :blk_N try _mc_N.method(args)` emitted when method `throws`. Selfhost mirrors via `inferExpr`+`isClassMethodThrows`.
-
-**BUG-084** — Selfhost `Lexer.zbr` `parenDepth` tracks `[`/`]`; Zig Tokenizer does not  
-`@[` symptom patched; root divergence (intentional or not?) unresolved. Audit `[`/`]` handling or document deliberate strategy.  
-File: `selfhost/Lexer.zbr` `parenDepth` management; compare with `src/Tokenizer.zig`
 
 **BUG-014** — Regex lazy match is global, not per-quantifier  
 `<.*?>STUFF.*>` misbehaves; `lazy_match` is a whole-regex flag.
@@ -143,7 +138,8 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `interface` codegen: fat-pointer vtable struct (`ptr`/`vtable`/`check()`); `implements` sites → `.check(@This())`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
 | BUG-083: `genGenericClass` now emits `comptime { IFoo.check(@This()); }` for `implements`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
 | Float token merge: `float_lit`/`float_lit_exp`/`fractional_lit` → single `float_lit`; `isFloatLit()` simplified; bootstrap 5/5 | 2026-04-24 |
-| `@[...]` array literal in expressions + `in @[...]` membership test via `_zebra_in` + `inline for`; selfhost parity; BUG-084 filed for parenDepth divergence | 2026-04-24 |
+| `@[...]` array literal in expressions + `in @[...]` membership test via `_zebra_in` + `inline for`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
+| BUG-084: selfhost `Lexer.zbr` `[`/`]` removed from `parenDepth`; aligned with Zig Tokenizer (`(`/`)` only); 26/26 smoke, bootstrap 5/5 | 2026-04-24 |
 
 ---
 
