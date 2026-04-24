@@ -1,0 +1,49 @@
+struct Widget
+    var label: str
+
+    cue init(lbl: str)
+        label = lbl
+
+    def withLabel(s: str): Widget
+        var r = this except
+            label = s
+        return r
+
+    def name(): str throws
+        if label == "bad"
+            raise "invalid label"
+        return label
+
+def makeWidget(lbl: str): Widget
+    return Widget(lbl)
+
+def acceptStr(s: str): str
+    return s
+
+# Pattern A: call-arg position — f().throws_method()
+# The generated Zig must emit: break :blk_N try _mc_N.name()
+def testCallArgChain(): str throws
+    return acceptStr(makeWidget("hello").name())
+
+# Pattern B: var-init position — var n = f().throws_method()
+# The generated Zig must emit: const n = try _mc_N.name()
+def testVarInitChain(): str throws
+    var n = makeWidget("ok").name()
+    return n
+
+# Pattern C: nested chain in call-arg — f().pure_method().throws_method()
+# The generated Zig must emit: break :blk_N try _mc_N.name()
+def testNestedChain(): str throws
+    return acceptStr(makeWidget("hi").withLabel("world").name())
+
+def main()
+    try
+        var a = testCallArgChain()
+        print a
+        var b = testVarInitChain()
+        print b
+        var c = testNestedChain()
+        print c
+        print "ok"
+    catch |e|
+        print "ERROR: " + e.message

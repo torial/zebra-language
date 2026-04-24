@@ -545,6 +545,7 @@ fn exprCallIsThrows(
     resolve:          *const Resolver.ResolveResult,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
     owner_members:    []const Ast.Decl,
+    tc:               ?*const TypeChecker.TypeCheckResult,
 ) bool {
     // Bare function call (callee is a plain ident, not a member expression).
     // e.g. `someFunc()` where `someFunc` is a top-level or same-class function.
@@ -564,6 +565,40 @@ fn exprCallIsThrows(
             }
         }
         return false;
+    }
+    // Call-expression receiver: `f().method()` — look up the TC type of the receiver call
+    // to determine which class owns `method`, then check if that method throws.
+    if (mem.object.* == .call) {
+        const tc_res = tc orelse return false;
+        const t = tc_res.expr_types.get(mem.object) orelse return false;
+        switch (t) {
+            .named => |sym| {
+                const members: []const Ast.Decl = switch (sym.decl) {
+                    .class   => |c| c.members,
+                    .struct_ => |s| s.members,
+                    else     => return false,
+                };
+                for (members) |m| {
+                    switch (m) {
+                        .method => |md| if (std.mem.eql(u8, md.name, mem.member)) return md.throws,
+                        else    => {},
+                    }
+                }
+                return false;
+            },
+            .cross_module => |cm| {
+                if (imported_modules) |imp| {
+                    if (imp.get(cm.module)) |iface| {
+                        if (iface.throws_methods.contains(mem.member)) return true;
+                        var buf: [512]u8 = undefined;
+                        const k1 = std.fmt.bufPrint(&buf, "{s}.{s}", .{ cm.type_name, mem.member }) catch return false;
+                        if (iface.throws_methods.contains(k1)) return true;
+                    }
+                }
+                return false;
+            },
+            else => return false,
+        }
     }
     if (mem.object.* != .ident) return false;
     const sym = resolve.exprs.get(&mem.object.ident) orelse return false;
@@ -606,14 +641,15 @@ fn bodyHasThrowsCall(
     resolve:          *const Resolver.ResolveResult,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
     owner_members:    []const Ast.Decl,
+    tc:               ?*const TypeChecker.TypeCheckResult,
 ) bool {
     for (stmts) |stmt| {
         if (stmt == .expr and stmt.expr.* == .call) {
-            if (exprCallIsThrows(stmt.expr.call, resolve, imported_modules, owner_members)) return true;
+            if (exprCallIsThrows(stmt.expr.call, resolve, imported_modules, owner_members, tc)) return true;
         }
         // Var init that's a throws call also counts (affects try-block var tracking).
         if (stmt == .var_ and stmt.var_.init != null and stmt.var_.init.?.* == .call) {
-            if (exprCallIsThrows(stmt.var_.init.?.call, resolve, imported_modules, owner_members)) return true;
+            if (exprCallIsThrows(stmt.var_.init.?.call, resolve, imported_modules, owner_members, tc)) return true;
         }
     }
     return false;
@@ -4289,16 +4325,20 @@ const Generator = struct {
                         const mem = call.callee.member;
                         if (mem.object.* == .call) {
                             const uid = g.nextUid();
+                            const is_throws = exprCallIsThrows(call, g.resolve, g.imported_modules, g.owner_members, g.tc);
                             try g.writeIndent();
                             try g.w.print("var _mc_{x} = ", .{uid});
                             try g.genExpr(mem.object);
                             try g.w.writeAll(";\n");
                             try g.writeIndent();
+                            if (is_throws and g.current_method_throws and g.try_block_label == null and !g.suppress_auto_try) {
+                                try g.w.writeAll("try ");
+                            }
                             try g.w.print("_mc_{x}.{s}(", .{ uid, mem.member });
                             try g.genArgs(g.lookupParams(call), call.args);
                             try g.w.writeAll(")");
                             if (g.try_block_label) |lbl| {
-                                if (exprCallIsThrows(call, g.resolve, g.imported_modules, g.owner_members)) {
+                                if (is_throws) {
                                     const ev = g.try_err_var.?;
                                     try g.w.print(" catch |_e| {{ {s} = _e; break :{s}; }}", .{ ev, lbl });
                                 }
@@ -4313,7 +4353,7 @@ const Generator = struct {
                 // Inside a try block, a call to a `throws` method must have its
                 // error captured and redirected to the block's tracking variable.
                 if (e.* == .call and g.try_block_label != null and
-                    exprCallIsThrows(e.call, g.resolve, g.imported_modules, g.owner_members))
+                    exprCallIsThrows(e.call, g.resolve, g.imported_modules, g.owner_members, g.tc))
                 {
                     const ev  = g.try_err_var.?;
                     const lbl = g.try_block_label.?;
@@ -4503,7 +4543,7 @@ const Generator = struct {
             // (including cross-module calls like `Lexer.tokenize(...)`), redirect the error
             // to the block's tracking variable so the catch clause fires.
             if (e.* == .call and g.try_block_label != null and
-                exprCallIsThrows(e.call, g.resolve, g.imported_modules, g.owner_members))
+                exprCallIsThrows(e.call, g.resolve, g.imported_modules, g.owner_members, g.tc))
             {
                 const ev  = g.try_err_var.?;
                 const lbl = g.try_block_label.?;
@@ -8604,7 +8644,7 @@ const Generator = struct {
         // var/const _try_err_XXXX: ?anyerror = null;
         // Use `var` only when the body may mutate the err variable (via `raise` or
         // `try expr`); otherwise `const` avoids Zig's "never mutated" diagnostic.
-        const has_raise = bodyNeedsErrVar(s.body, g.tc) or bodyHasThrowsCall(s.body, g.resolve, g.imported_modules, g.owner_members);
+        const has_raise = bodyNeedsErrVar(s.body, g.tc) or bodyHasThrowsCall(s.body, g.resolve, g.imported_modules, g.owner_members, g.tc);
         try g.writeIndent();
         try g.w.print("{s} {s}: ?anyerror = null;\n", .{
             if (has_raise) "var" else "const", err_var,
@@ -10043,9 +10083,15 @@ const Generator = struct {
         if (e.callee.* == .member and e.callee.member.object.* == .call) {
             const mem = e.callee.member;
             const uid = g.nextUid();
+            const chain_throws = exprCallIsThrows(e, g.resolve, g.imported_modules, g.owner_members, g.tc);
+            const need_try = chain_throws and g.current_method_throws and g.try_block_label == null and !g.suppress_auto_try;
             try g.w.print("(blk_{x}: {{ var _mc_{x} = ", .{ uid, uid });
             try g.genExpr(mem.object);
-            try g.w.print("; break :blk_{x} _mc_{x}.{s}(", .{ uid, uid, mem.member });
+            if (need_try) {
+                try g.w.print("; break :blk_{x} try _mc_{x}.{s}(", .{ uid, uid, mem.member });
+            } else {
+                try g.w.print("; break :blk_{x} _mc_{x}.{s}(", .{ uid, uid, mem.member });
+            }
             try g.genArgs(g.lookupParams(e), e.args);
             try g.w.writeAll("); })");
             return;

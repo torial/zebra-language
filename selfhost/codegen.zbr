@@ -625,6 +625,10 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             g.struct_names.add(exposed_name)
             on Decl.struct_ as s
                 g.struct_names.add(s.name)
+                for mem in s.members
+                    if mem is Decl.method as dm
+                        if dm.throws_
+                            g.throws_methods.add(makeDottedKey(s.name, dm.name))
             else
                 pass
     for decl in m.decls
@@ -2257,12 +2261,18 @@ struct Generator
         # If init_expr is `someCall().method(args)`, materialize someCall() first.
         var mc_recv = ""
         var mc_field = ""
+        var mc_throws: bool = false
         if n.init_expr != nil
             var ch = tryChain(n.init_expr to!)
             if ch != nil
                 var chain = ch to!
                 mc_recv = hoistCallChain(chain.recv)
                 mc_field = chain.method
+                if this.infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(chain.recv, this.infer_ctx to!)
+                    if recv_t is Type_.named as cn
+                        if isClassMethodThrows(cn, chain.method)
+                            mc_throws = true
         # Mutable fn-ref vars: Zig requires `*const fn(P) R` type.
         # Detect `var pred = isAlpha` where isAlpha is a top-level def,
         # and emit `var pred: @TypeOf(&isAlpha) = &isAlpha;` instead.
@@ -2382,6 +2392,8 @@ struct Generator
                     pass
         w.emit(" = ")
         if mc_recv.len > 0
+            if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                w.emit("try ")
             w.emit(mc_recv + "." + mc_field + "(")
             if n.init_expr != nil
                 var ch2 = tryChain(n.init_expr to!)
@@ -2391,6 +2403,15 @@ struct Generator
             w.emit(")")
         else if n.init_expr != nil
             genExpr(n.init_expr to!)
+            # Inside a try block: if init is a direct throws call, redirect the error.
+            if try_block_label != nil and not in_try_expr
+                var init_is_throws = false
+                if n.init_expr to! is Expr.call as ic
+                    if ic.callee is Expr.ident as iid
+                        if isTopLevelMethodThrows(iid.name)
+                            init_is_throws = true
+                if init_is_throws
+                    emitTryBlockCatch()
         else
             w.emit("undefined")
         w.emit(";\n")
@@ -2403,6 +2424,13 @@ struct Generator
             if decl is Decl.method as m
                 if m.name == name
                     return true
+        return false
+
+    def isTopLevelMethodThrows(name: str): bool
+        for decl in module_decls
+            if decl is Decl.method as m
+                if m.name == name
+                    return m.throws_
         return false
 
     def isStringBuilderCtor(e: Expr): bool
@@ -2791,6 +2819,14 @@ struct Generator
                 genExpr(obj)
                 w.emit(";\n")
                 writeIndent()
+                var stmt_is_throws: bool = false
+                if this.infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(obj, this.infer_ctx to!)
+                    if recv_t is Type_.named as recv_cn
+                        if isClassMethodThrows(recv_cn, method_name)
+                            stmt_is_throws = true
+                if stmt_is_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                    w.emit("try ")
                 w.emit(mc + "." + method_name + "(")
                 genArgList(call_args)
                 w.emit(");\n")
@@ -5756,9 +5792,19 @@ struct Generator
         if m.object is Expr.call
             var mc_uid: int = w.nextUid()
             var mc_lbl: str = "blk_" + mc_uid.toString()
+            var chain_throws: bool = false
+            if this.infer_ctx != nil
+                var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
+                if recv_t is Type_.named as recv_cn
+                    if isClassMethodThrows(recv_cn, mname)
+                        chain_throws = true
+            var need_try: bool = chain_throws and current_method_throws and try_block_label == nil and not in_try_expr
             w.emit("(" + mc_lbl + ": { var _mc_" + mc_uid.toString() + " = ")
             genExpr(m.object)
-            w.emit("; break :" + mc_lbl + " _mc_" + mc_uid.toString() + "." + mname + "(")
+            if need_try
+                w.emit("; break :" + mc_lbl + " try _mc_" + mc_uid.toString() + "." + mname + "(")
+            else
+                w.emit("; break :" + mc_lbl + " _mc_" + mc_uid.toString() + "." + mname + "(")
             genArgList(args)
             w.emit("); })")
             return

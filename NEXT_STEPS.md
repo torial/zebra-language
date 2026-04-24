@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-23 (session 5)
+**Last updated:** 2026-04-23 (session 6)
 
 ---
 
@@ -15,7 +15,7 @@ Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`
 
 ~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
-Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5.
+Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` extended to handle call receivers; `break :blk_N try _mc_N.method(args)` emitted when method `throws`. Selfhost mirrors via `inferExpr`+`isClassMethodThrows`.
 
 **BUG-014** — Regex lazy match is global, not per-quantifier  
 `<.*?>STUFF.*>` misbehaves; `lazy_match` is a whole-regex flag.
@@ -128,6 +128,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `for-else` complete — Path 1 (list native) + Path 2 (while-based labeled block) | 2026-04-23 |
 | Per-block `scanMutations` in `genStmts` — eliminates cross-arm const/var pollution | 2026-04-23 |
 | BUG-027: expression-position chain fix — labeled block in both backends | 2026-04-23 |
+| BUG-027 throws sub-issue: `exprCallIsThrows` handles call receivers; `try` emitted in labeled block + statement-position hoist; selfhost parity via `inferExpr`+`isClassMethodThrows`; bootstrap 5/5 | 2026-04-23 |
 
 ---
 
