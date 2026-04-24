@@ -6,8 +6,15 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {

@@ -822,6 +822,8 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 scanMutationsInto(w.stmts, out)
             on Stmt.for_in as f
                 scanMutationsInto(f.stmts, out)
+                if f.else_ != nil
+                    scanMutationsInto(f.else_ to!, out)
             on Stmt.for_num as fnum
                 scanMutationsInto(fnum.stmts, out)
             on Stmt.branch_ as b

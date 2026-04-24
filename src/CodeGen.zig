@@ -3907,13 +3907,11 @@ const Generator = struct {
         if (m.body) |body| {
             var refs = try collectRefs(body, g.resolve, g.alloc);
             defer refs.deinit();
-            var mut_set = try scanMutations(body, g.alloc, g.tc);
-            defer mut_set.deinit();
             var ret_set = try analyzeEscapes(body, g.alloc);
             defer ret_set.deinit();
             var cv_map = std.StringHashMap(void).init(g.alloc);
             defer cv_map.deinit();
-            const bg = eg.indented().withMutated(&mut_set).withClosureVars(&cv_map).withReturnedNames(&ret_set);
+            const bg = eg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set);
             try g.w.writeAll(" {\n");
             if (!refs.uses_self) try bg.line("_ = self;");
             for (m.params) |p| {
@@ -4041,10 +4039,7 @@ const Generator = struct {
             // Pre-scan 1: which params / self are actually referenced?
             var refs = try collectRefs(body, g.resolve, g.alloc);
             defer refs.deinit();
-            // Pre-scan 2: which locals are mutated? (var vs const)
-            var mut_set = try scanMutations(body, g.alloc, g.tc);
-            defer mut_set.deinit();
-            // Pre-scan 3: escape analysis — which string locals are returned?
+            // Pre-scan 2: escape analysis — which string locals are returned?
             // Suppresses `defer _allocator.free` for strings whose ownership
             // transfers to the caller. Does NOT affect List/HashMap (no deinit emitted).
             var ret_set = try analyzeEscapes(body, g.alloc);
@@ -4081,7 +4076,7 @@ const Generator = struct {
                 for (n.params) |p| try tco_pnames.append(g.alloc, p.name);
 
                 const bg = ig.indented()
-                    .withMutated(&mut_set).withClosureVars(&cv_map).withReturnedNames(&ret_set)
+                    .withClosureVars(&cv_map).withReturnedNames(&ret_set)
                     .withTco(n.name, tco_pnames.items, n.mods.shared);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 // Skip `_ = self` when invariant defer already references self.
@@ -4093,7 +4088,7 @@ const Generator = struct {
                 try ig.writeIndent();
                 try ig.w.writeAll("}\n");
             } else {
-                const bg = mg.indented().withMutated(&mut_set).withClosureVars(&cv_map).withReturnedNames(&ret_set);
+                const bg = mg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set);
                 // Emit `_ = x;` only for params that are NOT referenced in the body.
                 // Skip when invariant defer already references self (avoids "pointless discard" in Zig 0.15).
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
@@ -4142,11 +4137,9 @@ const Generator = struct {
         const body = n.body orelse &[_]Ast.Stmt{};
         var refs = try collectRefs(body, g.resolve, g.alloc);
         defer refs.deinit();
-        var mut_set = try scanMutations(body, g.alloc, g.tc);
-        defer mut_set.deinit();
         var cv_map = std.StringHashMap(void).init(g.alloc);
         defer cv_map.deinit();
-        const bg = mg.indented().withMutated(&mut_set).withClosureVars(&cv_map);
+        const bg = mg.indented().withClosureVars(&cv_map);
         try bg.writeIndent();
         if (g.is_struct_owner) {
             try bg.w.print("var self: {s} = undefined;\n", .{self_type_name});
@@ -4183,7 +4176,10 @@ const Generator = struct {
     // ── Statements ────────────────────────────────────────────────────────────
 
     fn genStmts(g: Generator, stmts: []const Ast.Stmt) anyerror!void {
-        for (stmts) |stmt| try g.genStmt(stmt);
+        var block_mut = try scanMutations(stmts, g.alloc, g.tc);
+        defer block_mut.deinit();
+        const bg = g.withMutated(&block_mut);
+        for (stmts) |stmt| try bg.genStmt(stmt);
     }
 
     /// Extract the source span from any Stmt variant.

@@ -427,22 +427,22 @@ class ASTBuilder
                 var vars: List(str) = List(str)()
                 for vname in pfor.var_names
                     vars.add(vname)
-                var fi_else: List(Stmt)? = nil
+                var else_stmts: List(Stmt)? = nil
                 if pfor.else_stmts.len > 0
-                    fi_else = .buildStmts(pfor.else_stmts)?
-                return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, stmts, fi_else))
+                    else_stmts = .buildStmts(pfor.else_stmts)?
+                return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, stmts, else_stmts))
 
             on PNode.stmt_for_num as pfn
                 const start_expr = .buildExpr(pfn.start.at(0))?
                 const stop_expr = .buildExpr(pfn.stop_.at(0))?
                 var stmts = .buildStmts(pfn.stmts)?
-                var else_stmts_fn: List(Stmt)? = nil
+                var else_stmts: List(Stmt)? = nil
                 if pfn.else_stmts.len > 0
-                    else_stmts_fn = .buildStmts(pfn.else_stmts)?
+                    else_stmts = .buildStmts(pfn.else_stmts)?
                 if pfn.step.len > 0
                     const step_expr = .buildExpr(pfn.step.at(0))?
-                    return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, step_expr, stmts, else_stmts_fn))
-                return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, nil, stmts, else_stmts_fn))
+                    return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, step_expr, stmts, else_stmts))
+                return Stmt.for_num(StmtForNum(Span(pfn.line, 0, pfn.line, 0), pfn.var_name, start_expr, stop_expr, nil, stmts, else_stmts))
 
             on PNode.stmt_var as pv
                 const type_ref = .parseTypeRef(pv.type_name)

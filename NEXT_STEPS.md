@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-23 (session 2)
+**Last updated:** 2026-04-23 (session 3)
 
 ---
 
@@ -129,6 +129,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `HashMap.count()`/`.remove()` without type annotation: infer from init expr (BUG-081) | 2026-04-23 |
 | BUG-002: guard/try_postfix tests fixed with try/catch wrapping | 2026-04-23 |
 | `for-else` Path 1: list iteration (`for x in list / else`) — Zig native `for...else` | 2026-04-23 |
+| Per-block `scanMutations` in `genStmts` — eliminates cross-arm const/var pollution | 2026-04-23 |
 
 ---
 

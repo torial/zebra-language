@@ -3201,6 +3201,10 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
                 scanMutationsInto(f.stmts, out);
+// zbr:selfhost/cg_helpers.zbr:825
+                if ((f.else_ != null)) {
+                    scanMutationsInto(f.else_.?, out);
+                }
             },
             .for_num => |_ptr_fnum| {
                 const fnum = _ptr_fnum.*;
@@ -3208,25 +3212,25 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/cg_helpers.zbr:828
+// zbr:selfhost/cg_helpers.zbr:830
                 for (b.cases.items) |c| {
                     scanMutationsInto(c.stmts, out);
                 }
-// zbr:selfhost/cg_helpers.zbr:830
+// zbr:selfhost/cg_helpers.zbr:832
                 if ((b.else_ != null)) {
                     scanMutationsInto(b.else_.?, out);
                 }
             },
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
-// zbr:selfhost/cg_helpers.zbr:833
+// zbr:selfhost/cg_helpers.zbr:835
                 if ((n.init_expr != null)) {
                     scanMutationsInExpr(n.init_expr.?.*, out);
                 }
             },
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/cg_helpers.zbr:836
+// zbr:selfhost/cg_helpers.zbr:838
                 if ((r.value != null)) {
                     scanMutationsInExpr(r.value.?.*, out);
                 }
@@ -3237,7 +3241,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/cg_helpers.zbr:841
+// zbr:selfhost/cg_helpers.zbr:843
                 if (w.target.* == .ident) {
                     const id = w.target.*.ident;
                     out.add(id.name);
@@ -3251,7 +3255,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
                 scanMutationsInto(tc.stmts, out);
-// zbr:selfhost/cg_helpers.zbr:848
+// zbr:selfhost/cg_helpers.zbr:850
                 for (tc.clauses.items) |cl| {
                     scanMutationsInto(cl.stmts, out);
                 }
@@ -3266,12 +3270,12 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .print_ => |_ptr_p| {
                 const p = _ptr_p.*;
-// zbr:selfhost/cg_helpers.zbr:855
+// zbr:selfhost/cg_helpers.zbr:857
                 var pi: i64 = 0;
-// zbr:selfhost/cg_helpers.zbr:856
+// zbr:selfhost/cg_helpers.zbr:858
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
                     scanMutationsInExpr(p.args.items[@intCast(pi)], out);
-// zbr:selfhost/cg_helpers.zbr:858
+// zbr:selfhost/cg_helpers.zbr:860
                     pi += 1;
                 }
             },
@@ -3283,10 +3287,10 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
 }
 
 pub fn scanMutations(stmts: std.ArrayList(Stmt)) *StrSet {
-// zbr:selfhost/cg_helpers.zbr:863
+// zbr:selfhost/cg_helpers.zbr:865
     const out = StrSet.init();
     scanMutationsInto(stmts, out);
-// zbr:selfhost/cg_helpers.zbr:865
+// zbr:selfhost/cg_helpers.zbr:867
     return out;
 }
 

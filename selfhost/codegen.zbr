@@ -1834,7 +1834,6 @@ struct Generator
             w.emit("void")
         if m.stmts != nil
             var mstmts = m.stmts to!
-            var ms = scanMutations(mstmts)
             var rs = analyzeEscapes(mstmts)
             var ps = StrSet()
             var sp = StrSet()
@@ -1851,7 +1850,7 @@ struct Generator
                 var inv_ig = indented()
                 inv_ig.writeIndent()
                 inv_ig.w.emit("defer self._check_invariant();\n")
-            var bg = withMethodCtx(ms, rs, auto_throws, owner_members, ps, sp, "self")
+            var bg = withMethodCtx(nil, rs, auto_throws, owner_members, ps, sp, "self")
             # Phase 17c — seed a per-method InferCtx and pre-walk statements so
             # expression-level type inference has a populated scope map. Used
             # during emit (e.g., at ctor-arg boxing) to replace name-pattern
@@ -1965,12 +1964,11 @@ struct Generator
             ig.w.emit(" = undefined;\n")
         if ini.stmts != nil
             var istmts = ini.stmts to!
-            var ms = scanMutations(istmts)
             var rs = analyzeEscapes(istmts)
             var ps = StrSet()
             for p in ini.params
                 ps.add(p.name)
-            var bg = ig.withMethodCtx(ms, rs, false, owner_members, ps, StrSet(), "_self")
+            var bg = ig.withMethodCtx(nil, rs, false, owner_members, ps, StrSet(), "_self")
             # Phase 17c — seed InferCtx for the init body: well (see genMethod).
             var ctx17ci = InferCtx(this.module_types, owner)
             ctx17ci.withDepTypes(this.dep_types)
@@ -2145,6 +2143,11 @@ struct Generator
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
     def genStmts(stmts: List(Stmt))
+        # Per-block mutation scope: save caller's mut_set, install block-scoped one,
+        # restore on exit. This prevents sibling branch arms from polluting each
+        # other's const/var decisions via the method-wide mut_set.
+        var saved_ms = mut_set
+        mut_set = scanMutations(stmts)
         # Pre-scan: find lambda-assigned vars that are never referenced in the body.
         # Emit `_ = name;` for those at the end to suppress Zig's unused-const error.
         var unused_lambdas = StrSet()
@@ -2159,6 +2162,7 @@ struct Generator
                             pass
         for s in stmts
             genStmt(s)
+        mut_set = saved_ms
         var lambda_names = unused_lambdas.items()
         var nm_i = 0
         while nm_i < lambda_names.count()

@@ -2333,14 +2333,14 @@ pub const ASTBuilder = struct {
                     vars.append(_allocator, _intern(vname)) catch @panic("OOM");
                 }
 // zbr:selfhost/astbuilder.zbr:430
-                var fi_else: ?std.ArrayList(Stmt) = null;
+                var else_stmts: ?std.ArrayList(Stmt) = null;
 // zbr:selfhost/astbuilder.zbr:431
                 if (_zebra_gt(@as(i64, @intCast(pfor.else_stmts.items.len)), 0)) {
 // zbr:selfhost/astbuilder.zbr:432
-                    fi_else = try self.buildStmts(pfor.else_stmts);
+                    else_stmts = try self.buildStmts(pfor.else_stmts);
                 }
 // zbr:selfhost/astbuilder.zbr:433
-                return Stmt{ .for_in = blk_box_20: { const _bv: std.meta.Child(@FieldType(Stmt, "for_in")) = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _bx0: { const _bv = iter_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts, fi_else); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } };
+                return Stmt{ .for_in = blk_box_20: { const _bv: std.meta.Child(@FieldType(Stmt, "for_in")) = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _bx0: { const _bv = iter_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, stmts, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } };
             },
             .stmt_for_num => |_ptr_pfn| {
                 const pfn = _ptr_pfn.*;
@@ -2351,21 +2351,21 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:438
                 const stmts = try self.buildStmts(pfn.stmts);
 // zbr:selfhost/astbuilder.zbr:439
-                var else_stmts_fn: ?std.ArrayList(Stmt) = null;
+                var else_stmts: ?std.ArrayList(Stmt) = null;
 // zbr:selfhost/astbuilder.zbr:440
                 if (_zebra_gt(@as(i64, @intCast(pfn.else_stmts.items.len)), 0)) {
 // zbr:selfhost/astbuilder.zbr:441
-                    else_stmts_fn = try self.buildStmts(pfn.else_stmts);
+                    else_stmts = try self.buildStmts(pfn.else_stmts);
                 }
 // zbr:selfhost/astbuilder.zbr:442
                 if (_zebra_gt(@as(i64, @intCast(pfn.step.items.len)), 0)) {
 // zbr:selfhost/astbuilder.zbr:443
                     const step_expr = try self.buildExpr(pfn.step.items[@intCast(0)]);
 // zbr:selfhost/astbuilder.zbr:444
-                    return Stmt{ .for_num = blk_box_21: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = step_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }, stmts, else_stmts_fn); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } };
+                    return Stmt{ .for_num = blk_box_21: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = step_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }, stmts, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } };
                 }
 // zbr:selfhost/astbuilder.zbr:445
-                return Stmt{ .for_num = blk_box_22: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, null, stmts, else_stmts_fn); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_22 _bp; } };
+                return Stmt{ .for_num = blk_box_22: { const _bv: std.meta.Child(@FieldType(Stmt, "for_num")) = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _bx0: { const _bv = start_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = stop_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, null, stmts, else_stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_22 _bp; } };
             },
             .stmt_var => |_ptr_pv| {
                 const pv = _ptr_pv.*;
