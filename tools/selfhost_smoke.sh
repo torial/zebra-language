@@ -81,6 +81,8 @@ smoke test/hashmap_set_test.zbr
 smoke test/hashmap_this_field_test.zbr
 # BUG-030: param.field.contains(key) on HashMap must emit .contains(), not List idiom.
 smoke test/hashmap_param_field_test.zbr
+# HashMap.remove() and HashMap.count() without type annotation (infer from init expr).
+smoke test/hashmap_remove_test.zbr
 
 # BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
 smoke test/method_chain_test.zbr

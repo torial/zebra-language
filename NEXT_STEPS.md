@@ -41,10 +41,6 @@ Parser/AST/Resolver for `interface` declarations are done. CodeGen needs to emit
 This is the prerequisite for the plugin system and unlocks clean Zebra-native vtable APIs.
 Files: `src/CodeGen.zig`, then selfhost port in `selfhost/codegen.zbr`.
 
-### 5. HashMap.remove — selfhost parity check
-`HashMap.remove(key)` works in the Zig backend. Verify and add to `selfhost/codegen.zbr`
-if missing from the `genHashMapMethod` dispatch.
-
 ---
 
 ## Medium Term (Milestone Features)
@@ -133,6 +129,8 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | User-defined generics (`class Stack(T)`) — Milestone 0.8 | 2026-04-10 |
 | ImGui backend (stub + GLFW) | 2026-04-06 |
 | String interning at List/HashMap/field sinks | 2026-04-23 |
+| `fn_ref` selfhost parity (BUG-019): `isTopLevelMethod` + `&` prefix in genLocalVar/genAssign | 2026-04-23 |
+| `HashMap.count()`/`.remove()` without type annotation: infer from init expr (BUG-081) | 2026-04-23 |
 
 ---
 

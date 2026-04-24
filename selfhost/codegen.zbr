@@ -2305,6 +2305,20 @@ struct Generator
         if n.init_expr != nil
             if isStrSetCtor(n.init_expr to!)
                 strset_locals.add(n.name)
+        # Detect HashMap from init expression (var m = HashMap(K,V)() without type annotation)
+        if n.init_expr != nil
+            var hm_args = getHashMapCtorArgs(n.init_expr to!)
+            if hm_args != nil
+                hashmap_locals.add(n.name)
+                var hma = hm_args to!
+                if hma.count() > 0
+                    var kname = hma.at(0)
+                    if kname == "str" or kname == "String"
+                        hashmap_str_key_locals.add(n.name)
+                if hma.count() > 1
+                    var vname = hma.at(1)
+                    if vname == "str" or vname == "String"
+                        hashmap_str_val_locals.add(n.name)
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
             if this.isStringBoth(n.init_expr to!, "var_decl")
@@ -2395,6 +2409,21 @@ struct Generator
                 if c.callee is Expr.ident as id
                     return id.name == "StrSet"
         return false
+
+    # Returns the type-arg names for `HashMap(K,V)()` init expressions (no type annotation).
+    # Returns nil if the expression is not a HashMap constructor call.
+    def getHashMapCtorArgs(e: Expr): List(str)?
+        if e is Expr.call as outer
+            if outer.args.count() == 0
+                if outer.callee is Expr.call as inner
+                    if inner.callee is Expr.ident as id
+                        if id.name == "HashMap"
+                            var result = List(str)()
+                            for a in inner.args
+                                if a.value is Expr.ident as ai
+                                    result.add(ai.name)
+                            return result
+        return nil
 
     def isGenericStdlibCtor(e: Expr): bool
         # List(T)() or HashMap(K,V)() or StrSet()
@@ -5026,10 +5055,12 @@ struct Generator
         if mname == "count"
             var cnt_obj_name = getMemberFieldName(m.object)
             var is_strset_cnt = false
+            var is_hashmap_cnt = false
             if cnt_obj_name != nil
                 var cnt_nm = cnt_obj_name to!
                 is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(this.module_types, this.dep_types, cnt_nm)
-            if is_strset_cnt
+                is_hashmap_cnt = hashmap_locals.contains_(cnt_nm) or fieldIsHashMap(this.module_types, this.dep_types, cnt_nm)
+            if is_strset_cnt or is_hashmap_cnt
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
                 w.emit(".count()))")

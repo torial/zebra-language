@@ -1,0 +1,30 @@
+# Tests HashMap.remove() and HashMap.count() when the variable is declared
+# without an explicit type annotation (var m = HashMap(K,V)()).
+
+def main()
+    var m = HashMap(str, int)()
+    m.put("a", 1)
+    m.put("b", 2)
+    m.put("c", 3)
+    assert m.count() == 3, "initial count"
+
+    m.remove("b")
+    assert m.count() == 2, "count after remove"
+    assert not m.contains("b"), "b removed"
+    assert m.contains("a"), "a still present"
+    assert m.contains("c"), "c still present"
+
+    # remove non-existent key is a no-op
+    m.remove("z")
+    assert m.count() == 2, "count unchanged after no-op remove"
+
+    # str→str HashMap
+    var tags = HashMap(str, str)()
+    tags.put("lang", "zebra")
+    tags.put("tier", "alpha")
+    assert tags.count() == 2, "str-str count"
+    tags.remove("tier")
+    assert tags.count() == 1, "str-str count after remove"
+    assert tags.contains("lang"), "lang still there"
+
+    print "ok"
