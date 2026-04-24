@@ -141,12 +141,14 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-085: `shared def` methods — bare field names incorrectly emit `self.field`
 - **Severity:** Low (ergonomic; workaround available)
-- **Status:** Open
-- **Symptom:** Inside a `shared def` method, a bare field name (e.g. `count`) is treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But shared methods have no `self` parameter in the generated Zig — so the generated code is `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
-- **Workaround:** Use the fully-qualified form `ClassName.field` instead of a bare name inside shared methods. e.g. `Counter.count = Counter.count + 1`.
-- **Root cause:** `genIdent` checks `in_method: bool` (set for both instance and shared methods) and `isFieldName` returns true for any declared class field. There is no `in_shared_method` guard to suppress the `self.` prefix for shared-method contexts.
-- **Fix direction:** Thread `in_shared_method: bool` (or check method mods in `genMethod`) so that `genIdent` skips the `self.` prefix when the current method is `shared`. Bare names in shared methods should then emit as `ClassName.fieldName` (Zig's `pub var` fields are addressed via the type name).
-- **Files:** `src/CodeGen.zig` (`genIdent`, `genMethod`), `selfhost/codegen.zbr` (parity).
+- **Status:** Fixed — `src/CodeGen.zig` and `selfhost/codegen.zbr` `genIdent`; `test/shared_var_test.zbr` updated to exercise the fix; bootstrap 5/5.
+- **Symptom:** Inside a `shared def` method, a bare field name (e.g. `count`) was treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But shared methods have no `self` parameter in the generated Zig — so the generated code was `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
+- **Root cause:** `genIdent` checked `in_method: bool` (set for both instance and shared methods) and `isFieldName` returned true for any declared class field. There was no guard for the shared case.
+- **Fix:** Rather than adding an `in_shared_method` flag (which would miss bare `shared var` access from instance methods), the fix checks the field's own `shared` modifier at the `genIdent` site:
+  - **Zig backend:** After `if (sym.kind == .var_)`, added `if (sym.decl.var_.mods.shared) { emit owner.name; return; }`. Safe because `sym.kind == .var_` guarantees `sym.decl` is the `.var_` union variant.
+  - **Selfhost:** Added `isSharedField(name: str): bool` helper (iterates `owner_members`, returns `fld.mods.is_shared`). `genIdent` now calls `isSharedField` and emits `owner.name` instead of `self_name.name` for shared fields.
+- **Benefit:** Fixes bare `shared var` access from BOTH shared methods AND instance methods — strictly more correct than the `in_shared_method` flag approach.
+- **Files:** `src/CodeGen.zig` (`genIdent`), `selfhost/codegen.zbr` (`genIdent`, new `isSharedField`).
 
 ---
 
@@ -157,6 +159,26 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
   - `this.field.method()` — chained member access through a field
   - Calls nested inside compound expressions
 - **Required action:** Use explicit `?` suffix for these cases: `localVar.method()?`, `this.field.method()?`
+
+---
+
+### DESIGN-002: `collectAndEmitOldSnapshots` (selfhost) missing `Expr` arms — latent risk
+- **Not a current bug** — no known failing test; filed for awareness
+- **Description:** `selfhost/codegen.zbr` `collectAndEmitOldSnapshots` handles a subset of `Expr` variants explicitly and falls through to `else: pass` for the rest. If an `old expr` node appears nested inside one of the unhandled variants, the snapshot will not be emitted and the deferred check will silently reference an undeclared identifier.
+- **Missing arms (vs. Zig `collectOldExprs` in `src/CodeGen.zig`):**
+  - `array_lit` — `@[a, b, c]` literals
+  - `list_lit` — `[a, b, c]` literals
+  - `dict_lit` — `{k: v, ...}` dict literals
+  - `tuple_lit` — `(a, b)` tuple literals
+  - `string_interp` — `"hello {x}"` interpolated strings
+  - `type_check` — `x is TypeName` expressions
+  - `slice` — `arr[a..b]` slice expressions
+  - `except_` — `x except { field = val }` struct-update expressions
+  - Leaf nodes (`int_lit`, `float_lit`, `bool_lit`, `char_lit`, `string_lit`, `nil_`, `this_`, `ident`, `zig_lit`) — these can't contain `old_` so the `else: pass` is correct for them
+  - `lambda` — Zig backend also ignores lambda bodies; correct (old_ inside a lambda would be semantically unsound)
+- **Risk:** Low in practice. `old expr` in a contract condition is almost always a simple field reference or a method call on a field. Reaching the missing arms requires deliberately nesting `old` inside a composite literal or slice inside an `ensure` condition — unusual.
+- **Fix direction:** Add explicit arms for the eight missing compound variants (each recurses into sub-expressions the same way the `binary`, `call`, etc. arms do). Defer until a concrete failing case is found.
+- **Files:** `selfhost/codegen.zbr` (`collectAndEmitOldSnapshots`); compare to `src/CodeGen.zig` (`collectOldExprs`).
 
 ---
 
@@ -180,4 +202,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-084 closed: selfhost Lexer `[`/`]` parenDepth divergence fixed; BUG-083 closed: genGenericClass implements block confirmed present*
+*Last updated: 2026-04-24 — BUG-085 closed: shared-field bare-name emit fixed in both backends; DESIGN-002 filed: collectAndEmitOldSnapshots missing Expr arms*

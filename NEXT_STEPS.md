@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 10 — Expr.old_ Option C refactor; shared var fields; BUG-085 filed)
+**Last updated:** 2026-04-24 (session 11 — BUG-085 fixed: shared-field bare-name emit; DESIGN-002 filed)
 
 ---
 
@@ -141,6 +141,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-084: selfhost `Lexer.zbr` `[`/`]` removed from `parenDepth`; aligned with Zig Tokenizer (`(`/`)` only); 26/26 smoke, bootstrap 5/5 | 2026-04-24 |
 | `_f32`/`_f64`/`f32`/`f64` float suffix codegen: `genFloatLit` in both backends; `@as(fNN, val)` emission; selfhost uses `replace()`; 27/27 smoke, bootstrap 5/5 | 2026-04-24 |
 | `ensure`+`old` codegen: defer-based post-condition checks; `old expr` → `const _old_N = snapshot;` + substitution; `kw_old`→`UnaryOp.old_` added to selfhost AST/parser/astbuilder; 29/29 smoke, bootstrap 5/5 | 2026-04-24 |
+| BUG-085: shared-field bare-name emit — `genIdent` now checks field's own `shared` mod; emits `TypeName.field` not `self.field`; `isSharedField` added to selfhost; both backends; bootstrap 5/5 | 2026-04-24 |
 
 ---
 

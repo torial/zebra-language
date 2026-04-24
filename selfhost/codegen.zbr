@@ -4638,9 +4638,19 @@ struct Generator
             w.emit(id.name)
             return
         if in_method and isFieldName(id.name)
-            w.emit(self_name)
+            if isSharedField(id.name)
+                w.emit(owner)
+            else
+                w.emit(self_name)
             w.emit(".")
         w.emit(id.name)
+
+    def isSharedField(name: str): bool
+        for d in owner_members
+            if d is Decl.var_ as fld
+                if fld.name == name
+                    return fld.mods.is_shared
+        return false
 
     def isFieldName(name: str): bool
         # Not a field if it's a parameter name (params shadow fields)

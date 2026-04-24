@@ -9408,6 +9408,11 @@ const Generator = struct {
         if (g.in_method) {
             if (g.resolve.exprs.get(e)) |sym| {
                 if (sym.kind == .var_) {
+                    // Shared (static) fields → TypeName.field, not self.field
+                    if (sym.decl.var_.mods.shared) {
+                        try g.w.print("{s}.{s}", .{g.owner, e.name});
+                        return;
+                    }
                     // Nil-narrowed field: self.name.?
                     if (g.nil_narrowed) |nn| {
                         if (nn.contains(e.name)) {
