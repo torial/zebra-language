@@ -687,6 +687,7 @@ union Expr
     tuple_lit: ^ExprTuple
     type_check: ^ExprTypeCheck
     except_: ^ExprExcept
+    old_: ^ExprOld
 
 # integer literal
 
@@ -901,7 +902,6 @@ enum UnaryOp
     neg
     not_
     bit_not
-    old_
 
 struct ExprUnary
     var span: Span
@@ -911,6 +911,18 @@ struct ExprUnary
     cue init(span: Span, op: UnaryOp, operand: ^Expr)
         this.span = span
         this.op = op
+        this.operand = operand
+
+# old expr — pre-call snapshot value used in `ensure` contracts
+
+struct ExprOld
+    var span: Span
+    var uid: int
+    var operand: ^Expr
+
+    cue init(span: Span, uid: int, operand: ^Expr)
+        this.span = span
+        this.uid = uid
         this.operand = operand
 
 # cast: expr to T

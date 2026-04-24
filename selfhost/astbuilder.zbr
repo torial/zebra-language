@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprOld
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit
 
 def zspan(): Span
@@ -155,6 +155,11 @@ def getObjectIdentName(e: Expr): str?
 # ── ASTBuilder ────────────────────────────────────────────────────────────────
 
 class ASTBuilder
+    var next_old_uid: int
+
+    cue init()
+        this.next_old_uid = 0
+
     # Entry point: convert a parsed PModule into a full ast.zbr Module.
     shared def build(pm: PModule, file: str): Module throws
         var ab = ASTBuilder()
@@ -718,6 +723,10 @@ class ASTBuilder
 
             on PNode.expr_unary as pu
                 const operand_expr = .buildExpr(pu.operand.at(0))?
+                if pu.op == "old"
+                    const uid = next_old_uid
+                    next_old_uid = next_old_uid + 1
+                    return Expr.old_(ExprOld(zspan(), uid, operand_expr))
                 const op = .toUnaryOp(pu.op)?
                 return Expr.unary(ExprUnary(zspan(), op, operand_expr))
 
@@ -856,8 +865,6 @@ class ASTBuilder
             return UnaryOp.neg
         if op == "not"
             return UnaryOp.not_
-        if op == "old"
-            return UnaryOp.old_
         raise "toUnaryOp: unknown op: " + op
 
     # ── Type reference parsing ────────────────────────────────────────────────

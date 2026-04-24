@@ -914,6 +914,8 @@ def exprLine(e: Expr): int
             return x.span.line
         on Expr.except_ as x
             return x.span.line
+        on Expr.old_ as x
+            return x.span.line
 
 def stmtLine(s: Stmt): int
     branch s
@@ -1052,9 +1054,7 @@ struct Generator
     var arena_counter        : int      # counter for unique arena scope var names
     var throws_methods       : StrSet   # "ClassName.methodName" entries for throws methods
     var module_decls         : List(Decl)   # module-level decls for named/default param lookup
-    var old_counter          : int      # index of next _old_N var; -1 = passthrough (not in ensure emit)
     var in_ensure_emit       : bool     # true while generating the ensure defer block
-    var old_snapshots        : List(Expr)   # inner exprs of all old() nodes (populated by collectOldInner)
 
     invariant
         indent >= 0
@@ -1113,9 +1113,7 @@ struct Generator
         this.arena_counter         = 0
         this.throws_methods        = StrSet()
         this.module_decls          = module_decls
-        this.old_counter           = -1
         this.in_ensure_emit        = false
-        this.old_snapshots         = List(Expr)()
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -4166,75 +4164,69 @@ struct Generator
             w.emit(context)
             w.emit("'\\n\", .{});\n")
 
-    # Collect inner exprs of all `old` unary nodes into this.old_snapshots (depth-first).
-    # Traversal order must match genExpr so the counter-based _old_N names line up.
-    def collectOldInner(e: Expr)
+    # Emit `const _old_{uid} = <operand>;` for every old() node found (depth-first).
+    # Each old_ node carries a stable uid assigned by the astbuilder — no ordering
+    # dependency between this traversal and the genExpr emit pass.
+    def collectAndEmitOldSnapshots(e: Expr)
         branch e
+            on Expr.old_ as o
+                writeIndent()
+                w.emit("const _old_")
+                w.emit(o.uid.toString())
+                w.emit(" = ")
+                genExpr(o.operand)
+                w.emit(";\n")
             on Expr.unary as u
-                if u.op == UnaryOp.old_
-                    old_snapshots.add(u.operand)
-                else
-                    collectOldInner(u.operand)
+                collectAndEmitOldSnapshots(u.operand)
             on Expr.binary as b
-                collectOldInner(b.left)
-                collectOldInner(b.right)
+                collectAndEmitOldSnapshots(b.left)
+                collectAndEmitOldSnapshots(b.right)
             on Expr.call as c
-                collectOldInner(c.callee)
+                collectAndEmitOldSnapshots(c.callee)
                 for arg in c.args
-                    collectOldInner(arg.value)
+                    collectAndEmitOldSnapshots(arg.value)
             on Expr.member as mem
-                collectOldInner(mem.object)
+                collectAndEmitOldSnapshots(mem.object)
             on Expr.index as ix
-                collectOldInner(ix.object)
-                collectOldInner(ix.index)
+                collectAndEmitOldSnapshots(ix.object)
+                collectAndEmitOldSnapshots(ix.index)
             on Expr.cast as ca
-                collectOldInner(ca.expr)
+                collectAndEmitOldSnapshots(ca.expr)
             on Expr.to_nilable as tn
-                collectOldInner(tn.expr)
+                collectAndEmitOldSnapshots(tn.expr)
             on Expr.to_non_nil as tnn
-                collectOldInner(tnn.expr)
+                collectAndEmitOldSnapshots(tnn.expr)
             on Expr.is_nil as isn
-                collectOldInner(isn.expr)
+                collectAndEmitOldSnapshots(isn.expr)
             on Expr.orelse_ as or_
-                collectOldInner(or_.expr)
-                collectOldInner(or_.fallback)
+                collectAndEmitOldSnapshots(or_.expr)
+                collectAndEmitOldSnapshots(or_.fallback)
             on Expr.catch_ as ca2
-                collectOldInner(ca2.expr)
-                collectOldInner(ca2.fallback)
+                collectAndEmitOldSnapshots(ca2.expr)
+                collectAndEmitOldSnapshots(ca2.fallback)
             on Expr.if_expr as ie
-                collectOldInner(ie.cond)
-                collectOldInner(ie.then_expr)
-                collectOldInner(ie.else_expr)
+                collectAndEmitOldSnapshots(ie.cond)
+                collectAndEmitOldSnapshots(ie.then_expr)
+                collectAndEmitOldSnapshots(ie.else_expr)
             on Expr.try_ as tr
-                collectOldInner(tr.expr)
+                collectAndEmitOldSnapshots(tr.expr)
             else
                 pass
 
-    # Emit old snapshots + defer ensure block.  Counter-based: traversal order of
-    # collectOldInner must match genExpr so _old_N names are consistent.
+    # Emit old snapshots then a defer block for each ensure expression.
+    # Each old() node has a uid assigned at AST build time; genExpr(Expr.old_)
+    # reads the uid directly — no counter synchronisation required.
     def genEnsureBlock(ensure_list: List(Expr), context: str)
         if ensure_list.count() == 0
             return
-        # Reset snapshot accumulator and collect all inner exprs of old() nodes
-        old_snapshots = List(Expr)()
+        # Single pass: emit const _old_N snapshots for every old() in each ensure expr
         for ens in ensure_list
-            collectOldInner(ens)
-        # Emit const snapshots before the defer registration
-        var sn = 0
-        while sn < old_snapshots.count()
-            writeIndent()
-            w.emit("const _old_")
-            w.emit(sn.toString())
-            w.emit(" = ")
-            genExpr(old_snapshots.at(sn))
-            w.emit(";\n")
-            sn += 1
-        # Emit defer block; set in_ensure_emit so genUnary substitutes _old_N
+            collectAndEmitOldSnapshots(ens)
+        # Emit defer block; in_ensure_emit causes genExpr to emit _old_N references
         writeIndent()
         w.emit("defer {\n")
         var ig = indented()
         ig.in_ensure_emit = true
-        ig.old_counter = 0
         for ens_expr in ensure_list
             ig.writeIndent()
             ig.w.emit("if (!(")
@@ -4605,6 +4597,13 @@ struct Generator
                     genExpr(tc2.expr)
                     w.emit("._type_tag == _ttag_")
                     w.emit(tc2.type_name)
+            on Expr.old_ as o
+                # ensure contract: emit _old_N reference (uid set at AST build time)
+                if in_ensure_emit
+                    w.emit("_old_")
+                    w.emit(o.uid.toString())
+                else
+                    genExpr(o.operand)
             on Expr.except_ as ex
                 # struct update: blk: { var _tmp = base; _tmp.f = v; break :blk _tmp; }
                 w.emit("blk: { var _except_tmp = ")
@@ -4844,14 +4843,6 @@ struct Generator
             w.emit("(~")
             genExpr(u.operand)
             w.emit(")")
-            return
-        if u.op == UnaryOp.old_
-            if in_ensure_emit
-                w.emit("_old_")
-                w.emit(old_counter.toString())
-                old_counter = old_counter + 1
-            else
-                genExpr(u.operand)
             return
         genExpr(u.operand)
 
