@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-080. Next new bug: BUG-081.**
+**Last bug number generated: BUG-081. Next new bug: BUG-082.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -142,4 +142,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-23 — BUG-029/030 closed (fixed in selfhost, regression tests added); INFRA-001 added; BUG-006/035/037/046/075/076/077/078/080 moved to FixedBugs.md*
+*Last updated: 2026-04-23 — BUG-081 (HashMap.count/remove without type annotation) fixed and closed; BUG-019 marked Fixed with cross-module limitation note; BUG-027 status clarified*
