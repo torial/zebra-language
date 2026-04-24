@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 8 — BUG-083/084 closed)
+**Last updated:** 2026-04-24 (session 8 — BUG-083/084 closed; float suffix codegen done)
 
 ---
 
@@ -11,8 +11,8 @@ Authoritative priority queue for the project. Update this file rather than regen
 ### 1. Open compiler bugs
 
 **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains  
-Method chains on cross-module types may emit `const` instead of `var`.
-File: `src/TypeChecker.zig` → `buildModuleInterface`
+Not manifesting in practice — `scanMutationsInExpr` conservatively marks cross-module calls as mutated.  
+Defer unless a concrete failing case is found.
 
 ~~**BUG-083** — `genGenericClass` skips `implements` conformance checks~~ ✓ DONE  
 ~~**BUG-084** — Selfhost `Lexer.zbr` `parenDepth` tracks `[`/`]`; Zig Tokenizer does not~~ ✓ DONE
@@ -75,7 +75,8 @@ See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
 - ~~Audit which reserved keywords (`set`/`get`/`body`/`same`) are grammar-load-bearing~~ ✓ DONE (`set`/`get`/`body`/`post`/`pro` removed 2026-04-19; `same` kept — TypeRef)
 - ~~`implements IfaceName` on the class declaration line~~ ✓ DONE (already on class line; old nested form was never the real parser)
-- ~~Float token merge~~ ✓ DONE — `float_lit`/`float_lit_exp`/`fractional_lit` → `float_lit`; bootstrap 5/5. Note: `_f32`/`_f64` suffix literals (`1.0_f32`) still don't codegen correctly (raw text emitted → Zig rejects); codegen transformation needed separately.
+- ~~Float token merge~~ ✓ DONE — `float_lit`/`float_lit_exp`/`fractional_lit` → `float_lit`; bootstrap 5/5.
+- ~~`_f32`/`_f64` suffix literal codegen~~ ✓ DONE — `genFloatLit` emits `@as(f32, val)` / `@as(f64, val)`; selfhost parity via `replace()`; 27/27 smoke, bootstrap 5/5.
 - `^T` auto-boxing edge case fixes
 - Book documentation for `sig`, raw strings, `"""`
 See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`
@@ -140,6 +141,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | Float token merge: `float_lit`/`float_lit_exp`/`fractional_lit` → single `float_lit`; `isFloatLit()` simplified; bootstrap 5/5 | 2026-04-24 |
 | `@[...]` array literal in expressions + `in @[...]` membership test via `_zebra_in` + `inline for`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
 | BUG-084: selfhost `Lexer.zbr` `[`/`]` removed from `parenDepth`; aligned with Zig Tokenizer (`(`/`)` only); 26/26 smoke, bootstrap 5/5 | 2026-04-24 |
+| `_f32`/`_f64`/`f32`/`f64` float suffix codegen: `genFloatLit` in both backends; `@as(fNN, val)` emission; selfhost uses `replace()`; 27/27 smoke, bootstrap 5/5 | 2026-04-24 |
 
 ---
 

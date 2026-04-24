@@ -4254,6 +4254,20 @@ struct Generator
             w.emit(";\n")
             i += 1
 
+    def genFloatLit(text: str)
+        # Strip _f32/_f64/f32/f64 suffix; emit @as(fNN, value). Zig has no suffixed float literals.
+        # Use replace("suffix","") to extract the bare value — avoids str.len (uint) arithmetic.
+        if text.endsWith("_f32")
+            w.emit("@as(f32, " + text.replace("_f32", "") + ")")
+        else if text.endsWith("_f64")
+            w.emit("@as(f64, " + text.replace("_f64", "") + ")")
+        else if text.endsWith("f32")
+            w.emit("@as(f32, " + text.replace("f32", "") + ")")
+        else if text.endsWith("f64")
+            w.emit("@as(f64, " + text.replace("f64", "") + ")")
+        else
+            w.emit(text)
+
     # ── genExpr ───────────────────────────────────────────────────────────────
 
     def genExpr(e: Expr)
@@ -4261,7 +4275,7 @@ struct Generator
             on Expr.int_lit as il
                 w.emit(il.text)
             on Expr.float_lit as fl
-                w.emit(fl.text)
+                genFloatLit(fl.text)
             on Expr.bool_lit as bl
                 if bl.value
                     w.emit("true")

@@ -8808,6 +8808,23 @@ const Generator = struct {
 
     // ── Expressions ───────────────────────────────────────────────────────────
 
+    fn genFloatLit(g: Generator, text: []const u8) !void {
+        // Strip _f32/_f64/f32/f64 suffix and emit @as(fNN, value).
+        // Zig does not accept C-style suffixed float literals.
+        const suffixes = [_]struct { suf: []const u8, ty: []const u8 }{
+            .{ .suf = "_f32", .ty = "f32" }, .{ .suf = "_f64", .ty = "f64" },
+            .{ .suf = "f32",  .ty = "f32" }, .{ .suf = "f64",  .ty = "f64" },
+        };
+        for (suffixes) |s| {
+            if (std.mem.endsWith(u8, text, s.suf)) {
+                const bare = text[0 .. text.len - s.suf.len];
+                try g.w.print("@as({s}, {s})", .{ s.ty, bare });
+                return;
+            }
+        }
+        try g.w.writeAll(text);
+    }
+
     fn genExpr(g: Generator, expr: *const Ast.Expr) anyerror!void {
         // Expression substitution: used to hoist an allocating receiver out of
         // a return value chain so it can be defer-freed before the return.
@@ -8819,7 +8836,7 @@ const Generator = struct {
         }
         sw: switch (expr.*) {
             .int_lit       => |e| try g.w.writeAll(e.text),
-            .float_lit     => |e| try g.w.writeAll(e.text),
+            .float_lit     => |e| try genFloatLit(g, e.text),
             .bool_lit      => |e| try g.w.writeAll(if (e.value) "true" else "false"),
             .char_lit      => |e| {
                 // Two forms:

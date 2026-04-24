@@ -109,6 +109,9 @@ smoke test/generic_iface_test.zbr
 # @[...] array literal in expression + `in @[...]` membership test.
 smoke test/array_in_test.zbr
 
+# Float suffix literals: 1.5_f32, 2.5_f64, 0.5f32, 3.0f64 → @as(fNN, val).
+smoke test/float_suffix_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
