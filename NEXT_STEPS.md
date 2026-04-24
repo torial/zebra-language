@@ -14,6 +14,10 @@ Authoritative priority queue for the project. Update this file rather than regen
 Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`
 
+**BUG-083** — `genGenericClass` skips `implements` conformance checks  
+`class Foo(T) implements IBar` won't emit `comptime { IBar.check(@This()); }`.  
+File: `src/CodeGen.zig` `genGenericClass` + `selfhost/codegen.zbr` `genGenericClass`
+
 ~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
 Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` extended to handle call receivers; `break :blk_N try _mc_N.method(args)` emitted when method `throws`. Selfhost mirrors via `inferExpr`+`isClassMethodThrows`.
 

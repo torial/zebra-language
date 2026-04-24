@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-082. Next new bug: BUG-083.**
+**Last bug number generated: BUG-083. Next new bug: BUG-084.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -122,6 +122,16 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-083: `genGenericClass` skips `implements` conformance checks
+- **Severity:** Low (conformance gap, not correctness gap — the class still compiles)
+- **Status:** Open
+- **Symptom:** A generic class declared `class Stack(T) implements IFoo` does not emit a `comptime { IFoo.check(@This()); }` block inside the generated Zig struct. The missing check means the compiler won't catch at compile time that `Stack(T)` is missing a required method — the error will only surface when a caller tries to use a `Stack(T)` value through the interface (if ever).
+- **Root cause:** `genGenericClass` in both `src/CodeGen.zig` and `selfhost/codegen.zbr` handles `invariants` but has no `implements`/`ifaces` block. `genClass` delegates to `genGenericClass` early and never runs its own `implements` block. This was a pre-existing gap before interface vtable codegen was added.
+- **Fix:** After `if (n.invariants.len > 0) try ig.genInvariantCheckFn();` in `genGenericClass`, add the same `implements.len > 0 → comptime { IFoo.check(@This()); }` block that exists in `genClass` and `genStruct`. Mirror in `selfhost/codegen.zbr`.
+- **Note:** No current test exercises a generic class with `implements`. The gap is benign until someone writes `class Foo(T) implements IBar`.
+
+---
+
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design
 - **Description:** Throws auto-propagation emits `try` for direct self-method calls and statement-level calls whose receiver is a `throws` method. It does NOT auto-propagate for:
@@ -152,4 +162,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-082 filed and fixed: selfhost inferExpr cross-module constructor gap; interface codegen complete (vtable struct)*
+*Last updated: 2026-04-24 — BUG-083 filed: genGenericClass skips implements conformance checks (pre-existing gap surfaced by interface vtable codegen)*

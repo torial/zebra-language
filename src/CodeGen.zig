@@ -3649,7 +3649,7 @@ const Generator = struct {
         if (n.invariants.len > 0) try ig.genInvariantCheckFn();
 
         // ④ Interface conformance checks.
-        //    `class Foo implements IBar` → `comptime { IBar(@This()); }`
+        //    `class Foo implements IBar` → `comptime { IBar.check(@This()); }`
         if (n.implements.len > 0) {
             try ig.w.writeAll("\n");
             try ig.writeIndent();
