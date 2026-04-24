@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-083. Next new bug: BUG-084.**
+**Last bug number generated: BUG-084. Next new bug: BUG-085.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -132,6 +132,17 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
+### BUG-084: Selfhost `Lexer.zbr` tracks `[`/`]` in `parenDepth`; Zig `Tokenizer.zig` does not
+- **Severity:** Low — partially mitigated; no currently-failing tests; root divergence remains
+- **Status:** Partially mitigated — `scanAt` now increments `parenDepth` before emitting `at_lbracket`; full parity audit deferred
+- **Symptom (fixed):** `if name in @["a", "b"]` caused `expected indent, got 'print'` in the selfhost compiler. The `@[` two-char path in `scanAt` consumed `[` without incrementing `parenDepth`, so the subsequent `]` decremented it to -1. EOL/indent tokens are only emitted when `parenDepth == 0`, so the newline after the `]` was swallowed, confusing the parser.
+- **Root cause:** Selfhost `Lexer.zbr` tracks both `[`/`]` and `(`/`)` in `parenDepth`. Zig `Tokenizer.zig` only tracks `(`/`)`. The two strategies diverge silently: any `[` not followed by a matching `]` on the same line in selfhost will suppress the EOL, which may be correct for index expressions (`a[i]\n`) but creates parity risk with the Zig backend for unusual code shapes.
+- **Fix applied (2026-04-24):** Added `parenDepth = parenDepth + 1` in `scanAt` when emitting `at_lbracket`, so `@[...]` increments and decrements balance correctly. Committed as part of `feat: @[...] array literal + in @[...] membership test`.
+- **Remaining work:** Audit whether `[`/`]` tracking in selfhost `Lexer.zbr` is intentional or accidental. If intentional (suppresses EOL inside multi-line index expressions), document it explicitly and verify all `[` paths increment. If unintentional, align with Zig Tokenizer and track only `(`/`)` — this would simplify parity analysis but requires removing `[`/`]` handling from `parenDepth` in `Lexer.zbr`.
+- **Risk:** No current test exercises a multi-line bare index expression (`a[\n  i\n]`). If selfhost suppresses EOL there (because `parenDepth > 0`) but Zig doesn't, the two backends parse it differently.
+
+---
+
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design
 - **Description:** Throws auto-propagation emits `try` for direct self-method calls and statement-level calls whose receiver is a `throws` method. It does NOT auto-propagate for:
@@ -162,4 +173,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-083 filed: genGenericClass skips implements conformance checks (pre-existing gap surfaced by interface vtable codegen)*
+*Last updated: 2026-04-24 — BUG-084 filed: selfhost Lexer parenDepth tracks `[`/`]` but Zig Tokenizer does not; `@[` symptom patched, root divergence deferred*
