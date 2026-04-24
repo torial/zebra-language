@@ -7,10 +7,19 @@ class Math
 
 class Main
     shared
-        def main throws
-            # ? postfix propagates errors (sugar for try)
-            var result = Math.safeDiv(10, 2)?
-            print result
+        def main
+            # try prefix propagates errors on failure
+            try
+                var result = try Math.safeDiv(10, 2)
+                print result
+            catch |e|
+                print "unexpected error: ".concat(e.message)
 
-            var result2 = Math.safeDiv(10, 0)?
-            print result2
+            # division by zero — verify error is raised with correct message
+            try
+                var result2 = try Math.safeDiv(10, 0)
+                print result2
+            catch |e|
+                print "caught: ".concat(e.message)
+
+            print "ok"

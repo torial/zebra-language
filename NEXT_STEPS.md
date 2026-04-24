@@ -10,11 +10,6 @@ Authoritative priority queue for the project. Update this file rather than regen
 
 ### 1. Open compiler bugs
 
-**BUG-002** — `guard` / `try_postfix` error propagation  
-Top-level `try Main.main()` panics with `error: ZebraError` instead of clean display.
-Test fixtures need `try/catch` wrapping; may also need a top-level error display fix in `src/main.zig`.
-Files: `test/guard_test.zbr`, `test/try_postfix_test.zbr`
-
 **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains  
 Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`
@@ -131,6 +126,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | String interning at List/HashMap/field sinks | 2026-04-23 |
 | `fn_ref` selfhost parity (BUG-019): `isTopLevelMethod` + `&` prefix in genLocalVar/genAssign | 2026-04-23 |
 | `HashMap.count()`/`.remove()` without type annotation: infer from init expr (BUG-081) | 2026-04-23 |
+| BUG-002: guard/try_postfix tests fixed with try/catch wrapping | 2026-04-23 |
 
 ---
 

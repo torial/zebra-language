@@ -84,6 +84,10 @@ smoke test/hashmap_param_field_test.zbr
 # HashMap.remove() and HashMap.count() without type annotation (infer from init expr).
 smoke test/hashmap_remove_test.zbr
 
+# BUG-002: guard/try error propagation — verified via try/catch round-trip.
+smoke test/guard_test.zbr
+smoke test/try_postfix_test.zbr
+
 # BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
 smoke test/method_chain_test.zbr
 
