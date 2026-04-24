@@ -36,9 +36,21 @@ def testAssign(): int
     r = makeBuilder(5).withVal(20)
     return r.result()   # 20
 
+# Pattern D: call-arg position (BUG-027 expression-position fix)
+def acceptBuilder(b: Builder): int
+    return b.result()
+
+def testCallArg(): int
+    return acceptBuilder(makeBuilder(5).withVal(30))   # 30
+
+def testNestedCallArg(): int
+    return acceptBuilder(makeBuilder(10).doubled().withVal(7))   # 7
+
 def main()
     print testVarInit()        # 109
     var rb = testReturn()
     print rb.result()          # 42
     print testAssign()         # 20
+    print testCallArg()        # 30
+    print testNestedCallArg()  # 7
     print "ok"

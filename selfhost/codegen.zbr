@@ -5750,6 +5750,18 @@ struct Generator
                 w.emit(" }")
             w.emit(") catch unreachable)")
             return
+        # BUG-027: expression-position chain fix — f().method(args) must materialise
+        # the temporary as a mutable var so the pointer-receiver method can take *T.
+        # (blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })
+        if m.object is Expr.call
+            var mc_uid: int = w.nextUid()
+            var mc_lbl: str = "blk_" + mc_uid.toString()
+            w.emit("(" + mc_lbl + ": { var _mc_" + mc_uid.toString() + " = ")
+            genExpr(m.object)
+            w.emit("; break :" + mc_lbl + " _mc_" + mc_uid.toString() + "." + mname + "(")
+            genArgList(args)
+            w.emit("); })")
+            return
         # Default: object.method(args)
         # Auto-try: if calling a throws method on self or same-module class, emit try prefix
         var callee_throws2 = false

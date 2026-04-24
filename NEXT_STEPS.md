@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-23 (session 3)
+**Last updated:** 2026-04-23 (session 5)
 
 ---
 
@@ -14,20 +14,17 @@ Authoritative priority queue for the project. Update this file rather than regen
 Method chains on cross-module types may emit `const` instead of `var`.
 File: `src/TypeChecker.zig` → `buildModuleInterface`
 
-**BUG-027** — Method chaining in expression position  
-Statement-position auto-hoist (`var r = f().method()`) is fixed. Expression-position
-(`return f().method()`, call-arg chains) still needs the same auto-materialize treatment.
-File: `src/CodeGen.zig` → `genExpr`
+~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
+Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5.
 
 **BUG-014** — Regex lazy match is global, not per-quantifier  
 `<.*?>STUFF.*>` misbehaves; `lazy_match` is a whole-regex flag.
 Architectural fix: priority-first NFA simulation or backtracking engine.
 File: `src/CodeGen.zig` NFA preamble. Effort: L
 
-### 2. `for-else` — while-path support (Path 2)
-Path 1 (list `.items` iteration) is done — Zig native `for...else`, break suppresses else correctly.
-Remaining: HashMap/split/chars/for-num paths use `while` loops; need labeled block + break-flag
-approach (`for_else_label` field in Generator) for correct break-suppression semantics.
+### 2. ~~`for-else` — while-path support (Path 2)~~ ✓ DONE
+All paths complete: native `for...else` for list/items; labeled-block pattern for HashMap/split/chars/for-num.
+Commit: `79aa9fb`. Bootstrap 5/5.
 
 ### 3. `interface` codegen
 Parser/AST/Resolver for `interface` declarations are done. CodeGen needs to emit:
@@ -128,8 +125,9 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `fn_ref` selfhost parity (BUG-019): `isTopLevelMethod` + `&` prefix in genLocalVar/genAssign | 2026-04-23 |
 | `HashMap.count()`/`.remove()` without type annotation: infer from init expr (BUG-081) | 2026-04-23 |
 | BUG-002: guard/try_postfix tests fixed with try/catch wrapping | 2026-04-23 |
-| `for-else` Path 1: list iteration (`for x in list / else`) — Zig native `for...else` | 2026-04-23 |
+| `for-else` complete — Path 1 (list native) + Path 2 (while-based labeled block) | 2026-04-23 |
 | Per-block `scanMutations` in `genStmts` — eliminates cross-arm const/var pollution | 2026-04-23 |
+| BUG-027: expression-position chain fix — labeled block in both backends | 2026-04-23 |
 
 ---
 

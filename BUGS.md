@@ -79,10 +79,9 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ### BUG-027: Method chaining on struct temporaries requires manual intermediate vars
 - **Severity:** Low (ergonomic / language design)
-- **Status:** Partial fix — selfhost hoists in var-init, return, and assign positions (via `hoistCallChain`). Call-arg chains remain open in both backends.
+- **Status:** Fixed — expression-position call-arg chains now emit a labeled block `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })` in both Zig backend (`src/CodeGen.zig`) and selfhost (`selfhost/codegen.zbr`). Bootstrap 5/5. **Remaining sub-issue:** if the chained method is `throws`, the labeled block does not emit `try` (because `exprCallIsThrows` returns false when the receiver is a call expression, not an ident). Workaround: use a manual temp.
 - **Symptom A (method-chain-on-temporary):** `display(makeBuilder(5).withVal(10))` fails: the struct temporary `makeBuilder(5)` becomes `*const Builder`, but `.withVal(10)` requires `*Builder`.
-  **Fixed positions:** `var r = f().method()` (var-init), `return f().method()` (return), `x = f().method()` (assign) — all hoisted transparently by selfhost codegen.
-  **Remaining:** Call-arg chains — `foo(f().method(args))` — not hoisted in either backend. Workaround: `var _t = f().method(args); foo(_t)`.
+  **Fixed positions:** `var r = f().method()` (var-init), `return f().method()` (return), `x = f().method()` (assign) — hoisted via `hoistCallChain` in selfhost / statement-position fix in Zig backend. `foo(f().method(args))` (call-arg / expression) — now fixed via labeled block in both backends.
 - **Symptom B (TC auto-deref annotation gap):** When a local variable is assigned from a `throws`-returning function via `?` propagation (`var x = foo()?`), the TypeChecker doesn't record the inferred type in `expr_types`. Downstream `^T` field accesses on `x` then silently omit the required `.*` deref because TC type is `.unknown`. Workaround: annotate explicitly — `var x as T = foo()?`. Fix tracked separately as BUG-077.
 - **Root cause (A):** Zig temporary value semantics — caller's stack slot for a struct returned by value is `const`.
 - **Root cause (B):** `inferCall` for `?`-propagated throws calls doesn't write back to `expr_types` for the receiving variable.
@@ -142,4 +141,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-23 — BUG-081 (HashMap.count/remove without type annotation) fixed and closed; BUG-019 marked Fixed with cross-module limitation note; BUG-027 status clarified*
+*Last updated: 2026-04-23 — BUG-027 expression-position call-arg chain fix complete (labeled block in both backends, bootstrap 5/5)*

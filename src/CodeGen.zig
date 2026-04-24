@@ -10037,6 +10037,19 @@ const Generator = struct {
             } else false;
             if (callee_throws) try g.w.writeAll("try ");
         }
+        // BUG-027: expression-position chain fix — `f().method(args)` must materialise
+        // the temporary as a mutable `var` so the pointer-receiver method can take `*T`.
+        // `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`
+        if (e.callee.* == .member and e.callee.member.object.* == .call) {
+            const mem = e.callee.member;
+            const uid = g.nextUid();
+            try g.w.print("(blk_{x}: {{ var _mc_{x} = ", .{ uid, uid });
+            try g.genExpr(mem.object);
+            try g.w.print("; break :blk_{x} _mc_{x}.{s}(", .{ uid, uid, mem.member });
+            try g.genArgs(g.lookupParams(e), e.args);
+            try g.w.writeAll("); })");
+            return;
+        }
         try g.genExpr(e.callee);
         try g.w.writeAll("(");
         try g.genArgs(g.lookupParams(e), e.args);
