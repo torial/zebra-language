@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-081. Next new bug: BUG-082.**
+**Last bug number generated: BUG-082. Next new bug: BUG-083.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -74,6 +74,16 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Symptom:** `var b = a.someMethod()` may still produce `const b` in generated Zig if `someMethod` isn't in `instance_method_return_types`.
 - **Root cause:** `instance_method_return_types` is populated by `buildModuleInterface`. It only captures methods whose return type resolves to a `.named` symbol with a non-primitive type.
 - **Fix direction:** Populate `instance_method_return_types` more comprehensively, including methods returning `Self` or generic types.
+
+---
+
+### BUG-082: Selfhost `inferExpr` returns `unknown_` for cross-module constructor calls
+- **Severity:** Medium
+- **Status:** Fixed — `selfhost/typechecker.zbr` `inferExpr` Expr.call/Expr.member branch; `test/bug082_test.zbr` + `test/bug082_lib.zbr`. Bootstrap 5/5.
+- **Symptom:** `var b = SomeMod.SomeClass(args)` — the variable `b` has type `unknown_` in the selfhost TC. Downstream method calls on `b` (e.g. `b.withVal(10)`) also return `unknown_`. Side-effect: `print d.show()` emits `{any}` format, printing the raw byte representation of the string instead of its value.
+- **Root cause:** In `inferExpr` for `Expr.call` with an `Expr.member` callee, the receiver is inferred via `inferExpr(mem.object, ctx)`. When `mem.object` is `Expr.ident("SomeMod")`, the ident is not a local variable and not a class — so `inferExpr` returns `Type_.unknown_`. The `branch recv` block has no `Type_.unknown_` arm, so it falls through to `pass` and returns `unknown_` for the whole call.
+- **Fix:** Before `return Type_.unknown_`, added: if `recv == unknown_` and `mem.object` is an ident that is neither a local nor a known class, and `mem.member` names a known dep class, return `Type_.named(mem.member)`. This correctly identifies `SomeMod.SomeClass(args)` as a cross-module constructor call.
+- **Note:** The constant-vs-var symptom described in BUG-026 was not reproduced; both backends use conservative mutation detection (`needs_var = true` for cross-module types) so wrong `const` emission doesn't occur in practice. BUG-082 tracks the observable symptom: wrong format string (`{any}` instead of `{s}`) for method return values on cross-module-typed variables.
 
 ---
 

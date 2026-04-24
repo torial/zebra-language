@@ -839,6 +839,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.int_
                         else
                             pass
+                    # Cross-module constructor: ModuleName.ClassName(args).
+                    # When recv is unknown_ because mem.object is a module-name
+                    # ident (not a local or class), and mem.member names a known
+                    # dep class, this call is a cross-module constructor that
+                    # yields a value of that dep class type.
+                    if recv is Type_.unknown_
+                        if mem.object is Expr.ident as mid
+                            if not ctx.hasLocal(mid.name) and not ctx.hasClassAny(mid.name)
+                                if ctx.dep_types.hasClass(mem.member)
+                                    return Type_.named(internString(mem.member))
                     return Type_.unknown_
                 else
                     return Type_.unknown_

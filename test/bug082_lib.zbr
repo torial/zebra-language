@@ -1,0 +1,20 @@
+struct Builder
+    var val: int
+    var name: str
+
+    cue init(v: int, n: str)
+        val = v
+        name = n
+
+    def withVal(v: int): Builder
+        var r = this except
+            val = v
+        return r
+
+    def withName(n: str): Builder
+        var r = this except
+            name = n
+        return r
+
+    def show(): str
+        return "Builder(${val}, ${name})"
