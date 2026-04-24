@@ -1705,6 +1705,17 @@ struct Generator
             ig.w.emit("}\n\n")
         if n.invariants.count() > 0
             ig.genInvariantCheckFn()
+        if n.ifaces.count() > 0
+            w.emit("\n")
+            ig.writeIndent()
+            w.emit("comptime {\n")
+            var cig3 = ig.indented()
+            for tr in n.ifaces
+                cig3.writeIndent()
+                w.emit(typeRefStr(tr))
+                w.emit(".check(@This());\n")
+            ig.writeIndent()
+            w.emit("}\n")
         fg.writeIndent()
         fg.w.emit("};\n")
         writeIndent()

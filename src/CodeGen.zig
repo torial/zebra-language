@@ -3568,6 +3568,21 @@ const Generator = struct {
         // ④ Invariant checker — same as non-generic path.
         if (n.invariants.len > 0) try ig.genInvariantCheckFn();
 
+        // ⑤ Interface conformance checks — same as non-generic path.
+        if (n.implements.len > 0) {
+            try ig.w.writeAll("\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("comptime {\n");
+            const cig = ig.indented();
+            for (n.implements) |tr| {
+                const iname = typeRefSimpleName(tr) orelse continue;
+                try cig.writeIndent();
+                try cig.w.print("{s}.check(@This());\n", .{iname});
+            }
+            try ig.writeIndent();
+            try ig.w.writeAll("}\n");
+        }
+
         try fg.writeIndent();
         try fg.w.writeAll("};\n");
         try g.writeIndent();
