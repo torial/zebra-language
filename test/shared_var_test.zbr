@@ -1,0 +1,41 @@
+# Test class-level (shared/static) var fields.
+# These emit as `pub var` in Zig — shared across all instances.
+
+class Counter
+    shared var count: int = 0
+    shared var label: str = "default"
+
+    shared def increment()
+        Counter.count = Counter.count + 1
+
+    shared def reset()
+        Counter.count = 0
+
+    def getCount(): int
+        return Counter.count
+
+def main()
+    assert Counter.count == 0
+
+    Counter.increment()
+    Counter.increment()
+    Counter.increment()
+    assert Counter.count == 3
+
+    Counter.reset()
+    assert Counter.count == 0
+
+    # Instance method can also read shared field
+    var c = Counter()
+    assert c.getCount() == 0
+
+    # Directly writing shared field
+    Counter.count = 7
+    assert Counter.count == 7
+
+    # Shared str field
+    assert Counter.label == "default"
+    Counter.label = "updated"
+    assert Counter.label == "updated"
+
+    print "shared_var: OK"

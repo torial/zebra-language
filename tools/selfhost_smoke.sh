@@ -117,6 +117,9 @@ smoke test/contract_ensure_test.zbr
 # ensure + old: snapshot pre-call value, check post-state with _old_N.
 smoke test/contract_old_test.zbr
 
+# Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
+smoke test/shared_var_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

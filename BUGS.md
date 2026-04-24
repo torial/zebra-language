@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-084. Next new bug: BUG-085.**
+**Last bug number generated: BUG-085. Next new bug: BUG-086.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -136,6 +136,17 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Fixed — removed `[`/`]` and `@[` from `parenDepth` tracking in `selfhost/Lexer.zbr`; aligned with `src/Tokenizer.zig` (only `(`/`)` tracked); 26/26 smoke tests pass; bootstrap 5/5
 - **Root cause:** Selfhost `Lexer.zbr` tracked both `[`/`]` and `(`/`)` in `parenDepth`. Zig `Tokenizer.zig` only tracks `(`/`)`. The divergence was accidental — the original selfhost port added `[`/`]` tracking without a design reason, and the `@[` emit path (added for array literals) was patched to compensate rather than root-cause fixed.
 - **Fix:** Removed `parenDepth = parenDepth ± 1` from the `[`/`]` handling and the `@[` `scanAt` path in `selfhost/Lexer.zbr`. Both backends now only suppress EOL inside `(`...`)`. Multi-line `@[...]` is consistently unsupported in both backends (same behavior).
+
+---
+
+### BUG-085: `shared def` methods — bare field names incorrectly emit `self.field`
+- **Severity:** Low (ergonomic; workaround available)
+- **Status:** Open
+- **Symptom:** Inside a `shared def` method, a bare field name (e.g. `count`) is treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But shared methods have no `self` parameter in the generated Zig — so the generated code is `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
+- **Workaround:** Use the fully-qualified form `ClassName.field` instead of a bare name inside shared methods. e.g. `Counter.count = Counter.count + 1`.
+- **Root cause:** `genIdent` checks `in_method: bool` (set for both instance and shared methods) and `isFieldName` returns true for any declared class field. There is no `in_shared_method` guard to suppress the `self.` prefix for shared-method contexts.
+- **Fix direction:** Thread `in_shared_method: bool` (or check method mods in `genMethod`) so that `genIdent` skips the `self.` prefix when the current method is `shared`. Bare names in shared methods should then emit as `ClassName.fieldName` (Zig's `pub var` fields are addressed via the type name).
+- **Files:** `src/CodeGen.zig` (`genIdent`, `genMethod`), `selfhost/codegen.zbr` (parity).
 
 ---
 
