@@ -369,6 +369,14 @@ for i in 0 to 10       # 0..9
 for i in 0 to 10 step 2
     print i
 
+# for-else (else runs when loop completes without break, including empty iterable)
+for item in items
+    if item == target
+        found = item
+        break
+else
+    found = default_value
+
 # guard (early return on nil/false)
 guard x != nil else
     return
@@ -673,7 +681,10 @@ def rawMemset(ptr as uint, size as uint)
         this.y = y
     ```
 
-11. **`arena` block — strings/slices allocated inside do NOT survive the block:**
+11. **`for-else` on HashMap/string-split/chars iterators**: the `else` block is silently
+    dropped for these paths (Path 2, deferred). Only list `.items` iteration is fully supported.
+
+12. **`arena` block — strings/slices allocated inside do NOT survive the block:**
     ```zebra
     arena
         var src = File.read("data.txt")
