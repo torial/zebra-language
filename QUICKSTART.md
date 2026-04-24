@@ -424,6 +424,33 @@ var result = sb.build()       # str (drains the builder)
 - `in` operator for substring check: `if "needle" in haystack`
 - `"needle" in haystack` is preferred over `haystack.contains("needle")` when TC can't resolve the method.
 
+### Raw strings
+
+Prefix `r` disables escape processing and interpolation. Useful for regular expressions and Windows paths:
+
+```zebra
+var pattern = r"\d+\.\d+"       # backslashes literal — no need to double-escape
+var path    = r"C:\Users\Sean"  # Windows path without escaping
+```
+
+Both `r'...'` and `r"..."` forms are accepted.
+
+### Triple-quoted strings (`"""..."""`)
+
+Multi-line string literals without escape sequences:
+
+```zebra
+var html = """
+    <html>
+        <body>Hello</body>
+    </html>
+"""
+
+var sql = """SELECT * FROM users WHERE name = 'Alice'"""  # inline form also works
+```
+
+Leading/trailing whitespace is stripped from the resulting string. No interpolation (`${...}`) inside triple-quoted strings.
+
 ---
 
 ## 15. Modules and cross-module usage
@@ -555,7 +582,34 @@ items.add(2)
 
 ---
 
-## 20. Type checks and casts
+## 20. `sig` — function type aliases
+
+`sig` declares a named function-pointer type. Use it to pass functions as arguments without wrapping them in closures:
+
+```zebra
+sig Comparator(a as int, b as int) as int
+sig Predicate(item as str) as bool
+sig Callback() as void
+
+def sort(items as List(int), cmp as Comparator)
+    # cmp(a, b) — call it like any method
+    pass
+
+shared def ascending(a as int, b as int) as int
+    return a - b
+
+def main
+    var nums = @[3, 1, 4, 1, 5]
+    sort(nums, ascending)
+```
+
+- `sig` names a `*const fn(T1, T2) R` pointer type in Zig.
+- Any `shared def` at module scope with a matching signature is assignment-compatible.
+- Useful for callbacks, strategy pattern, higher-order functions.
+
+---
+
+## 21. Type checks and casts
 
 ```zebra
 if obj is Dog
@@ -568,7 +622,7 @@ var y = x to!               # force-unwrap optional (panics if nil)
 
 ---
 
-## 21. `^T` heap-indirection (recursive types only)
+## 22. `^T` heap-indirection (recursive types only)
 
 Used to break recursive struct cycles:
 
@@ -590,7 +644,7 @@ a.next = b                 # auto-boxes: allocates *Node, copies b into it
 
 ---
 
-## 22. `zig"..."` escape hatch
+## 23. `zig"..."` escape hatch
 
 Inline Zig code (for stdlib wrappers or when Zebra doesn't support a pattern):
 
@@ -601,7 +655,7 @@ def rawMemset(ptr as uint, size as uint)
 
 ---
 
-## 23. Key idioms summary
+## 24. Key idioms summary
 
 | Pattern | Zebra | Notes |
 |---------|-------|-------|
@@ -618,7 +672,7 @@ def rawMemset(ptr as uint, size as uint)
 
 ---
 
-## 24. Common gotchas
+## 25. Common gotchas
 
 1. **`else` + `pass` must be on separate lines:**
    ```zebra
@@ -704,7 +758,7 @@ def rawMemset(ptr as uint, size as uint)
 
 ---
 
-## 25. Memory model and the `arena` block
+## 26. Memory model and the `arena` block
 
 **Book note — must be covered thoroughly in the language book.**
 
@@ -767,7 +821,7 @@ rewinds the bump pointer, corrupting any sub-slice still in use). The
 
 ---
 
-## 26. Build and run
+## 27. Build and run
 
 ```bash
 # From repo root:
@@ -782,7 +836,7 @@ The compiler resolves `use module_name` by looking for `module_name.zbr` in the 
 
 ---
 
-## 27. GUI programming
+## 28. GUI programming
 
 Zebra has a built-in immediate-mode GUI API backed by Dear ImGui (via the
 [zgui](https://github.com/zig-gamedev/zgui) bindings).
@@ -884,7 +938,7 @@ ImGuiColorTextEdit integration.
 
 ---
 
-## 28. Standard library API reference
+## 29. Standard library API reference
 
 ### `sys` — process / OS
 
