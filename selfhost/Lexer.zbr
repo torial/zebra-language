@@ -209,6 +209,7 @@ class Lexer
         var c1 = peek1()
         if c1 == c'['
             pos = pos + 2
+            parenDepth = parenDepth + 1
             emit(TokenKind.at_lbracket(), "@[", ln, cl)
             return
         if isAlpha(c1) or c1 == c'_'

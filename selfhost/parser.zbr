@@ -89,6 +89,7 @@ union PNode
     expr_string_interp: ^PStringInterp
     expr_lambda: PLambda
     expr_tuple_lit: ^PTupleLit
+    expr_array_lit: ^PArrayLit
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -139,6 +140,11 @@ struct PBranchOn
         this.stmts = stmts
 
 struct PTupleLit
+    var elems: List(PNode)
+    cue init(elems: List(PNode))
+        this.elems = elems
+
+struct PArrayLit
     var elems: List(PNode)
     cue init(elems: List(PNode))
         this.elems = elems
@@ -608,7 +614,18 @@ class Parser
                 return false
 
     def isFloatLit(): bool
-        return this.peek().kind == TokenKind.float_lit
+        branch this.peek().kind
+            on TokenKind.float_lit
+                return true
+            else
+                return false
+
+    def isAtLbracket(): bool
+        branch this.peek().kind
+            on TokenKind.at_lbracket
+                return true
+            else
+                return false
 
     def isStringSingle(): bool
         branch this.peek().kind
@@ -2002,6 +2019,19 @@ class Parser
             const text = this.peek().text
             this.advance()
             return PNode.expr_str(text)
+        else if .isAtLbracket()
+            # @[elem, elem, ...] — array literal
+            this.advance()
+            var elems = List(PNode)()
+            if not this.textIs("]")
+                elems.add(.parseExpr())
+                while this.textIs(",")
+                    this.advance()
+                    if this.textIs("]")
+                        break
+                    elems.add(.parseExpr())
+            .expectText("]")
+            return PNode.expr_array_lit(PArrayLit(elems))
         else if this.textIs("(")
             this.advance()
             const first = .parseExpr()

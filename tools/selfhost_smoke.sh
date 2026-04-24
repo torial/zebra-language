@@ -106,6 +106,9 @@ smoke test/interface_test.zbr
 # BUG-083 fix: genGenericClass now emits comptime { IFoo.check(@This()); }.
 smoke test/generic_iface_test.zbr
 
+# @[...] array literal in expression + `in @[...]` membership test.
+smoke test/array_in_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

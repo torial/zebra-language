@@ -4586,7 +4586,18 @@ struct Generator
             w.emit(")")
             return
         if b.op == BinaryOp.in_
-            # "needle" in haystack → std.mem.indexOf != null
+            # @[...] literal on right → _zebra_in handles tuple via inline for.
+            branch b.right
+                on Expr.array_lit
+                    w.emit("_zebra_in(")
+                    genExpr(b.left)
+                    w.emit(", ")
+                    genExpr(b.right)
+                    w.emit(")")
+                    return
+                else
+                    pass
+            # Default: string substring check via std.mem.indexOf.
             w.emit("(std.mem.indexOf(u8, ")
             genExpr(b.right)
             w.emit(", ")

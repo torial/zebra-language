@@ -1,0 +1,18 @@
+class Main
+    shared
+        def main
+            # @[...] array literal in a variable
+            var name = "findAll"
+
+            # in @[...] — membership test via _zebra_in + inline-for
+            if name in @["match", "find", "findAll", "groups"]
+                print "is regex method"
+            else
+                print "not regex method"
+
+            # negative case
+            var other = "unknown"
+            if other in @["match", "find", "findAll", "groups"]
+                print "found"
+            else
+                print "not found"
