@@ -4210,6 +4210,35 @@ struct Generator
                 collectAndEmitOldSnapshots(ie.else_expr)
             on Expr.try_ as tr
                 collectAndEmitOldSnapshots(tr.expr)
+            on Expr.array_lit as al
+                for elem in al.elems
+                    collectAndEmitOldSnapshots(elem)
+            on Expr.list_lit as ll
+                for elem in ll.elems
+                    collectAndEmitOldSnapshots(elem)
+            on Expr.tuple_lit as tl
+                for elem in tl.elems
+                    collectAndEmitOldSnapshots(elem)
+            on Expr.dict_lit as dl
+                for entry in dl.entries
+                    collectAndEmitOldSnapshots(entry.key)
+                    collectAndEmitOldSnapshots(entry.value)
+            on Expr.string_interp as si
+                for part in si.parts
+                    if part is StringPart.expr_ as ex
+                        collectAndEmitOldSnapshots(ex)
+            on Expr.type_check as tc
+                collectAndEmitOldSnapshots(tc.expr)
+            on Expr.slice as sl
+                collectAndEmitOldSnapshots(sl.object)
+                if sl.start != nil
+                    collectAndEmitOldSnapshots(sl.start to!)
+                if sl.stop_ != nil
+                    collectAndEmitOldSnapshots(sl.stop_ to!)
+            on Expr.except_ as ex
+                collectAndEmitOldSnapshots(ex.base)
+                for f in ex.fields
+                    collectAndEmitOldSnapshots(f.value)
             else
                 pass
 

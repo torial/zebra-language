@@ -116,6 +116,8 @@ smoke test/float_suffix_test.zbr
 smoke test/contract_ensure_test.zbr
 # ensure + old: snapshot pre-call value, check post-state with _old_N.
 smoke test/contract_old_test.zbr
+# ensure + old nested in compound expr (array_lit): regression for collectAndEmitOldSnapshots.
+smoke test/contract_old_compound_test.zbr
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr

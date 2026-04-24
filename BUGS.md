@@ -162,23 +162,23 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### DESIGN-002: `collectAndEmitOldSnapshots` (selfhost) missing `Expr` arms — latent risk
-- **Not a current bug** — no known failing test; filed for awareness
-- **Description:** `selfhost/codegen.zbr` `collectAndEmitOldSnapshots` handles a subset of `Expr` variants explicitly and falls through to `else: pass` for the rest. If an `old expr` node appears nested inside one of the unhandled variants, the snapshot will not be emitted and the deferred check will silently reference an undeclared identifier.
-- **Missing arms (vs. Zig `collectOldExprs` in `src/CodeGen.zig`):**
-  - `array_lit` — `@[a, b, c]` literals
-  - `list_lit` — `[a, b, c]` literals
-  - `dict_lit` — `{k: v, ...}` dict literals
-  - `tuple_lit` — `(a, b)` tuple literals
-  - `string_interp` — `"hello {x}"` interpolated strings
-  - `type_check` — `x is TypeName` expressions
-  - `slice` — `arr[a..b]` slice expressions
-  - `except_` — `x except { field = val }` struct-update expressions
-  - Leaf nodes (`int_lit`, `float_lit`, `bool_lit`, `char_lit`, `string_lit`, `nil_`, `this_`, `ident`, `zig_lit`) — these can't contain `old_` so the `else: pass` is correct for them
-  - `lambda` — Zig backend also ignores lambda bodies; correct (old_ inside a lambda would be semantically unsound)
-- **Risk:** Low in practice. `old expr` in a contract condition is almost always a simple field reference or a method call on a field. Reaching the missing arms requires deliberately nesting `old` inside a composite literal or slice inside an `ensure` condition — unusual.
-- **Fix direction:** Add explicit arms for the eight missing compound variants (each recurses into sub-expressions the same way the `binary`, `call`, etc. arms do). Defer until a concrete failing case is found.
-- **Files:** `selfhost/codegen.zbr` (`collectAndEmitOldSnapshots`); compare to `src/CodeGen.zig` (`collectOldExprs`).
+### DESIGN-002: `collectAndEmitOldSnapshots` (selfhost) missing `Expr` arms
+- **Status:** Fixed — `selfhost/codegen.zbr` `collectAndEmitOldSnapshots`; `test/contract_old_compound_test.zbr` covers the `array_lit` case; 31/31 smoke, bootstrap 5/5.
+- **Was:** `selfhost/codegen.zbr` `collectAndEmitOldSnapshots` fell through to `else: pass` for 8 compound Expr variants. An `old expr` nested inside any of these produced an undeclared-identifier Zig compile error: the `defer` block referenced `_old_N` but no snapshot was ever emitted.
+- **Confirmed failing test:** `ensure val in @[old val, n]` — `old val` inside `array_lit` — produced `error: use of undeclared identifier '_old_0'` before the fix.
+- **Fixed arms added:**
+  - `array_lit` — iterate `elems`, recurse each
+  - `list_lit` — iterate `elems`, recurse each
+  - `tuple_lit` — iterate `elems`, recurse each
+  - `dict_lit` — iterate `entries`, recurse `entry.key` and `entry.value`
+  - `string_interp` — iterate `parts`; recurse only `StringPart.expr_` arms
+  - `type_check` — recurse into `tc.expr`
+  - `slice` — recurse `sl.object`; recurse `sl.start to!` and `sl.stop_ to!` if non-nil
+  - `except_` — recurse `ex.base`; recurse each `f.value` in `ex.fields`
+  - `lambda` — left as no-op (correct: `old` inside a lambda body is semantically unsound)
+  - Leaf nodes — left as `else: pass` (correct: can't contain `old_`)
+- **Note on slice optional fields:** `ExprSlice.start: ^Expr?` uses `!= nil` + `to!` (not `if x as s`) — consistent with the existing `genExpr` slice handling in the selfhost.
+- **Files:** `selfhost/codegen.zbr` (`collectAndEmitOldSnapshots`), `test/contract_old_compound_test.zbr` (new), `tools/selfhost_smoke.sh` (new smoke entry).
 
 ---
 
@@ -202,4 +202,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-085 closed: shared-field bare-name emit fixed in both backends; DESIGN-002 filed: collectAndEmitOldSnapshots missing Expr arms*
+*Last updated: 2026-04-24 — BUG-085 closed: shared-field bare-name emit; DESIGN-002 closed: collectAndEmitOldSnapshots 8 missing arms added + regression test*

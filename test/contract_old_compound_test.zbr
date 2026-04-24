@@ -1,0 +1,19 @@
+# Regression: old() nested inside a compound expression in an ensure condition.
+# collectAndEmitOldSnapshots must recurse into array_lit to find and emit
+# the _old_N snapshot before the defer block.
+
+class Ratchet
+    var val: int = 0
+
+    def advance(n: int)
+        ensure
+            val in @[old val, n]
+        val = n
+
+def main()
+    var r = Ratchet()
+    r.advance(3)
+    assert r.val == 3
+    r.advance(7)
+    assert r.val == 7
+    print "contract_old_compound: OK"
