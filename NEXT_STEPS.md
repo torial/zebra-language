@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 8 — BUG-083/084 closed; float suffix codegen done)
+**Last updated:** 2026-04-24 (session 9 — ensure+old codegen done; BUG-083/084 closed; float suffix done)
 
 ---
 
@@ -60,16 +60,13 @@ Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
 Depends on `interface` codegen (step 4 above) and a thin `DynLib` stdlib wrapper.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 11. Contracts: `ensure` + `old` (Milestone 0.12)
-**Partial:** `require` and `invariant` already emit runtime checks (panic on violation).
-`ensure` is silently dropped by CodeGen; `old` is a passthrough (emits inner expr, no snapshot).
-Remaining decisions before implementing:
-- Scope: void-only `ensure` first (defer-based) vs. full non-void + `result` capture (labeled block)?
-- Partial `ensure` without `old`/`result` acceptable stepping stone, or confusingly inconsistent?
-- `-turbo` flag: strip contracts for release builds
-- Selfhost parity timing: same PR or separate phase?
+### 11. Contracts: `ensure` + `old` — core done; `--turbo` + `result` deferred
+**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 29/29 smoke; bootstrap 5/5.
+**Remaining:**
+- `--turbo` flag: strip contracts for release builds (separate commit)
+- `result` capture: no-op today; Resolver gives natural unbound-ident error (acceptable for now)
 Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — it says
-require/invariant are not yet done, but they are. Update the wiki alongside the decision.
+require/invariant are not yet done, but they are. Update the wiki alongside the `--turbo` work.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
@@ -142,6 +139,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `@[...]` array literal in expressions + `in @[...]` membership test via `_zebra_in` + `inline for`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
 | BUG-084: selfhost `Lexer.zbr` `[`/`]` removed from `parenDepth`; aligned with Zig Tokenizer (`(`/`)` only); 26/26 smoke, bootstrap 5/5 | 2026-04-24 |
 | `_f32`/`_f64`/`f32`/`f64` float suffix codegen: `genFloatLit` in both backends; `@as(fNN, val)` emission; selfhost uses `replace()`; 27/27 smoke, bootstrap 5/5 | 2026-04-24 |
+| `ensure`+`old` codegen: defer-based post-condition checks; `old expr` → `const _old_N = snapshot;` + substitution; `kw_old`→`UnaryOp.old_` added to selfhost AST/parser/astbuilder; 29/29 smoke, bootstrap 5/5 | 2026-04-24 |
 
 ---
 

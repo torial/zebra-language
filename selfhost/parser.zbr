@@ -1880,6 +1880,13 @@ class Parser
             this.advance()
             const operand = .parseUnary()
             return PNode.expr_try(operand)
+        if this.textIs("old")
+            # `old expr` — pre-call value in `ensure` contracts (Expr8 → kw_old Expr9).
+            this.advance()
+            const operand = .parseUnary()
+            var ops = List(PNode)()
+            ops.add(operand)
+            return PNode.expr_unary(PUnary("old", ops))
         return .parsePostfix()
 
     def parsePostfix(): PNode throws

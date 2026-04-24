@@ -735,6 +735,37 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
     }
 }
 
+/// Walk an expression depth-first and collect all `old` nodes (in traversal order).
+/// Used by genEnsureBlock to emit pre-call snapshots for `ensure`/`old` contracts.
+fn collectOldExprs(expr: *const Ast.Expr, alloc: Allocator, out: *std.ArrayListUnmanaged(*Ast.ExprOld)) anyerror!void {
+    switch (expr.*) {
+        .old         => |e| try out.append(alloc, e),
+        .binary      => |e| { try collectOldExprs(e.left, alloc, out);   try collectOldExprs(e.right, alloc, out); },
+        .unary       => |e| try collectOldExprs(e.operand, alloc, out),
+        .call        => |e| { try collectOldExprs(e.callee, alloc, out); for (e.args) |a| try collectOldExprs(a.value, alloc, out); },
+        .member      => |e| try collectOldExprs(e.object, alloc, out),
+        .index       => |e| { try collectOldExprs(e.object, alloc, out); try collectOldExprs(e.index, alloc, out); },
+        .slice       => |e| { try collectOldExprs(e.object, alloc, out); if (e.start) |s| try collectOldExprs(s, alloc, out); if (e.stop) |s| try collectOldExprs(s, alloc, out); },
+        .if_expr     => |e| { try collectOldExprs(e.cond, alloc, out);   try collectOldExprs(e.then_expr, alloc, out); try collectOldExprs(e.else_expr, alloc, out); },
+        .orelse_     => |e| { try collectOldExprs(e.expr, alloc, out);   try collectOldExprs(e.fallback, alloc, out); },
+        .catch_      => |e| { try collectOldExprs(e.expr, alloc, out);   try collectOldExprs(e.fallback, alloc, out); },
+        .to_nilable  => |e| try collectOldExprs(e.expr, alloc, out),
+        .to_non_nil  => |e| try collectOldExprs(e.expr, alloc, out),
+        .is_nil      => |e| try collectOldExprs(e.expr, alloc, out),
+        .cast        => |e| try collectOldExprs(e.expr, alloc, out),
+        .try_        => |e| try collectOldExprs(e.expr, alloc, out),
+        .tuple_lit   => |e| { for (e.elems) |el| try collectOldExprs(el, alloc, out); },
+        .list_lit    => |e| { for (e.elems) |el| try collectOldExprs(el, alloc, out); },
+        .array_lit   => |e| { for (e.elems) |el| try collectOldExprs(el, alloc, out); },
+        .dict_lit    => |e| { for (e.entries) |en| { try collectOldExprs(en.key, alloc, out); try collectOldExprs(en.value, alloc, out); } },
+        .string_interp => |e| { for (e.parts) |p| switch (p) { .expr => |ex| try collectOldExprs(ex, alloc, out), else => {} }; },
+        .type_check  => |e| try collectOldExprs(e.expr, alloc, out),
+        .lambda      => {},  // old doesn't make sense inside a lambda body
+        .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
+        .string_lit, .nil, .zig_lit => {},
+    }
+}
+
 // ── Mutation analysis ─────────────────────────────────────────────────────────
 
 /// Return a set of every identifier name that appears as the direct target of
@@ -1310,6 +1341,9 @@ const Generator = struct {
     /// `break :label false` instead of `break;` to suppress the else clause.
     /// Nested loops clear this to null so their own breaks stay plain.
     for_else_label: ?[]const u8 = null,
+    /// Pre-call value snapshot map for `ensure`/`old` contracts.
+    /// Null outside an ensure defer block.  Maps ExprOld pointer → snapshot index (_old_N).
+    old_map: ?*const std.AutoHashMap(*Ast.ExprOld, usize) = null,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1339,6 +1373,9 @@ const Generator = struct {
     }
     fn withExtSelf(g: Generator, t: TypeChecker.Type) Generator {
         var c = g; c.ext_self_type = t; return c;
+    }
+    fn withOldMap(g: Generator, m: *const std.AutoHashMap(*Ast.ExprOld, usize)) Generator {
+        var c = g; c.old_map = m; return c;
     }
 
     /// When inside a generic class body, resolve the Zig element-type string for a
@@ -4228,6 +4265,7 @@ const Generator = struct {
                 // Skip `_ = self` when invariant defer already references self.
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
                 try bg.genRequireChecks(n.require, n.name);
+                try bg.genEnsureBlock(n.ensure, n.name);
                 try bg.genStmts(body);
 
                 // Close the while loop.
@@ -4245,6 +4283,7 @@ const Generator = struct {
                     }
                 }
                 try bg.genRequireChecks(n.require, n.name);
+                try bg.genEnsureBlock(n.ensure, n.name);
                 try bg.genStmts(body);
             }
 
@@ -4308,6 +4347,7 @@ const Generator = struct {
             }
         }
         try bg.genRequireChecks(n.require, "init");
+        try bg.genEnsureBlock(n.ensure, "init");
         try bg.genStmts(body);
         if (g.owner_invariants.len > 0) {
             try bg.writeIndent();
@@ -8470,6 +8510,39 @@ const Generator = struct {
         }
     }
 
+    /// Emit `const _old_N = expr;` snapshots + `defer { ensure checks }` for contracts.
+    /// No-op when ensure is empty.  old_map is used by genExpr(.old) to substitute names.
+    fn genEnsureBlock(g: Generator, ensure: []const *Ast.Expr, context: []const u8) anyerror!void {
+        if (ensure.len == 0) return;
+        // Collect all old nodes across all ensure exprs (depth-first, left-to-right).
+        var old_nodes: std.ArrayListUnmanaged(*Ast.ExprOld) = .{};
+        defer old_nodes.deinit(g.alloc);
+        for (ensure) |e| try collectOldExprs(e, g.alloc, &old_nodes);
+        // Build pointer → index map for substitution during defer-block emit.
+        var old_map = std.AutoHashMap(*Ast.ExprOld, usize).init(g.alloc);
+        defer old_map.deinit();
+        for (old_nodes.items, 0..) |node, i| try old_map.put(node, i);
+        // Emit snapshot constants at method entry (before body and before defer registration).
+        for (old_nodes.items, 0..) |node, i| {
+            try g.writeIndent();
+            try g.w.print("const _old_{d} = ", .{i});
+            try g.genExpr(node.expr);
+            try g.w.writeAll(";\n");
+        }
+        // Emit defer block: runs on method exit (LIFO after invariant defer if both present).
+        try g.writeIndent();
+        try g.w.writeAll("defer {\n");
+        const ig = g.indented().withOldMap(&old_map);
+        for (ensure) |ens_expr| {
+            try ig.writeIndent();
+            try ig.w.writeAll("if (!(");
+            try ig.genExpr(ens_expr);
+            try ig.w.print(")) std.debug.panic(\"ensure failed in '{s}'\\n\", .{{}});\n", .{context});
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
     fn genAssert(g: Generator, s: *Ast.StmtAssert) anyerror!void {
         try g.writeIndent();
         if (s.message != null) {
@@ -9184,7 +9257,16 @@ const Generator = struct {
                 }
                 try g.w.writeAll("}");
             },
-            .old     => |e| try g.genExpr(e.expr), // contract pre-value → pass through
+            .old     => |e| {
+                if (g.old_map) |m| {
+                    // Inside ensure defer block: substitute with snapshot variable.
+                    const idx = m.get(e) orelse unreachable;
+                    try g.w.print("_old_{d}", .{idx});
+                } else {
+                    // Passthrough outside ensure context (e.g., dead-code path).
+                    try g.genExpr(e.expr);
+                }
+            },
             .zig_lit => |e| try g.genZigLit(e),
             .try_ => |e| {
                 // `expr?` in Zebra — two meanings depending on the inner type:

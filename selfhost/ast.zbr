@@ -901,6 +901,7 @@ enum UnaryOp
     neg
     not_
     bit_not
+    old_
 
 struct ExprUnary
     var span: Span

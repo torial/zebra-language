@@ -112,6 +112,11 @@ smoke test/array_in_test.zbr
 # Float suffix literals: 1.5_f32, 2.5_f64, 0.5f32, 3.0f64 → @as(fNN, val).
 smoke test/float_suffix_test.zbr
 
+# ensure without old: defer block checks post-state condition.
+smoke test/contract_ensure_test.zbr
+# ensure + old: snapshot pre-call value, check post-state with _old_N.
+smoke test/contract_old_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

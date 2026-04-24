@@ -856,6 +856,8 @@ class ASTBuilder
             return UnaryOp.neg
         if op == "not"
             return UnaryOp.not_
+        if op == "old"
+            return UnaryOp.old_
         raise "toUnaryOp: unknown op: " + op
 
     # ── Type reference parsing ────────────────────────────────────────────────

@@ -1,0 +1,14 @@
+class BankAccount
+    var balance: int = 0
+
+    def deposit(amount: int)
+        ensure
+            balance == old balance + amount
+        balance = balance + amount
+
+class Main
+    shared
+        def main
+            var acc = BankAccount()
+            acc.deposit(100)
+            print acc.balance
