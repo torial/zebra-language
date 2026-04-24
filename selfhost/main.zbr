@@ -52,6 +52,7 @@ class MultiCompiler
     var output_dir: str
     var c_sources: List(str)   # paths to .c deps discovered via `use`
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
+    var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
 
     cue init(preamble_path: str, output_dir: str)
         this.visited = List(str)()
@@ -61,6 +62,7 @@ class MultiCompiler
         this.output_dir = output_dir
         this.c_sources = List(str)()
         this.c_i_dirs = List(str)()
+        this.strip_contracts = false
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -124,9 +126,9 @@ class MultiCompiler
                         if vpath != zbr_path
                             all_deps.add(.moduleNameOf(vpath))
                         vi = vi + 1
-                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps)?
+                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts)?
                 else
-                    zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types)?
+                    zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
 
                 # Step 6: Write .zig file
                 var zig_path: str = .zbrToZig(zbr_path)
@@ -385,6 +387,7 @@ class Main
             sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
             sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
             sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
+            sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
             sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
             sys.errln("  zebra --version                          print version and exit")
             sys.exit(1)
@@ -403,6 +406,7 @@ class Main
         var mode_emit            = args.contains("--emit-zig")
         var mode_zig             = args.contains("--zig-backend")
         var release              = args.contains("--release")
+        var turbo                = args.contains("--turbo")
         const preamble_path      = "selfhost/stdlib_preamble.zig"
         # --output-dir=DIR style to avoid positional arg confusion
         var output_dir: str    = args.option("--output-dir", "")
@@ -413,6 +417,7 @@ class Main
             try
                 # Compile the root file and all its dependencies
                 var mc = MultiCompiler(preamble_path, output_dir)
+                mc.strip_contracts = turbo
                 mc.compileDep(path, true)?
 
                 if mode_emit

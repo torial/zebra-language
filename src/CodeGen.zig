@@ -134,6 +134,7 @@ pub fn generate(
     native_uses:      ?*const std.StringHashMap(NativeUse),
     emit_exports:     bool,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
+    strip_contracts:  bool,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -179,6 +180,7 @@ pub fn generate(
         .source_file      = module.file,
         .imported_modules = imported_modules,
         .box_counter_ptr  = &box_counter,
+        .strip_contracts  = strip_contracts,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -1344,6 +1346,8 @@ const Generator = struct {
     /// Pre-call value snapshot map for `ensure`/`old` contracts.
     /// Null outside an ensure defer block.  Maps ExprOld pointer → snapshot index (_old_N).
     old_map: ?*const std.AutoHashMap(*Ast.ExprOld, usize) = null,
+    /// When true, all `require`/`ensure`/invariant emit is suppressed (--turbo mode).
+    strip_contracts: bool = false,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -3614,7 +3618,7 @@ const Generator = struct {
         }
 
         // ④ Invariant checker — same as non-generic path.
-        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
+        if (n.invariants.len > 0 and !g.strip_contracts) try ig.genInvariantCheckFn();
 
         // ⑤ Interface conformance checks — same as non-generic path.
         if (n.implements.len > 0) {
@@ -3709,7 +3713,7 @@ const Generator = struct {
         }
 
         // ⑤ Invariant checker — private fn called at end of init and exit of instance methods.
-        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
+        if (n.invariants.len > 0 and !g.strip_contracts) try ig.genInvariantCheckFn();
 
         // ④ Interface conformance checks.
         //    `class Foo implements IBar` → `comptime { IBar.check(@This()); }`
@@ -3961,7 +3965,7 @@ const Generator = struct {
         try g.w.print("pub const {s} = struct {{\n", .{n.name});
         const ig = sg.indented();
         for (n.members) |decl| try ig.genMember(decl);
-        if (n.invariants.len > 0) try ig.genInvariantCheckFn();
+        if (n.invariants.len > 0 and !g.strip_contracts) try ig.genInvariantCheckFn();
         if (n.implements.len > 0) {
             try ig.w.writeAll("\n");
             try ig.writeIndent();
@@ -4237,7 +4241,7 @@ const Generator = struct {
             // Private helpers may temporarily break invariants; shared methods have no `self`.
             // Note: `defer` also runs on error exit paths — callers see the panic before
             // the original error.  Acceptable for v1; document for future errdefer refinement.
-            if (has_self and !n.mods.shared and !n.mods.private and g.owner_invariants.len > 0) {
+            if (has_self and !n.mods.shared and !n.mods.private and g.owner_invariants.len > 0 and !g.strip_contracts) {
                 try mg.indented().writeIndent();
                 try mg.indented().w.writeAll("defer self._check_invariant();\n");
             }
@@ -4263,7 +4267,7 @@ const Generator = struct {
                     .withTco(n.name, tco_pnames.items, n.mods.shared);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 // Skip `_ = self` when invariant defer already references self.
-                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
+                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
                 try bg.genRequireChecks(n.require, n.name);
                 try bg.genEnsureBlock(n.ensure, n.name);
                 try bg.genStmts(body);
@@ -4275,7 +4279,7 @@ const Generator = struct {
                 const bg = mg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set);
                 // Emit `_ = x;` only for params that are NOT referenced in the body.
                 // Skip when invariant defer already references self (avoids "pointless discard" in Zig 0.15).
-                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0)) try bg.line("_ = self;");
+                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
                 for (n.params) |p| {
                     if (!refs.param_names.contains(p.name)) {
                         try bg.writeIndent();
@@ -4349,7 +4353,7 @@ const Generator = struct {
         try bg.genRequireChecks(n.require, "init");
         try bg.genEnsureBlock(n.ensure, "init");
         try bg.genStmts(body);
-        if (g.owner_invariants.len > 0) {
+        if (g.owner_invariants.len > 0 and !g.strip_contracts) {
             try bg.writeIndent();
             try bg.w.writeAll("self._check_invariant();\n");
         }
@@ -8502,6 +8506,7 @@ const Generator = struct {
     }
 
     fn genRequireChecks(g: Generator, require: []const *Ast.Expr, context: []const u8) anyerror!void {
+        if (g.strip_contracts) return;
         for (require) |req_expr| {
             try g.writeIndent();
             try g.w.writeAll("if (!(");
@@ -8513,7 +8518,7 @@ const Generator = struct {
     /// Emit `const _old_N = expr;` snapshots + `defer { ensure checks }` for contracts.
     /// No-op when ensure is empty.  old_map is used by genExpr(.old) to substitute names.
     fn genEnsureBlock(g: Generator, ensure: []const *Ast.Expr, context: []const u8) anyerror!void {
-        if (ensure.len == 0) return;
+        if (g.strip_contracts or ensure.len == 0) return;
         // Collect all old nodes across all ensure exprs (depth-first, left-to-right).
         var old_nodes: std.ArrayListUnmanaged(*Ast.ExprOld) = .{};
         defer old_nodes.deinit(g.alloc);
@@ -11447,7 +11452,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     var out = std.ArrayList(u8){};
     errdefer out.deinit(alloc);
 
-    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null);
+    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false);
     return out.toOwnedSlice(alloc);
 }
 

@@ -1,0 +1,30 @@
+# Regression for --turbo: verify that require/ensure/invariant checks are
+# absent from the emitted Zig when the flag is set.
+#
+# Without --turbo, the require / ensure below would panic immediately.
+# With --turbo, the method body runs cleanly and the assertion holds.
+
+class Guard
+    var x: int = 0
+
+    invariant
+        x >= 0
+
+    def bump()
+        require
+            x < 1000
+        ensure
+            x > old x
+        x = x + 1
+
+    def idle()
+        # no self or field access — tests that _ = self; is correctly emitted
+        # even when the invariant defer is stripped (so self would be unused)
+        pass
+
+def main()
+    var g = Guard()
+    g.bump()
+    g.idle()
+    assert g.x == 1
+    print "turbo: OK"

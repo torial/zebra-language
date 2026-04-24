@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 11 — BUG-085 fixed: shared-field bare-name emit; DESIGN-002 filed)
+**Last updated:** 2026-04-24 (session 12 — `--turbo` flag implemented; DESIGN-002 closed)
 
 ---
 
@@ -60,14 +60,13 @@ Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
 Depends on `interface` codegen (step 4 above) and a thin `DynLib` stdlib wrapper.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 11. Contracts: `ensure` + `old` — core done; `--turbo` + `result` deferred
-**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 30/30 smoke; bootstrap 5/5.
+### 11. Contracts: `ensure` + `old` + `--turbo` — core complete
+**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 32/32 smoke; bootstrap 5/5.
 **Option C refactor done (2026-04-24, session 10):** `old` is now its own `Expr.old_` union variant (`ExprOld { uid: int, operand }`) instead of a `UnaryOp` enum value. UIDs assigned at ASTBuilder construction time (not traversal order), eliminating the ordering dependency. `collectOldInner` retired in favour of single-pass `collectAndEmitOldSnapshots`.
+**`--turbo` done (2026-04-24, session 12):** `strip_contracts: bool` field on Generator; `require`/`ensure`/`invariant` emit sites all guarded; `_ = self;` suppression updated; `generateFullWithDeps`/`generateDepWith` chain threads `strip_contracts`; `smoke_turbo` verifies absence of contract strings; both backends; bootstrap 5/5.
 **Remaining:**
-- `--turbo` flag: strip contracts for release builds (separate commit)
 - `result` capture: no-op today; Resolver gives natural unbound-ident error (acceptable for now)
-Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — it says
-require/invariant are not yet done, but they are. Update the wiki alongside the `--turbo` work.
+Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — update alongside a future `result` implementation.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
@@ -143,6 +142,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `ensure`+`old` codegen: defer-based post-condition checks; `old expr` → `const _old_N = snapshot;` + substitution; `kw_old`→`UnaryOp.old_` added to selfhost AST/parser/astbuilder; 29/29 smoke, bootstrap 5/5 | 2026-04-24 |
 | BUG-085: shared-field bare-name emit — `genIdent` now checks field's own `shared` mod; emits `TypeName.field` not `self.field`; `isSharedField` added to selfhost; both backends; bootstrap 5/5 | 2026-04-24 |
 | DESIGN-002: `collectAndEmitOldSnapshots` 8 missing Expr arms — `array_lit`/`list_lit`/`tuple_lit`/`dict_lit`/`string_interp`/`type_check`/`slice`/`except_` added; regression test `contract_old_compound_test.zbr`; 31/31 smoke, bootstrap 5/5 | 2026-04-24 |
+| `--turbo` flag: `strip_contracts: bool` on Generator; all require/ensure/invariant emit sites guarded; `_ = self;` suppression updated; generate* chain threads `strip_contracts`; `smoke_turbo` verifier; `turbo_test.zbr`; both backends; bootstrap 5/5 | 2026-04-24 |
 
 ---
 

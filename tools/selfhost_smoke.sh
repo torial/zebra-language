@@ -45,6 +45,29 @@ smoke() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Emit with --turbo and verify no contract strings appear in the generated Zig.
+smoke_turbo() {
+    local zbr="$1"
+    local label
+    label="$(basename "$zbr" .zbr)_turbo"
+    if "$ZEBRA" --turbo --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
+        if grep -qE "_check_invariant|require failed|ensure failed" "$zig_out" 2>/dev/null; then
+            echo "  FAIL: $label (contract strings found in turbo output)" >&2
+            grep -E "_check_invariant|require failed|ensure failed" "$zig_out" >&2 || true
+            FAIL=$((FAIL + 1))
+        else
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        fi
+    else
+        echo "  FAIL: $label (emit failed)" >&2
+        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 echo "── Selfhost smoke tests (emit-zig pipeline)"
 
 # Pure arithmetic / branching
@@ -121,6 +144,9 @@ smoke test/contract_old_compound_test.zbr
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr
+
+# --turbo: require/ensure/invariant must be absent from generated Zig.
+smoke_turbo test/turbo_test.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
