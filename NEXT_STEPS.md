@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 9 — ensure+old codegen done; BUG-083/084 closed; float suffix done)
+**Last updated:** 2026-04-24 (session 10 — Expr.old_ Option C refactor; shared var fields; BUG-085 filed)
 
 ---
 
@@ -61,7 +61,8 @@ Depends on `interface` codegen (step 4 above) and a thin `DynLib` stdlib wrapper
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
 ### 11. Contracts: `ensure` + `old` — core done; `--turbo` + `result` deferred
-**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 29/29 smoke; bootstrap 5/5.
+**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 30/30 smoke; bootstrap 5/5.
+**Option C refactor done (2026-04-24, session 10):** `old` is now its own `Expr.old_` union variant (`ExprOld { uid: int, operand }`) instead of a `UnaryOp` enum value. UIDs assigned at ASTBuilder construction time (not traversal order), eliminating the ordering dependency. `collectOldInner` retired in favour of single-pass `collectAndEmitOldSnapshots`.
 **Remaining:**
 - `--turbo` flag: strip contracts for release builds (separate commit)
 - `result` capture: no-op today; Resolver gives natural unbound-ident error (acceptable for now)
