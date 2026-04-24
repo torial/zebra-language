@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-23 (session 6)
+**Last updated:** 2026-04-24 (session 7)
 
 ---
 
@@ -26,13 +26,9 @@ File: `src/CodeGen.zig` NFA preamble. Effort: L
 All paths complete: native `for...else` for list/items; labeled-block pattern for HashMap/split/chars/for-num.
 Commit: `79aa9fb`. Bootstrap 5/5.
 
-### 3. `interface` codegen
-Parser/AST/Resolver for `interface` declarations are done. CodeGen needs to emit:
-- A vtable struct from the interface declaration
-- Method dispatch through the vtable (fat-pointer or explicit passing)
-
-This is the prerequisite for the plugin system and unlocks clean Zebra-native vtable APIs.
-Files: `src/CodeGen.zig`, then selfhost port in `selfhost/codegen.zbr`.
+### ~~3. `interface` codegen~~  ✓ DONE
+`interface IFoo` now emits a fat-pointer vtable struct: `ptr: *anyopaque`, `vtable: *const VTable`, forwarding methods, and a `check(comptime T: type)` conformance verifier. `class Foo implements IFoo` sites call `IFoo.check(@This())` in a `comptime` block. Both backends (Zig + selfhost) ported, bootstrap 5/5. Deferred: `wrap()` factory, `callconv(.C)` for DLL crossing, throws-in-vtable — tracked in item #10 (plugin system demo).
+Files: `src/CodeGen.zig` (`genInterface` + `genClass`/`genStruct` implements sites), `selfhost/codegen.zbr` (parity).
 
 ---
 
@@ -129,6 +125,8 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | Per-block `scanMutations` in `genStmts` — eliminates cross-arm const/var pollution | 2026-04-23 |
 | BUG-027: expression-position chain fix — labeled block in both backends | 2026-04-23 |
 | BUG-027 throws sub-issue: `exprCallIsThrows` handles call receivers; `try` emitted in labeled block + statement-position hoist; selfhost parity via `inferExpr`+`isClassMethodThrows`; bootstrap 5/5 | 2026-04-23 |
+| BUG-082: selfhost `inferExpr` cross-module constructor gap — `SomeMod.Class(args)` → `Type_.named` | 2026-04-24 |
+| `interface` codegen: fat-pointer vtable struct (`ptr`/`vtable`/`check()`); `implements` sites → `.check(@This())`; selfhost parity; bootstrap 5/5 | 2026-04-24 |
 
 ---
 

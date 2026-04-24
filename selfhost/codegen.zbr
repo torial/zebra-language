@@ -1638,6 +1638,17 @@ struct Generator
                     pass
         if n.invariants.count() > 0
             ig.genInvariantCheckFn()
+        if n.ifaces.count() > 0
+            w.emit("\n")
+            ig.writeIndent()
+            w.emit("comptime {\n")
+            var cig2 = ig.indented()
+            for tr in n.ifaces
+                cig2.writeIndent()
+                w.emit(typeRefStr(tr))
+                w.emit(".check(@This());\n")
+            ig.writeIndent()
+            w.emit("}\n")
         writeIndent()
         w.emit("};\n\n")
 
@@ -1764,6 +1775,17 @@ struct Generator
             ig.w.emit("}\n\n")
         if n.invariants.count() > 0
             ig.genInvariantCheckFn()
+        if n.ifaces.count() > 0
+            w.emit("\n")
+            ig.writeIndent()
+            w.emit("comptime {\n")
+            var cig2 = ig.indented()
+            for tr in n.ifaces
+                cig2.writeIndent()
+                w.emit(typeRefStr(tr))
+                w.emit(".check(@This());\n")
+            ig.writeIndent()
+            w.emit("}\n")
         writeIndent()
         w.emit("};\n")
         w.emit("const _ttag_")
@@ -2046,19 +2068,106 @@ struct Generator
         w.emit("};\n\n")
 
     # ── genInterface ─────────────────────────────────────────────────────────
-    # interface Shape → comptime validation fn: checks @hasDecl on each member
+    # interface IFoo → fat-pointer vtable struct:
+    #   pub const IFoo = struct {
+    #       ptr: *anyopaque, vtable: *const VTable,
+    #       pub const VTable = struct { method: *const fn(...) ret };
+    #       pub fn method(self: @This(), ...) ret { return self.vtable.method(...); }
+    #       pub fn check(comptime T: type) void { comptime { if (!@hasDecl...) } }
+    #   };
     def genInterface(ifc: DeclInterface)
-        writeIndent()
-        w.emit("pub fn ")
-        w.emit(ifc.name)
-        w.emit("(comptime T: type) void {\n")
         var ig = indented()
+        var vtig = ig.indented()
+        var mig = ig.indented()
+
+        # ── struct header ────────────────────────────────────────────────
+        writeIndent()
+        w.emit("pub const ")
+        w.emit(ifc.name)
+        w.emit(" = struct {\n")
+
+        # ── fat-pointer fields ───────────────────────────────────────────
         ig.writeIndent()
-        w.emit("comptime {\n")
-        var iig = ig.indented()
+        w.emit("ptr:    *anyopaque,\n")
+        ig.writeIndent()
+        w.emit("vtable: *const VTable,\n\n")
+
+        # ── VTable inner struct ──────────────────────────────────────────
+        ig.writeIndent()
+        w.emit("pub const VTable = struct {\n")
         for mem in ifc.members
             if mem is Decl.method as mth
-                iig.writeIndent()
+                vtig.writeIndent()
+                w.emit(mth.name)
+                w.emit(": *const fn (ptr: *anyopaque")
+                for p in mth.params
+                    w.emit(", ")
+                    w.emit(p.name)
+                    w.emit(": ")
+                    if p.type_ != nil
+                        genType(p.type_ to!)
+                    else
+                        w.emit("anytype")
+                w.emit(") ")
+                if mth.throws_
+                    w.emit("anyerror!")
+                if mth.return_type != nil
+                    genType(mth.return_type to!)
+                else
+                    w.emit("void")
+                w.emit(",\n")
+        ig.writeIndent()
+        w.emit("};\n")
+
+        # ── forwarding methods ───────────────────────────────────────────
+        for mem in ifc.members
+            if mem is Decl.method as mth
+                w.emit("\n")
+                ig.writeIndent()
+                w.emit("pub fn ")
+                w.emit(mth.name)
+                w.emit("(self: @This()")
+                for p in mth.params
+                    w.emit(", ")
+                    w.emit(p.name)
+                    w.emit(": ")
+                    if p.type_ != nil
+                        genType(p.type_ to!)
+                    else
+                        w.emit("anytype")
+                w.emit(") ")
+                if mth.throws_
+                    w.emit("anyerror!")
+                if mth.return_type != nil
+                    genType(mth.return_type to!)
+                else
+                    w.emit("void")
+                w.emit(" {\n")
+                mig.writeIndent()
+                if mth.throws_
+                    w.emit("return try self.vtable.")
+                else
+                    w.emit("return self.vtable.")
+                w.emit(mth.name)
+                w.emit("(self.ptr")
+                for p in mth.params
+                    w.emit(", ")
+                    w.emit(p.name)
+                w.emit(");\n")
+                ig.writeIndent()
+                w.emit("}\n")
+
+        # ── check() — comptime conformance verifier ──────────────────────
+        w.emit("\n")
+        ig.writeIndent()
+        w.emit("pub fn check(comptime T: type) void {\n")
+        var cig = ig.indented()
+        cig.writeIndent()
+        w.emit("comptime {\n")
+        var ccig = cig.indented()
+        for mem in ifc.members
+            if mem is Decl.method as mth
+                ccig.writeIndent()
                 w.emit("if (!@hasDecl(T, \"")
                 w.emit(mth.name)
                 w.emit("\")) @compileError(\"type \" ++ @typeName(T) ++ \" does not implement ")
@@ -2066,10 +2175,14 @@ struct Generator
                 w.emit(".")
                 w.emit(mth.name)
                 w.emit("\");\n")
+        cig.writeIndent()
+        w.emit("}\n")
         ig.writeIndent()
         w.emit("}\n")
+
+        # ── struct footer ────────────────────────────────────────────────
         writeIndent()
-        w.emit("}\n\n")
+        w.emit("};\n\n")
 
     # ── genExtend ────────────────────────────────────────────────────────────
     # extend Type → standalone functions prefixed with _ext_Type_

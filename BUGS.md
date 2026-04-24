@@ -152,4 +152,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-23 — BUG-027 throws sub-issue fixed: exprCallIsThrows handles call receivers, labeled block emits `try`, selfhost mirrors via inferExpr+isClassMethodThrows; deferred sub-issue documented (try_block_label + expression-position)*
+*Last updated: 2026-04-24 — BUG-082 filed and fixed: selfhost inferExpr cross-module constructor gap; interface codegen complete (vtable struct)*

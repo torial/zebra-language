@@ -8,7 +8,7 @@
 //! | Zebra              | Zig                                              |
 //! |--------------------|--------------------------------------------------|
 //! | `class Foo`        | `pub const Foo = struct { ... };`                |
-//! | `interface IFoo`   | `pub fn IFoo(comptime T: type) void { ... }`     |
+//! | `interface IFoo`   | `pub const IFoo = struct { ptr, vtable, check }` |
 //! | `mixin M`          | inlined at `adds M` sites; no standalone output  |
 //! | `struct Foo`       | `pub const Foo = struct { ... };`                |
 //! | `enum Color`       | `pub const Color = enum { ... };`                |
@@ -35,15 +35,16 @@
 //!
 //! ## Interfaces
 //!
-//! Interfaces are emitted as comptime checker functions:
+//! Interfaces emit a fat-pointer vtable struct:
 //! ```zig
-//! pub fn IFoo(comptime T: type) void {
-//!     comptime {
-//!         if (!@hasDecl(T, "method")) @compileError("...");
-//!     }
-//! }
+//! pub const IFoo = struct {
+//!     ptr: *anyopaque, vtable: *const VTable,
+//!     pub const VTable = struct { method: *const fn (*anyopaque, ...) ret };
+//!     pub fn method(self: @This(), ...) ret { return self.vtable.method(self.ptr, ...); }
+//!     pub fn check(comptime T: type) void { comptime { if (!@hasDecl(T, "method")) @compileError(...); } }
+//! };
 //! ```
-//! Every class that `implements IFoo` gets a `comptime { IFoo(@This()); }` block.
+//! Every class that `implements IFoo` gets a `comptime { IFoo.check(@This()); }` block.
 //!
 //! ## Inheritance
 //!
@@ -3657,7 +3658,7 @@ const Generator = struct {
             for (n.implements) |tr| {
                 const iname = typeRefSimpleName(tr) orelse continue;
                 try cig.writeIndent();
-                try cig.w.print("{s}(@This());\n", .{iname});
+                try cig.w.print("{s}.check(@This());\n", .{iname});
             }
             try ig.writeIndent();
             try ig.w.writeAll("}\n");
@@ -3780,35 +3781,113 @@ const Generator = struct {
     }
 
     // ── interface ─────────────────────────────────────────────────────────────
+    //
+    // Emits a fat-pointer vtable struct:
+    //
+    //   pub const IFoo = struct {
+    //       ptr:    *anyopaque,
+    //       vtable: *const VTable,
+    //
+    //       pub const VTable = struct {
+    //           method: *const fn (ptr: *anyopaque, <params>) <ret>,
+    //       };
+    //
+    //       pub fn method(self: @This(), <params>) <ret> {
+    //           return self.vtable.method(self.ptr, <args>);
+    //       }
+    //
+    //       pub fn check(comptime T: type) void {
+    //           comptime { if (!@hasDecl(T, "method")) @compileError(...); }
+    //       }
+    //   };
+    //
+    // `class Foo implements IFoo` sites call `IFoo.check(@This())` inside
+    // a `comptime` block for compile-time conformance verification.
 
     fn genInterface(g: Generator, n: *Ast.DeclInterface) anyerror!void {
-        try g.writeIndent();
-        try g.w.print("pub fn {s}(comptime T: type) void {{\n", .{n.name});
-
         const ig = g.indented();
-        try ig.writeIndent();
-        try ig.w.writeAll("comptime {\n");
+        const vtig = ig.indented();
+        const mig = ig.indented();  // method body indent
 
-        const iig = ig.indented();
+        // ── struct header ──────────────────────────────────────────────────
+        try g.writeIndent();
+        try g.w.print("pub const {s} = struct {{\n", .{n.name});
+
+        // ── fat-pointer fields ─────────────────────────────────────────────
+        try ig.writeIndent();
+        try ig.w.writeAll("ptr:    *anyopaque,\n");
+        try ig.writeIndent();
+        try ig.w.writeAll("vtable: *const VTable,\n\n");
+
+        // ── VTable inner struct ────────────────────────────────────────────
+        try ig.writeIndent();
+        try ig.w.writeAll("pub const VTable = struct {\n");
         for (n.members) |m| {
-            const req_name: ?[]const u8 = switch (m) {
-                .method => |meth| meth.name,
-                else    => null,
-            };
-            if (req_name) |mname| {
-                try iig.writeIndent();
-                try iig.w.print(
-                    "if (!@hasDecl(T, \"{s}\")) @compileError(" ++
-                    "\"type \" ++ @typeName(T) ++ \" does not implement {s}.{s}\");\n",
-                    .{ mname, n.name, mname },
-                );
+            const meth = switch (m) { .method => |x| x, else => continue };
+            try vtig.writeIndent();
+            try vtig.w.print("{s}: *const fn (ptr: *anyopaque", .{meth.name});
+            for (meth.params) |p| {
+                try vtig.w.writeAll(", ");
+                try vtig.w.print("{s}: ", .{p.name});
+                if (p.type_) |tr| try g.genType(tr) else try vtig.w.writeAll("anytype");
             }
+            try vtig.w.writeAll(") ");
+            if (meth.throws) try vtig.w.writeAll("anyerror!");
+            if (meth.return_type) |rt| try g.genType(rt) else try vtig.w.writeAll("void");
+            try vtig.w.writeAll(",\n");
+        }
+        try ig.writeIndent();
+        try ig.w.writeAll("};\n");
+
+        // ── forwarding methods ─────────────────────────────────────────────
+        for (n.members) |m| {
+            const meth = switch (m) { .method => |x| x, else => continue };
+            try ig.w.writeAll("\n");
+            try ig.writeIndent();
+            try ig.w.print("pub fn {s}(self: @This()", .{meth.name});
+            for (meth.params) |p| {
+                try ig.w.print(", {s}: ", .{p.name});
+                if (p.type_) |tr| try g.genType(tr) else try ig.w.writeAll("anytype");
+            }
+            try ig.w.writeAll(") ");
+            if (meth.throws) try ig.w.writeAll("anyerror!");
+            if (meth.return_type) |rt| try g.genType(rt) else try ig.w.writeAll("void");
+            try ig.w.writeAll(" {\n");
+            try mig.writeIndent();
+            if (meth.throws) try mig.w.writeAll("return try self.vtable.")
+            else             try mig.w.writeAll("return self.vtable.");
+            try mig.w.print("{s}(self.ptr", .{meth.name});
+            for (meth.params) |p| try mig.w.print(", {s}", .{p.name});
+            try mig.w.writeAll(");\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("}\n");
         }
 
+        // ── check() — comptime conformance verifier ────────────────────────
+        try ig.w.writeAll("\n");
+        try ig.writeIndent();
+        try ig.w.writeAll("pub fn check(comptime T: type) void {\n");
+        const cig = ig.indented();
+        try cig.writeIndent();
+        try cig.w.writeAll("comptime {\n");
+        const ccig = cig.indented();
+        for (n.members) |m| {
+            const mname: []const u8 = switch (m) { .method => |x| x.name, else => continue };
+            try ccig.writeIndent();
+            try ccig.w.print(
+                "if (!@hasDecl(T, \"{s}\")) @compileError(" ++
+                "\"type \" ++ @typeName(T) ++ \" does not implement {s}.{s}\");\n",
+                .{ mname, n.name, mname },
+            );
+        }
+        try cig.writeIndent();
+        try cig.w.writeAll("}\n");
         try ig.writeIndent();
         try ig.w.writeAll("}\n");
+
+        // ── struct footer ──────────────────────────────────────────────────
         try g.writeIndent();
-        try g.w.writeAll("}\n\n");
+        try g.w.writeAll("};\n\n");
     }
 
     // ── struct ────────────────────────────────────────────────────────────────
@@ -3828,7 +3907,7 @@ const Generator = struct {
             for (n.implements) |tr| {
                 const iname = typeRefSimpleName(tr) orelse continue;
                 try cig.writeIndent();
-                try cig.w.print("{s}(@This());\n", .{iname});
+                try cig.w.print("{s}.check(@This());\n", .{iname});
             }
             try ig.writeIndent();
             try ig.w.writeAll("}\n");
@@ -11285,7 +11364,7 @@ test "codegen: method params and return type" {
     try testing.expect(std.mem.indexOf(u8, out, "return name;") != null);
 }
 
-test "codegen: interface becomes comptime checker" {
+test "codegen: interface becomes vtable struct with check" {
     const src =
         \\interface Printable
         \\    def render
@@ -11294,8 +11373,15 @@ test "codegen: interface becomes comptime checker" {
     const out = try generateSnippet(src, testing.allocator);
     defer testing.allocator.free(out);
 
-    try testing.expect(std.mem.indexOf(u8, out,
-        "pub fn Printable(comptime T: type) void {") != null);
+    // Vtable struct (not a comptime-checker function)
+    try testing.expect(std.mem.indexOf(u8, out, "pub const Printable = struct {") != null);
+    // VTable inner struct with fn pointer
+    try testing.expect(std.mem.indexOf(u8, out, "pub const VTable = struct {") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "render: *const fn (ptr: *anyopaque) void") != null);
+    // Forwarding method
+    try testing.expect(std.mem.indexOf(u8, out, "pub fn render(self: @This()) void {") != null);
+    // check() comptime verifier
+    try testing.expect(std.mem.indexOf(u8, out, "pub fn check(comptime T: type) void {") != null);
     try testing.expect(std.mem.indexOf(u8, out, "@hasDecl(T, \"render\")") != null);
 }
 

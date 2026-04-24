@@ -1488,12 +1488,30 @@ const TimerHandle = struct {
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
 
-pub fn Greetable(comptime T: type) void {
-    comptime {
-        if (!@hasDecl(T, "greet")) @compileError("type " ++ @typeName(T) ++ " does not implement Greetable.greet");
-        if (!@hasDecl(T, "greetName")) @compileError("type " ++ @typeName(T) ++ " does not implement Greetable.greetName");
+pub const Greetable = struct {
+    ptr:    *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        greet: *const fn (ptr: *anyopaque) []const u8,
+        greetName: *const fn (ptr: *anyopaque, name: []const u8) []const u8,
+    };
+
+    pub fn greet(self: @This()) []const u8 {
+        return self.vtable.greet(self.ptr);
     }
-}
+
+    pub fn greetName(self: @This(), name: []const u8) []const u8 {
+        return self.vtable.greetName(self.ptr, name);
+    }
+
+    pub fn check(comptime T: type) void {
+        comptime {
+            if (!@hasDecl(T, "greet")) @compileError("type " ++ @typeName(T) ++ " does not implement Greetable.greet");
+            if (!@hasDecl(T, "greetName")) @compileError("type " ++ @typeName(T) ++ " does not implement Greetable.greetName");
+        }
+    }
+};
 
 pub const English = struct {
     _type_tag: u64 = _ttag_English,
@@ -1515,6 +1533,10 @@ pub const English = struct {
         return self;
     }
 
+
+    comptime {
+        Greetable.check(@This());
+    }
 };
 const _ttag_English: u64 = _zbr_hash("English");
 const _reflect_English_name: []const u8 = "English";
@@ -1541,6 +1563,10 @@ pub const Spanish = struct {
         return self;
     }
 
+
+    comptime {
+        Greetable.check(@This());
+    }
 };
 const _ttag_Spanish: u64 = _zbr_hash("Spanish");
 const _reflect_Spanish_name: []const u8 = "Spanish";
