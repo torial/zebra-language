@@ -214,6 +214,7 @@ class Resolver
                 for var_name in f.var_names
                     this.method_scope.put(var_name, 4)
                 .resolveStmts(f.stmts)
+                .resolveStmts(f.else_stmts)
             on PNode.stmt_assign as a
                 for expr in a.target
                     .resolveExpr(expr)

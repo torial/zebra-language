@@ -459,12 +459,14 @@ struct StmtForIn
     var vars: List(String)
     var iter: ^Expr
     var stmts: List(Stmt)
+    var else_: List(Stmt)?
 
-    cue init(span: Span, vars: List(String), iter: ^Expr, stmts: List(Stmt))
+    cue init(span: Span, vars: List(String), iter: ^Expr, stmts: List(Stmt), else_: List(Stmt)?)
         this.span = span
         this.vars = vars
         this.iter = iter
         this.stmts = stmts
+        this.else_ = else_
 
 struct StmtForNum
     var span: Span
@@ -473,14 +475,16 @@ struct StmtForNum
     var stop_: ^Expr
     var step: ^Expr?
     var stmts: List(Stmt)
+    var else_: List(Stmt)?
 
-    cue init(span: Span, var_: String, start: ^Expr, stop_: ^Expr, step: ^Expr?, stmts: List(Stmt))
+    cue init(span: Span, var_: String, start: ^Expr, stop_: ^Expr, step: ^Expr?, stmts: List(Stmt), else_: List(Stmt)?)
         this.span = span
         this.var_ = var_
         this.start = start
         this.stop_ = stop_
         this.step = step
         this.stmts = stmts
+        this.else_ = else_
 
 struct BranchOn
     var span: Span

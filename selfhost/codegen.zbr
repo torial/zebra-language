@@ -3088,6 +3088,11 @@ struct Generator
                 # Mark this variable: a for-loop var to suppress stale branch deref
                 for_loop_vars.add(vname)
                 ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    # for-else: Zig's native for...else runs when no break occurred
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
 

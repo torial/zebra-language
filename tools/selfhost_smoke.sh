@@ -91,6 +91,9 @@ smoke test/try_postfix_test.zbr
 # BUG-079: method chaining on struct temporaries (auto-hoist in genLocalVar).
 smoke test/method_chain_test.zbr
 
+# for-else: Python-style else block runs when no break occurred.
+smoke test/for_else_test.zbr
+
 # Named/default parameters: named args + reordering + default insertion.
 smoke test/named_default_test.zbr
 

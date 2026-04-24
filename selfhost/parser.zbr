@@ -348,11 +348,13 @@ struct PForIn
     var var_names: List(str)
     var iter: List(PNode)
     var stmts: List(PNode)
+    var else_stmts: List(PNode)
     var line: int
-    cue init(var_names: List(str), iter: List(PNode), stmts: List(PNode), line: int)
+    cue init(var_names: List(str), iter: List(PNode), stmts: List(PNode), else_stmts: List(PNode), line: int)
         this.var_names = var_names
         this.iter = iter
         this.stmts = stmts
+        this.else_stmts = else_stmts
         this.line = line
 
 struct PForNum
@@ -361,13 +363,15 @@ struct PForNum
     var stop_: List(PNode)
     var step: List(PNode)
     var stmts: List(PNode)
+    var else_stmts: List(PNode)
     var line: int
-    cue init(var_name: str, start: List(PNode), stop_: List(PNode), step: List(PNode), stmts: List(PNode), line: int)
+    cue init(var_name: str, start: List(PNode), stop_: List(PNode), step: List(PNode), stmts: List(PNode), else_stmts: List(PNode), line: int)
         this.var_name = var_name
         this.start = start
         this.stop_ = stop_
         this.step = step
         this.stmts = stmts
+        this.else_stmts = else_stmts
         this.line = line
 
 struct PVar
@@ -1466,17 +1470,27 @@ class Parser
                 step_list.add(.parseExpr())
             .skipEol()
             const stmts = .parseBlock()
+            var else_stmts = List(PNode)()
+            if this.textIs("else")
+                this.advance()
+                .skipEol()
+                else_stmts = .parseBlock()
             var start_list = List(PNode)()
             start_list.add(start_expr)
             var stop_list = List(PNode)()
             stop_list.add(stop_expr)
-            return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts, line))
+            return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts, else_stmts, line))
         # Iterator form: for i in expr
         .skipEol()
         const stmts = .parseBlock()
+        var else_stmts = List(PNode)()
+        if this.textIs("else")
+            this.advance()
+            .skipEol()
+            else_stmts = .parseBlock()
         var iter_list = List(PNode)()
         iter_list.add(start_expr)
-        return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts, line))
+        return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts, else_stmts, line))
 
     # `var {x, y} = expr` (struct destructure) or `var (x, y) = expr` (tuple)
     def parseDestructStmt(): PNode throws

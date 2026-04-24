@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-23 (session 2)
 
 ---
 
@@ -24,9 +24,10 @@ File: `src/CodeGen.zig` → `genExpr`
 Architectural fix: priority-first NFA simulation or backtracking engine.
 File: `src/CodeGen.zig` NFA preamble. Effort: L
 
-### 2. `for-else` support
-Python-style `for x in list\n    body\nelse\n    fallback` — else block runs when the iterable
-was empty (or loop never broke). Needs: grammar rule, AST node, Resolver walk, CodeGen.
+### 2. `for-else` — while-path support (Path 2)
+Path 1 (list `.items` iteration) is done — Zig native `for...else`, break suppresses else correctly.
+Remaining: HashMap/split/chars/for-num paths use `while` loops; need labeled block + break-flag
+approach (`for_else_label` field in Generator) for correct break-suppression semantics.
 
 ### 3. `interface` codegen
 Parser/AST/Resolver for `interface` declarations are done. CodeGen needs to emit:
@@ -127,6 +128,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `fn_ref` selfhost parity (BUG-019): `isTopLevelMethod` + `&` prefix in genLocalVar/genAssign | 2026-04-23 |
 | `HashMap.count()`/`.remove()` without type annotation: infer from init expr (BUG-081) | 2026-04-23 |
 | BUG-002: guard/try_postfix tests fixed with try/catch wrapping | 2026-04-23 |
+| `for-else` Path 1: list iteration (`for x in list / else`) — Zig native `for...else` | 2026-04-23 |
 
 ---
 
