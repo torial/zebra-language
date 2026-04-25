@@ -1,10 +1,23 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-085. Next new bug: BUG-086.**
+**Last bug number generated: BUG-086. Next new bug: BUG-087.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
+
+---
+
+## BUG-086: struct pattern — cross-module type names not supported
+
+**Severity:** low (pre-1.0 gap)  
+**Status:** open
+
+`on Mod.Point(x: 0)` is not recognized as a struct pattern. The uppercase-first-char check on the `open_call` token text only matches simple names like `Point`, not dotted names like `Mod.Point`. The `Mod.Point(` token sequence starts with `Mod` (an `id` token), not an `open_call`.
+
+**Workaround:** Use a local `var p = Mod.Point(...)` and match on `p` with a simple `on Point(...)`.
+
+**Fix sketch:** In `parseBranchStmt`, detect `id "." open_call` as an alternate struct pattern prefix.
 
 ---
 

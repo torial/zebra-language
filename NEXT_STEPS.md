@@ -57,9 +57,11 @@ See `wiki/pages/concepts/concept_zebra-reflection.md`.
 Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
 to track per-node shortest/longest flags, not a global flag.
 
-### 8. Pattern matching with destructuring in `branch` (Milestone 0.7)
-Match on struct field values (`on Point{x: 0, y: 0}`), not only union tags.
-Extends the existing branch/guard infrastructure.
+~~### 8. Pattern matching in `branch` — struct field values (Option A)~~ ✓ DONE (2026-04-25)
+`on Point(x: 0, y: 0)` matches struct field values using parenthesis syntax (Zebra-idiomatic).
+Supports partial matches, string fields, optional `as` binding for whole struct, guards.
+Both Zig and selfhost backends; bootstrap 5/5; 35/35 smoke. Deferred: cross-module
+`on Mod.Point(...)`, field-binding destructuring (Option B), nested patterns.
 
 ### 9. Greek NT n-gram port (anytime — real-world stress test)
 Port the Python Unicode n-gram analysis script for the Greek New Testament to Zebra.
