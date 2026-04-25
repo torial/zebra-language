@@ -113,12 +113,21 @@ MemberDecl           → MethodDecl
                      |  AspectDecl
                      |  kw_is IsAttrList eol
 
-MethodDecl           → ModList kw_def open_call ParamList rparen ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol
-                     |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol Block
-                     |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
-                     |  ModList kw_def id ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol
-                     |  ModList kw_def id ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol Block
-                     |  ModList kw_def id ReturnAnnotOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
+MethodDecl           → ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol
+                     |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block
+                     |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block CatchClauseList
+                     |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
+                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol
+                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block
+                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block CatchClauseList
+                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
+
+CatchClauseList      → CatchClause
+                     |  CatchClauseList CatchClause
+
+CatchClause          → kw_catch eol Block
+                     |  kw_catch vertical_bar id vertical_bar eol Block
+                     |  kw_catch vertical_bar id colon TypeRef vertical_bar eol Block
 
 ReturnAnnotOpt       → ε
                      |  kw_as TypeRef

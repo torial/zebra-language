@@ -35,21 +35,21 @@ class Engine
         const h = Helper()
         h.compute()?  # ? required: h is a local variable, not self (void result)
 
+def testCase1()
+    var e = Engine()
+    e.run()?   # e.run() calls .doWork(); both get try auto-emitted
+catch |_e|
+    pass       # expected: doWork raises
+
+def testCase3()
+    var e = Engine()
+    e.helper.compute()?   # `.field.method()` needs ?
+catch |_e|
+    pass
+
 class Main
     static
         def main
-            var e = Engine()
-
-            ## Case 1: direct self-call chain — auto-propagation fires
-            try
-                e.run()?   # e.run() calls .doWork(); both get try auto-emitted
-            catch |_e|
-                pass       # expected: doWork raises
-
-            ## Case 3: chained field access — explicit ? required
-            try
-                e.helper.compute()?   # `.field.method()` needs ?
-            catch |_e|
-                pass
-
+            testCase1()
+            testCase3()
             print "throws_nested_test: passed"

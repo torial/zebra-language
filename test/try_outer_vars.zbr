@@ -5,13 +5,15 @@ class App
                 raise "negative", x
             return x * 2
 
+        def testRiskyCalc(base: int, multiplier: int)
+            var result: int = try App.risky(base)
+            var total: int = result * multiplier
+            print total
+        catch
+            print "error"
+
         def main
             var base: int = 10
             var multiplier: int = 3
-            try
-                var result: int = try App.risky(base)
-                var total: int = result * multiplier
-                print total
-            catch
-                print "error"
+            testRiskyCalc(base, multiplier)
             print base

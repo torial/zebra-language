@@ -242,8 +242,8 @@ pub const NT = enum {
     // ── Error propagation / try-catch ─────────────────────────────────────
     ThrowsOpt,          // ε | kw_throws  (method annotation)
     StmtRaise,          // raise [Expr [, Expr]] eol
-    StmtTryCatch,       // try eol Block CatchClauseList
-    CatchClauseList,    // one or more catch clauses
+    StmtTryCatch,       // synthesized: method-level catch wraps body into StmtTryCatch
+    CatchClauseList,    // one or more catch clauses (used by MethodDecl)
     CatchClause,        // catch [|id [as T]|] eol Block
 };
 
@@ -531,6 +531,12 @@ const method_rules: []const Rule = &.{
         n(.ParamList), t(.rparen),
         n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block),
     } },
+    // Method body with catch clauses — method-level error handling.
+    .{ .lhs = .MethodDecl, .rhs = &.{
+        n(.ModList), t(.kw_def), t(.open_call),
+        n(.ParamList), t(.rparen),
+        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block), n(.CatchClauseList),
+    } },
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.open_call),
         n(.ParamList), t(.rparen),
@@ -544,6 +550,11 @@ const method_rules: []const Rule = &.{
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
         n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block),
+    } },
+    // No-arg method body with catch clauses.
+    .{ .lhs = .MethodDecl, .rhs = &.{
+        n(.ModList), t(.kw_def), t(.id),
+        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block), n(.CatchClauseList),
     } },
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
@@ -788,7 +799,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWith) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtArenaScope) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtRaise) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtTryCatch) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtGuard) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtGuardInline) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtRequire) } },
@@ -936,8 +946,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtRaise, .rhs = &.{ t(.kw_raise), n(.Expr), t(.eol) } },
     .{ .lhs = .StmtRaise, .rhs = &.{ t(.kw_raise), n(.Expr), t(.comma), n(.Expr), t(.eol) } },
 
-    // try eol Block CatchClauseList
-    .{ .lhs = .StmtTryCatch, .rhs = &.{ t(.kw_try), t(.eol), n(.Block), n(.CatchClauseList) } },
+    // CatchClauseList: one or more catch clauses (attached to MethodDecl, not a statement)
     .{ .lhs = .CatchClauseList, .rhs = &.{ n(.CatchClause) } },
     .{ .lhs = .CatchClauseList, .rhs = &.{ n(.CatchClauseList), n(.CatchClause) } },
     // catch — catch-all, no binding

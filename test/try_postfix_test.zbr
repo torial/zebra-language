@@ -5,21 +5,25 @@ class Math
                 raise "division by zero"
             return a / b
 
+def testSafeDiv()
+    var result = try Math.safeDiv(10, 2)
+    print result
+catch |e|
+    print "unexpected error: ".concat(e.message)
+
+def testSafeDivFail()
+    var result2 = try Math.safeDiv(10, 0)
+    print result2
+catch |e|
+    print "caught: ".concat(e.message)
+
 class Main
     static
         def main
             # try prefix propagates errors on failure
-            try
-                var result = try Math.safeDiv(10, 2)
-                print result
-            catch |e|
-                print "unexpected error: ".concat(e.message)
+            testSafeDiv()
 
             # division by zero — verify error is raised with correct message
-            try
-                var result2 = try Math.safeDiv(10, 0)
-                print result2
-            catch |e|
-                print "caught: ".concat(e.message)
+            testSafeDivFail()
 
             print "ok"

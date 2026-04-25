@@ -5,11 +5,12 @@ class App
                 raise "negative input", x
             return x * 2
 
-        def main
-            try
-                var result: int = try App.risky(5)
-                print result
-            catch
-                print "caught an error"
-
+        def testRisky()
+            var result: int = try App.risky(5)
+            print result
             print "after try"
+        catch
+            print "caught an error"
+
+        def main
+            testRisky()

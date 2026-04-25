@@ -275,38 +275,16 @@ class Main
             testTypeRefStrSimple()
             testTypeRefStrGeneric()
             testTypeRefStrTuple()
-            try
-                testTypeRefStrBoxed()
-            catch |_e|
-                assert false, "testTypeRefStrBoxed raised"
+            testTypeRefStrBoxed()
             testNilNarrowVarSimple()
-            try
-                testNilNarrowVar()
-            catch |_e|
-                assert false, "testNilNarrowVar raised"
-            try
-                testExprHasTry()
-            catch |_e|
-                assert false, "testExprHasTry raised"
-            try
-                testBodyHasRaise()
-            catch |_e|
-                assert false, "testBodyHasRaise raised"
+            testNilNarrowVar()
+            testExprHasTry()
+            testBodyHasRaise()
             testNameUsedInExprSimple()
-            try
-                testNameUsedInExprBinary()
-            catch |_e|
-                assert false, "testNameUsedInExprBinary raised"
-            try
-                testNameUsedInStmts()
-            catch |_e|
-                assert false, "testNameUsedInStmts raised"
-            try
-                testAnalyzeEscapes()
-            catch |_e|
-                assert false, "testAnalyzeEscapes raised"
-            try
-                testScanMutations()
-            catch |_e|
-                assert false, "testScanMutations raised"
+            testNameUsedInExprBinary()
+            testNameUsedInStmts()
+            testAnalyzeEscapes()
+            testScanMutations()
             print "cg_helpers_test: all OK"
+        catch |_e|
+            assert false, "unexpected error in cg_helpers_test"

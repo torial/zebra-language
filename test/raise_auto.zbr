@@ -6,9 +6,5 @@ class App
             return x * 2
 
         def main
-            var result: int = 0
-            try
-                result = try App.risky(5)
-            catch
-                result = -1
+            var result: int = try App.risky(5) catch -1
             print result

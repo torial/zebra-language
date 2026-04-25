@@ -256,8 +256,7 @@ class ParserTest
 class Main
     static
         def main
-            try
-                var t = ParserTest()
-                t.run()?
-            catch |e|
-                print "FAILED: " + e.message
+            var t = ParserTest()
+            t.run()?
+        catch |e|
+            print "FAILED: " + e.message

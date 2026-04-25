@@ -16,11 +16,10 @@ class AstTest
         .testBinaryOp()
         .testDeclVar()
         .testUnionTypeRef()
-        try
-            .testNilableTypeRef()
-        catch |_e|
-            assert false, "testNilableTypeRef raised unexpectedly"
+        .testNilableTypeRef()
         print "ast_test: all assertions passed"
+    catch |_e|
+        assert false, "testNilableTypeRef raised unexpectedly"
 
     def testSpan()
         const s = ast.Span(1, 5, 1, 10)

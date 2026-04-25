@@ -126,8 +126,7 @@ class ResolverTest
 class Main
     static
         def main
-            try
-                var t = ResolverTest()
-                t.run()?
-            catch |e|
-                print "FAILED: " + e.message
+            var t = ResolverTest()
+            t.run()?
+        catch |e|
+            print "FAILED: " + e.message

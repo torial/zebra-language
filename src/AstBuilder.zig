@@ -567,6 +567,17 @@ const Builder = struct {
                     ensure_  = cb.ensure;
                     body     = cb.body;
                 },
+                .CatchClauseList => {
+                    // Method-level catch: wrap body in a StmtTryCatch node.
+                    var clauses = std.ArrayList(Ast.CatchClause){};
+                    try b.collectCatchClauses(kid, &clauses);
+                    const tc = try b.box(Ast.StmtTryCatch, .{
+                        .span    = spanOf(kid, b.tokens),
+                        .body    = body orelse &.{},
+                        .clauses = try clauses.toOwnedSlice(b.arena),
+                    });
+                    body = try b.arena.dupe(Ast.Stmt, &[_]Ast.Stmt{.{ .try_catch = tc }});
+                },
                 else => {},
             }
         }
@@ -1002,7 +1013,8 @@ const Builder = struct {
             .StmtWith       => .{ .with        = try b.box(Ast.StmtWith,       try b.buildStmtWith(inner)) },
             .StmtArenaScope => .{ .arena_scope = try b.box(Ast.StmtArenaScope, try b.buildStmtArenaScope(inner)) },
             .StmtRaise    => .{ .raise     = try b.box(Ast.StmtRaise,    try b.buildStmtRaise(inner)) },
-            .StmtTryCatch => .{ .try_catch = try b.box(Ast.StmtTryCatch, try b.buildStmtTryCatch(inner)) },
+            // StmtTryCatch is no longer a grammar-level statement;
+            // it is synthesized by buildMethodDecl when catch clauses are present.
             .StmtGuard, .StmtGuardInline => .{ .guard = try b.box(Ast.StmtGuard, try b.buildStmtGuard(inner)) },
             .StmtRequire  => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .require)) },
             .StmtEnsure   => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .ensure)) },

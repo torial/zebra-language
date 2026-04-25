@@ -14,10 +14,9 @@ class ErrorPropTest
 
     ## Verify cross-method propagation works end-to-end via try/catch
     def run()
-        try
-            .outer()
-        catch |_e|
-            print "caught: OK"
+        .outer()
+    catch |_e|
+        print "caught: OK"
 
 class Main
     static

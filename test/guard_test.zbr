@@ -11,15 +11,23 @@ class Validator
             guard s.len > 0 else, return "?"
             return s[0..1]
 
+def testGuardSuccess()
+    var x = try Validator.checkPositive(42)
+    print x
+catch |e|
+    print "unexpected error: ".concat(e.message)
+
+def testGuardFail()
+    var bad = try Validator.checkPositive(-5)
+    print bad
+catch |e|
+    print "guard raised: ".concat(e.message)
+
 class Main
     static
         def main
             # block form guard — success path
-            try
-                var x = try Validator.checkPositive(42)
-                print x
-            catch |e|
-                print "unexpected error: ".concat(e.message)
+            testGuardSuccess()
 
             # inline form guard
             var c = Validator.firstChar("hello")
@@ -29,10 +37,6 @@ class Main
             print empty
 
             # guard that fires — verify error propagates with correct message
-            try
-                var bad = try Validator.checkPositive(-5)
-                print bad
-            catch |e|
-                print "guard raised: ".concat(e.message)
+            testGuardFail()
 
             print "ok"

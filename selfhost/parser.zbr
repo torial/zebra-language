@@ -1229,6 +1229,7 @@ class Parser
         return PNode.init_(PInit(params, stmts))
 
     def parseMethodDecl(is_static: bool): PNode throws
+        const line = this.peek().line
         .expectText("def")
         var name = ""
         var has_params = false
@@ -1273,6 +1274,19 @@ class Parser
         var stmts = List(PNode)()
         if .isIndent()
             stmts = .parseBlock()
+            # Method-level catch: optional catch clause(s) after the body block.
+            if this.textIs("catch")
+                var catch_binding = ""
+                this.advance()
+                if this.textIs("|")
+                    this.advance()
+                    catch_binding = .eatId()
+                    .expectText("|")
+                .skipEol()
+                var catch_stmts = .parseBlock()
+                var wrapped = List(PNode)()
+                wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
+                stmts = wrapped
         return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts))
 
     # -- Block and statements --------------------------------------------------
@@ -1322,8 +1336,7 @@ class Parser
             return .parseAssertStmt()
         else if this.textIs("raise")
             return .parseRaiseStmt()
-        else if this.textIs("try")
-            return .parseTryCatch()
+
         else if this.textIs("branch")
             return .parseBranchStmt()
         else if this.textIs("arena")
@@ -1614,20 +1627,7 @@ class Parser
         .skipEol()
         return PNode.stmt_raise(PRaise(msg_list, line))
 
-    def parseTryCatch(): PNode throws
-        const line = this.peek().line
-        .expectText("try")
-        .skipEol()
-        const body_stmts = .parseBlock()
-        .expectText("catch")
-        var catch_binding: str = ""
-        if this.textIs("|")
-            this.advance()
-            catch_binding = .eatId()
-            .expectText("|")
-        .skipEol()
-        const catch_stmts = .parseBlock()
-        return PNode.stmt_try_catch(PTryCatch(body_stmts, catch_binding, catch_stmts, line))
+
 
     def parseBranchStmt(): PNode throws
         const line = this.peek().line

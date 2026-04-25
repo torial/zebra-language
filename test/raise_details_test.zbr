@@ -14,15 +14,17 @@ class Main
         def tryRead(path: str) throws
             raise "file not found", FileInfo(path, 404)
 
-        def main
-            try
-                Main.tryRead("data.txt")
-            catch |e|
-                print e.message
-                print e.details.toString()
+        def testRaiseWithDetails()
+            Main.tryRead("data.txt")
+        catch |e|
+            print e.message
+            print e.details.toString()
 
-            # Simple raise (no details)
-            try
-                raise "simple error"
-            catch |e|
-                print e.message
+        def testSimpleRaise()
+            raise "simple error"
+        catch |e|
+            print e.message
+
+        def main
+            testRaiseWithDetails()
+            testSimpleRaise()

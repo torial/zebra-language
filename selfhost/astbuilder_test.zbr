@@ -426,8 +426,7 @@ class ASTBuilderTest
 class Main
     static
         def main
-            try
-                var t = ASTBuilderTest()
-                t.run()?
-            catch |e|
-                print "FAILED: " + e.message
+            var t = ASTBuilderTest()
+            t.run()?
+        catch |e|
+            print "FAILED: " + e.message

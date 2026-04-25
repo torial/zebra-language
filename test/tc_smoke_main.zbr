@@ -2,16 +2,18 @@
 
 use tc_smoke_types exposing TcType, TcTypes
 
+def testOptionalTypes()
+    var opt = TcType.optional(TcType.str_())
+    assert TcTypes.describe(opt) == "?str"
+    var nested = TcType.optional(TcType.optional(TcType.int_()))
+    assert TcTypes.describe(nested) == "??int"
+catch |e|
+    print "FAIL: " + e.message
+
 class Main
     static
         def main
             assert TcTypes.describe(TcType.int_())    == "int"
             assert TcTypes.describe(TcType.unknown()) == "unknown"
-            try
-                var opt = TcType.optional(TcType.str_())
-                assert TcTypes.describe(opt) == "?str"
-                var nested = TcType.optional(TcType.optional(TcType.int_()))
-                assert TcTypes.describe(nested) == "??int"
-            catch |e|
-                print "FAIL: " + e.message
+            testOptionalTypes()
             print "multi-file selfhost smoke: OK"

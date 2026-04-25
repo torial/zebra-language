@@ -1,8 +1,7 @@
 class App
     static
         def main
-            try
-                var x: int = 42
-                print x
-            catch
-                print "caught error"
+            var x: int = 42
+            print x
+        catch
+            print "caught error"

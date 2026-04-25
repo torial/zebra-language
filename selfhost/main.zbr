@@ -414,57 +414,52 @@ class Main
         if not mode_zig
             # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
             # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
-            try
-                # Compile the root file and all its dependencies
-                var mc = MultiCompiler(preamble_path, output_dir)
-                mc.strip_contracts = turbo
-                mc.compileDep(path, true)?
+            # Compile the root file and all its dependencies
+            var mc = MultiCompiler(preamble_path, output_dir)
+            mc.strip_contracts = turbo
+            mc.compileDep(path, true)?
 
-                if mode_emit
-                    # --emit-zig: print root file's Zig source to stdout
-                    var zig_path: str = mc.zbrToZig(path)
-                    var zig_src: str = File.read(zig_path)
-                    print zig_src
-                    sys.exit(0)
-
-                # --selfhost-compile: invoke zig to compile/run the generated file
+            if mode_emit
+                # --emit-zig: print root file's Zig source to stdout
                 var zig_path: str = mc.zbrToZig(path)
+                var zig_src: str = File.read(zig_path)
+                print zig_src
+                sys.exit(0)
 
-                var argv2 = List(str)()
-                argv2.add("zig")
-                if mode_c
-                    argv2.add("build-exe")
-                    argv2.add(zig_path)
-                    if release
-                        argv2.add("-OReleaseFast")
-                else
-                    argv2.add("run")
-                    argv2.add(zig_path)
+            # --selfhost-compile: invoke zig to compile/run the generated file
+            var zig_path: str = mc.zbrToZig(path)
 
-                # Append any C source files discovered during dep walk
-                var csi: int = 0
-                while csi < mc.c_sources.count()
-                    argv2.add(mc.c_sources.at(csi))
-                    csi = csi + 1
-                # -I flags for C deps that have a matching .h header
-                var idi: int = 0
-                while idi < mc.c_i_dirs.count()
-                    argv2.add("-I" + mc.c_i_dirs.at(idi))
-                    idi = idi + 1
-                # Always link libc — the stdlib preamble requires it
-                argv2.add("-lc")
+            var argv2 = List(str)()
+            argv2.add("zig")
+            if mode_c
+                argv2.add("build-exe")
+                argv2.add(zig_path)
+                if release
+                    argv2.add("-OReleaseFast")
+            else
+                argv2.add("run")
+                argv2.add(zig_path)
 
-                var r2 = sys.run(argv2)
-                if r2.stdout != ""
-                    Terminal.write(r2.stdout, "")
-                if r2.stderr != ""
-                    var remapped: str = remapZigErrors(r2.stderr, zig_path)
-                    sys.err(remapped)
-                if r2.exit_code != 0
-                    sys.exit(1)
+            # Append any C source files discovered during dep walk
+            var csi: int = 0
+            while csi < mc.c_sources.count()
+                argv2.add(mc.c_sources.at(csi))
+                csi = csi + 1
+            # -I flags for C deps that have a matching .h header
+            var idi: int = 0
+            while idi < mc.c_i_dirs.count()
+                argv2.add("-I" + mc.c_i_dirs.at(idi))
+                idi = idi + 1
+            # Always link libc — the stdlib preamble requires it
+            argv2.add("-lc")
 
-            catch |e|
-                sys.errln("zebra: selfhost pipeline error: " + e.message)
+            var r2 = sys.run(argv2)
+            if r2.stdout != ""
+                Terminal.write(r2.stdout, "")
+            if r2.stderr != ""
+                var remapped: str = remapZigErrors(r2.stderr, zig_path)
+                sys.err(remapped)
+            if r2.exit_code != 0
                 sys.exit(1)
             sys.exit(0)
 
@@ -487,6 +482,9 @@ class Main
             sys.errln(r.stderr)
         if r.exit_code != 0
             sys.exit(1)
+    catch |e|
+        sys.errln("zebra: selfhost pipeline error: " + e.message)
+        sys.exit(1)
 
 # ── Error remapping helpers ───────────────────────────────────────────────────
 

@@ -37,13 +37,12 @@ def testNestedChain(): str throws
     return acceptStr(makeWidget("hi").withLabel("world").name())
 
 def main()
-    try
-        var a = testCallArgChain()
-        print a
-        var b = testVarInitChain()
-        print b
-        var c = testNestedChain()
-        print c
-        print "ok"
-    catch |e|
-        print "ERROR: " + e.message
+    var a = testCallArgChain()
+    print a
+    var b = testVarInitChain()
+    print b
+    var c = testNestedChain()
+    print c
+    print "ok"
+catch |e|
+    print "ERROR: " + e.message

@@ -320,21 +320,29 @@ def caller() as int throws
     var r = divide(10, 2)     # auto-propagates (same-file throws methods)
     return r
 
-# try / catch:
-try
+# Method-level catch (catch clauses after the method body):
+def risky()
     var r = divide(10, 0)
     print r
-catch e
-    print "Error: ${e}"
+catch |e|
+    print "Error: " + e.message
+
+# Inline postfix catch — fallback value on error:
+var r = divide(10, 0) catch 0
 
 # Explicit propagation with `?`:
 var r = someObj.method()?    # propagates if method throws
+
+# `try expr` prefix — propagates error upward:
+var r = try divide(10, 2)
 ```
 
 - `throws` on a `def` makes it return `anyerror!T`.
 - Inside a `throws` method, calls to other `throws` methods in the same file auto-propagate (emit `try`).
 - For cross-module `throws` calls or local variable method calls, use explicit `?` suffix.
 - `raise "message"` creates an error.
+- `catch` clauses appear after the method body at the same indent as `def` — they wrap the entire body.
+- Multiple catch clauses are allowed; each has an optional `|binding|` and typed variant `|e: ErrorType|`.
 
 ---
 

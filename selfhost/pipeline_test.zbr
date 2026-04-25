@@ -167,8 +167,7 @@ class PipelineTest
 class Main
     static
         def main
-            try
-                var t = PipelineTest()
-                t.run()?
-            catch |e|
-                print "FAILED: " + e.message
+            var t = PipelineTest()
+            t.run()?
+        catch |e|
+            print "FAILED: " + e.message
