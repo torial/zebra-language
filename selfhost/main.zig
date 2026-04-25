@@ -1105,6 +1105,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+// === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
@@ -1124,6 +1125,7 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
+    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
     beginPanelFn:  *const fn (label: []const u8) bool,
     endPanelFn:    *const fn () void,
     beginWindowFn: *const fn (label: []const u8) bool,
@@ -1172,6 +1174,22 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
+// ─── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ────────
+const _CodeEditor = struct { text: []const u8, read_only: bool };
+fn _code_editor_new() *_CodeEditor {
+    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+    _ed.* = .{ .text = "", .read_only = false };
+    return _ed;
+}
+fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
+    if (!_ed.read_only) { _ed.text = _r; }
+}
+fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -1236,12 +1254,14 @@ const _gui_stub_backend = _GuiBackend{
     .sliderFn      = _stub_slider,
     .inputFn       = _stub_input,
     .inputMultilineFn = _stub_input_multiline,
+    .codeEditorFn  = _stub_input_multiline,
     .beginPanelFn  = _stub_begin_panel,
     .endPanelFn    = _stub_end_panel,
     .beginWindowFn = _stub_begin_window,
     .endWindowFn   = _stub_end_window,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
+// === STDLIB_PREAMBLE_GUI_END ===
 fn _hex_encode(bytes: []const u8) []const u8 {
     const _hx = "0123456789abcdef";
     var out = _allocator.alloc(u8, bytes.len * 2) catch return "";
