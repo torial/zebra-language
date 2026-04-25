@@ -9,7 +9,7 @@ extend String
         return "Hello, ".concat(this).concat("!")
 
 class Main
-    shared
+    static
         def main
             var s: str = "hello"
             var t: str = "world"

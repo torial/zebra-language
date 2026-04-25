@@ -9,7 +9,7 @@ class Diagnostic
     var isError  as bool = false
 
 class MockCompiler
-    shared
+    static
         def check(filepath as str, source as str) as List(Diagnostic)
             var diags as List(Diagnostic) = List()
 
@@ -59,7 +59,7 @@ class MockCompiler
                 return "[Program would run here]\n"
 
 class Main
-    shared
+    static
         def main
             print "═══════════════════════════════════════════════════════════"
             print "  Zebra Proxy IDE — Console Demo (workaround for GUI bugs)"

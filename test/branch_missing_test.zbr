@@ -4,7 +4,7 @@ union Color
     blue
 
 class Main
-    shared
+    static
         def main
             var c: Color = Color.red
             branch c

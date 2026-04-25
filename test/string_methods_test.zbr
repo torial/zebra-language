@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── len property ─────────────────────────────────────────────
             var greeting: str = "hello"

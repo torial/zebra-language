@@ -21,7 +21,7 @@ class Box(T) implements Printable
         return value
 
 class Main
-    shared
+    static
         def main
             var b = Box(Num)(Num(42))
             # b.label() produces {any} format for generic instance (known TC gap);

@@ -100,7 +100,7 @@ pub const NT = enum {
     InitDecl,            // cue init(...)
 
     // ── Grouped member blocks ──────────────────────────────────────────────
-    SharedGroupDecl,     // shared eol indent MemberDeclList dedent
+    SharedGroupDecl,     // static eol indent MemberDeclList dedent
     TestMemberDecl,      // test eol indent StmtList dedent
     InvariantDecl,       // invariant eol indent StmtList dedent
 
@@ -320,14 +320,14 @@ const mod_rules: []const Rule = &.{
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_protected) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_internal) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_abstract) } },
-    .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_shared) } },
+    .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_static) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_readonly) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_extern) } },
 };
 
 // ── is-clause and has-clause ──────────────────────────────────────────────────
 //
-// `is shared`, `is abstract`, `is override`, …  appear after method/property
+// `is static`, `is abstract`, `is override`, …  appear after method/property
 // signatures and on class/interface headers.
 // `has deprecated`, `has [Serializable, Conditional]` appear on members.
 
@@ -339,7 +339,7 @@ const is_clause_rules: []const Rule = &.{
     .{ .lhs = .IsAttrList, .rhs = &.{ n(.IsAttrList), n(.IsAttrItem) } },
 
     // Any modifier keyword or bare id is a valid is-attribute.
-    .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_shared) } },
+    .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_static) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_abstract) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_extern) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_readonly) } },
@@ -509,7 +509,7 @@ const member_rules: []const Rule = &.{
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.InvariantDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.AtDirective) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.AspectDecl) } },
-    // `is shared` (and other is-attributes) as a bare member declaration
+    // `is static` (and other is-attributes) as a bare member declaration
     .{ .lhs = .MemberDecl, .rhs = &.{ t(.kw_is), n(.IsAttrList), t(.eol) } },
 };
 
@@ -612,7 +612,7 @@ const at_directive_rules: []const Rule = &.{
 
 // ── Grouped member blocks ─────────────────────────────────────────────────────
 //
-// shared
+// static
 //     def main
 //         pass
 //
@@ -624,7 +624,7 @@ const at_directive_rules: []const Rule = &.{
 
 const group_member_rules: []const Rule = &.{
     .{ .lhs = .SharedGroupDecl, .rhs = &.{
-        t(.kw_shared), t(.eol),
+        t(.kw_static), t(.eol),
         t(.indent), n(.MemberDeclList), t(.dedent),
     } },
     .{ .lhs = .TestMemberDecl, .rhs = &.{

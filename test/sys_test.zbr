@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             var args = sys.args()
             print args.count()

@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             var nums: List(int) = List()
             nums.add(10)

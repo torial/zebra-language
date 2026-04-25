@@ -3,7 +3,7 @@
 use tc_smoke_types exposing TcType, TcTypes
 
 class Main
-    shared
+    static
         def main
             assert TcTypes.describe(TcType.int_())    == "int"
             assert TcTypes.describe(TcType.unknown()) == "unknown"

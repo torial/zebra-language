@@ -13,9 +13,8 @@ growing; a roadmap lives in [STDLIB_ROADMAP.md](STDLIB_ROADMAP.md).
 ## Hello, world
 
 ```zebra
-class Main
-    shared def main
-        print "Hello, Zebra!"
+def main
+    print "Hello, Zebra!"
 ```
 
 ```bash

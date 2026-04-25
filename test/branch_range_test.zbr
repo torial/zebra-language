@@ -21,7 +21,7 @@ class BranchRangeTest
         assert classify(c'9') == "digit"
 
 class Main
-    shared def main()
+    static def main()
         var t = BranchRangeTest()
         t.run()
         print "branch_range_test: all OK"

@@ -1215,7 +1215,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 walkExpr(e, ctx)
 
 class Main
-    shared def main()
+    static def main()
         # Smoke-test entry point so this file compiles/runs standalone.
         # Real tests live in typechecker_test.zbr.
         var mt: ModuleTypes = ModuleTypes()

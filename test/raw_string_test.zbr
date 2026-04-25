@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # r"..." — no double-backslash needed
             var re1 = Regex.compile(r"\d+")

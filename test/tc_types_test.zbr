@@ -4,7 +4,7 @@
 use tc_types exposing TcType, TcTypes, TcSymRef, TcSymbolKind, TcGenericRef, TcCrossRef
 
 class Main
-    shared
+    static
         def main
             # 1. Unit primitive eql
             assert TcTypes.eql(TcType.int_(), TcType.int_())

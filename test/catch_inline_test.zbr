@@ -1,0 +1,15 @@
+def risky(n: int): int throws
+    if n < 0
+        raise "negative"
+    return n * 2
+
+def main()
+    # Postfix catch without binding — fallback value
+    var a = risky(-1) catch 99
+    assert a == 99, "expected fallback 99"
+
+    # No error case — postfix catch should not fire
+    var c = risky(5) catch 99
+    assert c == 10, "expected 10 from risky(5)"
+
+    print "catch_inline: OK"

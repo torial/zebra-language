@@ -1612,7 +1612,7 @@ pub const TokenKind = union(enum) {
     kw_as,
     kw_from,
     kw_has,
-    kw_shared,
+    kw_static,
     kw_invariant,
     kw_where,
     kw_abstract,
@@ -1812,9 +1812,9 @@ pub const Keywords = struct {
             return TokenKind{ .kw_has = {} };
         }
 // zbr:selfhost/Token.zbr:236
-        if (std.mem.eql(u8, word, "shared")) {
+        if (std.mem.eql(u8, word, "static")) {
 // zbr:selfhost/Token.zbr:237
-            return TokenKind{ .kw_shared = {} };
+            return TokenKind{ .kw_static = {} };
         }
 // zbr:selfhost/Token.zbr:238
         if (std.mem.eql(u8, word, "invariant")) {

@@ -13,7 +13,7 @@ class Holder
         p = pt
 
 class Main
-    shared def main()
+    static def main()
         var pt = Point(x: 3, y: 4)
         var h = Holder(pt)
         assert h.p.x == 3

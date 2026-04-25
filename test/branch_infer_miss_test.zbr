@@ -4,7 +4,7 @@ union Expr
     neg
 
 class Main
-    shared
+    static
         def main
             var e = Expr.num(42)
             branch e

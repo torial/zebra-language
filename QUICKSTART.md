@@ -28,7 +28,7 @@ struct Bar
 - `.zbr` files are modules. The module name is the file stem (`codegen.zbr` → module `codegen`).
 - `use path/to/module` makes `module.Name` available.
 - `use path/to/module exposing A, B` also binds `A` and `B` directly in scope.
-- No explicit `main` — programs have a `class Main` with `shared def main`.
+- No explicit `main` — programs have a `class Main` with `static def main`, or a top-level `def main()`.
 
 ---
 
@@ -107,12 +107,12 @@ class Counter
     def value() as int
         return count
 
-    shared def create() as Counter    # static method
+    static def create() as Counter    # static method
         return Counter()
 ```
 
 - `cue init(params...)` is the constructor. No return type.
-- `shared def` = static method. Inside shared methods, `this` is unavailable.
+- `static def` = static method. Inside static methods, `this` is unavailable.
 - Field access inside methods: `count` (no `self.` needed). External: `obj.count`.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
 
@@ -595,7 +595,7 @@ def sort(items as List(int), cmp as Comparator)
     # cmp(a, b) — call it like any method
     pass
 
-shared def ascending(a as int, b as int) as int
+static def ascending(a as int, b as int) as int
     return a - b
 
 def main
@@ -604,7 +604,7 @@ def main
 ```
 
 - `sig` names a `*const fn(T1, T2) R` pointer type in Zig.
-- Any `shared def` at module scope with a matching signature is assignment-compatible.
+- Any `static def` at module scope with a matching signature is assignment-compatible.
 - Useful for callbacks, strategy pattern, higher-order functions.
 
 ---
@@ -857,7 +857,7 @@ the generated `.zig` file, writes a pinned `build.zig.zon`, and invokes
 
 ```zebra
 class Main
-    shared
+    static
         def main
             Gui.run("Hello", 400, 300, def(g: Gui)
                 g.text("Hello, Zebra!")

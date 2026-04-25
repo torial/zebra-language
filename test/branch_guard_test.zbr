@@ -4,7 +4,7 @@ union Shape
     point
 
 class Main
-    shared
+    static
         def checkShape(s: Shape): str
             branch s
                 on Shape.circle as r if r > 5.0

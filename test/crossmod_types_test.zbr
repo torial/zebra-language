@@ -14,7 +14,7 @@ class Segment
         return "${start.show()} to ${end_.show()}"
 
 class Main
-    shared
+    static
         def main
             var p = crossmod_types_lib.Point(3, 4)
             assert p.x == 3

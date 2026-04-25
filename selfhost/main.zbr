@@ -358,7 +358,7 @@ class MultiCompiler
         return PModule(merged_decls)
 
 class Main
-    shared def main()
+    static def main()
         var args = Arg.parse()
 
         # -- Version -----------------------------------------------------------

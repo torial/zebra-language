@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Tcp.connect returns ?TcpConn — nil on connection failure
             var conn = Tcp.connect("httpbin.org", 80)

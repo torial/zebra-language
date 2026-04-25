@@ -1,7 +1,7 @@
 use expose_lib exposing Color, Palette
 
 class Main
-    shared def main()
+    static def main()
         # Use the exposed union type directly (no expose_lib. prefix)
         var c = Color.green()
         branch c

@@ -7,7 +7,7 @@ class Container
     var label : str
 
 class Builder
-    shared
+    static
         def build(label: str): Container
             var c = Container()
             var items: List(str) = List()
@@ -18,7 +18,7 @@ class Builder
             return c            # c escapes; items must escape too
 
 class Main
-    shared
+    static
         def main
             var c = Builder.build("test")
             assert c.items.count() == 2, "item count"

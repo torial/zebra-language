@@ -267,7 +267,7 @@ def testScanMutations() throws
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         def main
             testStrSet()
             testAssignOpStr()

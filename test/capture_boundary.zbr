@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             var double = def(x: int) = x * 2
             var offset: int = 10

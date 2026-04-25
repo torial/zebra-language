@@ -2,13 +2,13 @@
 # These emit as `pub var` in Zig — shared across all instances.
 
 class Counter
-    shared var count: int = 0
-    shared var label: str = "default"
+    static var count: int = 0
+    static var label: str = "default"
 
-    shared def increment()
+    static def increment()
         count = count + 1
 
-    shared def reset()
+    static def reset()
         count = 0
 
     def getCount(): int

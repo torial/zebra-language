@@ -4,7 +4,7 @@
 # Integer check: 20 * intersection >= 7 * (total_a + total_b)
 
 class Program
-    shared
+    static
         def buildNgrams(text: str): HashMap(str, int)
             var ngrams: HashMap(str, int) = HashMap()
             var clist: List(str) = List()

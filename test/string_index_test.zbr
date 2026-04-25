@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             var s: str = "hello"
             var c = s[0]

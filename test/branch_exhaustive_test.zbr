@@ -4,7 +4,7 @@ union Shape
     point
 
 class Main
-    shared
+    static
         def main
             # Full coverage - all variants
             var s = Shape.circle(3.14)

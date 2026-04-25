@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Format specs in string interpolation ─────────────────────
             # Zero-padded hex: 08x → {x:0>8}

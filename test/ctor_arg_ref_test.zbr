@@ -11,7 +11,7 @@ class Node
         this.next  = nxt
 
 class Main
-    shared def main()
+    static def main()
         var c = Node(3, nil)
         var b = Node(2, c)
         var a = Node(1, b)

@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Path 1: list .items — native for...else ──────────────────────
             # else runs when no break (search fails)

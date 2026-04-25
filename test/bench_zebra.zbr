@@ -1,5 +1,5 @@
 class Bench
-    shared
+    static
         def fib(n: int): int
             if n < 2
                 return n
@@ -12,7 +12,7 @@ class Bench
             return acc
 
 class Program
-    shared
+    static
         def main
             var f = Bench.fib(40)
             print f

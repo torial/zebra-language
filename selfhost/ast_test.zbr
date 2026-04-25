@@ -84,7 +84,7 @@ class AstTest
                 assert false, "expected nilable variant"
 
 class Main
-    shared
+    static
         def main
             var t = AstTest()
             t.run()

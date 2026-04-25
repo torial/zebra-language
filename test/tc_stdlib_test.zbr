@@ -5,7 +5,7 @@ use tc_types  exposing TcType, TcTypes
 use tc_stdlib exposing TcStdlib
 
 class Main
-    shared
+    static
         def main
             # 1. memberType on opaque types
             var sb_len   = TcStdlib.memberType(TcType.string_builder(), "len")

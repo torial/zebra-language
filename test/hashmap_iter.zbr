@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             var scores: HashMap(str, int) = HashMap()
             scores.put("alice", 10)

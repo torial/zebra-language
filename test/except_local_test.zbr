@@ -28,7 +28,7 @@ struct Box
         return out
 
 class Main
-    shared
+    static
         def main
             var b = Box(10)
             var b2 = b.bumped(5)

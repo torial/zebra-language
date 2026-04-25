@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # sys.run with explicit argv (Windows: cmd /c echo)
             var argv: List(str) = List()

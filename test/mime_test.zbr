@@ -1,5 +1,5 @@
 class MimeTest
-    shared def main
+    static def main
         # fromExt: known extensions
         assert Mime.fromExt(".png") == "image/png"
         print "fromExt png: OK"

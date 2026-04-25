@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             # sort() — natural ascending order on ints
             var nums: List(int) = List()

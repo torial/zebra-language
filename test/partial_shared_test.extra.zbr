@@ -2,6 +2,6 @@
 # Tests that shared methods in partials are merged correctly.
 
 class PartialSharedTest
-    shared
+    static
         def describe: str
             return "PartialSharedTest v1"

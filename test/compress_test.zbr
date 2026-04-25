@@ -1,5 +1,5 @@
 class CompressTest
-    shared def main
+    static def main
         # gzip: stubbed in Zig 0.15.2 (std.compress.flate.Compress not yet implemented)
         # Returns "" since compression is not yet implemented
         print Compress.gzip("hello world").len

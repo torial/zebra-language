@@ -1,5 +1,5 @@
 class HashTest
-    shared def main
+    static def main
         # sha256 of empty string is well-known
         var h0 = Hash.sha256("")
         assert h0 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

@@ -90,7 +90,7 @@ class ParserTest
                 branch c.members.at(0)
                     on PNode.method_ as m
                         assert m.name == "double", "method class: method name mismatch, got '" + m.name + "'"
-                        assert not m.is_shared, "method class: should not be shared"
+                        assert not m.is_static, "method class: should not be static"
                         assert not m.throws_, "method class: should not throw"
                         assert m.stmts.len == 1, "method class: expected 1 stmt"
                     else
@@ -254,7 +254,7 @@ class ParserTest
         print "testVarStmt: OK"
 
 class Main
-    shared
+    static
         def main
             try
                 var t = ParserTest()

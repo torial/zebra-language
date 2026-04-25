@@ -21,10 +21,10 @@ Open bugs live in `BUGS.md`.
 
 ---
 
-### BUG-001: Shared method calling shared method emits `self.` prefix — FIXED
-- **Status:** Fixed (prior session — TCO work fixed bare shared method calls)
-- Was: `testHelper()` inside a shared method generated `self.testHelper()`.
-- Now: emits `ClassName.methodName()` correctly for shared→shared calls.
+### BUG-001: Static method calling static method emits `self.` prefix — FIXED
+- **Status:** Fixed (prior session — TCO work fixed bare static method calls)
+- Was: `testHelper()` inside a static method generated `self.testHelper()`.
+- Now: emits `ClassName.methodName()` correctly for static→static calls.
 
 ---
 

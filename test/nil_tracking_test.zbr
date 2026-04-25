@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Basic nil check: str? variable (postfix ? = nilable)
             var name: str? = "Alice"

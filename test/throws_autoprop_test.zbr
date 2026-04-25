@@ -20,7 +20,7 @@ class ErrorPropTest
             print "caught: OK"
 
 class Main
-    shared
+    static
         def main
             var t = ErrorPropTest()
             t.run()

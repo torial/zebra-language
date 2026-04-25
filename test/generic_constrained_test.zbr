@@ -22,7 +22,7 @@ class MinHeap(T where T implements Comparable)
         return best
 
 class Main
-    shared
+    static
         def main
             # Score implements Comparable → accepted
             var h = MinHeap(Score)(Score(42))

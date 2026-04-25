@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             # Basic implicit capture: expr-body lambda closes over outer var
             var base: int = 10

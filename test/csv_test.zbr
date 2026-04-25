@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Basic parse ───────────────────────────────────────────────────
             var simple = "name,score,city\nAlice,95,Boston\nBob,87,Austin\nCarla,100,Denver"

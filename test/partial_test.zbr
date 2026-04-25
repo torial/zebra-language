@@ -1,10 +1,10 @@
 class PartialTest
-    shared
+    static
         def greet(name: str): str
             return "Hello, " + name
 
 class Main
-    shared
+    static
         def main
             # greet() is in this file; describe() and score() are in partials.
             var g = PartialTest.greet("Alice")

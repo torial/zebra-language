@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Anchors ^ and $
             var anchored = Regex.compile("^hello$")

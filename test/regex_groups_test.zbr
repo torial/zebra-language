@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Basic capture groups: (word) (word)
             var re = Regex.compile("(\\w+)\\s+(\\w+)")

@@ -85,7 +85,7 @@ class PipelineTest
     # -- Phase 11: entry point generation tests --------------------------------
 
     def testEntryPointNonThrowing() throws
-        const src = "class Main\n    shared def main()\n        pass\n"
+        const src = "class Main\n    static def main()\n        pass\n"
         const pm_node = Parser.Parser.parse(src)?
         branch pm_node
             on PNode.module_ as pm
@@ -100,7 +100,7 @@ class PipelineTest
         print "testEntryPointNonThrowing: OK"
 
     def testEntryPointThrowing() throws
-        const src = "class App\n    shared def main() throws\n        pass\n"
+        const src = "class App\n    static def main() throws\n        pass\n"
         const pm_node = Parser.Parser.parse(src)?
         branch pm_node
             on PNode.module_ as pm
@@ -119,7 +119,7 @@ class PipelineTest
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
                 var entry: str = generateEntryPoint(module)
-                assert entry == "", "no entry point for class without shared main"
+                assert entry == "", "no entry point for class without static main"
             else
                 raise "expected module"
         print "testEntryPointNoMain: OK"
@@ -152,7 +152,7 @@ class PipelineTest
         if not File.exists(preamble_path)
             print "testFullRoundTrip: SKIP (preamble file not found at " + preamble_path + ")"
             return
-        const src = "class Main\n    shared def main()\n        pass\n"
+        const src = "class Main\n    static def main()\n        pass\n"
         const zig = runPipelineFull(src, preamble_path)?
         # Verify preamble section
         assert zig.contains("const std"), "expected preamble std import"
@@ -165,7 +165,7 @@ class PipelineTest
         print "testFullRoundTrip: OK"
 
 class Main
-    shared
+    static
         def main
             try
                 var t = PipelineTest()

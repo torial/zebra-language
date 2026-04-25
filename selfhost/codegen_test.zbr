@@ -23,7 +23,7 @@ def zspan(): Span
 def zmods(): Modifiers
     return Modifiers(false, false, false, false, false, false)
 
-def zshared(): Modifiers
+def zstatic(): Modifiers
     return Modifiers(false, false, false, true, false, false)
 
 def namedTr(name: str): TypeRef
@@ -239,7 +239,7 @@ def testGenFieldDeclSB
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         def main
             testWriter()
             testGenerator()

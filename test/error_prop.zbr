@@ -1,5 +1,5 @@
 class App
-    shared
+    static
         def main
             try
                 var x: int = 42

@@ -1,5 +1,5 @@
 class Validator
-    shared
+    static
         def checkPositive(n: int): int throws
             # block form: guard cond else\n    body
             guard n > 0 else
@@ -12,7 +12,7 @@ class Validator
             return s[0..1]
 
 class Main
-    shared
+    static
         def main
             # block form guard — success path
             try

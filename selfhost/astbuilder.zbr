@@ -6,7 +6,7 @@
 #
 # Design notes:
 #   - All Spans are synthetic (0,0,0,0) — parser doesn't preserve source positions.
-#   - Modifiers default to all-false; is_shared comes from PMethod.is_shared.
+#   - Modifiers default to all-false; is_static comes from PMethod.is_static.
 #   - TypeRef is parsed from the type_name string captured by the parser.
 #   - Phase 10: ^Expr? optional fields (return value, var init, assert/raise message)
 #     are now fully supported — TypeChecker.zig boxing fix extends struct_init_ref_params
@@ -16,8 +16,8 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprOld
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprOld, ExprCatch
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -25,7 +25,7 @@ def zspan(): Span
 def zmods(): Modifiers
     return Modifiers(false, false, false, false, false, false)
 
-def zshared(): Modifiers
+def zstatic(): Modifiers
     return Modifiers(false, false, false, true, false, false)
 
 # Strip surrounding quote characters from a string token text.
@@ -161,7 +161,7 @@ class ASTBuilder
         this.next_old_uid = 0
 
     # Entry point: convert a parsed PModule into a full ast.zbr Module.
-    shared def build(pm: PModule, file: str): Module throws
+    static def build(pm: PModule, file: str): Module throws
         var ab = ASTBuilder()
         var decls = ab.buildTopDecls(pm.decls)?
         return Module(file, decls)
@@ -281,8 +281,8 @@ class ASTBuilder
             on PNode.field_ as f
                 const type_ref = .parseTypeRef(f.type_name)
                 var fmods = zmods()
-                if f.is_shared
-                    fmods = zshared()
+                if f.is_static
+                    fmods = zstatic()
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
                     return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
@@ -334,7 +334,7 @@ class ASTBuilder
                 else
                     body_stmts.add(s)
         var stmts_list: List(Stmt)? = body_stmts
-        var mods = Modifiers(false, false, false, m.is_shared, false, false)
+        var mods = Modifiers(false, false, false, m.is_static, false, false)
         return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
@@ -734,6 +734,14 @@ class ASTBuilder
                 const inner_expr = .buildExpr(inner)?
                 return Expr.try_(ExprTry(zspan(), inner_expr))
 
+            on PNode.expr_catch as pc
+                const expr_val = .buildExpr(pc.expr.at(0))?
+                const fb_val = .buildExpr(pc.fallback.at(0))?
+                var ev: String? = nil
+                if pc.binding != ""
+                    ev = pc.binding
+                return Expr.catch_(ExprCatch(zspan(), expr_val, ev, fb_val))
+
             on PNode.expr_to_bang as inner
                 const inner_expr = .buildExpr(inner)?
                 return Expr.to_non_nil(ExprToNonNil(zspan(), inner_expr))
@@ -1005,5 +1013,5 @@ class ASTBuilder
         return tr to!
 
 class Main
-    shared def main
+    static def main
         print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"

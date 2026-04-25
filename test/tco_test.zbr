@@ -1,5 +1,5 @@
 class Acc
-    shared
+    static
         # Shared method: Owner.method(args) is the recursive form
         def sumTo(n: int, acc: int): int
             if n <= 0
@@ -16,7 +16,7 @@ class Counter
         return countDown(n - 1)
 
 class Program
-    shared
+    static
         def main
             # Shared method TCO: sumTo(1_000_000, 0) = 500_000_500_000
             var s = Acc.sumTo(1000000, 0)

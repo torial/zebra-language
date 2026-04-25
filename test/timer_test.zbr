@@ -1,5 +1,5 @@
 class TimerTest
-    shared def main
+    static def main
         var t = Timer.start()
 
         # elapsed returns milliseconds: float (>= 0)

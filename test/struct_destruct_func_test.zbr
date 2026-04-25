@@ -9,7 +9,7 @@ def makePerson(): Person
     return p
 
 class Program
-    shared
+    static
         def main
             # Destructure the return value of a top-level function directly.
             # Tests that inferExpr resolves module-level def return types so

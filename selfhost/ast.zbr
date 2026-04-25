@@ -57,15 +57,15 @@ struct Modifiers
     var is_public: bool
     var is_private: bool
     var is_abstract: bool
-    var is_shared: bool
+    var is_static: bool
     var is_readonly: bool
     var is_extern: bool
 
-    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_shared: bool, is_readonly: bool, is_extern: bool)
+    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool)
         this.is_public = is_public
         this.is_private = is_private
         this.is_abstract = is_abstract
-        this.is_shared = is_shared
+        this.is_static = is_static
         this.is_readonly = is_readonly
         this.is_extern = is_extern
 

@@ -113,7 +113,7 @@ union TokenKind
     kw_as
     kw_from
     kw_has
-    kw_shared
+    kw_static
     kw_invariant
     kw_where
     kw_abstract
@@ -190,7 +190,7 @@ class Token
         col  = cl
 
 class Keywords
-    shared def lookup(word: str): TokenKind?
+    static def lookup(word: str): TokenKind?
         if word == "use"
             return TokenKind.kw_use()
         if word == "exposing"
@@ -233,8 +233,8 @@ class Keywords
             return TokenKind.kw_from()
         if word == "has"
             return TokenKind.kw_has()
-        if word == "shared"
-            return TokenKind.kw_shared()
+        if word == "static"
+            return TokenKind.kw_static()
         if word == "invariant"
             return TokenKind.kw_invariant()
         if word == "where"

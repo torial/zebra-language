@@ -1,5 +1,5 @@
 class App
-    shared
+    static
         def findPositive(x: int): int?
             if x > 0
                 return x

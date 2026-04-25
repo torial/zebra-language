@@ -2,7 +2,7 @@
 # This file is clean and compiles without errors
 
 class Main
-    shared
+    static
         def main
             var msg = "Hello, World!"
             sys.outln(msg)

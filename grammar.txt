@@ -28,7 +28,7 @@ ModList              → ε
                      |  ModList kw_protected
                      |  ModList kw_internal
                      |  ModList kw_abstract
-                     |  ModList kw_shared
+                     |  ModList kw_static
                      |  ModList kw_readonly
                      |  ModList kw_extern
 
@@ -38,7 +38,7 @@ IsClauseOpt          → ε
 IsAttrList           → IsAttrItem
                      |  IsAttrList IsAttrItem
 
-IsAttrItem           → kw_shared
+IsAttrItem           → kw_static
                      |  kw_abstract
                      |  kw_extern
                      |  kw_readonly
@@ -159,7 +159,7 @@ VarInitOpt           → ε
 InitDecl             → ModList kw_cue open_call ParamList rparen eol
                      |  ModList kw_cue open_call ParamList rparen eol Block
 
-SharedGroupDecl      → kw_shared eol indent MemberDeclList dedent
+SharedGroupDecl      → kw_static eol indent MemberDeclList dedent
 
 TestMemberDecl       → kw_test eol indent StmtList dedent
 

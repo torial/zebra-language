@@ -1,7 +1,7 @@
-shared def isAlpha(c: char): bool
+static def isAlpha(c: char): bool
     return (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z')
 
-shared def isDigit(c: char): bool
+static def isDigit(c: char): bool
     return c >= c'0' and c <= c'9'
 
 class FnRefTest
@@ -23,7 +23,7 @@ class FnRefTest
         assert not pred(c'A')
 
 class Main
-    shared def main()
+    static def main()
         var t = FnRefTest()
         t.run()
         print "fn_ref_test: all OK"

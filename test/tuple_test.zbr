@@ -6,7 +6,7 @@ class Math
             return (b, a)
 
 class Program
-    shared def main
+    static def main
         var m = Math()
 
         # Tuple literal and member access

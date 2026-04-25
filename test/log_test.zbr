@@ -1,5 +1,5 @@
 class LogTest
-    shared def main
+    static def main
         # Default level is info — debug messages are suppressed
         Log.timestamp(false)   # disable timestamps for predictable test output
 

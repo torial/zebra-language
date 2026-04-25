@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Basic append + build ──────────────────────────────────────
             var sb: StringBuilder = StringBuilder()

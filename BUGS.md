@@ -139,16 +139,16 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-085: `shared def` methods — bare field names incorrectly emit `self.field`
+### BUG-085: `static def` methods — bare static field names incorrectly emit `self.field`
 - **Severity:** Low (ergonomic; workaround available)
 - **Status:** Fixed — `src/CodeGen.zig` and `selfhost/codegen.zbr` `genIdent`; `test/shared_var_test.zbr` updated to exercise the fix; bootstrap 5/5.
-- **Symptom:** Inside a `shared def` method, a bare field name (e.g. `count`) was treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But shared methods have no `self` parameter in the generated Zig — so the generated code was `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
-- **Root cause:** `genIdent` checked `in_method: bool` (set for both instance and shared methods) and `isFieldName` returned true for any declared class field. There was no guard for the shared case.
-- **Fix:** Rather than adding an `in_shared_method` flag (which would miss bare `shared var` access from instance methods), the fix checks the field's own `shared` modifier at the `genIdent` site:
-  - **Zig backend:** After `if (sym.kind == .var_)`, added `if (sym.decl.var_.mods.shared) { emit owner.name; return; }`. Safe because `sym.kind == .var_` guarantees `sym.decl` is the `.var_` union variant.
-  - **Selfhost:** Added `isSharedField(name: str): bool` helper (iterates `owner_members`, returns `fld.mods.is_shared`). `genIdent` now calls `isSharedField` and emits `owner.name` instead of `self_name.name` for shared fields.
-- **Benefit:** Fixes bare `shared var` access from BOTH shared methods AND instance methods — strictly more correct than the `in_shared_method` flag approach.
-- **Files:** `src/CodeGen.zig` (`genIdent`), `selfhost/codegen.zbr` (`genIdent`, new `isSharedField`).
+- **Symptom:** Inside a `static def` method, a bare field name (e.g. `count`) was treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But static methods have no `self` parameter in the generated Zig — so the generated code was `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
+- **Root cause:** `genIdent` checked `in_method: bool` (set for both instance and static methods) and `isFieldName` returned true for any declared class field. There was no guard for the static case.
+- **Fix:** Rather than adding an `in_static_method` flag (which would miss bare `static var` access from instance methods), the fix checks the field's own `static` modifier at the `genIdent` site:
+  - **Zig backend:** After `if (sym.kind == .var_)`, added `if (sym.decl.var_.mods.static_) { emit owner.name; return; }`. Safe because `sym.kind == .var_` guarantees `sym.decl` is the `.var_` union variant.
+  - **Selfhost:** Added `isStaticField(name: str): bool` helper (iterates `owner_members`, returns `fld.mods.is_static`). `genIdent` now calls `isStaticField` and emits `owner.name` instead of `self_name.name` for static fields.
+- **Benefit:** Fixes bare `static var` access from BOTH static methods AND instance methods — strictly more correct than the `in_static_method` flag approach.
+- **Files:** `src/CodeGen.zig` (`genIdent`), `selfhost/codegen.zbr` (`genIdent`, new `isStaticField`).
 
 ---
 
@@ -202,4 +202,4 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-*Last updated: 2026-04-24 — BUG-085 closed: shared-field bare-name emit; DESIGN-002 closed: collectAndEmitOldSnapshots 8 missing arms added + regression test*
+*Last updated: 2026-04-24 — BUG-085 closed: static-field bare-name emit; DESIGN-002 closed: collectAndEmitOldSnapshots 8 missing arms added + regression test*

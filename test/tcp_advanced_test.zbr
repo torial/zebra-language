@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # readLine — reads until \n, strips \r\n
             var conn = Tcp.connect("httpbin.org", 80)

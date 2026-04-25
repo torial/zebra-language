@@ -54,7 +54,7 @@ struct CrossModuleRef
 # ── Type helper class ─────────────────────────────────────────────────────────
 
 class Types
-    shared
+    static
         # Describe a Type: a human-readable string.
         # Tests: branch on all variants; recursive call with ^T payload; List(Type) iteration.
         def describe(t: Type): str
@@ -192,7 +192,7 @@ class Checker
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         def main
             # 1. Basic unit variants
             assert Types.describe(Type.int_())    == "int"

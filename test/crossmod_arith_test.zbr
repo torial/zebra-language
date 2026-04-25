@@ -1,7 +1,7 @@
 use MathUtils
 
 class App
-    shared
+    static
         def testBasicArithmetic
             var d = MathUtils.double(5)
             var s = MathUtils.square(3)

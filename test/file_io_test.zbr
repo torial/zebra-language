@@ -1,7 +1,7 @@
 # Test File, Dir, and Path stdlib APIs
 
 class Main
-    shared def main()
+    static def main()
         # ── File basics ──────────────────────────────────────────────────────────
         var path = "/tmp/zebra_file_test.txt"
         var copy_path = "/tmp/zebra_file_copy.txt"

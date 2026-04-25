@@ -10,7 +10,7 @@
 #   --check        compile-check only, don't execute
 
 class Main
-    shared
+    static
         def main
             var args = Arg.parse()
 

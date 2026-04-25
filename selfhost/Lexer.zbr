@@ -11,24 +11,24 @@ use Token exposing TokenKind
 # -- Named function-type alias for character predicates -------------------------
 #
 # `sig CharPred` lets module-level classifier functions be passed directly to
-# `scanWhile` without wrapping them in lambdas.  Any `shared def f(c: char)
+# `scanWhile` without wrapping them in lambdas.  Any `static def f(c: char)
 #: bool` at module scope is assignment-compatible with `CharPred`.
 
 sig CharPred(c: char): bool
 
 # -- Module-level character classifiers -----------------------------------------
 
-shared def isDigit(c: char): bool
+static def isDigit(c: char): bool
     branch c
         on c'0'..c'9'
             return true
         else
             return false
 
-shared def isDigitOrUnder(c: char): bool
+static def isDigitOrUnder(c: char): bool
     return isDigit(c) or c == c'_'
 
-shared def isHexDigit(c: char): bool
+static def isHexDigit(c: char): bool
     branch c
         on c'0'..c'9'
             return true
@@ -39,7 +39,7 @@ shared def isHexDigit(c: char): bool
         else
             return false
 
-shared def isAlpha(c: char): bool
+static def isAlpha(c: char): bool
     branch c
         on c'a'..c'z'
             return true
@@ -48,7 +48,7 @@ shared def isAlpha(c: char): bool
         else
             return false
 
-shared def isIdentContinue(c: char): bool
+static def isIdentContinue(c: char): bool
     return isAlpha(c) or isDigit(c) or c == c'_'
 
 # -------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ class Lexer
         lambdaBodyActive  = false
         lambdaIndentLevel = 0
 
-    shared def tokenize(source: str): List(Token.Token) throws
+    static def tokenize(source: str): List(Token.Token) throws
         var lex = Lexer()
         lex.src = source
         lex.run()?

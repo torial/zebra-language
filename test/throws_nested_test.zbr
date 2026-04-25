@@ -36,7 +36,7 @@ class Engine
         h.compute()?  # ? required: h is a local variable, not self (void result)
 
 class Main
-    shared
+    static
         def main
             var e = Engine()
 

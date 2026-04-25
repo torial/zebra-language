@@ -346,9 +346,9 @@ test "parse: method with is shared and body" {
 
 // ── Acceptance: grouped member blocks ─────────────────────────────────────────
 
-test "parse: shared group block" {
-    // SharedGroupDecl → kw_shared eol indent MemberDeclList dedent
-    try expectAccepts("class Foo\n\tshared\n\t\tdef main\n\t\t\tpass\n");
+test "parse: static group block" {
+    // SharedGroupDecl → kw_static eol indent MemberDeclList dedent
+    try expectAccepts("class Foo\n\tstatic\n\t\tdef main\n\t\t\tpass\n");
 }
 
 test "parse: test member block" {

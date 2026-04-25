@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Constants ───────────────────────────────────────────────────
             print Math.PI > 3.14 and Math.PI < 3.15   # true

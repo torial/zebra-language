@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def classify(cmd: str): str
             branch cmd
                 on "start", "begin"

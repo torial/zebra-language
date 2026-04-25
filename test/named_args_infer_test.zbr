@@ -10,7 +10,7 @@ class Point
         return "(" + x.toString() + ", " + y.toString() + ")"
 
 class Program
-    shared
+    static
         def main
             # Unannotated var — type inferred from constructor call
             var p = Point()

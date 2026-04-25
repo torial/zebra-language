@@ -1,5 +1,5 @@
 class App
-    shared
+    static
         def main
             var b: int? = 42
             var c: int = b to!

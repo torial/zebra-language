@@ -1,5 +1,5 @@
 class RandomTest
-    shared def main
+    static def main
         # Seeded PRNG — deterministic results
         Random.seed(42)
 

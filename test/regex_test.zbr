@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Basic match
             var re1: Regex = Regex.compile("hello")

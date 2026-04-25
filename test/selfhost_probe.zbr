@@ -76,7 +76,7 @@ class Lexer
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         def main
             # Token round-trip
             var t = Token(TokenKind.ident(), "foo", 1, 0)

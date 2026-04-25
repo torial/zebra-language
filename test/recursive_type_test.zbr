@@ -35,7 +35,7 @@ class Tree
         right = nil
 
 class Main
-    shared
+    static
         def main
             # Build from deepest first so each boxing captures the correct state.
             # ^T boxing copies by value at assignment time — deeper links must be

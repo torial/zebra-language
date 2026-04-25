@@ -1,7 +1,7 @@
 use MathUtils
 
 class App
-    shared
+    static
         def testTypeInference
             # Without explicit type annotation — inferred from cross-module interface.
             # If type inference works, this should compile and print 14 and 16.

@@ -8,7 +8,7 @@ class Counter
         return count
 
 class Program
-    shared
+    static
         def main
             # Test pipeline operator
             var nums: int = 42

@@ -60,6 +60,7 @@ union PNode
     stmt_ensure: List(PNode)
     invariant_decl: List(PNode)
     expr_orelse: ^POrelse
+    expr_catch: ^PCatch
     expr_pipeline: ^PPipeline
 
     # Expressions (inline - no heap indirection)
@@ -251,25 +252,25 @@ struct PField
     var name: str
     var type_name: str
     var is_const: bool
-    var is_shared: bool
+    var is_static: bool
     var init_expr: List(PNode)
-    cue init(name: str, type_name: str, is_const: bool, is_shared: bool, init_expr: List(PNode))
+    cue init(name: str, type_name: str, is_const: bool, is_static: bool, init_expr: List(PNode))
         this.name = name
         this.type_name = type_name
         this.is_const = is_const
-        this.is_shared = is_shared
+        this.is_static = is_static
         this.init_expr = init_expr
 
 struct PMethod
     var name: str
-    var is_shared: bool
+    var is_static: bool
     var throws_: bool
     var params: List(PParam)
     var return_type: str
     var stmts: List(PNode)
-    cue init(name: str, is_shared: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode))
+    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode))
         this.name = name
-        this.is_shared = is_shared
+        this.is_static = is_static
         this.throws_ = throws_
         this.params = params
         this.return_type = return_type
@@ -341,6 +342,15 @@ struct POrelse
     var fallback: List(PNode)
     cue init(expr: List(PNode), fallback: List(PNode))
         this.expr = expr
+        this.fallback = fallback
+
+struct PCatch
+    var expr: List(PNode)
+    var binding: str
+    var fallback: List(PNode)
+    cue init(expr: List(PNode), binding: str, fallback: List(PNode))
+        this.expr = expr
+        this.binding = binding
         this.fallback = fallback
 
 struct PPipeline
@@ -876,7 +886,7 @@ class Parser
             return .parseEnumDecl()
         else if this.textIs("sig")
             return .parseSigDecl()
-        else if this.textIs("shared")
+        else if this.textIs("static")
             this.advance()
             return .parseMethodDecl(true)
         else if this.textIs("def")
@@ -961,7 +971,7 @@ class Parser
                 .skipEol()
                 if .isDedent()
                     break
-                if this.textIs("shared")
+                if this.textIs("static")
                     this.advance()
                     .skipEol()
                     if .isIndent()
@@ -974,7 +984,7 @@ class Parser
                         if .isDedent()
                             this.advance()
                     else
-                        # Inline `shared def foo()` — no indented block
+                        # Inline `static def foo()` — no indented block
                         members.add(.parseMemberDecl(true))
                 else
                     var pd = .parseMemberDecl(false)
@@ -1136,13 +1146,13 @@ class Parser
 
     # -- Member declarations ---------------------------------------------------
 
-    def parseMemberDecl(is_shared: bool): PNode throws
+    def parseMemberDecl(is_static: bool): PNode throws
         if this.textIs("def")
-            return .parseMethodDecl(is_shared)
+            return .parseMethodDecl(is_static)
         else if this.textIs("var")
-            return .parseDeclField(false, is_shared)
+            return .parseDeclField(false, is_static)
         else if this.textIs("const")
-            return .parseDeclField(true, is_shared)
+            return .parseDeclField(true, is_static)
         else if this.textIs("cue")
             return .parseDeclInit()
         else if this.textIs("invariant")
@@ -1165,7 +1175,7 @@ class Parser
                 this.advance()
         return PNode.invariant_decl(expr_nodes)
 
-    def parseDeclField(is_const: bool, is_shared: bool): PNode throws
+    def parseDeclField(is_const: bool, is_static: bool): PNode throws
         if is_const
             .expectText("const")
         else
@@ -1183,7 +1193,7 @@ class Parser
             this.advance()
             init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.field_(PField(name, type_name, is_const, is_shared, init_expr))
+        return PNode.field_(PField(name, type_name, is_const, is_static, init_expr))
 
     def parseDeclInit(): PNode throws
         .expectText("cue")
@@ -1218,7 +1228,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_shared: bool): PNode throws
+    def parseMethodDecl(is_static: bool): PNode throws
         .expectText("def")
         var name = ""
         var has_params = false
@@ -1263,7 +1273,7 @@ class Parser
         var stmts = List(PNode)()
         if .isIndent()
             stmts = .parseBlock()
-        return PNode.method_(PMethod(name, is_shared, throws_, params, return_type, stmts))
+        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts))
 
     # -- Block and statements --------------------------------------------------
 
@@ -1752,6 +1762,19 @@ class Parser
             var rhs_list = List(PNode)()
             rhs_list.add(rhs)
             left = PNode.expr_pipeline(PPipeline(lhs_list, rhs_list))
+        while this.textIs("catch")
+            this.advance()
+            var binding = ""
+            if this.textIs("|")
+                this.advance()
+                binding = .eatId()
+                .expectText("|")
+            const fallback = .parseOr()
+            var base = List(PNode)()
+            base.add(left)
+            var fb = List(PNode)()
+            fb.add(fallback)
+            left = PNode.expr_catch(PCatch(base, binding, fb))
         return left
 
     def parseOr(): PNode throws
@@ -2242,7 +2265,7 @@ class Parser
 
     # -- Public API ------------------------------------------------------------
 
-    shared def parse(src: str): PNode throws
+    static def parse(src: str): PNode throws
         var toks = Lexer.tokenize(src)?
         var p = Parser(toks)
         return p.parseModule()

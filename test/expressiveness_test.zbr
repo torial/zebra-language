@@ -6,7 +6,7 @@ class Greeter
         return value >= lo and value <= hi
 
 class Program
-    shared
+    static
         def main
             var g: Greeter = Greeter()
 

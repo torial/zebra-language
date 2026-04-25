@@ -13,7 +13,7 @@ class Container
         return flags.at(0)
 
 class Main
-    shared def main()
+    static def main()
         var c = Container()
         c.add("hello", true)
         c.add("world", false)

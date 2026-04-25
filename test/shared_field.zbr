@@ -1,8 +1,8 @@
 class Counter
-    shared var count: int = 0
+    static var count: int = 0
 
 class Program
-    shared
+    static
         def main
             Counter.count = Counter.count + 1
             Counter.count = Counter.count + 1

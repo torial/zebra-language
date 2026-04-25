@@ -1298,7 +1298,7 @@ const Generator = struct {
     /// `genReturn` uses these to emit assignments before `continue`.
     tco_params: []const []const u8 = &.{},
     /// True when the TCO method is `shared` (class-level static).
-    tco_shared: bool = false,
+    tco_static_: bool = false,
     /// Source file path (e.g. "test/hello.zbr").  Set from module.file.
     /// Used to emit `// zbr:file:line` markers before each statement so
     /// that Zig compiler errors can be remapped to Zebra source locations.
@@ -1443,7 +1443,7 @@ const Generator = struct {
         var c = g; c.nil_narrowed = nn; return c;
     }
     fn withTco(g: Generator, method_name: []const u8, params: []const []const u8, shared: bool) Generator {
-        var c = g; c.tco_method_name = method_name; c.tco_params = params; c.tco_shared = shared; return c;
+        var c = g; c.tco_method_name = method_name; c.tco_params = params; c.tco_static_ = shared; return c;
     }
 
     // ── Low-level output ──────────────────────────────────────────────────────
@@ -3521,7 +3521,7 @@ const Generator = struct {
     /// Requirements: shared, no throws, body present, all param/return types
     /// are C-compatible primitives.
     fn isMethodCExportable(n: *const Ast.DeclMethod) bool {
-        if (!n.mods.shared) return false;
+        if (!n.mods.static_) return false;
         if (n.throws) return false;
         if (n.body == null) return false;
         for (n.params) |p| {
@@ -3743,7 +3743,7 @@ const Generator = struct {
 
             for (n.members) |decl| {
                 const v = switch (decl) { .var_ => |v| v, else => continue };
-                if (v.mods.shared) continue;
+                if (v.mods.static_) continue;
                 try field_names.append(g.alloc, v.name);
                 const ts: []const u8 = if (v.type_) |tr|
                     try typeRefStr(tr, g.alloc)
@@ -3793,7 +3793,7 @@ const Generator = struct {
 
     fn genFieldDecl(g: Generator, n: *Ast.DeclVar) anyerror!void {
         try g.writeIndent();
-        if (n.mods.shared) {
+        if (n.mods.static_) {
             // `shared var` → Zig namespace-level declaration inside the struct.
             // Accessed as StructName.field, not instance.field.
             const kw: []const u8 = if (n.mods.readonly or n.is_const) "const" else "var";
@@ -4188,12 +4188,12 @@ const Generator = struct {
 
         // Instance methods inside a type get `self: *Owner`.
         // `shared` methods (type-level, not instance) omit self.
-        const has_self = g.owner.len > 0 and !n.mods.shared;
+        const has_self = g.owner.len > 0 and !n.mods.static_;
 
         // Pre-check: does this method have any tail-recursive calls?
         // If so, we use the loop-transformation (TCO) path.
         const is_tco = if (n.body) |body| n.params.len > 0 and
-            scanTco(body, n.name, g.owner, n.mods.shared) else false;
+            scanTco(body, n.name, g.owner, n.mods.static_) else false;
 
         if (has_self) {
             // Generic class methods use *@This() (the struct is anonymous inside the comptime fn).
@@ -4241,7 +4241,7 @@ const Generator = struct {
             // Private helpers may temporarily break invariants; shared methods have no `self`.
             // Note: `defer` also runs on error exit paths — callers see the panic before
             // the original error.  Acceptable for v1; document for future errdefer refinement.
-            if (has_self and !n.mods.shared and !n.mods.private and g.owner_invariants.len > 0 and !g.strip_contracts) {
+            if (has_self and !n.mods.static_ and !n.mods.private and g.owner_invariants.len > 0 and !g.strip_contracts) {
                 try mg.indented().writeIndent();
                 try mg.indented().w.writeAll("defer self._check_invariant();\n");
             }
@@ -4264,7 +4264,7 @@ const Generator = struct {
 
                 const bg = ig.indented()
                     .withClosureVars(&cv_map).withReturnedNames(&ret_set)
-                    .withTco(n.name, tco_pnames.items, n.mods.shared);
+                    .withTco(n.name, tco_pnames.items, n.mods.static_);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 // Skip `_ = self` when invariant defer already references self.
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
@@ -7272,7 +7272,7 @@ const Generator = struct {
         // copies and `continue` the enclosing `while (true)` loop.
         if (g.tco_method_name.len > 0) {
             if (s.value) |v| {
-                if (isTcoExpr(v, g.tco_method_name, g.owner, g.tco_shared)) {
+                if (isTcoExpr(v, g.tco_method_name, g.owner, g.tco_static_)) {
                     const args = v.call.args;
                     const n_update = @min(args.len, g.tco_params.len);
                     // Evaluate new args into temps first (avoids aliasing when a
@@ -9414,7 +9414,7 @@ const Generator = struct {
             if (g.resolve.exprs.get(e)) |sym| {
                 if (sym.kind == .var_) {
                     // Shared (static) fields → TypeName.field, not self.field
-                    if (sym.decl.var_.mods.shared) {
+                    if (sym.decl.var_.mods.static_) {
                         try g.w.print("{s}.{s}", .{g.owner, e.name});
                         return;
                     }
@@ -10200,7 +10200,7 @@ const Generator = struct {
             if (g.resolve.exprs.get(ident)) |sym| {
                 if (sym.kind == .method) {
                     const is_shared: bool = switch (sym.decl) {
-                        .method => |m| m.mods.shared,
+                        .method => |m| m.mods.static_,
                         else    => false,
                     };
                     // Top-level functions have no owner class — call directly.
@@ -11371,7 +11371,7 @@ fn findMainMethod(decls: []const Ast.Decl) ?*Ast.DeclMethod {
         switch (decl) {
             .class => |c| {
                 for (c.members) |m| {
-                    if (m == .method and m.method.mods.shared and
+                    if (m == .method and m.method.mods.static_ and
                         std.mem.eql(u8, m.method.name, "main"))
                         return m.method;
                 }
@@ -11391,7 +11391,7 @@ fn findMainClass(decls: []const Ast.Decl, alloc: Allocator, prefix: []const u8) 
             .class => |c| {
                 for (c.members) |m| {
                     if (m == .method and
-                        m.method.mods.shared and
+                        m.method.mods.static_ and
                         std.mem.eql(u8, m.method.name, "main"))
                     {
                         if (prefix.len > 0)

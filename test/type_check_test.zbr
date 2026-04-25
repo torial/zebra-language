@@ -11,7 +11,7 @@ class Cat
         name = n
 
 class Main
-    shared
+    static
         def main
             var d = Dog("Rex", "Labrador")
             var c = Cat("Whiskers")

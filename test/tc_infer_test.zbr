@@ -9,7 +9,7 @@ use tc_scope  exposing TcScope, TcScopeKind, TcSymbol, TcSymKind
 use tc_infer  exposing TcInfer, TcExpr, TcExprMember, TcExprCall, TcExprBinary, TcExprUnary, TcExprCast
 
 class Main
-    shared
+    static
         def main
             # Build scope with all symbols before constructing TcInfer.
             var sc = TcScope()

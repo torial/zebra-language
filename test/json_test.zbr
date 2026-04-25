@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # --- Parse and read ---
             var json = '{"name": "Alice", "age": 30, "score": 9.5, "active": true}'

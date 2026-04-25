@@ -29,7 +29,7 @@ class Counter
         return count
 
 class Main
-    shared
+    static
         def main
             var e = English()
             var s = Spanish()

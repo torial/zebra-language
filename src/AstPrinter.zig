@@ -118,7 +118,7 @@ const Printer = struct {
         if (m.protected) try p.w(" protected", .{});
         if (m.internal)  try p.w(" internal",  .{});
         if (m.abstract)  try p.w(" abstract",  .{});
-        if (m.shared)    try p.w(" shared",    .{});
+        if (m.static_)   try p.w(" static",    .{});
         if (m.readonly)  try p.w(" readonly",  .{});
         if (m.extern_)   try p.w(" extern",    .{});
     }

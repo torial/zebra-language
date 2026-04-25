@@ -141,7 +141,7 @@ class ASTBuilderTest
                 branch m
                     on Decl.method as meth
                         assert meth.name == "bar", "method name should be 'bar'"
-                        assert meth.mods.is_shared == false, "bar should not be shared"
+                        assert meth.mods.is_static == false, "bar should not be shared"
                         assert meth.params.len == 0, "expected 0 params"
                     else
                         assert false, "expected method decl"
@@ -424,7 +424,7 @@ class ASTBuilderTest
         print "testRaiseMessage: OK"
 
 class Main
-    shared
+    static
         def main
             try
                 var t = ASTBuilderTest()

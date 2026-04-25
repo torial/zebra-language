@@ -2,7 +2,7 @@
 # This file contains intentional errors for demonstration
 
 class Main
-    shared
+    static
         def main
             var msg = "type error on next line
             var x = msg + 1

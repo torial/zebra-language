@@ -1553,10 +1553,10 @@ pub const Modifiers = struct {
     is_public: bool,
     is_private: bool,
     is_abstract: bool,
-    is_shared: bool,
+    is_static: bool,
     is_readonly: bool,
     is_extern: bool,
-    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_shared: bool, is_readonly: bool, is_extern: bool) Modifiers {
+    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool) Modifiers {
         var _self: Modifiers = undefined;
 // zbr:selfhost/ast.zbr:65
             _self.is_public = is_public;
@@ -1565,7 +1565,7 @@ pub const Modifiers = struct {
 // zbr:selfhost/ast.zbr:67
             _self.is_abstract = is_abstract;
 // zbr:selfhost/ast.zbr:68
-            _self.is_shared = is_shared;
+            _self.is_static = is_static;
 // zbr:selfhost/ast.zbr:69
             _self.is_readonly = is_readonly;
 // zbr:selfhost/ast.zbr:70

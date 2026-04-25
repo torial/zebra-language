@@ -71,7 +71,7 @@ def opCode(o: Op): int
         on Op.neg return 40
 
 class Main
-    shared
+    static
         def main
             # Simple values
             assert opName(Op.add())   == "add"

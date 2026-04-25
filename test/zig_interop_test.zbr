@@ -1,7 +1,7 @@
 use ZigMath
 
 class Program
-    shared
+    static
         def testBasicMath
             print "Basic math operations:"
             print ZigMath.square(7)

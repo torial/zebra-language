@@ -4,7 +4,7 @@ union Shape
     point
 
 class App
-    shared
+    static
         def main
             var s: Shape = Shape.circle(3.14)
             branch s

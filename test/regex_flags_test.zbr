@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── Case-insensitive (i flag) ───────────────────────────────────────
             var re_i = Regex.compile("hello", "i")

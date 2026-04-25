@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── UDP send ─────────────────────────────────────────────────────
             # Send a datagram to a local echo server (if available).

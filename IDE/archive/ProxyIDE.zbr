@@ -25,7 +25,7 @@ class Diagnostic
 
 # Mock compiler that returns diagnostics based on file content analysis
 class MockCompiler
-    shared
+    static
         # Analyze source code and return mock diagnostics
         def check(filepath as str, source as str) as List(Diagnostic)
             var diags as List(Diagnostic) = List()
@@ -100,7 +100,7 @@ class ProxyIDEState
 # ────────────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         # Main frame callback for Gui.run
         def ideFrame(g as Gui)
             capture

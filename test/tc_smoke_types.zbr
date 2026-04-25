@@ -7,7 +7,7 @@ union TcType
     optional: ^TcType
 
 class TcTypes
-    shared
+    static
         def describe(t: TcType): str
             branch t
                 on TcType.unknown   return "unknown"

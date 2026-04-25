@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # Named aliases
             var a: int32 = 42

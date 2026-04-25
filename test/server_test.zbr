@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             var handler = def(req: HttpRequest): HttpResponse
                 if req.path == "/"

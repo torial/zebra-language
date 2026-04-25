@@ -1,5 +1,5 @@
 class App
-    shared
+    static
         def risky(x: int): int
             if x < 0
                 raise "negative value", x

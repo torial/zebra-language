@@ -353,6 +353,6 @@ class Resolver
 # -- Main ----------------------------------------------------------------------
 
 class Main
-    shared
+    static
         def main
             print "resolver: loaded (run resolver_test.zbr to exercise)"

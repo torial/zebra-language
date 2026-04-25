@@ -1,7 +1,7 @@
 use MathUtils
 
 class App
-    shared
+    static
         def main
             var d: int = MathUtils.double(7)
             var s: int = MathUtils.square(4)

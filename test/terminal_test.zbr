@@ -1,5 +1,5 @@
 class TerminalTest
-    shared def main
+    static def main
         # isTty — false when output is piped (as in tests); true in interactive shell
         print Terminal.isTty()
         print "isTty: OK"

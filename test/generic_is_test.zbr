@@ -5,7 +5,7 @@ class Box(T)
         value = v
 
 class Main
-    shared
+    static
         def main
             var b = Box(int)(42)
             print b is Box           # true  — bare class check

@@ -268,7 +268,7 @@ def test_nested_ctx()
 # -- main --
 
 class Main
-    shared
+    static
         def main
             test_multiline()
             test_struct_except()

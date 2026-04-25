@@ -3,7 +3,7 @@
 # wrong Zig type if TC returned .optional(.string) and the annotation was omitted.
 
 class Main
-    shared
+    static
         def findFirst(items: List(str), prefix: str): str?
             for item in items
                 if item.contains(prefix)

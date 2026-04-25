@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             var x: int = 5
             var get_x = def(): int

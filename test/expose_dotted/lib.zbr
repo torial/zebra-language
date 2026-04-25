@@ -6,7 +6,7 @@
 # all resolve correctly even though the module path has a dot.
 
 class DottedLib
-    shared
+    static
         def greet(): str
             return "hello from dotted lib"
 

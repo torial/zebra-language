@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rm *)",
+      "Bash(rm -rf vendor/ImGuiColorTextEdit/.git)",
+      "Bash(git add *)",
+      "PowerShell(zig build *)"
+    ]
+  }
+}

@@ -209,7 +209,7 @@ pub const TokenKind = enum {
     kw_as,
     kw_from,
     kw_has,
-    kw_shared,
+    kw_static,
     kw_invariant,
     kw_where,
 
@@ -327,7 +327,7 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "as",          .kw_as },
     .{ "from",        .kw_from },
     .{ "has",         .kw_has },
-    .{ "shared",      .kw_shared },
+    .{ "static",      .kw_static },
     .{ "invariant",   .kw_invariant },
     .{ "abstract",    .kw_abstract },
     .{ "extern",      .kw_extern },

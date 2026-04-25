@@ -12,7 +12,7 @@ union Wrap
     empty_
 
 class Program
-    shared
+    static
         def main
             var s: Shape = Shape.circle(3.14)
 

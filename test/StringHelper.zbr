@@ -1,4 +1,4 @@
 class StringHelper
-    shared
+    static
         def greet(name: str): str
             return name.concat("!")

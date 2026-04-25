@@ -10,7 +10,7 @@ class Pair(A, B)
         return Pair(B, A)(second, first)
 
 class Main
-    shared
+    static
         def main
             var p = Pair(str, int)("hello", 42)
             print p.second     # 42

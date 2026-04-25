@@ -1,12 +1,12 @@
 # Tests that partials with shared methods and cross-partial type references work.
 
 class PartialSharedTest
-    shared
+    static
         def greet(name: str): str
             return "Hello, " + name
 
 class Main
-    shared
+    static
         def main
             var msg = PartialSharedTest.greet("world")
             print msg

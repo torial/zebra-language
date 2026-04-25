@@ -10,7 +10,7 @@ class FileInfo
         return "FileInfo(".concat(path).concat(")")
 
 class Main
-    shared
+    static
         def tryRead(path: str) throws
             raise "file not found", FileInfo(path, 404)
 

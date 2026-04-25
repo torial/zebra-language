@@ -23,7 +23,7 @@ class RunResult
     var error_msg: str = ""
 
 class ParityChecker
-    shared
+    static
         # ── Skip list ────────────────────────────────────────────────────────
         # Files that are not runnable entrypoints or have known environment deps.
         def shouldSkip(name: str): bool
@@ -169,5 +169,5 @@ class ParityChecker
                 sys.exit(1)
 
 class Main
-    shared def main()
+    static def main()
         ParityChecker.run()

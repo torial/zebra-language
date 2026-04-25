@@ -176,7 +176,7 @@ const Builder = struct {
                     .kw_protected => m.protected = true,
                     .kw_internal  => m.internal  = true,
                     .kw_abstract  => m.abstract  = true,
-                    .kw_shared    => m.shared    = true,
+                    .kw_static    => m.static_   = true,
                     .kw_readonly  => m.readonly  = true,
                     .kw_extern    => m.extern_   = true,
                     else => {},
@@ -479,7 +479,7 @@ const Builder = struct {
 
     /// `shared` block: build all inner members and mark each as `shared`.
     fn collectSharedGroupDecl(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl)) !void {
-        // SharedGroupDecl → kw_shared eol indent MemberDeclList dedent
+        // SharedGroupDecl → kw_static eol indent MemberDeclList dedent
         const kids = ch(node);
         const start = out.items.len;
         try b.collectMemberDecls(kids[3], out);
@@ -2450,15 +2450,15 @@ const Builder = struct {
 /// Set `shared = true` on any member decl that carries a `Modifiers` field.
 fn setShared(d: *Ast.Decl) void {
     switch (d.*) {
-        .method   => |n| n.mods.shared = true,
-        .var_     => |n| n.mods.shared = true,
-        .init     => |n| n.mods.shared = true,
-        .class    => |n| n.mods.shared = true,
-        .interface=> |n| n.mods.shared = true,
-        .struct_  => |n| n.mods.shared = true,
-        .mixin    => |n| n.mods.shared = true,
-        .enum_    => |n| n.mods.shared = true,
-        .union_   => |n| n.mods.shared = true,
+        .method   => |n| n.mods.static_ = true,
+        .var_     => |n| n.mods.static_ = true,
+        .init     => |n| n.mods.static_ = true,
+        .class    => |n| n.mods.static_ = true,
+        .interface=> |n| n.mods.static_ = true,
+        .struct_  => |n| n.mods.static_ = true,
+        .mixin    => |n| n.mods.static_ = true,
+        .enum_    => |n| n.mods.static_ = true,
+        .union_   => |n| n.mods.static_ = true,
         .use, .namespace, .extend, .sig_ => {}, // no mods field
     }
 }

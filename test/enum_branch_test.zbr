@@ -5,7 +5,7 @@ enum Direction
     west
 
 class Main
-    shared
+    static
         def main
             var d: Direction = Direction.north
             branch d

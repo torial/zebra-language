@@ -145,6 +145,12 @@ smoke test/contract_old_compound_test.zbr
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr
 
+# Postfix catch: expr catch fallback (no binding form).
+smoke test/catch_inline_test.zbr
+
+# Top-level def main() without class/static wrapper.
+smoke test/toplevel_main_test.zbr
+
 # --turbo: require/ensure/invariant must be absent from generated Zig.
 smoke_turbo test/turbo_test.zbr
 

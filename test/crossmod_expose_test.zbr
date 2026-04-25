@@ -10,7 +10,7 @@
 use crossmod_expose_lib exposing Tag, Bag, Shape
 
 class Main
-    shared
+    static
         def main
             test1BranchOnExposedUnion()
             test2ForInOverExposedClassList()

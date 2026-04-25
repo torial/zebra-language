@@ -4,7 +4,7 @@ use Token exposing TokenKind
 use Lexer
 
 class LexerTest
-    shared
+    static
         def testKeyword()
             try
                 var toks = Lexer.tokenize("class")
@@ -143,6 +143,6 @@ class LexerTest
             print "=== Tests complete ==="
 
 class Main
-    shared
+    static
         def main
             LexerTest.main()

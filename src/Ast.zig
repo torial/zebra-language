@@ -103,7 +103,7 @@ pub const Modifiers = packed struct {
     protected: bool = false,
     internal: bool = false,
     abstract: bool = false,
-    shared: bool = false, // type-associated (not instance)
+    static_: bool = false, // type-associated (not instance)
     readonly: bool = false,
     extern_: bool = false,
 };

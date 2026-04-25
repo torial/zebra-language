@@ -8,7 +8,7 @@ class Person
     var age: int = 0
 
 class Program
-    shared
+    static
         def main
             # Basic struct destructuring
             var p = Point()

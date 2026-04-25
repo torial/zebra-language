@@ -1,5 +1,5 @@
 class UriTest
-    shared def main
+    static def main
         var u = Uri.parse("https://api.example.com/v1/users?page=2")
         assert u.scheme == "https"
         print "scheme: OK"

@@ -2900,7 +2900,7 @@ pub fn generateEntryPoint(m: Module) []const u8 {
                         const mth_ptr = mem.method;
                         const mth = mth_ptr.*;
 // zbr:selfhost/codegen.zbr:717
-                        if ((std.mem.eql(u8, mth.name, "main") and mth.mods.is_shared)) {
+                        if ((std.mem.eql(u8, mth.name, "main") and mth.mods.is_static)) {
 // zbr:selfhost/codegen.zbr:718
                             main_class = c.name;
 // zbr:selfhost/codegen.zbr:719
@@ -2924,7 +2924,7 @@ pub fn generateEntryPoint(m: Module) []const u8 {
                                 const nmth_ptr = nmem.method;
                                 const nmth = nmth_ptr.*;
 // zbr:selfhost/codegen.zbr:725
-                                if ((std.mem.eql(u8, nmth.name, "main") and nmth.mods.is_shared)) {
+                                if ((std.mem.eql(u8, nmth.name, "main") and nmth.mods.is_static)) {
 // zbr:selfhost/codegen.zbr:726
                                     var qn: []const u8 = ns.name;
 // zbr:selfhost/codegen.zbr:727
@@ -4229,7 +4229,7 @@ pub const Generator = struct {
         defer self._check_invariant();
         self.writeIndent();
 // zbr:selfhost/codegen.zbr:1540
-        if (n.mods.is_shared) {
+        if (n.mods.is_static) {
             self.w.emit("pub var ");
             self.w.emit(n.name);
             self.w.emit(": ");
@@ -4616,7 +4616,7 @@ pub const Generator = struct {
                     const fld_ptr = fdecl.var_;
                     const fld = fld_ptr.*;
 // zbr:selfhost/codegen.zbr:1788
-                    if ((!fld.mods.is_shared)) {
+                    if ((!fld.mods.is_static)) {
 // zbr:selfhost/codegen.zbr:1789
                         if ((fld.init_expr != null)) {
                             dig.writeIndent();
@@ -4672,7 +4672,7 @@ pub const Generator = struct {
                 const fld_ptr = decl.var_;
                 const fld = fld_ptr.*;
 // zbr:selfhost/codegen.zbr:1825
-                if ((!fld.mods.is_shared)) {
+                if ((!fld.mods.is_static)) {
                     rf_names.append(_allocator, fld.name) catch @panic("OOM");
 // zbr:selfhost/codegen.zbr:1827
                     if ((fld.type_ != null)) {
@@ -4733,7 +4733,7 @@ pub const Generator = struct {
         self.w.emit(m.name);
         self.w.emit("(");
 // zbr:selfhost/codegen.zbr:1868
-        const has_self = (!std.mem.eql(u8, self.owner, "") and (!m.mods.is_shared));
+        const has_self = (!std.mem.eql(u8, self.owner, "") and (!m.mods.is_static));
 // zbr:selfhost/codegen.zbr:1869
         if (has_self) {
 // zbr:selfhost/codegen.zbr:1870
@@ -4791,7 +4791,7 @@ pub const Generator = struct {
             }
             self.w.emit(" {\n");
 // zbr:selfhost/codegen.zbr:1901
-            if (((((has_self and (!m.mods.is_shared)) and (!m.mods.is_private)) and _zebra_gt(@as(i64, @intCast(self.owner_invariants.items.len)), 0)) and (!self.strip_contracts))) {
+            if (((((has_self and (!m.mods.is_static)) and (!m.mods.is_private)) and _zebra_gt(@as(i64, @intCast(self.owner_invariants.items.len)), 0)) and (!self.strip_contracts))) {
 // zbr:selfhost/codegen.zbr:1902
                 var inv_ig = self.indented();
                 inv_ig.writeIndent();
@@ -6457,7 +6457,7 @@ pub const Generator = struct {
 // zbr:selfhost/codegen.zbr:2862
                 if (std.mem.eql(u8, dm.name, name)) {
 // zbr:selfhost/codegen.zbr:2863
-                    return dm.mods.is_shared;
+                    return dm.mods.is_static;
                 }
             }
         }
@@ -9286,7 +9286,7 @@ pub const Generator = struct {
 // zbr:selfhost/codegen.zbr:4691
                 if (std.mem.eql(u8, fld.name, name)) {
 // zbr:selfhost/codegen.zbr:4692
-                    return fld.mods.is_shared;
+                    return fld.mods.is_static;
                 }
             }
         }

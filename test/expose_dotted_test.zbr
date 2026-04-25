@@ -16,7 +16,7 @@
 use expose_dotted.lib exposing DottedLib, Point
 
 class Main
-    shared
+    static
         def main
             # 1. Static method returning str — TypeChecker must know greet() → str
             #    so string concatenation (" " + g) is valid.

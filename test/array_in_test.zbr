@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # @[...] array literal in a variable
             var name = "findAll"

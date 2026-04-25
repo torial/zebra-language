@@ -25,7 +25,7 @@ class WhileVarTest
         return pos
 
 class Main
-    shared def main()
+    static def main()
         var t = WhileVarTest()
         assert t.testScanAlpha()  == "hello"
         assert t.testScanDigits() == "42"

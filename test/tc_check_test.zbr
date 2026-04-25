@@ -7,7 +7,7 @@ use tc_infer  exposing TcInfer, TcExpr, TcExprBinary
 use tc_check  exposing TcCheck, TcStmt, TcStmtReturn, TcStmtVarDecl, TcStmtIf, TcStmtAssert
 
 class Main
-    shared
+    static
         def main
             # Build scope with known symbols, then construct TcInfer snapshot.
             var sc = TcScope()

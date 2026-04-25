@@ -1,5 +1,5 @@
 namespace App
     class Runner
-        shared
+        static
             def main
                 print "from namespace"

@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # ── isValidUtf8 ───────────────────────────────────────────────
             var s: str = "hello"

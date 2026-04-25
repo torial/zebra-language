@@ -1,5 +1,5 @@
 class ArgTest
-    shared def main
+    static def main
         # Arg.parse() with no real CLI args (program has no extra args when run via zebra test)
         var args = Arg.parse()
 

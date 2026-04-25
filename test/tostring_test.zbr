@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             var n: int = 42
             var f: float = 3.14

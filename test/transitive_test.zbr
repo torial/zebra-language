@@ -2,7 +2,7 @@ use MathUtils
 use StringHelper
 
 class App
-    shared
+    static
         def main
             var n: int = MathUtils.double(3)
             print n

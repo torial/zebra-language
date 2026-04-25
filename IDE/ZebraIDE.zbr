@@ -19,7 +19,7 @@ class IDEDiagnostic
 
 # Calls the Zebra compiler as a subprocess and parses diagnostics
 class CompilerBridge
-    shared
+    static
         def check(filepath: str): List(IDEDiagnostic)
             var argv = List(str)()
             argv.add("zebra")
@@ -97,7 +97,7 @@ class IDEState
 # ────────────────────────────────────────────────────────────────────────────
 
 class Main
-    shared
+    static
         def renderToolbar(g: Gui, state: IDEState, editor: CodeEditor)
             if g.button("Open")
                 if File.exists(state.filepath)

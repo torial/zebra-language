@@ -3,7 +3,7 @@ class Point
     var y: int = 0
 
 class Program
-    shared
+    static
         def main
             var p: Point = zig"Point{}"
             with p

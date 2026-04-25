@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         def main
             var s: str = "Hello World"
             print s.upper()

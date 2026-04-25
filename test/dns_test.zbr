@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def testLocalhostResolve
             # localhost always resolves (to 127.0.0.1 and/or ::1)
             print "Resolving localhost:"

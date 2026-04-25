@@ -1,5 +1,5 @@
 class Program
-    shared
+    static
         # Method accepting and returning List(int)
         def doubleAll(nums: List(int)): List(int)
             var result: List(int) = List()

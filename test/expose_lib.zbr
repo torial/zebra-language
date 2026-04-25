@@ -12,5 +12,5 @@ class Palette
     def describe(): str
         return "Palette:" + name
 
-shared def makeRed(): Color
+static def makeRed(): Color
     return Color.red()

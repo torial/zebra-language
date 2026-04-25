@@ -3,12 +3,12 @@
 # State is stored: class-level shared vars (no capture needed).
 
 class IDE
-    shared var current_file: str = ""
-    shared var source_code : str = ""
-    shared var run_output  : str = ""
-    shared var file_list   : List(str) = List()
+    static var current_file: str = ""
+    static var source_code : str = ""
+    static var run_output  : str = ""
+    static var file_list   : List(str) = List()
 
-    shared
+    static
         def loadFileList
             var entries: List(str) = File.listDir(".")
             IDE.file_list = List()

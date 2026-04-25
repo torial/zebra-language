@@ -118,7 +118,7 @@ union TcType
 # -- TcTypes helper class ------------------------------------------------------
 
 class TcTypes
-    shared
+    static
         # Structural equality.
         def eql(a: TcType, b: TcType): bool
             branch a

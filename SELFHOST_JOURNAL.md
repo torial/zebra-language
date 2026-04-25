@@ -121,7 +121,7 @@ Almost never. The implicit arena felt right for a lexer: emit tokens freely, ret
 
 **`cue init` zero-setup.** Writing the initializer as an indent-block without return or type annotation felt very clean. No struct literal boilerplate.
 
-**`shared def tokenize` as a static method.** `Lexer.tokenize(src)` at the call site is exactly what you'd write in pseudo-code. The `shared` modifier cleanly expresses "class method, no instance needed."
+**`static def tokenize` as a static method.** `Lexer.tokenize(src)` at the call site is exactly what you'd write in pseudo-code. The `static` modifier cleanly expresses "class method, no instance needed."
 
 **Zebra source = what you'd write in a design doc.** Looking at `Lexer.zbr`, a programmer unfamiliar with Zebra could read most of it as English-ish pseudocode and understand the algorithm.
 
@@ -471,7 +471,7 @@ When a class field has a cross-module class type (`var _scope as TcScope` in typ
 - **Union variant syntax** — `name as Type` (not `name(Type)`)
 - **Single-char single-quoted literals are `char` (`u8`)** — `'x'` is char, `"x"` is str; use double-quotes for single-char strings in expression positions
 - **Struct method chaining on temporaries fails** — `s.method1().method2()` — the temporary from `method1()` is `*const T` but `method2` wants `*T`; must assign each step to a `var` before the next call
-- **`class Main` + `shared def main` required for allocator init** — top-level `def main()` never initializes `_allocator`; allocating operations (string interp, repeat, etc.) segfault
+- **`class Main` + `static def main` OR top-level `def main()`** — both work; the preamble initializes `_allocator` at file scope so top-level `def main()` gets a valid allocator without an entry thunk
 
 ### Implications for Phase 6
 - The `Generator` struct's `withOwner`/`withClass`/`withIndent` pattern (copy-modify-return) works step-by-step but **cannot be chained** in a single expression. Each context fork must assign to a local `var`.
@@ -859,7 +859,7 @@ and the Resolver + TypeChecker must be wired into the pipeline for semantic chec
 
 ## Phase 11: Preamble + Resolver Wiring (`codegen.zbr`, `main.zbr`, `resolver.zbr`, `parser.zbr`)
 **Completed:** 2026-04-12
-**Lines of Zebra added:** codegen.zbr +90 (generateEntryPoint + generateFull) / resolver.zbr +5 param scope / parser.zbr +2 inline-shared fix
+**Lines of Zebra added:** codegen.zbr +90 (generateEntryPoint + generateFull) / resolver.zbr +5 param scope / parser.zbr +2 inline-static fix
 
 ### What Phase 11 delivered
 
@@ -867,7 +867,7 @@ and the Resolver + TypeChecker must be wired into the pipeline for semantic chec
 - Extracted the ~1,465-line Zig runtime preamble to `selfhost/stdlib_preamble.zig`
 - Added `generateFull(m, file, preamble_path)` to `codegen.zbr`:
   preamble + declarations + entry thunk → one complete, compilable `.zig` file
-- Added `generateEntryPoint(m)` that scans for `shared def main` and emits the arena thunk
+- Added `generateEntryPoint(m)` that scans for `static def main` and emits the arena thunk
 
 **Part B — Resolver wiring + `--selfhost-compile`**
 - `main.zbr` now wires: File.read → parse → Resolver.resolve → ASTBuilder.build → generateFull → File.write → zig run
@@ -876,7 +876,7 @@ and the Resolver + TypeChecker must be wired into the pipeline for semantic chec
 
 **Bugs fixed**
 
-1. **Parser: inline `shared def foo()` silently dropped** — `parseClassDecl` handled `shared` as a block-level section header only. After consuming the `shared` keyword, if the next token was `def` (no indent block), the method was not added to the class at all. Fixed: add `else` branch to handle inline shared methods. This affected `generateEntryPoint` producing empty strings for any class using `shared def main()`.
+1. **Parser: inline `static def foo()` silently dropped** — `parseClassDecl` handled `static` as a block-level section header only. After consuming the `static` keyword, if the next token was `def` (no indent block), the method was not added to the class at all. Fixed: add `else` branch to handle inline static methods. This affected `generateEntryPoint` producing empty strings for any class using `static def main()`.
 
 2. **Resolver: method params not added to scope** — `enterMethod` reset the scope but never declared params. Any param reference in a method body reported "undefined name". Fixed: `enterMethod` now takes `params as List(PParam)` and adds each to `method_scope` with kind 3.
 
@@ -889,7 +889,7 @@ Running total: **~61+ compiler bugs fixed** across all self-hosting phases.
 New tests added for Phase 11:
 - `testEntryPointNonThrowing` — verifies arena + `ClassName.main()` thunk, no `catch`
 - `testEntryPointThrowing` — verifies `catch |_err|` + `ZebraError` handler
-- `testEntryPointNoMain` — verifies `""` returned when no `shared def main` present
+- `testEntryPointNoMain` — verifies `""` returned when no `static def main` present
 - `testResolverClean` — verifies 0 errors on a well-formed program
 - `testResolverError` — verifies `print undeclaredVar` triggers a resolver error
 - `testFullRoundTrip` — verifies complete file has preamble + declarations + entry thunk
@@ -933,7 +933,7 @@ Phase 11 closes the loop. The selfhost binary can now:
 3. Emit a complete, self-contained `.zig` file ready for `zig run`
 4. Optionally invoke `zig run` itself via `--selfhost-compile`
 
-The Phase 11 bugs (inline-shared, param scope, stmt_expr) are all in the **selfhost implementation** (parser.zbr / resolver.zbr), not the Zig backend. This is the expected pattern as the selfhost grows: bugs in the Zebra implementation of the compiler, caught by tests written in Zebra. The language is proving sufficient for the task.
+The Phase 11 bugs (inline-static, param scope, stmt_expr) are all in the **selfhost implementation** (parser.zbr / resolver.zbr), not the Zig backend. This is the expected pattern as the selfhost grows: bugs in the Zebra implementation of the compiler, caught by tests written in Zebra. The language is proving sufficient for the task.
 
 ---
 
@@ -1031,7 +1031,7 @@ The selfhost pipeline now handles a real-world program with HashMap, List, neste
 
 1. **`open_call` didn't track paren depth** — `open_call` consumes `(` but didn't increment `parenDepth`, so `)` decremented to -1 and all subsequent eol/indent/dedent suppression broke. Fix: increment `parenDepth` in `open_call` detection.
 
-2. **Module-level `shared def` not bound** — `isAlpha()` etc. in Lexer.zbr undefined because `bindTopDecl` in resolver.zbr didn't handle `PNode.method_`. Fix: add method_ to both `bindTopDecl` and `resolveTopDecl`.
+2. **Module-level `static def` not bound** — `isAlpha()` etc. in Lexer.zbr undefined because `bindTopDecl` in resolver.zbr didn't handle `PNode.method_`. Fix: add method_ to both `bindTopDecl` and `resolveTopDecl`.
 
 3. **Cross-module string method codegen** — `arm.pattern.contains(".")` and `.split(".")` generate invalid Zig because the codegen doesn't track cross-module struct field types. Workaround: assign to local `var pat as str = arm.pattern` first.
 

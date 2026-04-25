@@ -1,5 +1,5 @@
 class Main
-    shared
+    static
         def main
             # --- Construction ---
             var epoch = DateTime.fromEpoch(0)

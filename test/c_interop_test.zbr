@@ -1,7 +1,7 @@
 use CUtils
 
 class Program
-    shared
+    static
         def testArithmetic
             var sum = CUtils.c_add(10, 32)
             print sum

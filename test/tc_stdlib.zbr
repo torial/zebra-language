@@ -13,7 +13,7 @@
 use tc_types exposing TcType
 
 class TcStdlib
-    shared
+    static
         # Return type of accessing `member` on a value of type `t`.
         # Covers opaque stdlib types (string_builder, http_response, …).
         # User-defined classes are NOT handled here; use TcScope for those.

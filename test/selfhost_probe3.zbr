@@ -34,7 +34,7 @@ class Diag
         return message
 
 class Helper
-    shared
+    static
         def kindName(k: TokenKind): str
             branch k
                 on TokenKind.ident,  return "ident"
@@ -64,7 +64,7 @@ class Lexer
         return t
 
 class Main
-    shared
+    static
         def main
             var t = Token(TokenKind.ident(), "foo", 1, 0)
             assert t.text == "foo"

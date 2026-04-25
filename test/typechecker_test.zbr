@@ -8,7 +8,7 @@ use tc_check     exposing TcStmt, TcStmtReturn, TcStmtVarDecl, TcStmtIf, TcStmtA
 use typechecker  exposing TypeChecker
 
 class Main
-    shared
+    static
         def main
             # 1. Basic lifecycle and scope management
             var tc = TypeChecker()

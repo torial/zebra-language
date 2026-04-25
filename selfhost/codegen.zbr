@@ -516,7 +516,7 @@ def bodyMentionsThis(stmts: List(Stmt)): bool
 #   Used for testing and incremental development.
 #
 # generateEntryPoint(m) — emits `pub fn main()` thunk if any class has
-#   `shared def main`.  Returns "" if no main found.
+#   `static def main`.  Returns "" if no main found.
 #
 # generateFull(m, file, preamble_path) — complete Zig file:
 #   preamble (read from file) + declarations + entry thunk.
@@ -702,7 +702,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
 #
-# Scans decls for a class with `shared def main`.  If found, emits:
+# Scans decls for a class with `static def main`.  If found, emits:
 #   pub fn main() void { _allocator = _arena.allocator(); defer _arena.deinit(); ClassName.main(); }
 # For a throws main, wraps in a catch block for clean error display.
 
@@ -714,7 +714,7 @@ def generateEntryPoint(m: Module): str
             on Decl.class_ as c
                 for mem in c.members
                     if mem is Decl.method as mth
-                        if mth.name == "main" and mth.mods.is_shared
+                        if mth.name == "main" and mth.mods.is_static
                             main_class = c.name
                             main_throws = mth.throws_
             on Decl.namespace_ as ns
@@ -722,7 +722,7 @@ def generateEntryPoint(m: Module): str
                     if nested is Decl.class_ as nc
                         for nmem in nc.members
                             if nmem is Decl.method as nmth
-                                if nmth.name == "main" and nmth.mods.is_shared
+                                if nmth.name == "main" and nmth.mods.is_static
                                     var qn: str = ns.name
                                     qn = qn + "."
                                     qn = qn + nc.name
@@ -1537,7 +1537,7 @@ struct Generator
     def genFieldDecl(n: DeclVar)
         writeIndent()
         # Shared (static) fields become `pub var name: type = default;` inside the struct.
-        if n.mods.is_shared
+        if n.mods.is_static
             w.emit("pub var ")
             w.emit(n.name)
             w.emit(": ")
@@ -1785,7 +1785,7 @@ struct Generator
             dig.w.emit(";\n")
             for fdecl in n.members
                 if fdecl is Decl.var_ as fld
-                    if not fld.mods.is_shared
+                    if not fld.mods.is_static
                         if fld.init_expr != nil
                             dig.writeIndent()
                             dig.w.emit("self.")
@@ -1822,7 +1822,7 @@ struct Generator
         var rf_types = List(str)()
         for decl in n.members
             if decl is Decl.var_ as fld
-                if not fld.mods.is_shared
+                if not fld.mods.is_static
                     rf_names.add(fld.name)
                     if fld.type_ != nil
                         rf_types.add(typeRefStr(fld.type_ to!))
@@ -1865,7 +1865,7 @@ struct Generator
         w.emit("pub fn ")
         w.emit(m.name)
         w.emit("(")
-        var has_self = owner != "" and not m.mods.is_shared
+        var has_self = owner != "" and not m.mods.is_static
         if has_self
             if is_generic
                 w.emit("self: *@This()")
@@ -1898,7 +1898,7 @@ struct Generator
             w.emit(" {\n")
             # Invariant exit check — public instance methods only.
             # Private helpers may temporarily break invariants; shared methods have no `self`.
-            if has_self and not m.mods.is_shared and not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts
+            if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts
                 var inv_ig = indented()
                 inv_ig.writeIndent()
                 inv_ig.w.emit("defer self._check_invariant();\n")
@@ -2860,7 +2860,7 @@ struct Generator
         for d in owner_members
             if d is Decl.method as dm
                 if dm.name == name
-                    return dm.mods.is_shared
+                    return dm.mods.is_static
         return false
 
     def isOwnerMethodThrows(name: str): bool
@@ -4689,7 +4689,7 @@ struct Generator
         for d in owner_members
             if d is Decl.var_ as fld
                 if fld.name == name
-                    return fld.mods.is_shared
+                    return fld.mods.is_static
         return false
 
     def isFieldName(name: str): bool

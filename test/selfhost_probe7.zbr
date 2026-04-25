@@ -85,7 +85,7 @@ struct Generator
         w.append("\n")
 
 class Main
-    shared
+    static
         def main
             test1SharedClassViaStructCopy()
             test2ContextForkingWithSharedWriter()

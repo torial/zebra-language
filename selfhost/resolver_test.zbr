@@ -124,7 +124,7 @@ class ResolverTest
         print "testTryCatch: OK"
 
 class Main
-    shared
+    static
         def main
             try
                 var t = ResolverTest()

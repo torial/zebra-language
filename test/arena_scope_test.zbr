@@ -11,7 +11,7 @@ class Counter
         return n
 
 class Main
-    shared
+    static
         def main
             var x: int = 0
 
