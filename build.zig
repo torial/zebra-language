@@ -210,7 +210,7 @@ pub fn build(b: *std.Build) void {
     // Does NOT call zig build recursively — that would cause a recursive build
     // error; the two-step idiom is intentional.
     const update_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--update" });
-    update_run.step.dependOn(b.getInstallStep());
+    update_run.step.dependOn(&bootstrap_exe.step); // only needs the Zig-compiled bootstrap, not zebra.exe
     const update_selfhost_step = b.step("update-selfhost", "Regenerate selfhost/*.zig from .zbr sources (then run 'zig build')");
     update_selfhost_step.dependOn(&update_run.step);
 }
