@@ -21,11 +21,11 @@ pub fn build(b: *std.Build) void {
     compiler_mod.addImport("earley", earley_mod);
     const raw_preamble = std.fs.cwd().readFileAlloc(b.allocator, "selfhost/stdlib_preamble.zig", 256 * 1024) catch @panic("selfhost/stdlib_preamble.zig missing");
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
-    // The static helpers start at the first `fn _intern` declaration.
-    const helpers_start_marker = "fn _intern(";
+    // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
+    const helpers_start_marker = "// === STDLIB_PREAMBLE_HELPERS_START ===\n";
     const gui_start_marker     = "// === STDLIB_PREAMBLE_GUI_START ===\n";
     const gui_end_marker       = "// === STDLIB_PREAMBLE_GUI_END ===\n";
-    const helpers_start = std.mem.indexOf(u8, raw_preamble, helpers_start_marker) orelse @panic("fn _intern missing from selfhost/stdlib_preamble.zig");
+    const helpers_start = std.mem.indexOf(u8, raw_preamble, helpers_start_marker) orelse @panic("STDLIB_PREAMBLE_HELPERS_START marker missing from selfhost/stdlib_preamble.zig");
     const gui_start_idx = std.mem.indexOf(u8, raw_preamble, gui_start_marker)     orelse @panic("STDLIB_PREAMBLE_GUI_START marker missing from selfhost/stdlib_preamble.zig");
     const gui_end_raw   = std.mem.indexOf(u8, raw_preamble, gui_end_marker)       orelse @panic("STDLIB_PREAMBLE_GUI_END marker missing from selfhost/stdlib_preamble.zig");
     const gui_end_idx   = gui_end_raw + gui_end_marker.len;

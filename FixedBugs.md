@@ -5,6 +5,13 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-082: Selfhost `inferExpr` returns `unknown_` for cross-module constructor calls — FIXED
+- **Status:** Fixed — `selfhost/typechecker.zbr` `inferExpr` Expr.call/Expr.member branch; `test/bug082_test.zbr` + `test/bug082_lib.zbr`. Bootstrap 5/5.
+- **Was:** `var b = SomeMod.SomeClass(args)` gave `b` type `unknown_` in selfhost TC; downstream method-return format strings emitted `{any}` instead of `{s}`, printing raw bytes.
+- **Fix:** In `inferExpr`, when receiver resolves to `unknown_` and the member name is a known dep class, return `Type_.named(mem.member)`.
+
+---
+
 ### BUG-029: Class field init with non-int-valued HashMap defaults to i64 — FIXED
 - **Status:** Fixed in selfhost — resolved incidentally during selfhost implementation
 - **Was:** `this.field = HashMap()` on a field declared `HashMap(str, T)` for non-int `T` emitted `std.StringHashMap(i64).init(_allocator)` in the Zig-backend compiler. Root cause: Zig-backend `genAssign` resolved field types only for `.ident` targets or `.member` with `.ident{name="self"}`, bailing out for `this.` which parses as `.member { object: .this }`.

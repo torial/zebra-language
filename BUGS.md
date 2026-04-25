@@ -77,16 +77,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-082: Selfhost `inferExpr` returns `unknown_` for cross-module constructor calls
-- **Severity:** Medium
-- **Status:** Fixed — `selfhost/typechecker.zbr` `inferExpr` Expr.call/Expr.member branch; `test/bug082_test.zbr` + `test/bug082_lib.zbr`. Bootstrap 5/5.
-- **Symptom:** `var b = SomeMod.SomeClass(args)` — the variable `b` has type `unknown_` in the selfhost TC. Downstream method calls on `b` (e.g. `b.withVal(10)`) also return `unknown_`. Side-effect: `print d.show()` emits `{any}` format, printing the raw byte representation of the string instead of its value.
-- **Root cause:** In `inferExpr` for `Expr.call` with an `Expr.member` callee, the receiver is inferred via `inferExpr(mem.object, ctx)`. When `mem.object` is `Expr.ident("SomeMod")`, the ident is not a local variable and not a class — so `inferExpr` returns `Type_.unknown_`. The `branch recv` block has no `Type_.unknown_` arm, so it falls through to `pass` and returns `unknown_` for the whole call.
-- **Fix:** Before `return Type_.unknown_`, added: if `recv == unknown_` and `mem.object` is an ident that is neither a local nor a known class, and `mem.member` names a known dep class, return `Type_.named(mem.member)`. This correctly identifies `SomeMod.SomeClass(args)` as a cross-module constructor call.
-- **Note:** The constant-vs-var symptom described in BUG-026 was not reproduced; both backends use conservative mutation detection (`needs_var = true` for cross-module types) so wrong `const` emission doesn't occur in practice. BUG-082 tracks the observable symptom: wrong format string (`{any}` instead of `{s}`) for method return values on cross-module-typed variables.
-
----
-
 ### BUG-027: Method chaining on struct temporaries requires manual intermediate vars
 - **Severity:** Low (ergonomic / language design)
 - **Status:** Fixed — expression-position call-arg chains now emit a labeled block `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })` in both Zig backend (`src/CodeGen.zig`) and selfhost (`selfhost/codegen.zbr`). Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` now handles call-expression receivers (looks up TC type, scans class/struct members); labeled block emits `break :blk_N try _mc_N.method(args)` when the chained method `throws`. Selfhost mirrors this via `inferExpr`+`isClassMethodThrows`.

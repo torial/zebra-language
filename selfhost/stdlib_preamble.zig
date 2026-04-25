@@ -1,8 +1,8 @@
 // Zebra selfhost runtime preamble — prepended verbatim to every file the selfhost compiler emits.
 // Also embedded by the Zig-compiled backend (zebra-bootstrap.exe) via b.addOptions() in build.zig.
 //
-// HOW TO ADD A HELPER (non-GUI): edit this file directly, outside the STDLIB_PREAMBLE_GUI_START /
-// STDLIB_PREAMBLE_GUI_END markers.  That is the ONLY change needed — both backends pick it up
+// HOW TO ADD A HELPER (non-GUI): edit this file directly, between the STDLIB_PREAMBLE_HELPERS_START
+// and STDLIB_PREAMBLE_GUI_START markers.  That is the ONLY change needed — both backends pick it up
 // automatically.  Do NOT regenerate from a .zbr emit.
 //
 // HOW TO ADD A GUI HELPER: edit inside the markers.  The Zig backend keeps the gui section inline
@@ -20,6 +20,7 @@ var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
+// === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
