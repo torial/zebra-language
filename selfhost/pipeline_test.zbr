@@ -11,7 +11,7 @@ use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateEntryPoint
 
 def runPipeline(src: str): str throws
-    const pm_node = Parser.Parser.parse(src)?
+    const pm_node = Parser.Parser.parse(src, "<test>")?
     branch pm_node
         on PNode.module_ as pm
             const module = ASTBuilder.build(pm, "<test>")?
@@ -20,7 +20,7 @@ def runPipeline(src: str): str throws
             raise "expected module_ from parser"
 
 def runPipelineFull(src: str, preamble_path: str): str throws
-    const pm_node = Parser.Parser.parse(src)?
+    const pm_node = Parser.Parser.parse(src, "<test>")?
     branch pm_node
         on PNode.module_ as pm
             const module = ASTBuilder.build(pm, "<test>")?
@@ -86,7 +86,7 @@ class PipelineTest
 
     def testEntryPointNonThrowing() throws
         const src = "class Main\n    static def main()\n        pass\n"
-        const pm_node = Parser.Parser.parse(src)?
+        const pm_node = Parser.Parser.parse(src, "<test>")?
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
@@ -101,7 +101,7 @@ class PipelineTest
 
     def testEntryPointThrowing() throws
         const src = "class App\n    static def main() throws\n        pass\n"
-        const pm_node = Parser.Parser.parse(src)?
+        const pm_node = Parser.Parser.parse(src, "<test>")?
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
@@ -114,7 +114,7 @@ class PipelineTest
 
     def testEntryPointNoMain() throws
         const src = "class Util\n    def helper()\n        pass\n"
-        const pm_node = Parser.Parser.parse(src)?
+        const pm_node = Parser.Parser.parse(src, "<test>")?
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
@@ -128,8 +128,8 @@ class PipelineTest
 
     def testResolverClean() throws
         const src = "class Adder\n    def add(a: int, b: int): int\n        return a\n"
-        const pm_node = Parser.Parser.parse(src)?
-        var resolver = Resolver.Resolver()
+        const pm_node = Parser.Parser.parse(src, "<test>")?
+        var resolver = Resolver.Resolver("<test>")
         resolver.resolve(pm_node)?
         assert resolver.errorCount() == 0, "clean program should have 0 resolver errors"
         print "testResolverClean: OK"
@@ -137,8 +137,8 @@ class PipelineTest
     def testResolverError() throws
         # 'undeclaredVar' is not declared — resolver should catch it
         const src = "class Broken\n    def bad()\n        print undeclaredVar\n"
-        const pm_node = Parser.Parser.parse(src)?
-        var resolver = Resolver.Resolver()
+        const pm_node = Parser.Parser.parse(src, "<test>")?
+        var resolver = Resolver.Resolver("<test>")
         resolver.resolve(pm_node)?
         assert resolver.errorCount() > 0, "expected resolver error for undeclared name"
         print "testResolverError: OK"

@@ -30,8 +30,8 @@ class ResolverTest
     # ── Tests ─────────────────────────────────────────────────────────────────
 
     def testEmptyClass() throws
-        var root = Parser.Parser.parse("class Empty\n")?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse("class Empty\n", "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "empty class: expected no errors"
         assert r.symbolCount() >= 1, "empty class: expected at least 1 symbol"
@@ -40,8 +40,8 @@ class ResolverTest
     def testFieldInScope() throws
         # A method that returns a field name — field should be in class scope
         const src = "class Point\n    var x: int\n    def getX(): int\n        return x\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "field in scope: expected no errors, got: " + r.firstError()
         print "testFieldInScope: OK"
@@ -49,8 +49,8 @@ class ResolverTest
     def testMethodInScope() throws
         # A method that references another method name — methods are in class scope
         const src = "class Counter\n    def value(): int\n        return 0\n    def doubled(): int\n        return value\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "method in scope: expected no errors, got: " + r.firstError()
         print "testMethodInScope: OK"
@@ -58,8 +58,8 @@ class ResolverTest
     def testLocalDeclaredBeforeUse() throws
         # var x declared, then returned — should be in scope
         const src = "class C\n    def compute(): int\n        var x: int = 0\n        return x\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "local before use: expected no errors, got: " + r.firstError()
         print "testLocalDeclaredBeforeUse: OK"
@@ -67,8 +67,8 @@ class ResolverTest
     def testUndefinedName() throws
         # Reference to a name that is never declared
         const src = "class C\n    def broken(): int\n        return undeclared\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 1, "undefined name: expected 1 error, got " + r.errorCount().toString()
         const msg = r.firstError()
@@ -79,8 +79,8 @@ class ResolverTest
         # `var x: int = x` — the RHS `x` is resolved BEFORE `x` is added to scope.
         # Resolver adds to scope only after resolving the init expression.
         const src = "class C\n    def bad()\n        var x: int = x\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 1, "pre-decl: expected 1 error, got " + r.errorCount().toString()
         const msg = r.firstError()
@@ -90,8 +90,8 @@ class ResolverTest
     def testArithExpr() throws
         # Binary expression with a local — resolver should walk both sides
         const src = "class C\n    def calc(): int\n        var n: int = 3\n        return n + n\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "arith: expected no errors, got: " + r.firstError()
         print "testArithExpr: OK"
@@ -99,8 +99,8 @@ class ResolverTest
     def testIfCond() throws
         # If with a reference in the condition and body
         const src = "class C\n    def check()\n        var flag: bool = true\n        if flag\n            var y: int = 1\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "if: expected no errors, got: " + r.firstError()
         print "testIfCond: OK"
@@ -108,8 +108,8 @@ class ResolverTest
     def testWhileLoop() throws
         # While loop with a declared counter
         const src = "class C\n    def loop()\n        var i: int = 0\n        while i\n            pass\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "while: expected no errors, got: " + r.firstError()
         print "testWhileLoop: OK"
@@ -117,8 +117,8 @@ class ResolverTest
     def testTryCatch() throws
         # try/catch — catch binding 'e' should be visible in catch body
         const src = "class C\n    def safe() throws\n        try\n            var x: int = 0\n        catch |e|\n            raise e\n"
-        var root = Parser.Parser.parse(src)?
-        var r = Resolver.Resolver()
+        var root = Parser.Parser.parse(src, "<test>")?
+        var r = Resolver.Resolver("<test>")
         r.resolve(root)?
         assert r.errorCount() == 0, "try/catch: expected no errors, got: " + r.firstError()
         print "testTryCatch: OK"

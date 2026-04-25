@@ -83,11 +83,11 @@ class MultiCompiler
 
         # Step 1: Parse
         sys.errln("  parsing...")
-        const pm_node = Parser.Parser.parse(src)?
+        const pm_node = Parser.Parser.parse(src, zbr_path)?
         sys.errln("  parsed OK")
 
         # Step 2: Resolve names
-        var resolver = Resolver.Resolver()
+        var resolver = Resolver.Resolver(zbr_path)
         resolver.resolve(pm_node)?
         sys.errln("  resolved OK")
         if resolver.errorCount() > 0
@@ -289,7 +289,7 @@ class MultiCompiler
             var ppath: str = partial_paths.at(pi)
             var psrc_raw: str = File.read(ppath)
             var psrc: str = psrc_raw
-            const ppm_node = Parser.Parser.parse(psrc)?
+            const ppm_node = Parser.Parser.parse(psrc, ppath)?
             if ppm_node is PNode.module_ as ppm
                 partial_pms.add(ppm)
             pi = pi + 1
@@ -483,7 +483,7 @@ class Main
         if r.exit_code != 0
             sys.exit(1)
     catch |e|
-        sys.errln("zebra: selfhost pipeline error: " + e.message)
+        sys.errln(e.message)
         sys.exit(1)
 
 # ── Error remapping helpers ───────────────────────────────────────────────────

@@ -512,10 +512,12 @@ struct PUnary
 class Parser
     var tokens: List(Token.Token)
     var pos: int
+    var file_name: str
 
-    cue init(tokens: List(Token.Token))
+    cue init(tokens: List(Token.Token), file_name: str)
         this.tokens = tokens
         this.pos = 0
+        this.file_name = file_name
 
     # -- Cursor ----------------------------------------------------------------
 
@@ -537,9 +539,12 @@ class Parser
     def textIs(s: str): bool
         return this.peek().text == s
 
+    def errorAt(msg: str): str
+        return this.file_name + ":" + this.peek().line.toString() + ":" + this.peek().col.toString() + ": error: " + msg
+
     def expectText(s: str) throws
         if not this.textIs(s)
-            raise "expected '" + s + "', got '" + this.peek().text + "' at line " + this.peek().line.toString()
+            raise .errorAt("expected '" + s + "', got '" + this.peek().text + "'")
         this.advance()
 
     def isEol(): bool
@@ -734,7 +739,7 @@ class Parser
 
     def eatId(): str throws
         if not this.isId()
-            raise "expected identifier, got '" + this.peek().text + "' at line " + this.peek().line.toString()
+            raise .errorAt("expected identifier, got '" + this.peek().text + "'")
         const text = this.peek().text
         this.advance()
         return text
@@ -748,7 +753,7 @@ class Parser
             const text = this.peek().text
             this.advance()
             return text
-        raise "expected name, got '" + this.peek().text + "' at line " + this.peek().line.toString()
+        raise .errorAt("expected name, got '" + this.peek().text + "'")
 
     # Consume a type-name token - accepts identifiers AND built-in type keywords
     # (int, bool, str, float, char, void) which the lexer promotes to keywords.
@@ -855,7 +860,7 @@ class Parser
             .expectText(")")
             sb.append(")")
             return sb.build()
-        raise "expected type name, got '" + text + "' at line " + this.peek().line.toString()
+        raise .errorAt("expected type name, got '" + text + "'")
 
     # -- Module ----------------------------------------------------------------
 
@@ -893,7 +898,7 @@ class Parser
             return .parseMethodDecl(true)
         else if this.textIs("def")
             return .parseMethodDecl(false)
-        raise "unexpected top-level token: '" + this.peek().text + "' at line " + this.peek().line.toString()
+        raise .errorAt("unexpected top-level token: '" + this.peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws
         .expectText("namespace")
@@ -1159,7 +1164,7 @@ class Parser
             return .parseDeclInit()
         else if this.textIs("invariant")
             return .parseInvariantDecl()
-        raise "unexpected member: '" + this.peek().text + "' at line " + this.peek().line.toString()
+        raise .errorAt("unexpected member: '" + this.peek().text + "'")
 
     def parseInvariantDecl(): PNode throws
         this.advance()
@@ -1200,7 +1205,7 @@ class Parser
     def parseDeclInit(): PNode throws
         .expectText("cue")
         if this.peek().text != "init"
-            raise "expected 'init' after cue, got '" + this.peek().text + "'"
+            raise .errorAt("expected 'init' after cue, got '" + this.peek().text + "'")
         var was_open_call = .isOpenCall()
         this.advance()
         if not was_open_call
@@ -1295,7 +1300,7 @@ class Parser
 
     def parseBlock(): List(PNode) throws
         if not .isIndent()
-            raise "expected indent, got '" + this.peek().text + "'"
+            raise .errorAt("expected indent, got '" + this.peek().text + "'")
         this.advance()
         var stmts = List(PNode)()
         while not .isDedent() and not .isEof()
@@ -1584,7 +1589,7 @@ class Parser
                 # Statement-body: def(params) eol indent [capture] stmts dedent
                 .skipEol()
                 if not .isIndent()
-                    raise "expected indent after lambda header at line " + this.peek().line.toString()
+                    raise .errorAt("expected indent after lambda header")
                 this.advance()
                 var captures = List(PCaptureVar)()
                 if this.textIs("capture")
@@ -1850,7 +1855,7 @@ class Parser
             # Consume "not", then expect "in"
             this.advance()
             if not this.textIs("in")
-                raise "expected 'in' after 'not' in comparison at line " + this.peek().line.toString()
+                raise .errorAt("expected 'in' after 'not' in comparison")
             this.advance()
             const right = .parseAddSub()
             var l = List(PNode)()
@@ -2122,7 +2127,7 @@ class Parser
             return PNode.expr_id(name)
         else if this.textIs("def") and .peekAt(1).text == "("
             return .parseLambdaExpr()
-        raise "unexpected expression token: '" + this.peek().text + "' at line " + this.peek().line.toString()
+        raise .errorAt("unexpected expression token: '" + this.peek().text + "'")
 
     def parseLambdaExpr(): PNode throws
         # Lambda: expression-body `def(params) [as T] = expr`
@@ -2149,7 +2154,7 @@ class Parser
         # Statement-body form: def(params) [as T] eol indent [capture] stmts dedent
         .skipEol()
         if not .isIndent()
-            raise "expected '=' or indent after lambda params at line " + this.peek().line.toString()
+            raise .errorAt("expected '=' or indent after lambda params")
         this.advance()
         var captures = List(PCaptureVar)()
         if this.textIs("capture")
@@ -2198,7 +2203,7 @@ class Parser
         .expectText("capture")
         .skipEol()
         if not .isIndent()
-            raise "expected indent after 'capture' at line " + this.peek().line.toString()
+            raise .errorAt("expected indent after 'capture'")
         this.advance()
         var caps = List(PCaptureVar)()
         while not .isDedent() and not .isEof()
@@ -2277,7 +2282,7 @@ class Parser
 
     # -- Public API ------------------------------------------------------------
 
-    static def parse(src: str): PNode throws
+    static def parse(src: str, file_name: str): PNode throws
         var toks = Lexer.tokenize(src)?
-        var p = Parser(toks)
+        var p = Parser(toks, file_name)
         return p.parseModule()

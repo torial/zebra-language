@@ -59,6 +59,9 @@ pub const ResolveResult = struct {
     types:      std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType),
     /// `ExprIdent` pointer → the symbol it refers to.  Absence = unresolved.
     exprs:      std.AutoHashMap(*const Ast.ExprIdent, *Symbol),
+    /// `DeclClass` pointer → its Symbol, so TypeChecker can set owner_sym for
+    /// `this.field` inference inside class method bodies.
+    class_syms: std.AutoHashMap(*const Ast.DeclClass, *const Symbol),
     diags:      []const Diagnostic,
     diag_alloc: Allocator,
 
@@ -72,6 +75,7 @@ pub const ResolveResult = struct {
         self.diag_alloc.free(self.diags);
         self.types.deinit();
         self.exprs.deinit();
+        self.class_syms.deinit();
     }
 };
 
@@ -89,15 +93,17 @@ pub fn resolvePass2(
     diag_alloc:       Allocator,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
 ) anyerror!ResolveResult {
-    var types = std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType).init(map_alloc);
-    var exprs = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
-    var diags = std.ArrayList(Diagnostic){};
+    var types      = std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType).init(map_alloc);
+    var exprs      = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
+    var class_syms = std.AutoHashMap(*const Ast.DeclClass, *const Symbol).init(map_alloc);
+    var diags      = std.ArrayList(Diagnostic){};
 
     const r = Resolver{
         .table            = table,
         .diag_alloc       = diag_alloc,
         .types            = &types,
         .exprs            = &exprs,
+        .class_syms       = &class_syms,
         .diags            = &diags,
         .imported_modules = imported_modules,
     };
@@ -107,6 +113,7 @@ pub fn resolvePass2(
     return .{
         .types      = types,
         .exprs      = exprs,
+        .class_syms = class_syms,
         .diags      = try diags.toOwnedSlice(diag_alloc),
         .diag_alloc = diag_alloc,
     };
@@ -119,6 +126,7 @@ const Resolver = struct {
     diag_alloc:       Allocator,
     types:            *std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType),
     exprs:            *std.AutoHashMap(*const Ast.ExprIdent, *Symbol),
+    class_syms:       *std.AutoHashMap(*const Ast.DeclClass, *const Symbol),
     diags:            *std.ArrayList(Diagnostic),
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface) = null,
 
@@ -159,6 +167,7 @@ const Resolver = struct {
     fn walkClass(r: Resolver, n: *Ast.DeclClass, scope: *Scope) anyerror!void {
         const sym   = scope.lookupLocal(n.name) orelse return;
         const inner = sym.own_scope orelse return;
+        try r.class_syms.put(n, sym);
         // Inject type parameters as placeholder symbols so that TypeRef.named("T")
         // resolves correctly inside the class body (Approach B: eager specialization).
         for (n.type_params) |tp| {

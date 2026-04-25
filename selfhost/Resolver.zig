@@ -1560,39 +1560,42 @@ pub const Resolver = struct {
     method_scope: std.StringHashMap(i64),
     errors: std.ArrayList(ResolveError),
     symbol_count: i64,
-    pub fn init() *Resolver {
+    file_name: []const u8,
+    pub fn init(file_name: []const u8) *Resolver {
         const _self = _allocator.create(Resolver) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Resolver");
-// zbr:selfhost/Resolver.zbr:57
-            _self.module_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:58
-            _self.class_scope = std.StringHashMap(i64).init(_allocator);
+            _self.module_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:59
-            _self.method_scope = std.StringHashMap(i64).init(_allocator);
+            _self.class_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:60
-            _self.errors = std.ArrayList(ResolveError){};
+            _self.method_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:61
+            _self.errors = std.ArrayList(ResolveError){};
+// zbr:selfhost/Resolver.zbr:62
             _self.symbol_count = 0;
+// zbr:selfhost/Resolver.zbr:63
+            _self.file_name = _intern(file_name);
         return _self;
     }
 
     pub fn errorCount(self: *Resolver) i64 {
-// zbr:selfhost/Resolver.zbr:66
+// zbr:selfhost/Resolver.zbr:68
         return @as(i64, @intCast(self.errors.items.len));
     }
 
     pub fn symbolCount(self: *Resolver) i64 {
-// zbr:selfhost/Resolver.zbr:69
+// zbr:selfhost/Resolver.zbr:71
         return self.symbol_count;
     }
 
     pub fn firstError(self: *Resolver) []const u8 {
-// zbr:selfhost/Resolver.zbr:72
+// zbr:selfhost/Resolver.zbr:74
         if (_zebra_gt(@as(i64, @intCast(self.errors.items.len)), 0)) {
-// zbr:selfhost/Resolver.zbr:73
+// zbr:selfhost/Resolver.zbr:75
             return self.errors.items[@intCast(0)].message;
         }
-// zbr:selfhost/Resolver.zbr:74
+// zbr:selfhost/Resolver.zbr:76
         return "";
     }
 
@@ -1602,11 +1605,11 @@ pub const Resolver = struct {
     }
 
     pub fn bindPass1(self: *Resolver, root: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:85
+// zbr:selfhost/Resolver.zbr:87
         if (root == .module_) {
             const m_ptr = root.module_;
             const m = m_ptr.*;
-// zbr:selfhost/Resolver.zbr:86
+// zbr:selfhost/Resolver.zbr:88
             for (m.decls.items) |decl| {
                 try self.bindTopDecl(decl);
             }
@@ -1614,48 +1617,48 @@ pub const Resolver = struct {
     }
 
     pub fn bindTopDecl(self: *Resolver, decl: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:89
+// zbr:selfhost/Resolver.zbr:91
         switch (decl) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
                 self.module_scope.put(_intern(c.name), 0) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:92
+// zbr:selfhost/Resolver.zbr:94
                 self.symbol_count = (self.symbol_count + 1);
             },
             .struct_ => |_ptr_s| {
                 const s = _ptr_s.*;
                 self.module_scope.put(_intern(s.name), 0) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:95
+// zbr:selfhost/Resolver.zbr:97
                 self.symbol_count = (self.symbol_count + 1);
             },
             .union_decl => |_ptr_u| {
                 const u = _ptr_u.*;
                 self.module_scope.put(_intern(u.name), 0) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:98
+// zbr:selfhost/Resolver.zbr:100
                 self.symbol_count = (self.symbol_count + 1);
             },
             .enum_ => |_ptr_e| {
                 const e = _ptr_e.*;
                 self.module_scope.put(_intern(e.name), 0) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:101
+// zbr:selfhost/Resolver.zbr:103
                 self.symbol_count = (self.symbol_count + 1);
             },
             .sig_ => |_ptr_sg| {
                 const sg = _ptr_sg.*;
                 self.module_scope.put(_intern(sg.name), 0) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:104
+// zbr:selfhost/Resolver.zbr:106
                 self.symbol_count = (self.symbol_count + 1);
             },
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
                 self.module_scope.put(_intern(m.name), 1) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:107
+// zbr:selfhost/Resolver.zbr:109
                 self.symbol_count = (self.symbol_count + 1);
             },
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
                 self.module_scope.put(_intern(u.path), 5) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:110
+// zbr:selfhost/Resolver.zbr:112
                 for (u.exposed.items) |name| {
                     self.module_scope.put(_intern(name), 5) catch @panic("OOM");
                 }
@@ -1667,11 +1670,11 @@ pub const Resolver = struct {
     }
 
     pub fn resolvePass2(self: *Resolver, root: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:118
+// zbr:selfhost/Resolver.zbr:120
         if (root == .module_) {
             const m_ptr = root.module_;
             const m = m_ptr.*;
-// zbr:selfhost/Resolver.zbr:119
+// zbr:selfhost/Resolver.zbr:121
             for (m.decls.items) |decl| {
                 try self.resolveTopDecl(decl);
             }
@@ -1679,7 +1682,7 @@ pub const Resolver = struct {
     }
 
     pub fn resolveTopDecl(self: *Resolver, decl: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:122
+// zbr:selfhost/Resolver.zbr:124
         switch (decl) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
@@ -1701,37 +1704,37 @@ pub const Resolver = struct {
 
     pub fn enterClass(self: *Resolver, name: []const u8, members: std.ArrayList(PNode), type_params: std.ArrayList([]const u8)) anyerror!void {
         _ = name;
-// zbr:selfhost/Resolver.zbr:136
-        self.class_scope = std.StringHashMap(i64).init(_allocator);
 // zbr:selfhost/Resolver.zbr:138
+        self.class_scope = std.StringHashMap(i64).init(_allocator);
+// zbr:selfhost/Resolver.zbr:140
         for (type_params.items) |tp| {
             self.class_scope.put(_intern(tp), 6) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:140
+// zbr:selfhost/Resolver.zbr:142
             self.symbol_count = (self.symbol_count + 1);
         }
-// zbr:selfhost/Resolver.zbr:142
+// zbr:selfhost/Resolver.zbr:144
         for (members.items) |member| {
             try self.collectMember(member);
         }
-// zbr:selfhost/Resolver.zbr:145
+// zbr:selfhost/Resolver.zbr:147
         for (members.items) |member| {
             try self.resolveMember(member);
         }
     }
 
     pub fn collectMember(self: *Resolver, member: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:149
+// zbr:selfhost/Resolver.zbr:151
         switch (member) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
                 self.class_scope.put(_intern(m.name), 1) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:152
+// zbr:selfhost/Resolver.zbr:154
                 self.symbol_count = (self.symbol_count + 1);
             },
             .field_ => |_ptr_f| {
                 const f = _ptr_f.*;
                 self.class_scope.put(_intern(f.name), 2) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:155
+// zbr:selfhost/Resolver.zbr:157
                 self.symbol_count = (self.symbol_count + 1);
             },
             else => |_| {
@@ -1741,7 +1744,7 @@ pub const Resolver = struct {
     }
 
     pub fn resolveMember(self: *Resolver, member: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:160
+// zbr:selfhost/Resolver.zbr:162
         switch (member) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
@@ -1758,67 +1761,67 @@ pub const Resolver = struct {
     }
 
     pub fn enterMethod(self: *Resolver, params: std.ArrayList(PParam), stmts: std.ArrayList(PNode)) anyerror!void {
-// zbr:selfhost/Resolver.zbr:170
+// zbr:selfhost/Resolver.zbr:172
         self.method_scope = std.StringHashMap(i64).init(_allocator);
-// zbr:selfhost/Resolver.zbr:171
+// zbr:selfhost/Resolver.zbr:173
         for (params.items) |p| {
             self.method_scope.put(_intern(p.name), 3) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:173
+// zbr:selfhost/Resolver.zbr:175
             self.symbol_count = (self.symbol_count + 1);
         }
         try self.resolveStmts(stmts);
     }
 
     pub fn resolveStmts(self: *Resolver, stmts: std.ArrayList(PNode)) anyerror!void {
-// zbr:selfhost/Resolver.zbr:179
+// zbr:selfhost/Resolver.zbr:181
         for (stmts.items) |stmt| {
             try self.resolveStmt(stmt);
         }
     }
 
     pub fn resolveStmt(self: *Resolver, stmt: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:183
+// zbr:selfhost/Resolver.zbr:185
         switch (stmt) {
             .stmt_var => |_ptr_v| {
                 const v = _ptr_v.*;
-// zbr:selfhost/Resolver.zbr:186
+// zbr:selfhost/Resolver.zbr:188
                 for (v.init_expr.items) |expr| {
                     try self.resolveExpr(expr);
                 }
                 self.method_scope.put(_intern(v.name), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:189
+// zbr:selfhost/Resolver.zbr:191
                 self.symbol_count = (self.symbol_count + 1);
             },
             .stmt_destruct => |_ptr_d| {
                 const d = _ptr_d.*;
-// zbr:selfhost/Resolver.zbr:191
+// zbr:selfhost/Resolver.zbr:193
                 for (d.init_expr.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:193
+// zbr:selfhost/Resolver.zbr:195
                 for (d.names.items) |nm| {
                     self.method_scope.put(_intern(nm), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:195
+// zbr:selfhost/Resolver.zbr:197
                     self.symbol_count = (self.symbol_count + 1);
                 }
             },
             .stmt_return => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/Resolver.zbr:197
+// zbr:selfhost/Resolver.zbr:199
                 for (r.value.items) |expr| {
                     try self.resolveExpr(expr);
                 }
             },
             .stmt_if => |_ptr_i| {
                 const i = _ptr_i.*;
-// zbr:selfhost/Resolver.zbr:200
+// zbr:selfhost/Resolver.zbr:202
                 for (i.cond.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:202
+// zbr:selfhost/Resolver.zbr:204
                 if ((i.is_capture != null)) {
                     self.method_scope.put(_intern(i.is_capture.?), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:204
+// zbr:selfhost/Resolver.zbr:206
                     self.symbol_count = (self.symbol_count + 1);
                 }
                 try self.resolveStmts(i.then_stmts);
@@ -1826,7 +1829,7 @@ pub const Resolver = struct {
             },
             .stmt_while => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/Resolver.zbr:208
+// zbr:selfhost/Resolver.zbr:210
                 for (w.cond.items) |expr| {
                     try self.resolveExpr(expr);
                 }
@@ -1834,11 +1837,11 @@ pub const Resolver = struct {
             },
             .stmt_for_in => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/Resolver.zbr:212
+// zbr:selfhost/Resolver.zbr:214
                 for (f.iter.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:214
+// zbr:selfhost/Resolver.zbr:216
                 for (f.var_names.items) |var_name| {
                     self.method_scope.put(_intern(var_name), 4) catch @panic("OOM");
                 }
@@ -1847,29 +1850,29 @@ pub const Resolver = struct {
             },
             .stmt_assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/Resolver.zbr:219
+// zbr:selfhost/Resolver.zbr:221
                 for (a.target.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:221
+// zbr:selfhost/Resolver.zbr:223
                 for (a.value.items) |expr| {
                     try self.resolveExpr(expr);
                 }
             },
             .stmt_assert => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/Resolver.zbr:224
+// zbr:selfhost/Resolver.zbr:226
                 for (a.cond.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:226
+// zbr:selfhost/Resolver.zbr:228
                 for (a.message.items) |expr| {
                     try self.resolveExpr(expr);
                 }
             },
             .stmt_raise => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/Resolver.zbr:229
+// zbr:selfhost/Resolver.zbr:231
                 for (r.message.items) |expr| {
                     try self.resolveExpr(expr);
                 }
@@ -1877,7 +1880,7 @@ pub const Resolver = struct {
             .stmt_try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
                 try self.resolveStmts(tc.body_stmts);
-// zbr:selfhost/Resolver.zbr:233
+// zbr:selfhost/Resolver.zbr:235
                 if (!std.mem.eql(u8, tc.catch_binding, "")) {
                     self.method_scope.put(_intern(tc.catch_binding), 4) catch @panic("OOM");
                 }
@@ -1885,13 +1888,13 @@ pub const Resolver = struct {
             },
             .stmt_branch => |_ptr_br| {
                 const br = _ptr_br.*;
-// zbr:selfhost/Resolver.zbr:237
+// zbr:selfhost/Resolver.zbr:239
                 for (br.subject.items) |expr| {
                     try self.resolveExpr(expr);
                 }
-// zbr:selfhost/Resolver.zbr:239
+// zbr:selfhost/Resolver.zbr:241
                 for (br.arms.items) |arm| {
-// zbr:selfhost/Resolver.zbr:240
+// zbr:selfhost/Resolver.zbr:242
                     if (!std.mem.eql(u8, arm.binding, "")) {
                         self.method_scope.put(_intern(arm.binding), 4) catch @panic("OOM");
                     }
@@ -1923,72 +1926,72 @@ pub const Resolver = struct {
     }
 
     pub fn resolveExpr(self: *Resolver, expr: PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:260
+// zbr:selfhost/Resolver.zbr:262
         switch (expr) {
             .expr_id => |name| {
-// zbr:selfhost/Resolver.zbr:262
+// zbr:selfhost/Resolver.zbr:264
                 if ((!self.isInScope(name))) {
-                    self.errors.append(_allocator, ResolveError.init(_str_concat(_str_concat("undefined name: '", name, _allocator), "'", _allocator))) catch @panic("OOM");
+                    self.errors.append(_allocator, ResolveError.init(_str_concat(_str_concat(_str_concat(self.file_name, ": error: undefined name: '", _allocator), name, _allocator), "'", _allocator))) catch @panic("OOM");
                 }
             },
             .expr_binary => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/Resolver.zbr:265
+// zbr:selfhost/Resolver.zbr:267
                 for (b.left.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:267
+// zbr:selfhost/Resolver.zbr:269
                 for (b.right.items) |e| {
                     try self.resolveExpr(e);
                 }
             },
             .expr_unary => |_ptr_u| {
                 const u = _ptr_u.*;
-// zbr:selfhost/Resolver.zbr:270
+// zbr:selfhost/Resolver.zbr:272
                 for (u.operand.items) |e| {
                     try self.resolveExpr(e);
                 }
             },
             .expr_call => |_ptr_c| {
                 const c = _ptr_c.*;
-// zbr:selfhost/Resolver.zbr:273
+// zbr:selfhost/Resolver.zbr:275
                 for (c.callee.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:275
+// zbr:selfhost/Resolver.zbr:277
                 for (c.args.items) |e| {
                     try self.resolveExpr(e);
                 }
             },
             .expr_index => |_ptr_ix| {
                 const ix = _ptr_ix.*;
-// zbr:selfhost/Resolver.zbr:278
+// zbr:selfhost/Resolver.zbr:280
                 for (ix.object.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:280
+// zbr:selfhost/Resolver.zbr:282
                 for (ix.index.items) |e| {
                     try self.resolveExpr(e);
                 }
             },
             .expr_slice => |_ptr_sl| {
                 const sl = _ptr_sl.*;
-// zbr:selfhost/Resolver.zbr:283
+// zbr:selfhost/Resolver.zbr:285
                 for (sl.object.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:285
+// zbr:selfhost/Resolver.zbr:287
                 for (sl.start.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:287
+// zbr:selfhost/Resolver.zbr:289
                 for (sl.stop_.items) |e| {
                     try self.resolveExpr(e);
                 }
             },
             .expr_member => |_ptr_m| {
                 const m = _ptr_m.*;
-// zbr:selfhost/Resolver.zbr:290
+// zbr:selfhost/Resolver.zbr:292
                 for (m.base.items) |e| {
                     try self.resolveExpr(e);
                 }
@@ -2001,13 +2004,13 @@ pub const Resolver = struct {
             },
             .expr_except => |_ptr_ex| {
                 const ex = _ptr_ex.*;
-// zbr:selfhost/Resolver.zbr:300
+// zbr:selfhost/Resolver.zbr:302
                 for (ex.base.items) |e| {
                     try self.resolveExpr(e);
                 }
-// zbr:selfhost/Resolver.zbr:302
+// zbr:selfhost/Resolver.zbr:304
                 for (ex.fields.items) |f| {
-// zbr:selfhost/Resolver.zbr:303
+// zbr:selfhost/Resolver.zbr:305
                     for (f.value.items) |v| {
                         try self.resolveExpr(v);
                     }
@@ -2015,7 +2018,7 @@ pub const Resolver = struct {
             },
             .expr_string_interp => |_ptr_si| {
                 const si = _ptr_si.*;
-// zbr:selfhost/Resolver.zbr:306
+// zbr:selfhost/Resolver.zbr:308
                 for (si.parts.items) |part| {
                     try self.resolveExpr(part);
                 }
@@ -2027,101 +2030,101 @@ pub const Resolver = struct {
     }
 
     pub fn isInScope(self: *Resolver, name: []const u8) bool {
-// zbr:selfhost/Resolver.zbr:315
-        if (self.method_scope.contains(name)) {
-// zbr:selfhost/Resolver.zbr:316
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:317
-        if (self.class_scope.contains(name)) {
+        if (self.method_scope.contains(name)) {
 // zbr:selfhost/Resolver.zbr:318
             return true;
         }
 // zbr:selfhost/Resolver.zbr:319
-        if (self.module_scope.contains(name)) {
+        if (self.class_scope.contains(name)) {
 // zbr:selfhost/Resolver.zbr:320
             return true;
         }
 // zbr:selfhost/Resolver.zbr:321
-        if (self.isBuiltin(name)) {
+        if (self.module_scope.contains(name)) {
 // zbr:selfhost/Resolver.zbr:322
             return true;
         }
 // zbr:selfhost/Resolver.zbr:323
+        if (self.isBuiltin(name)) {
+// zbr:selfhost/Resolver.zbr:324
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:325
         return false;
     }
 
     pub fn isBuiltin(self: *Resolver, name: []const u8) bool {
         _ = self;
-// zbr:selfhost/Resolver.zbr:327
-        if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
-// zbr:selfhost/Resolver.zbr:328
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:329
-        if (((std.mem.eql(u8, name, "nil") or std.mem.eql(u8, name, "true")) or std.mem.eql(u8, name, "false"))) {
+        if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
 // zbr:selfhost/Resolver.zbr:330
             return true;
         }
 // zbr:selfhost/Resolver.zbr:331
-        if (((std.mem.eql(u8, name, "this") or std.mem.eql(u8, name, "print")) or std.mem.eql(u8, name, "assert"))) {
+        if (((std.mem.eql(u8, name, "nil") or std.mem.eql(u8, name, "true")) or std.mem.eql(u8, name, "false"))) {
 // zbr:selfhost/Resolver.zbr:332
             return true;
         }
+// zbr:selfhost/Resolver.zbr:333
+        if (((std.mem.eql(u8, name, "this") or std.mem.eql(u8, name, "print")) or std.mem.eql(u8, name, "assert"))) {
 // zbr:selfhost/Resolver.zbr:334
-        if (((std.mem.eql(u8, name, "List") or std.mem.eql(u8, name, "HashMap")) or std.mem.eql(u8, name, "StringBuilder"))) {
-// zbr:selfhost/Resolver.zbr:335
             return true;
         }
+// zbr:selfhost/Resolver.zbr:336
+        if (((std.mem.eql(u8, name, "List") or std.mem.eql(u8, name, "HashMap")) or std.mem.eql(u8, name, "StringBuilder"))) {
 // zbr:selfhost/Resolver.zbr:337
-        if ((((std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "sys")) or std.mem.eql(u8, name, "Shell")) or std.mem.eql(u8, name, "Math"))) {
-// zbr:selfhost/Resolver.zbr:338
             return true;
         }
 // zbr:selfhost/Resolver.zbr:339
-        if (((((std.mem.eql(u8, name, "Json") or std.mem.eql(u8, name, "Http")) or std.mem.eql(u8, name, "Tcp")) or std.mem.eql(u8, name, "Udp")) or std.mem.eql(u8, name, "Net"))) {
+        if ((((std.mem.eql(u8, name, "File") or std.mem.eql(u8, name, "sys")) or std.mem.eql(u8, name, "Shell")) or std.mem.eql(u8, name, "Math"))) {
 // zbr:selfhost/Resolver.zbr:340
             return true;
         }
 // zbr:selfhost/Resolver.zbr:341
-        if ((((std.mem.eql(u8, name, "Hash") or std.mem.eql(u8, name, "Random")) or std.mem.eql(u8, name, "Arg")) or std.mem.eql(u8, name, "Terminal"))) {
+        if (((((std.mem.eql(u8, name, "Json") or std.mem.eql(u8, name, "Http")) or std.mem.eql(u8, name, "Tcp")) or std.mem.eql(u8, name, "Udp")) or std.mem.eql(u8, name, "Net"))) {
 // zbr:selfhost/Resolver.zbr:342
             return true;
         }
 // zbr:selfhost/Resolver.zbr:343
-        if (((((std.mem.eql(u8, name, "Log") or std.mem.eql(u8, name, "Uri")) or std.mem.eql(u8, name, "Compress")) or std.mem.eql(u8, name, "Mime")) or std.mem.eql(u8, name, "Timer"))) {
+        if ((((std.mem.eql(u8, name, "Hash") or std.mem.eql(u8, name, "Random")) or std.mem.eql(u8, name, "Arg")) or std.mem.eql(u8, name, "Terminal"))) {
 // zbr:selfhost/Resolver.zbr:344
             return true;
         }
 // zbr:selfhost/Resolver.zbr:345
-        if ((((std.mem.eql(u8, name, "Regex") or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Reflect"))) {
+        if (((((std.mem.eql(u8, name, "Log") or std.mem.eql(u8, name, "Uri")) or std.mem.eql(u8, name, "Compress")) or std.mem.eql(u8, name, "Mime")) or std.mem.eql(u8, name, "Timer"))) {
 // zbr:selfhost/Resolver.zbr:346
             return true;
         }
 // zbr:selfhost/Resolver.zbr:347
-        if (((std.mem.eql(u8, name, "Csv") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
+        if ((((std.mem.eql(u8, name, "Regex") or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Reflect"))) {
 // zbr:selfhost/Resolver.zbr:348
             return true;
         }
 // zbr:selfhost/Resolver.zbr:349
-        if (((std.mem.eql(u8, name, "Dir") or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "HttpResponse"))) {
+        if (((std.mem.eql(u8, name, "Csv") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
 // zbr:selfhost/Resolver.zbr:350
             return true;
         }
 // zbr:selfhost/Resolver.zbr:351
-        if (std.mem.eql(u8, name, "Progress")) {
+        if (((std.mem.eql(u8, name, "Dir") or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "HttpResponse"))) {
 // zbr:selfhost/Resolver.zbr:352
             return true;
         }
 // zbr:selfhost/Resolver.zbr:353
+        if (std.mem.eql(u8, name, "Progress")) {
+// zbr:selfhost/Resolver.zbr:354
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:355
         return false;
     }
 
 };
 const _ttag_Resolver: u64 = _zbr_hash("Resolver");
 const _reflect_Resolver_name: []const u8 = "Resolver";
-const _reflect_Resolver_fields: []const []const u8 = &.{"module_scope", "class_scope", "method_scope", "errors", "symbol_count"};
-const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)", "HashMap(str, int)", "HashMap(str, int)", "List(ResolveError)", "int"};
+const _reflect_Resolver_fields: []const []const u8 = &.{"module_scope", "class_scope", "method_scope", "errors", "symbol_count", "file_name"};
+const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)", "HashMap(str, int)", "HashMap(str, int)", "List(ResolveError)", "int", "str"};
 
 pub const Main = struct {
     _type_tag: u64 = _ttag_Main,

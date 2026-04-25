@@ -26,7 +26,7 @@ class ParserTest
     # -- Helpers ---------------------------------------------------------------
 
     def parseModule(src: str): PNode throws
-        return Parser.Parser.parse(src)
+        return Parser.Parser.parse(src, "<test>")
 
     def moduleDecls(src: str): List(PNode) throws
         const root = .parseModule(src)

@@ -1028,8 +1028,9 @@ const TypeChecker = struct {
     // ── Type declarations ─────────────────────────────────────────────────────
 
     fn checkClass(tc: TypeChecker, n: *Ast.DeclClass) anyerror!void {
-        for (n.invariants) |e| _ = try tc.inferExpr(e);
-        for (n.members)    |m| try tc.checkMember(m);
+        const inner = if (tc.resolve.class_syms.get(n)) |sym| tc.withOwner(sym) else tc;
+        for (n.invariants) |e| _ = try inner.inferExpr(e);
+        for (n.members)    |m| try inner.checkMember(m);
     }
 
     fn checkInterface(tc: TypeChecker, n: *Ast.DeclInterface) anyerror!void {

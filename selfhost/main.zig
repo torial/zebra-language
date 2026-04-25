@@ -1621,10 +1621,10 @@ pub const MultiCompiler = struct {
         const src: []const u8 = (std.fs.cwd().readFileAlloc(_allocator, zbr_path, std.math.maxInt(usize)) catch @panic("File.read error"));
         std.debug.print("{s}\n", .{"  parsing..."});
 // zbr:selfhost/main.zbr:86
-        const pm_node = try Parser.Parser.parse(src);
+        const pm_node = try Parser.Parser.parse(src, zbr_path);
         std.debug.print("{s}\n", .{"  parsed OK"});
 // zbr:selfhost/main.zbr:90
-        var resolver = Resolver.init();
+        var resolver = Resolver.init(zbr_path);
         try resolver.resolve(pm_node);
         std.debug.print("{s}\n", .{"  resolved OK"});
 // zbr:selfhost/main.zbr:93
@@ -2004,7 +2004,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:291
             const psrc: []const u8 = psrc_raw;
 // zbr:selfhost/main.zbr:292
-            const ppm_node = try Parser.Parser.parse(psrc);
+            const ppm_node = try Parser.Parser.parse(psrc, ppath);
 // zbr:selfhost/main.zbr:293
             if (ppm_node == .module_) {
                 const ppm_ptr = ppm_node.module_;
@@ -2319,7 +2319,7 @@ pub const Main = struct {
                 break :_try_blk;
             }
             if (_try_err != null) {
-                std.debug.print("{s}\n", .{_str_concat("zebra: selfhost pipeline error: ", _zbr_error_msg(), _allocator)});
+                std.debug.print("{s}\n", .{_zbr_error_msg()});
                 std.process.exit(@intCast(1));
             }
         }

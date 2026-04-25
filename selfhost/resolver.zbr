@@ -52,13 +52,15 @@ class Resolver
 
     var errors      : List(ResolveError)
     var symbol_count: int
+    var file_name   : str
 
-    cue init()
+    cue init(file_name: str)
         this.module_scope  = HashMap()
         this.class_scope   = HashMap()
         this.method_scope  = HashMap()
         this.errors        = List(ResolveError)()
         this.symbol_count  = 0
+        this.file_name     = file_name
 
     # -- Result accessors (return primitives for cross-module use) -------------
 
@@ -260,7 +262,7 @@ class Resolver
         branch expr
             on PNode.expr_id as name
                 if not .isInScope(name)
-                    this.errors.add(ResolveError("undefined name: '" + name + "'"))
+                    this.errors.add(ResolveError(this.file_name + ": error: undefined name: '" + name + "'"))
             on PNode.expr_binary as b
                 for e in b.left
                     .resolveExpr(e)

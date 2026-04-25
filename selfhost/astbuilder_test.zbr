@@ -46,7 +46,7 @@ class ASTBuilderTest
 
     # Build a Module from Zebra source. Explicit ? on cross-module throws calls.
     def buildModule(src: str): Module throws
-        const pm = Parser.Parser.parse(src)?
+        const pm = Parser.Parser.parse(src, "<test>")?
         branch pm
             on PNode.module_ as m
                 return ASTBuilder.build(m, "<test>")?
