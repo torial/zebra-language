@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 12 — `--turbo` flag implemented; DESIGN-002 closed)
+**Last updated:** 2026-04-24 (session 14 — #4 already done; #18 Progress module complete)
 
 ---
 
@@ -16,6 +16,9 @@ Defer unless a concrete failing case is found.
 
 ~~**BUG-083** — `genGenericClass` skips `implements` conformance checks~~ ✓ DONE  
 ~~**BUG-084** — Selfhost `Lexer.zbr` `parenDepth` tracks `[`/`]`; Zig Tokenizer does not~~ ✓ DONE
+
+~~### 4. `str` satisfies `Comparable` by compiler fiat — narrow fix (~1 hr)~~ ✓ ALREADY DONE
+`typeImplements` at `src/TypeChecker.zig:2982` already excludes `.string`; comment says "bool and string are excluded: they have no declared compareTo contract." No code change needed.
 
 ~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
 Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` extended to handle call receivers; `break :blk_N try _mc_N.method(args)` emitted when method `throws`. Selfhost mirrors via `inferExpr`+`isClassMethodThrows`.
@@ -42,6 +45,14 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 "Accumulate and rerun" state model (all previous cells stay in scope).
 See design notes in `selfhost/` journal and `SELFHOST_JOURNAL.md`.
 
+### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9 — pending)
+Two items from the 0.9 window that haven't shipped yet:
+- **`Json.parseStrict(T, str)`** — validate a JSON string against a declared Zebra struct type;
+  surface field-name mismatches at runtime rather than silently ignoring extra/missing keys.
+- **`@reflectable` annotation** — Tier 3 reflection: classes annotated `@reflectable` expose
+  field enumeration at runtime via `Reflect.fieldNames()` / `Reflect.fieldValue()`.  
+See `wiki/pages/concepts/concept_zebra-reflection.md`.
+
 ### 7. Regex per-quantifier lazy/greedy (Milestone 0.7)
 Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
 to track per-node shortest/longest flags, not a global flag.
@@ -54,6 +65,10 @@ Extends the existing branch/guard infrastructure.
 Port the Python Unicode n-gram analysis script for the Greek New Testament to Zebra.
 Exercises: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window.
 Good benchmark: if this runs correctly and fast, the language is production-capable for text work.
+
+~~### 18. `Progress` stdlib module (tqdm-equivalent)~~ ✓ DONE (2026-04-24)
+`Progress.bar(total, label)` / `.tick()` / `.done()` backed by `std.Progress` (thread-safe, no alloc).  
+Both Zig and selfhost backends; bootstrap 5/5; 34/34 smoke. Deferred: `Progress.wrap(iterable, label)` iterator form.
 
 ### 10. Plugin system — DynLib demo (after `interface` codegen)
 Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
@@ -69,6 +84,13 @@ See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — update alongside a future `result` implementation.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
+### 19. Error recovery — continue after first compiler error
+The Zebra compiler stops on the first error in each phase. Collecting all errors in a pass and
+reporting them together is critical for IDE integration, REPL usability, and `zebra check`.  
+**Scope:** Propagate an error-collection state through Resolver and TypeChecker; CodeGen skips
+method bodies that have unresolved types. Errors accumulate in a list, then all printed at exit.  
+**Effort:** Medium–large. See `concept_zebra-open-concerns.md` P4. 1.0-era.
+
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
 - ~~Audit which reserved keywords (`set`/`get`/`body`/`same`) are grammar-load-bearing~~ ✓ DONE (`set`/`get`/`body`/`post`/`pro` removed 2026-04-19; `same` kept — TypeRef)
 - ~~`implements IfaceName` on the class declaration line~~ ✓ DONE (already on class line; old nested form was never the real parser)
@@ -77,6 +99,23 @@ See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 - `^T` auto-boxing edge case fixes
 - Book documentation for `sig`, raw strings, `"""`
 See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`
+
+### 20. SIMD types — Milestone 0.11 headliner
+`f32x8`, `i16x16`, `f32x4` etc. naming convention (`{element_type}x{lanes}`). Auto-fallback to scalar loop when the target lacks the vector width.  
+**Impl coordinates:** `src/Builtins.zig` (SIMD builtins), `src/TypeChecker.zig` (simd type inference), `src/CodeGen.zig` (`genSimdCall`); selfhost parity in `selfhost/codegen.zbr`.  
+**Motivation:** LynseDB brute-force vector search; llama.cpp–style dot-product hotpaths.  
+See `wiki/pages/concepts/concept_zebra-simd-design.md` for the complete design.
+
+### 21. Milestone 0.11 supporting cluster
+Items that land in the same window as SIMD or that unlock the 0.12/0.13 work:
+- **gzip compress** — blocked on Zig 0.16 (`std.compress.flate.Compress` is `@panic("TODO")` in Zig 0.15.2); unblock once Zig upgrades
+- **`once` method modifier** — body executes at most once; result cached on the instance
+- **Chained comparisons** — `0 < x < 100` desugars to `0 < x and x < 100`
+- **`unless` / `until`** — negated conditional + loop forms
+- **JSON auto-inference** — `Json.parse(T, str)` infers target struct without a separate `as T` annotation
+- **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering
+- **Profiler** — sampling profiler; output compatible with flamegraph or Zig's tracy integration
+See `wiki/pages/projects/project_zebra.md` (milestone table 0.11).
 
 ---
 
@@ -101,6 +140,9 @@ See: `wiki/pages/concepts/concept_zebra-imgui-backend.md`, `concept_zebra-pthom-
 - WebSocket (`Ws.connect/send/recv/close`)
 - Allocator context (Odin-style named implicit allocator)
 - `Chan(T)` channels (`ch <- val` / `var v <- ch`)
+- **IANA timezone support (`zdt`)** — `DateTime.inZone("America/New_York")`; must land before 1.0; see `concept_zebra-datetime-design.md`
+- **`Test` stdlib module** — `zebra test` subcommand; test discovery by naming convention (`def test_*`); structured pass/fail output; see `STDLIB_ROADMAP.md` item 11
+- **General for-loop destructuring** — `for a, b in list_of_pairs` tuple unpacking; currently only HashMap iteration has this as compiler magic
 - CHANGELOG
 
 ### 16. Intertextual support (post-1.0)

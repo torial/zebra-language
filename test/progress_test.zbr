@@ -1,0 +1,8 @@
+class App
+    static
+        def main
+            var pb = Progress.bar(5, "counting")
+            for n in 0:5
+                pb.tick()
+            pb.done()
+            print "done"

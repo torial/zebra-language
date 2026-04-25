@@ -110,6 +110,8 @@ pub const Type = union(enum) {
     uri_result,
     /// `TimerHandle` — high-resolution timer from `Timer.start()`.
     timer_handle,
+    /// `ProgressBar` — terminal progress indicator from `Progress.bar()`.
+    progress_bar,
     /// `CodeEditor` — embeddable code-editor widget (Phase A: backed by inputMultiline).
     code_editor,
 
@@ -198,6 +200,7 @@ pub const Type = union(enum) {
             .arg_result     => b == .arg_result,
             .uri_result     => b == .uri_result,
             .timer_handle   => b == .timer_handle,
+            .progress_bar   => b == .progress_bar,
             .code_editor    => b == .code_editor,
             .json_array     => b == .json_array,
             .tuple => |ea| switch (b) {
@@ -291,6 +294,7 @@ pub const Type = union(enum) {
             .arg_result     => "ArgResult",
             .uri_result     => "UriResult",
             .timer_handle   => "TimerHandle",
+            .progress_bar   => "ProgressBar",
             .code_editor    => "CodeEditor",
             .optional       => "?T",
             .tuple          => "tuple",
@@ -2333,6 +2337,20 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "elapsed"))       return .float;
                     if (std.mem.eql(u8, mem.member, "elapsedMicros")) return .int;
                     if (std.mem.eql(u8, mem.member, "reset"))         return .void_;
+                    return .unknown;
+                }
+                // Progress.* static methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Progress")) {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "bar")) return .progress_bar;
+                    return .unknown;
+                }
+                // ProgressBar instance method calls.
+                if (try tc.inferExpr(mem.object) == .progress_bar) {
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "tick")) return .void_;
+                    if (std.mem.eql(u8, mem.member, "done")) return .void_;
                     return .unknown;
                 }
                 // Json.* static methods.

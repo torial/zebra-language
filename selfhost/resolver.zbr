@@ -348,6 +348,8 @@ class Resolver
             return true
         if name == "Dir" or name == "Path" or name == "HttpResponse"
             return true
+        if name == "Progress"
+            return true
         return false
 
 # -- Main ----------------------------------------------------------------------

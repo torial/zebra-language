@@ -5852,6 +5852,9 @@ struct Generator
             if id.name == "Timer"
                 genTimerCall(mname, args)
                 return
+            if id.name == "Progress"
+                genProgressCall(mname, args)
+                return
             if id.name == "Uri"
                 genUriCall(mname, args)
                 return
@@ -7000,6 +7003,25 @@ struct Generator
             w.emit("_timer_start()")
             return
         w.emit("@compileError(\"selfhost: unknown Timer.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── genProgressCall ──────────────────────────────────────────────────────
+    def genProgressCall(mname: str, args: List(Arg))
+        if mname == "bar"
+            w.emit("_progress_bar(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(", ")
+            if args.count() > 1
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"progress\"")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Progress.")
         w.emit(mname)
         w.emit("\")")
 

@@ -3306,6 +3306,26 @@ const Generator = struct {
             \\fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
             \\
         );
+        // ── Progress stdlib ──────────────────────────────────────────────────────
+        // Terminal progress bars backed by std.Progress (non-allocating, thread-safe).
+        try g.w.writeAll(
+            \\var _progress_root_started: bool = false;
+            \\var _progress_root: std.Progress.Node = undefined;
+            \\fn _progress_ensure_root() void {
+            \\    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+            \\}
+            \\const ProgressBar = struct {
+            \\    _node: std.Progress.Node,
+            \\    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+            \\    pub fn done(self: ProgressBar) void { self._node.end(); }
+            \\};
+            \\fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+            \\    _progress_ensure_root();
+            \\    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+            \\    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+            \\}
+            \\
+        );
         for (module.decls) |decl| try g.genTopDecl(decl);
 
         // Emit a top-level `pub fn main()` thunk if any class has a
@@ -5816,6 +5836,30 @@ const Generator = struct {
             try g.genExpr(obj);
             try g.w.writeAll(".reset()");
             return true;
+        }
+        return false;
+    }
+
+    // ── Progress static calls ────────────────────────────────────────────────
+    fn genProgressCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "bar")) {
+            try g.w.writeAll("_progress_bar(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"progress\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    // ── ProgressBar instance method calls ────────────────────────────────────
+    fn genProgressBarMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, _: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "tick")) {
+            try g.genExpr(obj); try g.w.writeAll(".tick()"); return true;
+        }
+        if (std.mem.eql(u8, method, "done")) {
+            try g.genExpr(obj); try g.w.writeAll(".done()"); return true;
         }
         return false;
     }
@@ -10013,6 +10057,13 @@ const Generator = struct {
                 if (try g.genJsonCall(mem.member, e.args)) return;
             }
         }
+        // Progress static calls: Progress.bar(total, label).
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Progress")) {
+                if (try g.genProgressCall(mem.member, e.args)) return;
+            }
+        }
         // HttpResponse factory: HttpResponse.ok(body), HttpResponse.notFound(body), etc.
         if (e.callee.* == .member) {
             const mem = e.callee.member;
@@ -10175,6 +10226,7 @@ const Generator = struct {
                     .csv_row       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     .arg_result    => if (try g.genArgResultMethod(mem.object, mem.member, e.args)) return,
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
+                    .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
                     .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     else           => {},
                 }
@@ -11182,6 +11234,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .arg_result,
         .uri_result,
         .timer_handle,
+        .progress_bar,
         .code_editor,
         .optional,
         .tuple,

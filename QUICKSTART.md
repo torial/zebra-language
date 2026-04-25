@@ -1008,3 +1008,21 @@ var present    = args.contains("--dry-run") # bool
 | `Math.abs(x)` | numeric |
 | `Math.min(a, b)` / `Math.max(a, b)` | numeric |
 | `Math.PI`, `Math.E`, `Math.TAU` | float constants |
+
+### `Progress` — terminal progress bars
+
+Backed by `std.Progress` (non-allocating, thread-safe, renders to terminal only — no output in piped/CI contexts).
+
+```zebra
+var pb = Progress.bar(100, "loading")   # total count, label
+for item in items
+    # ... do work ...
+    pb.tick()                            # increment by 1
+pb.done()                               # clear the bar
+```
+
+| Call | Returns | Description |
+|------|---------|-------------|
+| `Progress.bar(total, label)` | `ProgressBar` | Create a new progress bar |
+| `pb.tick()` | void | Increment completed count by 1 |
+| `pb.done()` | void | Mark bar complete and clear it |

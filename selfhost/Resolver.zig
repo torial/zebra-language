@@ -1498,6 +1498,22 @@ const TimerHandle = struct {
     }
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+// ── Progress stdlib ──────────────────────────────────────────────────────────
+var _progress_root_started: bool = false;
+var _progress_root: std.Progress.Node = undefined;
+fn _progress_ensure_root() void {
+    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+}
+const ProgressBar = struct {
+    _node: std.Progress.Node,
+    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+    pub fn done(self: ProgressBar) void { self._node.end(); }
+};
+fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+    _progress_ensure_root();
+    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
 
 const Parser = @import("Parser.zig");
 const PNode = Parser.PNode;
@@ -2069,6 +2085,11 @@ pub const Resolver = struct {
             return true;
         }
 // zbr:selfhost/Resolver.zbr:351
+        if (std.mem.eql(u8, name, "Progress")) {
+// zbr:selfhost/Resolver.zbr:352
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:353
         return false;
     }
 
