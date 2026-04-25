@@ -75,6 +75,14 @@ class Resolver
             return this.errors.at(0).message
         return ""
 
+    def allErrorMessages(): str
+        var result = ""
+        for e in this.errors
+            if result != ""
+                result = result + "\n"
+            result = result + e.message
+        return result
+
     # -- Public entry point ----------------------------------------------------
 
     def resolve(root: PNode) throws
@@ -260,9 +268,9 @@ class Resolver
 
     def resolveExpr(expr: PNode) throws
         branch expr
-            on PNode.expr_id as name
-                if not .isInScope(name)
-                    this.errors.add(ResolveError(this.file_name + ": error: undefined name: '" + name + "'"))
+            on PNode.expr_id as id
+                if not .isInScope(id.name)
+                    this.errors.add(ResolveError(this.file_name + ":" + id.line.toString() + ":" + id.col.toString() + ": error: undefined name: '" + id.name + "'"))
             on PNode.expr_binary as b
                 for e in b.left
                     .resolveExpr(e)

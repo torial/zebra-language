@@ -2827,9 +2827,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:672
                 return Expr{ .string_lit = ExprStringLit.init(zspan(), StringKind.raw, stripRawAndEscape(text)) };
             },
-            .expr_id => |name| {
+            .expr_id => |_ptr_id| {
+                const id = _ptr_id.*;
 // zbr:selfhost/astbuilder.zbr:675
-                return Expr{ .ident = ExprIdent.init(zspan(), name) };
+                return Expr{ .ident = ExprIdent.init(zspan(), id.name) };
             },
             .expr_member => |_ptr_pm| {
                 const pm = _ptr_pm.*;

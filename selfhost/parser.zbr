@@ -74,7 +74,7 @@ union PNode
     expr_zig_lit: str
     expr_raw_str: str
     expr_format: str
-    expr_id: str
+    expr_id: ^PExprId
 
     # Expressions (heap-boxed - recursive)
     expr_member: ^PMember
@@ -506,6 +506,15 @@ struct PUnary
     cue init(op: str, operand: List(PNode))
         this.op = op
         this.operand = operand
+
+struct PExprId
+    var name: str
+    var line: int
+    var col: int
+    cue init(name: str, line: int, col: int)
+        this.name = name
+        this.line = line
+        this.col = col
 
 # -- Parser class --------------------------------------------------------------
 
@@ -2095,11 +2104,13 @@ class Parser
             return first
         else if .isOpenCall()
             # function/constructor call: name(args)
+            const id_line = this.peek().line
+            const id_col = this.peek().col
             const name = this.peek().text
             this.advance()
             const args = .parseCallArgs()
             var callee = List(PNode)()
-            callee.add(PNode.expr_id(name))
+            callee.add(PNode.expr_id(PExprId(name, id_line, id_col)))
             return PNode.expr_call(PCall(callee, args))
         else if this.textIs(".")
             # self-member access or self-call: .field or .method(args)
@@ -2117,14 +2128,18 @@ class Parser
                 var base = List(PNode)()
                 return PNode.expr_member(PMember(base, field))
         else if .isId()
+            const id_line = this.peek().line
+            const id_col = this.peek().col
             const name = this.peek().text
             this.advance()
-            return PNode.expr_id(name)
+            return PNode.expr_id(PExprId(name, id_line, id_col))
         else if .isTypeKeyword()
             # type keyword used: expression (e.g. in List(int), HashMap(str, bool))
+            const id_line = this.peek().line
+            const id_col = this.peek().col
             const name = this.peek().text
             this.advance()
-            return PNode.expr_id(name)
+            return PNode.expr_id(PExprId(name, id_line, id_col))
         else if this.textIs("def") and .peekAt(1).text == "("
             return .parseLambdaExpr()
         raise .errorAt("unexpected expression token: '" + this.peek().text + "'")
@@ -2216,6 +2231,8 @@ class Parser
                 this.advance()
             else
                 .expectText("var")
+            const cap_line = this.peek().line
+            const cap_col = this.peek().col
             const cap_name = .eatId()
             var cap_type = ""
             if this.textIs(":")
@@ -2226,7 +2243,7 @@ class Parser
                 this.advance()
                 init_list.add(.parseExpr())
             else
-                init_list.add(PNode.expr_id(cap_name))
+                init_list.add(PNode.expr_id(PExprId(cap_name, cap_line, cap_col)))
             .skipEol()
             caps.add(PCaptureVar(cap_name, cap_type, init_list, is_const))
         if .isDedent()

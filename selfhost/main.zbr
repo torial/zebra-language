@@ -89,9 +89,10 @@ class MultiCompiler
         # Step 2: Resolve names
         var resolver = Resolver.Resolver(zbr_path)
         resolver.resolve(pm_node)?
-        sys.errln("  resolved OK")
         if resolver.errorCount() > 0
-            raise resolver.firstError()
+            sys.errln(resolver.allErrorMessages())
+            sys.exit(1)
+        sys.errln("  resolved OK")
 
         # Step 3: Discover and compile dependencies first
         branch pm_node

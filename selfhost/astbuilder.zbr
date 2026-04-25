@@ -671,8 +671,8 @@ class ASTBuilder
                 # Strip r"..." / r'...' wrapper, double backslashes for Zig emit.
                 return Expr.string_lit(ExprStringLit(zspan(), StringKind.raw, stripRawAndEscape(text)))
 
-            on PNode.expr_id as name
-                return Expr.ident(ExprIdent(zspan(), name))
+            on PNode.expr_id as id
+                return Expr.ident(ExprIdent(zspan(), id.name))
 
             on PNode.expr_member as pm
                 # pm.base has 0 elements for self (.field), 1 element for obj.field
