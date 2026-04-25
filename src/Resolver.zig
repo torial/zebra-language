@@ -384,8 +384,11 @@ const Resolver = struct {
                 try r.walkExpr(s.expr, scope);
                 for (s.on) |on| {
                     for (on.values) |v| try r.walkExpr(v, scope);
+                    if (on.struct_pattern) |sp| {
+                        for (sp.fields) |f| try r.walkExpr(f.value, scope);
+                    }
                     if (on.binding) |bname| {
-                        // Union dispatch: bind the payload variable in a sub-scope.
+                        // Union dispatch or struct pattern with `as name`: bind in sub-scope.
                         var body_scope = try r.table.newScope(.block, scope);
                         const sym = try r.table.arena.create(Symbol);
                         sym.* = .{ .name = bname, .kind = .local, .decl = .{ .catch_binding = on.span } };

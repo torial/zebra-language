@@ -1,0 +1,46 @@
+struct Point
+    var x: int
+    var y: int
+
+struct Person
+    var name: str
+    var age: int
+
+class Main
+    static
+        def main
+            # Test 1: exact int field match
+            var p = Point(x: 0, y: 0)
+            branch p
+                on Point(x: 0, y: 0)
+                    print "origin"
+                on Point(x: 0)
+                    print "y-axis"
+                else
+                    print "elsewhere"
+
+            # Test 2: partial match (single field)
+            var q = Point(x: 0, y: 5)
+            branch q
+                on Point(x: 0, y: 0)
+                    print "bad"
+                on Point(x: 0)
+                    print "on y-axis"
+                else
+                    print "nope"
+
+            # Test 3: string field match
+            var person = Person(name: "alice", age: 30)
+            branch person
+                on Person(name: "alice")
+                    print "hello alice"
+                else
+                    print "unknown"
+
+            # Test 4: binding with `as`
+            var r = Point(x: 5, y: 3)
+            branch r
+                on Point(x: 5) as pt
+                    print pt.y
+                else
+                    print "no match"

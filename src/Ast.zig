@@ -388,6 +388,16 @@ pub const StmtForNum = struct {
     else_: ?[]const Stmt = null,
 };
 
+pub const StructFieldPattern = struct {
+    name:  []const u8,
+    value: *Expr,
+};
+
+pub const StructPattern = struct {
+    type_name: []const u8,
+    fields: []const StructFieldPattern,
+};
+
 pub const BranchOn = struct {
     span: Span,
     values: []const *Expr,
@@ -396,6 +406,9 @@ pub const BranchOn = struct {
     binding: ?[]const u8 = null,
     /// Optional guard: `on Expr as id if condition` — body only runs when condition is true.
     guard: ?*Expr = null,
+    /// Set when the on-clause is `on TypeName(field: val, ...)` — struct field pattern.
+    /// `values` is empty for struct-pattern arms; CodeGen lowers to an if-else chain.
+    struct_pattern: ?StructPattern = null,
 };
 
 pub const StmtBranch = struct {

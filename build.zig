@@ -150,6 +150,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     unit_mod.addImport("earley", earley_mod);
+    unit_mod.addOptions("build_options", preamble_opts);
     const unit_tests = b.addTest(.{ .name = "unit", .root_module = unit_mod });
 
     // Integration tests: test/main.zig imports the explicit module graph.

@@ -391,7 +391,17 @@ const Printer = struct {
         for (s.on) |arm| {
             try p.nl(); try p.ind();
             try p.w("(on", .{});
-            for (arm.values) |v| { try p.w(" ", .{}); try p.printExpr(v.*); }
+            if (arm.struct_pattern) |sp| {
+                try p.w(" (struct-pat {s}", .{sp.type_name});
+                for (sp.fields) |f| {
+                    try p.w(" ({s} ", .{f.name});
+                    try p.printExpr(f.value.*);
+                    try p.w(")", .{});
+                }
+                try p.w(")", .{});
+            } else {
+                for (arm.values) |v| { try p.w(" ", .{}); try p.printExpr(v.*); }
+            }
             if (arm.binding) |b| try p.w(" as {s}", .{b});
             if (arm.guard)   |g| { try p.w(" if ", .{}); try p.printExpr(g.*); }
             try p.printBody(arm.body);

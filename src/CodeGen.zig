@@ -6715,6 +6715,74 @@ const Generator = struct {
     }
 
     fn genBranch(g: Generator, s: *Ast.StmtBranch) anyerror!void {
+        // Detect struct field pattern dispatch: any on-clause has a struct_pattern.
+        // Lowered to an if-else chain with per-field equality checks.
+        const is_struct_pattern = for (s.on) |on| {
+            if (on.struct_pattern != null) break true;
+        } else false;
+
+        if (is_struct_pattern) {
+            try g.writeIndent();
+            const tmp = try std.fmt.allocPrint(g.alloc, "_bsp_{x}", .{g.nextUid()});
+            defer g.alloc.free(tmp);
+            try g.w.writeAll("{\n");
+            const bg = g.indented();
+            try bg.writeIndent();
+            try bg.w.print("const {s} = ", .{tmp});
+            try bg.genExpr(s.expr);
+            try bg.w.writeAll(";\n");
+            for (s.on, 0..) |on, ci| {
+                try bg.writeIndent();
+                if (ci > 0) try bg.w.writeAll("} else ");
+                if (on.struct_pattern) |sp| {
+                    try bg.w.writeAll("if (");
+                    for (sp.fields, 0..) |f, fi| {
+                        if (fi > 0) try bg.w.writeAll(" and ");
+                        if (f.value.* == .string_lit) {
+                            try bg.w.print("std.mem.eql(u8, {s}.{s}, ", .{ tmp, f.name });
+                            try bg.genExpr(f.value);
+                            try bg.w.writeAll(")");
+                        } else {
+                            try bg.w.print("{s}.{s} == ", .{ tmp, f.name });
+                            try bg.genExpr(f.value);
+                        }
+                    }
+                    if (on.guard) |guard| {
+                        if (sp.fields.len > 0) try bg.w.writeAll(" and ");
+                        if (on.binding) |bname| {
+                            // Guard can reference the binding: declare it first.
+                            try bg.w.print("({{ const {s} = {s}; _ = {s}; ", .{ bname, tmp, bname });
+                            try bg.genExpr(guard);
+                            try bg.w.writeAll("; })");
+                        } else {
+                            try bg.genExpr(guard);
+                        }
+                    }
+                } else {
+                    // Non-struct arm in a struct-pattern branch (shouldn't occur in practice).
+                    try bg.w.writeAll("if (true)");
+                }
+                try bg.w.writeAll(") {\n");
+                if (on.binding) |bname| {
+                    try bg.indented().writeIndent();
+                    try bg.indented().w.print("const {s} = {s};\n", .{ bname, tmp });
+                }
+                try bg.indented().genStmts(on.body);
+            }
+            if (s.else_) |eb| {
+                try bg.writeIndent();
+                try bg.w.writeAll("} else {\n");
+                try bg.indented().genStmts(eb);
+            }
+            if (s.on.len > 0) {
+                try bg.writeIndent();
+                try bg.w.writeAll("}\n");
+            }
+            try g.writeIndent();
+            try g.w.writeAll("}\n");
+            return;
+        }
+
         // Detect union dispatch: any on-clause has a binding name.
         const is_union = for (s.on) |on| { if (on.binding != null) break true; } else false;
 

@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef, isString
 
@@ -3466,6 +3466,14 @@ struct Generator
             if b.else_ != nil
                 genStmts(b.else_ to!)
             return
+        # Detect struct field pattern dispatch: any case has struct_pat set.
+        var is_struct_pat = false
+        for cas in b.cases
+            if cas.struct_pat != nil
+                is_struct_pat = true
+        if is_struct_pat
+            genBranchStruct(b)
+            return
         var first_case = b.cases.at(0)
         if first_case.values.count() == 0
             genStmts(first_case.stmts)
@@ -3489,6 +3497,81 @@ struct Generator
             genBranchGuarded(b)
         else
             genBranchTagged(b)
+
+    def genBranchStruct(b: StmtBranch)
+        var uid = w.nextUid()
+        var tmp = "_bsp_" + uid.toString()
+        writeIndent()
+        w.emit("{\n")
+        var ig = indented()
+        ig.writeIndent()
+        ig.w.emit("const ")
+        ig.w.emit(tmp)
+        ig.w.emit(" = ")
+        ig.genExpr(b.expr)
+        ig.w.emit(";\n")
+        var first = true
+        for cas in b.cases
+            ig.writeIndent()
+            if not first
+                ig.w.emit("} else ")
+            first = false
+            if cas.struct_pat != nil
+                var sp = cas.struct_pat to!
+                ig.w.emit("if (")
+                var fi = 0
+                for f in sp.fields
+                    if fi > 0
+                        ig.w.emit(" and ")
+                    var fv = f.value
+                    var is_str_field = false
+                    branch fv
+                        on Expr.string_lit
+                            is_str_field = true
+                        else
+                            pass
+                    if is_str_field
+                        ig.w.emit("std.mem.eql(u8, ")
+                        ig.w.emit(tmp)
+                        ig.w.emit(".")
+                        ig.w.emit(f.name)
+                        ig.w.emit(", ")
+                        ig.genExpr(fv)
+                        ig.w.emit(")")
+                    else
+                        ig.w.emit(tmp)
+                        ig.w.emit(".")
+                        ig.w.emit(f.name)
+                        ig.w.emit(" == ")
+                        ig.genExpr(fv)
+                    fi = fi + 1
+                if cas.guard_expr.count() > 0
+                    if fi > 0
+                        ig.w.emit(" and ")
+                    ig.genExpr(cas.guard_expr.at(0))
+            else
+                ig.w.emit("if (true)")
+            ig.w.emit(") {\n")
+            if cas.binding != nil
+                var iig = ig.indented()
+                iig.writeIndent()
+                iig.w.emit("const ")
+                iig.w.emit(cas.binding to!)
+                iig.w.emit(" = ")
+                iig.w.emit(tmp)
+                iig.w.emit(";\n")
+                iig.genStmts(cas.stmts)
+            else
+                ig.indented().genStmts(cas.stmts)
+        if b.else_ != nil
+            ig.writeIndent()
+            ig.w.emit("} else {\n")
+            ig.indented().genStmts(b.else_ to!)
+        if b.cases.count() > 0
+            ig.writeIndent()
+            ig.w.emit("}\n")
+        writeIndent()
+        w.emit("}\n")
 
     def genBranchString(b: StmtBranch)
         var first = true

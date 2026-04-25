@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprOld, ExprCatch
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprOld, ExprCatch
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch
 
 def zspan(): Span
@@ -588,11 +588,45 @@ class ASTBuilder
             if arm.guard_cond.count() > 0
                 var gexpr = .buildExpr(arm.guard_cond.at(0))?
                 guard_exprs.add(gexpr)
-            cases.add(BranchOn(zspan(), values, arm_stmts, binding_opt, guard_exprs))
+            var bo = BranchOn(zspan(), values, arm_stmts, binding_opt, guard_exprs)
+            # Struct pattern: parser stored the full call node in struct_pat_node.
+            if arm.struct_pat_node.count() > 0
+                var call_expr = .buildExpr(arm.struct_pat_node.at(0))?
+                var sp_opt = .tryBuildStructPat(call_expr)
+                if sp_opt != nil
+                    bo.struct_pat = sp_opt
+                    bo.values = List(Expr)()
+            cases.add(bo)
         var else_opt: List(Stmt)? = nil
         if pb.else_stmts.len > 0
             else_opt = .buildStmts(pb.else_stmts)?
         return Stmt.branch_(StmtBranch(Span(pb.line, 0, pb.line, 0), subject_expr, cases, else_opt))
+
+    # Detect `TypeName(field: val, ...)` call expression and build a StructPat.
+    # Returns nil if the expression is not a struct pattern call.
+    def tryBuildStructPat(e: Expr): StructPat?
+        branch e
+            on Expr.call as call
+                branch call.callee
+                    on Expr.ident as id
+                        if id.name.len == 0
+                            return nil
+                        if id.name[0] < c'A' or id.name[0] > c'Z'
+                            return nil
+                        if call.args.count() == 0
+                            return nil
+                        # All args must be named
+                        for a in call.args
+                            if a.name == nil
+                                return nil
+                        var fields = List(StructFieldPat)()
+                        for a in call.args
+                            fields.add(StructFieldPat(a.name to!, a.value))
+                        return StructPat(id.name, fields)
+                    else
+                        return nil
+            else
+                return nil
 
     def patternToExpr(pat: str): Expr
         # Convert a branch pattern token to an Expr

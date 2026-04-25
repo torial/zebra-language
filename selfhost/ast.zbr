@@ -486,12 +486,29 @@ struct StmtForNum
         this.stmts = stmts
         this.else_ = else_
 
+struct StructFieldPat
+    var name: String
+    var value: Expr
+
+    cue init(name: String, value: Expr)
+        this.name = name
+        this.value = value
+
+struct StructPat
+    var type_name: String
+    var fields: List(StructFieldPat)
+
+    cue init(type_name: String, fields: List(StructFieldPat))
+        this.type_name = type_name
+        this.fields = fields
+
 struct BranchOn
     var span: Span
     var values: List(Expr)
     var stmts: List(Stmt)
     var binding: String?
     var guard_expr: List(Expr)
+    var struct_pat: StructPat?
 
     cue init(span: Span, values: List(Expr), stmts: List(Stmt), binding: String?, guard_expr: List(Expr))
         this.span = span
@@ -499,6 +516,7 @@ struct BranchOn
         this.stmts = stmts
         this.binding = binding
         this.guard_expr = guard_expr
+        this.struct_pat = nil
 
 struct StmtBranch
     var span: Span

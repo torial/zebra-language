@@ -154,6 +154,9 @@ smoke test/toplevel_main_test.zbr
 # --turbo: require/ensure/invariant must be absent from generated Zig.
 smoke_turbo test/turbo_test.zbr
 
+# Struct field pattern matching in branch: `on Point(x: 0, y: 0)`.
+smoke test/branch_struct_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

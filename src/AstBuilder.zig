@@ -1203,7 +1203,34 @@ const Builder = struct {
         }
     }
 
+    /// Post-process a BranchOn: if the single value is `TypeName(field: val, ...)`
+    /// with all named args and an uppercase type name, lift it to a struct_pattern arm.
+    fn liftStructPattern(b: Builder, on: Ast.BranchOn) anyerror!Ast.BranchOn {
+        if (on.values.len != 1) return on;
+        const v = on.values[0];
+        if (v.* != .call) return on;
+        const call = v.call;
+        if (call.callee.* != .ident) return on;
+        const name = call.callee.ident.name;
+        if (name.len == 0 or !std.ascii.isUpper(name[0])) return on;
+        if (call.args.len == 0) return on;
+        for (call.args) |arg| if (arg.name == null) return on;
+        const fields = try b.arena.alloc(Ast.StructFieldPattern, call.args.len);
+        for (call.args, 0..) |arg, i| {
+            fields[i] = .{ .name = arg.name.?, .value = arg.value };
+        }
+        var result = on;
+        result.values = &.{};
+        result.struct_pattern = .{ .type_name = name, .fields = fields };
+        return result;
+    }
+
     fn buildBranchOnClause(b: Builder, node: TN) anyerror!Ast.BranchOn {
+        const raw = try b.buildBranchOnClauseRaw(node);
+        return try b.liftStructPattern(raw);
+    }
+
+    fn buildBranchOnClauseRaw(b: Builder, node: TN) anyerror!Ast.BranchOn {
         // on ExprListNE eol Block           — value list form                (4 kids)
         // on ExprListNE , Stmt              — inline form                    (4 kids)
         // on Expr return Expr eol           — short return form              (5 kids)

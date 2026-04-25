@@ -134,11 +134,13 @@ struct PBranchOn
     var binding: str
     var guard_cond: List(PNode)
     var stmts: List(PNode)
+    var struct_pat_node: List(PNode)
     cue init(patterns: List(str), binding: str, guard_cond: List(PNode), stmts: List(PNode))
         this.patterns = patterns
         this.binding = binding
         this.guard_cond = guard_cond
         this.stmts = stmts
+        this.struct_pat_node = List(PNode)()
 
 struct PTupleLit
     var elems: List(PNode)
@@ -1648,14 +1650,22 @@ class Parser
                     # After a comma, if the next token is a statement keyword (print, return,
                     # pass, etc.), stop eating patterns — it's the inline-body comma form.
                     var patterns = List(str)()
-                    patterns.add(.eatBranchPattern())
-                    while this.textIs(",")
-                        # If the token after the comma is a stmt keyword (print, return,
-                        # pass, …), stop — it's the inline-body comma form, not a second pattern.
-                        if .isStmtKeyword(.peekAt(1).text)
-                            break
-                        this.advance()
+                    var struct_pat_node = List(PNode)()
+                    # Detect struct field pattern: UppercaseName followed by "(" means
+                    # `on TypeName(field: val, ...)` — use parseExpr() for the full call.
+                    var first_tok: str = this.peek().text
+                    var first_char_upper = first_tok != "" and first_tok[0] >= c'A' and first_tok[0] <= c'Z'
+                    if first_char_upper and .isOpenCall()
+                        struct_pat_node.add(.parseExpr())
+                    else
                         patterns.add(.eatBranchPattern())
+                        while this.textIs(",")
+                            # If the token after the comma is a stmt keyword (print, return,
+                            # pass, …), stop — it's the inline-body comma form, not a second pattern.
+                            if .isStmtKeyword(.peekAt(1).text)
+                                break
+                            this.advance()
+                            patterns.add(.eatBranchPattern())
                     # If we stopped at "," due to isStmtKeyword (inline-body comma form),
                     # consume the comma before parsing the inline body statement.
                     var inline_comma = false
@@ -1679,7 +1689,9 @@ class Parser
                     else if not .isEol() and not .isDedent() and not .isEof()
                         # Inline single-line arm: `on Pattern  return value` or `on Pat, stmt`
                         stmts.add(.parseStmt())
-                    arms.add(PBranchOn(patterns, binding, guard_cond, stmts))
+                    var arm = PBranchOn(patterns, binding, guard_cond, stmts)
+                    arm.struct_pat_node = struct_pat_node
+                    arms.add(arm)
                 else if this.textIs("else")
                     this.advance()
                     if this.textIs(",")

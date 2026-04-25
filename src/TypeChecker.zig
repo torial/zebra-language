@@ -1264,6 +1264,15 @@ const TypeChecker = struct {
                 const subj_type = try tc.inferExpr(s.expr);
                 for (s.on) |on| {
                     for (on.values) |v| _ = try tc.inferExpr(v);
+                    if (on.struct_pattern) |sp| {
+                        for (sp.fields) |f| _ = try tc.inferExpr(f.value);
+                        // Struct pattern binding: `on Point(x: 0) as p` — p has the subject type.
+                        if (on.binding) |bname| try tc.narrowed_types.put(bname, subj_type);
+                        if (on.guard) |g| _ = try tc.inferExpr(g);
+                        try tc.checkStmts(on.body);
+                        if (on.binding) |bname| _ = tc.narrowed_types.remove(bname);
+                        continue;
+                    }
                     // Push binding type into narrowed_types so body stmts see the payload type.
                     if (on.binding) |bname| {
                         if (on.values.len == 1 and on.values[0].* == .member) {
