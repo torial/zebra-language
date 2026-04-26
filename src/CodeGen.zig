@@ -5764,23 +5764,8 @@ const Generator = struct {
                         else     => null,
                     };
                     const tn = type_name orelse break :blk null;
-                    // BUG-047 sibling (field-assign path): class payloads are already `*T` via
-                    // auto-box, so the `^T` box-and-store pattern would double-indirect. Suppress.
-                    // Union types are always passed as `^T` pointers (never bare values), so the
-                    // same suppression applies: `^Union` fields receive `*Union` params directly.
-                    if (g.class_names.contains(tn)) break :blk null;
-                    if (g.union_names.contains(tn)) break :blk null;
-                    if (std.mem.indexOfScalar(u8, tn, '.')) |dot| {
-                        const mod_alias = tn[0..dot];
-                        const inner_name = tn[dot + 1 ..];
-                        if (g.imported_modules) |imp| {
-                            if (imp.get(mod_alias)) |iface| {
-                                if (iface.types.get(inner_name)) |kind| {
-                                    if (kind == .class) break :blk null;
-                                }
-                            }
-                        }
-                    }
+                    // BUG-047 sibling: class/union payloads are always `*T`; suppress double-box.
+                    if (g.isPointerPassedType(tn)) break :blk null;
                     break :blk tn;
                 };
                 if (needs_box) {
@@ -7735,27 +7720,13 @@ const Generator = struct {
                             if (field_sym.decl != .var_) break :blk false;
                             const field_tr = field_sym.decl.var_.type_ orelse break :blk false;
                             if (field_tr != .ref_to) break :blk false;
-                            // Class-payload short-circuit (BUG-047).
+                            // BUG-047: class/union payloads are pointer-passed; suppress deref.
                             const payload: Ast.TypeRef = if (field_tr.ref_to.* == .nilable)
                                 field_tr.ref_to.nilable.*
                             else
                                 field_tr.ref_to.*;
                             if (payload == .named) {
-                                const pn = payload.named.name;
-                                if (g.class_names.contains(pn)) break :blk false;
-                                if (g.union_names.contains(pn)) break :blk false;
-                                if (std.mem.indexOfScalar(u8, pn, '.')) |dot| {
-                                    const mod_alias = pn[0..dot];
-                                    const type_name = pn[dot + 1 ..];
-                                    if (g.imported_modules) |imp| {
-                                        if (imp.get(mod_alias)) |iface| {
-                                            if (iface.types.get(type_name)) |kind| {
-                                                if (kind == .class) break :blk false;
-                                                if (kind == .union_) break :blk false;
-                                            }
-                                        }
-                                    }
-                                }
+                                if (g.isPointerPassedType(payload.named.name)) break :blk false;
                             }
                             break :blk true;
                         }
@@ -9517,6 +9488,27 @@ const Generator = struct {
     }
 
     // ── Type reference ────────────────────────────────────────────────────────
+
+    /// Returns true when `name` refers to a class or union type — i.e. a type
+    /// that is always passed/stored as a pointer. `^T` fields of such types must
+    /// not be double-boxed on assignment or auto-dereffed on read.
+    /// Handles both same-module names and cross-module dotted names (mod.Type).
+    fn isPointerPassedType(g: Generator, name: []const u8) bool {
+        if (g.class_names.contains(name)) return true;
+        if (g.union_names.contains(name)) return true;
+        if (std.mem.indexOfScalar(u8, name, '.')) |dot| {
+            const mod_alias  = name[0..dot];
+            const type_name  = name[dot + 1 ..];
+            if (g.imported_modules) |imp| {
+                if (imp.get(mod_alias)) |iface| {
+                    if (iface.types.get(type_name)) |kind| {
+                        if (kind == .class or kind == .union_) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
     fn genType(g: Generator, tr: Ast.TypeRef) anyerror!void {
         switch (tr) {
