@@ -607,24 +607,28 @@ class ASTBuilder
     def tryBuildStructPat(e: Expr): StructPat?
         branch e
             on Expr.call as call
+                var tname: str = ""
                 branch call.callee
                     on Expr.ident as id
-                        if id.name.len == 0
-                            return nil
-                        if id.name[0] < c'A' or id.name[0] > c'Z'
-                            return nil
-                        if call.args.count() == 0
-                            return nil
-                        # All args must be named
-                        for a in call.args
-                            if a.name == nil
-                                return nil
-                        var fields = List(StructFieldPat)()
-                        for a in call.args
-                            fields.add(StructFieldPat(a.name to!, a.value))
-                        return StructPat(id.name, fields)
+                        tname = id.name
+                    on Expr.member as m
+                        tname = m.member
                     else
                         return nil
+                if tname.len == 0
+                    return nil
+                if tname[0] < c'A' or tname[0] > c'Z'
+                    return nil
+                if call.args.count() == 0
+                    return nil
+                # All args must be named
+                for a in call.args
+                    if a.name == nil
+                        return nil
+                var fields = List(StructFieldPat)()
+                for a in call.args
+                    fields.add(StructFieldPat(a.name to!, a.value))
+                return StructPat(tname, fields)
             else
                 return nil
 

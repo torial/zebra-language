@@ -6,8 +6,16 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+// === STDLIB_PREAMBLE_HELPERS_START ===
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -19,10 +27,6 @@ const _Stringable = struct {
 };
 const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
-pub fn _zbr_error_msg() []const u8 {
-    if (_error_ctx.message.len > 0) return _error_ctx.message;
-    return "";
-}
 fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     return a < b;
@@ -39,11 +43,22 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
-/// `item in container` — membership test for List, string (substring), HashMap.
+/// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
-    // Struct types: ArrayList (has .items field) or HashMap (has .contains decl).
+    // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
+    if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
+        inline for (container) |elem| {
+            if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+                if (std.mem.eql(u8, elem, item)) return true;
+            } else {
+                if (elem == item) return true;
+            }
+        }
+        return false;
+    }
+    // Named struct types: ArrayList (has .items field) or HashMap (has .contains decl).
     if (comptime @typeInfo(C) == .@"struct") {
         if (comptime @hasField(C, "items")) {
             for (container.items) |elem| {
@@ -81,7 +96,48 @@ fn _zbr_hash(comptime s: []const u8) u32 {
     comptime var h: u32 = 2166136261;
     comptime for (s) |c| { h ^= c; h *%= 16777619; };
     return h;
-}fn _pad_fill(fill: anytype) u8 {
+}fn _Result(comptime T: type, comptime E: type) type {
+    return union(enum) {
+        ok: T,
+        err: E,
+        pub fn isOk(self: @This()) bool { return self == .ok; }
+        pub fn isErr(self: @This()) bool { return self == .err; }
+        pub fn unwrap(self: @This()) T {
+            return switch (self) { .ok => |v| v, .err => std.debug.panic("unwrap() on error Result\n", .{}) };
+        }
+        pub fn unwrapOr(self: @This(), default: T) T {
+            return switch (self) { .ok => |v| v, .err => default };
+        }
+        pub fn okValue(self: @This()) ?T {
+            return switch (self) { .ok => |v| v, .err => null };
+        }
+        pub fn errValue(self: @This()) ?E {
+            return switch (self) { .ok => null, .err => |e| e };
+        }
+        /// map(f) — apply f to the ok value; propagate err unchanged.
+        /// f may be a fn pointer or a capture-closure struct with a `call` method.
+        pub fn map(self: @This(), f: anytype) _Result(
+            @TypeOf(if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))), E
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| .{ .ok = if (_is_fn) f(v) else f.call(v) },
+                .err => |e| .{ .err = e },
+            };
+        }
+        /// flatMap(f) — apply f to the ok value; f must return Result(U, E).
+        pub fn flatMap(self: @This(), f: anytype) @TypeOf(
+            if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| if (_is_fn) f(v) else f.call(v),
+                .err => |e| .{ .err = e },
+            };
+        }
+    };
+}
+fn _pad_fill(fill: anytype) u8 {
     if (comptime @typeInfo(@TypeOf(fill)) == .pointer) return fill[0];
     return @as(u8, @intCast(fill));
 }
@@ -1040,6 +1096,10 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+pub fn _zbr_error_msg() []const u8 {
+    if (_error_ctx.message.len > 0) return _error_ctx.message;
+    return "";
+}
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
@@ -1449,6 +1509,22 @@ const TimerHandle = struct {
     }
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+// ── Progress stdlib ──────────────────────────────────────────────────────────
+var _progress_root_started: bool = false;
+var _progress_root: std.Progress.Node = undefined;
+fn _progress_ensure_root() void {
+    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+}
+const ProgressBar = struct {
+    _node: std.Progress.Node,
+    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+    pub fn done(self: ProgressBar) void { self._node.end(); }
+};
+fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+    _progress_ensure_root();
+    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
 pub const Program = struct {
     _type_tag: u64 = _ttag_Program,
     pub fn buildNgrams(text: []const u8) std.StringHashMap(i64) {
@@ -1460,7 +1536,7 @@ pub const Program = struct {
         var _cp_it_1 = std.unicode.Utf8View.initUnchecked(text).iterator();
         while (_cp_it_1.nextCodepoint()) |c| {
 // zbr:test/fuzzy_match.zbr:12
-            clist.append(_allocator, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(c, &_cpbuf) catch 1; const _cpout = _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); break :blk @as([]const u8, _cpout); })) catch unreachable;
+            clist.append(_allocator, _intern((blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(c, &_cpbuf) catch 1; const _cpout = _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); break :blk @as([]const u8, _cpout); }))) catch unreachable;
         }
 // zbr:test/fuzzy_match.zbr:13
         var i: i64 = 0;
@@ -1471,10 +1547,10 @@ pub const Program = struct {
 // zbr:test/fuzzy_match.zbr:16
             if (ngrams.contains(tri)) {
 // zbr:test/fuzzy_match.zbr:17
-                ngrams.put((_allocator.dupe(u8, tri) catch @panic("OOM")), ((ngrams.get(tri) orelse undefined) + 1)) catch unreachable;
+                ngrams.put(_intern(tri), ((ngrams.get(tri) orelse undefined) + 1)) catch unreachable;
             } else {
 // zbr:test/fuzzy_match.zbr:19
-                ngrams.put((_allocator.dupe(u8, tri) catch @panic("OOM")), 1) catch unreachable;
+                ngrams.put(_intern(tri), 1) catch unreachable;
             }
 // zbr:test/fuzzy_match.zbr:20
             i = (i + 1);
@@ -1537,7 +1613,7 @@ pub const Program = struct {
                 var _it_p = std.mem.splitSequence(u8, line, ",");
                 while (_it_p.next()) |p| {
 // zbr:test/fuzzy_match.zbr:44
-                    parts.append(_allocator, p) catch unreachable;
+                    parts.append(_allocator, _intern(p)) catch unreachable;
                 }
 // zbr:test/fuzzy_match.zbr:45
                 if (_zebra_ge(@as(i64, @intCast(parts.items.len)), 3)) {
@@ -1546,7 +1622,7 @@ pub const Program = struct {
 // zbr:test/fuzzy_match.zbr:47
                     if (_zebra_gt(@as(i64, @intCast(std.unicode.utf8CountCodepoints(text) catch 0)), 4)) {
 // zbr:test/fuzzy_match.zbr:48
-                        verses.append(_allocator, text) catch unreachable;
+                        verses.append(_allocator, _intern(text)) catch unreachable;
                     }
                 }
             }

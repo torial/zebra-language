@@ -1210,8 +1210,12 @@ const Builder = struct {
         const v = on.values[0];
         if (v.* != .call) return on;
         const call = v.call;
-        if (call.callee.* != .ident) return on;
-        const name = call.callee.ident.name;
+        // Accept plain TypeName(...) or Mod.TypeName(...) for cross-module patterns.
+        const name: []const u8 = switch (call.callee.*) {
+            .ident  => |id| id.name,
+            .member => |m|  m.member,
+            else    => return on,
+        };
         if (name.len == 0 or !std.ascii.isUpper(name[0])) return on;
         if (call.args.len == 0) return on;
         for (call.args) |arg| if (arg.name == null) return on;

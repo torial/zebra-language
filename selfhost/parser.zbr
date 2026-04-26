@@ -632,6 +632,13 @@ class Parser
             else
                 return false
 
+    def isOpenCallAt(offset: int): bool
+        branch this.peekAt(offset).kind
+            on TokenKind.open_call
+                return true
+            else
+                return false
+
     def isIntLit(): bool
         branch this.peek().kind
             on TokenKind.integer_lit
@@ -1666,10 +1673,12 @@ class Parser
                     var patterns = List(str)()
                     var struct_pat_node = List(PNode)()
                     # Detect struct field pattern: UppercaseName followed by "(" means
-                    # `on TypeName(field: val, ...)` — use parseExpr() for the full call.
+                    # `on TypeName(field: val, ...)` — or `on Mod.TypeName(field: val, ...)`.
                     var first_tok: str = this.peek().text
                     var first_char_upper = first_tok != "" and first_tok[0] >= c'A' and first_tok[0] <= c'Z'
-                    if first_char_upper and .isOpenCall()
+                    var is_dotted = peekAt(1).text == "." and .isOpenCallAt(2)
+                    var dotted_upper = is_dotted and peekAt(2).text != "" and peekAt(2).text[0] >= c'A' and peekAt(2).text[0] <= c'Z'
+                    if (first_char_upper and .isOpenCall()) or (is_dotted and dotted_upper)
                         struct_pat_node.add(.parseExpr())
                     else
                         patterns.add(.eatBranchPattern())

@@ -77,11 +77,13 @@ smoke test/branch_range_test.zbr
 # Language features
 smoke test/arena_scope_test.zbr
 smoke test/char_tostring_test.zbr
+smoke test/interp_tostring_test.zbr
 smoke test/string_format_test.zbr
 
 # Cross-module dep graph walk
 smoke test/crossmod_arith_test.zbr
 smoke test/crossmod_types_test.zbr
+smoke test/crossmod_struct_pat_test.zbr
 
 # Struct + union features
 smoke test/ctor_arg_ref_test.zbr

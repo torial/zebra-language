@@ -10,6 +10,7 @@ var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
+// === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
@@ -26,10 +27,6 @@ const _Stringable = struct {
 };
 const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
-pub fn _zbr_error_msg() []const u8 {
-    if (_error_ctx.message.len > 0) return _error_ctx.message;
-    return "";
-}
 fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     return a < b;
@@ -46,11 +43,22 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
-/// `item in container` — membership test for List, string (substring), HashMap.
+/// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
-    // Struct types: ArrayList (has .items field) or HashMap (has .contains decl).
+    // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
+    if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
+        inline for (container) |elem| {
+            if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+                if (std.mem.eql(u8, elem, item)) return true;
+            } else {
+                if (elem == item) return true;
+            }
+        }
+        return false;
+    }
+    // Named struct types: ArrayList (has .items field) or HashMap (has .contains decl).
     if (comptime @typeInfo(C) == .@"struct") {
         if (comptime @hasField(C, "items")) {
             for (container.items) |elem| {
@@ -88,7 +96,48 @@ fn _zbr_hash(comptime s: []const u8) u32 {
     comptime var h: u32 = 2166136261;
     comptime for (s) |c| { h ^= c; h *%= 16777619; };
     return h;
-}fn _pad_fill(fill: anytype) u8 {
+}fn _Result(comptime T: type, comptime E: type) type {
+    return union(enum) {
+        ok: T,
+        err: E,
+        pub fn isOk(self: @This()) bool { return self == .ok; }
+        pub fn isErr(self: @This()) bool { return self == .err; }
+        pub fn unwrap(self: @This()) T {
+            return switch (self) { .ok => |v| v, .err => std.debug.panic("unwrap() on error Result\n", .{}) };
+        }
+        pub fn unwrapOr(self: @This(), default: T) T {
+            return switch (self) { .ok => |v| v, .err => default };
+        }
+        pub fn okValue(self: @This()) ?T {
+            return switch (self) { .ok => |v| v, .err => null };
+        }
+        pub fn errValue(self: @This()) ?E {
+            return switch (self) { .ok => null, .err => |e| e };
+        }
+        /// map(f) — apply f to the ok value; propagate err unchanged.
+        /// f may be a fn pointer or a capture-closure struct with a `call` method.
+        pub fn map(self: @This(), f: anytype) _Result(
+            @TypeOf(if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))), E
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| .{ .ok = if (_is_fn) f(v) else f.call(v) },
+                .err => |e| .{ .err = e },
+            };
+        }
+        /// flatMap(f) — apply f to the ok value; f must return Result(U, E).
+        pub fn flatMap(self: @This(), f: anytype) @TypeOf(
+            if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| if (_is_fn) f(v) else f.call(v),
+                .err => |e| .{ .err = e },
+            };
+        }
+    };
+}
+fn _pad_fill(fill: anytype) u8 {
     if (comptime @typeInfo(@TypeOf(fill)) == .pointer) return fill[0];
     return @as(u8, @intCast(fill));
 }
@@ -1047,6 +1096,10 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+pub fn _zbr_error_msg() []const u8 {
+    if (_error_ctx.message.len > 0) return _error_ctx.message;
+    return "";
+}
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
@@ -1456,6 +1509,22 @@ const TimerHandle = struct {
     }
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+// ── Progress stdlib ──────────────────────────────────────────────────────────
+var _progress_root_started: bool = false;
+var _progress_root: std.Progress.Node = undefined;
+fn _progress_ensure_root() void {
+    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+}
+const ProgressBar = struct {
+    _node: std.Progress.Node,
+    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+    pub fn done(self: ProgressBar) void { self._node.end(); }
+};
+fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+    _progress_ensure_root();
+    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
 pub const Builder = struct {
     value: i64 = undefined,
     pub fn init(v: i64) Builder {
@@ -1501,37 +1570,56 @@ pub fn makeBuilder(n: i64) Builder {
 
 pub fn testVarInit() i64 {
 // zbr:test/method_chain_test.zbr:25
-    var r1 = makeBuilder(5).withVal(10);
+    var r1 = (blk_1: { var _mc_1 = makeBuilder(5); break :blk_1 _mc_1.withVal(10); });
 // zbr:test/method_chain_test.zbr:26
-    var r2 = makeBuilder(3).doubled().withVal(99);
+    var r2 = (blk_2: { var _mc_2 = (blk_3: { var _mc_3 = makeBuilder(3); break :blk_3 _mc_3.doubled(); }); break :blk_2 _mc_2.withVal(99); });
 // zbr:test/method_chain_test.zbr:27
     return (r1.result() + r2.result());
 }
 
 pub fn testReturn() Builder {
 // zbr:test/method_chain_test.zbr:31
-    return makeBuilder(7).withVal(42);
+    return (blk_4: { var _mc_4 = makeBuilder(7); break :blk_4 _mc_4.withVal(42); });
 }
 
 pub fn testAssign() i64 {
 // zbr:test/method_chain_test.zbr:35
     var r = makeBuilder(0);
 // zbr:test/method_chain_test.zbr:36
-    r = makeBuilder(5).withVal(20);
+    r = (blk_5: { var _mc_5 = makeBuilder(5); break :blk_5 _mc_5.withVal(20); });
 // zbr:test/method_chain_test.zbr:37
     return r.result();
 }
 
-pub fn main() void {
-// zbr:test/method_chain_test.zbr:40
-    std.debug.print("{}\n", .{testVarInit()});
+pub fn acceptBuilder(b: Builder) i64 {
 // zbr:test/method_chain_test.zbr:41
-    var rb = testReturn();
-// zbr:test/method_chain_test.zbr:42
-    std.debug.print("{}\n", .{rb.result()});
-// zbr:test/method_chain_test.zbr:43
-    std.debug.print("{}\n", .{testAssign()});
+    return b.result();
+}
+
+pub fn testCallArg() i64 {
 // zbr:test/method_chain_test.zbr:44
+    return acceptBuilder((blk_6: { var _mc_6 = makeBuilder(5); break :blk_6 _mc_6.withVal(30); }));
+}
+
+pub fn testNestedCallArg() i64 {
+// zbr:test/method_chain_test.zbr:47
+    return acceptBuilder((blk_7: { var _mc_7 = (blk_8: { var _mc_8 = makeBuilder(10); break :blk_8 _mc_8.doubled(); }); break :blk_7 _mc_7.withVal(7); }));
+}
+
+pub fn main() void {
+// zbr:test/method_chain_test.zbr:50
+    std.debug.print("{}\n", .{testVarInit()});
+// zbr:test/method_chain_test.zbr:51
+    var rb = testReturn();
+// zbr:test/method_chain_test.zbr:52
+    std.debug.print("{}\n", .{rb.result()});
+// zbr:test/method_chain_test.zbr:53
+    std.debug.print("{}\n", .{testAssign()});
+// zbr:test/method_chain_test.zbr:54
+    std.debug.print("{}\n", .{testCallArg()});
+// zbr:test/method_chain_test.zbr:55
+    std.debug.print("{}\n", .{testNestedCallArg()});
+// zbr:test/method_chain_test.zbr:56
     std.debug.print("{s}\n", .{"ok"});
 }
 
