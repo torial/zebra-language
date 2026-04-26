@@ -1677,6 +1677,9 @@ class Parser
                     var first_tok: str = this.peek().text
                     var first_char_upper = first_tok != "" and first_tok[0] >= c'A' and first_tok[0] <= c'Z'
                     var is_dotted = peekAt(1).text == "." and .isOpenCallAt(2)
+                    # open_call token text is "TypeName(" — first char is always the type name's
+                    # first char, so [0] uppercase check works. If tokenizer ever strips the "(",
+                    # this needs to change to peekAt(2).text (without the index).
                     var dotted_upper = is_dotted and peekAt(2).text != "" and peekAt(2).text[0] >= c'A' and peekAt(2).text[0] <= c'Z'
                     if (first_char_upper and .isOpenCall()) or (is_dotted and dotted_upper)
                         struct_pat_node.add(.parseExpr())
