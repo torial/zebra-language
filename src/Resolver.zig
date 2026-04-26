@@ -61,8 +61,10 @@ pub const ResolveResult = struct {
     exprs:      std.AutoHashMap(*const Ast.ExprIdent, *Symbol),
     /// `DeclClass` pointer → its Symbol, so TypeChecker can set owner_sym for
     /// `this.field` inference inside class method bodies.
-    class_syms: std.AutoHashMap(*const Ast.DeclClass, *const Symbol),
-    diags:      []const Diagnostic,
+    class_syms:  std.AutoHashMap(*const Ast.DeclClass, *const Symbol),
+    /// `DeclStruct` pointer → its Symbol, same purpose as class_syms.
+    struct_syms: std.AutoHashMap(*const Ast.DeclStruct, *const Symbol),
+    diags:       []const Diagnostic,
     diag_alloc: Allocator,
 
     pub fn hasErrors(self: ResolveResult) bool {
@@ -76,6 +78,7 @@ pub const ResolveResult = struct {
         self.types.deinit();
         self.exprs.deinit();
         self.class_syms.deinit();
+        self.struct_syms.deinit();
     }
 };
 
@@ -93,10 +96,11 @@ pub fn resolvePass2(
     diag_alloc:       Allocator,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
 ) anyerror!ResolveResult {
-    var types      = std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType).init(map_alloc);
-    var exprs      = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
-    var class_syms = std.AutoHashMap(*const Ast.DeclClass, *const Symbol).init(map_alloc);
-    var diags      = std.ArrayList(Diagnostic){};
+    var types       = std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType).init(map_alloc);
+    var exprs       = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
+    var class_syms  = std.AutoHashMap(*const Ast.DeclClass, *const Symbol).init(map_alloc);
+    var struct_syms = std.AutoHashMap(*const Ast.DeclStruct, *const Symbol).init(map_alloc);
+    var diags       = std.ArrayList(Diagnostic){};
 
     const r = Resolver{
         .table            = table,
@@ -104,6 +108,7 @@ pub fn resolvePass2(
         .types            = &types,
         .exprs            = &exprs,
         .class_syms       = &class_syms,
+        .struct_syms      = &struct_syms,
         .diags            = &diags,
         .imported_modules = imported_modules,
     };
@@ -111,11 +116,12 @@ pub fn resolvePass2(
     try r.walkModule(module, table.root);
 
     return .{
-        .types      = types,
-        .exprs      = exprs,
-        .class_syms = class_syms,
-        .diags      = try diags.toOwnedSlice(diag_alloc),
-        .diag_alloc = diag_alloc,
+        .types       = types,
+        .exprs       = exprs,
+        .class_syms  = class_syms,
+        .struct_syms = struct_syms,
+        .diags       = try diags.toOwnedSlice(diag_alloc),
+        .diag_alloc  = diag_alloc,
     };
 }
 
@@ -127,6 +133,7 @@ const Resolver = struct {
     types:            *std.AutoHashMap(*const Ast.NamedTypeRef, ResolvedType),
     exprs:            *std.AutoHashMap(*const Ast.ExprIdent, *Symbol),
     class_syms:       *std.AutoHashMap(*const Ast.DeclClass, *const Symbol),
+    struct_syms:      *std.AutoHashMap(*const Ast.DeclStruct, *const Symbol),
     diags:            *std.ArrayList(Diagnostic),
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface) = null,
 
@@ -191,6 +198,7 @@ const Resolver = struct {
     fn walkStruct(r: Resolver, n: *Ast.DeclStruct, scope: *Scope) anyerror!void {
         const sym   = scope.lookupLocal(n.name) orelse return;
         const inner = sym.own_scope orelse return;
+        try r.struct_syms.put(n, sym);
         for (n.implements) |*tr| try r.resolveTypeRef(tr, scope);
         for (n.invariants) |e|   try r.walkExpr(e, inner);
         for (n.members)    |m|   try r.walkMember(m, inner);

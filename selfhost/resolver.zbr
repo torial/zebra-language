@@ -76,12 +76,11 @@ class Resolver
         return ""
 
     def allErrorMessages(): str
-        var result = ""
+        var b: StringBuilder = StringBuilder()
         for e in this.errors
-            if result != ""
-                result = result + "\n"
-            result = result + e.message
-        return result
+            b.append(e.message)
+            b.append("\n")
+        return b.build()
 
     # -- Public entry point ----------------------------------------------------
 

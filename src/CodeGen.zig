@@ -5766,7 +5766,10 @@ const Generator = struct {
                     const tn = type_name orelse break :blk null;
                     // BUG-047 sibling (field-assign path): class payloads are already `*T` via
                     // auto-box, so the `^T` box-and-store pattern would double-indirect. Suppress.
+                    // Union types are always passed as `^T` pointers (never bare values), so the
+                    // same suppression applies: `^Union` fields receive `*Union` params directly.
                     if (g.class_names.contains(tn)) break :blk null;
+                    if (g.union_names.contains(tn)) break :blk null;
                     if (std.mem.indexOfScalar(u8, tn, '.')) |dot| {
                         const mod_alias = tn[0..dot];
                         const inner_name = tn[dot + 1 ..];
@@ -7740,6 +7743,7 @@ const Generator = struct {
                             if (payload == .named) {
                                 const pn = payload.named.name;
                                 if (g.class_names.contains(pn)) break :blk false;
+                                if (g.union_names.contains(pn)) break :blk false;
                                 if (std.mem.indexOfScalar(u8, pn, '.')) |dot| {
                                     const mod_alias = pn[0..dot];
                                     const type_name = pn[dot + 1 ..];
@@ -7747,6 +7751,7 @@ const Generator = struct {
                                         if (imp.get(mod_alias)) |iface| {
                                             if (iface.types.get(type_name)) |kind| {
                                                 if (kind == .class) break :blk false;
+                                                if (kind == .union_) break :blk false;
                                             }
                                         }
                                     }

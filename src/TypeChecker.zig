@@ -1038,8 +1038,9 @@ const TypeChecker = struct {
     }
 
     fn checkStruct(tc: TypeChecker, n: *Ast.DeclStruct) anyerror!void {
-        for (n.invariants) |e| _ = try tc.inferExpr(e);
-        for (n.members)    |m| try tc.checkMember(m);
+        const inner = if (tc.resolve.struct_syms.get(n)) |sym| tc.withOwner(sym) else tc;
+        for (n.invariants) |e| _ = try inner.inferExpr(e);
+        for (n.members)    |m| try inner.checkMember(m);
     }
 
     fn checkMixin(tc: TypeChecker, n: *Ast.DeclMixin) anyerror!void {
