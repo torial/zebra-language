@@ -9263,6 +9263,11 @@ const Generator = struct {
         var cast_types = std.ArrayList(?[]const u8){};
         defer cast_types.deinit(g.alloc);
 
+        // Per-arg flag: true when the expr has a named type with toString() —
+        // emit `.toString()` call suffix and use {s} format.
+        var needs_tostring = std.ArrayList(bool){};
+        defer needs_tostring.deinit(g.alloc);
+
         var i: usize = 0;
         while (i < e.parts.len) : (i += 1) {
             switch (e.parts[i]) {
@@ -9288,11 +9293,24 @@ const Generator = struct {
                         try writeZigFmtSpec(fmt_buf.writer(g.alloc), raw_spec, ex_type);
                         try fmt_buf.writer(g.alloc).writeByte('}');
                         try cast_types.append(g.alloc, castTypeForBitSpec(raw_spec, ex_type));
+                        try needs_tostring.append(g.alloc, false);
                         i += 1; // skip the consumed format part
                     } else {
-                        const spec = printFmt(g.tc, g.catch_var, ex);
-                        try fmt_buf.writer(g.alloc).writeAll(spec);
+                        // Implicit toString: named type with a toString() method → {s}.
+                        const ts = if (g.tc) |tc| blk: {
+                            const et = tc.expr_types.get(ex) orelse break :blk false;
+                            if (et != .named) break :blk false;
+                            const scope = et.named.own_scope orelse break :blk false;
+                            break :blk scope.lookupLocal("toString") != null;
+                        } else false;
+                        if (ts) {
+                            try fmt_buf.writer(g.alloc).writeAll("{s}");
+                        } else {
+                            const spec = printFmt(g.tc, g.catch_var, ex);
+                            try fmt_buf.writer(g.alloc).writeAll(spec);
+                        }
                         try cast_types.append(g.alloc, null);
+                        try needs_tostring.append(g.alloc, ts);
                     }
                 },
                 .format => unreachable, // consumed above
@@ -9318,10 +9336,14 @@ const Generator = struct {
                     if (!first) try g.w.writeAll(", ");
                     first = false;
                     const cast = if (arg_idx < cast_types.items.len) cast_types.items[arg_idx] else null;
+                    const ts = arg_idx < needs_tostring.items.len and needs_tostring.items[arg_idx];
                     if (cast) |ut| {
                         try g.w.print("@as({s}, @bitCast(", .{ut});
                         try g.genExpr(ex);
                         try g.w.writeAll("))");
+                    } else if (ts) {
+                        try g.genExpr(ex);
+                        try g.w.writeAll(".toString()");
                     } else {
                         try g.genExpr(ex);
                     }

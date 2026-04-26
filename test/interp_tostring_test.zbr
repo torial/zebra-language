@@ -1,0 +1,38 @@
+class Point
+    var x: int = 0
+    var y: int = 0
+
+    def toString(): str
+        return "(${x}, ${y})"
+
+class Color
+    var r: int = 0
+    var g: int = 0
+    var b: int = 0
+
+    def toString(): str
+        return "rgb(${r}, ${g}, ${b})"
+
+class NoToString
+    var val: int = 0
+
+class Main
+    static
+        def main
+            var p = Point()
+            p.x = 3
+            p.y = 4
+            print "point: ${p}"
+            var msg: str = "location is ${p}"
+            print msg
+
+            var c = Color()
+            c.r = 255
+            c.g = 128
+            c.b = 0
+            print "color: ${c}"
+
+            var n = 42
+            print "n = ${n}"
+            var s: str = "hi"
+            print "s = ${s}"

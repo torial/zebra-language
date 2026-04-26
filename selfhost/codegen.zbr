@@ -586,6 +586,8 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         on Decl.method as dm
                             if dm.throws_
                                 g.throws_methods.add(makeDottedKey(c.name, dm.name))
+                            if dm.name == "toString"
+                                g.toString_types.add(c.name)
                         on Decl.namespace_ as ns2
                             for nmem in ns2.decls
                                 if nmem is Decl.method as ndm
@@ -631,6 +633,8 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     if mem is Decl.method as dm
                         if dm.throws_
                             g.throws_methods.add(makeDottedKey(s.name, dm.name))
+                        if dm.name == "toString"
+                            g.toString_types.add(s.name)
             else
                 pass
     for decl in m.decls
@@ -1018,6 +1022,7 @@ struct Generator
     var union_names          : StrSet  # names of unions → emit union construction
     var enum_names           : StrSet  # names of enums → emit enum construction
     var struct_names         : StrSet  # names of structs → emit struct.init() construction
+    var toString_types       : StrSet  # names of types that have a toString() method
     var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
@@ -1082,6 +1087,7 @@ struct Generator
         this.union_names           = StrSet()
         this.enum_names            = StrSet()
         this.struct_names          = StrSet()
+        this.toString_types        = StrSet()
         this.boxed_variants        = StrSet()
         this.ref_fields            = StrSet()
         this.opt_ref_fields        = StrSet()
@@ -5050,6 +5056,7 @@ struct Generator
         # First pass: build format string and collect cast types for each expr slot
         var fmt_str: str = ""
         var cast_types: List(str) = List(str)()
+        var needs_tostring: List(bool) = List(bool)()
         var i: int = 0
         while i < si.parts.count()
             var part = si.parts.at(i)
@@ -5072,12 +5079,23 @@ struct Generator
                         var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
                         fmt_str = fmt_str + "{" + zig_spec + "}"
                         cast_types.add(bitCastType(fmt_spec, ex_type))
+                        needs_tostring.add(false)
                     else
-                        if this.isStringBoth(e, "interp_fmt")
+                        # Implicit toString: named type with toString() method → {s}.
+                        var ts: bool = false
+                        if this.infer_ctx != nil
+                            var et: Type_ = inferExpr(e, this.infer_ctx to!)
+                            if et is Type_.named as tn
+                                if toString_types.contains_(tn)
+                                    ts = true
+                        if ts
+                            fmt_str = fmt_str + "{s}"
+                        else if this.isStringBoth(e, "interp_fmt")
                             fmt_str = fmt_str + "{s}"
                         else
                             fmt_str = fmt_str + "{}"
                         cast_types.add("")
+                        needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
             i = i + 1
@@ -5093,12 +5111,16 @@ struct Generator
                     w.emit(", ")
                 first = false
                 var cast: str = cast_types.at(arg_idx)
+                var ts: bool = needs_tostring.at(arg_idx)
                 if cast != ""
                     w.emit("@as(")
                     w.emit(cast)
                     w.emit(", @bitCast(")
                     genExpr(e)
                     w.emit("))")
+                else if ts
+                    genExpr(e)
+                    w.emit(".toString()")
                 else
                     genExpr(e)
                 arg_idx = arg_idx + 1
