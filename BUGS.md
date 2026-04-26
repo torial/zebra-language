@@ -11,13 +11,12 @@ Fixed / closed bugs have been moved to `FixedBugs.md`.
 ## BUG-086: struct pattern — cross-module type names not supported
 
 **Severity:** low (pre-1.0 gap)  
-**Status:** open
+**Status:** closed — fixed in commit 343ddac
 
-`on Mod.Point(x: 0)` is not recognized as a struct pattern. The uppercase-first-char check on the `open_call` token text only matches simple names like `Point`, not dotted names like `Mod.Point`. The `Mod.Point(` token sequence starts with `Mod` (an `id` token), not an `open_call`.
-
-**Workaround:** Use a local `var p = Mod.Point(...)` and match on `p` with a simple `on Point(...)`.
-
-**Fix sketch:** In `parseBranchStmt`, detect `id "." open_call` as an alternate struct pattern prefix.
+`on Mod.Point(x: 0)` is now recognized as a struct pattern. Three fix sites:
+- `src/AstBuilder.zig` `liftStructPattern`: accepts `.member` callee (Mod.TypeName) alongside plain `.ident`
+- `selfhost/parser.zbr`: `isOpenCallAt(offset)` helper + `id "." open_call` detection in `parseBranchStmt`
+- `selfhost/astbuilder.zbr` `tryBuildStructPat`: handles `Expr.member` callee
 
 ---
 
