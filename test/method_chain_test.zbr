@@ -14,7 +14,7 @@ struct Builder
             value = value * 2
         return r
 
-    def result(): int
+    def getVal(): int
         return value
 
 def makeBuilder(n: int): Builder
@@ -24,7 +24,7 @@ def makeBuilder(n: int): Builder
 def testVarInit(): int
     var r1 = makeBuilder(5).withVal(10)
     var r2 = makeBuilder(3).doubled().withVal(99)
-    return r1.result() + r2.result()   # 10 + 99 = 109
+    return r1.getVal() + r2.getVal()   # 10 + 99 = 109
 
 # Pattern B: return position
 def testReturn(): Builder
@@ -34,11 +34,11 @@ def testReturn(): Builder
 def testAssign(): int
     var r = makeBuilder(0)
     r = makeBuilder(5).withVal(20)
-    return r.result()   # 20
+    return r.getVal()   # 20
 
 # Pattern D: call-arg position (BUG-027 expression-position fix)
 def acceptBuilder(b: Builder): int
-    return b.result()
+    return b.getVal()
 
 def testCallArg(): int
     return acceptBuilder(makeBuilder(5).withVal(30))   # 30
@@ -49,7 +49,7 @@ def testNestedCallArg(): int
 def main()
     print testVarInit()        # 109
     var rb = testReturn()
-    print rb.result()          # 42
+    print rb.getVal()          # 42
     print testAssign()         # 20
     print testCallArg()        # 30
     print testNestedCallArg()  # 7

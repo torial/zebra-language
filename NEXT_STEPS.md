@@ -88,9 +88,9 @@ See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 **Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 32/32 smoke; bootstrap 5/5.
 **Option C refactor done (2026-04-24, session 10):** `old` is now its own `Expr.old_` union variant (`ExprOld { uid: int, operand }`) instead of a `UnaryOp` enum value. UIDs assigned at ASTBuilder construction time (not traversal order), eliminating the ordering dependency. `collectOldInner` retired in favour of single-pass `collectAndEmitOldSnapshots`.
 **`--turbo` done (2026-04-24, session 12):** `strip_contracts: bool` field on Generator; `require`/`ensure`/`invariant` emit sites all guarded; `_ = self;` suppression updated; `generateFullWithDeps`/`generateDepWith` chain threads `strip_contracts`; `smoke_turbo` verifies absence of contract strings; both backends; bootstrap 5/5.
-**Remaining:**
-- `result` capture: no-op today; Resolver gives natural unbound-ident error (acceptable for now)
-Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc is stale — update alongside a future `result` implementation.
+**`result` capture done (2026-04-27):** `kw_result` keyword + `Expr.result_` AST variant; codegen emits `var _result: T = undefined;` + `var _ensure_armed: bool = false;` at function entry; `genReturn` rewrites `return EXPR;` → `_result = EXPR; _ensure_armed = true; return _result;`; defer check gated on `_ensure_armed` so it fires only on the success path.  Side effect: BUG-087 (ensure mis-fires on throws path) fixed by the same flag.  Tests: `contract_result_test.zbr`, `contract_result_throws_test.zbr`, `contract_ensure_falloff_test.zbr`.  Both backends; bootstrap 5/5; 40/40 smoke.
+
+Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc still needs updating to reflect `result` impl.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
 ### 19. Error recovery — continue after first compiler error

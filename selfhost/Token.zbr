@@ -132,6 +132,7 @@ union TokenKind
     kw_require
     kw_ensure
     kw_old
+    kw_result
     kw_implies
     kw_assert
     kw_branch
@@ -271,6 +272,8 @@ class Keywords
             return TokenKind.kw_ensure()
         if word == "old"
             return TokenKind.kw_old()
+        if word == "result"
+            return TokenKind.kw_result()
         if word == "implies"
             return TokenKind.kw_implies()
         if word == "assert"

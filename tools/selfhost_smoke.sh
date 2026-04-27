@@ -143,6 +143,12 @@ smoke test/contract_ensure_test.zbr
 smoke test/contract_old_test.zbr
 # ensure + old nested in compound expr (array_lit): regression for collectAndEmitOldSnapshots.
 smoke test/contract_old_compound_test.zbr
+# ensure + result: post-condition references the function's return value.
+smoke test/contract_result_test.zbr
+# ensure + result on throws function: BUG-087 — defer must not fire on error path.
+smoke test/contract_result_throws_test.zbr
+# ensure on void function with implicit fall-off return: defer must still fire.
+smoke test/contract_ensure_falloff_test.zbr
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr

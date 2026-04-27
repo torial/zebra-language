@@ -4,7 +4,9 @@
       "Bash(git rm *)",
       "Bash(rm -rf vendor/ImGuiColorTextEdit/.git)",
       "Bash(git add *)",
-      "PowerShell(zig build *)"
+      "PowerShell(zig build *)",
+      "Bash(grep -E --line-buffered \"error:|Build Summary|steps succeeded|warning:|^$\")",
+      "Bash(break)"
     ]
   }
 }

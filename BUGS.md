@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-086. Next new bug: BUG-087.**
+**Last bug number generated: BUG-088. Next new bug: BUG-089.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -38,6 +38,28 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ## Open Bugs
+
+### BUG-088: def-level `try/catch` in non-void return function falls off the end
+- **Severity:** Medium (correctness — Zig refuses to compile the generated code)
+- **Status:** Open
+- **Symptom:** A method using the `def...catch` form (catch clause attached to the def itself, not a nested try/catch block) with a non-void return type fails to compile. The generated Zig has a `return` inside the success path, an unreachable `break`, then an `if (_try_err_1 != null) return ...;` afterwards — but no return on the path through both blocks where neither error occurred and the success block didn't already return. Zig errors with "function with non-void return type implicitly returns" + "unreachable code" at the orphan `break`.
+- **Reproducer:** A `def f(): str` with `var v = try X()` followed by `return "ok"` and a `catch` clause returning `"err"` — see the original `contract_result_throws_test.zbr` shape (now restructured to side-effect form to avoid this).
+- **Root cause:** The labeled-block lowering for def-level catch doesn't restructure the success path's return into a `break :blk EXPR` with a typed labeled-block result.
+- **Workaround:** Use a void function with side effects (mutate a passed-in object, print) instead of returning from the def-level try/catch block.
+- **Discovered:** While writing `contract_result_throws_test.zbr` for the BUG-087 fix.
+
+---
+
+### BUG-087: `ensure` defer fires on the error path of throws functions
+- **Severity:** Medium (correctness — silent panic instead of caught exception)
+- **Status:** Fixed — `_ensure_armed` flag set only on the success path; defer check gated on the flag.  Both Zig and selfhost backends.  Tests: `contract_result_throws_test.zbr` and `contract_ensure_falloff_test.zbr`.
+- **Symptom:** A throws function with an `ensure` clause that raises mid-body causes the ensure check to fire on the error path. Result: the program panics with "ensure failed in '<fn>'" and the user's `try/catch` never sees the original exception.
+- **Reproducer:** `C:/tmp/ensure_throws_probe.zbr` — `maybeFail(-5)` raises "negative!" but defer evaluates `x > 100`, fails, panics. The outer `catch` is bypassed.
+- **Root cause:** Zig `defer` runs on both success and error returns. The current `genEnsureBlock` emits a plain `defer { if (!(expr)) panic; }` with no success-vs-error discrimination.
+- **Fix:** Add a `var _ensure_armed = false;` local at function entry. Set it `true` on the success path (right before normal `return _result;` in functions with `result`-capable ensure, or right before any normal return otherwise). Wrap the defer check in `if (_ensure_armed and !(expr)) panic;`.
+- **Links:** Discovered while implementing `result` capture (NEXT_STEPS.md item #11 remaining piece).
+
+---
 
 ### BUG-002: `guard` + `try_postfix` runtime error propagation
 - **Severity:** Medium

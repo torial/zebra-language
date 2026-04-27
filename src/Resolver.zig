@@ -615,7 +615,7 @@ const Resolver = struct {
             },
             // Atomic — nothing to resolve.
             .int_lit, .float_lit, .bool_lit, .char_lit,
-            .string_lit, .zig_lit, .nil, .this => {},
+            .string_lit, .zig_lit, .nil, .this, .result_ => {},
         }
     }
 
@@ -771,7 +771,7 @@ const Resolver = struct {
             .type_check    => |e| try r.collectFreeVars(e.expr, local, out, seen),
             // Atomics: nothing to collect.
             .int_lit, .float_lit, .bool_lit, .char_lit,
-            .string_lit, .zig_lit, .nil, .this,
+            .string_lit, .zig_lit, .nil, .this, .result_,
             .old, .string_interp, .slice => {},
         }
     }
@@ -911,7 +911,7 @@ const Resolver = struct {
             .type_check    => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
             // Atomics: nothing to check.
             .int_lit, .float_lit, .bool_lit, .char_lit,
-            .string_lit, .zig_lit, .nil, .this,
+            .string_lit, .zig_lit, .nil, .this, .result_,
             .old, .string_interp, .slice => {},
         }
     }

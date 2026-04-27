@@ -1862,7 +1862,7 @@ pub const MultiCompiler = struct {
             return "";
         }
 // zbr:selfhost/main.zbr:225
-        var result: []const u8 = parts.items[@intCast(0)];
+        var out: []const u8 = parts.items[@intCast(0)];
 // zbr:selfhost/main.zbr:226
         var i: i64 = 1;
 // zbr:selfhost/main.zbr:227
@@ -1870,14 +1870,14 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:228
         while (_zebra_lt(i, last)) {
 // zbr:selfhost/main.zbr:229
-            result = _str_concat(result, "/", _allocator);
+            out = _str_concat(out, "/", _allocator);
 // zbr:selfhost/main.zbr:230
-            result = _str_concat(result, parts.items[@intCast(i)], _allocator);
+            out = _str_concat(out, parts.items[@intCast(i)], _allocator);
 // zbr:selfhost/main.zbr:231
             i = (i + 1);
         }
 // zbr:selfhost/main.zbr:232
-        return result;
+        return out;
     }
 
     pub fn hasDupMethod(self: *MultiCompiler, method_name: []const u8, root_members: std.ArrayList(PNode)) bool {

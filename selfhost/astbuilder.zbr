@@ -61,13 +61,13 @@ def stripStringQuotes(text: str): str
             # Only one quote in text — string_start token like "hello or bare ".
             # Return content after the leading quote (parts[1]).
             return parts.at(1)
-        var result: str = parts.at(1)
+        var out: str = parts.at(1)
         var i: int = 2
         while i < parts.count() - 1
-            result = result + quote
-            result = result + parts.at(i)
+            out = out + quote
+            out = out + parts.at(i)
             i = i + 1
-        return result
+        return out
     return text
 
 # Strip zig literal: zig"Point{}" → Point{}, zig'x' → x
@@ -84,13 +84,13 @@ def stripZigQuotes(text: str): str
     # parts[0] = "zig", parts[-1] = ""; content is between.
     if parts.count() <= 2
         return ""
-    var result: str = parts.at(1)
+    var out: str = parts.at(1)
     var i: int = 2
     while i < parts.count() - 1
-        result = result + quote
-        result = result + parts.at(i)
+        out = out + quote
+        out = out + parts.at(i)
         i = i + 1
-    return result
+    return out
 
 # Strip raw string: r"\d+" → \\d+ (backslashes doubled for Zig emit).
 # Token text includes `r` prefix + quote + content + closing quote.
@@ -121,13 +121,13 @@ def stripRawAndEscape(text: str): str
         bs_parts.add(bp)
     if bs_parts.count() <= 1
         return content
-    var result: str = bs_parts.at(0)
+    var out: str = bs_parts.at(0)
     var j: int = 1
     while j < bs_parts.count()
-        result = result + "\\\\"
-        result = result + bs_parts.at(j)
+        out = out + "\\\\"
+        out = out + bs_parts.at(j)
         j = j + 1
-    return result
+    return out
 
 # Strip char literal: c'x' → x, c'\n' → \n
 def stripCharQuotes(text: str): str
@@ -660,6 +660,9 @@ class ASTBuilder
             on PNode.expr_this
                 return Expr.this_(zspan())
 
+            on PNode.expr_result
+                return Expr.result_(zspan())
+
             on PNode.expr_str as text
                 return .buildStringLit(text)?
 
@@ -930,7 +933,7 @@ class ASTBuilder
     # Split s by top-level commas, ignoring commas inside nested parens.
     # e.g. "int,str" → ["int","str"]; "Result(int,str)" → ["Result(int,str)"]
     def splitTopLevelArgs(s: str): List(str)
-        var result: List(str) = List(str)()
+        var out: List(str) = List(str)()
         var depth = 0
         var current: str = ""
         for gch in s.chars()
@@ -941,13 +944,13 @@ class ASTBuilder
                 depth = depth - 1
                 current = current + gch.toString()
             else if gch == c',' and depth == 0
-                result.add(current)
+                out.add(current)
                 current = ""
             else
                 current = current + gch.toString()
         if current != ""
-            result.add(current)
-        return result
+            out.add(current)
+        return out
 
     def parseTypeRef(s: str): TypeRef?
         if s == "" or s == "void"

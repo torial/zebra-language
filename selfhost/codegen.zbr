@@ -51,10 +51,10 @@ def makeDottedKey(a: str, b: str): str
 def extractAfterDot(s: str): str
     # Return the part after the last '.' in a dotted name
     # e.g. "Token.Token" → "Token", "a.b.c" → "c"
-    var result: str = s
+    var out: str = s
     for part in s.split(".")
-        result = part
-    return result
+        out = part
+    return out
 
 def isUpperCase(s: str): bool
     if s.len == 0
@@ -113,51 +113,51 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     if i < spec.len
         type_s = spec[i..i+1]
     # Map Python type char to Zig type prefix
-    var result: str = ""
+    var out: str = ""
     if type_s == "s"
-        result = "s"
+        out = "s"
     else if type_s == "c"
-        result = "c"
+        out = "c"
     else if type_s == "u"
-        result = "u"
+        out = "u"
     else if type_s == "d" or type_s == "i" or type_s == "n"
-        result = "d"
+        out = "d"
     else if type_s == "f" or type_s == "g" or type_s == "G" or type_s == "%"
-        result = "d"
+        out = "d"
     else if type_s == "e" or type_s == "E"
-        result = "e"
+        out = "e"
     else if type_s == "x"
-        result = "x"
+        out = "x"
     else if type_s == "X"
-        result = "X"
+        out = "X"
     else if type_s == "o"
-        result = "o"
+        out = "o"
     else if type_s == "b"
-        result = "b"
+        out = "b"
     else if type_s != ""
-        result = "d"
+        out = "d"
     else
         # Infer from TC type when no type char given
         if isString(ex_type)
-            result = "s"
+            out = "s"
         else
             branch ex_type
                 on Type_.float_
-                    result = "d"
+                    out = "d"
                 on Type_.float_n as _
-                    result = "d"
+                    out = "d"
                 on Type_.char_
-                    result = "u"
+                    out = "u"
                 on Type_.int_n as _
-                    result = "d"
+                    out = "d"
                 on Type_.int_
-                    result = "d"
+                    out = "d"
                 else
                     pass
     var has_opts: bool = fill_s != "" or align_s != "" or width_s != "" or prec_s != ""
     if has_opts
-        result = result + ":" + fill_s + align_s + width_s + prec_s
-    return result
+        out = out + ":" + fill_s + align_s + width_s + prec_s
+    return out
 
 def bitCastType(spec: str, ex_type: Type_): str
     if spec.len == 0
@@ -702,7 +702,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             w.emit("_field_types };\n")
             ri2 = ri2 + 1
         w.emit("    return .{ .items = &.{} };\n}\n")
-    return w.result()
+    return w.output()
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
 #
@@ -876,6 +876,8 @@ def exprLine(e: Expr): int
             return sp.line
         on Expr.this_ as sp
             return sp.line
+        on Expr.result_ as sp
+            return sp.line
         on Expr.string_interp as x
             return x.span.line
         on Expr.member as x
@@ -974,6 +976,14 @@ struct CallChain
         this.method = method
         this.args = args
 
+struct EnsureCtx
+    var armed: bool
+    var uses_result: bool
+
+    cue init(armed: bool, uses_result: bool)
+        this.armed = armed
+        this.uses_result = uses_result
+
 def tryChain(e: Expr): CallChain?
     if e is Expr.call as c
         if c.callee is Expr.member as m
@@ -995,7 +1005,7 @@ class Writer
     def emit(s: str)
         _buf.append(s)
 
-    def result(): str
+    def output(): str
         return _buf.build()
 
     # Monotonic counter for deterministic unique identifier suffixes in emitted
@@ -1063,6 +1073,8 @@ struct Generator
     var module_decls         : List(Decl)   # module-level decls for named/default param lookup
     var in_ensure_emit       : bool     # true while generating the ensure defer block
     var strip_contracts      : bool     # true when --turbo: suppress require/ensure/invariant emit
+    var ensure_armed_active  : bool     # true while emitting a fn body whose ensure emits _ensure_armed
+    var ensure_uses_result   : bool     # true while emitting a fn body whose ensure references `result`
 
     invariant
         indent >= 0
@@ -1124,6 +1136,8 @@ struct Generator
         this.module_decls          = module_decls
         this.in_ensure_emit        = false
         this.strip_contracts       = false
+        this.ensure_armed_active   = false
+        this.ensure_uses_result    = false
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1150,6 +1164,19 @@ struct Generator
     def indented: Generator
         var g = this except
             indent = indent + 1
+        return g
+
+    def withEnsureCtx(armed: bool, uses_result: bool): Generator
+        var g = this except
+            ensure_armed_active = armed
+            ensure_uses_result  = uses_result
+        return g
+
+    # Clear the ensure context — used inside lambda bodies.
+    def withInLambda(): Generator
+        var g = this except
+            ensure_armed_active = false
+            ensure_uses_result  = false
         return g
 
     def withThrows: Generator
@@ -1976,8 +2003,13 @@ struct Generator
                     bg.w.emit(p.name)
                     bg.w.emit(";\n")
             bg.genRequireChecks(m.require_, m.name)
-            bg.genEnsureBlock(m.ensure_, m.name)
-            bg.genStmts(mstmts)
+            var ec = bg.genEnsureBlock(m.ensure_, m.name, m.return_type)
+            bg.withEnsureCtx(ec.armed, ec.uses_result).genStmts(mstmts)
+            # Arm the ensure check for fall-off-the-end paths (void functions
+            # with no explicit return).  Idempotent when explicit returns already armed.
+            if ec.armed
+                bg.writeIndent()
+                bg.w.emit("_ensure_armed = true;\n")
             writeIndent()
             w.emit("}\n\n")
         else
@@ -2039,11 +2071,19 @@ struct Generator
             walkStmts(istmts, ctx17ci)
             bg = bg.withInferCtx(ctx17ci)
             bg.genRequireChecks(ini.require_, "init")
-            bg.genEnsureBlock(ini.ensure_, "init")
+            # init has no user-visible `return EXPR` — pass nil return_type so any
+            # `result` reference is statically rejected.
+            var ec_i1 = bg.genEnsureBlock(ini.ensure_, "init", nil)
             bg.genStmts(istmts)
+            if ec_i1.armed
+                ig.writeIndent()
+                ig.w.emit("_ensure_armed = true;\n")
         else
             ig.genRequireChecks(ini.require_, "init")
-            ig.genEnsureBlock(ini.ensure_, "init")
+            var ec_i2 = ig.genEnsureBlock(ini.ensure_, "init", nil)
+            if ec_i2.armed
+                ig.writeIndent()
+                ig.w.emit("_ensure_armed = true;\n")
         if owner_invariants.count() > 0 and not strip_contracts
             ig.writeIndent()
             ig.w.emit("_self._check_invariant();\n")
@@ -2601,11 +2641,11 @@ struct Generator
                 if outer.callee is Expr.call as inner
                     if inner.callee is Expr.ident as id
                         if id.name == "HashMap"
-                            var result = List(str)()
+                            var out = List(str)()
                             for a in inner.args
                                 if a.value is Expr.ident as ai
-                                    result.add(ai.name)
-                            return result
+                                    out.add(ai.name)
+                            return out
         return nil
 
     def isGenericStdlibCtor(e: Expr): bool
@@ -2933,6 +2973,18 @@ struct Generator
     # ── genReturn ─────────────────────────────────────────────────────────────
 
     def genReturn(r: StmtReturn)
+        # Contract `result` capture: when the current function has an ensure
+        # referencing `result`, capture the value and arm the flag before returning.
+        if ensure_armed_active and ensure_uses_result and r.value != nil
+            writeIndent()
+            w.emit("{ _result = ")
+            genExpr(r.value to!)
+            w.emit("; _ensure_armed = true; return _result; }\n")
+            return
+        # Plain ensure-armed path (no result capture): arm before existing return logic.
+        if ensure_armed_active
+            writeIndent()
+            w.emit("_ensure_armed = true;\n")
         # BUG-079: auto-hoist method chain on struct temporary in return position
         if r.value != nil
             var ch = tryChain(r.value to!)
@@ -4267,6 +4319,75 @@ struct Generator
     # Emit `const _old_{uid} = <operand>;` for every old() node found (depth-first).
     # Each old_ node carries a stable uid assigned by the astbuilder — no ordering
     # dependency between this traversal and the genExpr emit pass.
+    # True if any sub-expression is `result` (the contract return-value reference).
+    def containsResultRef(e: Expr): bool
+        branch e
+            on Expr.result_
+                return true
+            on Expr.binary as b
+                return containsResultRef(b.left) or containsResultRef(b.right)
+            on Expr.unary as u
+                return containsResultRef(u.operand)
+            on Expr.call as c
+                if containsResultRef(c.callee)
+                    return true
+                for a in c.args
+                    if containsResultRef(a.value)
+                        return true
+                return false
+            on Expr.member as m
+                return containsResultRef(m.object)
+            on Expr.index as i
+                return containsResultRef(i.object) or containsResultRef(i.index)
+            on Expr.cast as cx
+                return containsResultRef(cx.expr)
+            on Expr.to_nilable as tn
+                return containsResultRef(tn.expr)
+            on Expr.to_non_nil as tnn
+                return containsResultRef(tnn.expr)
+            on Expr.is_nil as inl
+                return containsResultRef(inl.expr)
+            on Expr.orelse_ as o
+                return containsResultRef(o.expr) or containsResultRef(o.fallback)
+            on Expr.catch_ as c
+                return containsResultRef(c.expr) or containsResultRef(c.fallback)
+            on Expr.if_expr as ie
+                return containsResultRef(ie.cond) or containsResultRef(ie.then_expr) or containsResultRef(ie.else_expr)
+            on Expr.old_ as o
+                return containsResultRef(o.operand)
+            on Expr.try_ as t
+                return containsResultRef(t.expr)
+            on Expr.type_check as tc
+                return containsResultRef(tc.expr)
+            on Expr.list_lit as ll
+                for el in ll.elems
+                    if containsResultRef(el)
+                        return true
+                return false
+            on Expr.array_lit as al
+                for el in al.elems
+                    if containsResultRef(el)
+                        return true
+                return false
+            on Expr.tuple_lit as tl
+                for el in tl.elems
+                    if containsResultRef(el)
+                        return true
+                return false
+            on Expr.dict_lit as dl
+                for en in dl.entries
+                    if containsResultRef(en.key) or containsResultRef(en.value)
+                        return true
+                return false
+            on Expr.string_interp as si
+                for p in si.parts
+                    if p is StringPart.expr_ as ep
+                        if containsResultRef(ep)
+                            return true
+                return false
+            else
+                return false
+
     def collectAndEmitOldSnapshots(e: Expr)
         branch e
             on Expr.old_ as o
@@ -4342,15 +4463,34 @@ struct Generator
             else
                 pass
 
-    # Emit old snapshots then a defer block for each ensure expression.
-    # Each old() node has a uid assigned at AST build time; genExpr(Expr.old_)
-    # reads the uid directly — no counter synchronisation required.
-    def genEnsureBlock(ensure_list: List(Expr), context: str)
+    # Emit old snapshots, an `_ensure_armed` flag, and a defer block for each
+    # ensure expression.  When any ensure references `result`, also emit
+    # `var _result: T = undefined;` (T = return_type).  The defer check is
+    # gated on `_ensure_armed` so it fires only on the success path (BUG-087).
+    # Returns context the caller threads into the body (so genReturn can arm
+    # the flag and capture _result).
+    def genEnsureBlock(ensure_list: List(Expr), context: str, return_type: TypeRef?): EnsureCtx
         if strip_contracts or ensure_list.count() == 0
-            return
+            return EnsureCtx(false, false)
+        var uses_result = false
+        for ens in ensure_list
+            if containsResultRef(ens)
+                uses_result = true
+        if uses_result and return_type == nil
+            print "selfhost codegen: ensure in '${context}' references 'result' but function has no return type"
+            uses_result = false
         # Single pass: emit const _old_N snapshots for every old() in each ensure expr
         for ens in ensure_list
             collectAndEmitOldSnapshots(ens)
+        # Capture variable for `result` references.
+        if uses_result
+            writeIndent()
+            w.emit("var _result: ")
+            genType(return_type to!)
+            w.emit(" = undefined;\n")
+        # Success-armed flag.
+        writeIndent()
+        w.emit("var _ensure_armed: bool = false;\n")
         # Emit defer block; in_ensure_emit causes genExpr to emit _old_N references
         writeIndent()
         w.emit("defer {\n")
@@ -4358,13 +4498,14 @@ struct Generator
         ig.in_ensure_emit = true
         for ens_expr in ensure_list
             ig.writeIndent()
-            ig.w.emit("if (!(")
+            ig.w.emit("if (_ensure_armed and !(")
             ig.genExpr(ens_expr)
             ig.w.emit(")) std.debug.panic(\"ensure failed in '")
             ig.w.emit(context)
             ig.w.emit("'\\n\", .{});\n")
         writeIndent()
         w.emit("}\n")
+        return EnsureCtx(true, uses_result)
 
     def genAssert(a: StmtAssert)
         writeIndent()
@@ -4522,6 +4663,9 @@ struct Generator
                 w.emit("null")
             on Expr.this_
                 w.emit(self_name)
+            on Expr.result_
+                # `result` in ensure clause — emit the captured return-value local.
+                w.emit("_result")
             on Expr.ident as id
                 genIdent(id)
             on Expr.member as m
@@ -6489,7 +6633,9 @@ struct Generator
                 w.emit(";")
             on LambdaBody.stmts as ss
                 w.emit("\n")
-                var ig = lg.indented()
+                # Clear the outer-fn ensure context so `return` inside the lambda
+                # body is NOT rewritten to outer-fn `_result` capture.
+                var ig = lg.withInLambda().indented()
                 ig.genStmts(ss)
                 lg.writeIndent()
         w.emit(" } }")

@@ -2,6 +2,6 @@ def add(a: int, b: int): int
     return a + b
 
 def main()
-    var result = add(3, 4)
-    assert result == 7, "expected 7"
+    var sum = add(3, 4)
+    assert sum == 7, "expected 7"
     print "toplevel_main: OK"

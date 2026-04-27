@@ -2084,6 +2084,7 @@ const Builder = struct {
                     .kw_false => .{ .bool_lit = .{ .span = s, .value = false } },
                     .kw_nil   => .{ .nil = s },
                     .kw_this  => .{ .this = s },
+                    .kw_result => .{ .result_ = try b.box(Ast.ExprResult, .{ .span = s }) },
                     .id       => .{ .ident = .{ .span = s, .name = text } },
                     .integer_lit, .integer_lit_explicit,
                     .hex_lit, .hex_lit_unsign, .hex_lit_explicit

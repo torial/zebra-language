@@ -710,6 +710,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             if ctx.current_class == ""
                 return Type_.unknown_
             return Type_.named(ctx.current_class)
+        on Expr.result_ as _
+            # CodeGen substitutes `result` with `_result` whose type comes from the
+            # function signature; the inference type here is unknown.
+            return Type_.unknown_
         on Expr.ident as id
             var nm: str = id.name
             if ctx.hasLocal(nm)

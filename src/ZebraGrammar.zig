@@ -703,6 +703,10 @@ const aspect_rules: []const Rule = &.{
     .{ .lhs = .AspectBodyItem, .rhs = &.{
         t(.kw_on), t(.open_call), t(.id), t(.rparen), t(.eol), n(.Block),
     } },
+    // on after(result) — `result` is now `kw_result` (contracts), so accept it explicitly.
+    .{ .lhs = .AspectBodyItem, .rhs = &.{
+        t(.kw_on), t(.open_call), t(.kw_result), t(.rparen), t(.eol), n(.Block),
+    } },
     // on error  (`error` is a keyword, so it's kw_error not id)
     .{ .lhs = .AspectBodyItem, .rhs = &.{ t(.kw_on), t(.kw_error), t(.eol), n(.Block) } },
     // on error(e)  (kw_error followed by lparen, not open_call)
@@ -1079,6 +1083,8 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Atom, .rhs = &.{ t(.kw_nil) } },
     // — Self-reference
     .{ .lhs = .Atom, .rhs = &.{ t(.kw_this) } },
+    // — Contract: result (return value, only valid in `ensure` clauses)
+    .{ .lhs = .Atom, .rhs = &.{ t(.kw_result) } },
     // — Identifier
     .{ .lhs = .Atom, .rhs = &.{ t(.id) } },
     // — Self-member access: .foo  .foo(args)  (implicit `this`)

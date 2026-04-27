@@ -60,7 +60,7 @@ def testWriter
     var w = Writer()
     w.emit("hello")
     w.emit(" world")
-    assert w.result() == "hello world", "Writer basic"
+    assert w.output() == "hello world", "Writer basic"
     print "1. Writer: OK"
 
 # ── Part 2: Generator context-forking ────────────────────────────────────────
@@ -91,31 +91,31 @@ def testGenTypePrimitive
     var g = makeGen()
 
     g.genType(namedTr("int"))
-    assert g.w.result() == "i64", "int -> i64"
+    assert g.w.output() == "i64", "int -> i64"
 
     var g2 = makeGen()
     g2.genType(namedTr("str"))
-    assert g2.w.result() == "[]const u8", "str -> []const u8"
+    assert g2.w.output() == "[]const u8", "str -> []const u8"
 
     var g3 = makeGen()
     g3.genType(namedTr("float"))
-    assert g3.w.result() == "f64", "float -> f64"
+    assert g3.w.output() == "f64", "float -> f64"
 
     var g4 = makeGen()
     g4.genType(namedTr("bool"))
-    assert g4.w.result() == "bool", "bool -> bool"
+    assert g4.w.output() == "bool", "bool -> bool"
 
     var g5 = makeGen()
     g5.genType(namedTr("char"))
-    assert g5.w.result() == "u21", "char -> u21"
+    assert g5.w.output() == "u21", "char -> u21"
 
     var g6 = makeGen()
     g6.genType(TypeRef.void_)
-    assert g6.w.result() == "void", "void_ -> void"
+    assert g6.w.output() == "void", "void_ -> void"
 
     var g7 = makeGen()
     g7.genType(namedTr("MyStruct"))
-    assert g7.w.result() == "MyStruct", "user type unchanged"
+    assert g7.w.output() == "MyStruct", "user type unchanged"
 
     # Class type → *ClassName
     var cn = StrSet()
@@ -123,7 +123,7 @@ def testGenTypePrimitive
     var w8 = Writer()
     var g8 = Generator(w8, 0, "", false, false, false, false, nil, "", "", cn, ModuleTypes(), ModuleTypes())
     g8.genType(namedTr("MyClass"))
-    assert g8.w.result() == "*MyClass", "class -> *ClassName"
+    assert g8.w.output() == "*MyClass", "class -> *ClassName"
 
     print "3. genType primitives: OK"
 
@@ -132,11 +132,11 @@ def testGenTypePrimitive
 def testGenTypeGenerics
     var g = makeGen()
     g.genType(listTr(namedTr("int")))
-    assert g.w.result() == "std.ArrayList(i64)", "List(int)"
+    assert g.w.output() == "std.ArrayList(i64)", "List(int)"
 
     var g2 = makeGen()
     g2.genType(hashTr(namedTr("str"), namedTr("int")))
-    assert g2.w.result() == "std.StringHashMap(i64)", "HashMap(str, int)"
+    assert g2.w.output() == "std.StringHashMap(i64)", "HashMap(str, int)"
 
     print "4. genType generics: OK"
 
@@ -145,15 +145,15 @@ def testGenTypeGenerics
 def testGenTypeCompound
     var g = makeGen()
     g.genType(nilableTr(namedTr("int")))
-    assert g.w.result() == "?i64", "nilable int"
+    assert g.w.output() == "?i64", "nilable int"
 
     var g2 = makeGen()
     g2.genType(errUnionTr(namedTr("str")))
-    assert g2.w.result() == "anyerror![]const u8", "error_union str"
+    assert g2.w.output() == "anyerror![]const u8", "error_union str"
 
     var g3 = makeGen()
     g3.genType(refToTr(namedTr("Node")))
-    assert g3.w.result() == "*Node", "ref_to Node"
+    assert g3.w.output() == "*Node", "ref_to Node"
 
     print "5. genType compound: OK"
 
@@ -168,7 +168,7 @@ def testGenEnum
 
     var g = makeGen()
     g.genEnum(n)
-    var out = g.w.result()
+    var out = g.w.output()
     assert out == "pub const Color = enum {\n    red,\n    green,\n    blue,\n};\n\n", "genEnum output: '${out}'"
     print "6. genEnum: OK"
 
@@ -183,7 +183,7 @@ def testGenUnion
 
     var g = makeGen()
     g.genUnion(n)
-    var out = g.w.result()
+    var out = g.w.output()
     assert out == "pub const Value = union(enum) {\n    int_: i64,\n    str_: []const u8,\n    void_,\n};\n\n", "genUnion output: '${out}'"
     print "7. genUnion: OK"
 
@@ -199,7 +199,7 @@ def testGenStruct
 
     var g = makeGen()
     g.genStruct(n)
-    var out = g.w.result()
+    var out = g.w.output()
     assert "pub const Point = struct {" in out, "struct header"
     assert "x: i64," in out, "field x"
     assert "name: []const u8," in out, "field name"
@@ -216,7 +216,7 @@ def testGenClass
 
     var g = makeGen()
     g.genClass(cls)
-    var out = g.w.result()
+    var out = g.w.output()
     assert "pub const Counter = struct {" in out, "class header"
     assert "_type_tag: u64 = _ttag_Counter," in out, "_type_tag field"
     assert "value: i64," in out, "field value"
@@ -232,7 +232,7 @@ def testGenFieldDeclSB
     var ig = g.indented()
     var fld = DeclVar(zspan(), zmods(), "buf", namedTr("StringBuilder"), nil, false)
     ig.genFieldDecl(fld)
-    var out = g.w.result()
+    var out = g.w.output()
     assert out == "    buf: std.ArrayList(u8) = .{},\n", "StringBuilder field: '${out}'"
     print "10. genFieldDecl StringBuilder: OK"
 

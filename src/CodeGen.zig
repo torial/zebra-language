@@ -721,6 +721,7 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .is_nil      => |e| try refsInExpr(e.expr, r, o),
         .cast        => |e| try refsInExpr(e.expr, r, o),
         .old         => |e| try refsInExpr(e.expr, r, o),
+        .result_     => {},
         .list_lit    => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
         .array_lit   => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
         .dict_lit    => |e| { for (e.entries) |en| { try refsInExpr(en.key, r, o); try refsInExpr(en.value, r, o); } },
@@ -736,6 +737,43 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit => {},
     }
+}
+
+/// True if any sub-expression is `result` (the contract return-value reference).
+fn containsResultRef(expr: *const Ast.Expr) bool {
+    return switch (expr.*) {
+        .result_       => true,
+        .binary        => |e| containsResultRef(e.left) or containsResultRef(e.right),
+        .unary         => |e| containsResultRef(e.operand),
+        .call          => |e| blk: {
+            if (containsResultRef(e.callee)) break :blk true;
+            for (e.args) |a| if (containsResultRef(a.value)) break :blk true;
+            break :blk false;
+        },
+        .member        => |e| containsResultRef(e.object),
+        .index         => |e| containsResultRef(e.object) or containsResultRef(e.index),
+        .slice         => |e| containsResultRef(e.object)
+                              or (e.start != null and containsResultRef(e.start.?))
+                              or (e.stop  != null and containsResultRef(e.stop.?)),
+        .if_expr       => |e| containsResultRef(e.cond) or containsResultRef(e.then_expr) or containsResultRef(e.else_expr),
+        .orelse_       => |e| containsResultRef(e.expr) or containsResultRef(e.fallback),
+        .catch_        => |e| containsResultRef(e.expr) or containsResultRef(e.fallback),
+        .to_nilable    => |e| containsResultRef(e.expr),
+        .to_non_nil    => |e| containsResultRef(e.expr),
+        .is_nil        => |e| containsResultRef(e.expr),
+        .cast          => |e| containsResultRef(e.expr),
+        .old           => |e| containsResultRef(e.expr),
+        .try_          => |e| containsResultRef(e.expr),
+        .tuple_lit     => |e| blk: { for (e.elems) |el| if (containsResultRef(el)) break :blk true; break :blk false; },
+        .list_lit      => |e| blk: { for (e.elems) |el| if (containsResultRef(el)) break :blk true; break :blk false; },
+        .array_lit     => |e| blk: { for (e.elems) |el| if (containsResultRef(el)) break :blk true; break :blk false; },
+        .dict_lit      => |e| blk: { for (e.entries) |en| if (containsResultRef(en.key) or containsResultRef(en.value)) break :blk true; break :blk false; },
+        .string_interp => |e| blk: { for (e.parts) |p| switch (p) { .expr => |ex| if (containsResultRef(ex)) break :blk true, else => {} }; break :blk false; },
+        .type_check    => |e| containsResultRef(e.expr),
+        .lambda        => false, // result inside a lambda body refers to the lambda's own ensure (n/a today)
+        .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
+        .string_lit, .nil, .zig_lit => false,
+    };
 }
 
 /// Walk an expression depth-first and collect all `old` nodes (in traversal order).
@@ -765,7 +803,7 @@ fn collectOldExprs(expr: *const Ast.Expr, alloc: Allocator, out: *std.ArrayListU
         .type_check  => |e| try collectOldExprs(e.expr, alloc, out),
         .lambda      => {},  // old doesn't make sense inside a lambda body
         .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
-        .string_lit, .nil, .zig_lit => {},
+        .string_lit, .nil, .zig_lit, .result_ => {},
     }
 }
 
@@ -1349,6 +1387,16 @@ const Generator = struct {
     old_map: ?*const std.AutoHashMap(*Ast.ExprOld, usize) = null,
     /// When true, all `require`/`ensure`/invariant emit is suppressed (--turbo mode).
     strip_contracts: bool = false,
+    /// True while emitting a function body whose `ensure` block emitted a
+    /// `var _ensure_armed = false;` flag.  genReturn must `_ensure_armed = true;`
+    /// before returning so the deferred ensure check fires only on the success path
+    /// (and is skipped on the throws/error path — see BUG-087).
+    /// Cleared inside lambda bodies (lambda returns are not the outer fn's returns).
+    ensure_armed_active: bool = false,
+    /// True while emitting a function body whose `ensure` references `result`.
+    /// Implies ensure_armed_active.  genReturn rewrites `return EXPR;` to
+    /// `_result = EXPR; _ensure_armed = true; return _result;`.
+    ensure_uses_result: bool = false,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1381,6 +1429,22 @@ const Generator = struct {
     }
     fn withOldMap(g: Generator, m: *const std.AutoHashMap(*Ast.ExprOld, usize)) Generator {
         var c = g; c.old_map = m; return c;
+    }
+
+    fn withEnsureCtx(g: Generator, armed: bool, uses_result: bool) Generator {
+        var c = g;
+        c.ensure_armed_active = armed;
+        c.ensure_uses_result = uses_result;
+        return c;
+    }
+
+    /// Clear the ensure context — used when entering a lambda body so that
+    /// `return` inside the lambda does NOT trigger the outer-function rewrite.
+    fn withInLambda(g: Generator) Generator {
+        var c = g;
+        c.ensure_armed_active = false;
+        c.ensure_uses_result = false;
+        return c;
     }
 
     /// When inside a generic class body, resolve the Zig element-type string for a
@@ -2861,8 +2925,15 @@ const Generator = struct {
                 // Skip `_ = self` when invariant defer already references self.
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
                 try bg.genRequireChecks(n.require, n.name);
-                try bg.genEnsureBlock(n.ensure, n.name);
-                try bg.genStmts(body);
+                const ec_tco = try bg.genEnsureBlock(n.ensure, n.name, n.return_type);
+                try bg.withEnsureCtx(ec_tco.armed, ec_tco.uses_result).genStmts(body);
+                // Arm the ensure check for fall-off-the-end paths (void functions
+                // with no explicit return).  Inside the TCO loop, this is reached
+                // when the loop body completes without re-recursing.
+                if (ec_tco.armed) {
+                    try bg.indented().writeIndent();
+                    try bg.indented().w.writeAll("_ensure_armed = true;\n");
+                }
 
                 // Close the while loop.
                 try ig.writeIndent();
@@ -2879,8 +2950,15 @@ const Generator = struct {
                     }
                 }
                 try bg.genRequireChecks(n.require, n.name);
-                try bg.genEnsureBlock(n.ensure, n.name);
-                try bg.genStmts(body);
+                const ec = try bg.genEnsureBlock(n.ensure, n.name, n.return_type);
+                try bg.withEnsureCtx(ec.armed, ec.uses_result).genStmts(body);
+                // Arm the ensure check for fall-off-the-end paths (void functions
+                // with no explicit return).  Idempotent for paths that already
+                // armed via genReturn.
+                if (ec.armed) {
+                    try bg.writeIndent();
+                    try bg.w.writeAll("_ensure_armed = true;\n");
+                }
             }
 
             try g.writeIndent();
@@ -2943,11 +3021,17 @@ const Generator = struct {
             }
         }
         try bg.genRequireChecks(n.require, "init");
-        try bg.genEnsureBlock(n.ensure, "init");
+        // init has no user-visible `return EXPR` — the trailing `return self;` is implicit.
+        // Pass null return_type so any `result` reference is statically rejected.
+        const ec_init = try bg.genEnsureBlock(n.ensure, "init", null);
         try bg.genStmts(body);
         if (g.owner_invariants.len > 0 and !g.strip_contracts) {
             try bg.writeIndent();
             try bg.w.writeAll("self._check_invariant();\n");
+        }
+        if (ec_init.armed) {
+            try bg.writeIndent();
+            try bg.w.writeAll("_ensure_armed = true;\n");
         }
         try bg.writeIndent();
         try bg.w.writeAll("return self;\n");
@@ -3024,6 +3108,7 @@ const Generator = struct {
             .dict_lit      => |x| x.span,
             .array_lit     => |x| x.span,
             .old           => |x| x.span,
+            .result_       => |x| x.span,
             .try_          => |x| x.span,
             .tuple_lit     => |x| x.span,
             .type_check    => |x| x.span,
@@ -5898,6 +5983,25 @@ const Generator = struct {
                 }
             }
         }
+        // Contract `result` capture path: rewrite `return EXPR;` into a block that
+        // captures the value into `_result`, arms the ensure flag, and returns the
+        // captured local.  Only the outer function's returns are rewritten — lambda
+        // bodies clear `ensure_armed_active` via withInLambda.
+        if (g.ensure_armed_active and g.ensure_uses_result) {
+            if (s.value) |v| {
+                try g.writeIndent();
+                try g.w.writeAll("{ _result = ");
+                try g.genExpr(v);
+                try g.w.writeAll("; _ensure_armed = true; return _result; }\n");
+                return;
+            }
+        }
+        // Plain ensure-armed path (no result capture): just arm before the existing
+        // return logic emits the actual return statement.
+        if (g.ensure_armed_active) {
+            try g.writeIndent();
+            try g.w.writeAll("_ensure_armed = true;\n");
+        }
         try g.writeIndent();
         if (s.value) |v| {
             // If the return value is an allocating call whose receiver is also
@@ -7187,10 +7291,24 @@ const Generator = struct {
         }
     }
 
-    /// Emit `const _old_N = expr;` snapshots + `defer { ensure checks }` for contracts.
-    /// No-op when ensure is empty.  old_map is used by genExpr(.old) to substitute names.
-    fn genEnsureBlock(g: Generator, ensure: []const *Ast.Expr, context: []const u8) anyerror!void {
-        if (g.strip_contracts or ensure.len == 0) return;
+    /// Result of `genEnsureBlock` — describes what the caller's body context needs.
+    const EnsureCtx = struct { armed: bool, uses_result: bool };
+
+    /// Emit `const _old_N = expr;` snapshots, `var _result = undefined;` (when result is referenced),
+    /// `var _ensure_armed = false;`, and a `defer { if (_ensure_armed and !(check)) panic; }` block.
+    /// Returns the context the caller should thread into the body emission so `genReturn` can
+    /// arm the flag + capture the return value (see BUG-087).
+    /// No-op when ensure is empty or contracts are stripped.
+    fn genEnsureBlock(g: Generator, ensure: []const *Ast.Expr, context: []const u8, return_type: ?Ast.TypeRef) anyerror!EnsureCtx {
+        if (g.strip_contracts or ensure.len == 0) return .{ .armed = false, .uses_result = false };
+        // Detect whether any ensure clause references `result` — if so, the function must
+        // have a non-void return type and we'll capture the value into `_result`.
+        var uses_result = false;
+        for (ensure) |e| { if (containsResultRef(e)) { uses_result = true; break; } }
+        if (uses_result and return_type == null) {
+            // Static error — result requires a typed return path.
+            std.debug.panic("ensure in '{s}' references 'result' but function has no return type", .{context});
+        }
         // Collect all old nodes across all ensure exprs (depth-first, left-to-right).
         var old_nodes: std.ArrayListUnmanaged(*Ast.ExprOld) = .{};
         defer old_nodes.deinit(g.alloc);
@@ -7206,18 +7324,29 @@ const Generator = struct {
             try g.genExpr(node.expr);
             try g.w.writeAll(";\n");
         }
+        // Capture variable for `result` references.
+        if (uses_result) {
+            try g.writeIndent();
+            try g.w.writeAll("var _result: ");
+            try g.genType(return_type.?);
+            try g.w.writeAll(" = undefined;\n");
+        }
+        // Success-armed flag — defer check fires only when set.
+        try g.writeIndent();
+        try g.w.writeAll("var _ensure_armed: bool = false;\n");
         // Emit defer block: runs on method exit (LIFO after invariant defer if both present).
         try g.writeIndent();
         try g.w.writeAll("defer {\n");
         const ig = g.indented().withOldMap(&old_map);
         for (ensure) |ens_expr| {
             try ig.writeIndent();
-            try ig.w.writeAll("if (!(");
+            try ig.w.writeAll("if (_ensure_armed and !(");
             try ig.genExpr(ens_expr);
             try ig.w.print(")) std.debug.panic(\"ensure failed in '{s}'\\n\", .{{}});\n", .{context});
         }
         try g.writeIndent();
         try g.w.writeAll("}\n");
+        return .{ .armed = true, .uses_result = uses_result };
     }
 
     fn genAssert(g: Generator, s: *Ast.StmtAssert) anyerror!void {
@@ -7931,6 +8060,11 @@ const Generator = struct {
                     // Passthrough outside ensure context (e.g., dead-code path).
                     try g.genExpr(e.expr);
                 }
+            },
+            .result_ => |_| {
+                // Always emits `_result` — only valid inside an ensure clause.
+                // Resolver/TC reject result outside ensure or in void functions.
+                try g.w.writeAll("_result");
             },
             .zig_lit => |e| try g.genZigLit(e),
             .try_ => |e| {
@@ -9484,7 +9618,9 @@ const Generator = struct {
                 var ret_set_lambda = try analyzeEscapes(ss, g.alloc);
                 defer ret_set_lambda.deinit();
                 try lg.w.writeAll("\n");
-                try lg.indented().withMutated(&mut_set_lambda).withReturnedNames(&ret_set_lambda).genStmts(ss);
+                // withInLambda clears the outer-fn ensure context so `return` inside
+                // the lambda body is NOT rewritten to outer-fn `_result` capture.
+                try lg.indented().withMutated(&mut_set_lambda).withReturnedNames(&ret_set_lambda).withInLambda().genStmts(ss);
                 try lg.writeIndent();
             },
         }

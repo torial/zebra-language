@@ -1,0 +1,36 @@
+# Verifies BUG-087 fix: ensure check is bypassed on the throws path.
+# Before the fix, the defer fired even when the function raised, masking
+# the original exception with a "ensure failed" panic.
+
+class Main
+    var caught_count: int = 0
+    var ok_count: int = 0
+
+    static
+        def safeAbs(n: int): int throws
+            ensure
+                result >= 0
+            if n < -1000
+                raise "out of range"
+            if n < 0
+                return -n
+            return n
+
+        def runOne(m: Main, n: int)
+            var v: int = try Main.safeAbs(n)
+            m.ok_count = m.ok_count + 1
+            print "ok=${v}"
+        catch
+            m.caught_count = m.caught_count + 1
+            print "caught"
+
+        def main
+            var m = Main()
+            Main.runOne(m, 5)
+            Main.runOne(m, -7)
+            # n = -2000 raises "out of range" — catch should see it,
+            # NOT a panic from the ensure defer firing on the error path.
+            Main.runOne(m, -2000)
+            assert m.ok_count == 2
+            assert m.caught_count == 1
+            print "contract_result_throws_test OK"

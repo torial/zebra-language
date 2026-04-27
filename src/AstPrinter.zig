@@ -494,6 +494,7 @@ const Printer = struct {
             .string_interp => |n| try p.printStringInterp(n),
             .nil        => try p.w("nil", .{}),
             .this       => try p.w("this", .{}),
+            .result_    => try p.w("result", .{}),
             .ident      => |n| try p.w("{s}", .{n.name}),
             .member     => |n| { try p.printExpr(n.object.*); try p.w(".{s}", .{n.member}); },
             .call       => |n| try p.printCall(n.*),

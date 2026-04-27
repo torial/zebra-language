@@ -15,8 +15,8 @@ class App
             print z
 
         def testChaining
-            var result = MathUtils.square(MathUtils.double(3))  # (3*2)^2 = 36
-            print result
+            var v = MathUtils.square(MathUtils.double(3))  # (3*2)^2 = 36
+            print v
 
         def main
             testBasicArithmetic()

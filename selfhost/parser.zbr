@@ -69,6 +69,7 @@ union PNode
     expr_bool: bool
     expr_nil
     expr_this
+    expr_result
     expr_str: str
     expr_char: str
     expr_zig_lit: str
@@ -2057,6 +2058,9 @@ class Parser
         else if this.textIs("this")
             this.advance()
             return PNode.expr_this()
+        else if this.textIs("result")
+            this.advance()
+            return PNode.expr_result()
         else if .isIntLit()
             const text = this.peek().text
             this.advance()

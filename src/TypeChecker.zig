@@ -1706,6 +1706,7 @@ const TypeChecker = struct {
             .dict_lit       => |e| blk: { for (e.entries) |en| { _ = try tc.inferExpr(en.key); _ = try tc.inferExpr(en.value); } break :blk .unknown; },
             .array_lit      => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .unknown; },
             .old            => |e| try tc.inferExpr(e.expr),
+            .result_        => .unknown, // CodeGen substitutes with `_result` typed via the function signature
             // try expr — may be error propagation OR optional-unwrap (`opt?.x`).
             // Detect optional-unwrap by checking the inner ident's DECLARED type
             // (bypassing nil-narrowing which would make ?Foo look like Foo here).
@@ -3086,6 +3087,7 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
         .dict_lit      => |e| e.span,
         .array_lit     => |e| e.span,
         .old           => |e| e.span,
+        .result_       => |e| e.span,
         .try_          => |e| e.span,
         .tuple_lit     => |e| e.span,
         .type_check    => |e| e.span,

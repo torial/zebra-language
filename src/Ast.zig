@@ -597,6 +597,7 @@ pub const Expr = union(enum) {
     dict_lit: *ExprDictLit,
     array_lit: *ExprArrayLit,
     old: *ExprOld,     // old expr — pre-call value in `ensure` contracts
+    result_: *ExprResult, // result — return value in `ensure` contracts
     zig_lit: ExprZigLit, // zig'...' / zig"..." backend literal
     try_: *ExprTry,    // try expr — propagate error upward
     tuple_lit: *ExprTuple,  // (a, b, c) — tuple literal
@@ -865,6 +866,11 @@ pub const ExprArrayLit = struct {
 pub const ExprOld = struct {
     span: Span,
     expr: *Expr,
+};
+
+/// `result` — refers to the function's return value (in `ensure`).
+pub const ExprResult = struct {
+    span: Span,
 };
 
 /// `zig'...'` or `zig"..."` — inline backend (Zig) literal string.

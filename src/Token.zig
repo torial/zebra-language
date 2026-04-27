@@ -234,6 +234,7 @@ pub const TokenKind = enum {
     kw_require,
     kw_ensure,
     kw_old,
+    kw_result,
     kw_implies,
 
     // Statements
@@ -345,6 +346,7 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "require",     .kw_require },
     .{ "ensure",      .kw_ensure },
     .{ "old",         .kw_old },
+    .{ "result",      .kw_result },
     .{ "implies",     .kw_implies },
     .{ "assert",      .kw_assert },
     .{ "branch",      .kw_branch },

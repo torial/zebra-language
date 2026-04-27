@@ -706,6 +706,7 @@ union Expr
     type_check: ^ExprTypeCheck
     except_: ^ExprExcept
     old_: ^ExprOld
+    result_: Span
 
 # integer literal
 

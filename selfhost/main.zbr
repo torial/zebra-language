@@ -222,14 +222,14 @@ class MultiCompiler
         if parts.len <= 1
             return ""
         # Rejoin all parts except the last
-        var result: str = parts.at(0)
+        var out: str = parts.at(0)
         var i: int = 1
         var last: int = parts.len - 1
         while i < last
-            result = result + "/"
-            result = result + parts.at(i)
+            out = out + "/"
+            out = out + parts.at(i)
             i = i + 1
-        return result
+        return out
 
     # ── Partial-file merging ──────────────────────────────────────────────────
     #

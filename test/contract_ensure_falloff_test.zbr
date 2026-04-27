@@ -1,0 +1,21 @@
+# Discriminating test: void function with ensure, falls off the end.
+# Without proper arm-on-fall-off handling, the success-armed flag stays
+# false and the ensure check silently skips when the body returns implicitly.
+
+class Counter
+    var value: int = 0
+
+    def bump()
+        ensure
+            value > 0
+        value = value + 1
+        # Falls off the end — no explicit return.
+
+class Main
+    static
+        def main
+            var c = Counter()
+            c.bump()
+            c.bump()
+            assert c.value == 2
+            print "contract_ensure_falloff_test OK"
