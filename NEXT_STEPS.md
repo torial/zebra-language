@@ -63,10 +63,17 @@ Supports partial matches, string fields, optional `as` binding for whole struct,
 Both Zig and selfhost backends; bootstrap 5/5; 35/35 smoke. Deferred: cross-module
 `on Mod.Point(...)`, field-binding destructuring (Option B), nested patterns.
 
-### 9. Greek NT n-gram port (anytime — real-world stress test)
-Port the Python Unicode n-gram analysis script for the Greek New Testament to Zebra.
-Exercises: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window.
-Good benchmark: if this runs correctly and fast, the language is production-capable for text work.
+### 9. Greek NT n-gram port — **deferred until 0.11 (SIMD)** lands
+An earlier port exists from a much earlier Zebra version and is no longer idiomatic.
+The update is held until SIMD types arrive so the rewrite uses `f32x8` / dot-product
+primitives from the start rather than being ported twice.
+
+The TF-IDF / cosine-similarity follow-on (and any LynseDB-shaped embedding fuzzy match)
+are the real beneficiaries of SIMD here. See the "Fuzzy Match and Text Analytics
+Use Cases" table in `concept_zebra-simd-design.md`.
+
+Original scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window —
+all available now, but the rewrite would land twice if done before 0.11.
 
 ~~### 18. `Progress` stdlib module (tqdm-equivalent)~~ ✓ DONE (2026-04-24)
 `Progress.bar(total, label)` / `.tick()` / `.done()` backed by `std.Progress` (thread-safe, no alloc).  
