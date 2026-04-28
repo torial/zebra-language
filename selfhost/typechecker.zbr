@@ -801,6 +801,25 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         var bname: str = bid.name
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
+                    # ── Json static-method TC inference (intentionally absent) ──
+                    #
+                    # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
+                    # are dispatched by codegen.zbr::genJsonCall (~line 6848);
+                    # neither needs a TC arm here today because:
+                    #   - parse/stringify/object/array consumers route through
+                    #     the json_value / string_ types via member dispatch.
+                    #   - parseStrict's result type matters only for the user's
+                    #     downstream code, and every shape exercised by the
+                    #     parity test (test/json_parse_strict_tc_test.zbr) gets
+                    #     its type from Zig itself: explicit annotations or
+                    #     inference from `_json_parse_strict_<T>`'s ?*T return.
+                    #
+                    # If a future codegen change makes a TC-driven decision on
+                    # the result type (e.g. heuristic on unknown receiver),
+                    # add an arm here returning `Type_.optional(Type_.named(T))`
+                    # for `Json.parseStrict` where args[0] is an Expr.ident
+                    # naming a class.  The Zig backend's arm lives at
+                    # src/TypeChecker.zig (search "Json.* static methods").
                     # Special case first: `UnionName.variant(args)` — when the
                     # receiver ident names a known union, the call yields a
                     # value of the union's named type.

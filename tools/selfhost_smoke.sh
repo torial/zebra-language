@@ -171,6 +171,10 @@ smoke test/branch_struct_test.zbr
 # Json.parseStrict + @reflectable: type-safe JSON deserialization with hard-error
 # gates for non-@reflectable / non-primitive fields.
 smoke test/json_parse_strict_test.zbr
+# Probes parseStrict in TC-sensitive shapes (typed assignment, typed param,
+# direct-to-if-binding) — selfhost has no Json TC arm, so this guards against
+# a future codegen change making TC inference necessary.
+smoke test/json_parse_strict_tc_test.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

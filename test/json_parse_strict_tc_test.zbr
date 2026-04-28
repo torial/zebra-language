@@ -1,0 +1,47 @@
+# Regression test: shapes that *would* depend on Json.parseStrict TC inference
+# if the codegen path ever changed.  Selfhost has no Json arm in typechecker.zbr,
+# so all four shapes return Type.unknown there.  This test verifies that the
+# generated Zig is still equivalent — Zig itself infers the binding/parameter
+# types from `_json_parse_strict_<T>`'s return type and from explicit
+# annotations.  If a future codegen change makes TC inference necessary
+# (e.g. heuristic on unknown receiver), this test will diverge between
+# backends and fail in selfhost.
+
+@reflectable
+class User
+    var name: str = ""
+    var age: int = 0
+    var rate: float = 0.0
+    var ok: bool = false
+
+class Main
+    static
+        # Pass result of parseStrict into a typed function — TC must
+        # match `?User` against the param type, otherwise the call
+        # site would emit with a coerced/wrong shape.
+        def takesOpt(u: User?): str
+            if u as user
+                return user.name
+            return "(none)"
+
+        def main
+            var src = "{\"name\":\"Alice\",\"age\":30,\"rate\":1.5,\"ok\":true}"
+
+            # Shape 1: assign to var with no annotation (TC drives type).
+            var maybe = Json.parseStrict(User, src)
+            if maybe as u
+                assert u.name == "Alice"
+
+            # Shape 2: pass directly to a User?-typed parameter.
+            assert Main.takesOpt(Json.parseStrict(User, src)) == "Alice"
+
+            # Shape 3: assign to a User?-typed local, then unwrap.
+            var u_typed: User? = Json.parseStrict(User, src)
+            if u_typed as inner
+                assert inner.age == 30
+
+            # Shape 4: parsed result used directly in if-binding.
+            if Json.parseStrict(User, src) as direct
+                assert direct.rate == 1.5
+
+            print "json_parse_strict_tc_test OK"
