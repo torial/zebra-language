@@ -103,14 +103,19 @@ before halting if any are errors.  A 5-error fixture reports all 5 from the boot
 backend.
 
 **Remaining gaps:**
-- **Tokenizer**: `error.UnexpectedCharacter` (e.g. `\r` from CRLF — see CLAUDE.md hazard
-  section) surfaces as `internal compiler error` with no source location.  Should be a
-  positioned diagnostic.
-- **AstBuilder `@panic("TODO: …")` paths**: AspectDecl, WeaveDecl crash hard.  Convert to
-  a diagnostic + skip-the-decl.
-- **Selfhost typechecker parity**: selfhost only reports 2 of the 5 errors that bootstrap
-  catches on the same fixture — missing the unresolved-type-in-type-position diagnostic and
-  both `var x: T = "string"` style type-mismatch diagnostics.
+- ~~**Tokenizer**: `error.UnexpectedCharacter` surfaces as `internal compiler error`~~ ✓ DONE
+  2026-04-26: positioned diagnostic via `Tokenizer.Diag {line, col, byte}`; CRLF gets a
+  hint pointing at the LF-only requirement.  Selfhost mirrors via `lexErr()`.
+- ~~**AstBuilder `@panic("TODO: …")` paths**~~ ✓ DONE 2026-04-26: AspectDecl/WeaveDecl/
+  StmtExpect/StmtLock now panic with `<line>:<col>: error: <feature> not yet implemented`.
+- **Selfhost typechecker has no diagnostic infrastructure** (audited 2026-04-26):
+  selfhost/typechecker.zbr is inference-only, with no `errors` list, no `addErr` helper,
+  and no integration path through selfhost main for printing.  As a result, `var x: T = "s"`
+  type mismatches and `var a: NotAType = 1` unresolved-type-in-type-position diagnostics
+  exist only in the bootstrap backend.  Selfhost still reports undefined-name errors via
+  selfhost/resolver.zbr, so the parity gap is 3-of-5 on a 5-error fixture.  Closing it is
+  a real piece of work (Diagnostic type, error list threaded through every checkStmt arm,
+  wiring to main.zbr's print loop), not a small parity tweak.
 
 ### 19a. Boundary-restart parser recovery (deferred)
 The Earley parser stops on the first syntax error.  Full multi-error Earley recovery is
