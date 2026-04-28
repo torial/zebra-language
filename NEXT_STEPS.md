@@ -45,13 +45,15 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 "Accumulate and rerun" state model (all previous cells stay in scope).
 See design notes in `selfhost/` journal and `SELFHOST_JOURNAL.md`.
 
-~~### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9, scope-1)~~ ✓ DONE (2026-04-26)
+~~### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9, scope-1)~~ ✓ DONE (2026-04-27)
 - **`@reflectable` annotation** — top-level `@reflectable` directive sets `mods.reflectable`
   on the following `class`/`struct` decl; gates the per-class strict parser emission.
 - **`Json.parseStrict(T, str): ?T`** — scope-1 (`int`/`float`/`bool`/`str` fields only):
   missing key, type mismatch, or extra key → null.  Per-class
   `_json_parse_strict_<T>` free function emitted next to the reflect arrays.
-- Both backends; bootstrap 5/5; 42/42 smoke.  Test: `test/json_parse_strict_test.zbr`.
+- Both backends; bootstrap 5/5; 43/43 smoke (added `json_parse_strict_test` and
+  `json_parse_strict_tc_test`).  Test files: `test/json_parse_strict_test.zbr`,
+  `test/json_parse_strict_tc_test.zbr`.
 - **Future scope:** sized numerics, `T?` optional fields, `List(T)` of primitives, nested
   `@reflectable` classes, `Reflect.fieldNames()` / `Reflect.fieldValue()` runtime API.  
 See `wiki/pages/concepts/concept_zebra-reflection.md`.
@@ -104,11 +106,11 @@ backend.
 
 **Remaining gaps:**
 - ~~**Tokenizer**: `error.UnexpectedCharacter` surfaces as `internal compiler error`~~ ✓ DONE
-  2026-04-26: positioned diagnostic via `Tokenizer.Diag {line, col, byte}`; CRLF gets a
+  2026-04-27: positioned diagnostic via `Tokenizer.Diag {line, col, byte}`; CRLF gets a
   hint pointing at the LF-only requirement.  Selfhost mirrors via `lexErr()`.
-- ~~**AstBuilder `@panic("TODO: …")` paths**~~ ✓ DONE 2026-04-26: AspectDecl/WeaveDecl/
+- ~~**AstBuilder `@panic("TODO: …")` paths**~~ ✓ DONE 2026-04-27: AspectDecl/WeaveDecl/
   StmtExpect/StmtLock now panic with `<line>:<col>: error: <feature> not yet implemented`.
-- **Selfhost typechecker has no diagnostic infrastructure** (audited 2026-04-26):
+- **Selfhost typechecker has no diagnostic infrastructure** (audited 2026-04-27):
   selfhost/typechecker.zbr is inference-only, with no `errors` list, no `addErr` helper,
   and no integration path through selfhost main for printing.  As a result, `var x: T = "s"`
   type mismatches and `var a: NotAType = 1` unresolved-type-in-type-position diagnostics
