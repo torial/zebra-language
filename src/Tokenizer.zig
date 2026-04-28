@@ -44,6 +44,15 @@ pub const TokenizeError = error{
     OutOfMemory,
 };
 
+/// Location of the failure that produced a `TokenizeError`.
+/// Populated by `tokenizeWithDiag` when the tokenizer fails.
+pub const Diag = struct {
+    line: u32 = 0,
+    col:  u16 = 0,
+    /// The offending byte at the failure site (or 0 if not applicable).
+    byte: u8  = 0,
+};
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Tokenize Zebra source text.
@@ -53,12 +62,33 @@ pub const TokenizeError = error{
 /// returned slice.  Caller owns the result and must free with
 /// `allocator.free(tokens)`.
 pub fn tokenize(src: []const u8, allocator: std.mem.Allocator) TokenizeError![]Token {
+    return tokenizeWithDiag(src, allocator, null);
+}
+
+/// Like `tokenize`, but populates `out_diag` with the failure location when
+/// the tokenizer returns an error.  Pass `null` for `out_diag` to ignore.
+/// `main.zig` uses this to print `path:line:col: error: …` instead of the
+/// bare `internal compiler error: error.UnexpectedCharacter`.
+pub fn tokenizeWithDiag(
+    src:       []const u8,
+    allocator: std.mem.Allocator,
+    out_diag:  ?*Diag,
+) TokenizeError![]Token {
     var t = Tokenizer{
         .src   = src,
         .alloc = allocator,
     };
     errdefer t.out.deinit(allocator);
-    try t.run();
+    t.run() catch |e| {
+        if (out_diag) |d| d.* = .{
+            .line = if (t.err_line != 0) t.err_line else t.line,
+            .col  = if (t.err_col  != 0) t.err_col  else t.col(),
+            .byte = if (t.err_byte != 0)
+                t.err_byte
+            else if (t.pos < t.src.len) t.src[t.pos] else 0,
+        };
+        return e;
+    };
     return t.out.toOwnedSlice(allocator);
 }
 
@@ -69,6 +99,12 @@ const Tokenizer = struct {
     pos:        usize = 0,
     line:       u32   = 1,
     line_start: usize = 0,  // byte offset of start of current line
+    /// Set by failure sites before throwing so the offending byte and its
+    /// pre-advance position survive into the public Diag.  Zero means "no
+    /// special diag, fall back to the current pos/line/col".
+    err_byte: u8  = 0,
+    err_line: u32 = 0,
+    err_col:  u16 = 0,
 
     alloc: std.mem.Allocator,
     out:   std.ArrayListUnmanaged(Token) = .empty,
@@ -372,6 +408,9 @@ const Tokenizer = struct {
             try self.emit(.at_id, self.src[id_start - 1 .. self.pos], ln, cl);
             return;
         }
+        self.err_byte = c1;
+        self.err_line = self.line;
+        self.err_col  = self.col();
         return error.UnexpectedCharacter;
     }
 
@@ -822,6 +861,10 @@ const Tokenizer = struct {
         if (c == '.' and c1 == '.') { self.pos += 2; try self.emit(.dotdot,              "..", ln, cl); return; }
 
         // Single-character operators
+        // Capture pre-advance location so the diagnostic points at the
+        // offending byte itself, not at the byte after it.
+        const op_err_line = self.line;
+        const op_err_col  = self.col();
         self.pos += 1;
         const kind: TokenKind = switch (c) {
             '+' => .plus,
@@ -848,7 +891,12 @@ const Tokenizer = struct {
             ']' => .rbracket,
             '{' => .lcurly,
             '}' => .rcurly,
-            else => return error.UnexpectedCharacter,
+            else => {
+                self.err_byte = c;
+                self.err_line = op_err_line;
+                self.err_col  = op_err_col;
+                return error.UnexpectedCharacter;
+            },
         };
         // Track parenthesis depth for indentation suppression.
         if (kind == .lparen) {

@@ -160,7 +160,36 @@ pub fn main() void {
 /// Internal (OOM etc.) errors propagate as Zig errors.
 fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
-    const tokens = try Tokenizer.tokenize(src, alloc);
+    var tok_diag: Tokenizer.Diag = .{};
+    const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
+        const reason: []const u8 = switch (err) {
+            error.UnexpectedCharacter      => "unexpected character",
+            error.MixedIndentation         => "mixed tabs and spaces in indentation",
+            error.SpaceIndentNotMultipleOfFour => "space indent must be a multiple of four",
+            error.UnterminatedString       => "unterminated string literal",
+            error.UnterminatedCharLiteral  => "unterminated character literal",
+            error.UnterminatedBlockComment => "unterminated block comment",
+            error.UnterminatedInterpolation => "unterminated string interpolation",
+            error.OutOfMemory              => return err,
+        };
+        if (tok_diag.byte == '\r') {
+            std.debug.print(
+                "{s}:{d}:{d}: error: unexpected '\\r' (CRLF line endings — convert to LF; the tokenizer requires LF-only)\n",
+                .{ path, tok_diag.line, tok_diag.col },
+            );
+        } else if (tok_diag.byte != 0 and std.ascii.isPrint(tok_diag.byte)) {
+            std.debug.print(
+                "{s}:{d}:{d}: error: {s} '{c}'\n",
+                .{ path, tok_diag.line, tok_diag.col, reason, tok_diag.byte },
+            );
+        } else {
+            std.debug.print(
+                "{s}:{d}:{d}: error: {s} (byte 0x{X:0>2})\n",
+                .{ path, tok_diag.line, tok_diag.col, reason, tok_diag.byte },
+            );
+        }
+        return 1;
+    };
     defer alloc.free(tokens);
 
     // ── 2. Parse ──────────────────────────────────────────────────────────────

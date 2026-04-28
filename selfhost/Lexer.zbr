@@ -96,6 +96,14 @@ class Lexer
         lex.run()?
         return lex.out
 
+    # Build a positioned diagnostic for an unexpected byte.
+    # Mirrors src/Tokenizer.zig's diag handling: special-case '\r' (CRLF
+    # hazard) and otherwise show the offending character.
+    def lexErr(b: char, ln: int, cl: int): str
+        if b == c'\r'
+            return ln.toString() + ":" + cl.toString() + ": unexpected '\\r' (CRLF line endings — convert to LF)"
+        return ln.toString() + ":" + cl.toString() + ": unexpected character '" + b.toString() + "'"
+
     # -- Low-level helpers ---------------------------------------------------
 
     def col(): int
@@ -217,7 +225,7 @@ class Lexer
             scanWhile(isIdentContinue)
             emit(TokenKind.at_id(), src[start - 1..pos], ln, cl)
             return
-        raise "UnexpectedCharacter"
+        raise lexErr(c1, line, col())
 
     # -- Identifiers, keywords, string prefixes ------------------------------
 
@@ -743,7 +751,7 @@ class Lexer
         if c == c'}'
             emit(TokenKind.rcurly(), "}", ln, cl)
             return
-        raise "UnexpectedCharacter"
+        raise lexErr(c, ln, cl)
 
     # -- Token dispatch (branch on leading char) -----------------------------
 

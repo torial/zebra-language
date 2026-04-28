@@ -141,8 +141,20 @@ const Builder = struct {
                 m.is_top_level = true;
                 break :blk .{ .method = try b.box(Ast.DeclMethod, m) };
             },
-            .AspectDecl    => @panic("TODO: AspectDecl"),
-            .WeaveDecl     => @panic("TODO: WeaveDecl"),
+            .AspectDecl    => {
+                const sp = spanOf(decl_node, b.tokens);
+                std.debug.panic(
+                    "{d}:{d}: error: aspect declarations are not yet implemented",
+                    .{ sp.line, sp.col },
+                );
+            },
+            .WeaveDecl     => {
+                const sp = spanOf(decl_node, b.tokens);
+                std.debug.panic(
+                    "{d}:{d}: error: weave declarations are not yet implemented",
+                    .{ sp.line, sp.col },
+                );
+            },
             .AtDirective   => unreachable, // filtered out in processTopDecl
             else => std.debug.panic("buildTopDecl: unexpected NT {s}", .{@tagName(ntOf(decl_node))}),
         };
@@ -1057,8 +1069,20 @@ const Builder = struct {
             .StmtGuard, .StmtGuardInline => .{ .guard = try b.box(Ast.StmtGuard, try b.buildStmtGuard(inner)) },
             .StmtRequire  => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .require)) },
             .StmtEnsure   => .{ .contract = try b.box(Ast.StmtContract, try b.buildStmtContract(inner, .ensure)) },
-            .StmtExpect   => @panic("TODO: StmtExpect"),
-            .StmtLock     => @panic("TODO: StmtLock"),
+            .StmtExpect   => {
+                const sp = spanOf(inner, b.tokens);
+                std.debug.panic(
+                    "{d}:{d}: error: 'expect' statements are not yet implemented",
+                    .{ sp.line, sp.col },
+                );
+            },
+            .StmtLock     => {
+                const sp = spanOf(inner, b.tokens);
+                std.debug.panic(
+                    "{d}:{d}: error: 'lock' statements are not yet implemented",
+                    .{ sp.line, sp.col },
+                );
+            },
             else => std.debug.panic("buildStmt: unexpected NT {s}", .{@tagName(ntOf(inner))}),
         };
     }
