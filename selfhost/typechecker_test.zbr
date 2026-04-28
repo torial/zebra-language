@@ -219,7 +219,7 @@ def testTypeFromRef()
 # Construct a tiny Module with one class:  class Foo { var name: str }
 
 def emptyMods(): Modifiers
-    return Modifiers(false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false)
 
 def varDecl(name: str, t: TypeRef): Decl
     return Decl.var_(DeclVar(mkSpan(), emptyMods(), name, t, nil, false))

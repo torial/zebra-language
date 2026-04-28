@@ -2104,7 +2104,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:340
                             mi = (mi + 1);
                         }
-                        merged_decls.append(_allocator, PNode{ .class_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(rcls_name, rcls.type_params, rcls.ifaces, new_members, std.ArrayList(PNode){}); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } }) catch @panic("OOM");
+                        merged_decls.append(_allocator, PNode{ .class_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(rcls_name, rcls.type_params, rcls.ifaces, new_members, std.ArrayList(PNode){}, rcls.is_reflectable); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } }) catch @panic("OOM");
                     }
                 },
                 else => |_| {

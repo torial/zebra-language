@@ -230,12 +230,14 @@ struct PClass
     var ifaces: List(str)
     var members: List(PNode)
     var invs: List(PNode)
-    cue init(name: str, type_params: List(str), ifaces: List(str), members: List(PNode), invs: List(PNode))
+    var is_reflectable: bool
+    cue init(name: str, type_params: List(str), ifaces: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool)
         this.name = name
         this.type_params = type_params
         this.ifaces = ifaces
         this.members = members
         this.invs = invs
+        this.is_reflectable = is_reflectable
 
 struct PExtend
     var target_name: str
@@ -892,14 +894,30 @@ class Parser
     # -- Top-level declarations ------------------------------------------------
 
     def parseTopDecl(): PNode throws
+        # `@directive` annotation — currently only `@reflectable` recognized.
+        # Consume the directive and apply it to the immediately-following decl.
+        var pending_reflectable: bool = false
+        var saw_directive: bool = true
+        while saw_directive
+            saw_directive = false
+            branch this.peek().kind
+                on TokenKind.at_id
+                    const dtext = this.peek().text
+                    this.advance()
+                    .skipEol()
+                    if dtext == "@reflectable"
+                        pending_reflectable = true
+                    saw_directive = true
+                else
+                    saw_directive = false
         if this.textIs("use")
             return .parseUseDecl()
         else if this.textIs("namespace")
             return .parseNamespaceDecl()
         else if this.textIs("class")
-            return .parseClassDecl()
+            return .parseClassDecl(pending_reflectable)
         else if this.textIs("struct")
-            return .parseStructDecl()
+            return .parseStructDecl(pending_reflectable)
         else if this.textIs("interface")
             return .parseInterfaceDecl()
         else if this.textIs("extend")
@@ -955,7 +973,7 @@ class Parser
         .skipEol()
         return PNode.use_(PUse(path, exposed))
 
-    def parseClassDecl(): PNode throws
+    def parseClassDecl(is_reflectable: bool): PNode throws
         .expectText("class")
         var name: str = ""
         var type_params = List(str)()
@@ -1020,7 +1038,7 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 this.advance()
-        return PNode.class_(PClass(name, type_params, ifaces, members, invs))
+        return PNode.class_(PClass(name, type_params, ifaces, members, invs, is_reflectable))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")
@@ -1039,7 +1057,7 @@ class Parser
                 this.advance()
         return PNode.enum_(PEnum(name, variants))
 
-    def parseStructDecl(): PNode throws
+    def parseStructDecl(is_reflectable: bool): PNode throws
         .expectText("struct")
         const name = .eatId()
         .skipEol()
@@ -1062,7 +1080,7 @@ class Parser
                 this.advance()
         var ifaces = List(str)()
         var type_params = List(str)()
-        return PNode.struct_(PClass(name, type_params, ifaces, members, invs))
+        return PNode.struct_(PClass(name, type_params, ifaces, members, invs, is_reflectable))
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")
@@ -1086,7 +1104,7 @@ class Parser
             if .isDedent()
                 this.advance()
         var type_params = List(str)()
-        return PNode.interface_(PClass(name, type_params, ifaces, members, List(PNode)()))
+        return PNode.interface_(PClass(name, type_params, ifaces, members, List(PNode)(), false))
 
     def parseExtendDecl(): PNode throws
         .expectText("extend")

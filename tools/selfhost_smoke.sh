@@ -168,6 +168,10 @@ smoke_turbo test/turbo_test.zbr
 # Struct field pattern matching in branch: `on Point(x: 0, y: 0)`.
 smoke test/branch_struct_test.zbr
 
+# Json.parseStrict + @reflectable: type-safe JSON deserialization with hard-error
+# gates for non-@reflectable / non-primitive fields.
+smoke test/json_parse_strict_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

@@ -19,7 +19,7 @@ def zspan(): Span
     return Span(0, 0, 0, 0)
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false)
 
 # ── Part 1: StrSet ────────────────────────────────────────────────────────────
 

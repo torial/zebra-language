@@ -1890,6 +1890,117 @@ struct Generator
             w.emit("\"")
             ri = ri + 1
         w.emit("};\n\n")
+        # Tier-3 reflection: emit per-class strict JSON parser when @reflectable.
+        if n.mods.is_reflectable
+            genJsonParseStrictFn(n)
+
+    # Map a primitive TypeRef to a kind tag for the strict JSON parser.
+    # Returns "" for unsupported types.
+    def primitiveKindName(tr: TypeRef): str
+        if tr is TypeRef.named as nt
+            if nt.name == "int"
+                return "int"
+            if nt.name == "float"
+                return "float"
+            if nt.name == "bool"
+                return "bool"
+            if nt.name == "str" or nt.name == "String"
+                return "str"
+        return ""
+
+    # Emit `fn _json_parse_strict_<T>(src) ?*T` for a @reflectable class T.
+    def genJsonParseStrictFn(n: DeclClass)
+        var f_names = List(str)()
+        var f_kinds = List(str)()
+        for d in n.members
+            if d is Decl.var_ as fld
+                if fld.mods.is_static
+                    continue
+                if fld.type_ == nil
+                    continue
+                var tr = fld.type_ to!
+                var kind: str = primitiveKindName(tr)
+                if kind == ""
+                    w.emit("comptime { @compileError(\"Json.parseStrict on ")
+                    w.emit(n.name)
+                    w.emit(": field '")
+                    w.emit(fld.name)
+                    w.emit("' has unsupported type '")
+                    w.emit(typeRefStr(tr))
+                    w.emit("' (only int/float/bool/str supported in 0.9)\"); }\n")
+                    return
+                f_names.add(fld.name)
+                f_kinds.add(kind)
+        w.emit("fn _json_parse_strict_")
+        w.emit(n.name)
+        w.emit("(_src: []const u8) ?*")
+        w.emit(n.name)
+        w.emit(" {\n")
+        w.emit("    const _v = _json_parse(_src) orelse return null;\n")
+        w.emit("    if (!_json_is_object(_v)) return null;\n")
+        if f_names.count() > 0
+            w.emit("    var _it = _v.object.iterator();\n")
+            w.emit("    while (_it.next()) |_e| {\n")
+            w.emit("        const _k = _e.key_ptr.*;\n")
+            w.emit("        const _known = ")
+            var i = 0
+            while i < f_names.count()
+                if i > 0
+                    w.emit(" or ")
+                w.emit("std.mem.eql(u8, _k, \"")
+                w.emit(f_names.at(i))
+                w.emit("\")")
+                i = i + 1
+            w.emit(";\n")
+            w.emit("        if (!_known) return null;\n")
+            w.emit("    }\n")
+        else
+            w.emit("    if (_v.object.count() != 0) return null;\n")
+        var j = 0
+        while j < f_names.count()
+            var nm = f_names.at(j)
+            var kd = f_kinds.at(j)
+            w.emit("    { const _x = _v.object.get(\"")
+            w.emit(nm)
+            w.emit("\") orelse return null;\n      switch (_x) { ")
+            if kd == "int"
+                w.emit(".integer => {}, else => return null")
+            else if kd == "float"
+                w.emit(".float, .integer => {}, else => return null")
+            else if kd == "bool"
+                w.emit(".bool => {}, else => return null")
+            else
+                w.emit(".string => {}, else => return null")
+            w.emit(" } }\n")
+            j = j + 1
+        w.emit("    const _r = _allocator.create(")
+        w.emit(n.name)
+        w.emit(") catch return null;\n")
+        w.emit("    _r.* = .{};\n")
+        w.emit("    _r._type_tag = _ttag_")
+        w.emit(n.name)
+        w.emit(";\n")
+        j = 0
+        while j < f_names.count()
+            var nm = f_names.at(j)
+            var kd = f_kinds.at(j)
+            w.emit("    _r.")
+            w.emit(nm)
+            w.emit(" = ")
+            if kd == "int"
+                w.emit("_json_get_int(")
+            else if kd == "float"
+                w.emit("_json_get_float(")
+            else if kd == "bool"
+                w.emit("_json_get_bool(")
+            else
+                w.emit("_json_get_str(")
+            w.emit("_v, \"")
+            w.emit(nm)
+            w.emit("\");\n")
+            j = j + 1
+        w.emit("    return _r;\n")
+        w.emit("}\n\n")
 
     # ── genMethod ─────────────────────────────────────────────────────────────
 
@@ -6852,6 +6963,44 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"{}\"")
+            w.emit(")")
+            return
+        if mname == "parseStrict"
+            # Json.parseStrict(T, src) — T must be a @reflectable class.
+            if args.count() < 2
+                w.emit("@compileError(\"Json.parseStrict requires (T, src)\")")
+                return
+            var first = args.at(0).value
+            var class_name: str = ""
+            if first is Expr.ident as id_ref
+                class_name = id_ref.name
+            else
+                w.emit("@compileError(\"Json.parseStrict requires (T, src) where T is a class name\")")
+                return
+            var found: bool = false
+            var reflectable: bool = false
+            for d in module_decls
+                if d is Decl.class_ as cls
+                    if cls.name == class_name
+                        found = true
+                        if cls.mods.is_reflectable
+                            reflectable = true
+            if not found
+                w.emit("@compileError(\"Json.parseStrict: '")
+                w.emit(class_name)
+                w.emit("' is not a class declared in this module\")")
+                return
+            if not reflectable
+                w.emit("@compileError(\"Json.parseStrict requires '@reflectable class ")
+                w.emit(class_name)
+                w.emit("' — add the annotation to ")
+                w.emit(class_name)
+                w.emit("'s declaration.\")")
+                return
+            w.emit("_json_parse_strict_")
+            w.emit(class_name)
+            w.emit("(")
+            genExpr(args.at(1).value)
             w.emit(")")
             return
         if mname == "stringify"

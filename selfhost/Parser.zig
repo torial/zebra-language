@@ -1864,18 +1864,21 @@ pub const PClass = struct {
     ifaces: std.ArrayList([]const u8),
     members: std.ArrayList(PNode),
     invs: std.ArrayList(PNode),
-    pub fn init(name: []const u8, type_params: std.ArrayList([]const u8), ifaces: std.ArrayList([]const u8), members: std.ArrayList(PNode), invs: std.ArrayList(PNode)) PClass {
+    is_reflectable: bool,
+    pub fn init(name: []const u8, type_params: std.ArrayList([]const u8), ifaces: std.ArrayList([]const u8), members: std.ArrayList(PNode), invs: std.ArrayList(PNode), is_reflectable: bool) PClass {
         var _self: PClass = undefined;
-// zbr:selfhost/Parser.zbr:234
-            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:235
-            _self.type_params = type_params;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:236
-            _self.ifaces = ifaces;
+            _self.type_params = type_params;
 // zbr:selfhost/Parser.zbr:237
-            _self.members = members;
+            _self.ifaces = ifaces;
 // zbr:selfhost/Parser.zbr:238
+            _self.members = members;
+// zbr:selfhost/Parser.zbr:239
             _self.invs = invs;
+// zbr:selfhost/Parser.zbr:240
+            _self.is_reflectable = is_reflectable;
         return _self;
     }
 
@@ -1886,9 +1889,9 @@ pub const PExtend = struct {
     members: std.ArrayList(PNode),
     pub fn init(target_name: []const u8, members: std.ArrayList(PNode)) PExtend {
         var _self: PExtend = undefined;
-// zbr:selfhost/Parser.zbr:244
+// zbr:selfhost/Parser.zbr:246
             _self.target_name = _intern(target_name);
-// zbr:selfhost/Parser.zbr:245
+// zbr:selfhost/Parser.zbr:247
             _self.members = members;
         return _self;
     }
@@ -1900,9 +1903,9 @@ pub const PEnum = struct {
     variants: std.ArrayList([]const u8),
     pub fn init(name: []const u8, variants: std.ArrayList([]const u8)) PEnum {
         var _self: PEnum = undefined;
-// zbr:selfhost/Parser.zbr:251
+// zbr:selfhost/Parser.zbr:253
             _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:252
+// zbr:selfhost/Parser.zbr:254
             _self.variants = variants;
         return _self;
     }
@@ -1917,15 +1920,15 @@ pub const PField = struct {
     init_expr: std.ArrayList(PNode),
     pub fn init(name: []const u8, type_name: []const u8, is_const: bool, is_static: bool, init_expr: std.ArrayList(PNode)) PField {
         var _self: PField = undefined;
-// zbr:selfhost/Parser.zbr:261
-            _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:262
-            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:263
-            _self.is_const = is_const;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:264
-            _self.is_static = is_static;
+            _self.type_name = _intern(type_name);
 // zbr:selfhost/Parser.zbr:265
+            _self.is_const = is_const;
+// zbr:selfhost/Parser.zbr:266
+            _self.is_static = is_static;
+// zbr:selfhost/Parser.zbr:267
             _self.init_expr = init_expr;
         return _self;
     }
@@ -1941,17 +1944,17 @@ pub const PMethod = struct {
     stmts: std.ArrayList(PNode),
     pub fn init(name: []const u8, is_static: bool, throws_: bool, params: std.ArrayList(PParam), return_type: []const u8, stmts: std.ArrayList(PNode)) PMethod {
         var _self: PMethod = undefined;
-// zbr:selfhost/Parser.zbr:275
-            _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:276
-            _self.is_static = is_static;
 // zbr:selfhost/Parser.zbr:277
-            _self.throws_ = throws_;
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:278
-            _self.params = params;
+            _self.is_static = is_static;
 // zbr:selfhost/Parser.zbr:279
-            _self.return_type = _intern(return_type);
+            _self.throws_ = throws_;
 // zbr:selfhost/Parser.zbr:280
+            _self.params = params;
+// zbr:selfhost/Parser.zbr:281
+            _self.return_type = _intern(return_type);
+// zbr:selfhost/Parser.zbr:282
             _self.stmts = stmts;
         return _self;
     }
@@ -1963,9 +1966,9 @@ pub const PInit = struct {
     stmts: std.ArrayList(PNode),
     pub fn init(params: std.ArrayList(PParam), stmts: std.ArrayList(PNode)) PInit {
         var _self: PInit = undefined;
-// zbr:selfhost/Parser.zbr:286
+// zbr:selfhost/Parser.zbr:288
             _self.params = params;
-// zbr:selfhost/Parser.zbr:287
+// zbr:selfhost/Parser.zbr:289
             _self.stmts = stmts;
         return _self;
     }
@@ -1977,9 +1980,9 @@ pub const PReturn = struct {
     line: i64,
     pub fn init(value: std.ArrayList(PNode), line: i64) PReturn {
         var _self: PReturn = undefined;
-// zbr:selfhost/Parser.zbr:293
+// zbr:selfhost/Parser.zbr:295
             _self.value = value;
-// zbr:selfhost/Parser.zbr:294
+// zbr:selfhost/Parser.zbr:296
             _self.line = line;
         return _self;
     }
@@ -1994,15 +1997,15 @@ pub const PIf = struct {
     line: i64,
     pub fn init(cond: std.ArrayList(PNode), then_stmts: std.ArrayList(PNode), else_stmts: std.ArrayList(PNode), line: i64) PIf {
         var _self: PIf = undefined;
-// zbr:selfhost/Parser.zbr:303
-            _self.cond = cond;
-// zbr:selfhost/Parser.zbr:304
-            _self.is_capture = null;
 // zbr:selfhost/Parser.zbr:305
-            _self.then_stmts = then_stmts;
+            _self.cond = cond;
 // zbr:selfhost/Parser.zbr:306
-            _self.else_stmts = else_stmts;
+            _self.is_capture = null;
 // zbr:selfhost/Parser.zbr:307
+            _self.then_stmts = then_stmts;
+// zbr:selfhost/Parser.zbr:308
+            _self.else_stmts = else_stmts;
+// zbr:selfhost/Parser.zbr:309
             _self.line = line;
         return _self;
     }
@@ -2015,11 +2018,11 @@ pub const PWhile = struct {
     line: i64,
     pub fn init(cond: std.ArrayList(PNode), stmts: std.ArrayList(PNode), line: i64) PWhile {
         var _self: PWhile = undefined;
-// zbr:selfhost/Parser.zbr:314
-            _self.cond = cond;
-// zbr:selfhost/Parser.zbr:315
-            _self.stmts = stmts;
 // zbr:selfhost/Parser.zbr:316
+            _self.cond = cond;
+// zbr:selfhost/Parser.zbr:317
+            _self.stmts = stmts;
+// zbr:selfhost/Parser.zbr:318
             _self.line = line;
         return _self;
     }
@@ -2031,9 +2034,9 @@ pub const PArenaScope = struct {
     line: i64,
     pub fn init(stmts: std.ArrayList(PNode), line: i64) PArenaScope {
         var _self: PArenaScope = undefined;
-// zbr:selfhost/Parser.zbr:322
+// zbr:selfhost/Parser.zbr:324
             _self.stmts = stmts;
-// zbr:selfhost/Parser.zbr:323
+// zbr:selfhost/Parser.zbr:325
             _self.line = line;
         return _self;
     }
@@ -2046,11 +2049,11 @@ pub const PWith = struct {
     line: i64,
     pub fn init(target: std.ArrayList(PNode), stmts: std.ArrayList(PNode), line: i64) PWith {
         var _self: PWith = undefined;
-// zbr:selfhost/Parser.zbr:330
-            _self.target = target;
-// zbr:selfhost/Parser.zbr:331
-            _self.stmts = stmts;
 // zbr:selfhost/Parser.zbr:332
+            _self.target = target;
+// zbr:selfhost/Parser.zbr:333
+            _self.stmts = stmts;
+// zbr:selfhost/Parser.zbr:334
             _self.line = line;
         return _self;
     }
@@ -2063,11 +2066,11 @@ pub const PGuard = struct {
     line: i64,
     pub fn init(cond: std.ArrayList(PNode), else_stmts: std.ArrayList(PNode), line: i64) PGuard {
         var _self: PGuard = undefined;
-// zbr:selfhost/Parser.zbr:339
-            _self.cond = cond;
-// zbr:selfhost/Parser.zbr:340
-            _self.else_stmts = else_stmts;
 // zbr:selfhost/Parser.zbr:341
+            _self.cond = cond;
+// zbr:selfhost/Parser.zbr:342
+            _self.else_stmts = else_stmts;
+// zbr:selfhost/Parser.zbr:343
             _self.line = line;
         return _self;
     }
@@ -2079,9 +2082,9 @@ pub const POrelse = struct {
     fallback: std.ArrayList(PNode),
     pub fn init(expr: std.ArrayList(PNode), fallback: std.ArrayList(PNode)) POrelse {
         var _self: POrelse = undefined;
-// zbr:selfhost/Parser.zbr:347
+// zbr:selfhost/Parser.zbr:349
             _self.expr = expr;
-// zbr:selfhost/Parser.zbr:348
+// zbr:selfhost/Parser.zbr:350
             _self.fallback = fallback;
         return _self;
     }
@@ -2094,11 +2097,11 @@ pub const PCatch = struct {
     fallback: std.ArrayList(PNode),
     pub fn init(expr: std.ArrayList(PNode), binding: []const u8, fallback: std.ArrayList(PNode)) PCatch {
         var _self: PCatch = undefined;
-// zbr:selfhost/Parser.zbr:355
-            _self.expr = expr;
-// zbr:selfhost/Parser.zbr:356
-            _self.binding = _intern(binding);
 // zbr:selfhost/Parser.zbr:357
+            _self.expr = expr;
+// zbr:selfhost/Parser.zbr:358
+            _self.binding = _intern(binding);
+// zbr:selfhost/Parser.zbr:359
             _self.fallback = fallback;
         return _self;
     }
@@ -2110,9 +2113,9 @@ pub const PPipeline = struct {
     rhs: std.ArrayList(PNode),
     pub fn init(lhs: std.ArrayList(PNode), rhs: std.ArrayList(PNode)) PPipeline {
         var _self: PPipeline = undefined;
-// zbr:selfhost/Parser.zbr:363
+// zbr:selfhost/Parser.zbr:365
             _self.lhs = lhs;
-// zbr:selfhost/Parser.zbr:364
+// zbr:selfhost/Parser.zbr:366
             _self.rhs = rhs;
         return _self;
     }
@@ -2127,15 +2130,15 @@ pub const PForIn = struct {
     line: i64,
     pub fn init(var_names: std.ArrayList([]const u8), iter: std.ArrayList(PNode), stmts: std.ArrayList(PNode), else_stmts: std.ArrayList(PNode), line: i64) PForIn {
         var _self: PForIn = undefined;
-// zbr:selfhost/Parser.zbr:373
-            _self.var_names = var_names;
-// zbr:selfhost/Parser.zbr:374
-            _self.iter = iter;
 // zbr:selfhost/Parser.zbr:375
-            _self.stmts = stmts;
+            _self.var_names = var_names;
 // zbr:selfhost/Parser.zbr:376
-            _self.else_stmts = else_stmts;
+            _self.iter = iter;
 // zbr:selfhost/Parser.zbr:377
+            _self.stmts = stmts;
+// zbr:selfhost/Parser.zbr:378
+            _self.else_stmts = else_stmts;
+// zbr:selfhost/Parser.zbr:379
             _self.line = line;
         return _self;
     }
@@ -2152,19 +2155,19 @@ pub const PForNum = struct {
     line: i64,
     pub fn init(var_name: []const u8, start: std.ArrayList(PNode), stop_: std.ArrayList(PNode), step: std.ArrayList(PNode), stmts: std.ArrayList(PNode), else_stmts: std.ArrayList(PNode), line: i64) PForNum {
         var _self: PForNum = undefined;
-// zbr:selfhost/Parser.zbr:388
-            _self.var_name = _intern(var_name);
-// zbr:selfhost/Parser.zbr:389
-            _self.start = start;
 // zbr:selfhost/Parser.zbr:390
-            _self.stop_ = stop_;
+            _self.var_name = _intern(var_name);
 // zbr:selfhost/Parser.zbr:391
-            _self.step = step;
+            _self.start = start;
 // zbr:selfhost/Parser.zbr:392
-            _self.stmts = stmts;
+            _self.stop_ = stop_;
 // zbr:selfhost/Parser.zbr:393
-            _self.else_stmts = else_stmts;
+            _self.step = step;
 // zbr:selfhost/Parser.zbr:394
+            _self.stmts = stmts;
+// zbr:selfhost/Parser.zbr:395
+            _self.else_stmts = else_stmts;
+// zbr:selfhost/Parser.zbr:396
             _self.line = line;
         return _self;
     }
@@ -2179,15 +2182,15 @@ pub const PVar = struct {
     line: i64,
     pub fn init(name: []const u8, is_const: bool, type_name: []const u8, init_expr: std.ArrayList(PNode), line: i64) PVar {
         var _self: PVar = undefined;
-// zbr:selfhost/Parser.zbr:403
-            _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:404
-            _self.is_const = is_const;
 // zbr:selfhost/Parser.zbr:405
-            _self.type_name = _intern(type_name);
+            _self.name = _intern(name);
 // zbr:selfhost/Parser.zbr:406
-            _self.init_expr = init_expr;
+            _self.is_const = is_const;
 // zbr:selfhost/Parser.zbr:407
+            _self.type_name = _intern(type_name);
+// zbr:selfhost/Parser.zbr:408
+            _self.init_expr = init_expr;
+// zbr:selfhost/Parser.zbr:409
             _self.line = line;
         return _self;
     }
@@ -2201,13 +2204,13 @@ pub const PDestruct = struct {
     line: i64,
     pub fn init(names: std.ArrayList([]const u8), init_expr: std.ArrayList(PNode), is_struct: bool, line: i64) PDestruct {
         var _self: PDestruct = undefined;
-// zbr:selfhost/Parser.zbr:415
-            _self.names = names;
-// zbr:selfhost/Parser.zbr:416
-            _self.init_expr = init_expr;
 // zbr:selfhost/Parser.zbr:417
-            _self.is_struct = is_struct;
+            _self.names = names;
 // zbr:selfhost/Parser.zbr:418
+            _self.init_expr = init_expr;
+// zbr:selfhost/Parser.zbr:419
+            _self.is_struct = is_struct;
+// zbr:selfhost/Parser.zbr:420
             _self.line = line;
         return _self;
     }
@@ -2221,13 +2224,13 @@ pub const PAssign = struct {
     line: i64,
     pub fn init(op: []const u8, target: std.ArrayList(PNode), value: std.ArrayList(PNode), line: i64) PAssign {
         var _self: PAssign = undefined;
-// zbr:selfhost/Parser.zbr:426
-            _self.op = _intern(op);
-// zbr:selfhost/Parser.zbr:427
-            _self.target = target;
 // zbr:selfhost/Parser.zbr:428
-            _self.value = value;
+            _self.op = _intern(op);
 // zbr:selfhost/Parser.zbr:429
+            _self.target = target;
+// zbr:selfhost/Parser.zbr:430
+            _self.value = value;
+// zbr:selfhost/Parser.zbr:431
             _self.line = line;
         return _self;
     }
@@ -2240,11 +2243,11 @@ pub const PAssert = struct {
     line: i64,
     pub fn init(cond: std.ArrayList(PNode), message: std.ArrayList(PNode), line: i64) PAssert {
         var _self: PAssert = undefined;
-// zbr:selfhost/Parser.zbr:436
-            _self.cond = cond;
-// zbr:selfhost/Parser.zbr:437
-            _self.message = message;
 // zbr:selfhost/Parser.zbr:438
+            _self.cond = cond;
+// zbr:selfhost/Parser.zbr:439
+            _self.message = message;
+// zbr:selfhost/Parser.zbr:440
             _self.line = line;
         return _self;
     }
@@ -2256,9 +2259,9 @@ pub const PRaise = struct {
     line: i64,
     pub fn init(message: std.ArrayList(PNode), line: i64) PRaise {
         var _self: PRaise = undefined;
-// zbr:selfhost/Parser.zbr:444
+// zbr:selfhost/Parser.zbr:446
             _self.message = message;
-// zbr:selfhost/Parser.zbr:445
+// zbr:selfhost/Parser.zbr:447
             _self.line = line;
         return _self;
     }
@@ -2272,13 +2275,13 @@ pub const PTryCatch = struct {
     line: i64,
     pub fn init(body_stmts: std.ArrayList(PNode), catch_binding: []const u8, catch_stmts: std.ArrayList(PNode), line: i64) PTryCatch {
         var _self: PTryCatch = undefined;
-// zbr:selfhost/Parser.zbr:453
-            _self.body_stmts = body_stmts;
-// zbr:selfhost/Parser.zbr:454
-            _self.catch_binding = _intern(catch_binding);
 // zbr:selfhost/Parser.zbr:455
-            _self.catch_stmts = catch_stmts;
+            _self.body_stmts = body_stmts;
 // zbr:selfhost/Parser.zbr:456
+            _self.catch_binding = _intern(catch_binding);
+// zbr:selfhost/Parser.zbr:457
+            _self.catch_stmts = catch_stmts;
+// zbr:selfhost/Parser.zbr:458
             _self.line = line;
         return _self;
     }
@@ -2290,9 +2293,9 @@ pub const PMember = struct {
     member: []const u8,
     pub fn init(base: std.ArrayList(PNode), member: []const u8) PMember {
         var _self: PMember = undefined;
-// zbr:selfhost/Parser.zbr:462
+// zbr:selfhost/Parser.zbr:464
             _self.base = base;
-// zbr:selfhost/Parser.zbr:463
+// zbr:selfhost/Parser.zbr:465
             _self.member = _intern(member);
         return _self;
     }
@@ -2304,9 +2307,9 @@ pub const PCall = struct {
     args: std.ArrayList(PNode),
     pub fn init(callee: std.ArrayList(PNode), args: std.ArrayList(PNode)) PCall {
         var _self: PCall = undefined;
-// zbr:selfhost/Parser.zbr:469
+// zbr:selfhost/Parser.zbr:471
             _self.callee = callee;
-// zbr:selfhost/Parser.zbr:470
+// zbr:selfhost/Parser.zbr:472
             _self.args = args;
         return _self;
     }
@@ -2318,9 +2321,9 @@ pub const PNamedArg = struct {
     value: std.ArrayList(PNode),
     pub fn init(name: []const u8, value: std.ArrayList(PNode)) PNamedArg {
         var _self: PNamedArg = undefined;
-// zbr:selfhost/Parser.zbr:476
+// zbr:selfhost/Parser.zbr:478
             _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:477
+// zbr:selfhost/Parser.zbr:479
             _self.value = value;
         return _self;
     }
@@ -2332,9 +2335,9 @@ pub const PIndex = struct {
     index: std.ArrayList(PNode),
     pub fn init(object: std.ArrayList(PNode), index: std.ArrayList(PNode)) PIndex {
         var _self: PIndex = undefined;
-// zbr:selfhost/Parser.zbr:483
+// zbr:selfhost/Parser.zbr:485
             _self.object = object;
-// zbr:selfhost/Parser.zbr:484
+// zbr:selfhost/Parser.zbr:486
             _self.index = index;
         return _self;
     }
@@ -2347,11 +2350,11 @@ pub const PSlice = struct {
     stop_: std.ArrayList(PNode),
     pub fn init(object: std.ArrayList(PNode), start: std.ArrayList(PNode), stop_: std.ArrayList(PNode)) PSlice {
         var _self: PSlice = undefined;
-// zbr:selfhost/Parser.zbr:491
-            _self.object = object;
-// zbr:selfhost/Parser.zbr:492
-            _self.start = start;
 // zbr:selfhost/Parser.zbr:493
+            _self.object = object;
+// zbr:selfhost/Parser.zbr:494
+            _self.start = start;
+// zbr:selfhost/Parser.zbr:495
             _self.stop_ = stop_;
         return _self;
     }
@@ -2364,11 +2367,11 @@ pub const PBinary = struct {
     right: std.ArrayList(PNode),
     pub fn init(op: []const u8, left: std.ArrayList(PNode), right: std.ArrayList(PNode)) PBinary {
         var _self: PBinary = undefined;
-// zbr:selfhost/Parser.zbr:500
-            _self.op = _intern(op);
-// zbr:selfhost/Parser.zbr:501
-            _self.left = left;
 // zbr:selfhost/Parser.zbr:502
+            _self.op = _intern(op);
+// zbr:selfhost/Parser.zbr:503
+            _self.left = left;
+// zbr:selfhost/Parser.zbr:504
             _self.right = right;
         return _self;
     }
@@ -2380,9 +2383,9 @@ pub const PUnary = struct {
     operand: std.ArrayList(PNode),
     pub fn init(op: []const u8, operand: std.ArrayList(PNode)) PUnary {
         var _self: PUnary = undefined;
-// zbr:selfhost/Parser.zbr:508
+// zbr:selfhost/Parser.zbr:510
             _self.op = _intern(op);
-// zbr:selfhost/Parser.zbr:509
+// zbr:selfhost/Parser.zbr:511
             _self.operand = operand;
         return _self;
     }
@@ -2395,11 +2398,11 @@ pub const PExprId = struct {
     col: i64,
     pub fn init(name: []const u8, line: i64, col: i64) PExprId {
         var _self: PExprId = undefined;
-// zbr:selfhost/Parser.zbr:516
-            _self.name = _intern(name);
-// zbr:selfhost/Parser.zbr:517
-            _self.line = line;
 // zbr:selfhost/Parser.zbr:518
+            _self.name = _intern(name);
+// zbr:selfhost/Parser.zbr:519
+            _self.line = line;
+// zbr:selfhost/Parser.zbr:520
             _self.col = col;
         return _self;
     }
@@ -2414,115 +2417,115 @@ pub const Parser = struct {
     pub fn init(tokens: std.ArrayList(*Token.Token), file_name: []const u8) *Parser {
         const _self = _allocator.create(Parser) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Parser");
-// zbr:selfhost/Parser.zbr:528
-            _self.tokens = tokens;
-// zbr:selfhost/Parser.zbr:529
-            _self.pos = 0;
 // zbr:selfhost/Parser.zbr:530
+            _self.tokens = tokens;
+// zbr:selfhost/Parser.zbr:531
+            _self.pos = 0;
+// zbr:selfhost/Parser.zbr:532
             _self.file_name = _intern(file_name);
         return _self;
     }
 
     pub fn peek(self: *Parser) *Token.Token {
-// zbr:selfhost/Parser.zbr:535
+// zbr:selfhost/Parser.zbr:537
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.tokens.items.len)))) {
-// zbr:selfhost/Parser.zbr:536
+// zbr:selfhost/Parser.zbr:538
             return self.tokens.items[@intCast(self.pos)];
         }
-// zbr:selfhost/Parser.zbr:537
+// zbr:selfhost/Parser.zbr:539
         return self.tokens.items[@intCast((@as(i64, @intCast(self.tokens.items.len)) - 1))];
     }
 
     pub fn peekAt(self: *Parser, offset: i64) *Token.Token {
-// zbr:selfhost/Parser.zbr:540
-        const idx = (self.pos + offset);
-// zbr:selfhost/Parser.zbr:541
-        if (_zebra_lt(idx, @as(i64, @intCast(self.tokens.items.len)))) {
 // zbr:selfhost/Parser.zbr:542
+        const idx = (self.pos + offset);
+// zbr:selfhost/Parser.zbr:543
+        if (_zebra_lt(idx, @as(i64, @intCast(self.tokens.items.len)))) {
+// zbr:selfhost/Parser.zbr:544
             return self.tokens.items[@intCast(idx)];
         }
-// zbr:selfhost/Parser.zbr:543
+// zbr:selfhost/Parser.zbr:545
         return self.tokens.items[@intCast((@as(i64, @intCast(self.tokens.items.len)) - 1))];
     }
 
     pub fn advance(self: *Parser) void {
-// zbr:selfhost/Parser.zbr:546
+// zbr:selfhost/Parser.zbr:548
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.tokens.items.len)))) {
-// zbr:selfhost/Parser.zbr:547
+// zbr:selfhost/Parser.zbr:549
             self.pos = (self.pos + 1);
         }
     }
 
     pub fn textIs(self: *Parser, s: []const u8) bool {
-// zbr:selfhost/Parser.zbr:550
+// zbr:selfhost/Parser.zbr:552
         return std.mem.eql(u8, self.peek().text, s);
     }
 
     pub fn errorAt(self: *Parser, msg: []const u8) []const u8 {
-// zbr:selfhost/Parser.zbr:553
+// zbr:selfhost/Parser.zbr:555
         return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{self.peek().line}) catch unreachable), _allocator), ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{self.peek().col}) catch unreachable), _allocator), ": error: ", _allocator), msg, _allocator);
     }
 
     pub fn expectText(self: *Parser, s: []const u8) anyerror!void {
-// zbr:selfhost/Parser.zbr:556
+// zbr:selfhost/Parser.zbr:558
         if ((!self.textIs(s))) {
-// zbr:selfhost/Parser.zbr:557
+// zbr:selfhost/Parser.zbr:559
             { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat(_str_concat(_str_concat("expected '", s, _allocator), "', got '", _allocator), self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
         }
         self.advance();
     }
 
     pub fn isEol(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:561
+// zbr:selfhost/Parser.zbr:563
         switch (self.peek().kind) {
             .eol => {
-// zbr:selfhost/Parser.zbr:563
+// zbr:selfhost/Parser.zbr:565
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:565
+// zbr:selfhost/Parser.zbr:567
                 return false;
             },
         }
     }
 
     pub fn isIndent(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:568
+// zbr:selfhost/Parser.zbr:570
         switch (self.peek().kind) {
             .indent => {
-// zbr:selfhost/Parser.zbr:570
+// zbr:selfhost/Parser.zbr:572
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:572
+// zbr:selfhost/Parser.zbr:574
                 return false;
             },
         }
     }
 
     pub fn isDedent(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:575
+// zbr:selfhost/Parser.zbr:577
         switch (self.peek().kind) {
             .dedent => {
-// zbr:selfhost/Parser.zbr:577
+// zbr:selfhost/Parser.zbr:579
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:579
+// zbr:selfhost/Parser.zbr:581
                 return false;
             },
         }
     }
 
     pub fn isEof(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:582
+// zbr:selfhost/Parser.zbr:584
         switch (self.peek().kind) {
             .eof => {
-// zbr:selfhost/Parser.zbr:584
+// zbr:selfhost/Parser.zbr:586
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:586
+// zbr:selfhost/Parser.zbr:588
                 return false;
             },
         }
@@ -2530,601 +2533,630 @@ pub const Parser = struct {
 
     pub fn isStmtKeyword(self: *Parser, text: []const u8) bool {
         _ = self;
-// zbr:selfhost/Parser.zbr:591
-        const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|guard|defer|";
-// zbr:selfhost/Parser.zbr:592
-        const needle = _str_concat(_str_concat("|", text, _allocator), "|", _allocator);
 // zbr:selfhost/Parser.zbr:593
+        const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|guard|defer|";
+// zbr:selfhost/Parser.zbr:594
+        const needle = _str_concat(_str_concat("|", text, _allocator), "|", _allocator);
+// zbr:selfhost/Parser.zbr:595
         return (std.mem.indexOf(u8, kws, needle) != null);
     }
 
     pub fn isId(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:596
+// zbr:selfhost/Parser.zbr:598
         switch (self.peek().kind) {
             .id => {
-// zbr:selfhost/Parser.zbr:598
+// zbr:selfhost/Parser.zbr:600
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:600
+// zbr:selfhost/Parser.zbr:602
                 return false;
             },
         }
     }
 
     pub fn isSizedTypeName(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:603
+// zbr:selfhost/Parser.zbr:605
         switch (self.peek().kind) {
             .int_size => {
-// zbr:selfhost/Parser.zbr:605
-                return true;
-            },
-            .uint_size => {
 // zbr:selfhost/Parser.zbr:607
                 return true;
             },
-            .float_size => {
+            .uint_size => {
 // zbr:selfhost/Parser.zbr:609
                 return true;
             },
-            else => {
+            .float_size => {
 // zbr:selfhost/Parser.zbr:611
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:613
                 return false;
             },
         }
     }
 
     pub fn isTypeKeyword(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:615
+// zbr:selfhost/Parser.zbr:617
         switch (self.peek().kind) {
             .kw_int => {
-// zbr:selfhost/Parser.zbr:617
-                return true;
-            },
-            .kw_uint => {
 // zbr:selfhost/Parser.zbr:619
                 return true;
             },
-            .kw_float => {
+            .kw_uint => {
 // zbr:selfhost/Parser.zbr:621
                 return true;
             },
-            .kw_bool => {
+            .kw_float => {
 // zbr:selfhost/Parser.zbr:623
                 return true;
             },
-            .kw_char => {
+            .kw_bool => {
 // zbr:selfhost/Parser.zbr:625
                 return true;
             },
-            else => {
+            .kw_char => {
 // zbr:selfhost/Parser.zbr:627
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:629
                 return false;
             },
         }
     }
 
     pub fn isOpenCall(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:630
+// zbr:selfhost/Parser.zbr:632
         switch (self.peek().kind) {
             .open_call => {
-// zbr:selfhost/Parser.zbr:632
+// zbr:selfhost/Parser.zbr:634
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:634
+// zbr:selfhost/Parser.zbr:636
                 return false;
             },
         }
     }
 
     pub fn isOpenCallAt(self: *Parser, offset: i64) bool {
-// zbr:selfhost/Parser.zbr:637
+// zbr:selfhost/Parser.zbr:639
         switch (self.peekAt(offset).kind) {
             .open_call => {
-// zbr:selfhost/Parser.zbr:639
+// zbr:selfhost/Parser.zbr:641
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:641
+// zbr:selfhost/Parser.zbr:643
                 return false;
             },
         }
     }
 
     pub fn isIntLit(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:644
+// zbr:selfhost/Parser.zbr:646
         switch (self.peek().kind) {
             .integer_lit => {
-// zbr:selfhost/Parser.zbr:646
+// zbr:selfhost/Parser.zbr:648
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:648
+// zbr:selfhost/Parser.zbr:650
                 return false;
             },
         }
     }
 
     pub fn isFloatLit(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:651
+// zbr:selfhost/Parser.zbr:653
         switch (self.peek().kind) {
             .float_lit => {
-// zbr:selfhost/Parser.zbr:653
+// zbr:selfhost/Parser.zbr:655
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:655
+// zbr:selfhost/Parser.zbr:657
                 return false;
             },
         }
     }
 
     pub fn isAtLbracket(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:658
+// zbr:selfhost/Parser.zbr:660
         switch (self.peek().kind) {
             .at_lbracket => {
-// zbr:selfhost/Parser.zbr:660
+// zbr:selfhost/Parser.zbr:662
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:662
+// zbr:selfhost/Parser.zbr:664
                 return false;
             },
         }
     }
 
     pub fn isStringSingle(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:665
+// zbr:selfhost/Parser.zbr:667
         switch (self.peek().kind) {
             .string_single => {
-// zbr:selfhost/Parser.zbr:667
+// zbr:selfhost/Parser.zbr:669
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:669
+// zbr:selfhost/Parser.zbr:671
                 return false;
             },
         }
     }
 
     pub fn isStringDouble(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:672
+// zbr:selfhost/Parser.zbr:674
         switch (self.peek().kind) {
             .string_double => {
-// zbr:selfhost/Parser.zbr:674
+// zbr:selfhost/Parser.zbr:676
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:676
+// zbr:selfhost/Parser.zbr:678
                 return false;
             },
         }
     }
 
     pub fn isCharLit(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:679
+// zbr:selfhost/Parser.zbr:681
         switch (self.peek().kind) {
             .char_lit_single => {
-// zbr:selfhost/Parser.zbr:681
-                return true;
-            },
-            .char_lit_double => {
 // zbr:selfhost/Parser.zbr:683
                 return true;
             },
-            else => {
+            .char_lit_double => {
 // zbr:selfhost/Parser.zbr:685
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:687
                 return false;
             },
         }
     }
 
     pub fn isZigLit(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:688
+// zbr:selfhost/Parser.zbr:690
         switch (self.peek().kind) {
             .zig_single => {
-// zbr:selfhost/Parser.zbr:690
-                return true;
-            },
-            .zig_double => {
 // zbr:selfhost/Parser.zbr:692
                 return true;
             },
-            else => {
+            .zig_double => {
 // zbr:selfhost/Parser.zbr:694
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:696
                 return false;
             },
         }
     }
 
     pub fn isRawString(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:697
+// zbr:selfhost/Parser.zbr:699
         switch (self.peek().kind) {
             .string_raw_single => {
-// zbr:selfhost/Parser.zbr:699
-                return true;
-            },
-            .string_raw_double => {
 // zbr:selfhost/Parser.zbr:701
                 return true;
             },
-            else => {
+            .string_raw_double => {
 // zbr:selfhost/Parser.zbr:703
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:705
                 return false;
             },
         }
     }
 
     pub fn isDocString(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:706
+// zbr:selfhost/Parser.zbr:708
         switch (self.peek().kind) {
             .doc_string_line => {
-// zbr:selfhost/Parser.zbr:708
+// zbr:selfhost/Parser.zbr:710
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:710
+// zbr:selfhost/Parser.zbr:712
                 return false;
             },
         }
     }
 
     pub fn isStringStart(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:713
+// zbr:selfhost/Parser.zbr:715
         switch (self.peek().kind) {
             .string_start_single => {
-// zbr:selfhost/Parser.zbr:715
-                return true;
-            },
-            .string_start_double => {
 // zbr:selfhost/Parser.zbr:717
                 return true;
             },
-            else => {
+            .string_start_double => {
 // zbr:selfhost/Parser.zbr:719
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:721
                 return false;
             },
         }
     }
 
     pub fn isStringPart(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:722
+// zbr:selfhost/Parser.zbr:724
         switch (self.peek().kind) {
             .string_part_single => {
-// zbr:selfhost/Parser.zbr:724
-                return true;
-            },
-            .string_part_double => {
 // zbr:selfhost/Parser.zbr:726
                 return true;
             },
-            else => {
+            .string_part_double => {
 // zbr:selfhost/Parser.zbr:728
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:730
                 return false;
             },
         }
     }
 
     pub fn isStringStop(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:731
+// zbr:selfhost/Parser.zbr:733
         switch (self.peek().kind) {
             .string_stop_single => {
-// zbr:selfhost/Parser.zbr:733
-                return true;
-            },
-            .string_stop_double => {
 // zbr:selfhost/Parser.zbr:735
                 return true;
             },
-            else => {
+            .string_stop_double => {
 // zbr:selfhost/Parser.zbr:737
+                return true;
+            },
+            else => {
+// zbr:selfhost/Parser.zbr:739
                 return false;
             },
         }
     }
 
     pub fn isRcurlySpecial(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:740
+// zbr:selfhost/Parser.zbr:742
         switch (self.peek().kind) {
             .rcurly_special => {
-// zbr:selfhost/Parser.zbr:742
+// zbr:selfhost/Parser.zbr:744
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:744
+// zbr:selfhost/Parser.zbr:746
                 return false;
             },
         }
     }
 
     pub fn isStringPartFormat(self: *Parser) bool {
-// zbr:selfhost/Parser.zbr:747
+// zbr:selfhost/Parser.zbr:749
         switch (self.peek().kind) {
             .string_part_format => {
-// zbr:selfhost/Parser.zbr:749
+// zbr:selfhost/Parser.zbr:751
                 return true;
             },
             else => {
-// zbr:selfhost/Parser.zbr:751
+// zbr:selfhost/Parser.zbr:753
                 return false;
             },
         }
     }
 
     pub fn skipEol(self: *Parser) void {
-// zbr:selfhost/Parser.zbr:754
+// zbr:selfhost/Parser.zbr:756
         while (self.isEol()) {
             self.advance();
         }
     }
 
     pub fn eatId(self: *Parser) anyerror![]const u8 {
-// zbr:selfhost/Parser.zbr:758
+// zbr:selfhost/Parser.zbr:760
         if ((!self.isId())) {
-// zbr:selfhost/Parser.zbr:759
+// zbr:selfhost/Parser.zbr:761
             { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected identifier, got '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
         }
-// zbr:selfhost/Parser.zbr:760
+// zbr:selfhost/Parser.zbr:762
         const text = self.peek().text;
         self.advance();
-// zbr:selfhost/Parser.zbr:762
+// zbr:selfhost/Parser.zbr:764
         return text;
     }
 
     pub fn eatName(self: *Parser) anyerror![]const u8 {
-// zbr:selfhost/Parser.zbr:765
+// zbr:selfhost/Parser.zbr:767
         if (self.isId()) {
-// zbr:selfhost/Parser.zbr:766
+// zbr:selfhost/Parser.zbr:768
             const text = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:768
+// zbr:selfhost/Parser.zbr:770
             return text;
         } else {
-// zbr:selfhost/Parser.zbr:769
+// zbr:selfhost/Parser.zbr:771
             if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:770
+// zbr:selfhost/Parser.zbr:772
                 const text = self.peek().text;
                 self.advance();
-// zbr:selfhost/Parser.zbr:772
+// zbr:selfhost/Parser.zbr:774
                 return text;
             }
         }
-// zbr:selfhost/Parser.zbr:773
+// zbr:selfhost/Parser.zbr:775
         { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected name, got '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
     }
 
     pub fn eatTypeName(self: *Parser) anyerror![]const u8 {
-// zbr:selfhost/Parser.zbr:781
+// zbr:selfhost/Parser.zbr:783
         if (self.textIs("^")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:783
+// zbr:selfhost/Parser.zbr:785
             const inner: []const u8 = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:784
+// zbr:selfhost/Parser.zbr:786
             var sb = std.ArrayList(u8){};
             sb.appendSlice(_allocator, "^") catch @panic("OOM");
             sb.appendSlice(_allocator, inner) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:787
+// zbr:selfhost/Parser.zbr:789
             return (try sb.toOwnedSlice(_allocator));
         }
-// zbr:selfhost/Parser.zbr:788
+// zbr:selfhost/Parser.zbr:790
         const text = self.peek().text;
-// zbr:selfhost/Parser.zbr:789
+// zbr:selfhost/Parser.zbr:791
         if (self.isOpenCall()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:792
-            var args = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:793
-            while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:794
+            var args = std.ArrayList([]const u8){};
+// zbr:selfhost/Parser.zbr:795
+            while ((!self.textIs(")"))) {
+// zbr:selfhost/Parser.zbr:796
                 if (self.textIs(",")) {
                     self.advance();
                 } else {
-// zbr:selfhost/Parser.zbr:797
+// zbr:selfhost/Parser.zbr:799
                     var arg: []const u8 = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:798
+// zbr:selfhost/Parser.zbr:800
                     if (self.textIs("?")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:800
+// zbr:selfhost/Parser.zbr:802
                         arg = _str_concat(arg, "?", _allocator);
                     }
                     args.append(_allocator, _intern(arg)) catch @panic("OOM");
                 }
             }
             try self.expectText(")");
-// zbr:selfhost/Parser.zbr:804
+// zbr:selfhost/Parser.zbr:806
             var sb = std.ArrayList(u8){};
             sb.appendSlice(_allocator, text) catch @panic("OOM");
             sb.appendSlice(_allocator, "(") catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:807
-            var first = true;
-// zbr:selfhost/Parser.zbr:808
-            for (args.items) |arg| {
 // zbr:selfhost/Parser.zbr:809
+            var first = true;
+// zbr:selfhost/Parser.zbr:810
+            for (args.items) |arg| {
+// zbr:selfhost/Parser.zbr:811
                 if ((!first)) {
                     sb.appendSlice(_allocator, ",") catch @panic("OOM");
                 }
                 sb.appendSlice(_allocator, arg) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:812
+// zbr:selfhost/Parser.zbr:814
                 first = false;
             }
             sb.appendSlice(_allocator, ")") catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:814
+// zbr:selfhost/Parser.zbr:816
             return (try sb.toOwnedSlice(_allocator));
         }
-// zbr:selfhost/Parser.zbr:815
+// zbr:selfhost/Parser.zbr:817
         if (self.isId()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:818
+// zbr:selfhost/Parser.zbr:820
             if (self.textIs(".")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:820
+// zbr:selfhost/Parser.zbr:822
                 const rest: []const u8 = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:821
+// zbr:selfhost/Parser.zbr:823
                 var sb = std.ArrayList(u8){};
                 sb.appendSlice(_allocator, text) catch @panic("OOM");
                 sb.appendSlice(_allocator, ".") catch @panic("OOM");
                 sb.appendSlice(_allocator, rest) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:825
+// zbr:selfhost/Parser.zbr:827
                 return (try sb.toOwnedSlice(_allocator));
             }
-// zbr:selfhost/Parser.zbr:826
+// zbr:selfhost/Parser.zbr:828
             return text;
         }
-// zbr:selfhost/Parser.zbr:828
+// zbr:selfhost/Parser.zbr:830
         if (((std.mem.eql(u8, text, "int") or std.mem.eql(u8, text, "uint")) or std.mem.eql(u8, text, "float"))) {
             self.advance();
-// zbr:selfhost/Parser.zbr:831
+// zbr:selfhost/Parser.zbr:833
             if (self.textIs("(")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:833
+// zbr:selfhost/Parser.zbr:835
                 const n_str = self.peek().text;
                 self.advance();
                 try self.expectText(")");
-// zbr:selfhost/Parser.zbr:836
+// zbr:selfhost/Parser.zbr:838
                 var sb2 = std.ArrayList(u8){};
                 sb2.appendSlice(_allocator, text) catch @panic("OOM");
                 sb2.appendSlice(_allocator, "(") catch @panic("OOM");
                 sb2.appendSlice(_allocator, n_str) catch @panic("OOM");
                 sb2.appendSlice(_allocator, ")") catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:841
+// zbr:selfhost/Parser.zbr:843
                 return (try sb2.toOwnedSlice(_allocator));
             }
-// zbr:selfhost/Parser.zbr:842
+// zbr:selfhost/Parser.zbr:844
             return text;
         }
-// zbr:selfhost/Parser.zbr:843
+// zbr:selfhost/Parser.zbr:845
         if (((((std.mem.eql(u8, text, "bool") or std.mem.eql(u8, text, "str")) or std.mem.eql(u8, text, "char")) or std.mem.eql(u8, text, "void")) or std.mem.eql(u8, text, "any"))) {
             self.advance();
-// zbr:selfhost/Parser.zbr:845
+// zbr:selfhost/Parser.zbr:847
             return text;
         }
-// zbr:selfhost/Parser.zbr:847
+// zbr:selfhost/Parser.zbr:849
         if (self.isSizedTypeName()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:849
+// zbr:selfhost/Parser.zbr:851
             return text;
         }
-// zbr:selfhost/Parser.zbr:852
+// zbr:selfhost/Parser.zbr:854
         if ((std.mem.eql(u8, text, "byte") or std.mem.eql(u8, text, "String"))) {
             self.advance();
-// zbr:selfhost/Parser.zbr:854
+// zbr:selfhost/Parser.zbr:856
             return text;
         }
-// zbr:selfhost/Parser.zbr:856
+// zbr:selfhost/Parser.zbr:858
         if (std.mem.eql(u8, text, "same")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:858
+// zbr:selfhost/Parser.zbr:860
             return text;
         }
-// zbr:selfhost/Parser.zbr:860
+// zbr:selfhost/Parser.zbr:862
         if (std.mem.eql(u8, text, "(")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:862
+// zbr:selfhost/Parser.zbr:864
             var sb = std.ArrayList(u8){};
             sb.appendSlice(_allocator, "(") catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:864
-            var first = true;
-// zbr:selfhost/Parser.zbr:865
-            while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:866
+            var first = true;
+// zbr:selfhost/Parser.zbr:867
+            while ((!self.textIs(")"))) {
+// zbr:selfhost/Parser.zbr:868
                 if (self.textIs(",")) {
                     self.advance();
                 } else {
-// zbr:selfhost/Parser.zbr:869
+// zbr:selfhost/Parser.zbr:871
                     if ((!first)) {
                         sb.appendSlice(_allocator, ",") catch @panic("OOM");
                     }
-// zbr:selfhost/Parser.zbr:871
+// zbr:selfhost/Parser.zbr:873
                     var elem: []const u8 = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:872
+// zbr:selfhost/Parser.zbr:874
                     if (self.textIs("?")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:874
+// zbr:selfhost/Parser.zbr:876
                         elem = _str_concat(elem, "?", _allocator);
                     }
                     sb.appendSlice(_allocator, elem) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:876
+// zbr:selfhost/Parser.zbr:878
                     first = false;
                 }
             }
             try self.expectText(")");
             sb.appendSlice(_allocator, ")") catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:879
+// zbr:selfhost/Parser.zbr:881
             return (try sb.toOwnedSlice(_allocator));
         }
-// zbr:selfhost/Parser.zbr:880
+// zbr:selfhost/Parser.zbr:882
         { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected type name, got '", text, _allocator), "'", _allocator)) }; return error.ZebraError; }
     }
 
     pub fn parseModule(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:885
+// zbr:selfhost/Parser.zbr:887
         var decls = std.ArrayList(PNode){};
         self.skipEol();
-// zbr:selfhost/Parser.zbr:887
+// zbr:selfhost/Parser.zbr:889
         while ((!self.isEof())) {
             decls.append(_allocator, try self.parseTopDecl()) catch @panic("OOM");
             self.skipEol();
         }
-// zbr:selfhost/Parser.zbr:890
+// zbr:selfhost/Parser.zbr:892
         return PNode{ .module_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(PNode, "module_")) = PModule.init(decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
     }
 
     pub fn parseTopDecl(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:895
+// zbr:selfhost/Parser.zbr:899
+        var pending_reflectable: bool = false;
+// zbr:selfhost/Parser.zbr:900
+        var saw_directive: bool = true;
+// zbr:selfhost/Parser.zbr:901
+        while (saw_directive) {
+// zbr:selfhost/Parser.zbr:902
+            saw_directive = false;
+// zbr:selfhost/Parser.zbr:903
+            switch (self.peek().kind) {
+                .at_id => {
+// zbr:selfhost/Parser.zbr:905
+                    const dtext = self.peek().text;
+                    self.advance();
+                    self.skipEol();
+// zbr:selfhost/Parser.zbr:908
+                    if (std.mem.eql(u8, dtext, "@reflectable")) {
+// zbr:selfhost/Parser.zbr:909
+                        pending_reflectable = true;
+                    }
+// zbr:selfhost/Parser.zbr:910
+                    saw_directive = true;
+                },
+                else => {
+// zbr:selfhost/Parser.zbr:912
+                    saw_directive = false;
+                },
+            }
+        }
+// zbr:selfhost/Parser.zbr:913
         if (self.textIs("use")) {
-// zbr:selfhost/Parser.zbr:896
+// zbr:selfhost/Parser.zbr:914
             return try self.parseUseDecl();
         } else {
-// zbr:selfhost/Parser.zbr:897
+// zbr:selfhost/Parser.zbr:915
             if (self.textIs("namespace")) {
-// zbr:selfhost/Parser.zbr:898
+// zbr:selfhost/Parser.zbr:916
                 return try self.parseNamespaceDecl();
             } else {
-// zbr:selfhost/Parser.zbr:899
+// zbr:selfhost/Parser.zbr:917
                 if (self.textIs("class")) {
-// zbr:selfhost/Parser.zbr:900
-                    return try self.parseClassDecl();
+// zbr:selfhost/Parser.zbr:918
+                    return try self.parseClassDecl(pending_reflectable);
                 } else {
-// zbr:selfhost/Parser.zbr:901
+// zbr:selfhost/Parser.zbr:919
                     if (self.textIs("struct")) {
-// zbr:selfhost/Parser.zbr:902
-                        return try self.parseStructDecl();
+// zbr:selfhost/Parser.zbr:920
+                        return try self.parseStructDecl(pending_reflectable);
                     } else {
-// zbr:selfhost/Parser.zbr:903
+// zbr:selfhost/Parser.zbr:921
                         if (self.textIs("interface")) {
-// zbr:selfhost/Parser.zbr:904
+// zbr:selfhost/Parser.zbr:922
                             return try self.parseInterfaceDecl();
                         } else {
-// zbr:selfhost/Parser.zbr:905
+// zbr:selfhost/Parser.zbr:923
                             if (self.textIs("extend")) {
-// zbr:selfhost/Parser.zbr:906
+// zbr:selfhost/Parser.zbr:924
                                 return try self.parseExtendDecl();
                             } else {
-// zbr:selfhost/Parser.zbr:907
+// zbr:selfhost/Parser.zbr:925
                                 if (self.textIs("union")) {
-// zbr:selfhost/Parser.zbr:908
+// zbr:selfhost/Parser.zbr:926
                                     return try self.parseUnionDecl();
                                 } else {
-// zbr:selfhost/Parser.zbr:909
+// zbr:selfhost/Parser.zbr:927
                                     if (self.textIs("enum")) {
-// zbr:selfhost/Parser.zbr:910
+// zbr:selfhost/Parser.zbr:928
                                         return try self.parseEnumDecl();
                                     } else {
-// zbr:selfhost/Parser.zbr:911
+// zbr:selfhost/Parser.zbr:929
                                         if (self.textIs("sig")) {
-// zbr:selfhost/Parser.zbr:912
+// zbr:selfhost/Parser.zbr:930
                                             return try self.parseSigDecl();
                                         } else {
-// zbr:selfhost/Parser.zbr:913
+// zbr:selfhost/Parser.zbr:931
                                             if (self.textIs("static")) {
                                                 self.advance();
-// zbr:selfhost/Parser.zbr:915
+// zbr:selfhost/Parser.zbr:933
                                                 return try self.parseMethodDecl(true);
                                             } else {
-// zbr:selfhost/Parser.zbr:916
+// zbr:selfhost/Parser.zbr:934
                                                 if (self.textIs("def")) {
-// zbr:selfhost/Parser.zbr:917
+// zbr:selfhost/Parser.zbr:935
                                                     return try self.parseMethodDecl(false);
                                                 }
                                             }
@@ -3137,104 +3169,104 @@ pub const Parser = struct {
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:918
+// zbr:selfhost/Parser.zbr:936
         { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("unexpected top-level token: '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
     }
 
     pub fn parseNamespaceDecl(self: *Parser) anyerror!PNode {
         try self.expectText("namespace");
-// zbr:selfhost/Parser.zbr:922
+// zbr:selfhost/Parser.zbr:940
         var name: []const u8 = try self.eatId();
-// zbr:selfhost/Parser.zbr:923
+// zbr:selfhost/Parser.zbr:941
         while (self.textIs(".")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:925
+// zbr:selfhost/Parser.zbr:943
             name = _str_concat(name, ".", _allocator);
-// zbr:selfhost/Parser.zbr:926
+// zbr:selfhost/Parser.zbr:944
             name = _str_concat(name, try self.eatId(), _allocator);
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:928
+// zbr:selfhost/Parser.zbr:946
         var decls = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:929
+// zbr:selfhost/Parser.zbr:947
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:931
+// zbr:selfhost/Parser.zbr:949
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:933
+// zbr:selfhost/Parser.zbr:951
                 if (self.isDedent()) {
                     break;
                 }
                 decls.append(_allocator, try self.parseTopDecl()) catch @panic("OOM");
                 self.skipEol();
             }
-// zbr:selfhost/Parser.zbr:937
+// zbr:selfhost/Parser.zbr:955
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:939
+// zbr:selfhost/Parser.zbr:957
         return PNode{ .namespace_decl = blk_box_2: { const _bv: std.meta.Child(@FieldType(PNode, "namespace_decl")) = PNamespace.init(name, decls); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
     }
 
     pub fn parseUseDecl(self: *Parser) anyerror!PNode {
         try self.expectText("use");
-// zbr:selfhost/Parser.zbr:943
+// zbr:selfhost/Parser.zbr:961
         var path: []const u8 = try self.eatId();
-// zbr:selfhost/Parser.zbr:944
+// zbr:selfhost/Parser.zbr:962
         while (self.textIs(".")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:946
+// zbr:selfhost/Parser.zbr:964
             path = _str_concat(path, ".", _allocator);
-// zbr:selfhost/Parser.zbr:947
+// zbr:selfhost/Parser.zbr:965
             path = _str_concat(path, try self.eatId(), _allocator);
         }
-// zbr:selfhost/Parser.zbr:948
+// zbr:selfhost/Parser.zbr:966
         var exposed = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:949
+// zbr:selfhost/Parser.zbr:967
         if (self.textIs("exposing")) {
             self.advance();
             exposed.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:952
+// zbr:selfhost/Parser.zbr:970
             while (self.textIs(",")) {
                 self.advance();
                 exposed.append(_allocator, try self.eatId()) catch @panic("OOM");
             }
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:956
+// zbr:selfhost/Parser.zbr:974
         return PNode{ .use_ = blk_box_3: { const _bv: std.meta.Child(@FieldType(PNode, "use_")) = PUse.init(path, exposed); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
     }
 
-    pub fn parseClassDecl(self: *Parser) anyerror!PNode {
+    pub fn parseClassDecl(self: *Parser, is_reflectable: bool) anyerror!PNode {
         try self.expectText("class");
-// zbr:selfhost/Parser.zbr:960
+// zbr:selfhost/Parser.zbr:978
         var name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:961
+// zbr:selfhost/Parser.zbr:979
         var type_params = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:963
+// zbr:selfhost/Parser.zbr:981
         if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:964
+// zbr:selfhost/Parser.zbr:982
             name = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:966
+// zbr:selfhost/Parser.zbr:984
             if ((!self.textIs(")"))) {
                 type_params.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:969
+// zbr:selfhost/Parser.zbr:987
                 if (self.textIs("where")) {
-// zbr:selfhost/Parser.zbr:970
+// zbr:selfhost/Parser.zbr:988
                     while (((!self.textIs(")")) and (!self.textIs(",")))) {
                         self.advance();
                     }
                 }
-// zbr:selfhost/Parser.zbr:972
+// zbr:selfhost/Parser.zbr:990
                 while (self.textIs(",")) {
                     self.advance();
                     type_params.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:976
+// zbr:selfhost/Parser.zbr:994
                     if (self.textIs("where")) {
-// zbr:selfhost/Parser.zbr:977
+// zbr:selfhost/Parser.zbr:995
                         while (((!self.textIs(")")) and (!self.textIs(",")))) {
                             self.advance();
                         }
@@ -3243,53 +3275,53 @@ pub const Parser = struct {
             }
             try self.expectText(")");
         } else {
-// zbr:selfhost/Parser.zbr:981
+// zbr:selfhost/Parser.zbr:999
             name = try self.eatId();
         }
-// zbr:selfhost/Parser.zbr:982
+// zbr:selfhost/Parser.zbr:1000
         var ifaces = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:983
+// zbr:selfhost/Parser.zbr:1001
         if (self.textIs("implements")) {
             self.advance();
             ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:986
+// zbr:selfhost/Parser.zbr:1004
             while (self.textIs(",")) {
                 self.advance();
                 ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
             }
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:990
+// zbr:selfhost/Parser.zbr:1008
         var members = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:991
+// zbr:selfhost/Parser.zbr:1009
         var invs = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:992
+// zbr:selfhost/Parser.zbr:1010
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:994
+// zbr:selfhost/Parser.zbr:1012
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:996
+// zbr:selfhost/Parser.zbr:1014
                 if (self.isDedent()) {
                     break;
                 }
-// zbr:selfhost/Parser.zbr:998
+// zbr:selfhost/Parser.zbr:1016
                 if (self.textIs("static")) {
                     self.advance();
                     self.skipEol();
-// zbr:selfhost/Parser.zbr:1001
+// zbr:selfhost/Parser.zbr:1019
                     if (self.isIndent()) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1003
+// zbr:selfhost/Parser.zbr:1021
                         while (((!self.isDedent()) and (!self.isEof()))) {
                             self.skipEol();
-// zbr:selfhost/Parser.zbr:1005
+// zbr:selfhost/Parser.zbr:1023
                             if (self.isDedent()) {
                                 break;
                             }
                             members.append(_allocator, try self.parseMemberDecl(true)) catch @panic("OOM");
                         }
-// zbr:selfhost/Parser.zbr:1008
+// zbr:selfhost/Parser.zbr:1026
                         if (self.isDedent()) {
                             self.advance();
                         }
@@ -3297,14 +3329,14 @@ pub const Parser = struct {
                         members.append(_allocator, try self.parseMemberDecl(true)) catch @panic("OOM");
                     }
                 } else {
-// zbr:selfhost/Parser.zbr:1014
+// zbr:selfhost/Parser.zbr:1032
                     const pd = try self.parseMemberDecl(false);
-// zbr:selfhost/Parser.zbr:1015
+// zbr:selfhost/Parser.zbr:1033
                     if (pd == .invariant_decl) {
                         const inv_exprs = pd.invariant_decl;
-// zbr:selfhost/Parser.zbr:1016
+// zbr:selfhost/Parser.zbr:1034
                         const inv_list: std.ArrayList(PNode) = inv_exprs;
-// zbr:selfhost/Parser.zbr:1017
+// zbr:selfhost/Parser.zbr:1035
                         for (inv_list.items) |inv_e| {
                             invs.append(_allocator, inv_e) catch @panic("OOM");
                         }
@@ -3313,53 +3345,22 @@ pub const Parser = struct {
                     }
                 }
             }
-// zbr:selfhost/Parser.zbr:1021
+// zbr:selfhost/Parser.zbr:1039
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1023
-        return PNode{ .class_ = blk_box_4: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(name, type_params, ifaces, members, invs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
+// zbr:selfhost/Parser.zbr:1041
+        return PNode{ .class_ = blk_box_4: { const _bv: std.meta.Child(@FieldType(PNode, "class_")) = PClass.init(name, type_params, ifaces, members, invs, is_reflectable); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
     }
 
     pub fn parseEnumDecl(self: *Parser) anyerror!PNode {
         try self.expectText("enum");
-// zbr:selfhost/Parser.zbr:1027
+// zbr:selfhost/Parser.zbr:1045
         const name = try self.eatId();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1029
-        var variants = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1030
-        if (self.isIndent()) {
-            self.advance();
-// zbr:selfhost/Parser.zbr:1032
-            while (((!self.isDedent()) and (!self.isEof()))) {
-                self.skipEol();
-// zbr:selfhost/Parser.zbr:1034
-                if (self.isDedent()) {
-                    break;
-                }
-                variants.append(_allocator, try self.eatId()) catch @panic("OOM");
-                self.skipEol();
-            }
-// zbr:selfhost/Parser.zbr:1038
-            if (self.isDedent()) {
-                self.advance();
-            }
-        }
-// zbr:selfhost/Parser.zbr:1040
-        return PNode{ .enum_ = blk_box_5: { const _bv: std.meta.Child(@FieldType(PNode, "enum_")) = PEnum.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
-    }
-
-    pub fn parseStructDecl(self: *Parser) anyerror!PNode {
-        try self.expectText("struct");
-// zbr:selfhost/Parser.zbr:1044
-        const name = try self.eatId();
-        self.skipEol();
-// zbr:selfhost/Parser.zbr:1046
-        var members = std.ArrayList(PNode){};
 // zbr:selfhost/Parser.zbr:1047
-        var invs = std.ArrayList(PNode){};
+        var variants = std.ArrayList([]const u8){};
 // zbr:selfhost/Parser.zbr:1048
         if (self.isIndent()) {
             self.advance();
@@ -3370,14 +3371,45 @@ pub const Parser = struct {
                 if (self.isDedent()) {
                     break;
                 }
-// zbr:selfhost/Parser.zbr:1054
+                variants.append(_allocator, try self.eatId()) catch @panic("OOM");
+                self.skipEol();
+            }
+// zbr:selfhost/Parser.zbr:1056
+            if (self.isDedent()) {
+                self.advance();
+            }
+        }
+// zbr:selfhost/Parser.zbr:1058
+        return PNode{ .enum_ = blk_box_5: { const _bv: std.meta.Child(@FieldType(PNode, "enum_")) = PEnum.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
+    }
+
+    pub fn parseStructDecl(self: *Parser, is_reflectable: bool) anyerror!PNode {
+        try self.expectText("struct");
+// zbr:selfhost/Parser.zbr:1062
+        const name = try self.eatId();
+        self.skipEol();
+// zbr:selfhost/Parser.zbr:1064
+        var members = std.ArrayList(PNode){};
+// zbr:selfhost/Parser.zbr:1065
+        var invs = std.ArrayList(PNode){};
+// zbr:selfhost/Parser.zbr:1066
+        if (self.isIndent()) {
+            self.advance();
+// zbr:selfhost/Parser.zbr:1068
+            while (((!self.isDedent()) and (!self.isEof()))) {
+                self.skipEol();
+// zbr:selfhost/Parser.zbr:1070
+                if (self.isDedent()) {
+                    break;
+                }
+// zbr:selfhost/Parser.zbr:1072
                 const pd = try self.parseMemberDecl(false);
-// zbr:selfhost/Parser.zbr:1055
+// zbr:selfhost/Parser.zbr:1073
                 if (pd == .invariant_decl) {
                     const inv_exprs = pd.invariant_decl;
-// zbr:selfhost/Parser.zbr:1056
+// zbr:selfhost/Parser.zbr:1074
                     const inv_list: std.ArrayList(PNode) = inv_exprs;
-// zbr:selfhost/Parser.zbr:1057
+// zbr:selfhost/Parser.zbr:1075
                     for (inv_list.items) |inv_e| {
                         invs.append(_allocator, inv_e) catch @panic("OOM");
                     }
@@ -3385,181 +3417,181 @@ pub const Parser = struct {
                     members.append(_allocator, pd) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/Parser.zbr:1061
+// zbr:selfhost/Parser.zbr:1079
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1063
+// zbr:selfhost/Parser.zbr:1081
         const ifaces = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1064
+// zbr:selfhost/Parser.zbr:1082
         const type_params = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1065
-        return PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(PNode, "struct_")) = PClass.init(name, type_params, ifaces, members, invs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
+// zbr:selfhost/Parser.zbr:1083
+        return PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(PNode, "struct_")) = PClass.init(name, type_params, ifaces, members, invs, is_reflectable); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
     }
 
     pub fn parseInterfaceDecl(self: *Parser) anyerror!PNode {
         try self.expectText("interface");
-// zbr:selfhost/Parser.zbr:1069
+// zbr:selfhost/Parser.zbr:1087
         const name = try self.eatId();
-// zbr:selfhost/Parser.zbr:1070
+// zbr:selfhost/Parser.zbr:1088
         var ifaces = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1071
+// zbr:selfhost/Parser.zbr:1089
         if (self.textIs("implements")) {
             self.advance();
             ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1074
+// zbr:selfhost/Parser.zbr:1092
             while (self.textIs(",")) {
                 self.advance();
                 ifaces.append(_allocator, try self.eatId()) catch @panic("OOM");
             }
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1078
+// zbr:selfhost/Parser.zbr:1096
         var members = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1079
+// zbr:selfhost/Parser.zbr:1097
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1081
+// zbr:selfhost/Parser.zbr:1099
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1083
+// zbr:selfhost/Parser.zbr:1101
                 if (self.isDedent()) {
                     break;
                 }
                 members.append(_allocator, try self.parseMemberDecl(false)) catch @panic("OOM");
             }
-// zbr:selfhost/Parser.zbr:1086
+// zbr:selfhost/Parser.zbr:1104
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1088
+// zbr:selfhost/Parser.zbr:1106
         const type_params = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1089
-        return PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(PNode, "interface_")) = PClass.init(name, type_params, ifaces, members, std.ArrayList(PNode){}); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
+// zbr:selfhost/Parser.zbr:1107
+        return PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(PNode, "interface_")) = PClass.init(name, type_params, ifaces, members, std.ArrayList(PNode){}, false); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
     }
 
     pub fn parseExtendDecl(self: *Parser) anyerror!PNode {
         try self.expectText("extend");
-// zbr:selfhost/Parser.zbr:1093
+// zbr:selfhost/Parser.zbr:1111
         const target_name = try self.eatTypeName();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1095
+// zbr:selfhost/Parser.zbr:1113
         var members = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1096
+// zbr:selfhost/Parser.zbr:1114
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1098
+// zbr:selfhost/Parser.zbr:1116
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1100
+// zbr:selfhost/Parser.zbr:1118
                 if (self.isDedent()) {
                     break;
                 }
                 members.append(_allocator, try self.parseMemberDecl(false)) catch @panic("OOM");
             }
-// zbr:selfhost/Parser.zbr:1103
+// zbr:selfhost/Parser.zbr:1121
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1105
+// zbr:selfhost/Parser.zbr:1123
         return PNode{ .extend_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(PNode, "extend_")) = PExtend.init(target_name, members); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
     }
 
     pub fn parseUnionDecl(self: *Parser) anyerror!PNode {
         try self.expectText("union");
-// zbr:selfhost/Parser.zbr:1109
+// zbr:selfhost/Parser.zbr:1127
         const name = try self.eatId();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1111
+// zbr:selfhost/Parser.zbr:1129
         var variants = std.ArrayList(PUnionVariant){};
-// zbr:selfhost/Parser.zbr:1112
+// zbr:selfhost/Parser.zbr:1130
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1114
+// zbr:selfhost/Parser.zbr:1132
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1116
+// zbr:selfhost/Parser.zbr:1134
                 if (self.isDedent()) {
                     break;
                 }
-// zbr:selfhost/Parser.zbr:1118
+// zbr:selfhost/Parser.zbr:1136
                 const vname = try self.eatId();
-// zbr:selfhost/Parser.zbr:1119
+// zbr:selfhost/Parser.zbr:1137
                 var vtype: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1120
+// zbr:selfhost/Parser.zbr:1138
                 if (self.textIs(":")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1123
+// zbr:selfhost/Parser.zbr:1141
                     if (self.textIs("^")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1125
+// zbr:selfhost/Parser.zbr:1143
                         vtype = _str_concat("^", try self.eatTypeName(), _allocator);
                     } else {
-// zbr:selfhost/Parser.zbr:1127
+// zbr:selfhost/Parser.zbr:1145
                         vtype = try self.eatTypeName();
                     }
-// zbr:selfhost/Parser.zbr:1128
+// zbr:selfhost/Parser.zbr:1146
                     if (self.textIs("?")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1130
+// zbr:selfhost/Parser.zbr:1148
                         vtype = _str_concat(vtype, "?", _allocator);
                     }
                 }
                 self.skipEol();
                 variants.append(_allocator, PUnionVariant.init(vname, vtype)) catch @panic("OOM");
             }
-// zbr:selfhost/Parser.zbr:1133
+// zbr:selfhost/Parser.zbr:1151
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1135
+// zbr:selfhost/Parser.zbr:1153
         return PNode{ .union_decl = blk_box_9: { const _bv: std.meta.Child(@FieldType(PNode, "union_decl")) = PUnionDecl.init(name, variants); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_9 _bp; } };
     }
 
     pub fn parseSigDecl(self: *Parser) anyerror!PNode {
         try self.expectText("sig");
-// zbr:selfhost/Parser.zbr:1139
+// zbr:selfhost/Parser.zbr:1157
         var name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1140
+// zbr:selfhost/Parser.zbr:1158
         var has_params = false;
-// zbr:selfhost/Parser.zbr:1141
+// zbr:selfhost/Parser.zbr:1159
         if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:1142
+// zbr:selfhost/Parser.zbr:1160
             name = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:1144
+// zbr:selfhost/Parser.zbr:1162
             has_params = true;
         } else {
-// zbr:selfhost/Parser.zbr:1146
+// zbr:selfhost/Parser.zbr:1164
             name = try self.eatId();
         }
-// zbr:selfhost/Parser.zbr:1147
+// zbr:selfhost/Parser.zbr:1165
         var params = std.ArrayList(PParam){};
-// zbr:selfhost/Parser.zbr:1148
+// zbr:selfhost/Parser.zbr:1166
         if (has_params) {
-// zbr:selfhost/Parser.zbr:1149
+// zbr:selfhost/Parser.zbr:1167
             while ((!self.textIs(")"))) {
-// zbr:selfhost/Parser.zbr:1150
+// zbr:selfhost/Parser.zbr:1168
                 if (self.textIs(",")) {
                     self.advance();
                 } else {
-// zbr:selfhost/Parser.zbr:1153
+// zbr:selfhost/Parser.zbr:1171
                     const pname = try self.eatId();
-// zbr:selfhost/Parser.zbr:1154
+// zbr:selfhost/Parser.zbr:1172
                     var ptype: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1155
+// zbr:selfhost/Parser.zbr:1173
                     if (self.textIs(":")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1157
+// zbr:selfhost/Parser.zbr:1175
                         ptype = try self.eatTypeName();
                     }
-// zbr:selfhost/Parser.zbr:1158
+// zbr:selfhost/Parser.zbr:1176
                     var pdefault = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1159
+// zbr:selfhost/Parser.zbr:1177
                     if (self.textIs("=")) {
                         self.advance();
                         pdefault.append(_allocator, try self.parseExpr()) catch @panic("OOM");
@@ -3569,156 +3601,156 @@ pub const Parser = struct {
             }
             try self.expectText(")");
         }
-// zbr:selfhost/Parser.zbr:1164
+// zbr:selfhost/Parser.zbr:1182
         var return_type: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1165
+// zbr:selfhost/Parser.zbr:1183
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1167
+// zbr:selfhost/Parser.zbr:1185
             return_type = try self.eatTypeName();
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1169
+// zbr:selfhost/Parser.zbr:1187
         return PNode{ .sig_ = blk_box_10: { const _bv: std.meta.Child(@FieldType(PNode, "sig_")) = PSig.init(name, params, return_type); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } };
     }
 
     pub fn parseMemberDecl(self: *Parser, is_static: bool) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1174
+// zbr:selfhost/Parser.zbr:1192
         if (self.textIs("def")) {
-// zbr:selfhost/Parser.zbr:1175
+// zbr:selfhost/Parser.zbr:1193
             return try self.parseMethodDecl(is_static);
         } else {
-// zbr:selfhost/Parser.zbr:1176
+// zbr:selfhost/Parser.zbr:1194
             if (self.textIs("var")) {
-// zbr:selfhost/Parser.zbr:1177
+// zbr:selfhost/Parser.zbr:1195
                 return try self.parseDeclField(false, is_static);
             } else {
-// zbr:selfhost/Parser.zbr:1178
+// zbr:selfhost/Parser.zbr:1196
                 if (self.textIs("const")) {
-// zbr:selfhost/Parser.zbr:1179
+// zbr:selfhost/Parser.zbr:1197
                     return try self.parseDeclField(true, is_static);
                 } else {
-// zbr:selfhost/Parser.zbr:1180
+// zbr:selfhost/Parser.zbr:1198
                     if (self.textIs("cue")) {
-// zbr:selfhost/Parser.zbr:1181
+// zbr:selfhost/Parser.zbr:1199
                         return try self.parseDeclInit();
                     } else {
-// zbr:selfhost/Parser.zbr:1182
+// zbr:selfhost/Parser.zbr:1200
                         if (self.textIs("invariant")) {
-// zbr:selfhost/Parser.zbr:1183
+// zbr:selfhost/Parser.zbr:1201
                             return try self.parseInvariantDecl();
                         }
                     }
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:1184
+// zbr:selfhost/Parser.zbr:1202
         { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("unexpected member: '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
     }
 
     pub fn parseInvariantDecl(self: *Parser) anyerror!PNode {
         self.advance();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1189
+// zbr:selfhost/Parser.zbr:1207
         var expr_nodes = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1190
+// zbr:selfhost/Parser.zbr:1208
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1192
+// zbr:selfhost/Parser.zbr:1210
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1194
+// zbr:selfhost/Parser.zbr:1212
                 if (self.isDedent()) {
                     break;
                 }
                 expr_nodes.append(_allocator, try self.parseExpr()) catch @panic("OOM");
                 self.skipEol();
             }
-// zbr:selfhost/Parser.zbr:1198
+// zbr:selfhost/Parser.zbr:1216
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1200
+// zbr:selfhost/Parser.zbr:1218
         return PNode{ .invariant_decl = expr_nodes };
     }
 
     pub fn parseDeclField(self: *Parser, is_const: bool, is_static: bool) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1203
+// zbr:selfhost/Parser.zbr:1221
         if (is_const) {
             try self.expectText("const");
         } else {
             try self.expectText("var");
         }
-// zbr:selfhost/Parser.zbr:1207
+// zbr:selfhost/Parser.zbr:1225
         const name = try self.eatId();
-// zbr:selfhost/Parser.zbr:1208
+// zbr:selfhost/Parser.zbr:1226
         var type_name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1209
+// zbr:selfhost/Parser.zbr:1227
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1211
+// zbr:selfhost/Parser.zbr:1229
             type_name = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:1212
+// zbr:selfhost/Parser.zbr:1230
             if (self.textIs("?")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:1214
+// zbr:selfhost/Parser.zbr:1232
                 type_name = _str_concat(type_name, "?", _allocator);
             }
         }
-// zbr:selfhost/Parser.zbr:1215
+// zbr:selfhost/Parser.zbr:1233
         var init_expr = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1216
+// zbr:selfhost/Parser.zbr:1234
         if (self.textIs("=")) {
             self.advance();
             init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1220
+// zbr:selfhost/Parser.zbr:1238
         return PNode{ .field_ = blk_box_11: { const _bv: std.meta.Child(@FieldType(PNode, "field_")) = PField.init(name, type_name, is_const, is_static, init_expr); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_11 _bp; } };
     }
 
     pub fn parseDeclInit(self: *Parser) anyerror!PNode {
         try self.expectText("cue");
-// zbr:selfhost/Parser.zbr:1224
+// zbr:selfhost/Parser.zbr:1242
         if (!std.mem.eql(u8, self.peek().text, "init")) {
-// zbr:selfhost/Parser.zbr:1225
+// zbr:selfhost/Parser.zbr:1243
             { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected 'init' after cue, got '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
         }
-// zbr:selfhost/Parser.zbr:1226
+// zbr:selfhost/Parser.zbr:1244
         const was_open_call = self.isOpenCall();
         self.advance();
-// zbr:selfhost/Parser.zbr:1228
+// zbr:selfhost/Parser.zbr:1246
         if ((!was_open_call)) {
             try self.expectText("(");
         }
-// zbr:selfhost/Parser.zbr:1230
+// zbr:selfhost/Parser.zbr:1248
         var params = std.ArrayList(PParam){};
-// zbr:selfhost/Parser.zbr:1231
+// zbr:selfhost/Parser.zbr:1249
         while ((!self.textIs(")"))) {
-// zbr:selfhost/Parser.zbr:1232
+// zbr:selfhost/Parser.zbr:1250
             if (self.textIs(",")) {
                 self.advance();
             } else {
-// zbr:selfhost/Parser.zbr:1235
+// zbr:selfhost/Parser.zbr:1253
                 const pname = try self.eatId();
-// zbr:selfhost/Parser.zbr:1236
+// zbr:selfhost/Parser.zbr:1254
                 var ptype: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1237
+// zbr:selfhost/Parser.zbr:1255
                 if (self.textIs(":")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1239
+// zbr:selfhost/Parser.zbr:1257
                     ptype = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:1240
+// zbr:selfhost/Parser.zbr:1258
                     if (self.textIs("?")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1242
+// zbr:selfhost/Parser.zbr:1260
                         ptype = _str_concat(ptype, "?", _allocator);
                     }
                 }
-// zbr:selfhost/Parser.zbr:1243
+// zbr:selfhost/Parser.zbr:1261
                 var pdefault = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1244
+// zbr:selfhost/Parser.zbr:1262
                 if (self.textIs("=")) {
                     self.advance();
                     pdefault.append(_allocator, try self.parseExpr()) catch @panic("OOM");
@@ -3728,65 +3760,65 @@ pub const Parser = struct {
         }
         try self.expectText(")");
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1250
+// zbr:selfhost/Parser.zbr:1268
         var stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1251
+// zbr:selfhost/Parser.zbr:1269
         if (self.isIndent()) {
-// zbr:selfhost/Parser.zbr:1252
+// zbr:selfhost/Parser.zbr:1270
             stmts = try self.parseBlock();
         }
-// zbr:selfhost/Parser.zbr:1253
+// zbr:selfhost/Parser.zbr:1271
         return PNode{ .init_ = blk_box_12: { const _bv: std.meta.Child(@FieldType(PNode, "init_")) = PInit.init(params, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_12 _bp; } };
     }
 
     pub fn parseMethodDecl(self: *Parser, is_static: bool) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1256
+// zbr:selfhost/Parser.zbr:1274
         const line = self.peek().line;
         try self.expectText("def");
-// zbr:selfhost/Parser.zbr:1258
+// zbr:selfhost/Parser.zbr:1276
         var name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1259
+// zbr:selfhost/Parser.zbr:1277
         var has_params = false;
-// zbr:selfhost/Parser.zbr:1260
+// zbr:selfhost/Parser.zbr:1278
         var params = std.ArrayList(PParam){};
-// zbr:selfhost/Parser.zbr:1261
+// zbr:selfhost/Parser.zbr:1279
         if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:1262
+// zbr:selfhost/Parser.zbr:1280
             name = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:1264
+// zbr:selfhost/Parser.zbr:1282
             has_params = true;
         } else {
-// zbr:selfhost/Parser.zbr:1266
+// zbr:selfhost/Parser.zbr:1284
             name = try self.eatId();
         }
-// zbr:selfhost/Parser.zbr:1267
+// zbr:selfhost/Parser.zbr:1285
         if (has_params) {
-// zbr:selfhost/Parser.zbr:1268
+// zbr:selfhost/Parser.zbr:1286
             while ((!self.textIs(")"))) {
-// zbr:selfhost/Parser.zbr:1269
+// zbr:selfhost/Parser.zbr:1287
                 if (self.textIs(",")) {
                     self.advance();
                 } else {
-// zbr:selfhost/Parser.zbr:1272
+// zbr:selfhost/Parser.zbr:1290
                     const pname = try self.eatId();
-// zbr:selfhost/Parser.zbr:1273
+// zbr:selfhost/Parser.zbr:1291
                     var ptype: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1274
+// zbr:selfhost/Parser.zbr:1292
                     if (self.textIs(":")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1276
+// zbr:selfhost/Parser.zbr:1294
                         ptype = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:1277
+// zbr:selfhost/Parser.zbr:1295
                         if (self.textIs("?")) {
                             self.advance();
-// zbr:selfhost/Parser.zbr:1279
+// zbr:selfhost/Parser.zbr:1297
                             ptype = _str_concat(ptype, "?", _allocator);
                         }
                     }
-// zbr:selfhost/Parser.zbr:1280
+// zbr:selfhost/Parser.zbr:1298
                     var pdefault = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1281
+// zbr:selfhost/Parser.zbr:1299
                     if (self.textIs("=")) {
                         self.advance();
                         pdefault.append(_allocator, try self.parseExpr()) catch @panic("OOM");
@@ -3796,194 +3828,194 @@ pub const Parser = struct {
             }
             try self.expectText(")");
         }
-// zbr:selfhost/Parser.zbr:1286
+// zbr:selfhost/Parser.zbr:1304
         var return_type: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1287
+// zbr:selfhost/Parser.zbr:1305
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1289
+// zbr:selfhost/Parser.zbr:1307
             return_type = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:1290
+// zbr:selfhost/Parser.zbr:1308
             if (self.textIs("?")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:1292
+// zbr:selfhost/Parser.zbr:1310
                 return_type = _str_concat(return_type, "?", _allocator);
             }
         }
-// zbr:selfhost/Parser.zbr:1293
+// zbr:selfhost/Parser.zbr:1311
         var throws_ = false;
-// zbr:selfhost/Parser.zbr:1294
+// zbr:selfhost/Parser.zbr:1312
         if (self.textIs("throws")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1296
+// zbr:selfhost/Parser.zbr:1314
             throws_ = true;
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1298
+// zbr:selfhost/Parser.zbr:1316
         var stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1299
+// zbr:selfhost/Parser.zbr:1317
         if (self.isIndent()) {
-// zbr:selfhost/Parser.zbr:1300
+// zbr:selfhost/Parser.zbr:1318
             stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1302
+// zbr:selfhost/Parser.zbr:1320
             if (self.textIs("catch")) {
-// zbr:selfhost/Parser.zbr:1303
+// zbr:selfhost/Parser.zbr:1321
                 var catch_binding: []const u8 = "";
                 self.advance();
-// zbr:selfhost/Parser.zbr:1305
+// zbr:selfhost/Parser.zbr:1323
                 if (self.textIs("|")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1307
+// zbr:selfhost/Parser.zbr:1325
                     catch_binding = try self.eatId();
                     try self.expectText("|");
                 }
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1310
+// zbr:selfhost/Parser.zbr:1328
                 const catch_stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1311
+// zbr:selfhost/Parser.zbr:1329
                 var wrapped = std.ArrayList(PNode){};
                 wrapped.append(_allocator, PNode{ .stmt_try_catch = blk_box_13: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_try_catch")) = PTryCatch.init(stmts, catch_binding, catch_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1313
+// zbr:selfhost/Parser.zbr:1331
                 stmts = wrapped;
             }
         }
-// zbr:selfhost/Parser.zbr:1314
+// zbr:selfhost/Parser.zbr:1332
         return PNode{ .method_ = blk_box_14: { const _bv: std.meta.Child(@FieldType(PNode, "method_")) = PMethod.init(name, is_static, throws_, params, return_type, stmts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_14 _bp; } };
     }
 
     pub fn parseBlock(self: *Parser) anyerror!std.ArrayList(PNode) {
-// zbr:selfhost/Parser.zbr:1319
+// zbr:selfhost/Parser.zbr:1337
         if ((!self.isIndent())) {
-// zbr:selfhost/Parser.zbr:1320
+// zbr:selfhost/Parser.zbr:1338
             { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected indent, got '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
         }
         self.advance();
-// zbr:selfhost/Parser.zbr:1322
+// zbr:selfhost/Parser.zbr:1340
         var stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1323
+// zbr:selfhost/Parser.zbr:1341
         while (((!self.isDedent()) and (!self.isEof()))) {
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1325
+// zbr:selfhost/Parser.zbr:1343
             if (self.isDedent()) {
                 break;
             }
             stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
         }
-// zbr:selfhost/Parser.zbr:1328
+// zbr:selfhost/Parser.zbr:1346
         if (self.isDedent()) {
             self.advance();
         }
-// zbr:selfhost/Parser.zbr:1330
+// zbr:selfhost/Parser.zbr:1348
         return stmts;
     }
 
     pub fn parseStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1333
+// zbr:selfhost/Parser.zbr:1351
         if (self.textIs("pass")) {
             self.advance();
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1336
+// zbr:selfhost/Parser.zbr:1354
             return PNode{ .stmt_pass = {} };
         } else {
-// zbr:selfhost/Parser.zbr:1337
+// zbr:selfhost/Parser.zbr:1355
             if (self.textIs("break")) {
                 self.advance();
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1340
+// zbr:selfhost/Parser.zbr:1358
                 return PNode{ .stmt_break = {} };
             } else {
-// zbr:selfhost/Parser.zbr:1341
+// zbr:selfhost/Parser.zbr:1359
                 if (self.textIs("continue")) {
                     self.advance();
                     self.skipEol();
-// zbr:selfhost/Parser.zbr:1344
+// zbr:selfhost/Parser.zbr:1362
                     return PNode{ .stmt_continue = {} };
                 } else {
-// zbr:selfhost/Parser.zbr:1345
+// zbr:selfhost/Parser.zbr:1363
                     if (self.textIs("return")) {
-// zbr:selfhost/Parser.zbr:1346
+// zbr:selfhost/Parser.zbr:1364
                         return try self.parseReturnStmt();
                     } else {
-// zbr:selfhost/Parser.zbr:1347
+// zbr:selfhost/Parser.zbr:1365
                         if (self.textIs("if")) {
-// zbr:selfhost/Parser.zbr:1348
+// zbr:selfhost/Parser.zbr:1366
                             return try self.parseIfStmt();
                         } else {
-// zbr:selfhost/Parser.zbr:1349
+// zbr:selfhost/Parser.zbr:1367
                             if (self.textIs("while")) {
-// zbr:selfhost/Parser.zbr:1350
+// zbr:selfhost/Parser.zbr:1368
                                 return try self.parseWhileStmt();
                             } else {
-// zbr:selfhost/Parser.zbr:1351
+// zbr:selfhost/Parser.zbr:1369
                                 if (self.textIs("for")) {
-// zbr:selfhost/Parser.zbr:1352
+// zbr:selfhost/Parser.zbr:1370
                                     return try self.parseForInStmt();
                                 } else {
-// zbr:selfhost/Parser.zbr:1353
+// zbr:selfhost/Parser.zbr:1371
                                     if (self.textIs("var")) {
-// zbr:selfhost/Parser.zbr:1354
+// zbr:selfhost/Parser.zbr:1372
                                         if ((std.mem.eql(u8, self.peekAt(1).text, "{") or std.mem.eql(u8, self.peekAt(1).text, "("))) {
-// zbr:selfhost/Parser.zbr:1355
+// zbr:selfhost/Parser.zbr:1373
                                             return try self.parseDestructStmt();
                                         }
-// zbr:selfhost/Parser.zbr:1356
+// zbr:selfhost/Parser.zbr:1374
                                         return try self.parseVarStmt(false);
                                     } else {
-// zbr:selfhost/Parser.zbr:1357
+// zbr:selfhost/Parser.zbr:1375
                                         if (self.textIs("const")) {
-// zbr:selfhost/Parser.zbr:1358
+// zbr:selfhost/Parser.zbr:1376
                                             return try self.parseVarStmt(true);
                                         } else {
-// zbr:selfhost/Parser.zbr:1359
+// zbr:selfhost/Parser.zbr:1377
                                             if (self.textIs("assert")) {
-// zbr:selfhost/Parser.zbr:1360
+// zbr:selfhost/Parser.zbr:1378
                                                 return try self.parseAssertStmt();
                                             } else {
-// zbr:selfhost/Parser.zbr:1361
+// zbr:selfhost/Parser.zbr:1379
                                                 if (self.textIs("raise")) {
-// zbr:selfhost/Parser.zbr:1362
+// zbr:selfhost/Parser.zbr:1380
                                                     return try self.parseRaiseStmt();
                                                 } else {
-// zbr:selfhost/Parser.zbr:1364
+// zbr:selfhost/Parser.zbr:1382
                                                     if (self.textIs("branch")) {
-// zbr:selfhost/Parser.zbr:1365
+// zbr:selfhost/Parser.zbr:1383
                                                         return try self.parseBranchStmt();
                                                     } else {
-// zbr:selfhost/Parser.zbr:1366
+// zbr:selfhost/Parser.zbr:1384
                                                         if (self.textIs("arena")) {
-// zbr:selfhost/Parser.zbr:1367
+// zbr:selfhost/Parser.zbr:1385
                                                             return try self.parseArenaScopeStmt();
                                                         } else {
-// zbr:selfhost/Parser.zbr:1368
+// zbr:selfhost/Parser.zbr:1386
                                                             if (self.textIs("with")) {
-// zbr:selfhost/Parser.zbr:1369
+// zbr:selfhost/Parser.zbr:1387
                                                                 return try self.parseWithStmt();
                                                             } else {
-// zbr:selfhost/Parser.zbr:1370
+// zbr:selfhost/Parser.zbr:1388
                                                                 if (self.textIs("guard")) {
-// zbr:selfhost/Parser.zbr:1371
+// zbr:selfhost/Parser.zbr:1389
                                                                     return try self.parseGuardStmt();
                                                                 } else {
-// zbr:selfhost/Parser.zbr:1372
+// zbr:selfhost/Parser.zbr:1390
                                                                     if (self.textIs("require")) {
-// zbr:selfhost/Parser.zbr:1373
+// zbr:selfhost/Parser.zbr:1391
                                                                         return try self.parseContractStmt("require");
                                                                     } else {
-// zbr:selfhost/Parser.zbr:1374
+// zbr:selfhost/Parser.zbr:1392
                                                                         if (self.textIs("ensure")) {
-// zbr:selfhost/Parser.zbr:1375
+// zbr:selfhost/Parser.zbr:1393
                                                                             return try self.parseContractStmt("ensure");
                                                                         } else {
-// zbr:selfhost/Parser.zbr:1376
+// zbr:selfhost/Parser.zbr:1394
                                                                             if (self.textIs("print")) {
                                                                                 self.advance();
-// zbr:selfhost/Parser.zbr:1378
+// zbr:selfhost/Parser.zbr:1396
                                                                                 const expr = try self.parseExpr();
                                                                                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1380
+// zbr:selfhost/Parser.zbr:1398
                                                                                 return PNode{ .stmt_print = blk_box_15: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_print")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_15 _bp; } };
                                                                             } else {
-// zbr:selfhost/Parser.zbr:1382
+// zbr:selfhost/Parser.zbr:1400
                                                                                 return try self.parseExprOrAssignStmt();
                                                                             }
                                                                         }
@@ -4006,130 +4038,130 @@ pub const Parser = struct {
     }
 
     pub fn parseReturnStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1385
+// zbr:selfhost/Parser.zbr:1403
         const line = self.peek().line;
         try self.expectText("return");
-// zbr:selfhost/Parser.zbr:1387
+// zbr:selfhost/Parser.zbr:1405
         var value = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1388
+// zbr:selfhost/Parser.zbr:1406
         if ((((!self.isEol()) and (!self.isEof())) and (!self.isDedent()))) {
             value.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1391
+// zbr:selfhost/Parser.zbr:1409
         return PNode{ .stmt_return = blk_box_16: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_return")) = PReturn.init(value, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_16 _bp; } };
     }
 
     pub fn parseIfStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1394
+// zbr:selfhost/Parser.zbr:1412
         const line = self.peek().line;
         try self.expectText("if");
-// zbr:selfhost/Parser.zbr:1396
+// zbr:selfhost/Parser.zbr:1414
         const cond_expr = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:1398
+// zbr:selfhost/Parser.zbr:1416
         var capture_name: ?[]const u8 = null;
-// zbr:selfhost/Parser.zbr:1399
+// zbr:selfhost/Parser.zbr:1417
         if (self.textIs("as")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1401
+// zbr:selfhost/Parser.zbr:1419
             capture_name = try self.eatId();
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1403
+// zbr:selfhost/Parser.zbr:1421
         const then_stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1404
+// zbr:selfhost/Parser.zbr:1422
         var else_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1405
+// zbr:selfhost/Parser.zbr:1423
         if (self.textIs("else")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1407
+// zbr:selfhost/Parser.zbr:1425
             if (self.textIs("if")) {
                 else_stmts.append(_allocator, try self.parseIfStmt()) catch @panic("OOM");
             } else {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1412
+// zbr:selfhost/Parser.zbr:1430
                 else_stmts = try self.parseBlock();
             }
         }
-// zbr:selfhost/Parser.zbr:1413
+// zbr:selfhost/Parser.zbr:1431
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1415
+// zbr:selfhost/Parser.zbr:1433
         var pif = PIf.init(cond_list, then_stmts, else_stmts, line);
-// zbr:selfhost/Parser.zbr:1416
+// zbr:selfhost/Parser.zbr:1434
         pif.is_capture = capture_name;
-// zbr:selfhost/Parser.zbr:1417
+// zbr:selfhost/Parser.zbr:1435
         return PNode{ .stmt_if = blk_box_17: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = pif; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
     }
 
     pub fn parseWhileStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1420
+// zbr:selfhost/Parser.zbr:1438
         const line = self.peek().line;
         try self.expectText("while");
-// zbr:selfhost/Parser.zbr:1425
+// zbr:selfhost/Parser.zbr:1443
         if (self.textIs("var")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1427
+// zbr:selfhost/Parser.zbr:1445
             const bind_name = try self.eatId();
             try self.expectText("=");
-// zbr:selfhost/Parser.zbr:1429
+// zbr:selfhost/Parser.zbr:1447
             const init_expr_pn = try self.parseExpr();
             try self.expectText(",");
-// zbr:selfhost/Parser.zbr:1431
+// zbr:selfhost/Parser.zbr:1449
             const guard_expr_pn = try self.parseExpr();
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1433
+// zbr:selfhost/Parser.zbr:1451
             const body_stmts: std.ArrayList(PNode) = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1434
+// zbr:selfhost/Parser.zbr:1452
             var init_list = std.ArrayList(PNode){};
             init_list.append(_allocator, init_expr_pn) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1436
+// zbr:selfhost/Parser.zbr:1454
             var guard_operand = std.ArrayList(PNode){};
             guard_operand.append(_allocator, guard_expr_pn) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1438
+// zbr:selfhost/Parser.zbr:1456
             var if_cond_list = std.ArrayList(PNode){};
             if_cond_list.append(_allocator, PNode{ .expr_unary = blk_box_18: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", guard_operand); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_18 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1440
+// zbr:selfhost/Parser.zbr:1458
             var break_list = std.ArrayList(PNode){};
             break_list.append(_allocator, PNode{ .stmt_break = {} }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1442
+// zbr:selfhost/Parser.zbr:1460
             const empty_else = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1443
+// zbr:selfhost/Parser.zbr:1461
             var wrapped = std.ArrayList(PNode){};
             wrapped.append(_allocator, PNode{ .stmt_var = blk_box_19: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(bind_name, false, "", init_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_19 _bp; } }) catch @panic("OOM");
             wrapped.append(_allocator, PNode{ .stmt_if = blk_box_20: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_if")) = PIf.init(if_cond_list, break_list, empty_else, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1446
+// zbr:selfhost/Parser.zbr:1464
             for (body_stmts.items) |bs| {
                 wrapped.append(_allocator, bs) catch @panic("OOM");
             }
-// zbr:selfhost/Parser.zbr:1448
+// zbr:selfhost/Parser.zbr:1466
             var true_cond = std.ArrayList(PNode){};
             true_cond.append(_allocator, PNode{ .expr_bool = true }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1450
+// zbr:selfhost/Parser.zbr:1468
             return PNode{ .stmt_while = blk_box_21: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(true_cond, wrapped, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1451
+// zbr:selfhost/Parser.zbr:1469
         const cond_expr = try self.parseExpr();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1453
+// zbr:selfhost/Parser.zbr:1471
         const stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1454
+// zbr:selfhost/Parser.zbr:1472
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1456
+// zbr:selfhost/Parser.zbr:1474
         return PNode{ .stmt_while = blk_box_22: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_while")) = PWhile.init(cond_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_22 _bp; } };
     }
 
     pub fn parseContractStmt(self: *Parser, kw: []const u8) anyerror!PNode {
         self.advance();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1461
+// zbr:selfhost/Parser.zbr:1479
         const stmts: std.ArrayList(PNode) = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1463
+// zbr:selfhost/Parser.zbr:1481
         var expr_nodes = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1464
+// zbr:selfhost/Parser.zbr:1482
         for (stmts.items) |s| {
-// zbr:selfhost/Parser.zbr:1465
+// zbr:selfhost/Parser.zbr:1483
             switch (s) {
                 .stmt_expr => |_ptr_inner| {
                     const inner = _ptr_inner.*;
@@ -4140,344 +4172,344 @@ pub const Parser = struct {
                 },
             }
         }
-// zbr:selfhost/Parser.zbr:1470
+// zbr:selfhost/Parser.zbr:1488
         if (std.mem.eql(u8, kw, "ensure")) {
-// zbr:selfhost/Parser.zbr:1471
+// zbr:selfhost/Parser.zbr:1489
             return PNode{ .stmt_ensure = expr_nodes };
         }
-// zbr:selfhost/Parser.zbr:1472
+// zbr:selfhost/Parser.zbr:1490
         return PNode{ .stmt_require = expr_nodes };
     }
 
     pub fn parseArenaScopeStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1475
+// zbr:selfhost/Parser.zbr:1493
         const line = self.peek().line;
         try self.expectText("arena");
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1478
+// zbr:selfhost/Parser.zbr:1496
         const stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1479
+// zbr:selfhost/Parser.zbr:1497
         return PNode{ .stmt_arena_scope = blk_box_23: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_arena_scope")) = PArenaScope.init(stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_23 _bp; } };
     }
 
     pub fn parseWithStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1482
+// zbr:selfhost/Parser.zbr:1500
         const line = self.peek().line;
         try self.expectText("with");
-// zbr:selfhost/Parser.zbr:1484
+// zbr:selfhost/Parser.zbr:1502
         const target_expr = try self.parseExpr();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1486
+// zbr:selfhost/Parser.zbr:1504
         const stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1487
+// zbr:selfhost/Parser.zbr:1505
         var target_list = std.ArrayList(PNode){};
         target_list.append(_allocator, target_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1489
+// zbr:selfhost/Parser.zbr:1507
         return PNode{ .stmt_with = blk_box_24: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_with")) = PWith.init(target_list, stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_24 _bp; } };
     }
 
     pub fn parseGuardStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1492
+// zbr:selfhost/Parser.zbr:1510
         const line = self.peek().line;
         try self.expectText("guard");
-// zbr:selfhost/Parser.zbr:1494
+// zbr:selfhost/Parser.zbr:1512
         const cond_expr = try self.parseExpr();
         try self.expectText("else");
-// zbr:selfhost/Parser.zbr:1496
+// zbr:selfhost/Parser.zbr:1514
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1498
+// zbr:selfhost/Parser.zbr:1516
         var else_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1499
+// zbr:selfhost/Parser.zbr:1517
         if (self.textIs(",")) {
             self.advance();
             else_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
         } else {
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1506
+// zbr:selfhost/Parser.zbr:1524
             else_stmts = try self.parseBlock();
         }
-// zbr:selfhost/Parser.zbr:1507
+// zbr:selfhost/Parser.zbr:1525
         return PNode{ .stmt_guard = blk_box_25: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_guard")) = PGuard.init(cond_list, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_25 _bp; } };
     }
 
     pub fn parseForInStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1510
+// zbr:selfhost/Parser.zbr:1528
         const line = self.peek().line;
         try self.expectText("for");
-// zbr:selfhost/Parser.zbr:1512
+// zbr:selfhost/Parser.zbr:1530
         var var_names = std.ArrayList([]const u8){};
         var_names.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1514
+// zbr:selfhost/Parser.zbr:1532
         while (self.textIs(",")) {
             self.advance();
             var_names.append(_allocator, try self.eatId()) catch @panic("OOM");
         }
         try self.expectText("in");
-// zbr:selfhost/Parser.zbr:1518
+// zbr:selfhost/Parser.zbr:1536
         const start_expr = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:1520
+// zbr:selfhost/Parser.zbr:1538
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1522
+// zbr:selfhost/Parser.zbr:1540
             const stop_expr = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:1523
+// zbr:selfhost/Parser.zbr:1541
             var step_list = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1524
+// zbr:selfhost/Parser.zbr:1542
             if (self.textIs(":")) {
                 self.advance();
                 step_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
             }
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1528
+// zbr:selfhost/Parser.zbr:1546
             const stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1529
+// zbr:selfhost/Parser.zbr:1547
             var else_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1530
+// zbr:selfhost/Parser.zbr:1548
             if (self.textIs("else")) {
                 self.advance();
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1533
+// zbr:selfhost/Parser.zbr:1551
                 else_stmts = try self.parseBlock();
             }
-// zbr:selfhost/Parser.zbr:1534
+// zbr:selfhost/Parser.zbr:1552
             var start_list = std.ArrayList(PNode){};
             start_list.append(_allocator, start_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1536
+// zbr:selfhost/Parser.zbr:1554
             var stop_list = std.ArrayList(PNode){};
             stop_list.append(_allocator, stop_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1538
+// zbr:selfhost/Parser.zbr:1556
             return PNode{ .stmt_for_num = blk_box_26: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_num")) = PForNum.init(var_names.items[@intCast(0)], start_list, stop_list, step_list, stmts, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_26 _bp; } };
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1541
+// zbr:selfhost/Parser.zbr:1559
         const stmts = try self.parseBlock();
-// zbr:selfhost/Parser.zbr:1542
+// zbr:selfhost/Parser.zbr:1560
         var else_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1543
+// zbr:selfhost/Parser.zbr:1561
         if (self.textIs("else")) {
             self.advance();
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1546
+// zbr:selfhost/Parser.zbr:1564
             else_stmts = try self.parseBlock();
         }
-// zbr:selfhost/Parser.zbr:1547
+// zbr:selfhost/Parser.zbr:1565
         var iter_list = std.ArrayList(PNode){};
         iter_list.append(_allocator, start_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1549
+// zbr:selfhost/Parser.zbr:1567
         return PNode{ .stmt_for_in = blk_box_27: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_for_in")) = PForIn.init(var_names, iter_list, stmts, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_27 _bp; } };
     }
 
     pub fn parseDestructStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1553
+// zbr:selfhost/Parser.zbr:1571
         const line = self.peek().line;
         try self.expectText("var");
-// zbr:selfhost/Parser.zbr:1555
+// zbr:selfhost/Parser.zbr:1573
         var is_struct: bool = false;
-// zbr:selfhost/Parser.zbr:1556
+// zbr:selfhost/Parser.zbr:1574
         var close: []const u8 = ")";
-// zbr:selfhost/Parser.zbr:1557
+// zbr:selfhost/Parser.zbr:1575
         if (self.textIs("{")) {
-// zbr:selfhost/Parser.zbr:1558
+// zbr:selfhost/Parser.zbr:1576
             is_struct = true;
-// zbr:selfhost/Parser.zbr:1559
+// zbr:selfhost/Parser.zbr:1577
             close = "}";
             self.advance();
         } else {
             try self.expectText("(");
         }
-// zbr:selfhost/Parser.zbr:1563
+// zbr:selfhost/Parser.zbr:1581
         var names = std.ArrayList([]const u8){};
         names.append(_allocator, try self.eatId()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1565
+// zbr:selfhost/Parser.zbr:1583
         while (self.textIs(",")) {
             self.advance();
             names.append(_allocator, try self.eatId()) catch @panic("OOM");
         }
         try self.expectText(close);
         try self.expectText("=");
-// zbr:selfhost/Parser.zbr:1570
+// zbr:selfhost/Parser.zbr:1588
         var init_expr = std.ArrayList(PNode){};
         init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1573
+// zbr:selfhost/Parser.zbr:1591
         return PNode{ .stmt_destruct = blk_box_28: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_destruct")) = PDestruct.init(names, init_expr, is_struct, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_28 _bp; } };
     }
 
     pub fn parseVarStmt(self: *Parser, is_const: bool) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1576
+// zbr:selfhost/Parser.zbr:1594
         const line = self.peek().line;
-// zbr:selfhost/Parser.zbr:1577
+// zbr:selfhost/Parser.zbr:1595
         if (is_const) {
             try self.expectText("const");
         } else {
             try self.expectText("var");
         }
-// zbr:selfhost/Parser.zbr:1581
+// zbr:selfhost/Parser.zbr:1599
         const name = try self.eatId();
-// zbr:selfhost/Parser.zbr:1582
+// zbr:selfhost/Parser.zbr:1600
         var type_name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1583
+// zbr:selfhost/Parser.zbr:1601
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1585
+// zbr:selfhost/Parser.zbr:1603
             type_name = try self.eatTypeName();
-// zbr:selfhost/Parser.zbr:1586
+// zbr:selfhost/Parser.zbr:1604
             if (self.textIs("?")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:1588
+// zbr:selfhost/Parser.zbr:1606
                 type_name = _str_concat(type_name, "?", _allocator);
             }
         }
-// zbr:selfhost/Parser.zbr:1589
+// zbr:selfhost/Parser.zbr:1607
         var init_expr = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1590
+// zbr:selfhost/Parser.zbr:1608
         if (self.textIs("=")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1593
+// zbr:selfhost/Parser.zbr:1611
             if ((self.textIs("def") and std.mem.eql(u8, self.peekAt(1).text, "("))) {
-// zbr:selfhost/Parser.zbr:1596
+// zbr:selfhost/Parser.zbr:1614
                 const lam = try self.parseLambdaPrefix();
-// zbr:selfhost/Parser.zbr:1597
+// zbr:selfhost/Parser.zbr:1615
                 if (self.textIs("=")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1600
+// zbr:selfhost/Parser.zbr:1618
                     var body_expr = std.ArrayList(PNode){};
                     body_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
                     self.skipEol();
-// zbr:selfhost/Parser.zbr:1603
+// zbr:selfhost/Parser.zbr:1621
                     const lambda_node = PLambda.init(lam.params, lam.return_type, std.ArrayList(PCaptureVar){}, body_expr, std.ArrayList(PNode){});
                     init_expr.append(_allocator, PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1605
+// zbr:selfhost/Parser.zbr:1623
                     return PNode{ .stmt_var = blk_box_29: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_29 _bp; } };
                 }
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1608
+// zbr:selfhost/Parser.zbr:1626
                 if ((!self.isIndent())) {
-// zbr:selfhost/Parser.zbr:1609
+// zbr:selfhost/Parser.zbr:1627
                     { _error_ctx = .{ .message = self.errorAt("expected indent after lambda header") }; return error.ZebraError; }
                 }
                 self.advance();
-// zbr:selfhost/Parser.zbr:1611
+// zbr:selfhost/Parser.zbr:1629
                 var captures = std.ArrayList(PCaptureVar){};
-// zbr:selfhost/Parser.zbr:1612
+// zbr:selfhost/Parser.zbr:1630
                 if (self.textIs("capture")) {
-// zbr:selfhost/Parser.zbr:1613
+// zbr:selfhost/Parser.zbr:1631
                     captures = try self.parseCaptureBlock();
                 }
-// zbr:selfhost/Parser.zbr:1614
+// zbr:selfhost/Parser.zbr:1632
                 var body_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1615
+// zbr:selfhost/Parser.zbr:1633
                 while (((!self.isDedent()) and (!self.isEof()))) {
                     self.skipEol();
-// zbr:selfhost/Parser.zbr:1617
+// zbr:selfhost/Parser.zbr:1635
                     if (self.isDedent()) {
                         break;
                     }
                     body_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
                 }
-// zbr:selfhost/Parser.zbr:1620
+// zbr:selfhost/Parser.zbr:1638
                 if (self.isDedent()) {
                     self.advance();
                 }
-// zbr:selfhost/Parser.zbr:1622
+// zbr:selfhost/Parser.zbr:1640
                 const lambda_node = PLambda.init(lam.params, lam.return_type, captures, std.ArrayList(PNode){}, body_stmts);
                 init_expr.append(_allocator, PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1624
+// zbr:selfhost/Parser.zbr:1642
                 return PNode{ .stmt_var = blk_box_30: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_30 _bp; } };
             }
             init_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1627
+// zbr:selfhost/Parser.zbr:1645
         return PNode{ .stmt_var = blk_box_31: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_var")) = PVar.init(name, is_const, type_name, init_expr, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_31 _bp; } };
     }
 
     pub fn parseAssertStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1630
+// zbr:selfhost/Parser.zbr:1648
         const line = self.peek().line;
         try self.expectText("assert");
-// zbr:selfhost/Parser.zbr:1632
+// zbr:selfhost/Parser.zbr:1650
         const cond_expr = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:1633
+// zbr:selfhost/Parser.zbr:1651
         var cond_list = std.ArrayList(PNode){};
         cond_list.append(_allocator, cond_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1635
+// zbr:selfhost/Parser.zbr:1653
         var msg_list = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1636
+// zbr:selfhost/Parser.zbr:1654
         if (self.textIs(",")) {
             self.advance();
             msg_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1640
+// zbr:selfhost/Parser.zbr:1658
         return PNode{ .stmt_assert = blk_box_32: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assert")) = PAssert.init(cond_list, msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_32 _bp; } };
     }
 
     pub fn parseRaiseStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1643
+// zbr:selfhost/Parser.zbr:1661
         const line = self.peek().line;
         try self.expectText("raise");
-// zbr:selfhost/Parser.zbr:1645
+// zbr:selfhost/Parser.zbr:1663
         var msg_list = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1646
+// zbr:selfhost/Parser.zbr:1664
         if ((((!self.isEol()) and (!self.isEof())) and (!self.isDedent()))) {
             msg_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1648
+// zbr:selfhost/Parser.zbr:1666
             if (self.textIs(",")) {
                 self.advance();
                 msg_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
             }
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1652
+// zbr:selfhost/Parser.zbr:1670
         return PNode{ .stmt_raise = blk_box_33: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_raise")) = PRaise.init(msg_list, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_33 _bp; } };
     }
 
     pub fn parseBranchStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1657
+// zbr:selfhost/Parser.zbr:1675
         const line = self.peek().line;
         try self.expectText("branch");
-// zbr:selfhost/Parser.zbr:1659
+// zbr:selfhost/Parser.zbr:1677
         const subject = try self.parseExpr();
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1661
+// zbr:selfhost/Parser.zbr:1679
         var arms = std.ArrayList(PBranchOn){};
-// zbr:selfhost/Parser.zbr:1662
+// zbr:selfhost/Parser.zbr:1680
         var else_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1663
+// zbr:selfhost/Parser.zbr:1681
         if (self.isIndent()) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1665
+// zbr:selfhost/Parser.zbr:1683
             while (((!self.isDedent()) and (!self.isEof()))) {
                 self.skipEol();
-// zbr:selfhost/Parser.zbr:1667
+// zbr:selfhost/Parser.zbr:1685
                 if (self.isDedent()) {
                     break;
                 }
-// zbr:selfhost/Parser.zbr:1669
+// zbr:selfhost/Parser.zbr:1687
                 if (self.textIs("on")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1674
+// zbr:selfhost/Parser.zbr:1692
                     var patterns = std.ArrayList([]const u8){};
-// zbr:selfhost/Parser.zbr:1675
+// zbr:selfhost/Parser.zbr:1693
                     var struct_pat_node = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1678
+// zbr:selfhost/Parser.zbr:1696
                     const first_tok: []const u8 = self.peek().text;
-// zbr:selfhost/Parser.zbr:1679
+// zbr:selfhost/Parser.zbr:1697
                     const first_char_upper = ((!std.mem.eql(u8, first_tok, "") and _zebra_ge(first_tok[@as(usize, @intCast(0))], 'A')) and _zebra_le(first_tok[@as(usize, @intCast(0))], 'Z'));
-// zbr:selfhost/Parser.zbr:1680
+// zbr:selfhost/Parser.zbr:1698
                     const is_dotted = (std.mem.eql(u8, self.peekAt(1).text, ".") and self.isOpenCallAt(2));
-// zbr:selfhost/Parser.zbr:1684
+// zbr:selfhost/Parser.zbr:1702
                     const dotted_upper = (((is_dotted and !std.mem.eql(u8, self.peekAt(2).text, "")) and _zebra_ge(self.peekAt(2).text[@as(usize, @intCast(0))], 'A')) and _zebra_le(self.peekAt(2).text[@as(usize, @intCast(0))], 'Z'));
-// zbr:selfhost/Parser.zbr:1685
+// zbr:selfhost/Parser.zbr:1703
                     if (((first_char_upper and self.isOpenCall()) or (is_dotted and dotted_upper))) {
                         struct_pat_node.append(_allocator, try self.parseExpr()) catch @panic("OOM");
                     } else {
                         patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1689
+// zbr:selfhost/Parser.zbr:1707
                         while (self.textIs(",")) {
-// zbr:selfhost/Parser.zbr:1692
+// zbr:selfhost/Parser.zbr:1710
                             if (self.isStmtKeyword(self.peekAt(1).text)) {
                                 break;
                             }
@@ -4485,66 +4517,66 @@ pub const Parser = struct {
                             patterns.append(_allocator, try self.eatBranchPattern()) catch @panic("OOM");
                         }
                     }
-// zbr:selfhost/Parser.zbr:1698
+// zbr:selfhost/Parser.zbr:1716
                     var inline_comma = false;
-// zbr:selfhost/Parser.zbr:1699
+// zbr:selfhost/Parser.zbr:1717
                     if (self.textIs(",")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1701
+// zbr:selfhost/Parser.zbr:1719
                         inline_comma = true;
                     }
-// zbr:selfhost/Parser.zbr:1702
+// zbr:selfhost/Parser.zbr:1720
                     var binding: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1703
+// zbr:selfhost/Parser.zbr:1721
                     if ((!inline_comma)) {
-// zbr:selfhost/Parser.zbr:1704
+// zbr:selfhost/Parser.zbr:1722
                         if (self.textIs("as")) {
                             self.advance();
-// zbr:selfhost/Parser.zbr:1706
+// zbr:selfhost/Parser.zbr:1724
                             binding = try self.eatId();
                         }
                     }
-// zbr:selfhost/Parser.zbr:1707
+// zbr:selfhost/Parser.zbr:1725
                     var guard_cond = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1708
+// zbr:selfhost/Parser.zbr:1726
                     if ((!inline_comma)) {
-// zbr:selfhost/Parser.zbr:1709
+// zbr:selfhost/Parser.zbr:1727
                         if (self.textIs("if")) {
                             self.advance();
                             guard_cond.append(_allocator, try self.parseExpr()) catch @panic("OOM");
                         }
                     }
                     self.skipEol();
-// zbr:selfhost/Parser.zbr:1713
+// zbr:selfhost/Parser.zbr:1731
                     var stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1714
+// zbr:selfhost/Parser.zbr:1732
                     if (self.isIndent()) {
-// zbr:selfhost/Parser.zbr:1715
+// zbr:selfhost/Parser.zbr:1733
                         stmts = try self.parseBlock();
                     } else {
-// zbr:selfhost/Parser.zbr:1716
+// zbr:selfhost/Parser.zbr:1734
                         if ((((!self.isEol()) and (!self.isDedent())) and (!self.isEof()))) {
                             stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
                         }
                     }
-// zbr:selfhost/Parser.zbr:1719
+// zbr:selfhost/Parser.zbr:1737
                     var arm = PBranchOn.init(patterns, binding, guard_cond, stmts);
-// zbr:selfhost/Parser.zbr:1720
+// zbr:selfhost/Parser.zbr:1738
                     arm.struct_pat_node = struct_pat_node;
                     arms.append(_allocator, arm) catch @panic("OOM");
                 } else {
-// zbr:selfhost/Parser.zbr:1722
+// zbr:selfhost/Parser.zbr:1740
                     if (self.textIs("else")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:1724
+// zbr:selfhost/Parser.zbr:1742
                         if (self.textIs(",")) {
                             self.advance();
                             else_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
                         } else {
                             self.skipEol();
-// zbr:selfhost/Parser.zbr:1730
+// zbr:selfhost/Parser.zbr:1748
                             if (self.isIndent()) {
-// zbr:selfhost/Parser.zbr:1731
+// zbr:selfhost/Parser.zbr:1749
                                 else_stmts = try self.parseBlock();
                             }
                         }
@@ -4553,287 +4585,287 @@ pub const Parser = struct {
                     }
                 }
             }
-// zbr:selfhost/Parser.zbr:1734
+// zbr:selfhost/Parser.zbr:1752
             if (self.isDedent()) {
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:1736
+// zbr:selfhost/Parser.zbr:1754
         var subj_list = std.ArrayList(PNode){};
         subj_list.append(_allocator, subject) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1738
+// zbr:selfhost/Parser.zbr:1756
         return PNode{ .stmt_branch = blk_box_34: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_branch")) = PBranch.init(subj_list, arms, else_stmts, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_34 _bp; } };
     }
 
     pub fn eatBranchPattern(self: *Parser) anyerror![]const u8 {
-// zbr:selfhost/Parser.zbr:1742
+// zbr:selfhost/Parser.zbr:1760
         var sb = std.ArrayList(u8){};
         sb.appendSlice(_allocator, self.peek().text) catch @panic("OOM");
         self.advance();
-// zbr:selfhost/Parser.zbr:1747
+// zbr:selfhost/Parser.zbr:1765
         var going: bool = true;
-// zbr:selfhost/Parser.zbr:1748
+// zbr:selfhost/Parser.zbr:1766
         while (going) {
-// zbr:selfhost/Parser.zbr:1749
+// zbr:selfhost/Parser.zbr:1767
             if (self.textIs(".")) {
                 sb.appendSlice(_allocator, ".") catch @panic("OOM");
                 self.advance();
                 sb.appendSlice(_allocator, self.peek().text) catch @panic("OOM");
                 self.advance();
             } else {
-// zbr:selfhost/Parser.zbr:1754
+// zbr:selfhost/Parser.zbr:1772
                 if (self.textIs("..")) {
                     sb.appendSlice(_allocator, "..") catch @panic("OOM");
                     self.advance();
                     sb.appendSlice(_allocator, self.peek().text) catch @panic("OOM");
                     self.advance();
                 } else {
-// zbr:selfhost/Parser.zbr:1760
+// zbr:selfhost/Parser.zbr:1778
                     going = false;
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:1761
+// zbr:selfhost/Parser.zbr:1779
         return (try sb.toOwnedSlice(_allocator));
     }
 
     pub fn parseExprOrAssignStmt(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1764
+// zbr:selfhost/Parser.zbr:1782
         const line = self.peek().line;
-// zbr:selfhost/Parser.zbr:1765
+// zbr:selfhost/Parser.zbr:1783
         const target_expr = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:1766
+// zbr:selfhost/Parser.zbr:1784
         var op: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1767
+// zbr:selfhost/Parser.zbr:1785
         if (self.textIs("=")) {
-// zbr:selfhost/Parser.zbr:1768
+// zbr:selfhost/Parser.zbr:1786
             op = "=";
         } else {
-// zbr:selfhost/Parser.zbr:1769
+// zbr:selfhost/Parser.zbr:1787
             if (self.textIs("+=")) {
-// zbr:selfhost/Parser.zbr:1770
+// zbr:selfhost/Parser.zbr:1788
                 op = "+=";
             } else {
-// zbr:selfhost/Parser.zbr:1771
+// zbr:selfhost/Parser.zbr:1789
                 if (self.textIs("-=")) {
-// zbr:selfhost/Parser.zbr:1772
+// zbr:selfhost/Parser.zbr:1790
                     op = "-=";
                 } else {
-// zbr:selfhost/Parser.zbr:1773
+// zbr:selfhost/Parser.zbr:1791
                     if (self.textIs("*=")) {
-// zbr:selfhost/Parser.zbr:1774
+// zbr:selfhost/Parser.zbr:1792
                         op = "*=";
                     }
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:1775
+// zbr:selfhost/Parser.zbr:1793
         if (!std.mem.eql(u8, op, "")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1777
+// zbr:selfhost/Parser.zbr:1795
             const value_expr = try self.parseExpr();
             self.skipEol();
-// zbr:selfhost/Parser.zbr:1779
+// zbr:selfhost/Parser.zbr:1797
             var tgt = std.ArrayList(PNode){};
             tgt.append(_allocator, target_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1781
+// zbr:selfhost/Parser.zbr:1799
             var val = std.ArrayList(PNode){};
             val.append(_allocator, value_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1783
+// zbr:selfhost/Parser.zbr:1801
             return PNode{ .stmt_assign = blk_box_35: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_assign")) = PAssign.init(op, tgt, val, line); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_35 _bp; } };
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:1785
+// zbr:selfhost/Parser.zbr:1803
         return PNode{ .stmt_expr = blk_box_36: { const _bv: std.meta.Child(@FieldType(PNode, "stmt_expr")) = target_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
     }
 
     pub fn parseExpr(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1792
+// zbr:selfhost/Parser.zbr:1810
         return try self.parsePipeline();
     }
 
     pub fn parsePipeline(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1795
+// zbr:selfhost/Parser.zbr:1813
         var left = try self.parseOr();
-// zbr:selfhost/Parser.zbr:1796
+// zbr:selfhost/Parser.zbr:1814
         while (self.textIs("->")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1798
+// zbr:selfhost/Parser.zbr:1816
             const rhs = try self.parseOr();
-// zbr:selfhost/Parser.zbr:1799
+// zbr:selfhost/Parser.zbr:1817
             var lhs_list = std.ArrayList(PNode){};
             lhs_list.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1801
+// zbr:selfhost/Parser.zbr:1819
             var rhs_list = std.ArrayList(PNode){};
             rhs_list.append(_allocator, rhs) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1803
+// zbr:selfhost/Parser.zbr:1821
             left = PNode{ .expr_pipeline = blk_box_37: { const _bv: std.meta.Child(@FieldType(PNode, "expr_pipeline")) = PPipeline.init(lhs_list, rhs_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_37 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1804
+// zbr:selfhost/Parser.zbr:1822
         while (self.textIs("catch")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1806
+// zbr:selfhost/Parser.zbr:1824
             var binding: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1807
+// zbr:selfhost/Parser.zbr:1825
             if (self.textIs("|")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:1809
+// zbr:selfhost/Parser.zbr:1827
                 binding = try self.eatId();
                 try self.expectText("|");
             }
-// zbr:selfhost/Parser.zbr:1811
+// zbr:selfhost/Parser.zbr:1829
             const fallback = try self.parseOr();
-// zbr:selfhost/Parser.zbr:1812
+// zbr:selfhost/Parser.zbr:1830
             var base = std.ArrayList(PNode){};
             base.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1814
+// zbr:selfhost/Parser.zbr:1832
             var fb = std.ArrayList(PNode){};
             fb.append(_allocator, fallback) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1816
+// zbr:selfhost/Parser.zbr:1834
             left = PNode{ .expr_catch = blk_box_38: { const _bv: std.meta.Child(@FieldType(PNode, "expr_catch")) = PCatch.init(base, binding, fb); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1817
+// zbr:selfhost/Parser.zbr:1835
         return left;
     }
 
     pub fn parseOr(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1820
+// zbr:selfhost/Parser.zbr:1838
         var left = try self.parseAnd();
-// zbr:selfhost/Parser.zbr:1821
+// zbr:selfhost/Parser.zbr:1839
         while ((self.textIs("or") or self.textIs("orelse"))) {
-// zbr:selfhost/Parser.zbr:1822
+// zbr:selfhost/Parser.zbr:1840
             const is_orelse = self.textIs("orelse");
             self.advance();
-// zbr:selfhost/Parser.zbr:1824
+// zbr:selfhost/Parser.zbr:1842
             const right = try self.parseAnd();
-// zbr:selfhost/Parser.zbr:1825
+// zbr:selfhost/Parser.zbr:1843
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1827
+// zbr:selfhost/Parser.zbr:1845
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1829
+// zbr:selfhost/Parser.zbr:1847
             if (is_orelse) {
-// zbr:selfhost/Parser.zbr:1830
+// zbr:selfhost/Parser.zbr:1848
                 left = PNode{ .expr_orelse = blk_box_39: { const _bv: std.meta.Child(@FieldType(PNode, "expr_orelse")) = POrelse.init(l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_39 _bp; } };
             } else {
-// zbr:selfhost/Parser.zbr:1832
+// zbr:selfhost/Parser.zbr:1850
                 left = PNode{ .expr_binary = blk_box_40: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("or", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
             }
         }
-// zbr:selfhost/Parser.zbr:1833
+// zbr:selfhost/Parser.zbr:1851
         return left;
     }
 
     pub fn parseAnd(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1836
+// zbr:selfhost/Parser.zbr:1854
         var left = try self.parseNot();
-// zbr:selfhost/Parser.zbr:1837
+// zbr:selfhost/Parser.zbr:1855
         while (self.textIs("and")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1839
+// zbr:selfhost/Parser.zbr:1857
             const right = try self.parseNot();
-// zbr:selfhost/Parser.zbr:1840
+// zbr:selfhost/Parser.zbr:1858
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1842
+// zbr:selfhost/Parser.zbr:1860
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1844
+// zbr:selfhost/Parser.zbr:1862
             left = PNode{ .expr_binary = blk_box_41: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("and", l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1845
+// zbr:selfhost/Parser.zbr:1863
         return left;
     }
 
     pub fn parseNot(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1848
+// zbr:selfhost/Parser.zbr:1866
         if (self.textIs("not")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1850
+// zbr:selfhost/Parser.zbr:1868
             const operand = try self.parseNot();
-// zbr:selfhost/Parser.zbr:1851
+// zbr:selfhost/Parser.zbr:1869
             var ops = std.ArrayList(PNode){};
             ops.append(_allocator, operand) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1853
+// zbr:selfhost/Parser.zbr:1871
             return PNode{ .expr_unary = blk_box_42: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1854
+// zbr:selfhost/Parser.zbr:1872
         return try self.parseComparison();
     }
 
     pub fn parseComparison(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1857
+// zbr:selfhost/Parser.zbr:1875
         const left = try self.parseAddSub();
-// zbr:selfhost/Parser.zbr:1858
+// zbr:selfhost/Parser.zbr:1876
         var op: []const u8 = "";
-// zbr:selfhost/Parser.zbr:1859
+// zbr:selfhost/Parser.zbr:1877
         if (self.textIs("==")) {
-// zbr:selfhost/Parser.zbr:1860
+// zbr:selfhost/Parser.zbr:1878
             op = "==";
         } else {
-// zbr:selfhost/Parser.zbr:1861
+// zbr:selfhost/Parser.zbr:1879
             if ((self.textIs("!=") or self.textIs("<>"))) {
-// zbr:selfhost/Parser.zbr:1862
+// zbr:selfhost/Parser.zbr:1880
                 op = "!=";
             } else {
-// zbr:selfhost/Parser.zbr:1863
+// zbr:selfhost/Parser.zbr:1881
                 if (self.textIs("<=")) {
-// zbr:selfhost/Parser.zbr:1864
+// zbr:selfhost/Parser.zbr:1882
                     op = "<=";
                 } else {
-// zbr:selfhost/Parser.zbr:1865
+// zbr:selfhost/Parser.zbr:1883
                     if (self.textIs(">=")) {
-// zbr:selfhost/Parser.zbr:1866
+// zbr:selfhost/Parser.zbr:1884
                         op = ">=";
                     } else {
-// zbr:selfhost/Parser.zbr:1867
+// zbr:selfhost/Parser.zbr:1885
                         if (self.textIs("<")) {
-// zbr:selfhost/Parser.zbr:1868
+// zbr:selfhost/Parser.zbr:1886
                             op = "<";
                         } else {
-// zbr:selfhost/Parser.zbr:1869
+// zbr:selfhost/Parser.zbr:1887
                             if (self.textIs(">")) {
-// zbr:selfhost/Parser.zbr:1870
+// zbr:selfhost/Parser.zbr:1888
                                 op = ">";
                             } else {
-// zbr:selfhost/Parser.zbr:1871
+// zbr:selfhost/Parser.zbr:1889
                                 if (self.textIs("in")) {
-// zbr:selfhost/Parser.zbr:1872
+// zbr:selfhost/Parser.zbr:1890
                                     op = "in";
                                 } else {
-// zbr:selfhost/Parser.zbr:1873
+// zbr:selfhost/Parser.zbr:1891
                                     if (self.textIs("is")) {
-// zbr:selfhost/Parser.zbr:1874
+// zbr:selfhost/Parser.zbr:1892
                                         op = "is";
                                     } else {
-// zbr:selfhost/Parser.zbr:1875
+// zbr:selfhost/Parser.zbr:1893
                                         if (self.textIs("not")) {
                                             self.advance();
-// zbr:selfhost/Parser.zbr:1879
+// zbr:selfhost/Parser.zbr:1897
                                             if ((!self.textIs("in"))) {
-// zbr:selfhost/Parser.zbr:1880
+// zbr:selfhost/Parser.zbr:1898
                                                 { _error_ctx = .{ .message = self.errorAt("expected 'in' after 'not' in comparison") }; return error.ZebraError; }
                                             }
                                             self.advance();
-// zbr:selfhost/Parser.zbr:1882
+// zbr:selfhost/Parser.zbr:1900
                                             const right = try self.parseAddSub();
-// zbr:selfhost/Parser.zbr:1883
+// zbr:selfhost/Parser.zbr:1901
                                             var l = std.ArrayList(PNode){};
                                             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1885
+// zbr:selfhost/Parser.zbr:1903
                                             var r = std.ArrayList(PNode){};
                                             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1888
+// zbr:selfhost/Parser.zbr:1906
                                             var inner = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:1889
+// zbr:selfhost/Parser.zbr:1907
                                             var lc = std.ArrayList(PNode){};
                                             lc.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1891
+// zbr:selfhost/Parser.zbr:1909
                                             var rc = std.ArrayList(PNode){};
                                             rc.append(_allocator, right) catch @panic("OOM");
                                             inner.append(_allocator, PNode{ .expr_binary = blk_box_43: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init("in", lc, rc); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_43 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1894
+// zbr:selfhost/Parser.zbr:1912
                                             return PNode{ .expr_unary = blk_box_44: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("not", inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_44 _bp; } };
                                         }
                                     }
@@ -4844,249 +4876,249 @@ pub const Parser = struct {
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:1895
+// zbr:selfhost/Parser.zbr:1913
         if (!std.mem.eql(u8, op, "")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1897
+// zbr:selfhost/Parser.zbr:1915
             const right = try self.parseAddSub();
-// zbr:selfhost/Parser.zbr:1898
+// zbr:selfhost/Parser.zbr:1916
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1900
+// zbr:selfhost/Parser.zbr:1918
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1902
+// zbr:selfhost/Parser.zbr:1920
             return PNode{ .expr_binary = blk_box_45: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1903
+// zbr:selfhost/Parser.zbr:1921
         return left;
     }
 
     pub fn parseAddSub(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1906
+// zbr:selfhost/Parser.zbr:1924
         var left = try self.parseMulDiv();
-// zbr:selfhost/Parser.zbr:1907
+// zbr:selfhost/Parser.zbr:1925
         while ((self.textIs("+") or self.textIs("-"))) {
-// zbr:selfhost/Parser.zbr:1908
+// zbr:selfhost/Parser.zbr:1926
             const op = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:1910
+// zbr:selfhost/Parser.zbr:1928
             const right = try self.parseMulDiv();
-// zbr:selfhost/Parser.zbr:1911
+// zbr:selfhost/Parser.zbr:1929
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1913
+// zbr:selfhost/Parser.zbr:1931
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1915
+// zbr:selfhost/Parser.zbr:1933
             left = PNode{ .expr_binary = blk_box_46: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_46 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1916
+// zbr:selfhost/Parser.zbr:1934
         return left;
     }
 
     pub fn parseMulDiv(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1919
+// zbr:selfhost/Parser.zbr:1937
         var left = try self.parseUnary();
-// zbr:selfhost/Parser.zbr:1920
+// zbr:selfhost/Parser.zbr:1938
         while (((self.textIs("*") or self.textIs("/")) or self.textIs("%"))) {
-// zbr:selfhost/Parser.zbr:1921
+// zbr:selfhost/Parser.zbr:1939
             const op = self.peek().text;
             self.advance();
-// zbr:selfhost/Parser.zbr:1923
+// zbr:selfhost/Parser.zbr:1941
             const right = try self.parseUnary();
-// zbr:selfhost/Parser.zbr:1924
+// zbr:selfhost/Parser.zbr:1942
             var l = std.ArrayList(PNode){};
             l.append(_allocator, left) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1926
+// zbr:selfhost/Parser.zbr:1944
             var r = std.ArrayList(PNode){};
             r.append(_allocator, right) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1928
+// zbr:selfhost/Parser.zbr:1946
             left = PNode{ .expr_binary = blk_box_47: { const _bv: std.meta.Child(@FieldType(PNode, "expr_binary")) = PBinary.init(op, l, r); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_47 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1929
+// zbr:selfhost/Parser.zbr:1947
         return left;
     }
 
     pub fn parseUnary(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1932
+// zbr:selfhost/Parser.zbr:1950
         if (self.textIs("-")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1934
+// zbr:selfhost/Parser.zbr:1952
             const operand = try self.parseUnary();
-// zbr:selfhost/Parser.zbr:1935
+// zbr:selfhost/Parser.zbr:1953
             var ops = std.ArrayList(PNode){};
             ops.append(_allocator, operand) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1937
+// zbr:selfhost/Parser.zbr:1955
             return PNode{ .expr_unary = blk_box_48: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("-", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1938
+// zbr:selfhost/Parser.zbr:1956
         if (self.textIs("try")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1943
+// zbr:selfhost/Parser.zbr:1961
             const operand = try self.parseUnary();
-// zbr:selfhost/Parser.zbr:1944
+// zbr:selfhost/Parser.zbr:1962
             return PNode{ .expr_try = blk_box_49: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = operand; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_49 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1945
+// zbr:selfhost/Parser.zbr:1963
         if (self.textIs("old")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:1948
+// zbr:selfhost/Parser.zbr:1966
             const operand = try self.parseUnary();
-// zbr:selfhost/Parser.zbr:1949
+// zbr:selfhost/Parser.zbr:1967
             var ops = std.ArrayList(PNode){};
             ops.append(_allocator, operand) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1951
+// zbr:selfhost/Parser.zbr:1969
             return PNode{ .expr_unary = blk_box_50: { const _bv: std.meta.Child(@FieldType(PNode, "expr_unary")) = PUnary.init("old", ops); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_50 _bp; } };
         }
-// zbr:selfhost/Parser.zbr:1952
+// zbr:selfhost/Parser.zbr:1970
         return try self.parsePostfix();
     }
 
     pub fn parsePostfix(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:1955
+// zbr:selfhost/Parser.zbr:1973
         var expr = try self.parseAtom();
-// zbr:selfhost/Parser.zbr:1956
+// zbr:selfhost/Parser.zbr:1974
         var going: bool = true;
-// zbr:selfhost/Parser.zbr:1957
+// zbr:selfhost/Parser.zbr:1975
         while (going) {
-// zbr:selfhost/Parser.zbr:1958
+// zbr:selfhost/Parser.zbr:1976
             if (self.textIs(".")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:1960
+// zbr:selfhost/Parser.zbr:1978
                 if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:1962
+// zbr:selfhost/Parser.zbr:1980
                     const mname = self.peek().text;
                     self.advance();
-// zbr:selfhost/Parser.zbr:1964
+// zbr:selfhost/Parser.zbr:1982
                     const args = try self.parseCallArgs();
-// zbr:selfhost/Parser.zbr:1965
+// zbr:selfhost/Parser.zbr:1983
                     var base = std.ArrayList(PNode){};
                     base.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1967
+// zbr:selfhost/Parser.zbr:1985
                     var callee = std.ArrayList(PNode){};
                     callee.append(_allocator, PNode{ .expr_member = blk_box_51: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_51 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1969
+// zbr:selfhost/Parser.zbr:1987
                     expr = PNode{ .expr_call = blk_box_52: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_52 _bp; } };
                 } else {
-// zbr:selfhost/Parser.zbr:1970
+// zbr:selfhost/Parser.zbr:1988
                     if (self.isIntLit()) {
-// zbr:selfhost/Parser.zbr:1972
+// zbr:selfhost/Parser.zbr:1990
                         const field = self.peek().text;
                         self.advance();
-// zbr:selfhost/Parser.zbr:1974
+// zbr:selfhost/Parser.zbr:1992
                         var base = std.ArrayList(PNode){};
                         base.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1976
+// zbr:selfhost/Parser.zbr:1994
                         expr = PNode{ .expr_member = blk_box_53: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_53 _bp; } };
                     } else {
-// zbr:selfhost/Parser.zbr:1979
+// zbr:selfhost/Parser.zbr:1997
                         const field = try self.eatId();
-// zbr:selfhost/Parser.zbr:1980
+// zbr:selfhost/Parser.zbr:1998
                         var base = std.ArrayList(PNode){};
                         base.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:1982
+// zbr:selfhost/Parser.zbr:2000
                         expr = PNode{ .expr_member = blk_box_54: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_54 _bp; } };
                     }
                 }
             } else {
-// zbr:selfhost/Parser.zbr:1983
+// zbr:selfhost/Parser.zbr:2001
                 if (self.textIs("?")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:1985
+// zbr:selfhost/Parser.zbr:2003
                     expr = PNode{ .expr_try = blk_box_55: { const _bv: std.meta.Child(@FieldType(PNode, "expr_try")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_55 _bp; } };
                 } else {
-// zbr:selfhost/Parser.zbr:1986
+// zbr:selfhost/Parser.zbr:2004
                     if (self.textIs("to")) {
                         self.advance();
                         try self.expectText("!");
-// zbr:selfhost/Parser.zbr:1990
+// zbr:selfhost/Parser.zbr:2008
                         expr = PNode{ .expr_to_bang = blk_box_56: { const _bv: std.meta.Child(@FieldType(PNode, "expr_to_bang")) = expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_56 _bp; } };
                     } else {
-// zbr:selfhost/Parser.zbr:1991
+// zbr:selfhost/Parser.zbr:2009
                         if (self.textIs("except")) {
                             self.advance();
                             self.skipEol();
-// zbr:selfhost/Parser.zbr:1995
+// zbr:selfhost/Parser.zbr:2013
                             var fields = std.ArrayList(PExceptField){};
-// zbr:selfhost/Parser.zbr:1996
+// zbr:selfhost/Parser.zbr:2014
                             if (self.isIndent()) {
                                 self.advance();
-// zbr:selfhost/Parser.zbr:1998
+// zbr:selfhost/Parser.zbr:2016
                                 while (((!self.isDedent()) and (!self.isEof()))) {
                                     self.skipEol();
-// zbr:selfhost/Parser.zbr:2000
+// zbr:selfhost/Parser.zbr:2018
                                     if (self.isDedent()) {
                                         break;
                                     }
-// zbr:selfhost/Parser.zbr:2002
+// zbr:selfhost/Parser.zbr:2020
                                     const fname = try self.eatId();
                                     try self.expectText("=");
-// zbr:selfhost/Parser.zbr:2004
+// zbr:selfhost/Parser.zbr:2022
                                     const fval = try self.parseExpr();
                                     self.skipEol();
-// zbr:selfhost/Parser.zbr:2006
+// zbr:selfhost/Parser.zbr:2024
                                     var vlist = std.ArrayList(PNode){};
                                     vlist.append(_allocator, fval) catch @panic("OOM");
                                     fields.append(_allocator, PExceptField.init(fname, vlist)) catch @panic("OOM");
                                 }
-// zbr:selfhost/Parser.zbr:2009
+// zbr:selfhost/Parser.zbr:2027
                                 if (self.isDedent()) {
                                     self.advance();
                                 }
                             }
-// zbr:selfhost/Parser.zbr:2011
+// zbr:selfhost/Parser.zbr:2029
                             var base_list = std.ArrayList(PNode){};
                             base_list.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2013
+// zbr:selfhost/Parser.zbr:2031
                             expr = PNode{ .expr_except = blk_box_57: { const _bv: std.meta.Child(@FieldType(PNode, "expr_except")) = PExcept.init(base_list, fields); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_57 _bp; } };
                         } else {
-// zbr:selfhost/Parser.zbr:2014
+// zbr:selfhost/Parser.zbr:2032
                             if (self.textIs("[")) {
                                 self.advance();
-// zbr:selfhost/Parser.zbr:2017
+// zbr:selfhost/Parser.zbr:2035
                                 const first = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:2018
+// zbr:selfhost/Parser.zbr:2036
                                 if (self.textIs("..")) {
                                     self.advance();
-// zbr:selfhost/Parser.zbr:2021
+// zbr:selfhost/Parser.zbr:2039
                                     const stop_expr = try self.parseExpr();
                                     try self.expectText("]");
-// zbr:selfhost/Parser.zbr:2023
+// zbr:selfhost/Parser.zbr:2041
                                     var obj = std.ArrayList(PNode){};
                                     obj.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2025
+// zbr:selfhost/Parser.zbr:2043
                                     var start_list = std.ArrayList(PNode){};
                                     start_list.append(_allocator, first) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2027
+// zbr:selfhost/Parser.zbr:2045
                                     var stop_list = std.ArrayList(PNode){};
                                     stop_list.append(_allocator, stop_expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2029
+// zbr:selfhost/Parser.zbr:2047
                                     expr = PNode{ .expr_slice = blk_box_58: { const _bv: std.meta.Child(@FieldType(PNode, "expr_slice")) = PSlice.init(obj, start_list, stop_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_58 _bp; } };
                                 } else {
                                     try self.expectText("]");
-// zbr:selfhost/Parser.zbr:2032
+// zbr:selfhost/Parser.zbr:2050
                                     var obj = std.ArrayList(PNode){};
                                     obj.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2034
+// zbr:selfhost/Parser.zbr:2052
                                     var idx_list = std.ArrayList(PNode){};
                                     idx_list.append(_allocator, first) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2036
+// zbr:selfhost/Parser.zbr:2054
                                     expr = PNode{ .expr_index = blk_box_59: { const _bv: std.meta.Child(@FieldType(PNode, "expr_index")) = PIndex.init(obj, idx_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_59 _bp; } };
                                 }
                             } else {
-// zbr:selfhost/Parser.zbr:2037
+// zbr:selfhost/Parser.zbr:2055
                                 if (self.textIs("(")) {
                                     self.advance();
-// zbr:selfhost/Parser.zbr:2040
+// zbr:selfhost/Parser.zbr:2058
                                     const args = try self.parseCallArgs();
-// zbr:selfhost/Parser.zbr:2041
+// zbr:selfhost/Parser.zbr:2059
                                     var callee = std.ArrayList(PNode){};
                                     callee.append(_allocator, expr) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2043
+// zbr:selfhost/Parser.zbr:2061
                                     expr = PNode{ .expr_call = blk_box_60: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_60 _bp; } };
                                 } else {
-// zbr:selfhost/Parser.zbr:2045
+// zbr:selfhost/Parser.zbr:2063
                                     going = false;
                                 }
                             }
@@ -5095,114 +5127,114 @@ pub const Parser = struct {
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:2046
+// zbr:selfhost/Parser.zbr:2064
         return expr;
     }
 
     pub fn parseAtom(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:2049
+// zbr:selfhost/Parser.zbr:2067
         if (self.textIs("true")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:2051
+// zbr:selfhost/Parser.zbr:2069
             return PNode{ .expr_bool = true };
         } else {
-// zbr:selfhost/Parser.zbr:2052
+// zbr:selfhost/Parser.zbr:2070
             if (self.textIs("false")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:2054
+// zbr:selfhost/Parser.zbr:2072
                 return PNode{ .expr_bool = false };
             } else {
-// zbr:selfhost/Parser.zbr:2055
+// zbr:selfhost/Parser.zbr:2073
                 if (self.textIs("nil")) {
                     self.advance();
-// zbr:selfhost/Parser.zbr:2057
+// zbr:selfhost/Parser.zbr:2075
                     return PNode{ .expr_nil = {} };
                 } else {
-// zbr:selfhost/Parser.zbr:2058
+// zbr:selfhost/Parser.zbr:2076
                     if (self.textIs("this")) {
                         self.advance();
-// zbr:selfhost/Parser.zbr:2060
+// zbr:selfhost/Parser.zbr:2078
                         return PNode{ .expr_this = {} };
                     } else {
-// zbr:selfhost/Parser.zbr:2061
+// zbr:selfhost/Parser.zbr:2079
                         if (self.textIs("result")) {
                             self.advance();
-// zbr:selfhost/Parser.zbr:2063
+// zbr:selfhost/Parser.zbr:2081
                             return PNode{ .expr_result = {} };
                         } else {
-// zbr:selfhost/Parser.zbr:2064
+// zbr:selfhost/Parser.zbr:2082
                             if (self.isIntLit()) {
-// zbr:selfhost/Parser.zbr:2065
+// zbr:selfhost/Parser.zbr:2083
                                 const text = self.peek().text;
                                 self.advance();
-// zbr:selfhost/Parser.zbr:2067
+// zbr:selfhost/Parser.zbr:2085
                                 return PNode{ .expr_int = text };
                             } else {
-// zbr:selfhost/Parser.zbr:2068
+// zbr:selfhost/Parser.zbr:2086
                                 if (self.isFloatLit()) {
-// zbr:selfhost/Parser.zbr:2069
+// zbr:selfhost/Parser.zbr:2087
                                     const text = self.peek().text;
                                     self.advance();
-// zbr:selfhost/Parser.zbr:2071
+// zbr:selfhost/Parser.zbr:2089
                                     return PNode{ .expr_float = text };
                                 } else {
-// zbr:selfhost/Parser.zbr:2072
+// zbr:selfhost/Parser.zbr:2090
                                     if (self.isStringStart()) {
-// zbr:selfhost/Parser.zbr:2073
+// zbr:selfhost/Parser.zbr:2091
                                         return try self.parseStringInterp();
                                     } else {
-// zbr:selfhost/Parser.zbr:2074
+// zbr:selfhost/Parser.zbr:2092
                                         if ((self.isStringSingle() or self.isStringDouble())) {
-// zbr:selfhost/Parser.zbr:2075
+// zbr:selfhost/Parser.zbr:2093
                                             const text = self.peek().text;
                                             self.advance();
-// zbr:selfhost/Parser.zbr:2077
+// zbr:selfhost/Parser.zbr:2095
                                             return PNode{ .expr_str = text };
                                         } else {
-// zbr:selfhost/Parser.zbr:2078
+// zbr:selfhost/Parser.zbr:2096
                                             if (self.isCharLit()) {
-// zbr:selfhost/Parser.zbr:2079
+// zbr:selfhost/Parser.zbr:2097
                                                 const text = self.peek().text;
                                                 self.advance();
-// zbr:selfhost/Parser.zbr:2081
+// zbr:selfhost/Parser.zbr:2099
                                                 return PNode{ .expr_char = text };
                                             } else {
-// zbr:selfhost/Parser.zbr:2082
+// zbr:selfhost/Parser.zbr:2100
                                                 if (self.isZigLit()) {
-// zbr:selfhost/Parser.zbr:2083
+// zbr:selfhost/Parser.zbr:2101
                                                     const text = self.peek().text;
                                                     self.advance();
-// zbr:selfhost/Parser.zbr:2085
+// zbr:selfhost/Parser.zbr:2103
                                                     return PNode{ .expr_zig_lit = text };
                                                 } else {
-// zbr:selfhost/Parser.zbr:2086
+// zbr:selfhost/Parser.zbr:2104
                                                     if (self.isRawString()) {
-// zbr:selfhost/Parser.zbr:2087
+// zbr:selfhost/Parser.zbr:2105
                                                         const text = self.peek().text;
                                                         self.advance();
-// zbr:selfhost/Parser.zbr:2089
+// zbr:selfhost/Parser.zbr:2107
                                                         return PNode{ .expr_raw_str = text };
                                                     } else {
-// zbr:selfhost/Parser.zbr:2090
+// zbr:selfhost/Parser.zbr:2108
                                                         if (self.isDocString()) {
-// zbr:selfhost/Parser.zbr:2091
+// zbr:selfhost/Parser.zbr:2109
                                                             const text = self.peek().text;
                                                             self.advance();
-// zbr:selfhost/Parser.zbr:2093
+// zbr:selfhost/Parser.zbr:2111
                                                             return PNode{ .expr_str = text };
                                                         } else {
-// zbr:selfhost/Parser.zbr:2094
+// zbr:selfhost/Parser.zbr:2112
                                                             if (self.isAtLbracket()) {
                                                                 self.advance();
-// zbr:selfhost/Parser.zbr:2097
+// zbr:selfhost/Parser.zbr:2115
                                                                 var elems = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2098
+// zbr:selfhost/Parser.zbr:2116
                                                                 if ((!self.textIs("]"))) {
                                                                     elems.append(_allocator, try self.parseExpr()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2100
+// zbr:selfhost/Parser.zbr:2118
                                                                     while (self.textIs(",")) {
                                                                         self.advance();
-// zbr:selfhost/Parser.zbr:2102
+// zbr:selfhost/Parser.zbr:2120
                                                                         if (self.textIs("]")) {
                                                                             break;
                                                                         }
@@ -5210,102 +5242,102 @@ pub const Parser = struct {
                                                                     }
                                                                 }
                                                                 try self.expectText("]");
-// zbr:selfhost/Parser.zbr:2106
+// zbr:selfhost/Parser.zbr:2124
                                                                 return PNode{ .expr_array_lit = blk_box_61: { const _bv: std.meta.Child(@FieldType(PNode, "expr_array_lit")) = PArrayLit.init(elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_61 _bp; } };
                                                             } else {
-// zbr:selfhost/Parser.zbr:2107
+// zbr:selfhost/Parser.zbr:2125
                                                                 if (self.textIs("(")) {
                                                                     self.advance();
-// zbr:selfhost/Parser.zbr:2109
+// zbr:selfhost/Parser.zbr:2127
                                                                     const first = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:2110
+// zbr:selfhost/Parser.zbr:2128
                                                                     if (self.textIs(",")) {
-// zbr:selfhost/Parser.zbr:2112
+// zbr:selfhost/Parser.zbr:2130
                                                                         var elems = std.ArrayList(PNode){};
                                                                         elems.append(_allocator, first) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2114
+// zbr:selfhost/Parser.zbr:2132
                                                                         while (self.textIs(",")) {
                                                                             self.advance();
                                                                             elems.append(_allocator, try self.parseExpr()) catch @panic("OOM");
                                                                         }
                                                                         try self.expectText(")");
-// zbr:selfhost/Parser.zbr:2118
+// zbr:selfhost/Parser.zbr:2136
                                                                         return PNode{ .expr_tuple_lit = blk_box_62: { const _bv: std.meta.Child(@FieldType(PNode, "expr_tuple_lit")) = PTupleLit.init(elems); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_62 _bp; } };
                                                                     }
                                                                     try self.expectText(")");
-// zbr:selfhost/Parser.zbr:2120
+// zbr:selfhost/Parser.zbr:2138
                                                                     return first;
                                                                 } else {
-// zbr:selfhost/Parser.zbr:2121
+// zbr:selfhost/Parser.zbr:2139
                                                                     if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:2123
+// zbr:selfhost/Parser.zbr:2141
                                                                         const id_line = self.peek().line;
-// zbr:selfhost/Parser.zbr:2124
+// zbr:selfhost/Parser.zbr:2142
                                                                         const id_col = self.peek().col;
-// zbr:selfhost/Parser.zbr:2125
+// zbr:selfhost/Parser.zbr:2143
                                                                         const name = self.peek().text;
                                                                         self.advance();
-// zbr:selfhost/Parser.zbr:2127
+// zbr:selfhost/Parser.zbr:2145
                                                                         const args = try self.parseCallArgs();
-// zbr:selfhost/Parser.zbr:2128
+// zbr:selfhost/Parser.zbr:2146
                                                                         var callee = std.ArrayList(PNode){};
                                                                         callee.append(_allocator, PNode{ .expr_id = blk_box_63: { const _bv: std.meta.Child(@FieldType(PNode, "expr_id")) = PExprId.init(name, id_line, id_col); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_63 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2130
+// zbr:selfhost/Parser.zbr:2148
                                                                         return PNode{ .expr_call = blk_box_64: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_64 _bp; } };
                                                                     } else {
-// zbr:selfhost/Parser.zbr:2131
+// zbr:selfhost/Parser.zbr:2149
                                                                         if (self.textIs(".")) {
                                                                             self.advance();
-// zbr:selfhost/Parser.zbr:2134
+// zbr:selfhost/Parser.zbr:2152
                                                                             if (self.isOpenCall()) {
-// zbr:selfhost/Parser.zbr:2135
+// zbr:selfhost/Parser.zbr:2153
                                                                                 const mname = self.peek().text;
                                                                                 self.advance();
-// zbr:selfhost/Parser.zbr:2137
+// zbr:selfhost/Parser.zbr:2155
                                                                                 const args = try self.parseCallArgs();
-// zbr:selfhost/Parser.zbr:2138
+// zbr:selfhost/Parser.zbr:2156
                                                                                 const base = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2139
+// zbr:selfhost/Parser.zbr:2157
                                                                                 var callee = std.ArrayList(PNode){};
                                                                                 callee.append(_allocator, PNode{ .expr_member = blk_box_65: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, mname); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_65 _bp; } }) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2141
+// zbr:selfhost/Parser.zbr:2159
                                                                                 return PNode{ .expr_call = blk_box_66: { const _bv: std.meta.Child(@FieldType(PNode, "expr_call")) = PCall.init(callee, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_66 _bp; } };
                                                                             } else {
-// zbr:selfhost/Parser.zbr:2143
+// zbr:selfhost/Parser.zbr:2161
                                                                                 const field = try self.eatId();
-// zbr:selfhost/Parser.zbr:2144
+// zbr:selfhost/Parser.zbr:2162
                                                                                 const base = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2145
+// zbr:selfhost/Parser.zbr:2163
                                                                                 return PNode{ .expr_member = blk_box_67: { const _bv: std.meta.Child(@FieldType(PNode, "expr_member")) = PMember.init(base, field); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_67 _bp; } };
                                                                             }
                                                                         } else {
-// zbr:selfhost/Parser.zbr:2146
+// zbr:selfhost/Parser.zbr:2164
                                                                             if (self.isId()) {
-// zbr:selfhost/Parser.zbr:2147
+// zbr:selfhost/Parser.zbr:2165
                                                                                 const id_line = self.peek().line;
-// zbr:selfhost/Parser.zbr:2148
+// zbr:selfhost/Parser.zbr:2166
                                                                                 const id_col = self.peek().col;
-// zbr:selfhost/Parser.zbr:2149
+// zbr:selfhost/Parser.zbr:2167
                                                                                 const name = self.peek().text;
                                                                                 self.advance();
-// zbr:selfhost/Parser.zbr:2151
+// zbr:selfhost/Parser.zbr:2169
                                                                                 return PNode{ .expr_id = blk_box_68: { const _bv: std.meta.Child(@FieldType(PNode, "expr_id")) = PExprId.init(name, id_line, id_col); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_68 _bp; } };
                                                                             } else {
-// zbr:selfhost/Parser.zbr:2152
+// zbr:selfhost/Parser.zbr:2170
                                                                                 if (self.isTypeKeyword()) {
-// zbr:selfhost/Parser.zbr:2154
+// zbr:selfhost/Parser.zbr:2172
                                                                                     const id_line = self.peek().line;
-// zbr:selfhost/Parser.zbr:2155
+// zbr:selfhost/Parser.zbr:2173
                                                                                     const id_col = self.peek().col;
-// zbr:selfhost/Parser.zbr:2156
+// zbr:selfhost/Parser.zbr:2174
                                                                                     const name = self.peek().text;
                                                                                     self.advance();
-// zbr:selfhost/Parser.zbr:2158
+// zbr:selfhost/Parser.zbr:2176
                                                                                     return PNode{ .expr_id = blk_box_69: { const _bv: std.meta.Child(@FieldType(PNode, "expr_id")) = PExprId.init(name, id_line, id_col); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_69 _bp; } };
                                                                                 } else {
-// zbr:selfhost/Parser.zbr:2159
+// zbr:selfhost/Parser.zbr:2177
                                                                                     if ((self.textIs("def") and std.mem.eql(u8, self.peekAt(1).text, "("))) {
-// zbr:selfhost/Parser.zbr:2160
+// zbr:selfhost/Parser.zbr:2178
                                                                                         return try self.parseLambdaExpr();
                                                                                     }
                                                                                 }
@@ -5327,169 +5359,169 @@ pub const Parser = struct {
                 }
             }
         }
-// zbr:selfhost/Parser.zbr:2161
+// zbr:selfhost/Parser.zbr:2179
         { _error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("unexpected expression token: '", self.peek().text, _allocator), "'", _allocator)) }; return error.ZebraError; }
     }
 
     pub fn parseLambdaExpr(self: *Parser) anyerror!PNode {
         try self.expectText("def");
         try self.expectText("(");
-// zbr:selfhost/Parser.zbr:2168
+// zbr:selfhost/Parser.zbr:2186
         var params = std.ArrayList(PParam){};
-// zbr:selfhost/Parser.zbr:2169
+// zbr:selfhost/Parser.zbr:2187
         if ((!self.textIs(")"))) {
             params.append(_allocator, try self.parseLambdaParam()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2171
+// zbr:selfhost/Parser.zbr:2189
             while (self.textIs(",")) {
                 self.advance();
                 params.append(_allocator, try self.parseLambdaParam()) catch @panic("OOM");
             }
         }
         try self.expectText(")");
-// zbr:selfhost/Parser.zbr:2175
+// zbr:selfhost/Parser.zbr:2193
         var ret_type: []const u8 = "";
-// zbr:selfhost/Parser.zbr:2176
+// zbr:selfhost/Parser.zbr:2194
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:2178
+// zbr:selfhost/Parser.zbr:2196
             ret_type = try self.eatTypeName();
         }
-// zbr:selfhost/Parser.zbr:2179
+// zbr:selfhost/Parser.zbr:2197
         if (self.textIs("=")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:2182
+// zbr:selfhost/Parser.zbr:2200
             var body_expr = std.ArrayList(PNode){};
             body_expr.append(_allocator, try self.parseExpr()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2184
+// zbr:selfhost/Parser.zbr:2202
             return PNode{ .expr_lambda = PLambda.init(params, ret_type, std.ArrayList(PCaptureVar){}, body_expr, std.ArrayList(PNode){}) };
         }
         self.skipEol();
-// zbr:selfhost/Parser.zbr:2187
+// zbr:selfhost/Parser.zbr:2205
         if ((!self.isIndent())) {
-// zbr:selfhost/Parser.zbr:2188
+// zbr:selfhost/Parser.zbr:2206
             { _error_ctx = .{ .message = self.errorAt("expected '=' or indent after lambda params") }; return error.ZebraError; }
         }
         self.advance();
-// zbr:selfhost/Parser.zbr:2190
+// zbr:selfhost/Parser.zbr:2208
         var captures = std.ArrayList(PCaptureVar){};
-// zbr:selfhost/Parser.zbr:2191
+// zbr:selfhost/Parser.zbr:2209
         if (self.textIs("capture")) {
-// zbr:selfhost/Parser.zbr:2192
+// zbr:selfhost/Parser.zbr:2210
             captures = try self.parseCaptureBlock();
         }
-// zbr:selfhost/Parser.zbr:2193
+// zbr:selfhost/Parser.zbr:2211
         var body_stmts = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2194
+// zbr:selfhost/Parser.zbr:2212
         while (((!self.isDedent()) and (!self.isEof()))) {
             self.skipEol();
-// zbr:selfhost/Parser.zbr:2196
+// zbr:selfhost/Parser.zbr:2214
             if (self.isDedent()) {
                 break;
             }
             body_stmts.append(_allocator, try self.parseStmt()) catch @panic("OOM");
         }
-// zbr:selfhost/Parser.zbr:2199
+// zbr:selfhost/Parser.zbr:2217
         if (self.isDedent()) {
             self.advance();
         }
-// zbr:selfhost/Parser.zbr:2201
+// zbr:selfhost/Parser.zbr:2219
         return PNode{ .expr_lambda = PLambda.init(params, ret_type, captures, std.ArrayList(PNode){}, body_stmts) };
     }
 
     pub fn parseLambdaParam(self: *Parser) anyerror!PParam {
-// zbr:selfhost/Parser.zbr:2204
+// zbr:selfhost/Parser.zbr:2222
         const name = try self.eatId();
-// zbr:selfhost/Parser.zbr:2205
+// zbr:selfhost/Parser.zbr:2223
         var type_name: []const u8 = "";
-// zbr:selfhost/Parser.zbr:2206
+// zbr:selfhost/Parser.zbr:2224
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:2208
+// zbr:selfhost/Parser.zbr:2226
             type_name = try self.eatTypeName();
         }
-// zbr:selfhost/Parser.zbr:2209
+// zbr:selfhost/Parser.zbr:2227
         var pdefault = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2210
+// zbr:selfhost/Parser.zbr:2228
         if (self.textIs("=")) {
             self.advance();
             pdefault.append(_allocator, try self.parseExpr()) catch @panic("OOM");
         }
-// zbr:selfhost/Parser.zbr:2213
+// zbr:selfhost/Parser.zbr:2231
         return PParam.init(name, type_name, pdefault);
     }
 
     pub fn parseLambdaPrefix(self: *Parser) anyerror!PLambda {
         try self.expectText("def");
         try self.expectText("(");
-// zbr:selfhost/Parser.zbr:2219
+// zbr:selfhost/Parser.zbr:2237
         var params = std.ArrayList(PParam){};
-// zbr:selfhost/Parser.zbr:2220
+// zbr:selfhost/Parser.zbr:2238
         if ((!self.textIs(")"))) {
             params.append(_allocator, try self.parseLambdaParam()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2222
+// zbr:selfhost/Parser.zbr:2240
             while (self.textIs(",")) {
                 self.advance();
                 params.append(_allocator, try self.parseLambdaParam()) catch @panic("OOM");
             }
         }
         try self.expectText(")");
-// zbr:selfhost/Parser.zbr:2226
+// zbr:selfhost/Parser.zbr:2244
         var ret_type: []const u8 = "";
-// zbr:selfhost/Parser.zbr:2227
+// zbr:selfhost/Parser.zbr:2245
         if (self.textIs(":")) {
             self.advance();
-// zbr:selfhost/Parser.zbr:2229
+// zbr:selfhost/Parser.zbr:2247
             ret_type = try self.eatTypeName();
         }
-// zbr:selfhost/Parser.zbr:2230
+// zbr:selfhost/Parser.zbr:2248
         return PLambda.init(params, ret_type, std.ArrayList(PCaptureVar){}, std.ArrayList(PNode){}, std.ArrayList(PNode){});
     }
 
     pub fn parseCaptureBlock(self: *Parser) anyerror!std.ArrayList(PCaptureVar) {
         try self.expectText("capture");
         self.skipEol();
-// zbr:selfhost/Parser.zbr:2236
+// zbr:selfhost/Parser.zbr:2254
         if ((!self.isIndent())) {
-// zbr:selfhost/Parser.zbr:2237
+// zbr:selfhost/Parser.zbr:2255
             { _error_ctx = .{ .message = self.errorAt("expected indent after 'capture'") }; return error.ZebraError; }
         }
         self.advance();
-// zbr:selfhost/Parser.zbr:2239
+// zbr:selfhost/Parser.zbr:2257
         var caps = std.ArrayList(PCaptureVar){};
-// zbr:selfhost/Parser.zbr:2240
+// zbr:selfhost/Parser.zbr:2258
         while (((!self.isDedent()) and (!self.isEof()))) {
             self.skipEol();
-// zbr:selfhost/Parser.zbr:2242
+// zbr:selfhost/Parser.zbr:2260
             if (self.isDedent()) {
                 break;
             }
-// zbr:selfhost/Parser.zbr:2244
+// zbr:selfhost/Parser.zbr:2262
             var is_const = false;
-// zbr:selfhost/Parser.zbr:2245
+// zbr:selfhost/Parser.zbr:2263
             if (self.textIs("const")) {
-// zbr:selfhost/Parser.zbr:2246
+// zbr:selfhost/Parser.zbr:2264
                 is_const = true;
                 self.advance();
             } else {
                 try self.expectText("var");
             }
-// zbr:selfhost/Parser.zbr:2250
+// zbr:selfhost/Parser.zbr:2268
             const cap_line = self.peek().line;
-// zbr:selfhost/Parser.zbr:2251
+// zbr:selfhost/Parser.zbr:2269
             const cap_col = self.peek().col;
-// zbr:selfhost/Parser.zbr:2252
+// zbr:selfhost/Parser.zbr:2270
             const cap_name = try self.eatId();
-// zbr:selfhost/Parser.zbr:2253
+// zbr:selfhost/Parser.zbr:2271
             var cap_type: []const u8 = "";
-// zbr:selfhost/Parser.zbr:2254
+// zbr:selfhost/Parser.zbr:2272
             if (self.textIs(":")) {
                 self.advance();
-// zbr:selfhost/Parser.zbr:2256
+// zbr:selfhost/Parser.zbr:2274
                 cap_type = try self.eatTypeName();
             }
-// zbr:selfhost/Parser.zbr:2257
+// zbr:selfhost/Parser.zbr:2275
             var init_list = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2258
+// zbr:selfhost/Parser.zbr:2276
             if (self.textIs("=")) {
                 self.advance();
                 init_list.append(_allocator, try self.parseExpr()) catch @panic("OOM");
@@ -5499,82 +5531,82 @@ pub const Parser = struct {
             self.skipEol();
             caps.append(_allocator, PCaptureVar.init(cap_name, cap_type, init_list, is_const)) catch @panic("OOM");
         }
-// zbr:selfhost/Parser.zbr:2265
+// zbr:selfhost/Parser.zbr:2283
         if (self.isDedent()) {
             self.advance();
         }
-// zbr:selfhost/Parser.zbr:2267
+// zbr:selfhost/Parser.zbr:2285
         return caps;
     }
 
     pub fn parseStringInterp(self: *Parser) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:2271
+// zbr:selfhost/Parser.zbr:2289
         var parts = std.ArrayList(PNode){};
         parts.append(_allocator, PNode{ .expr_str = self.peek().text }) catch @panic("OOM");
         self.advance();
-// zbr:selfhost/Parser.zbr:2276
+// zbr:selfhost/Parser.zbr:2294
         while (((!self.isStringStop()) and (!self.isEof()))) {
             parts.append(_allocator, try self.parseExpr()) catch @panic("OOM");
-// zbr:selfhost/Parser.zbr:2280
+// zbr:selfhost/Parser.zbr:2298
             if (self.isStringPartFormat()) {
                 parts.append(_allocator, PNode{ .expr_format = self.peek().text }) catch @panic("OOM");
                 self.advance();
             }
-// zbr:selfhost/Parser.zbr:2284
+// zbr:selfhost/Parser.zbr:2302
             if (self.isRcurlySpecial()) {
                 self.advance();
             }
-// zbr:selfhost/Parser.zbr:2287
+// zbr:selfhost/Parser.zbr:2305
             if (self.isStringPart()) {
                 parts.append(_allocator, PNode{ .expr_str = self.peek().text }) catch @panic("OOM");
                 self.advance();
             }
         }
-// zbr:selfhost/Parser.zbr:2291
+// zbr:selfhost/Parser.zbr:2309
         if (self.isStringStop()) {
             parts.append(_allocator, PNode{ .expr_str = self.peek().text }) catch @panic("OOM");
             self.advance();
         }
-// zbr:selfhost/Parser.zbr:2294
+// zbr:selfhost/Parser.zbr:2312
         return PNode{ .expr_string_interp = blk_box_71: { const _bv: std.meta.Child(@FieldType(PNode, "expr_string_interp")) = PStringInterp.init(parts); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_71 _bp; } };
     }
 
     pub fn parseCallArgs(self: *Parser) anyerror!std.ArrayList(PNode) {
-// zbr:selfhost/Parser.zbr:2297
+// zbr:selfhost/Parser.zbr:2315
         var args = std.ArrayList(PNode){};
-// zbr:selfhost/Parser.zbr:2298
+// zbr:selfhost/Parser.zbr:2316
         while ((!self.textIs(")"))) {
-// zbr:selfhost/Parser.zbr:2301
+// zbr:selfhost/Parser.zbr:2319
             if ((self.isId() and std.mem.eql(u8, self.peekAt(1).text, ":"))) {
-// zbr:selfhost/Parser.zbr:2302
+// zbr:selfhost/Parser.zbr:2320
                 const label: []const u8 = self.peek().text;
                 self.advance();
                 self.advance();
-// zbr:selfhost/Parser.zbr:2305
+// zbr:selfhost/Parser.zbr:2323
                 const val_pn = try self.parseExpr();
-// zbr:selfhost/Parser.zbr:2306
+// zbr:selfhost/Parser.zbr:2324
                 var val_list = std.ArrayList(PNode){};
                 val_list.append(_allocator, val_pn) catch @panic("OOM");
                 args.append(_allocator, PNode{ .expr_named_arg = blk_box_72: { const _bv: std.meta.Child(@FieldType(PNode, "expr_named_arg")) = PNamedArg.init(label, val_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_72 _bp; } }) catch @panic("OOM");
             } else {
                 args.append(_allocator, try self.parseExpr()) catch @panic("OOM");
             }
-// zbr:selfhost/Parser.zbr:2311
+// zbr:selfhost/Parser.zbr:2329
             if (self.textIs(",")) {
                 self.advance();
             }
         }
         try self.expectText(")");
-// zbr:selfhost/Parser.zbr:2314
+// zbr:selfhost/Parser.zbr:2332
         return args;
     }
 
     pub fn parse(src: []const u8, file_name: []const u8) anyerror!PNode {
-// zbr:selfhost/Parser.zbr:2319
+// zbr:selfhost/Parser.zbr:2337
         const toks = try Lexer.tokenize(src);
-// zbr:selfhost/Parser.zbr:2320
+// zbr:selfhost/Parser.zbr:2338
         var p = Parser.init(toks, file_name);
-// zbr:selfhost/Parser.zbr:2321
+// zbr:selfhost/Parser.zbr:2339
         return p.parseModule();
     }
 

@@ -45,16 +45,13 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 "Accumulate and rerun" state model (all previous cells stay in scope).
 See design notes in `selfhost/` journal and `SELFHOST_JOURNAL.md`.
 
-### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9)
+~~### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9, scope-1)~~ ✓ DONE (2026-04-26)
 - **`@reflectable` annotation** — top-level `@reflectable` directive sets `mods.reflectable`
   on the following `class`/`struct` decl; gates the per-class strict parser emission.
-- **`Json.parseStrict(T, str): ?T`** — scope-1 done (Zig backend, 2026-04-26): only
-  `int`/`float`/`bool`/`str` fields supported; missing key, type mismatch, or extra key → null.
-  Per-class `_json_parse_strict_<T>` free function emitted next to the reflect arrays.
-  Test: `test/json_parse_strict_test.zbr`. Bootstrap 5/5; 41/41 smoke.
-- **Selfhost parity — pending.** Selfhost parser, astbuilder, typechecker, codegen need the
-  same plumbing.  No selfhost source uses `@reflectable`, so bootstrap stays clean; the gap
-  only manifests if a selfhost-compiled program tries to use it.
+- **`Json.parseStrict(T, str): ?T`** — scope-1 (`int`/`float`/`bool`/`str` fields only):
+  missing key, type mismatch, or extra key → null.  Per-class
+  `_json_parse_strict_<T>` free function emitted next to the reflect arrays.
+- Both backends; bootstrap 5/5; 42/42 smoke.  Test: `test/json_parse_strict_test.zbr`.
 - **Future scope:** sized numerics, `T?` optional fields, `List(T)` of primitives, nested
   `@reflectable` classes, `Reflect.fieldNames()` / `Reflect.fieldValue()` runtime API.  
 See `wiki/pages/concepts/concept_zebra-reflection.md`.

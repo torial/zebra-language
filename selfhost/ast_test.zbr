@@ -50,7 +50,7 @@ class AstTest
 
     def testDeclVar()
         const s = ast.Span(5, 1, 5, 10)
-        const mods = ast.Modifiers(false, false, false, false, false, false)
+        const mods = ast.Modifiers(false, false, false, false, false, false, false)
         const dv = ast.DeclVar(s, mods, "x", nil, nil, false)
         assert dv.name == "x"
         assert not dv.is_const
