@@ -149,6 +149,9 @@ smoke test/contract_result_test.zbr
 smoke test/contract_result_throws_test.zbr
 # ensure on void function with implicit fall-off return: defer must still fire.
 smoke test/contract_ensure_falloff_test.zbr
+# ensure with `result` member access: TC must infer result's return type
+# so result.len, result.startsWith, etc. emit correct codegen.
+smoke test/contract_result_member_test.zbr
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr

@@ -486,12 +486,17 @@ class InferCtx
     var dep_types: ModuleTypes
     var current_class: str
     var scope: HashMap(str, Type_)
+    var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
 
     cue init(module_types: ModuleTypes, current_class: str)
         this.module_types = module_types
         this.dep_types = ModuleTypes()
         this.current_class = current_class
         scope = HashMap()
+        this.current_return_type = nil
+
+    def withReturnType(rt: Type_?)
+        this.current_return_type = rt
 
     # Phase 17c — attach merged dependency ModuleTypes (from codegen's
     # buildModuleTypes over transitive deps) so inferExpr can see unions /
@@ -711,8 +716,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 return Type_.unknown_
             return Type_.named(ctx.current_class)
         on Expr.result_ as _
-            # CodeGen substitutes `result` with `_result` whose type comes from the
-            # function signature; the inference type here is unknown.
+            # `result` has the current function's declared return type so
+            # member access (e.g., `ensure result.len > 0`) gets correct codegen.
+            if ctx.current_return_type != nil
+                return ctx.current_return_type to!
             return Type_.unknown_
         on Expr.ident as id
             var nm: str = id.name

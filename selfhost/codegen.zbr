@@ -1942,6 +1942,8 @@ struct Generator
             # heuristics with walker-derived types.
             var ctx17c = InferCtx(this.module_types, owner)
             ctx17c.withDepTypes(this.dep_types)
+            if m.return_type != nil
+                ctx17c.withReturnType(typeFromRef(m.return_type to!))
             for pp in m.params
                 if pp.type_ != nil
                     ctx17c.bind(pp.name, typeFromRef(pp.type_ to!))
