@@ -2368,11 +2368,31 @@ const TypeChecker = struct {
                 // Json.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Json")) {
                     _ = try tc.inferExpr(mem.object);
-                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    // Json.parseStrict(T, src) — args[0] is a class ident used as a
+                    // type-as-value.  Inferring it would treat it as a value reference;
+                    // skip it and infer remaining args normally.
+                    const is_strict = std.mem.eql(u8, mem.member, "parseStrict");
+                    const skip_first = is_strict and e.args.len >= 1 and e.args[0].value.* == .ident;
+                    for (e.args, 0..) |a, i| {
+                        if (skip_first and i == 0) continue;
+                        _ = try tc.inferExpr(a.value);
+                    }
                     if (std.mem.eql(u8, mem.member, "parse")) {
                         const boxed = tc.map_alloc.create(Type) catch return .json_value;
                         boxed.* = .json_value;
                         return .{ .optional = boxed };
+                    }
+                    if (is_strict) {
+                        if (e.args.len >= 1 and e.args[0].value.* == .ident) {
+                            if (tc.resolve.exprs.get(&e.args[0].value.ident)) |sym| {
+                                if (sym.kind == .class) {
+                                    const boxed = tc.map_alloc.create(Type) catch return .unknown;
+                                    boxed.* = .{ .named = sym };
+                                    return .{ .optional = boxed };
+                                }
+                            }
+                        }
+                        return .unknown;
                     }
                     if (std.mem.eql(u8, mem.member, "stringify")) return .string;
                     if (std.mem.eql(u8, mem.member, "object"))    return .json_value;

@@ -106,6 +106,10 @@ pub const Modifiers = packed struct {
     static_: bool = false, // type-associated (not instance)
     readonly: bool = false,
     extern_: bool = false,
+    /// `@reflectable` annotation — opts the class into Tier-3 reflection
+    /// (currently: Json.parseStrict).  Set by AstBuilder when a preceding
+    /// `@reflectable` directive is consumed.
+    reflectable: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────

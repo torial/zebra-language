@@ -2431,6 +2431,12 @@ const Generator = struct {
             try g.w.writeAll("};\n\n");
         }
 
+        // Tier-3 reflection: `@reflectable class T` opts into Json.parseStrict.
+        // Emit a per-class strict parser that returns `?*T`.
+        if (n.mods.reflectable) {
+            try g.genJsonParseStrictFn(n);
+        }
+
         try g.genExportWrappers(n.name, n.members);
     }
 
@@ -4224,6 +4230,34 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "parseStrict")) {
+            // First arg must be a class ident; second arg is the JSON source.
+            if (args.len < 2 or args[0].value.* != .ident) {
+                std.debug.panic(
+                    "Json.parseStrict requires (T, src) where T is a class name",
+                    .{},
+                );
+            }
+            const class_name = args[0].value.ident.name;
+            const sym = g.resolve.exprs.get(&args[0].value.ident);
+            if (sym == null or sym.?.kind != .class) {
+                std.debug.panic(
+                    "Json.parseStrict({s}, …): '{s}' is not a class declared in this module",
+                    .{ class_name, class_name },
+                );
+            }
+            const cls = sym.?.decl.class;
+            if (!cls.mods.reflectable) {
+                std.debug.panic(
+                    "Json.parseStrict requires '@reflectable class {s}' — add the annotation to {s}'s declaration.",
+                    .{ class_name, class_name },
+                );
+            }
+            try g.w.print("_json_parse_strict_{s}(", .{class_name});
+            try g.genExpr(args[1].value);
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "stringify")) {
             try g.w.writeAll("_json_stringify(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("_json_object()");
@@ -4239,6 +4273,90 @@ const Generator = struct {
             return true;
         }
         return false;
+    }
+
+    // ── Tier-3 reflection: Json.parseStrict per-class parser ─────────────────
+    //
+    // For `@reflectable class T`, emit `fn _json_parse_strict_T(src) ?*T`.
+    // Strict semantics: missing key, type mismatch, or extra key → null.
+    // Scope-1 supports only int/float/bool/str fields.
+
+    const StrictFieldKind = enum { int_, float_, bool_, str_ };
+
+    fn primitiveFieldKind(tr: Ast.TypeRef) ?StrictFieldKind {
+        return switch (tr) {
+            .named => |n| if (std.mem.eql(u8, n.name, "int")) .int_
+                else if (std.mem.eql(u8, n.name, "float")) .float_
+                else if (std.mem.eql(u8, n.name, "bool")) .bool_
+                else if (std.mem.eql(u8, n.name, "str") or std.mem.eql(u8, n.name, "String")) .str_
+                else null,
+            else => null,
+        };
+    }
+
+    fn genJsonParseStrictFn(g: Generator, n: *Ast.DeclClass) anyerror!void {
+        const Field = struct { name: []const u8, kind: StrictFieldKind };
+        var fields = std.ArrayListUnmanaged(Field){};
+        defer fields.deinit(g.alloc);
+
+        for (n.members) |decl| {
+            const v = switch (decl) { .var_ => |vv| vv, else => continue };
+            if (v.mods.static_) continue;
+            const tr = v.type_ orelse std.debug.panic(
+                "@reflectable class {s}: field '{s}' has no declared type — Json.parseStrict requires explicit field types",
+                .{ n.name, v.name },
+            );
+            const k = primitiveFieldKind(tr) orelse {
+                const ts = try typeRefStr(tr, g.alloc);
+                defer g.alloc.free(ts);
+                std.debug.panic(
+                    "Json.parseStrict on {s}: field '{s}' has unsupported type '{s}' (only int/float/bool/str supported in 0.9)",
+                    .{ n.name, v.name, ts },
+                );
+            };
+            try fields.append(g.alloc, .{ .name = v.name, .kind = k });
+        }
+
+        try g.w.print("fn _json_parse_strict_{s}(_src: []const u8) ?*{s} {{\n", .{ n.name, n.name });
+        try g.w.writeAll("    const _v = _json_parse(_src) orelse return null;\n");
+        try g.w.writeAll("    if (!_json_is_object(_v)) return null;\n");
+        if (fields.items.len > 0) {
+            try g.w.writeAll("    var _it = _v.object.iterator();\n");
+            try g.w.writeAll("    while (_it.next()) |_e| {\n");
+            try g.w.writeAll("        const _k = _e.key_ptr.*;\n");
+            try g.w.writeAll("        const _known = ");
+            for (fields.items, 0..) |f, i| {
+                if (i > 0) try g.w.writeAll(" or ");
+                try g.w.print("std.mem.eql(u8, _k, \"{s}\")", .{f.name});
+            }
+            try g.w.writeAll(";\n");
+            try g.w.writeAll("        if (!_known) return null;\n");
+            try g.w.writeAll("    }\n");
+        } else {
+            try g.w.writeAll("    if (_v.object.count() != 0) return null;\n");
+        }
+        for (fields.items) |f| {
+            try g.w.print("    {{ const _x = _v.object.get(\"{s}\") orelse return null;\n", .{f.name});
+            switch (f.kind) {
+                .int_   => try g.w.writeAll("      switch (_x) { .integer => {}, else => return null } }\n"),
+                .float_ => try g.w.writeAll("      switch (_x) { .float, .integer => {}, else => return null } }\n"),
+                .bool_  => try g.w.writeAll("      switch (_x) { .bool => {}, else => return null } }\n"),
+                .str_   => try g.w.writeAll("      switch (_x) { .string => {}, else => return null } }\n"),
+            }
+        }
+        try g.w.print("    const _r = _allocator.create({s}) catch return null;\n", .{n.name});
+        try g.w.writeAll("    _r.* = .{};\n");
+        try g.w.print("    _r._type_tag = _ttag_{s};\n", .{n.name});
+        for (fields.items) |f| {
+            switch (f.kind) {
+                .int_   => try g.w.print("    _r.{s} = _json_get_int(_v, \"{s}\");\n", .{ f.name, f.name }),
+                .float_ => try g.w.print("    _r.{s} = _json_get_float(_v, \"{s}\");\n", .{ f.name, f.name }),
+                .bool_  => try g.w.print("    _r.{s} = _json_get_bool(_v, \"{s}\");\n", .{ f.name, f.name }),
+                .str_   => try g.w.print("    _r.{s} = _json_get_str(_v, \"{s}\");\n", .{ f.name, f.name }),
+            }
+        }
+        try g.w.writeAll("    return _r;\n");
+        try g.w.writeAll("}\n\n");
     }
 
     // ── Hash static calls ────────────────────────────────────────────────────

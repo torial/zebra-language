@@ -72,6 +72,11 @@ const Builder = struct {
     // ── TopDeclList (left-recursive) ──────────────────────────────────────────
 
     fn collectTopDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl)) !void {
+        var pending_reflectable = false;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable);
+    }
+
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -79,17 +84,43 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try out.append(b.arena, try b.buildTopDecl(kids[0]));
+                    try b.processTopDecl(kids[0], out, pending_reflectable);
                 } else {
-                    try b.collectTopDecls(kids[0], out);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try out.append(b.arena, try b.buildTopDecl(kids[1]));
+                    try b.processTopDecl(kids[1], out, pending_reflectable);
                 }
             },
             .leaf => unreachable,
         }
+    }
+
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool) anyerror!void {
+        const decl_node = singleChild(td);
+        if (ntOf(decl_node) == .AtDirective) {
+            // AtDirective → at_id eol  |  at_id ( ArgList ) eol
+            const at_kids = ch(decl_node);
+            const at_text = leafText(at_kids[0], b.tokens); // includes leading '@'
+            const name = if (at_text.len > 0 and at_text[0] == '@') at_text[1..] else at_text;
+            if (std.mem.eql(u8, name, "reflectable")) {
+                pending_reflectable.* = true;
+            }
+            // Unknown @directive: ignored silently (was a panic; future-reserved).
+            return;
+        }
+        var d = try b.buildTopDecl(td);
+        if (pending_reflectable.*) {
+            applyReflectable(&d) catch |err| switch (err) {
+                error.ReflectableOnNonClass => std.debug.panic(
+                    "@reflectable can only precede `class` or `struct` declarations",
+                    .{},
+                ),
+            };
+            pending_reflectable.* = false;
+        }
+        try out.append(b.arena, d);
     }
 
     fn buildTopDecl(b: Builder, node: TN) anyerror!Ast.Decl {
@@ -112,9 +143,17 @@ const Builder = struct {
             },
             .AspectDecl    => @panic("TODO: AspectDecl"),
             .WeaveDecl     => @panic("TODO: WeaveDecl"),
-            .AtDirective   => @panic("TODO: top-level AtDirective"),
+            .AtDirective   => unreachable, // filtered out in processTopDecl
             else => std.debug.panic("buildTopDecl: unexpected NT {s}", .{@tagName(ntOf(decl_node))}),
         };
+    }
+
+    fn applyReflectable(d: *Ast.Decl) error{ReflectableOnNonClass}!void {
+        switch (d.*) {
+            .class   => |c| c.mods.reflectable = true,
+            .struct_ => |s| s.mods.reflectable = true,
+            else     => return error.ReflectableOnNonClass,
+        }
     }
 
     // ── Use directive ─────────────────────────────────────────────────────────
