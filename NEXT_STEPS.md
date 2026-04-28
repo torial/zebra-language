@@ -96,12 +96,32 @@ See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc still needs updating to reflect `result` impl.
 See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 
-### 19. Error recovery — continue after first compiler error
-The Zebra compiler stops on the first error in each phase. Collecting all errors in a pass and
-reporting them together is critical for IDE integration, REPL usability, and `zebra check`.  
-**Scope:** Propagate an error-collection state through Resolver and TypeChecker; CodeGen skips
-method bodies that have unresolved types. Errors accumulate in a list, then all printed at exit.  
-**Effort:** Medium–large. See `concept_zebra-open-concerns.md` P4. 1.0-era.
+### 19. Error recovery — current state and remaining gaps
+**Largely done already (verified 2026-04-26 via multi-error fixture):** Bind, Resolve, and
+TypeCheck all collect-and-continue via `Diagnostic` lists; main.zig prints all of them
+before halting if any are errors.  A 5-error fixture reports all 5 from the bootstrap
+backend.
+
+**Remaining gaps:**
+- **Tokenizer**: `error.UnexpectedCharacter` (e.g. `\r` from CRLF — see CLAUDE.md hazard
+  section) surfaces as `internal compiler error` with no source location.  Should be a
+  positioned diagnostic.
+- **AstBuilder `@panic("TODO: …")` paths**: AspectDecl, WeaveDecl crash hard.  Convert to
+  a diagnostic + skip-the-decl.
+- **Selfhost typechecker parity**: selfhost only reports 2 of the 5 errors that bootstrap
+  catches on the same fixture — missing the unresolved-type-in-type-position diagnostic and
+  both `var x: T = "string"` style type-mismatch diagnostics.
+
+### 19a. Boundary-restart parser recovery (deferred)
+The Earley parser stops on the first syntax error.  Full multi-error Earley recovery is
+genuinely hard and most syntax errors cascade from one root cause, so it's low value.
+But indent-based languages have natural sync points: every `dedent` back to column 0 is
+a clean restart boundary.  After a parse error, scan forward to the next top-decl-starter
+(`class` / `struct` / `def` / `use` / `static` / blank-then-`@`) at column 0, restart the
+parse from there, accumulate errors across restarts.  Catches "missing paren in method A
++ bad expression in method B" without trying to recover within a broken decl.  
+**Effort:** Session-sized (restart-aware token cursor, ParseResult holds
+`errors: []ParseError`, decision logic for safe restart points).  1.0-era.
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
 - ~~Audit which reserved keywords (`set`/`get`/`body`/`same`) are grammar-load-bearing~~ ✓ DONE (`set`/`get`/`body`/`post`/`pro` removed 2026-04-19; `same` kept — TypeRef)
