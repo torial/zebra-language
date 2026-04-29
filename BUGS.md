@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-088. Next new bug: BUG-089.**
+**Last bug number generated: BUG-090. Next new bug: BUG-091.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -38,6 +38,60 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ## Open Bugs
+
+### BUG-089: `print` of a mixin-method `str` return falls back to `{any}` byte-array formatting
+- **Severity:** Low (cosmetic — wrong output format; does not affect type-annotated locals)
+- **Status:** Open
+- **Symptom:** Calling a mixin method that returns `str` directly inside `print` emits the bytes as a `[]const u8` integer-array fallback instead of as text.
+- **Reproducer:**
+  ```zebra
+  mixin Greeter
+      def hi(): str
+          return "hi"
+
+  class Foo adds Greeter
+      cue init()
+          pass
+
+  class Main
+      static
+          def main
+              var f = Foo()
+              print f.hi()        # prints `{ 104, 105 }`, not `hi`
+  ```
+- **Generated Zig:** `std.debug.print("{any}\n", .{f.hi()});` — wrong format specifier; should be `"{s}\n"`.
+- **Root cause:** TC inferExpr on a mixin-derived method call does not surface the declared return type, so the print-emission path in CodeGen sees `Type.unknown` and falls back to `{any}`.  Direct access via a typed local (`var s: str = f.hi(); print s`) emits `{s}` correctly — confirming this is a TC propagation gap on the call site, not a codegen format selector bug.
+- **Workaround:** Assign to a `: str`-annotated local before printing.
+- **Discovered:** 2026-04-28 while spot-verifying QUICKSTART.md examples.
+
+---
+
+### BUG-090: `for n in Reflect.fieldNames(obj)` loses element type — `print n` emits `{any}`
+- **Severity:** Low (cosmetic; iteration itself is correct)
+- **Status:** Open
+- **Symptom:** Iterating a `Reflect.fieldNames(obj)` result (or any other `[]str`-returning stdlib call) loses the element type, so `print n` inside the loop emits the byte-array fallback instead of the string.
+- **Reproducer:**
+  ```zebra
+  class User
+      var name: str = ""
+      var age: int = 0
+
+  class Main
+      static
+          def main
+              var u = User()
+              u.name = "Alice"
+              for n in Reflect.fieldNames(u)
+                  print n               # prints `{ 110, 97, 109, 101 }` then `{ 97, 103, 101 }`
+              print u.name              # prints `Alice` correctly — direct field access is fine
+  ```
+- **Generated Zig:** `for (_reflect_User_fields[0..]) |n| { std.debug.print("{any}\n", .{n}); }` — `n` is `[]const u8` but the print emits `{any}`.
+- **Root cause:** for-loop variable element-type propagation gap.  TC infers the iter source as `[]str` / `str_slice` but doesn't record `n`'s element type into the per-statement `expr_types` map that the print-emission path consults.  Same bug class as BUG-089 (TC propagation gap surfaces as wrong print format), different code path.
+- **Workaround:** Assign through a `: str`-annotated temp inside the loop before printing.
+- **Related:** BUG-017 (legacy `len`-on-unknown-type fallback).
+- **Discovered:** 2026-04-28 while spot-verifying QUICKSTART.md §25 reflection example.
+
+---
 
 ### BUG-088: def-level `try/catch` in non-void return function falls off the end
 - **Severity:** Medium (correctness — Zig refuses to compile the generated code)
