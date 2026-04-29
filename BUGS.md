@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-090. Next new bug: BUG-091.**
+**Last bug number generated: BUG-093. Next new bug: BUG-094.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -38,6 +38,63 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ## Open Bugs
+
+### BUG-091: `List(T)` parameter receiver is `*const` — `.add()` rejected by Zig
+- **Severity:** Medium (significant ergonomic loss; forces an out-param-on-class workaround)
+- **Status:** Open
+- **Symptom:** Passing a `List(T)` as a function parameter and calling `.add()` (or any mutating method) on it emits a Zig `*const ArrayList(...)` receiver, which Zig's `append(...)` rejects ("cast discards const qualifier").
+- **Reproducer:**
+  ```zebra
+  def fillIt(out: List(str))
+      out.add("hello")
+  ```
+  Generated Zig:
+  ```zig
+  fn fillIt(out: *const std.ArrayList([]const u8)) void {
+      out.append(_allocator, _intern("hello")) catch unreachable;  // ← *const, but append takes *Self
+  }
+  ```
+- **Workaround:** Make the list a class field and call the method on a class instance instead of passing as an out-parameter. Tools written during the book-cleanup work (`zebra-language-book/zebra-tools/book_lint.zbr`) use this dodge throughout — see Walker / Linter / Extractor classes.
+- **Root-cause hypothesis:** Zebra treats `List(T)` parameters by-value-with-const-borrow; needs to detect mutation in the body and pass mutably (or always pass mutably for collection types).
+- **Discovered:** 2026-04-29 while writing `book_lint.zbr` (Phase 3 dogfooding tools).
+
+---
+
+### BUG-092: `var lines: List(str) = s.split("\n")` doesn't auto-collect SplitIterator
+- **Severity:** Low (small annoyance; the `for line in s.split(...)` form works fine)
+- **Status:** Open
+- **Symptom:** Assigning the result of `s.split(...)` to a typed `List(str)` local fails compile because the codegen emits `std.mem.splitSequence(...)` (returning a SplitIterator) into a slot annotated `std.ArrayList([]const u8)`. Type mismatch.
+- **Reproducer:**
+  ```zebra
+  var content: str = "a\nb\nc"
+  var lines: List(str) = content.split("\n")    # → "expected ArrayList, found SplitIterator"
+  ```
+- **Workaround:** Iterate the result directly: `for line in content.split("\n")`. Or build the list manually:
+  ```zebra
+  var lines: List(str) = List(str)()
+  for line in content.split("\n")
+      lines.add(line)
+  ```
+- **QUICKSTART §31 says** `s.split(sep)` returns `List(str)` — either the doc is aspirational or the typed-assignment form needs an auto-collect step in codegen.
+- **Discovered:** 2026-04-29 while writing `book_lint.zbr`.
+
+---
+
+### BUG-093: `s.len` is `usize`, no `int` conversion — arithmetic fails on slice indices
+- **Severity:** Low (forces awkward workarounds; comparisons still work)
+- **Status:** Open
+- **Symptom:** `s.len` codegens as `.len` on a `[]const u8`, which is `usize` in Zig.  Comparisons against `int` literals auto-promote (`if s.len > 3` works), but **subtraction fails**: `s.len - 3` for slice indices errors with "arithmetic operands must have the same type: 'uint' vs 'int'".  No `s.len.toInt()` builtin, and `s.len to int` is a parse error.
+- **Reproducer:**
+  ```zebra
+  var s: str = "hello.md"
+  var n: int = s.len             # ← "expected i64, found usize"
+  var trimmed: str = s[0..s.len - 3]   # ← "uint vs int" arithmetic error
+  ```
+- **Workaround:** Compute length via a counter loop (`for c in s: n = n + 1`), or use methods like `s.endsWith(...)` that don't require length arithmetic.
+- **Doc claim:** QUICKSTART §3 says `s.len` is `int`.  Either fix the codegen to emit a typed `i64` (with a runtime `@intCast`) or update the doc.
+- **Discovered:** 2026-04-29 while writing `book_extract.zbr` (needed `s.len - 3` to strip `.md` from filenames).
+
+---
 
 ### BUG-089: `print` of a mixin-method `str` return falls back to `{any}` byte-array formatting
 - **Severity:** Low (cosmetic — wrong output format; does not affect type-annotated locals)
