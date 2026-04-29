@@ -176,6 +176,12 @@ pub fn build(b: *std.Build) void {
     smoke_run.step.dependOn(&exe.step);
     test_step.dependOn(&smoke_run.step);
 
+    // Escape-hatches guard: fails if `page_allocator` count in src/ or in
+    // selfhost/stdlib_preamble.zig drifts from the recorded baseline.  Cheap;
+    // catches accidental new escape hatches before they're committed.
+    const escape_check = b.addSystemCommand(&.{ "bash", "tools/escape_hatches_check.sh" });
+    test_step.dependOn(&escape_check.step);
+
     // ── Selfhost build ────────────────────────────────────────────────────────
     //
     // `zig build selfhost` emits all selfhost/*.zbr files to /tmp/bs-zig via
