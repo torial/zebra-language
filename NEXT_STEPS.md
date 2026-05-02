@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-04-24 (session 14 — #4 already done; #18 Progress module complete)
+**Last updated:** 2026-05-01 (TC robustness audit → item 19.5 cluster + item 13 reframed post-1.0)
 
 ---
 
@@ -119,6 +119,50 @@ backend.
   a real piece of work (Diagnostic type, error list threaded through every checkStmt arm,
   wiring to main.zbr's print loop), not a small parity tweak.
 
+### 19.5. TC reliability + extracted VCS-helper features (oracle-prep cluster)
+
+Cluster of high-priority items that emerged from the 2026-05-01 typecheck-as-merge-oracle
+audit (`C:/tmp/zebra-tc-audit.md`).  Most of these would meaningfully improve daily Zebra
+workflow *without* waiting for a full Zebra-VCS rewrite (which is now reframed as a
+post-1.0 capstone — see item 13).
+
+**a. BUG-099 — Split overloaded `.unknown`**  ★ keystone
+Three-way split into `.context_dependent` / `.unknown` / `.unresolved`. Gates merge-oracle
+reliability and is the upstream cause of half the silent-accept bugs (BUG-105, BUG-106,
+BUG-108).  Goal state: zero `.unresolved` instances at typecheck completion on a valid
+program.  See `BUGS.md` BUG-099 for full design.  **Effort:** session-sized; touches
+`Type` definition + every site currently returning `.unknown` for re-classification.
+
+**b. `zebra typecheck-merge` subcommand**  ★ extracts oracle benefit pre-VCS
+The only piece of the Zebra-VCS-as-merge-oracle thesis (`concept_zebra-vcs-architecture`)
+that earns its place pre-1.0.  Runs on a git merge-result and emits typed diagnostics
+instead of `<<<<<<<` markers.  Integrates as a git `pre-merge-commit` hook.  Cleanly
+extractable from the larger VCS rewrite.  **Effort:** 1–2 days once BUG-099 lands.
+
+**c. Per-commit zip snapshot git hook**  ★ immediate stash-hazard relief
+20-line shell script as a git `post-commit` hook; saves a workspace zip to
+`.git/zsnapshots/<commit-id>.zip`.  Solves the "lost work via stash misuse" class of
+bugs that hit Zebra twice (see `concept_vcs-alternatives` Tier 1 items).  Costs disk
+space; pays for itself the first time it's needed.  **Effort:** 1 hour. **Independent**
+of the rest of the cluster — could land tomorrow.
+
+**d. Bootstrap-check feedback latency**
+`tools/bootstrap_check.sh` is the integration safety net but slow under CPU throttle
+(observed 5–10 min wall on 2026-04-30 PDF rebuild day).  Profile + optimize where cheap
+(parallel build steps, cache invalidation tightening).  Concrete sub-items deferred
+until profiling identifies hotspots.  **Effort:** unknown; gated on profiling pass.
+
+**e. (item 19, already queued) — selfhost TC diagnostics**
+Listed here for cluster context.  Without item 19, selfhost cannot serve as the merge
+oracle (no diagnostics → only "passes / fails to compile" binary).  Sequencing: 19 →
+BUG-099 → typecheck-merge subcommand.
+
+**Cluster framing:** items a, b, e all chain toward "the typecheck-as-merge-oracle is a
+real, daily-useful tool" without committing to building a VCS.  Item c is independent
+stash-hazard relief.  Item d is orthogonal toolchain quality.
+
+---
+
 ### 19a. Boundary-restart parser recovery (deferred)
 The Earley parser stops on the first syntax error.  Full multi-error Earley recovery is
 genuinely hard and most syntax errors cascade from one root cause, so it's low value.
@@ -160,10 +204,21 @@ See `wiki/pages/projects/project_zebra.md` (milestone table 0.11).
 
 ## Longer Term (1.0 and Beyond)
 
-### 13. VCS in Zebra (agent-tools phase — before IDE)
-A version-control tool written in Zebra, inspired by Mercurial and Fossil.
-Priority over the IDE because VCS tooling is load-bearing for the self-hosting workflow itself
-(safe WIP management, corpus snapshots, bisect). See: `wiki/pages/projects/project_zebra.md`
+### 13. VCS in Zebra — post-1.0 capstone (reframed 2026-05-01)
+A version-control tool written in Zebra, architected as Pijul-shaped patch algebra +
+AST overlay for `.zbr` + typecheck-as-merge-oracle.  See
+`wiki/pages/concepts/concept_zebra-vcs-architecture.md` for the full design.
+
+**Reframing:** previously listed as "agent-tools phase, before IDE."  After the
+honest-ROI assessment on 2026-05-01, the *full* VCS rewrite is reframed as a post-1.0
+capstone (research/teaching artifact + flagship demo) rather than a near-term productivity
+investment.  The two pieces that *would* help daily — `zebra typecheck-merge` and the
+per-commit zip-snapshot hook — were extracted to item 19.5 (b, c).
+
+**Open question on the reframing:** if a future workflow change introduces sustained
+multi-week branches with real merges (e.g., a collaborator joins, or a long-running
+experimental fork stabilizes), the calculus shifts back toward Pijul-style merge correctness.
+Revisit if that materializes.
 
 ### 14. IDE — self-hosted (post contracts)
 Self-hosted Zebra + ImGui editor with:
