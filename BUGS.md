@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-093. Next new bug: BUG-094.**
+**Last bug number generated: BUG-108. Next new bug: BUG-109.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -39,44 +39,198 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ## Open Bugs
 
-### BUG-091: `List(T)` parameter receiver is `*const` — `.add()` rejected by Zig
-- **Severity:** Medium (significant ergonomic loss; forces an out-param-on-class workaround)
+### BUG-099: Split overloaded `.unknown` Type into `.context_dependent` / `.unknown` / `.unresolved` (TC reliability keystone)
+- **Severity:** High (foundational; gates merge-oracle reliability and is the upstream cause of many silent-accept bugs below)
 - **Status:** Open
-- **Symptom:** Passing a `List(T)` as a function parameter and calling `.add()` (or any mutating method) on it emits a Zig `*const ArrayList(...)` receiver, which Zig's `append(...)` rejects ("cast discards const qualifier").
-- **Reproducer:**
+- **Symptom:** The TC's `Type.unknown` is overloaded across three semantically distinct cases that propagate identically:
+  1. **Context-dependent (legitimate):** type depends on usage context (e.g., `nil` literal, `result` reference inside a function whose return type is being inferred).
+  2. **Opaque-by-design (legitimate):** the TC genuinely cannot and should not assign a concrete type (e.g., `zig_lit`, opaque cross-module externs, generic type parameters not yet substituted).
+  3. **Unresolved (illegitimate):** the TC failed to derive a type it ought to have known (e.g., member access on an unknown object, list literal element-type punted to codegen, cross-module field lookup miss).
+  Cases 1–3 all return `.unknown`. Downstream rules like "RHS of `var x: int = expr` must be `int`-compatible" can't tell case-3 from case-1, so:
   ```zebra
-  def fillIt(out: List(str))
-      out.add("hello")
+  var x: int = some_undefined_call()   # silently typechecks; RHS infers to .unknown
   ```
-  Generated Zig:
-  ```zig
-  fn fillIt(out: *const std.ArrayList([]const u8)) void {
-      out.append(_allocator, _intern("hello")) catch unreachable;  // ← *const, but append takes *Self
-  }
-  ```
-- **Workaround:** Make the list a class field and call the method on a class instance instead of passing as an out-parameter. Tools written during the book-cleanup work (`zebra-language-book/zebra-tools/book_lint.zbr`) use this dodge throughout — see Walker / Linter / Extractor classes.
-- **Root-cause hypothesis:** Zebra treats `List(T)` parameters by-value-with-const-borrow; needs to detect mutation in the body and pass mutably (or always pass mutably for collection types).
-- **Discovered:** 2026-04-29 while writing `book_lint.zbr` (Phase 3 dogfooding tools).
+- **Reproducer:** `var x: int = NoSuchMethod()` — RHS infers to `.unknown`, no diagnostic emitted.
+- **Root cause:** Type union in `src/TypeChecker.zig` collapses three different concepts into one variant.
+- **Fix sketch:** Split into three Type variants:
+  - `.context_dependent` — propagates without complaint until a concrete-type expectation site supplies a hint
+  - `.unknown` — opaque by design; never errors at expectation sites either
+  - `.unresolved` — alarm bell; first concrete-type expectation site emits a diagnostic and the value's source span gets the blame
+  Audit every site that currently returns `.unknown` and re-classify into the appropriate bucket. Goal state: zero `.unresolved` instances at typecheck completion on a valid program.
+- **Why three buckets, not two:** `.unresolved` is the alarm-bell category. Conflating it with `.unknown` (opaque-by-design) means we can't distinguish "the type system is doing its job on opaque externs" from "the TC gave up."  Three buckets makes the second case visible and countable — ideally always zero on accepted programs.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` cross-cutting finding). User-suggested three-bucket taxonomy 2026-05-01.
 
 ---
 
-### BUG-092: `var lines: List(str) = s.split("\n")` doesn't auto-collect SplitIterator
-- **Severity:** Low (small annoyance; the `for line in s.split(...)` form works fine)
+### BUG-100: `else => unreachable` in TC for-in HashMap two-var iteration is reachable
+- **Severity:** Medium (panic on parseable input; rare path)
 - **Status:** Open
-- **Symptom:** Assigning the result of `s.split(...)` to a typed `List(str)` local fails compile because the codegen emits `std.mem.splitSequence(...)` (returning a SplitIterator) into a slot annotated `std.ArrayList([]const u8)`. Type mismatch.
+- **Symptom:** `src/TypeChecker.zig:1220` panics when `for k, v in expr` is evaluated and `expr` is an ident whose Symbol resolves to anything other than `var_` or `param` (e.g., a method, class, or namespace name).
+- **Reproducer:** Construct a program where a `for k, v in someMethod` references a method directly. The structural guard at `:1207` (`if (s.iter.* != .ident) break :blk false;`) passes, the `is_hashmap_two_var` branch sets up, then `:1220`'s `switch (sym.decl) { .var_, .param, else => unreachable }` panics.
+- **Root cause:** The guard at `:1207` only checks AST shape; it doesn't guard the symbol kind. The line above (`:1212`) handles the same shape with `else => null`; line `:1220` should match that pattern.
+- **Fix sketch:** Replace `else => unreachable` with `else => return .unknown` (or `.unresolved` after BUG-099) and emit a diagnostic: `'<name>' is not iterable as HashMap`.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-1]).
+
+---
+
+### BUG-101: AstBuilder uses `std.debug.panic` instead of diagnostics for parse-tree shape violations
+- **Severity:** Low today (only the parser produces trees and it's well-tested) / Critical for VCS-merge-oracle future (operation-patches could synthesize trees)
+- **Status:** Open
+- **Symptom:** ~20 sites in `src/AstBuilder.zig` use `std.debug.panic` to assert parse-tree shapes (e.g., `:159, 551, 869, 896, 924, 941, 1086, 1589, 1650, 1908, 1928, 2052, 2131, 2169, 2277, 2430` — partial list). Failure mode is hard panic with terse message and no source span.
+- **Reproducer:** None today from any well-formed source (they're invariant assertions). But under a future operation-patch VCS where structural edits synthesize trees, every site is a live hazard.
+- **Root cause:** AstBuilder predates the Diagnostic infrastructure; these sites were the historical fail-fast paths.
+- **Fix sketch:** Long-horizon refactor — fold each panic into the `Diagnostic` system with a "synthesized AST violated invariant X" error class, including the offending parse-tree NT. Short-term: leave alone but document the assumption that only the parser produces trees.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-2]).
+
+---
+
+### BUG-102: Selfhost typechecker has 65+ `to!` force-unwraps — audit needed
+- **Severity:** Medium (each is a potential panic with no diagnostic; unknown how many are unguarded)
+- **Status:** Open
+- **Symptom:** `selfhost/typechecker.zbr` contains roughly 65 `to!` force-unwrap operations. Several are preceded by explicit nil-checks (safe); several appear unguarded. A nil at any unguarded `to!` is a hard panic with no diagnostic and no recovery.
+- **Specific suspects from initial scan:**
+  - `:722  return ctx.current_return_type to!` — fires if `result`/`return` is encountered outside any function context
+  - `:1015 var pt_val: Type_ = pt to!` — payload type unwrap; fires if union variant has no payload
+  - `:1079 var var_nm: str = tce.variant_name to!` — branch arm variant name; parser-shape dependent
+  - `:1095 ctx.bind(si.is_capture to!, cap_t)` — capture binding without an `as` name
+- **Reproducer:** Per-site reproducer needs construction; the audit found the count, not concrete crashes.
+- **Root cause:** Selfhost was written in `to!`-heavy style before `if x as n` binding form became idiomatic. Many `to!` calls are now unnecessarily aggressive.
+- **Fix sketch:** Triage the 65 sites by hot-path frequency. For each:
+  1. If the AST shape that nils the optional is provably impossible from any parser output, leave a comment proving why (`# safe: parser guarantees …`).
+  2. Otherwise convert to `if x as y` with a defensive diagnostic emit (gated on BUG-104's diag infrastructure).
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-3]).
+
+---
+
+### BUG-103: TC `extractFromDecls`/`extractFromMembers` silently skip unknown declaration variants
+- **Severity:** Low (only triggers on adding a new `Ast.Decl` variant; latent reliability hazard)
+- **Status:** Open
+- **Symptom:** `src/TypeChecker.zig:553, 583, 691, 862, 866` use `else => {}` in metadata-collection passes. A future `Ast.Decl` variant would be silently skipped, contributing no metadata and producing downstream `.unknown` types instead of a clear "I missed this."
+- **Reproducer:** Add a new `Decl` variant (or audit what an `enum_`/`mixin`/`extend` variant contributes vs other variants). The contrast is `checkTopDecl` at `:1011` which has no `else` arm at all — Zig's exhaustiveness checker forces every variant to be handled.
+- **Fix sketch:** Replace each `else => {}` with explicit handling for known variants and `else => @panic("unhandled decl variant: …")` (debug builds) or a TC diagnostic (release). Match the strict exhaustiveness pattern of `checkTopDecl`.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-1]).
+
+---
+
+### BUG-104: Unknown `@directive` silently ignored by AstBuilder
+- **Severity:** Low (typical case is benign; impacts merge-oracle and forward-compat)
+- **Status:** Open
+- **Symptom:** `src/AstBuilder.zig:107-111` ("Unknown @directive: ignored silently (was a panic; future-reserved).") drops unrecognized at-directives without a diagnostic. A merge that introduces `@reflectable_v2` against a compiler that hasn't shipped support would be silently accepted with the directive's intended effect missing.
+- **Reproducer:** Add `@nonsense_directive` before any class declaration; compiles cleanly, no warning.
+- **Fix sketch:** Convert to a warning-level diagnostic: `unknown @-directive '@foo'; ignored`. Merge-oracle can then surface the divergence.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-2]).
+
+---
+
+### BUG-105: `enum_member` and `union_variant` infer to `.unknown` instead of parent type
+- **Severity:** Medium (TODO comment in `:2892`; affects type inference for any enum/union expression usage)
+- **Status:** Open
+- **Symptom:** `src/TypeChecker.zig:2892, 2894` — `Color.red` infers to `.unknown` instead of `.named(Color)`; `Result.ok(...)` similarly. Downstream rules like `var c: Color = Color.red` then can't catch a mismatch because RHS is `.unknown`.
 - **Reproducer:**
   ```zebra
-  var content: str = "a\nb\nc"
-  var lines: List(str) = content.split("\n")    # → "expected ArrayList, found SplitIterator"
+  enum Color: red, blue
+  var c: int = Color.red    # should error; today silently typechecks
   ```
-- **Workaround:** Iterate the result directly: `for line in content.split("\n")`. Or build the list manually:
+- **Root cause:** TODO comments in `inferExpr` for these two AST kinds — never wired up.
+- **Fix sketch:** Resolve to `.named(parent_enum)` / `.named(parent_union)` from the resolver's symbol info. Becomes much easier after BUG-099 when `.unresolved` is the alarm-bell bucket.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-3]).
+
+---
+
+### BUG-106: List/dict/array literals don't check element-type homogeneity or cast validity
+- **Severity:** Medium (silent miscompile potential; merge-oracle blocker)
+- **Status:** Open
+- **Symptom:** `src/TypeChecker.zig:1705-1707` — `[1, "a"]` (heterogeneous) infers to `.unknown` without complaint. `dict_lit`, `array_lit` similar. Also `.cast` at `:1693` returns the cast target without validating source-type compatibility (`42 as ClassType` typechecks).
+- **Reproducer:**
   ```zebra
-  var lines: List(str) = List(str)()
-  for line in content.split("\n")
-      lines.add(line)
+  var xs: List(int) = [1, "two", 3]   # silently typechecks; RHS is .unknown
+  var c: ClassType = 42 as ClassType  # silently typechecks; impossible cast
   ```
-- **QUICKSTART §31 says** `s.split(sep)` returns `List(str)` — either the doc is aspirational or the typed-assignment form needs an auto-collect step in codegen.
-- **Discovered:** 2026-04-29 while writing `book_lint.zbr`.
+- **Fix sketch:** For literals, walk elements and verify common type (or common supertype if subtyping lands). For `.cast`, validate source/target compatibility (numeric→numeric, optional unwrap, named-class downcast).
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-4]).
+
+---
+
+### BUG-107: TC halt-on-diagnostics audit — verify codegen never runs on a tree with diags present
+- **Severity:** Medium (verification task; if the property doesn't hold today, this becomes High)
+- **Status:** Open (verification needed)
+- **Symptom:** `src/TypeChecker.zig` has only ONE `return error.X` site (line 3170, `error.ParseFailed`). The TC accumulates diagnostics into `tc.diags` and returns void; the halting story lives in `main.zig` (or wherever the TC is invoked from).
+- **Verification needed:**
+  1. Confirm `main.zig` checks `diags.items.len > 0` after typecheck and halts before codegen.
+  2. Confirm any other call site (selfhost, REPL, IDE, future merge-oracle) does the same.
+  3. If any path runs codegen on a diagnosed tree, that's an immediate elevation to High severity.
+- **Fix sketch (if gap found):** Centralize the check — TC could expose `hasErrors()` and any consumer that proceeds without consulting it should be considered a bug.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-5]).
+
+---
+
+### BUG-108: TC silent `.unknown` returns lack defensive diagnostics
+- **Severity:** Medium (umbrella for several P2/P3 sites; many become trivial after BUG-099)
+- **Status:** Open
+- **Symptom:** Multiple sites silently return `.unknown` where a diagnostic should fire if the TC has reached a state it shouldn't have. Each is benign on well-formed code (some other phase caught the error first) but failure-amplifying when the upstream catch is missed.
+  - `inferIdent` (`src/TypeChecker.zig:1739-1747`) — resolver miss returns `.unknown` with no defensive `emitError`. If Resolver is buggy, no diagnostic from TC.
+  - `inferMember` (`:1749-1768`) — cross-module member-not-found returns `.unknown` silently (`:1767`).
+  - `index`/`slice` on non-indexable (`:1678-1690`) — silently returns `.unknown` for `someInt[0]`.
+  - `this` outside class context (`:1672-1673`) — silently `.unknown` if `ext_self_type == null and owner_sym == null`.
+- **Fix sketch:** Add defensive `emitError` at each site. Most won't fire on well-formed code (other phases caught it); they're insurance. After BUG-099, these all become "if the result is `.unresolved`, emit at this site."
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entries [P2-1, P2-2, P2-3, P3-1]).
+
+---
+
+### BUG-097: `&out` follow-on of BUG-091 — passing already-`*ArrayList` arg through a chain
+- **Severity:** Medium (any function that takes a List/HashMap as a mutating out-param can't itself call helpers that take that container by value)
+- **Status:** Open
+- **Symptom:** With BUG-091's mutation-driven `*ArrayList` conversion, a function signature like `def freeVars(t: Term, out: List(str))` emits `out: *std.ArrayList(...)`. Two follow-on issues then surface in the same body:
+  1. **Recursive call:** `freeVars(child, out)` — the call site still emits `&out` (because the formal param is mutating-container), producing `**ArrayList` for an arg expected as `*ArrayList`.
+  2. **Helper call:** `hasName(out, name)` where `hasName` takes `out: List(str)` non-mutating (so its sig stays `ArrayList`). The call site emits `hasName(out, name)` with no `.*` deref, producing `*ArrayList` for an arg expected as `ArrayList`.
+- **Reproducer:** see `examples/lambda_calc.zbr`'s commit history — the original `freeVars(t: Term, out: List(str))` shape ran into both above; the file was rewritten to return-by-value instead.
+- **Root cause:** the `&` insertion in `genArgs`/`genArgListNamed` doesn't account for the caller's local already being `*ArrayList`. The decision rule needs to distinguish:
+  - arg is value, formal is `*Self` → emit `&arg`
+  - arg is already `*Self`, formal is `*Self` → emit `arg` (no `&`)
+  - arg is already `*Self`, formal is value → emit `arg.*` (deref)
+- **Workaround:** restructure to return-by-value, or thread the container through a class field instead of a parameter.
+- **Discovered:** 2026-04-30 while writing `examples/lambda_calc.zbr`.
+
+---
+
+### BUG-096: `List(SomeClass)()` constructor doesn't pointer-wrap the element type to match the field
+- **Severity:** Low (only triggers when storing class instances in Lists declared as fields)
+- **Status:** Open
+- **Symptom:** `class Holder { var results: List(Result) = ... }` where `Result` is a class. The field type emits as `std.ArrayList(*Result)` (correct — classes are reference-typed), but the constructor expression `List(Result)()` emits `std.ArrayList(Result){}` (without the pointer). Zig rejects the assignment with a type mismatch.
+- **Reproducer:**
+  ```zebra
+  class Result
+      var msg: str = ""
+      cue init(m: str)
+          this.msg = m
+
+  class Holder
+      var results: List(Result)
+      cue init()
+          this.results = List(Result)()      # ✗ field is List(*Result), ctor builds List(Result)
+  ```
+- **Workaround:** make the element type a `struct` rather than a `class` (the workaround used by `book_run.zbr`'s `Result` type), or assign via `[]` empty-list literal once that path supports class element types.
+- **Discovered:** 2026-04-30 while writing `book_run.zbr`.
+
+---
+
+### BUG-094: `for k, v in HashMap` emits spurious `_ = k;` plus loses key/value formatting
+- **Severity:** Medium (the QUICKSTART-canonical iteration form is unusable; the rest of the book has examples that won't compile)
+- **Status:** Open
+- **Symptom:** Both backends fail on `for k, v in some_hashmap`:
+  - **Selfhost (`zebra.exe`):** emits `const name = ...; _ = name;` immediately followed by usage in the loop body — Zig rejects with "pointless discard of local constant ... used here". Even when the discard is suppressed, `print "${name}: ${age}"` falls back to `{any}` for `name` because the formatter doesn't see the `[]const u8` type for the for-binding.
+  - **Zig backend (`zebra-bootstrap.exe`):** rejects the syntax outright with "extra capture in for loop" — the multi-binding form was never wired up here.
+- **Reproducer:**
+  ```zebra
+  def main()
+      var ages = HashMap(str, int)()
+      ages.put("Alice", 30)
+      for name, age in ages
+          print "${name}: ${age}"
+  ```
+- **Workaround:** Read values back via `.get(known_key)` for spot lookups; iterate with a parallel `List(str)` of keys when you genuinely need to walk the whole map.
+- **Doc claim:** QUICKSTART §10 documents `for k, v in m` as the canonical iteration. Either fix both backends to support it, or amend the doc to point at the working pattern.
+- **Discovered:** 2026-04-30 while sweeping the book's Chapter 3 examples for the verbosity rewrite.
 
 ---
 
