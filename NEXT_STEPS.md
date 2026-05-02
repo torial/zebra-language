@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-01 (TC robustness audit → item 19.5 cluster + item 13 reframed post-1.0)
+**Last updated:** 2026-05-02 (item 22 added — 2.0 kernel track with `.zbr`/`.zeb` file split)
 
 ---
 
@@ -238,6 +238,53 @@ See: `wiki/pages/concepts/concept_zebra-imgui-backend.md`, `concept_zebra-pthom-
 - **`Test` stdlib module** — `zebra test` subcommand; test discovery by naming convention (`def test_*`); structured pass/fail output; see `STDLIB_ROADMAP.md` item 11
 - **General for-loop destructuring** — `for a, b in list_of_pairs` tuple unpacking; currently only HashMap iteration has this as compiler magic
 - CHANGELOG
+
+### 22. 2.0 — Kernel track (Zebra for OS-writing)
+2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no
+runtime underneath.  Motivated by the expressiveness multiplier observation
+(selfhost is ~2.7x smaller than the Zig backend), suggesting a Linux-1.0-equivalent
+kernel could fit in ~60K LOC of Zebra — "one human can hold it in their head" scale,
+in the spirit of MenuetOS / KolibriOS / TempleOS / Ladybird.
+
+Settled design directions (2026-05-02):
+
+**`.zbr` / `.zeb` file split.** Two file extensions sharing one parser/AST.  `.zeb`
+files unlock the systems vocabulary (inline asm, custom calling conventions, section
+attributes, naked functions, volatile structs, panic-handler override, per-CPU storage,
+`@no_fp`, `comptime` blocks).  `.zbr` files build on `.zeb` primitives through normal
+imports.  Stronger than Rust-style `unsafe { … }` blocks because the privilege boundary
+is enforced by *syntax* (the `.zbr` parser doesn't accept the systems vocabulary at all),
+not by reviewer attention.  Implementation is roughly 50 lines in the typechecker —
+`.zeb` grammar is a superset of `.zbr` grammar; the difference is a per-construct
+allow-flag at semantic analysis.
+
+**`@freestanding` mode.** Disables implicit allocator, removes syscall-touching stdlib,
+unlocks bare-metal features.  Companion `core` stdlib (parallel to Rust's `core`) provides
+no-allocator equivalents: `FixedList(T, N)`, `OpenAddressMap(K, V, N)`, `[]const u8`.
+Contracts, generics, interface vtables, `^T`, throws, nil tracking — all survive
+unchanged.
+
+**Heavy Zig leverage.** Inline asm (Zig already supports it — confirmed 2026-05-02),
+custom calling conventions, `comptime`, `@embedFile`, packed/aligned structs,
+address-space-typed pointers, freestanding mode — all already shipping in Zig 0.15+.
+Zebra-side work is mostly Zebra-native naming + the type-system pieces Zig doesn't have.
+
+**Phasing:**
+- *1.x prerequisites already on roadmap:* `Chan(T)` (item 15), SIMD (item 20),
+  allocator context (item 15).
+- *2.0 minimum freestanding:* `@freestanding` + `.zeb` recognition + `core` stdlib
+  subset + `@callconv("naked"|"interrupt")` + `asm "…"` + `@section` + `extern "linker"`
+  + `@embed_file` + `volatile` + `Cpu.*` intrinsics.  Unlocks bootloader + serial-out kernel.
+- *2.0 real-OS layer:* general `comptime` + `@per_cpu` + `@panic_handler` + `@no_fp` +
+  cross-target `asm` + bootable-image build target.
+
+**Risks / open questions:** see wiki page.  Notable: the `.zeb` could devolve into
+"everything I write" (mitigation: project lints + code review culture); `comptime` blocks
+are a real language feature with their own type-checking rules (lower to Zig comptime
+initially, implement in selfhost when it earns it).
+
+See: `wiki/pages/concepts/concept_zebra-os-additions.md` for the full design.
+Sister page: `concept_zebra-systems-additions.md` (browser-class additions; subset of this).
 
 ### 16. Intertextual support (post-1.0)
 LXX/MT divergence tool; provenance typing; multilingual manuscript analysis.
