@@ -1,14 +1,22 @@
 class Main
     static
         def main
-            var handler = def(req: HttpRequest): HttpResponse
-                if req.path == "/"
-                    return HttpResponse.ok("<h1>Hello from Zebra!</h1>")
-                if req.path == "/greet"
-                    var msg: str = "Hello, ${req.method} ${req.path}"
-                    return HttpResponse.ok(msg)
-                if req.path == "/echo"
-                    return HttpResponse.ok(req.content)
-                return HttpResponse.notFound("<h1>404 Not Found</h1>")
-            print "Listening on http://localhost:8080"
-            Http.serve(8080, handler)
+            # Pre-flight: if 8080 is already in use, exit cleanly rather than
+            # silently coexisting via SO_REUSEADDR (the runtime's _http_serve
+            # passes .reuse_address=true). Catches stray prior runs that
+            # didn't shut down — last incident left 4 instances coexisting.
+            if Tcp.connect("127.0.0.1", 8080) as probe
+                probe.close()
+                print "Port 8080 is already in use; exiting."
+            else
+                var handler = def(req: HttpRequest): HttpResponse
+                    if req.path == "/"
+                        return HttpResponse.ok("<h1>Hello from Zebra!</h1>")
+                    if req.path == "/greet"
+                        var msg: str = "Hello, ${req.method} ${req.path}"
+                        return HttpResponse.ok(msg)
+                    if req.path == "/echo"
+                        return HttpResponse.ok(req.content)
+                    return HttpResponse.notFound("<h1>404 Not Found</h1>")
+                print "Listening on http://localhost:8080"
+                Http.serve(8080, handler)
