@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-108. Next new bug: BUG-109.**
+**Last bug number generated: BUG-110. Next new bug: BUG-111.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -38,6 +38,34 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ## Open Bugs
+
+### BUG-109: `Http.serve` runtime hardcodes `.reuse_address = true` — allows silent duplicate binds
+- **Severity:** Medium (footgun for test apps; not a crash, but a "wait, why are four copies running?" surprise)
+- **Status:** Open
+- **Symptom:** The runtime `_http_serve` (emitted by `src/CodeGen.zig`) calls `std.net.Address.initIp4(.{0,0,0,0}, port).listen(.{ .reuse_address = true })`. The `reuse_address = true` setting allows multiple processes to successfully `listen()` on the same port; the OS load-balances incoming connections across them. Concrete observed consequence: 2026-04-21 → 2026-05-04 the box accumulated 4 stray `server_test.exe` processes all coexisting on 8080, undetected until manual `netstat` inspection.
+- **Reproducer:** Run `server_test.exe` (built from `test/server_test.zbr`) twice in succession in separate terminals — both bind successfully and both serve traffic. No error from the second bind.
+- **Root cause:** `src/CodeGen.zig` emits `.reuse_address = true` unconditionally in the `_http_serve` preamble (line ~459 in current emitted output). The flag is appropriate for fast-restart-after-crash workflows (avoids TIME_WAIT delay) but inappropriate for "did I accidentally start two of these?" detection.
+- **Fix sketches (pick one):**
+  1. **Flip to `.reuse_address = false`** — simplest; OS rejects duplicate binds. Cost: TIME_WAIT delay if the same port is rebound within ~60s after a clean shutdown. For test apps this is fine; for production restart loops it's friction.
+  2. **Make it configurable:** `Http.serve(port, handler, reuse: false)` with a default that we pick. Cost: tiny API change, ripples through codegen.
+  3. **Probe-bind hybrid:** keep `reuse_address = true` but also attempt a `Tcp.connect` probe first and refuse if it succeeds. Cost: small race window between probe and bind; doubles the syscall surface.
+- **Workaround in use:** `test/server_test.zbr` now does the probe-then-bind dance manually at the user level (see commit 7fe29ae). Every other `Http.serve` caller would have to do the same until this is fixed centrally.
+- **Discovered:** 2026-05-04 cleanup of the 4 stray instances.
+- **Source:** Side-finding from `test/server_test.zbr` port-busy fix.
+
+---
+
+### BUG-110: `Http.serve` panics on bind error instead of returning a typed error
+- **Severity:** Low (only triggers on bind failure; rare in practice)
+- **Status:** Open
+- **Symptom:** The runtime `_http_serve` handles bind failure with `... .listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e))`. On any bind failure (port busy with `reuse_address = false`, permission denied for low ports, address-not-available), the program dies with a Zig panic and stack trace rather than a clean error. Counterpart of BUG-107 (TC halt-on-diagnostics audit) but at runtime: the failure is communicated by panic rather than by the language's structured error path.
+- **Reproducer:** With BUG-109 fixed (`reuse_address = false`), running `server_test.exe` twice produces a panic on the second run instead of a clean error message.
+- **Root cause:** `src/CodeGen.zig` emits the `catch |e| @panic(@errorName(e))` pattern in `_http_serve`. The right shape is to make `Http.serve` `throws` so callers can `catch |err| { print "Could not bind: ${err}" }`.
+- **Fix sketch:** Change `Http.serve`'s declared signature to `throws` (in the typechecker's stdlib bindings); update the emit so the bind error propagates as `anyerror!void` rather than panicking. Callers that don't care can still `Http.serve(...) catch unreachable`. Pairs naturally with BUG-109 — both are policy decisions about how the runtime communicates bind problems.
+- **Discovered:** 2026-05-04, alongside BUG-109.
+- **Source:** Side-finding from `test/server_test.zbr` port-busy fix.
+
+---
 
 ### BUG-099: Split overloaded `.unknown` Type into `.context_dependent` / `.unknown` / `.unresolved` (TC reliability keystone)
 - **Severity:** High (foundational; gates merge-oracle reliability and is the upstream cause of many silent-accept bugs below)
