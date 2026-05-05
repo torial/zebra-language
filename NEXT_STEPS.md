@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-05 (Phase 13 sweeps #1+#2 complete; BUG-111/112/113 closed; §19 selfhost TC diags Phase 1 shipped; BUG-099 split shipped; oracle-prep §19.5b is next)
+**Last updated:** 2026-05-05 (Phase 13 sweeps #1+#2 complete; BUG-111/112/113 closed; §19 selfhost TC diags Phase 1 shipped; BUG-099 split shipped; §19.5b typecheck-merge subcommand shipped — oracle-prep cluster COMPLETE)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -107,13 +107,12 @@ Goal state achieved: zero false `.unresolved` emissions on accepted programs (bo
 smoke 43/43, full test suite). Side effects: BUG-105, BUG-106, BUG-108 (partial) fixed.
 Selfhost port of the split is a future item — selfhost TC currently uses `unknown_` only.
 
-**b. `zebra typecheck-merge` subcommand**  ★ extracts oracle benefit pre-VCS
-The only piece of the Zebra-VCS-as-merge-oracle thesis (`concept_zebra-vcs-architecture`)
-that earns its place pre-1.0.  Runs on a git merge-result and emits typed diagnostics
-instead of `<<<<<<<` markers.  Integrates as a git `pre-merge-commit` hook.  Cleanly
-extractable from the larger VCS rewrite.  **Effort:** 1–2 days.
-**Prerequisites satisfied:** §19.5a (BUG-099) ✅, §19.5e (selfhost TC diags) ✅.
-Next in the oracle chain.
+**b. `zebra typecheck-merge` subcommand** ✅ COMPLETE (2026-05-05)
+`zebra typecheck-merge <file.zbr>` — extracts both sides of a conflict-marked file
+(preserving line numbers via blank-line substitution), runs parse+resolve+ASTBuilder+TC
+on each side, reports which side has type errors.  Handles standard and diff3 conflict
+styles.  Installed as a git `pre-merge-commit` hook via `tools/install_merge_hook.sh`.
+Exit code 0 (informational); test fixture: `test/tc_merge_fixture.zbr`; bootstrap 5/5.
 
 **c. Per-commit zip snapshot git hook** ✅ COMPLETE
 Shipped: `.git/hooks/post-commit` saves `zsnapshots/<commit-id>.zip` on every commit.
@@ -393,6 +392,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-113 closed as not-reproduced — slice TC works correctly | 2026-05-05 |
 | BUG-099 `.unknown` three-way split (`.context_dependent`/`.unknown`/`.unresolved`); zero false `.unresolved` on accepted programs; bootstrap 5/5, smoke 43/43 | 2026-05-05 |
 | §19 selfhost TC diagnostics Phase 1: `Diagnostic` struct + `InferCtx.errors` + primitive mismatch detection; `selfhost_compat` 2/2 PASS; bootstrap 5/5 | 2026-05-05 |
+| §19.5b `zebra typecheck-merge` subcommand: conflict-side extraction + TC check; line-number preservation; diff3 support; git hook installer; bootstrap 5/5 | 2026-05-05 |
 
 ---
 
