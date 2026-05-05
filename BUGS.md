@@ -39,7 +39,20 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ## Open Bugs
 
-### BUG-111: Compound assignment on `this.field` / `.field` not supported (phase 13)
+### BUG-111: ✅ NOT-A-BUG 2026-05-05 — compound assign already works
+
+Verified in both backends: `.count += 1`, `this.count += 1`, and
+`obj.count += 5` all parse, codegen, and run correctly. The original
+filing was based on a repo-wide grep finding "zero occurrences" of
+`this.X +=`, but that turned out to be stylistic legacy (selfhost
+authors used the verbose `this.X = this.X + 1` form before `.field`
+shorthand was canonical), not a compiler limitation.
+
+Closing as not-reproduced. No code change needed for BUG-111.
+
+---
+
+### BUG-111 (original entry, retained for context):
 - **Severity:** Low (workaround is verbose but correct)
 - **Status:** Open — phase 0.13 syntax-cleanup window
 - **Symptom:** `this.pos += 1` and (after style-guide adoption) `.pos += 1` either fail to parse or fail to codegen. Verified via repo-wide grep: zero occurrences of `this\.\w+ \+=` exist in any `.zbr` file across selfhost, test, or examples — confirming users have learned to avoid the form. The workaround in current code is `this.pos = this.pos + 1`.
