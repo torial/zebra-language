@@ -1,0 +1,27 @@
+# bug091_dispatch_test.zbr — coverage for non-static call shapes:
+#   1. this.helper(out) inside an instance method (Expr.this_ receiver).
+#   2. f.helper(out) where f is a local instance (Expr.ident inferred via TC).
+# Both must mark the caller's `items` as `var` and emit `&items` at the call site.
+
+class Filler
+    def helperList(out: List(str))
+        out.add("a")
+        out.add("b")
+
+    def runSelf
+        var items: List(str) = List(str)()
+        this.helperList(items)
+        assert items.count() == 2, "self count"
+
+class Main
+    static
+        def main
+            var f = Filler()
+            f.runSelf()
+
+            # Instance call from outside.
+            var items2: List(str) = List(str)()
+            f.helperList(items2)
+            assert items2.count() == 2, "instance count"
+
+            print "ok"

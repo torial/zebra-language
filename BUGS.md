@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-110. Next new bug: BUG-111.**
+**Last bug number generated: BUG-115. Next new bug: BUG-116.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -38,6 +38,77 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 ---
 
 ## Open Bugs
+
+### BUG-111: Compound assignment on `this.field` / `.field` not supported (phase 13)
+- **Severity:** Low (workaround is verbose but correct)
+- **Status:** Open — phase 0.13 syntax-cleanup window
+- **Symptom:** `this.pos += 1` and (after style-guide adoption) `.pos += 1` either fail to parse or fail to codegen. Verified via repo-wide grep: zero occurrences of `this\.\w+ \+=` exist in any `.zbr` file across selfhost, test, or examples — confirming users have learned to avoid the form. The workaround in current code is `this.pos = this.pos + 1`.
+- **Reproducer:**
+  ```zebra
+  class Lexer
+      var pos: int
+      cue init()
+          pos = 0
+      def advance()
+          .pos += 1     # expected: codegen `self.pos += 1`
+  ```
+- **Why it matters now:** the style guide (see `docs/STYLE_GUIDE_DRAFT.md` §13.1) has flagged the verbose form as compiler-driven, *not* canonical. When this fixes, the sweep is one grep across selfhost.
+- **Fix sketch:** investigate whether the parser admits compound-assign on a member-access LHS, then whether codegen emits the correct shape. Likely a 1-line parser fix + codegen verification.
+- **Discovered:** 2026-05-04 during style guide drafting.
+- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.1.
+
+---
+
+### BUG-112: `def name: T` no-paren shorthand should be removed from grammar (phase 13)
+- **Severity:** Low (cosmetic; both forms work today)
+- **Status:** Open — phase 0.13 syntax-cleanup window
+- **Symptom:** `def name: T` and `def name(): T` are both legal and equivalent. Callers always write `obj.name()` regardless. The no-paren form is a vestige of the removed `prop`/`get`/`set` machinery (per `project_remove_property_keywords.md`) — it survives but no longer carries weight, and visually contradicts the call-site syntax (footgun: reads as a getter that doesn't need parens at the call site, which isn't true).
+- **Repo data:** 38 no-paren occurrences across 17 files; 124 explicit-paren occurrences across 25 files. The repo's revealed preference is `def name(): T`.
+- **Fix sketch:**
+  1. Sweep the 38 no-paren declarations to `def name(): T` form (mechanical).
+  2. Remove the no-paren rule from `parser.zbr` and `src/Parser.zig` so it can't drift back in.
+  3. Tokenizer / TC unaffected — they already canonicalise both.
+- **Discovered:** 2026-05-04 during style guide drafting.
+- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §1 Q2.
+
+---
+
+### BUG-113: `pratt_calc.zbr:134` slice expression loses `str` type through a `var` binding
+- **Severity:** Medium (forces explicit annotations downstream of any string slice)
+- **Status:** Open — TC inference gap
+- **Symptom:** `var text = this.src[start..pos]` infers `text` as something that doesn't dispatch `.toFloat()` correctly, requiring users to write `var text: str = this.src[start..pos]`. The author of `pratt_calc.zbr` documented this in a comment at line 132–134:
+  > "the compiler's TC currently loses the slice's str type once it passes through a `var`, so we annotate explicitly to guide `.toFloat()` to the right dispatch."
+- **Reproducer:**
+  ```zebra
+  def parse(src: str): float? throws
+      var text = src[0..3]      # text is inferred as ?
+      return text.toFloat()     # may fail to dispatch correctly
+  ```
+- **Fix sketch:** check `inferExpr` for the slice arm — `str[int..int]` should infer back to `str`. Likely a missing case in either the bootstrap or selfhost typechecker (or both, given parity work).
+- **Discovered:** 2026-05-04 during style guide drafting; the workaround is in `pratt_calc.zbr:134`.
+- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.2.
+
+---
+
+### BUG-114: `0 - x` / `0.0 - x` instead of `-x` — sweep target (NOT a bug)
+- **Severity:** N/A
+- **Status:** Filed for sweep tracking, not for fix
+- **Note:** Verified 2026-05-04: unary `-x` works correctly on int and float (`var y = -x` codegens to `-x`). The `0 - x` and `0.0 - x` forms in `examples/pratt_calc.zbr:304` and elsewhere are stylistic legacy, not compiler workarounds. Sweep target: replace with `-x` during the phase 13 cleanup pass. No compiler fix needed; this entry exists so the sweep is greppable.
+- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.3.
+
+---
+
+### BUG-115: Real `private` / `internal` visibility keywords (phase 13 language proposal)
+- **Severity:** Low (open language design question, not a defect)
+- **Status:** Open — phase 0.13 language proposal
+- **Background:** Repo convention has used a leading `_` prefix on fields to signal "private" (e.g., `_radius`, `_items`). Verified 2026-05-04: this prefix has zero compiler-level enforcement — `f._hidden` from outside the class compiles and runs without complaint. The convention is purely social and misleads readers about what the language guarantees.
+- **Decision needed:** Should Zebra add real visibility keywords (`private` / `internal` / `public`), or accept that the language has no field privacy and require the style guide to drop the `_` convention?
+- **Style guide stance (2026-05-04):** Drop the `_` convention until/unless real keywords land. Compiler-emitted internals (`_allocator`, `_arena`, `_intern`, `_str_pool`, `_error_ctx`) are out of scope.
+- **Cost sketch (if implementing):** parser arm for the visibility token; resolver enforces at member-access; codegen unaffected (Zig has no equivalent — emit `pub` / non-`pub` only). Scope of "internal" (module-private) needs design — Zig has it via `pub` boundary; Zebra would need an analogous module model.
+- **Discovered:** 2026-05-04 during style guide drafting.
+- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §1 Q3.
+
+---
 
 ### BUG-109: `Http.serve` runtime hardcodes `.reuse_address = true` — allows silent duplicate binds
 - **Severity:** Medium (footgun for test apps; not a crash, but a "wait, why are four copies running?" surprise)
@@ -343,27 +414,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-087: `ensure` defer fires on the error path of throws functions
-- **Severity:** Medium (correctness — silent panic instead of caught exception)
-- **Status:** Fixed — `_ensure_armed` flag set only on the success path; defer check gated on the flag.  Both Zig and selfhost backends.  Tests: `contract_result_throws_test.zbr` and `contract_ensure_falloff_test.zbr`.
-- **Symptom:** A throws function with an `ensure` clause that raises mid-body causes the ensure check to fire on the error path. Result: the program panics with "ensure failed in '<fn>'" and the user's `try/catch` never sees the original exception.
-- **Reproducer:** `C:/tmp/ensure_throws_probe.zbr` — `maybeFail(-5)` raises "negative!" but defer evaluates `x > 100`, fails, panics. The outer `catch` is bypassed.
-- **Root cause:** Zig `defer` runs on both success and error returns. The current `genEnsureBlock` emits a plain `defer { if (!(expr)) panic; }` with no success-vs-error discrimination.
-- **Fix:** Add a `var _ensure_armed = false;` local at function entry. Set it `true` on the success path (right before normal `return _result;` in functions with `result`-capable ensure, or right before any normal return otherwise). Wrap the defer check in `if (_ensure_armed and !(expr)) panic;`.
-- **Links:** Discovered while implementing `result` capture (NEXT_STEPS.md item #11 remaining piece).
-
----
-
-### BUG-002: `guard` + `try_postfix` runtime error propagation
-- **Severity:** Medium
-- **Status:** Open
-- **Target:** 0.3 or 0.5 (source-mapped errors)
-- **Symptom A (`guard_test`):** `checkPositive` raises inside a guard else block; top-level `try Main.main()` panics with `error: ZebraError`.
-- **Symptom B (`try_postfix_test`):** `safeDiv(10,0)?` propagates through `main throws`; top-level panics. The test doesn't catch the error — it's testing propagation but exits non-zero.
-- **Note:** Both are likely correct behavior for Zebra error semantics. The tests need `try/catch` wrapping to validate error propagation without panicking. Test quality issue + potentially a compiler issue with top-level error display.
-
----
-
 ### BUG-014: Regex lazy match is global, not per-quantifier
 - **Severity:** Medium
 - **Status:** Open — architectural limitation
@@ -381,16 +431,6 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 - **Status:** Open — known imprecision; deferred until ModuleInterface preserves return types
 - **Symptom:** When a local variable's TC type is `.unknown` and `.len` is accessed on it, CodeGen emits `.items.len` as a last-resort fallback. Correct for `ArrayList`-backed `List(T)` values but wrong for user-defined structs with a field named `len`.
 - **Proper fix:** Add a `.list { elem_type }` variant to `TypeChecker.Type`, store it in `ModuleInterface.methods` for list-returning methods, propagate through `inferCall` for cross-module calls.
-
----
-
-### BUG-019: `fn_ref` assignment missing `&` prefix in selfhost codegen
-- **Severity:** Low
-- **Status:** Fixed — selfhost `codegen.zbr` `isTopLevelMethod` + `genLocalVar`/`genAssign` fn-ref paths; see `test/fn_ref_test.zbr`
-- **Target:** 0.5 (cleanup)
-- **Root cause:** `selfhost/codegen.zbr` lacked the fn-ref detection that `src/CodeGen.zig` has. Mutable local vars initialized from a bare top-level function name (e.g. `var pred = isAlpha`) must emit `var pred: @TypeOf(&isAlpha) = &isAlpha;`, and reassignment (`pred = isDigit`) must emit `pred = &isDigit;`. The Zig backend had this via `tc_init_type == .fn_ref`; the selfhost now uses `isTopLevelMethod()`.
-- **Original symptom:** `var pred = isAlpha` compiled by selfhost zebra.exe produced Zig `var pred = isAlpha;` which Zig rejects ("variable of type 'fn(u21) bool' must be const or comptime").
-- **Known limitation:** `isTopLevelMethod()` only scans the current module's `module_decls`. Cross-module fn_ref (`var cb = OtherModule.func`) will still emit `cb = OtherModule.func;` without `&` in selfhost. Not yet seen in practice.
 
 ---
 

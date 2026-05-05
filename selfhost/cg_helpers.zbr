@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField
+use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -732,6 +732,8 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "split" or name == "trim" or name == "upper" or name == "lower"
         return true
+    if name == "lines"
+        return true
     if name == "format" or name == "join" or name == "iter" or name == "items"
         return true
     if name == "codePointCount" or name == "byteLen" or name == "isEmpty"
@@ -865,3 +867,38 @@ def scanMutations(stmts: List(Stmt)): StrSet
     var out = StrSet()
     scanMutationsInto(stmts, out)
     return out
+
+# ── BUG-091: List(T)/HashMap(K,V) param mutation → addr-of param convention ─
+#
+# When a function-parameter of type List(T) or HashMap(K,V) is mutated inside
+# the body (via .add/.put/.append/.remove/.clear/.sort), the caller expects
+# the underlying container to be modified in place.  Zig's std.ArrayList is
+# value-typed, so a plain pass-by-value parameter is *const ArrayList from
+# the body's view -- .append (which takes *Self) is rejected.  The fix is
+# to emit the parameter as *std.ArrayList(T) and take &arg at every call
+# site.  paramNeedsAddrOf is the canonical predicate; both genMethod (param
+# emission) and the call-site emit consult it.
+
+def isContainerTypeRef(tr: TypeRef): bool
+    branch tr
+        on TypeRef.generic as g
+            return g.name == "List" or g.name == "HashMap"
+        else
+            return false
+
+# Cost: each call runs scanMutations over `body` -- O(|body|).  Because the
+# predicate is consulted at every param-emit and every arg-emit (and the call-
+# site emit may run again per arg), worst case is O(N * M) where N is calls
+# referencing the method and M is the body size.  Acceptable for the current
+# corpus (<100ms total impact in bootstrap).  If profiling shows this matters,
+# memoise per-method by adding a HashMap(str, StrSet) on Generator keyed by
+# "Class.method" (the same key shape used by lookupFnParams/lookupFnBody).
+def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
+    if p.type_ == nil
+        return false
+    if not isContainerTypeRef(p.type_ to!)
+        return false
+    if body == nil
+        return false
+    var ms: StrSet = scanMutations(body to!)
+    return ms.contains_(p.name)

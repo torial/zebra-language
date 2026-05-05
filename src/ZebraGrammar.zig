@@ -1053,7 +1053,10 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.id) } },                             // obj.member
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.integer_lit) } },                    // tuple.0  tuple.1
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.open_call), n(.ArgList), t(.rparen) } }, // obj.method(args)
-    // Allow keyword names as method-call targets: obj.get(args)  obj.post(args)
+    // Allow keyword names as method-call targets: obj.to(args) — used for numeric ranges
+    // (`for i in 0.to(5)`).  The 6-child shape (vs. 5 for open_call) means kids[2] is the
+    // keyword token and kids[3] is the literal lparen.
+    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.dot), t(.kw_to), t(.lparen), n(.ArgList), t(.rparen) } }, // obj.to(args)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.rbracket) } },        // obj[index]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.dotdot), n(.Expr), t(.rbracket) } }, // obj[start..stop]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), n(.TypeRef) } },                       // expr to T
@@ -1109,6 +1112,12 @@ const expr_rules: []const Rule = &.{
     } },
     // — Array literal @[...]
     .{ .lhs = .Atom, .rhs = &.{ t(.at_lbracket), n(.ArgList), t(.rbracket) } },
+    // — List literal [...]:  empty `[]`, or `[a, b, c]`.  Lowers to a
+    //   labeled-block that builds a std.ArrayList(T).  The element type
+    //   is inferred from the first element (or required from the LHS
+    //   annotation when the list is empty).
+    .{ .lhs = .Atom, .rhs = &.{ t(.lbracket), t(.rbracket) } },
+    .{ .lhs = .Atom, .rhs = &.{ t(.lbracket), n(.ArgList), t(.rbracket) } },
     // — Char literals: c'A'  c"A"
     .{ .lhs = .Atom, .rhs = &.{ t(.char_lit_single) } },
     .{ .lhs = .Atom, .rhs = &.{ t(.char_lit_double) } },

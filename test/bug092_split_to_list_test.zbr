@@ -1,0 +1,17 @@
+# bug092_split_to_list_test.zbr — typed `var lines: List(str) = s.split(sep)`
+# auto-collects the SplitIterator into a fresh ArrayList.  Same for s.lines().
+
+class Main
+    static
+        def main
+            var content: str = "a\nb\nc"
+            var lines: List(str) = content.split("\n")
+            assert lines.count() == 3, "split count"
+            assert lines.at(0) == "a", "a"
+            assert lines.at(1) == "b", "b"
+            assert lines.at(2) == "c", "c"
+
+            var ls: List(str) = content.lines()
+            assert ls.count() == 3, "lines count"
+
+            print "ok"

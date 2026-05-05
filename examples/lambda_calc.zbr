@@ -1,0 +1,407 @@
+# lambda_calc.zbr — untyped lambda calculus, with reduction steps.
+#
+# Pure lambda calculus is one of the smallest universal models of
+# computation: just variables, abstraction (`λx.body`), and application
+# (`f arg`).  Every other "feature" — booleans, numbers, lists,
+# recursion — falls out of those three forms via the right encoding.
+#
+# Syntax accepted by this implementation:
+#   x                     — variable
+#   \x.body               — abstraction (`\` stands in for λ)
+#   (M N)                 — application; juxtaposition is also allowed,
+#                           and is left-associative: `M N P`  ≡  `((M N) P)`
+#
+# Reduction:
+#   normal-order: always reduce the LEFTMOST-OUTERMOST redex first.
+#   capture-avoiding substitution: if `M[x := N]` would capture a free
+#   var of N, alpha-rename the offending binder to a fresh name (`x'`,
+#   `x''`, ...).
+#
+# A demonstration suite is baked into main(); each case is parsed,
+# reduced step-by-step (up to a step cap), and printed with the steps.
+
+# ── Tokens ────────────────────────────────────────────────────────────────
+
+enum TokKind
+    ident
+    lparen
+    rparen
+    backslash
+    dot
+    eof
+
+class Token
+    var kind: TokKind = TokKind.eof
+    var text: str = ""
+
+    cue init(kind: TokKind, text: str)
+        .kind = kind
+        .text = text
+
+
+# ── Lexer ─────────────────────────────────────────────────────────────────
+
+class Lexer
+    var src: str = ""
+    var pos: int = 0
+
+    cue init(src: str)
+        .src = src
+        .pos = 0
+
+    def atEnd(): bool
+        return .pos >= .src.len
+
+    def isIdentStart(c: char): bool
+        return (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z') or c == c'_'
+
+    def isIdentCont(c: char): bool
+        return .isIdentStart(c) or (c >= c'0' and c <= c'9') or c == c'\''
+
+    def skipSpace()
+        while not .atEnd()
+            var c = .src[.pos]
+            if c == c' ' or c == c'\t' or c == c'\n' or c == c'\r'
+                .pos = .pos + 1
+            else
+                break
+
+    def nextToken(): Token throws
+        .skipSpace()
+        if .atEnd()
+            return Token(TokKind.eof, "")
+        var c = .src[.pos]
+        if c == c'('
+            .pos = .pos + 1
+            return Token(TokKind.lparen, "(")
+        if c == c')'
+            .pos = .pos + 1
+            return Token(TokKind.rparen, ")")
+        if c == c'\\'
+            .pos = .pos + 1
+            return Token(TokKind.backslash, "\\")
+        if c == c'.'
+            .pos = .pos + 1
+            return Token(TokKind.dot, ".")
+        if .isIdentStart(c)
+            var start = .pos
+            while not .atEnd() and .isIdentCont(.src[.pos])
+                .pos = .pos + 1
+            var text: str = .src[start...pos]
+            return Token(TokKind.ident, text)
+        raise "lex: unexpected character"
+
+
+# ── AST ───────────────────────────────────────────────────────────────────
+#
+# Three variants — that's the whole language.
+
+union Term
+    var_: str        # variable reference
+    abs:  ^Lam       # \x.body
+    app:  ^App       # (f x)
+
+struct Lam
+    var param: str
+    var body:  ^Term
+
+    cue init(param: str, body: ^Term)
+        .param = param
+        .body  = body
+
+struct App
+    var func: ^Term
+    var arg:  ^Term
+
+    cue init(func: ^Term, arg: ^Term)
+        .func = func
+        .arg  = arg
+
+
+# ── Parser ────────────────────────────────────────────────────────────────
+#
+# Recursive descent.  The only subtlety is application: it's left-
+# associative juxtaposition, so `M N P Q` parses as `((M N) P) Q`.
+#
+# Grammar:
+#   term   ::= app
+#   app    ::= atom (atom)*
+#   atom   ::= ident | "(" term ")" | "\" ident "." term
+
+class Parser
+    var lex: Lexer
+    var cur: Token
+
+    cue init(src: str)
+        .lex = Lexer(src)
+        .cur = Token(TokKind.eof, "")
+
+    def start() throws
+        .cur = .lex.nextToken()?
+
+    def bump() throws
+        .cur = .lex.nextToken()?
+
+    def parseAtom(): Term throws
+        var t = .cur
+        if t.kind == TokKind.ident
+            .bump()?
+            return Term.var_(t.text)
+        if t.kind == TokKind.lparen
+            .bump()?
+            var inner = .parseTerm()?
+            if .cur.kind != TokKind.rparen
+                raise "parse: missing ')'"
+            .bump()?
+            return inner
+        if t.kind == TokKind.backslash
+            .bump()?
+            if .cur.kind != TokKind.ident
+                raise "parse: expected variable after '\\'"
+            var p: str = .cur.text
+            .bump()?
+            if .cur.kind != TokKind.dot
+                raise "parse: expected '.' after lambda parameter"
+            .bump()?
+            var body = .parseTerm()?
+            return Term.abs(Lam(p, (body)))
+        raise "parse: unexpected token"
+
+    def parseTerm(): Term throws
+        # `term` is just `app` — left-associative juxtaposition.
+        var lhs = .parseAtom()?
+        while .canStartAtom()
+            var rhs = .parseAtom()?
+            lhs = Term.app(App((lhs), (rhs)))
+        return lhs
+
+    def canStartAtom(): bool
+        var k = .cur.kind
+        return k == TokKind.ident or k == TokKind.lparen or k == TokKind.backslash
+
+
+# ── Free variables ────────────────────────────────────────────────────────
+#
+# Used by capture-avoiding substitution.  We accumulate into a List(str)
+# rather than a HashMap because (a) HashMap kv-iteration is currently
+# bugged (BUG-094) and (b) free-var sets in real lambda terms are tiny —
+# the linear-membership cost is irrelevant here.
+
+# Linear contains-check for List(str).  Avoids `name in list` because
+# Zebra's `in` operator currently only specialises for string-substring
+# and `@[...]` tuple literals, not for List(str) receivers.
+def hasName(list: List(str), name: str): bool
+    for x in list
+        var v: str = x
+        if v == name
+            return true
+    return false
+
+# Return-by-value variant of "free variables of a term".  An out-param
+# version would be more idiomatic, but it triggers a known follow-on
+# of BUG-091: when the caller's `out: List(str)` becomes `*ArrayList`,
+# passing it to a non-mutating helper (`hasName`) still emits the
+# pointer rather than auto-dereferencing.  Returning the list bypasses
+# the issue entirely.
+def freeVars(t: Term): List(str)
+    var out = List(str)()
+    branch t
+        on Term.var_ as name
+            out.add(name)
+        on Term.abs as l
+            var inner = freeVars(l.body)
+            for x in inner
+                var v: str = x
+                if v != l.param
+                    if not hasName(out, v)
+                        out.add(v)
+        on Term.app as a
+            for x in freeVars(a.func)
+                var fv: str = x
+                if not hasName(out, fv)
+                    out.add(fv)
+            for x in freeVars(a.arg)
+                var av: str = x
+                if not hasName(out, av)
+                    out.add(av)
+    return out
+
+
+# ── Substitution ──────────────────────────────────────────────────────────
+#
+# `subst(body, x, n)` returns `body[x := n]`.  When `body` is `\y.inner`
+# and `y` is in `freeVars(n)`, we alpha-rename `y` to a fresh name
+# (suffix with `'` until it's neither in `freeVars(inner)` nor
+# `freeVars(n)`).  This avoids variable capture.
+
+def subst(body: Term, x: str, n: Term): Term
+    branch body
+        on Term.var_ as name
+            if name == x
+                return n
+            return Term.var_(name)
+        on Term.abs as l
+            if l.param == x
+                # The binder shadows the free `x` we're substituting; leave alone.
+                return Term.abs(l)
+            # Does our replacement's free vars include the binder name?
+            var n_free = freeVars(n)
+            if hasName(n_free, l.param)
+                # Capture would happen — alpha-rename the binder.
+                var b_free = freeVars(l.body)
+                var fresh: str = freshName(l.param, b_free, n_free)
+                var renamed_body: Term = subst(l.body, l.param, Term.var_(fresh))
+                var rebound: Term = Term.abs(Lam(fresh, renamed_body))
+                return subst(rebound, x, n)
+            var new_body: Term = subst(l.body, x, n)
+            return Term.abs(Lam(l.param, new_body))
+        on Term.app as a
+            var f = subst(a.func, x, n)
+            var v = subst(a.arg, x, n)
+            return Term.app(App(f, v))
+
+# Pick a name not already free in `b_free` or `n_free`, starting from `base`
+# and appending `'` until we find one.
+def freshName(base: str, b_free: List(str), n_free: List(str)): str
+    var candidate: str = base + "'"
+    while hasName(b_free, candidate) or hasName(n_free, candidate)
+        candidate = candidate + "'"
+    return candidate
+
+
+# ── Reduction ─────────────────────────────────────────────────────────────
+#
+# Normal-order: leftmost-outermost first.  This converges if a normal
+# form exists.  We stop after `step_cap` reductions to keep divergent
+# terms (Ω = (\x.x x) (\x.x x)) from looping forever.
+
+# Returns (reduced_term, did_step).  When did_step is false the term
+# is a normal form.  Encoded via two outputs because we don't have
+# tuples ergonomic-enough.
+class StepResult
+    var term: Term = Term.var_("")
+    var stepped: bool = false
+
+    cue init(term: Term, stepped: bool)
+        .term = term
+        .stepped = stepped
+
+def reduceOnce(t: Term): StepResult
+    branch t
+        on Term.app as a
+            # Normal-order: try the outermost redex first.
+            if a.func is Term.abs as l
+                # Beta!
+                var reduced: Term = subst(l.body, l.param, a.arg)
+                return StepResult(reduced, true)
+            # Otherwise try to reduce the function side.
+            var fres = reduceOnce(a.func)
+            if fres.stepped
+                # Both args go through typed locals so the auto-box fires
+                # uniformly on App(func, arg) (mixing a Term value with a
+                # `^Term` field-access disables the auto-box otherwise).
+                var new_func: Term = fres.term
+                var same_arg: Term = a.arg
+                return StepResult(Term.app(App(new_func, same_arg)), true)
+            # Then the argument side.
+            var ares = reduceOnce(a.arg)
+            if ares.stepped
+                var same_func: Term = a.func
+                var new_arg: Term = ares.term
+                return StepResult(Term.app(App(same_func, new_arg)), true)
+            return StepResult(t, false)
+        on Term.abs as l
+            # Reduce under the binder so that, e.g., \x.(\y.y) z → \x.z.
+            var bres = reduceOnce(l.body)
+            if bres.stepped
+                var new_body_r: Term = bres.term
+                return StepResult(Term.abs(Lam(l.param, new_body_r)), true)
+            return StepResult(t, false)
+        on Term.var_
+            return StepResult(t, false)
+
+
+# ── Pretty-printer ────────────────────────────────────────────────────────
+#
+# Right-associate inside `\x.body` (no parens around body), left-
+# associate for application.  Add parens only where required.
+
+def show(t: Term): str
+    branch t
+        on Term.var_ as name
+            return name
+        on Term.abs as l
+            return "\\" + l.param + "." + show(l.body)
+        on Term.app as a
+            return showApp(a.func) + " " + showAtom(a.arg)
+
+# In application's left position, abstractions need parens.
+def showApp(t: Term): str
+    if t is Term.abs
+        return "(" + show(t) + ")"
+    return show(t)
+
+# In application's right position, both abstractions AND applications
+# need parens (because juxtaposition is left-associative).
+def showAtom(t: Term): str
+    if t is Term.abs
+        return "(" + show(t) + ")"
+    if t is Term.app
+        return "(" + show(t) + ")"
+    return show(t)
+
+
+# ── Driver ────────────────────────────────────────────────────────────────
+
+def runOne(src: str)
+    var p = Parser(src)
+    p.start()?
+    var t = p.parseTerm()?
+    if p.cur.kind != TokKind.eof
+        print "  ${src}  -> error: trailing tokens"
+        return
+    print "  ${src}"
+    var steps: List(str) = []
+    steps.add(show(t))
+    var step_cap = 64
+    var i = 0
+    var current: Term = t
+    while i < step_cap
+        var step = reduceOnce(current)
+        if not step.stepped
+            break
+        current = step.term
+        steps.add(show(current))
+        i = i + 1
+    var k = 0
+    while k < steps.count()
+        var line: str = steps.at(k)
+        if k == 0
+            print "    = ${line}"
+        else
+            print "    → ${line}"
+        k = k + 1
+    if i == step_cap
+        print "    (stopped after ${step_cap} steps — no normal form found)"
+catch |e|
+    print "  ${src}  -> error: ${e.message}"
+
+def main()
+    print "lambda_calc — untyped lambda calculus"
+    print "---"
+    # Identity applied to a variable.
+    runOne("(\\x.x) y")
+    # K combinator — first projection.
+    runOne("(\\x.\\y.x) a b")
+    # Application chain — left associative.
+    runOne("(\\x.\\y.\\z.x z (y z)) (\\a.\\b.a) (\\c.\\d.c) e")
+    # Capture avoidance: substituting `y` for `x` under a binder named `y`
+    # forces an alpha rename.  Without it the `y` would be captured.
+    runOne("(\\x.\\y.x) y")
+    # Church numerals — successor and "two = \\f.\\x.f (f x)".
+    runOne("(\\n.\\f.\\x.f (n f x)) (\\f.\\x.x)")          # succ 0  → \f.\x.f x  (i.e. 1)
+    runOne("(\\n.\\f.\\x.f (n f x)) (\\f.\\x.f x)")        # succ 1  → \f.\x.f (f x)  (i.e. 2)
+    # Omega — should not converge; the steps will hit the step cap.
+    runOne("(\\x.x x) (\\x.x x)")
+    # A trivial parse error.
+    runOne("\\x")

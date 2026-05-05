@@ -2,7 +2,17 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-02 (item 22 added — 2.0 kernel track with `.zbr`/`.zeb` file split)
+**Last updated:** 2026-05-04 (added item 23 — 0.14 memory model + concurrency primitives milestone, splitting `<-` arena copy-out + `Chan(T)` + allocator context off from 1.0; triage pass; phase 13 cluster expanded with style-guide bugs)
+
+> **Milestone cumulative semantics:** each milestone listed below is
+> *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
+> part of the **1.0 stability commitment** — 1.0 includes everything
+> delivered from 0.1 through 0.14.  Same rule for 2.0 (kernel track =
+> 1.0 + the 2.0 additions).  When evaluating "what blocks 1.0," the
+> answer is everything labeled for any 0.x milestone that isn't yet
+> shipped + stable, not just the items in §15.  See
+> `wiki/pages/projects/project_zebra.md` milestone table for the
+> authoritative version-by-version breakdown.
 
 ---
 
@@ -14,27 +24,19 @@ Authoritative priority queue for the project. Update this file rather than regen
 Not manifesting in practice — `scanMutationsInExpr` conservatively marks cross-module calls as mutated.  
 Defer unless a concrete failing case is found.
 
-~~**BUG-083** — `genGenericClass` skips `implements` conformance checks~~ ✓ DONE  
-~~**BUG-084** — Selfhost `Lexer.zbr` `parenDepth` tracks `[`/`]`; Zig Tokenizer does not~~ ✓ DONE
-
-~~### 4. `str` satisfies `Comparable` by compiler fiat — narrow fix (~1 hr)~~ ✓ ALREADY DONE
-`typeImplements` at `src/TypeChecker.zig:2982` already excludes `.string`; comment says "bool and string are excluded: they have no declared compareTo contract." No code change needed.
-
-~~**BUG-027** — Method chaining in expression position~~  ✓ DONE  
-Labeled-block fix in both backends: `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })`. Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` extended to handle call receivers; `break :blk_N try _mc_N.method(args)` emitted when method `throws`. Selfhost mirrors via `inferExpr`+`isClassMethodThrows`.
-
 **BUG-014** — Regex lazy match is global, not per-quantifier  
 `<.*?>STUFF.*>` misbehaves; `lazy_match` is a whole-regex flag.
 Architectural fix: priority-first NFA simulation or backtracking engine.
 File: `src/CodeGen.zig` NFA preamble. Effort: L
 
-### 2. ~~`for-else` — while-path support (Path 2)~~ ✓ DONE
-All paths complete: native `for...else` for list/items; labeled-block pattern for HashMap/split/chars/for-num.
-Commit: `79aa9fb`. Bootstrap 5/5.
+**BUG-099 cluster (TC reliability keystone)** — see §19.5a below.
 
-### ~~3. `interface` codegen~~  ✓ DONE
-`interface IFoo` now emits a fat-pointer vtable struct: `ptr: *anyopaque`, `vtable: *const VTable`, forwarding methods, and a `check(comptime T: type)` conformance verifier. `class Foo implements IFoo` sites call `IFoo.check(@This())` in a `comptime` block. Both backends (Zig + selfhost) ported, bootstrap 5/5. Deferred: `wrap()` factory, `callconv(.C)` for DLL crossing, throws-in-vtable — tracked in item #10 (plugin system demo).
-Files: `src/CodeGen.zig` (`genInterface` + `genClass`/`genStruct` implements sites), `selfhost/codegen.zbr` (parity).
+**BUG-109 / BUG-110** — `Http.serve` `.reuse_address` policy + bind-error
+panic instead of throws. See `BUGS.md`.
+
+**Phase 13 cluster (style-guide–driven sweep targets, BUG-111..115)** —
+all queued for the 0.13 syntax-cleanup window. See §12 below for the
+syntax-cleanup roster.
 
 ---
 
@@ -45,28 +47,9 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 "Accumulate and rerun" state model (all previous cells stay in scope).
 See design notes in `selfhost/` journal and `SELFHOST_JOURNAL.md`.
 
-~~### 17. `Json.parseStrict` + `@reflectable` annotation (Milestone 0.9, scope-1)~~ ✓ DONE (2026-04-27)
-- **`@reflectable` annotation** — top-level `@reflectable` directive sets `mods.reflectable`
-  on the following `class`/`struct` decl; gates the per-class strict parser emission.
-- **`Json.parseStrict(T, str): ?T`** — scope-1 (`int`/`float`/`bool`/`str` fields only):
-  missing key, type mismatch, or extra key → null.  Per-class
-  `_json_parse_strict_<T>` free function emitted next to the reflect arrays.
-- Both backends; bootstrap 5/5; 43/43 smoke (added `json_parse_strict_test` and
-  `json_parse_strict_tc_test`).  Test files: `test/json_parse_strict_test.zbr`,
-  `test/json_parse_strict_tc_test.zbr`.
-- **Future scope:** sized numerics, `T?` optional fields, `List(T)` of primitives, nested
-  `@reflectable` classes, `Reflect.fieldNames()` / `Reflect.fieldValue()` runtime API.  
-See `wiki/pages/concepts/concept_zebra-reflection.md`.
-
 ### 7. Regex per-quantifier lazy/greedy (Milestone 0.7)
 Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
 to track per-node shortest/longest flags, not a global flag.
-
-~~### 8. Pattern matching in `branch` — struct field values (Option A)~~ ✓ DONE (2026-04-25)
-`on Point(x: 0, y: 0)` matches struct field values using parenthesis syntax (Zebra-idiomatic).
-Supports partial matches, string fields, optional `as` binding for whole struct, guards.
-Both Zig and selfhost backends; bootstrap 5/5; 35/35 smoke. Deferred: cross-module
-`on Mod.Point(...)`, field-binding destructuring (Option B), nested patterns.
 
 ### 9. Greek NT n-gram port — **deferred until 0.11 (SIMD)** lands
 An earlier port exists from a much earlier Zebra version and is no longer idiomatic.
@@ -80,36 +63,24 @@ Use Cases" table in `concept_zebra-simd-design.md`.
 Original scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window —
 all available now, but the rewrite would land twice if done before 0.11.
 
-~~### 18. `Progress` stdlib module (tqdm-equivalent)~~ ✓ DONE (2026-04-24)
-`Progress.bar(total, label)` / `.tick()` / `.done()` backed by `std.Progress` (thread-safe, no alloc).  
-Both Zig and selfhost backends; bootstrap 5/5; 34/34 smoke. Deferred: `Progress.wrap(iterable, label)` iterator form.
-
 ### 10. Plugin system — DynLib demo (after `interface` codegen)
 Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
 Depends on `interface` codegen (step 4 above) and a thin `DynLib` stdlib wrapper.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 11. Contracts: `ensure` + `old` + `--turbo` — core complete
-**Done (2026-04-24):** `ensure` now emits a `defer { if (!(expr)) panic(); }` block; `old expr` emits `const _old_N = snapshot;` before body, then substitutes `_old_N` in the defer check. Both Zig and selfhost backends pass 32/32 smoke; bootstrap 5/5.
-**Option C refactor done (2026-04-24, session 10):** `old` is now its own `Expr.old_` union variant (`ExprOld { uid: int, operand }`) instead of a `UnaryOp` enum value. UIDs assigned at ASTBuilder construction time (not traversal order), eliminating the ordering dependency. `collectOldInner` retired in favour of single-pass `collectAndEmitOldSnapshots`.
-**`--turbo` done (2026-04-24, session 12):** `strip_contracts: bool` field on Generator; `require`/`ensure`/`invariant` emit sites all guarded; `_ = self;` suppression updated; `generateFullWithDeps`/`generateDepWith` chain threads `strip_contracts`; `smoke_turbo` verifies absence of contract strings; both backends; bootstrap 5/5.
-**`result` capture done (2026-04-27):** `kw_result` keyword + `Expr.result_` AST variant; codegen emits `var _result: T = undefined;` + `var _ensure_armed: bool = false;` at function entry; `genReturn` rewrites `return EXPR;` → `_result = EXPR; _ensure_armed = true; return _result;`; defer check gated on `_ensure_armed` so it fires only on the success path.  Side effect: BUG-087 (ensure mis-fires on throws path) fixed by the same flag.  Tests: `contract_result_test.zbr`, `contract_result_throws_test.zbr`, `contract_ensure_falloff_test.zbr`.  Both backends; bootstrap 5/5; 40/40 smoke.
-
-Note: `wiki/pages/concepts/concept_zebra-0.12-contracts.md` design doc still needs updating to reflect `result` impl.
-See: `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
+### 11. Contracts: `ensure` / `old` / `--turbo` / `result` — ✅ COMPLETE
+All four phases shipped 2026-04-24 to 2026-04-27. Bootstrap 5/5; 40/40 smoke.
+Both backends parity. Design doc `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
+refreshed 2026-05-04 to reflect as-shipped state. Closed BUG-087 as a side effect.
 
 ### 19. Error recovery — current state and remaining gaps
-**Largely done already (verified 2026-04-26 via multi-error fixture):** Bind, Resolve, and
-TypeCheck all collect-and-continue via `Diagnostic` lists; main.zig prints all of them
-before halting if any are errors.  A 5-error fixture reports all 5 from the bootstrap
-backend.
+**Bootstrap backend largely done** (verified 2026-04-26 via multi-error fixture):
+Bind, Resolve, and TypeCheck collect-and-continue via `Diagnostic` lists;
+main.zig prints all of them before halting. 5-error fixture reports all 5.
+Tokenizer positioned diagnostics + CRLF hint, AstBuilder TODO panics — both
+shipped 2026-04-27.
 
-**Remaining gaps:**
-- ~~**Tokenizer**: `error.UnexpectedCharacter` surfaces as `internal compiler error`~~ ✓ DONE
-  2026-04-27: positioned diagnostic via `Tokenizer.Diag {line, col, byte}`; CRLF gets a
-  hint pointing at the LF-only requirement.  Selfhost mirrors via `lexErr()`.
-- ~~**AstBuilder `@panic("TODO: …")` paths**~~ ✓ DONE 2026-04-27: AspectDecl/WeaveDecl/
-  StmtExpect/StmtLock now panic with `<line>:<col>: error: <feature> not yet implemented`.
+**Remaining gap:**
 - **Selfhost typechecker has no diagnostic infrastructure** (audited 2026-04-27):
   selfhost/typechecker.zbr is inference-only, with no `errors` list, no `addErr` helper,
   and no integration path through selfhost main for printing.  As a result, `var x: T = "s"`
@@ -175,13 +146,28 @@ parse from there, accumulate errors across restarts.  Catches "missing paren in 
 `errors: []ParseError`, decision logic for safe restart points).  1.0-era.
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
-- ~~Audit which reserved keywords (`set`/`get`/`body`/`same`) are grammar-load-bearing~~ ✓ DONE (`set`/`get`/`body`/`post`/`pro` removed 2026-04-19; `same` kept — TypeRef)
-- ~~`implements IfaceName` on the class declaration line~~ ✓ DONE (already on class line; old nested form was never the real parser)
-- ~~Float token merge~~ ✓ DONE — `float_lit`/`float_lit_exp`/`fractional_lit` → `float_lit`; bootstrap 5/5.
-- ~~`_f32`/`_f64` suffix literal codegen~~ ✓ DONE — `genFloatLit` emits `@as(f32, val)` / `@as(f64, val)`; selfhost parity via `replace()`; 27/27 smoke, bootstrap 5/5.
-- `^T` auto-boxing edge case fixes
+Phase 13 work cluster. Style guide draft (`docs/STYLE_GUIDE_DRAFT.md`)
+identifies the canonical forms; sweep targets and compiler-driven workarounds
+flow into this milestone.
+
+**Compiler fixes (BUGS.md tracking):**
+- **BUG-111** — `this.field += 1` / `.field += 1` compound assignment (verified zero uses repo-wide; users have learned to write the verbose form)
+- **BUG-112** — Remove `def name: T` no-paren shorthand from grammar (38 occurrences sweep target first)
+- **BUG-113** — Slice expression loses `str` type through a `var` binding (per `pratt_calc.zbr:132–134` in-source comment)
+- **BUG-115** — Real `private` / `internal` visibility keywords (language proposal; `_` prefix has zero compiler enforcement today)
+
+**Style guide sweeps (mechanical, no compiler change):**
+- `this.field` → `.field` (1,149 occurrences in selfhost; QUICKSTART §5 + style guide §7)
+- `0 - x` / `0.0 - x` → `-x` (BUG-114 filed for tracking only — `-x` already works)
+- `class Main` + `static def main` → top-level `def main()` (selfhost/main.zbr first)
+- `_underscore` private prefix → drop (pending BUG-115 decision)
+
+**Other cleanup carried over:**
+- `^T` auto-boxing edge case fixes (W11 in `concept_zebra-language-warts.md`)
 - Book documentation for `sig`, raw strings, `"""`
-See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`
+
+See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`,
+`docs/STYLE_GUIDE_DRAFT.md` §13.
 
 ### 20. SIMD types — Milestone 0.11 headliner
 `f32x8`, `i16x16`, `f32x4` etc. naming convention (`{element_type}x{lanes}`). Auto-fallback to scalar loop when the target lacks the vector width.  
@@ -229,15 +215,78 @@ Self-hosted Zebra + ImGui editor with:
 
 See: `wiki/pages/concepts/concept_zebra-imgui-backend.md`, `concept_zebra-pthom-editor.md`
 
-### 15. 1.0 — Language stability
+### 23. 0.14 — Memory model + concurrency primitives (NEW milestone — split from 1.0 on 2026-05-04)
+
+Foundational memory + concurrency primitives.  Cluster motivation: the
+three items below all touch the runtime memory model (or the `<-` token);
+they should land **together** so the API surface is settled before 1.0
+stability locks it.
+
+**a. `<-` arena copy-out operator** ★ design doc complete
+Receive-only operator for crossing the `arena {…}` block boundary:
+`outer_var <- inner_value` deep-copies the value into the outer arena,
+copying only what's actually allocated in the exiting sub-arena
+(provenance-aware).  Implementation split: comptime per-type traversal
+generation + runtime `_arena_owns()` provenance check.  Six open
+implementation questions surfaced; static elision for primitive types
+gives a "free when unneeded" property.  Replaces the current `"" + src`
+magic-concat idiom with first-class, grep-friendly syntax.
+See [[concept_zebra-arena-copyout]] for the full design + raw
+brainstorm conversation.  **Effort:** prototype = 1 session for parser
++ str types; full deep-copy generator with cycles + interfaces = 3-5
+sessions.
+
+**b. `Chan(T)` channels** — shares `<-` token with (a)
+`ch <- val` (send), `var v <- ch` (receive).  Backed by `std.Thread` +
+mutex/condvar queue.  `Chan(T)(capacity: n)` construction.  Must land
+*after* (a) so the parser support for `<-` is reused — disambiguation
+between channel-receive and arena-copy is type-driven (RHS `Chan(T)` →
+channel; else → arena copy).  **Effort:** unknown; channel runtime is
+real work but the language-side parser piece is small.
+
+**c. Allocator context** — Odin-style named implicit allocator
+Currently the compiler threads `_allocator` everywhere; user code
+inherits it implicitly.  Allocator context would let user code say
+"this block uses allocator X" without manual threading.  Required for
+compiler-scale programs that want pool / region allocators alongside
+the default arena.  **Effort:** medium; touches every alloc-emitting
+codegen site + the runtime `_initAllocator` mechanism.
+
+**Sequencing:** (a) → (b) → (c).  (a) lands the parser + token; (b)
+re-uses parser; (c) is independent and can happen before or after.
+
+### 15. 1.0 — Language stability + CHANGELOG (cumulative commitment)
+
+**Cumulative semantics:** 1.0 isn't "the few items below" — it's the
+**full API surface delivered through all prior 0.x milestones, locked
+down with a stability promise**.  The items below are *new at 1.0*; the
+broader commitment is everything that landed from 0.1 onward.
+
+**Stability commitment — 1.0 must have all of:**
+- ✅ Generics (delivered 0.8)
+- ✅ Contracts (`require`/`ensure`/`invariant`/`old`/`result`/`--turbo`, delivered 0.12)
+- ✅ All stdlib modules through 0.4–0.13: Math, Json, DateTime, CSV, Hash, Random, Arg, Terminal, Log, Uri, Compress, Mime, Timer, Regex, Http, Tcp, Udp, Net, File, sys, Gui, Reflect, Json.parseStrict, Progress
+- 0.14 deliverables (must be present and stable at 1.0):
+  - `<-` arena copy-out operator (see item 23)
+  - `Chan(T)` channels (item 23)
+  - Allocator context (item 23)
+- 0.13 deliverables: syntax cleanup (BUG-111..115 closed; sweeps complete)
+- 0.11 deliverables: SIMD types, real ImGui backend, REPL, regex per-quantifier lazy/greedy
+- Source-mapped errors (delivered 0.5), self-hosting (Phase 22 cutover, delivered 2026-04-21)
+
+**NEW at 1.0 (the small list below):**
 - Type aliases with constraints (`type Name = str where len > 0`)
 - WebSocket (`Ws.connect/send/recv/close`)
-- Allocator context (Odin-style named implicit allocator)
-- `Chan(T)` channels (`ch <- val` / `var v <- ch`)
-- **IANA timezone support (`zdt`)** — `DateTime.inZone("America/New_York")`; must land before 1.0; see `concept_zebra-datetime-design.md`
+- **IANA timezone support (`zdt`)** — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - **`Test` stdlib module** — `zebra test` subcommand; test discovery by naming convention (`def test_*`); structured pass/fail output; see `STDLIB_ROADMAP.md` item 11
 - **General for-loop destructuring** — `for a, b in list_of_pairs` tuple unpacking; currently only HashMap iteration has this as compiler magic
-- CHANGELOG
+- CHANGELOG covering the full 0.1 → 1.0 surface
+
+**Implication for "what blocks 1.0":** anything in the cumulative
+commitment list that isn't yet shipped or yet stable.  Right now: 0.11
+items (SIMD, REPL, ImGui completion), 0.13 items (BUG-111..115 +
+sweeps), 0.14 items (the whole new milestone), plus the small
+NEW-at-1.0 list.
 
 ### 22. 2.0 — Kernel track (Zebra for OS-writing)
 2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no
@@ -326,6 +375,18 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-085: static-field bare-name emit — `genIdent` now checks field's own `static` mod; emits `TypeName.field` not `self.field`; `isStaticField` added to selfhost; both backends; bootstrap 5/5 | 2026-04-24 |
 | DESIGN-002: `collectAndEmitOldSnapshots` 8 missing Expr arms — `array_lit`/`list_lit`/`tuple_lit`/`dict_lit`/`string_interp`/`type_check`/`slice`/`except_` added; regression test `contract_old_compound_test.zbr`; 31/31 smoke, bootstrap 5/5 | 2026-04-24 |
 | `--turbo` flag: `strip_contracts: bool` on Generator; all require/ensure/invariant emit sites guarded; `_ = self;` suppression updated; generate* chain threads `strip_contracts`; `smoke_turbo` verifier; `turbo_test.zbr`; both backends; bootstrap 5/5 | 2026-04-24 |
+| BUG-027: method chaining in expression position — labeled-block fix in both backends; throws sub-issue: `exprCallIsThrows` handles call receivers | 2026-04-23 |
+| BUG-083 / BUG-084: `genGenericClass` `implements` check + selfhost `parenDepth` only tracking `(`/`)` | 2026-04-24 |
+| `for-else` complete (Path 1 native + Path 2 labeled-block) | 2026-04-23 |
+| `interface` codegen: fat-pointer vtable struct (`ptr`/`vtable`/`check()`); both backends; bootstrap 5/5 | 2026-04-24 |
+| `Json.parseStrict` + `@reflectable` (scope-1 primitives); per-class `_json_parse_strict_<T>`; both backends; 43/43 smoke | 2026-04-27 |
+| `Progress` stdlib (`Progress.bar`/`tick`/`done`); std.Progress backed; both backends; 34/34 smoke | 2026-04-24 |
+| `branch` struct field patterns (Option A): `on Point(x: 0, y: 0)` syntax; both backends; 35/35 smoke | 2026-04-25 |
+| `result` capture in `ensure`: `kw_result` + `Expr.result_` + `_ensure_armed` flag; closes BUG-087; 40/40 smoke | 2026-04-27 |
+| Selfhost cutover (zebra.exe = selfhost binary) — Phase 22 | 2026-04-21 |
+| `str` Comparable verified excluded already at `TypeChecker.zig:2982` (no fiat-by-default; `bool` and `string` excluded explicitly) | (verified 2026-04-?) |
+| Style guide draft committed at `docs/STYLE_GUIDE_DRAFT.md` (foundational §1 decisions resolved 2026-05-04) | 2026-05-04 |
+| Phase 13 BUGS-111..115 filed for the syntax-cleanup window | 2026-05-04 |
 
 ---
 

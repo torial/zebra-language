@@ -1,0 +1,27 @@
+# bug091_list_param_test.zbr — List(T) and HashMap(K,V) params that are
+# mutated inside the body must surface mutations to the caller.  Before the
+# fix, the param emitted as `*const ArrayList(...)` and `.add()` was rejected.
+# After the fix, the param is `*std.ArrayList(...)` and the call site takes `&`.
+
+class Main
+    static
+        def fillList(out: List(str))
+            out.add("alpha")
+            out.add("beta")
+
+        def fillMap(out: HashMap(str, int))
+            out.put("one", 1)
+            out.put("two", 2)
+
+        def main
+            var items: List(str) = List(str)()
+            Main.fillList(items)
+            assert items.count() == 2, "list count mismatch"
+            assert items.at(0) == "alpha", "alpha"
+            assert items.at(1) == "beta", "beta"
+
+            var counts: HashMap(str, int) = HashMap(str, int)()
+            Main.fillMap(counts)
+            assert counts.count() == 2, "map count mismatch"
+
+            print "ok"

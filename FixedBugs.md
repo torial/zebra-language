@@ -5,6 +5,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-087: `ensure` defer fires on the error path of throws functions — FIXED
+- **Status:** Fixed 2026-04-27 in both backends. `_ensure_armed` flag set only on the success path; defer check gated on the flag. Tests: `contract_result_throws_test.zbr`, `contract_ensure_falloff_test.zbr`.
+- **Was:** A throws function with an `ensure` clause that raised mid-body caused the ensure check to fire on the error path. Result: program panicked with "ensure failed in '<fn>'" and the user's `try/catch` never saw the original exception. Zig `defer` runs on both success and error returns, but `genEnsureBlock` emitted a plain `defer { if (!(expr)) panic; }` with no success-vs-error discrimination.
+- **Fix:** `var _ensure_armed = false;` local at function entry. Set `true` on the success path (right before normal `return _result;` in functions with `result`-capable ensure, or right before any normal return otherwise). Defer check wrapped in `if (_ensure_armed and !(expr)) panic;`.
+- **Discovered:** while implementing `result` capture (NEXT_STEPS item #11). Closed as a side effect of the `result`-keyword work — same flag mechanism delivers both features.
+
+---
+
+### BUG-019: `fn_ref` assignment missing `&` prefix in selfhost codegen — FIXED
+- **Status:** Fixed 2026-04-23 in `selfhost/codegen.zbr`. `isTopLevelMethod` + `&` prefix paths in `genLocalVar`/`genAssign`. Test: `test/fn_ref_test.zbr`.
+- **Was:** `selfhost/codegen.zbr` lacked the fn-ref detection that `src/CodeGen.zig` has. Mutable local vars initialised from a bare top-level function name (e.g. `var pred = isAlpha`) emitted Zig `var pred = isAlpha;` which Zig rejects: *"variable of type 'fn(u21) bool' must be const or comptime"*. The Zig backend had this via `tc_init_type == .fn_ref`; the selfhost lacked parity.
+- **Fix:** added `isTopLevelMethod()` scanner over the current module's `module_decls`. Mutable fn-ref locals emit `var pred: @TypeOf(&isAlpha) = &isAlpha;`; reassignment emits `pred = &isDigit;`.
+- **Known limitation (deferred):** `isTopLevelMethod()` only scans the current module. Cross-module fn-ref (`var cb = OtherModule.func`) still emits without `&` in selfhost. Not yet seen in practice; refile if it lands.
+
+---
+
+### BUG-002: `guard` + `try_postfix` runtime error propagation — CLOSED (test quality)
+- **Status:** Closed 2026-04-23. Tests fixed by adding explicit `try/catch` wrapping. Per memory log + NEXT_STEPS reference table.
+- **Was:** Two tests (`guard_test`, `try_postfix_test`) panicked at top level rather than catching propagated errors. Symptom A: `checkPositive` raised inside a guard `else` block; top-level `try Main.main()` panicked with `error: ZebraError`. Symptom B: `safeDiv(10,0)?` propagated through `main throws`; test exited non-zero.
+- **Resolution:** Behaviour was correct per Zebra's error semantics — propagation up to `main` does panic if uncaught. The tests were testing propagation without explicit `try/catch` boundaries; adding the wrapping made them validate the propagation path without panicking. No compiler change needed.
+
+---
+
+### BUG-098: `name in some_list` always routed to `std.mem.indexOf(u8, …)` — FIXED
+- **Status:** Fixed in `selfhost/codegen.zbr`. Bootstrap 5/5, smoke 43/43.
+- **Was:** The `in` operator only specialised for `@[…]` tuple literals on the right; List(T) / HashMap(K,V) variables fell through to the substring path, which emitted `std.mem.indexOf(u8, container, needle)` — Zig rejected because `indexOf` takes a `[]const T` slice, not an `ArrayList`.
+- **Fix:** `BinaryOp.in_` now routes to the existing `_zebra_in` runtime helper (which handles ArrayList + HashMap + tuple via comptime dispatch) when the right operand is:
+  - `Expr.array_lit` (the existing case)
+  - `Expr.list_lit` (newly recognised — `[a, b, c]` literals)
+  - `Expr.ident` whose name is in `list_locals` / `hashmap_locals`
+  - or any expression whose TC type is a `.named` symbol named `"List"` / `"HashMap"` (covers field accesses)
+- **Companion fix:** `genLocalVar` now adds `n.name` to `list_locals` (and `list_str_locals` when the first element is str-typed) for `var x = [a, b, …]` declarations — without that, downstream `.count()`, `.at()`, and `in` dispatches missed list-locals that came from a `[…]` literal rather than a `List(T)()` ctor.
+- **Regression test:** `["alice", "bob"]` etc. round-trip through `examples/lambda_calc.zbr` (which uses `name in list` pervasively after this fix).
+- **Discovered:** 2026-04-30 while writing `examples/lambda_calc.zbr`.
+
+---
+
+### BUG-095: class field defaults aren't auto-applied — `cue init` left fields as Zig `undefined` — FIXED
+- **Status:** Fixed in `selfhost/codegen.zbr` `genInit`. Bootstrap 5/5, smoke 43/43.
+- **Was:** When a `cue init` body didn't explicitly assign a class field that had a declared default (`var hits: int = 0`), the un-assigned field was emitted as Zig `undefined` — producing the poison value `0xAAAA…AAAA` which silently overflowed in subsequent arithmetic. The synthetic-default-init path (used when a class has no user-written `cue init`) already pre-filled defaults; the explicit-init path didn't.
+- **Fix:** `genInit` now walks `owner_members` for `Decl.var_` entries with a non-nil `init_expr` and emits `_self.field = <default>;` *before* running the user's `cue init` body. The user's body may overwrite those defaults — that's fine and matches the bare-class semantics. Same pre-fill is also added for body-less `cue init` declarations.
+- **Reproducer:** `class Counter { var hits: int = 0; var misses: int = 0; cue init(): pass }` — `c.hits + c.misses` now prints `0` instead of `-6148914691236517206`.
+- **Discovered:** 2026-04-30 while writing `zebra-tools/book_run.zbr`'s pass/fail counters.
+
+---
+
+### BUG-091: `List(T)` / `HashMap(K,V)` parameter receiver is `*const` — `.add()` rejected by Zig — FIXED
+- **Status:** Fixed in **both** `src/CodeGen.zig` (Zig backend) and `selfhost/codegen.zbr` + `selfhost/cg_helpers.zbr` (selfhost). Per-equivalence rule. Bootstrap 5/5; smoke 43/43.
+- **Was:** Passing a `List(T)` as a function parameter and calling `.add()` on it emitted `*const ArrayList(...)` (Zig parameters are always const), and `append` (which takes `*Self`) was rejected with "cast discards const qualifier".
+- **Fix:** Mutation-driven param-pointering. New helper `paramNeedsAddrOf` returns true when the param's type is `List(T)` / `HashMap(K,V)` AND the body's `scanMutations` set contains the param name. `genMethod` emits the param as `*std.ArrayList(...)` in that case; the call-site emit (`genArgs` in src; `genArgListNamed` + the class-method member-call path in selfhost) emits `&` for the corresponding arg. `addAddrOfMutationsInStmts` (a parallel pass alongside `scanMutations` in `genStmts`) marks the caller's local as `var` so `&items` is `*ArrayList`, not `*const ArrayList`.
+- **Why mutation-driven (not blanket):** Existing selfhost code (441 `: List(...)` param sites) is reads-only; flipping the calling convention everywhere would have a large blast radius. The mutation predicate isolates the change to sites that actually need it.
+- **Selfhost port:** added `paramNeedsAddrOf` + `isContainerTypeRef` to `cg_helpers.zbr`; added `lookupFnBody`, `addAddrOfMutationsInStmts/Expr`, `*` prefix in `genParamList`, `&` prefix in `genArgListNamed` and `genMemberCall` member-method path; small TypeRef.named "StrSet" → `strset_locals` registration so a typed `var ms: StrSet = scanMutations(...)` round-trips. Both the call-site `&` emit and the addr-of mutation-marking pass cover three dispatch shapes: static (`Class.method`), self (`this.method`), and instance (`var.method` resolved via `inferExpr` against the per-method `InferCtx`).
+- **Regression tests:** `test/bug091_list_param_test.zbr` (static `Main.fillX(items)`) and `test/bug091_dispatch_test.zbr` (`this.helper(items)` and `f.helper(items)` instance shapes with assertions). Both pass through `zebra-bootstrap.exe` (Zig backend) and `zebra.exe` (selfhost).
+- **Discovered:** 2026-04-29 while writing `book_lint.zbr` (Phase 3 dogfooding tools).
+
+---
+
+### BUG-092: `var lines: List(str) = s.split("\n")` didn't auto-collect SplitIterator — FIXED
+- **Status:** Fixed in **both** `src/CodeGen.zig` `genLocalVar` and `selfhost/codegen.zbr` `genLocalVar`. Bootstrap 5/5.
+- **Was:** Assigning `content.split("\n")` to a `List(str)`-annotated local annotated the slot as `std.ArrayList([]const u8)` but the RHS emitted `std.mem.splitSequence(...)` — a Zig type mismatch.
+- **Fix:**
+  - **Zig backend** (`src/CodeGen.zig`): New branch in `genLocalVar` emits the iterator + while-loop drainer alongside the const/var declaration.
+  - **Selfhost** (`selfhost/codegen.zbr`): same pattern but emitted as a single labeled-block initializer (`blk_N: { var _ll_N = …; while (…) |…| _ll_N.append(…); break :blk_N _ll_N; }`) so the form works regardless of the outer const/var decision. Also added "lines" to `isReadOnlyMethod` in `cg_helpers.zbr` so a downstream `s.lines()` call doesn't spuriously mark `s` as mutated.
+- **Coverage:** Both `split(sep)` and `lines()` are handled via the same path (both return iterators in Zig). Untyped `var x = s.split(...)` for-loop iteration is unchanged (still drives the iterator directly).
+- **Regression test:** `test/bug092_split_to_list_test.zbr`, passes through both backends.
+- **Discovered:** 2026-04-29 while writing `book_lint.zbr`.
+
+---
+
 ### BUG-082: Selfhost `inferExpr` returns `unknown_` for cross-module constructor calls — FIXED
 - **Status:** Fixed — `selfhost/typechecker.zbr` `inferExpr` Expr.call/Expr.member branch; `test/bug082_test.zbr` + `test/bug082_lib.zbr`. Bootstrap 5/5.
 - **Was:** `var b = SomeMod.SomeClass(args)` gave `b` type `unknown_` in selfhost TC; downstream method-return format strings emitted `{any}` instead of `{s}`, printing raw bytes.

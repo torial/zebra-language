@@ -358,134 +358,133 @@ class MultiCompiler
             pmi = pmi + 1
         return PModule(merged_decls)
 
-class Main
-    static def main()
-        var args = Arg.parse()
+def main()
+    var args = Arg.parse()
 
-        # -- Version -----------------------------------------------------------
+    # -- Version -----------------------------------------------------------
 
-        if args.contains("--version")
-            sys.errln("zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)")
-            sys.exit(0)
+    if args.contains("--version")
+        sys.errln("zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)")
+        sys.exit(0)
 
-        # -- Source path -------------------------------------------------------
-        # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
+    # -- Source path -------------------------------------------------------
+    # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
 
-        var src_path: str? = nil
-        var pi: int = 0
-        while pi < 10
-            var candidate = args.positional(pi)
-            if candidate == nil
-                break
-            var cval: str = candidate to!
-            if cval.endsWith(".zbr") or cval.endsWith(".cobra")
-                src_path = cval
-                break
-            pi = pi + 1
-        if src_path == nil
-            sys.errln("usage:")
-            sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
-            sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
-            sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
-            sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
-            sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
-            sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
-            sys.errln("  zebra --version                          print version and exit")
-            sys.exit(1)
-
-        var path = src_path to!
-
-        # -- Validate file exists ----------------------------------------------
-
-        if not File.exists(path)
-            sys.errln("zebra: source file not found: '" + path + "'")
-            sys.exit(1)
-
-        # -- Pipeline selection ------------------------------------------------
-
-        var mode_c               = args.contains("-c")
-        var mode_emit            = args.contains("--emit-zig")
-        var mode_zig             = args.contains("--zig-backend")
-        var release              = args.contains("--release")
-        var turbo                = args.contains("--turbo")
-        const preamble_path      = "selfhost/stdlib_preamble.zig"
-        # --output-dir=DIR style to avoid positional arg confusion
-        var output_dir: str    = args.option("--output-dir", "")
-
-        if not mode_zig
-            # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
-            # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
-            # Compile the root file and all its dependencies
-            var mc = MultiCompiler(preamble_path, output_dir)
-            mc.strip_contracts = turbo
-            mc.compileDep(path, true)?
-
-            if mode_emit
-                # --emit-zig: print root file's Zig source to stdout
-                var zig_path: str = mc.zbrToZig(path)
-                var zig_src: str = File.read(zig_path)
-                print zig_src
-                sys.exit(0)
-
-            # --selfhost-compile: invoke zig to compile/run the generated file
-            var zig_path: str = mc.zbrToZig(path)
-
-            var argv2 = List(str)()
-            argv2.add("zig")
-            if mode_c
-                argv2.add("build-exe")
-                argv2.add(zig_path)
-                if release
-                    argv2.add("-OReleaseFast")
-            else
-                argv2.add("run")
-                argv2.add(zig_path)
-
-            # Append any C source files discovered during dep walk
-            var csi: int = 0
-            while csi < mc.c_sources.count()
-                argv2.add(mc.c_sources.at(csi))
-                csi = csi + 1
-            # -I flags for C deps that have a matching .h header
-            var idi: int = 0
-            while idi < mc.c_i_dirs.count()
-                argv2.add("-I" + mc.c_i_dirs.at(idi))
-                idi = idi + 1
-            # Always link libc — the stdlib preamble requires it
-            argv2.add("-lc")
-
-            var r2 = sys.run(argv2)
-            if r2.stdout != ""
-                Terminal.write(r2.stdout, "")
-            if r2.stderr != ""
-                var remapped: str = remapZigErrors(r2.stderr, zig_path)
-                sys.err(remapped)
-            if r2.exit_code != 0
-                sys.exit(1)
-            sys.exit(0)
-
-        # -- Zig backend delegation (--zig-backend) ----------------------------
-        # Delegates to the Zig-compiled bootstrap compiler.
-        # Requires running from repo root where zig-out/bin/ exists.
-
-        var argv = List(str)()
-        argv.add("zig-out/bin/zebra-bootstrap.exe")
-        if mode_c
-            argv.add("-c")
-        if release
-            argv.add("--release")
-        argv.add(path)
-
-        var r = sys.run(argv)
-        if r.stdout != ""
-            print r.stdout
-        if r.stderr != ""
-            sys.errln(r.stderr)
-        if r.exit_code != 0
-            sys.exit(1)
-    catch |e|
-        sys.errln(e.message)
+    var src_path: str? = nil
+    var pi: int = 0
+    while pi < 10
+        var candidate = args.positional(pi)
+        if candidate == nil
+            break
+        var cval: str = candidate to!
+        if cval.endsWith(".zbr") or cval.endsWith(".cobra")
+            src_path = cval
+            break
+        pi = pi + 1
+    if src_path == nil
+        sys.errln("usage:")
+        sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
+        sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
+        sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
+        sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
+        sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
+        sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
+        sys.errln("  zebra --version                          print version and exit")
         sys.exit(1)
+
+    var path = src_path to!
+
+    # -- Validate file exists ----------------------------------------------
+
+    if not File.exists(path)
+        sys.errln("zebra: source file not found: '" + path + "'")
+        sys.exit(1)
+
+    # -- Pipeline selection ------------------------------------------------
+
+    var mode_c               = args.contains("-c")
+    var mode_emit            = args.contains("--emit-zig")
+    var mode_zig             = args.contains("--zig-backend")
+    var release              = args.contains("--release")
+    var turbo                = args.contains("--turbo")
+    const preamble_path      = "selfhost/stdlib_preamble.zig"
+    # --output-dir=DIR style to avoid positional arg confusion
+    var output_dir: str    = args.option("--output-dir", "")
+
+    if not mode_zig
+        # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
+        # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
+        # Compile the root file and all its dependencies
+        var mc = MultiCompiler(preamble_path, output_dir)
+        mc.strip_contracts = turbo
+        mc.compileDep(path, true)?
+
+        if mode_emit
+            # --emit-zig: print root file's Zig source to stdout
+            var zig_path: str = mc.zbrToZig(path)
+            var zig_src: str = File.read(zig_path)
+            print zig_src
+            sys.exit(0)
+
+        # --selfhost-compile: invoke zig to compile/run the generated file
+        var zig_path: str = mc.zbrToZig(path)
+
+        var argv2 = List(str)()
+        argv2.add("zig")
+        if mode_c
+            argv2.add("build-exe")
+            argv2.add(zig_path)
+            if release
+                argv2.add("-OReleaseFast")
+        else
+            argv2.add("run")
+            argv2.add(zig_path)
+
+        # Append any C source files discovered during dep walk
+        var csi: int = 0
+        while csi < mc.c_sources.count()
+            argv2.add(mc.c_sources.at(csi))
+            csi = csi + 1
+        # -I flags for C deps that have a matching .h header
+        var idi: int = 0
+        while idi < mc.c_i_dirs.count()
+            argv2.add("-I" + mc.c_i_dirs.at(idi))
+            idi = idi + 1
+        # Always link libc — the stdlib preamble requires it
+        argv2.add("-lc")
+
+        var r2 = sys.run(argv2)
+        if r2.stdout != ""
+            Terminal.write(r2.stdout, "")
+        if r2.stderr != ""
+            var remapped: str = remapZigErrors(r2.stderr, zig_path)
+            sys.err(remapped)
+        if r2.exit_code != 0
+            sys.exit(1)
+        sys.exit(0)
+
+    # -- Zig backend delegation (--zig-backend) ----------------------------
+    # Delegates to the Zig-compiled bootstrap compiler.
+    # Requires running from repo root where zig-out/bin/ exists.
+
+    var argv = List(str)()
+    argv.add("zig-out/bin/zebra-bootstrap.exe")
+    if mode_c
+        argv.add("-c")
+    if release
+        argv.add("--release")
+    argv.add(path)
+
+    var r = sys.run(argv)
+    if r.stdout != ""
+        print r.stdout
+    if r.stderr != ""
+        sys.errln(r.stderr)
+    if r.exit_code != 0
+        sys.exit(1)
+catch |e|
+    sys.errln(e.message)
+    sys.exit(1)
 
 # ── Error remapping helpers ───────────────────────────────────────────────────
 

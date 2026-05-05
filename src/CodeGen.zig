@@ -1174,6 +1174,164 @@ fn scanMutationsInExpr(
     }
 }
 
+// ── BUG-091: List(T)/HashMap(K,V) param mutation → addr-of param convention ─
+//
+// When a function-parameter of type `List(T)` or `HashMap(K,V)` is mutated
+// inside the body (via `.add`/`.append`/`.put`/`.remove`/`.clear`/`.sort`),
+// the caller expects the underlying container to be modified in place.
+// Zig's `std.ArrayList` is value-typed (struct of items + capacity), so a
+// plain pass-by-value parameter is `*const ArrayList` from the body's view —
+// `.append` (which takes `*Self`) is rejected.  The fix is to emit the
+// parameter as `*std.ArrayList(T)` and take `&arg` at every call site.
+//
+// `paramNeedsAddrOf` is the canonical predicate.  Both `genMethod` (param
+// emission) and `genArgs` (call-site emission) consult it, so the two sides
+// stay in lock-step.
+
+fn isContainerType(t: Ast.TypeRef) bool {
+    return switch (t) {
+        .generic => |g| std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap"),
+        else     => false,
+    };
+}
+
+// Cost: each call runs scanMutations over `body` -- O(|body|).  Because the
+// predicate is consulted at every param-emit and every arg-emit (potentially
+// per-arg at one call site), worst case is O(N * M) for N calls to a method
+// of body size M.  Acceptable for the current corpus (<100ms total impact in
+// bootstrap).  Memoise per-method (HashMap from *Ast.DeclMethod -> StringHashMap)
+// if profiling ever shows this matters.
+fn paramNeedsAddrOf(
+    param:  Ast.Param,
+    body:   ?[]const Ast.Stmt,
+    alloc:  Allocator,
+    tc_opt: ?*const TypeChecker.TypeCheckResult,
+) bool {
+    const t = param.type_ orelse return false;
+    if (!isContainerType(t)) return false;
+    const b = body orelse return false;
+    var mut_set = scanMutations(b, alloc, tc_opt) catch return false;
+    defer mut_set.deinit();
+    return mut_set.contains(param.name);
+}
+
+/// Walk `stmts` for any call whose ident-arg is passed as `&` to a mutating
+/// container param, and add those ident names to `mut_set` so the caller-side
+/// `var`/`const` decision treats them as mutated.  `&items` requires `items`
+/// to be `var`, otherwise Zig sees `*const ArrayList` which doesn't coerce
+/// to `*ArrayList`.
+fn addAddrOfMutationsInStmts(
+    stmts:    []const Ast.Stmt,
+    set:      *std.StringHashMap(void),
+    alloc:    Allocator,
+    tc_opt:   ?*const TypeChecker.TypeCheckResult,
+    resolve:  *const Resolver.ResolveResult,
+) anyerror!void {
+    for (stmts) |stmt| {
+        switch (stmt) {
+            .if_ => |s| {
+                try addAddrOfMutationsInStmts(s.then_body, set, alloc, tc_opt, resolve);
+                for (s.else_ifs) |ei| try addAddrOfMutationsInStmts(ei.body, set, alloc, tc_opt, resolve);
+                if (s.else_body) |eb| try addAddrOfMutationsInStmts(eb, set, alloc, tc_opt, resolve);
+            },
+            .while_ => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .for_in => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .for_num => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .branch => |s| {
+                for (s.on) |on| try addAddrOfMutationsInStmts(on.body, set, alloc, tc_opt, resolve);
+                if (s.else_) |eb| try addAddrOfMutationsInStmts(eb, set, alloc, tc_opt, resolve);
+            },
+            .try_catch => |s| {
+                try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve);
+                for (s.clauses) |cl| try addAddrOfMutationsInStmts(cl.body, set, alloc, tc_opt, resolve);
+            },
+            .arena_scope => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .with => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .guard => |s| try addAddrOfMutationsInStmts(s.else_body, set, alloc, tc_opt, resolve),
+            .var_  => |n| { if (n.init) |e| try addAddrOfMutationsInExpr(e, set, alloc, tc_opt, resolve); },
+            .return_ => |s| { if (s.value) |v| try addAddrOfMutationsInExpr(v, set, alloc, tc_opt, resolve); },
+            .expr  => |e| try addAddrOfMutationsInExpr(e, set, alloc, tc_opt, resolve),
+            .assign => |s| {
+                try addAddrOfMutationsInExpr(s.target, set, alloc, tc_opt, resolve);
+                try addAddrOfMutationsInExpr(s.value, set, alloc, tc_opt, resolve);
+            },
+            .print => |s| { for (s.args) |a| try addAddrOfMutationsInExpr(a, set, alloc, tc_opt, resolve); },
+            .assert => |s| try addAddrOfMutationsInExpr(s.cond, set, alloc, tc_opt, resolve),
+            else   => {},
+        }
+    }
+}
+
+fn addAddrOfMutationsInExpr(
+    expr:     *const Ast.Expr,
+    set:      *std.StringHashMap(void),
+    alloc:    Allocator,
+    tc_opt:   ?*const TypeChecker.TypeCheckResult,
+    resolve:  *const Resolver.ResolveResult,
+) anyerror!void {
+    if (expr.* == .call) {
+        const e = expr.call;
+        // Recurse first so nested calls are handled.
+        try addAddrOfMutationsInExpr(e.callee, set, alloc, tc_opt, resolve);
+        for (e.args) |a| try addAddrOfMutationsInExpr(a.value, set, alloc, tc_opt, resolve);
+
+        // Resolve the callee to a method/init declaration so we can check
+        // whether any container param is mutated by the body.
+        const params_and_body: ?struct { params: []const Ast.Param, body: ?[]const Ast.Stmt } = blk: {
+            if (e.callee.* == .ident) {
+                if (resolve.exprs.get(&e.callee.ident)) |sym| switch (sym.decl) {
+                    .method => |m| break :blk .{ .params = m.params, .body = m.body },
+                    .class  => |c| {
+                        for (c.members) |mem| if (mem == .init) break :blk .{ .params = mem.init.params, .body = mem.init.body };
+                        break :blk null;
+                    },
+                    .struct_ => |s| {
+                        for (s.members) |mem| if (mem == .init) break :blk .{ .params = mem.init.params, .body = mem.init.body };
+                        break :blk null;
+                    },
+                    else => break :blk null,
+                };
+            }
+            if (e.callee.* == .member) {
+                const mem = e.callee.member;
+                const obj_type = if (tc_opt) |tc| tc.expr_types.get(mem.object) orelse .unknown else .unknown;
+                if (obj_type == .named) {
+                    const class_sym = obj_type.named;
+                    if (class_sym.own_scope) |scope| {
+                        if (scope.lookupLocal(mem.member)) |method_sym| {
+                            if (method_sym.kind == .method) break :blk .{ .params = method_sym.decl.method.params, .body = method_sym.decl.method.body };
+                        }
+                    }
+                }
+            }
+            break :blk null;
+        };
+
+        if (params_and_body) |pb| {
+            for (e.args, 0..) |a, i| {
+                if (i >= pb.params.len) break;
+                if (a.value.* != .ident) continue;
+                if (!paramNeedsAddrOf(pb.params[i], pb.body, alloc, tc_opt)) continue;
+                try set.put(a.value.ident.name, {});
+            }
+        }
+        return;
+    }
+    switch (expr.*) {
+        .binary    => |e| { try addAddrOfMutationsInExpr(e.left, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.right, set, alloc, tc_opt, resolve); },
+        .unary     => |e| try addAddrOfMutationsInExpr(e.operand, set, alloc, tc_opt, resolve),
+        .member    => |e| try addAddrOfMutationsInExpr(e.object, set, alloc, tc_opt, resolve),
+        .index     => |e| { try addAddrOfMutationsInExpr(e.object, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.index, set, alloc, tc_opt, resolve); },
+        .if_expr   => |e| { try addAddrOfMutationsInExpr(e.cond, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.then_expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.else_expr, set, alloc, tc_opt, resolve); },
+        .orelse_   => |e| { try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.fallback, set, alloc, tc_opt, resolve); },
+        .catch_    => |e| { try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.fallback, set, alloc, tc_opt, resolve); },
+        .tuple_lit  => |e| { for (e.elems) |el| try addAddrOfMutationsInExpr(el, set, alloc, tc_opt, resolve); },
+        .type_check => |e| try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve),
+        .try_       => |e| try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve),
+        else        => {},
+    }
+}
+
 /// True if `name` appears as an identifier anywhere in `stmts`.
 /// Returns the variable name being nil-checked in `x != nil` (for_then=true) or `x == nil` (for_then=false).
 fn nilNarrowVar(cond: *const Ast.Expr, for_then: bool) ?[]const u8 {
@@ -2873,6 +3031,12 @@ const Generator = struct {
             if (i > 0) try g.w.writeAll(", ");
             if (is_tco) try g.w.print("_p_{s}", .{p.name}) else try g.w.writeAll(p.name);
             try g.w.writeAll(": ");
+            // BUG-091: List(T)/HashMap(K,V) params that are mutated in the body
+            // emit as `*std.ArrayList(T)` so `.append` (which takes *Self) works
+            // and the caller sees the changes.  TCO is excluded because the
+            // params are shadowed by mutable locals there.
+            const needs_addr_of = !is_tco and paramNeedsAddrOf(p, n.body, g.alloc, g.tc);
+            if (needs_addr_of) try g.w.writeAll("*");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
         }
         try g.w.writeAll(") ");
@@ -3050,6 +3214,9 @@ const Generator = struct {
     fn genStmts(g: Generator, stmts: []const Ast.Stmt) anyerror!void {
         var block_mut = try scanMutations(stmts, g.alloc, g.tc);
         defer block_mut.deinit();
+        // BUG-091: idents passed as `&` to mutating-container params must be
+        // declared `var`, otherwise `&items` is `*const ArrayList`.
+        try addAddrOfMutationsInStmts(stmts, &block_mut, g.alloc, g.tc, g.resolve);
         const bg = g.withMutated(&block_mut);
         for (stmts) |stmt| try bg.genStmt(stmt);
     }
@@ -3167,7 +3334,7 @@ const Generator = struct {
                                 try g.w.writeAll("try ");
                             }
                             try g.w.print("_mc_{x}.{s}(", .{ uid, mem.member });
-                            try g.genArgs(g.lookupParams(call), call.args);
+                            try g.genArgs(g.lookupParams(call), g.lookupCalleeBody(call), call.args);
                             try g.w.writeAll(")");
                             if (g.try_block_label) |lbl| {
                                 if (is_throws) {
@@ -3306,6 +3473,56 @@ const Generator = struct {
                         // at once) and harmful: Allocator.free poisons the buffer with 0xAA
                         // before rawFree, corrupting any struct that still holds a pointer to
                         // the same buffer (e.g. a List passed into a PBinary constructor).
+                        return;
+                    }
+                }
+            }
+        }
+        // `var x: List(T) = []` (or `var x: List(T) = [a, b, c]`) — the LHS
+        // annotation provides the element type that the literal's expression-
+        // position emit can't see on its own.
+        if (n.init) |e| {
+            if (n.type_) |tr| {
+                if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List") and e.* == .list_lit) {
+                    try g.w.writeAll(kw);
+                    try g.w.writeAll(" ");
+                    try g.w.writeAll(n.name);
+                    try g.w.writeAll(": ");
+                    try g.genType(tr);
+                    try g.w.writeAll(" = ");
+                    try g.genType(tr);
+                    try g.w.writeAll("{};\n");
+                    for (e.list_lit.elems) |el| {
+                        try g.writeIndent();
+                        try g.w.print("{s}.append(_allocator, ", .{n.name});
+                        try g.genExpr(el);
+                        try g.w.writeAll(") catch @panic(\"OOM\");\n");
+                    }
+                    return;
+                }
+            }
+        }
+        // BUG-092: `var lines: List(str) = s.split(sep)` / `s.lines()` —
+        // materialise the SplitIterator into a fresh ArrayList.  Without
+        // this, the LHS is annotated `std.ArrayList([]const u8)` but the
+        // RHS is `splitSequence(...)`, producing a Zig type mismatch.
+        if (n.init) |e| {
+            if (n.type_) |tr| {
+                if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List") and
+                    e.* == .call and e.call.callee.* == .member)
+                {
+                    const meth = e.call.callee.member.member;
+                    if (std.mem.eql(u8, meth, "split") or std.mem.eql(u8, meth, "lines")) {
+                        const uid = g.nextUid();
+                        try g.w.print("var {s}: ", .{n.name});
+                        try g.genType(tr);
+                        try g.w.writeAll(" = ");
+                        try g.genStdlibInit(tr.generic);
+                        try g.w.writeAll(";\n");
+                        try g.writeIndent();
+                        try g.w.print("{{ var _split_iter_{x} = ", .{uid});
+                        try g.genExpr(e);
+                        try g.w.print("; while (_split_iter_{x}.next()) |_se_{x}| {{ {s}.append(_allocator, _se_{x}) catch @panic(\"OOM\"); }} }}\n", .{ uid, uid, n.name, uid });
                         return;
                     }
                 }
@@ -6448,6 +6665,9 @@ const Generator = struct {
         // for c in str.chars() — Unicode codepoint iteration via Utf8Iterator
         if (g.isCharsCallOnString(s.iter)) return g.genForInChars(s);
 
+        // for i in start.to(end) — numeric range loop (Zig: while (i < stop) : (i += 1))
+        if (isToRangeCall(s.iter)) return g.genForInToRange(s);
+
         // for x in str.split(delim) — emit while loop over splitSequence iterator
         if (g.isSplitCallOnString(s.iter)) return g.genForInSplit(s);
 
@@ -6520,6 +6740,60 @@ const Generator = struct {
             try g.writeIndent();
             try g.w.writeAll("} else {\n");
             try g.indented().genStmts(else_body);
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    /// True when `e` is a `.to(end)` method call — used for numeric range loops.
+    /// Both `n.to(end)` (single arg) shapes are accepted; the receiver becomes `start`.
+    fn isToRangeCall(e: *const Ast.Expr) bool {
+        if (e.* != .call) return false;
+        const c = e.call;
+        if (c.args.len != 1) return false;
+        if (c.callee.* != .member) return false;
+        return std.mem.eql(u8, c.callee.member.member, "to");
+    }
+
+    /// `for i in start.to(end)` → numeric range loop. Lowered to:
+    ///     { var i: i64 = <start>; const _stop_i: i64 = <end>;
+    ///       while (i < _stop_i) : (i += 1) { body } }
+    /// Mirrors the `for var in start:end` (StmtForNum) pattern but takes its
+    /// arguments from a method-call expression rather than a numeric-range syntax.
+    fn genForInToRange(g: Generator, s: *Ast.StmtForIn) anyerror!void {
+        const c     = s.iter.call;
+        const start = c.callee.member.object;
+        const stop  = c.args[0].value;
+        const vname = s.vars[0];
+
+        try g.writeIndent();
+        try g.w.writeAll("{\n");
+        const ig = g.indented();
+        try ig.writeIndent();
+        try ig.w.print("var {s}: i64 = ", .{vname});
+        try ig.genExpr(start);
+        try ig.w.writeAll(";\n");
+        try ig.writeIndent();
+        try ig.w.print("const _stop_{s}: i64 = ", .{vname});
+        try ig.genExpr(stop);
+        try ig.w.writeAll(";\n");
+        var bg = ig.indented();
+        bg.for_else_label = null;
+        try ig.writeIndent();
+        try ig.w.print("while ({s} < _stop_{s}) : ({s} += 1) {{\n", .{ vname, vname, vname });
+        if (s.where) |w| {
+            try bg.writeIndent();
+            try bg.w.writeAll("if (!(");
+            try bg.genExpr(w);
+            try bg.w.writeAll(")) continue;\n");
+        }
+        try bg.genStmts(s.body);
+        try ig.writeIndent();
+        try ig.w.writeAll("}\n");
+        if (s.else_) |else_body| {
+            try ig.writeIndent();
+            try ig.w.writeAll("// for-else: ran to completion\n");
+            try ig.genStmts(else_body);
         }
         try g.writeIndent();
         try g.w.writeAll("}\n");
@@ -8148,13 +8422,34 @@ const Generator = struct {
             },
             .lambda   => |e| try g.genLambda(e),
             .list_lit => |e| {
-                // Emit as a comptime slice literal.
-                try g.w.writeAll("&.{");
-                for (e.elems, 0..) |el, i| {
-                    if (i > 0) try g.w.writeAll(", ");
-                    try g.genExpr(el);
+                // `[a, b, c]` lowers to a labeled-block that builds a
+                // std.ArrayList(T) and appends each element.  The element
+                // type comes from TC's inference of the first element.
+                // Empty `[]` requires the LHS annotation to provide T (handled
+                // in genLocalVar's list-empty-init special case below); a
+                // bare empty list literal in expression position falls back
+                // to ArrayList([]const u8) which Zig will reject if used
+                // wrong — that's intentional, the caller needs to annotate.
+                if (e.elems.len == 0) {
+                    try g.w.writeAll("std.ArrayList([]const u8){}");
+                } else {
+                    const elem_zig: []const u8 = blk: {
+                        if (g.tc) |tc| {
+                            const t = tc.expr_types.get(e.elems[0]) orelse break :blk "i64";
+                            break :blk zigTypeNameOf(t);
+                        }
+                        break :blk "i64";
+                    };
+                    const uid = g.nextUid();
+                    try g.w.print("(blk_{x}: {{ ", .{uid});
+                    try g.w.print("var _ll_{x}: std.ArrayList({s}) = std.ArrayList({s}){{}}; ", .{ uid, elem_zig, elem_zig });
+                    for (e.elems) |el| {
+                        try g.w.print("_ll_{x}.append(_allocator, ", .{uid});
+                        try g.genExpr(el);
+                        try g.w.writeAll(") catch @panic(\"OOM\"); ");
+                    }
+                    try g.w.print("break :blk_{x} _ll_{x}; }})", .{ uid, uid });
                 }
-                try g.w.writeAll("}");
             },
             .dict_lit => {
                 try g.w.writeAll(
@@ -8387,6 +8682,42 @@ const Generator = struct {
         return null;
     }
 
+    /// Mirror of `lookupParams` that returns the callee's body too, so
+    /// `genArgs` can consult `paramNeedsAddrOf` for List/HashMap params
+    /// (BUG-091).  Returns null when the callee can't be resolved or has
+    /// no body (abstract method, native call, etc.).
+    fn lookupCalleeBody(g: Generator, e: *Ast.ExprCall) ?[]const Ast.Stmt {
+        if (e.callee.* == .ident) {
+            if (g.resolve.exprs.get(&e.callee.ident)) |sym| {
+                switch (sym.decl) {
+                    .method => |m| return m.body,
+                    .class  => |c| {
+                        for (c.members) |mem| if (mem == .init) return mem.init.body;
+                        return null;
+                    },
+                    .struct_ => |s| {
+                        for (s.members) |mem| if (mem == .init) return mem.init.body;
+                        return null;
+                    },
+                    else => return null,
+                }
+            }
+        }
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            const obj_type = if (g.tc) |tc| tc.expr_types.get(mem.object) orelse .unknown else .unknown;
+            if (obj_type == .named) {
+                const class_sym = obj_type.named;
+                if (class_sym.own_scope) |scope| {
+                    if (scope.lookupLocal(mem.member)) |method_sym| {
+                        if (method_sym.kind == .method) return method_sym.decl.method.body;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /// Emit a single argument, boxing value `T` → `*T` when the param is `^T`.
     /// `param_is_ref` = the param's declared type is `.ref_to`; `inner` = the inner TypeRef.
     ///
@@ -8430,7 +8761,15 @@ const Generator = struct {
 
     /// Emit a comma-separated argument list, honouring named args and defaults.
     /// If params is null or no arg is named, falls back to positional emission.
-    fn genArgs(g: Generator, params: ?[]const Ast.Param, args: []const Ast.Arg) anyerror!void {
+    /// `body` (when non-null) is the callee's body — used to decide whether a
+    /// `List(T)`/`HashMap(K,V)` param is mutated and therefore needs `&` at
+    /// the call site (BUG-091).
+    fn genArgs(
+        g:      Generator,
+        params: ?[]const Ast.Param,
+        body:   ?[]const Ast.Stmt,
+        args:   []const Ast.Arg,
+    ) anyerror!void {
         const has_named = for (args) |a| { if (a.name != null) break true; } else false;
         if (!has_named) {
             for (args, 0..) |a, i| {
@@ -8442,6 +8781,12 @@ const Generator = struct {
                             try g.genBoxedArgExpr(a.value, pt.ref_to.*);
                             continue;
                         };
+                        // BUG-091: take `&` for List/HashMap params mutated by the body.
+                        if (paramNeedsAddrOf(ps[i], body, g.alloc, g.tc)) {
+                            try g.w.writeAll("&");
+                            try g.genArgExpr(a.value);
+                            continue;
+                        }
                     }
                 }
                 try g.genArgExpr(a.value);
@@ -8470,15 +8815,22 @@ const Generator = struct {
                     const pt = ps[i].type_ orelse break :blk false;
                     break :blk pt == .ref_to;
                 } else false;
+                const param_needs_addr = if (i < ps.len) paramNeedsAddrOf(ps[i], body, g.alloc, g.tc) else false;
                 if (maybe_expr) |expr| {
                     if (param_is_ref) {
                         try g.genBoxedArgExpr(expr, ps[i].type_.?.ref_to.*);
+                    } else if (param_needs_addr) {
+                        try g.w.writeAll("&");
+                        try g.genArgExpr(expr);
                     } else {
                         try g.genArgExpr(expr);
                     }
                 } else if (i < ps.len and ps[i].default != null) {
                     if (param_is_ref) {
                         try g.genBoxedArgExpr(ps[i].default.?, ps[i].type_.?.ref_to.*);
+                    } else if (param_needs_addr) {
+                        try g.w.writeAll("&");
+                        try g.genArgExpr(ps[i].default.?);
                     } else {
                         try g.genArgExpr(ps[i].default.?);
                     }
@@ -8777,7 +9129,13 @@ const Generator = struct {
                             }
                             break :blk null;
                         };
-                        try g.genArgs(init_params, e.args);
+                        const init_body: ?[]const Ast.Stmt = blk: {
+                            for (members) |m| {
+                                if (m == .init) break :blk m.init.body;
+                            }
+                            break :blk null;
+                        };
+                        try g.genArgs(init_params, init_body, e.args);
                         try g.w.writeAll(")");
                     } else if (sym.kind == .struct_) {
                         // Structs without `cue init`: emit a struct literal.
@@ -9107,7 +9465,7 @@ const Generator = struct {
                 if (cv.contains(e.callee.ident.name)) {
                     try g.w.writeAll(e.callee.ident.name);
                     try g.w.writeAll(".call(");
-                    try g.genArgs(null, e.args);
+                    try g.genArgs(null, null, e.args);
                     try g.w.writeAll(")");
                     return;
                 }
@@ -9132,6 +9490,10 @@ const Generator = struct {
                         .method => |m| m.params,
                         else    => null,
                     };
+                    const bare_body: ?[]const Ast.Stmt = switch (sym.decl) {
+                        .method => |m| m.body,
+                        else    => null,
+                    };
                     // Auto-propagate errors: when calling a `throws` method from
                     // inside a `throws` method (and not inside a try/catch block),
                     // emit `try` so Zig doesn't reject the ignored error union.
@@ -9150,7 +9512,7 @@ const Generator = struct {
                         try g.w.print("self.{s}", .{ident.name});
                     }
                     try g.w.writeAll("(");
-                    try g.genArgs(bare_params, e.args);
+                    try g.genArgs(bare_params, bare_body, e.args);
                     try g.w.writeAll(")");
                     return;
                 }
@@ -9168,7 +9530,7 @@ const Generator = struct {
                         if (iface.types.contains(mem.member)) {
                             // It's a cross-module type constructor.
                             try g.w.print("{s}.{s}.init(", .{ mod_name, mem.member });
-                            try g.genArgs(null, e.args);
+                            try g.genArgs(null, null, e.args);
                             try g.w.writeAll(")");
                             return;
                         }
@@ -9226,13 +9588,13 @@ const Generator = struct {
             } else {
                 try g.w.print("; break :blk_{x} _mc_{x}.{s}(", .{ uid, uid, mem.member });
             }
-            try g.genArgs(g.lookupParams(e), e.args);
+            try g.genArgs(g.lookupParams(e), g.lookupCalleeBody(e), e.args);
             try g.w.writeAll("); })");
             return;
         }
         try g.genExpr(e.callee);
         try g.w.writeAll("(");
-        try g.genArgs(g.lookupParams(e), e.args);
+        try g.genArgs(g.lookupParams(e), g.lookupCalleeBody(e), e.args);
         try g.w.writeAll(")");
     }
 

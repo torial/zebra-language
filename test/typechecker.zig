@@ -2,11 +2,14 @@
 // Source: test/typechecker.zbr
 
 // Zebra selfhost runtime preamble — prepended verbatim to every file the selfhost compiler emits.
+// Also embedded by the Zig-compiled backend (zebra-bootstrap.exe) via b.addOptions() in build.zig.
 //
-// HOW TO ADD A HELPER: edit this file directly at the appropriate landmark (e.g. after
-// _zebra_sort_by).  Do NOT regenerate from a .zbr emit — the preamble/user-code boundary in
-// emitted output shifts whenever a helper is added, making head-N extraction unreliable and
-// prone to including user structs (which then duplicate when the preamble is re-embedded).
+// HOW TO ADD A HELPER (non-GUI): edit this file directly, between the STDLIB_PREAMBLE_HELPERS_START
+// and STDLIB_PREAMBLE_GUI_START markers.  That is the ONLY change needed — both backends pick it up
+// automatically.  Do NOT regenerate from a .zbr emit.
+//
+// HOW TO ADD A GUI HELPER: edit inside the markers.  The Zig backend keeps the gui section inline
+// in CodeGen.zig (conditional stub/glfw dispatch); the selfhost backend reads the whole file.
 
 
 const std     = @import("std");
@@ -14,8 +17,18 @@ const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
+// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+// === STDLIB_PREAMBLE_HELPERS_START ===
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -43,11 +56,22 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
-/// `item in container` — membership test for List, string (substring), HashMap.
+/// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
-    // Struct types: ArrayList (has .items field) or HashMap (has .contains decl).
+    // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
+    if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
+        inline for (container) |elem| {
+            if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+                if (std.mem.eql(u8, elem, item)) return true;
+            } else {
+                if (elem == item) return true;
+            }
+        }
+        return false;
+    }
+    // Named struct types: ArrayList (has .items field) or HashMap (has .contains decl).
     if (comptime @typeInfo(C) == .@"struct") {
         if (comptime @hasField(C, "items")) {
             for (container.items) |elem| {
@@ -1085,6 +1109,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+// === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
@@ -1104,6 +1129,7 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
+    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
     beginPanelFn:  *const fn (label: []const u8) bool,
     endPanelFn:    *const fn () void,
     beginWindowFn: *const fn (label: []const u8) bool,
@@ -1152,6 +1178,22 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
+// ─── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ────────
+const _CodeEditor = struct { text: []const u8, read_only: bool };
+fn _code_editor_new() *_CodeEditor {
+    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+    _ed.* = .{ .text = "", .read_only = false };
+    return _ed;
+}
+fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
+    if (!_ed.read_only) { _ed.text = _r; }
+}
+fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -1216,12 +1258,14 @@ const _gui_stub_backend = _GuiBackend{
     .sliderFn      = _stub_slider,
     .inputFn       = _stub_input,
     .inputMultilineFn = _stub_input_multiline,
+    .codeEditorFn  = _stub_input_multiline,
     .beginPanelFn  = _stub_begin_panel,
     .endPanelFn    = _stub_end_panel,
     .beginWindowFn = _stub_begin_window,
     .endWindowFn   = _stub_end_window,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
+// === STDLIB_PREAMBLE_GUI_END ===
 fn _hex_encode(bytes: []const u8) []const u8 {
     const _hx = "0123456789abcdef";
     var out = _allocator.alloc(u8, bytes.len * 2) catch return "";
@@ -1478,6 +1522,22 @@ const TimerHandle = struct {
     }
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+// ── Progress stdlib ──────────────────────────────────────────────────────────
+var _progress_root_started: bool = false;
+var _progress_root: std.Progress.Node = undefined;
+fn _progress_ensure_root() void {
+    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+}
+const ProgressBar = struct {
+    _node: std.Progress.Node,
+    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+    pub fn done(self: ProgressBar) void { self._node.end(); }
+};
+fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+    _progress_ensure_root();
+    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
 
 const tc_types = @import("tc_types.zig");
 const TcType = tc_types.TcType;
@@ -1586,7 +1646,7 @@ pub const TypeChecker = struct {
         var i: i64 = 0;
 // zbr:test/typechecker.zbr:83
         while (_zebra_lt(i, @as(i64, @intCast(chk.errors.items.len)))) {
-            self.errors.append(_allocator, chk.errors.items[@intCast(i)]) catch @panic("OOM");
+            self.errors.append(_allocator, _intern(chk.errors.items[@intCast(i)])) catch @panic("OOM");
 // zbr:test/typechecker.zbr:85
             i = (i + 1);
         }

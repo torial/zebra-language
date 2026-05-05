@@ -147,11 +147,16 @@ class Counter
 - `cue init(params...)` is the constructor.  No return type.
 - `static def` declares a type-associated method (no `this`).  The `static`
   group form (a `static` line, indented members below) is preferred for >1 static.
-- `def name: T` (no parens) is a **getter**: callers write `obj.name`, not `obj.name()`.
-  The body is a normal method body.
-- Field access inside methods: bare `count` (no `self.` needed).
-  External: `obj.count`.
+- Field access inside methods uses the **leading-dot shorthand**: `.count`
+  reads/writes the field, even when a local variable shadows the name.  Bare
+  `count` is also legal but only when no local shadows it — `.count` is the
+  shadow-resilient default.  External: `obj.count`.  See §26 for the idiom
+  table.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
+
+> **Note (0.13 sweep):** `def name: T` (no parens at decl) is being removed
+> from the grammar — see BUG-112.  Always use `def name(): T`.  Callers
+> always write parens (`obj.name()`) regardless.
 
 ---
 
@@ -165,11 +170,11 @@ struct Point
     var y: int
 
     cue init(x: int, y: int)
-        this.x = x
-        this.y = y
+        .x = x                        # leading-dot shorthand: param `x` shadows field `x`
+        .y = y
 
     def distSq(): int
-        return x*x + y*y
+        return .x * .x + .y * .y
 
     def withX(nx: int): Point         # returns a modified copy
         var p = this except
@@ -177,10 +182,11 @@ struct Point
         return p
 ```
 
-- `this` refers to the struct value.  Use `this.field` when a param shadows a
-  field name.
-- `this except field = value, ...` — copy with overrides; the primary
-  immutable-update idiom.
+- `.field` is the canonical receiver-field access (works regardless of local
+  shadowing).  Bare `field` is legal when no local shadows it but is more
+  fragile to future edits.  `this.field` is non-canonical — see §26.
+- `this` itself (no dot) is the whole struct value, used in
+  `this except field = value, ...` — the immutable-update idiom.
 - Method-chaining on struct temporaries works in `var`-init, `return`, and
   assignment positions (the compiler auto-materialises the temporary).
   Expression-position chains (call args, compound expressions) still need a
@@ -299,9 +305,13 @@ branch e
 
 ```zebra
 # List
-var items = List(int)()              # empty list
+var items = List(int)()              # empty list, constructor form
 items.add(1)
 items.add(2)
+# Or — list literal `[…]` builds the same thing in one expression:
+var nums = [1, 2, 3]                 # type inferred from the first element
+var labels = ["alpha", "beta"]       # → List(str)
+var empty: List(int) = []            # empty literal needs an annotation
 var n = items.count()                # length
 var x = items.at(0)                  # index (bounds-checked)
 items.remove(0)                      # remove by index
@@ -611,7 +621,7 @@ class Dog implements Printable adds Describable
     var name: str
 
     cue init(name: str)
-        this.name = name
+        .name = name
 
     def show(): str
         return "Dog(${name})"
@@ -632,19 +642,19 @@ if obj is Printable
 
 ```zebra
 class Stack(T)
-    var _items: List(T)
+    var items: List(T)
 
     cue init()
-        _items = List(T)()
+        items = List(T)()
 
     def push(item: T)
-        _items.add(item)
+        .items.add(item)
 
     def pop(): T?
-        if _items.count() == 0
+        if .items.count() == 0
             return nil
-        var last = _items.at(_items.count() - 1)
-        _items.remove(_items.count() - 1)
+        var last = .items.at(.items.count() - 1)
+        .items.remove(.items.count() - 1)
         return last
 
 # Constrained generic — T must implement Comparable:
@@ -669,28 +679,34 @@ var top = s.pop()
 There is no special property / getter syntax in current Zebra.  The
 `prop` / `get` / `set` / `body` / `post` keywords were removed 2026-04-19.
 
-Use ordinary methods for computed state.  `def name: T` is shorthand for
-`def name(): T` — a zero-arg method with a return type — and callers always
-include the parentheses:
+Use ordinary methods for computed state.  Always declare with explicit
+parentheses (`def name(): T`) — callers always write parens too:
 
 ```zebra
 class Circle
-    var _radius: float
+    var radius: float
 
     cue init(r: float)
-        _radius = r
+        radius = r
 
-    def radius: float            # same as `def radius(): float`
-        return _radius
+    def diameter(): float
+        return .radius * 2.0
 
-    def area: float
-        return Math.PI * _radius * _radius
+    def area(): float
+        return Math.PI * .radius * .radius
 
 # Use:
 var c = Circle(5.0)
-print c.radius()                  # parentheses required
-print c.area()
+print c.radius                    # field access — no parens
+print c.area()                    # method call — parens
 ```
+
+Field privacy: there are no `private` / `internal` keywords today.  A
+leading underscore on a field name (`_radius`) is purely social convention
+and has zero compiler enforcement — see BUG-115.  Style guide stance:
+**don't add new `_` prefixes**, but leave existing ones as-is until
+BUG-115 resolves (avoids churn-then-rewrite if real privacy keywords
+land in 0.14).
 
 For direct field exposure, declare the field public and access `c._radius`
 directly.  No "computed property" sugar is provided.
@@ -964,12 +980,12 @@ are deferred.
 | Substring test       | `"needle" in str`              | preferred over `.contains`               |
 | Optional chain       | `obj?.field`                   | propagates nil                           |
 | Error propagation    | `expr?`                        | explicit in cross-module / local-var calls |
-| Auto-propagation     | `self.method()`                | same-file `throws` methods only          |
-| Struct update copy   | `this except field = val`      |                                          |
+| Auto-propagation     | `.method()`                    | same-file `throws` methods only          |
+| Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
 | Int-to-float         | `x.toFloat()`                  | explicit conversion                      |
 | Divide integers      | `int` division                 | use `%` for modulo                       |
-| Field-style getter   | `def name: T` (no parens)      | called as `obj.name`                     |
+| Field access (self)  | `.field`                       | leading-dot shorthand; shadow-resilient  |
 
 ---
 
@@ -1015,7 +1031,7 @@ are deferred.
    struct Bar
        var parts: List(str)
        cue init(parts: List(str))
-           this.parts = parts
+           .parts = parts             # leading-dot shorthand
    ```
    The rule: `var X = List(T)()` is for **method bodies**.
    `var X: List(T)` is for **field declarations**.
@@ -1042,12 +1058,13 @@ are deferred.
 9. **Keyword escaping** — Zig keywords used as Zebra field names get a
    trailing-underscore convention: `type_`, `void_`.
 
-10. **`cue init` with explicit params needs `this.field` when param shadows field:**
+10. **`cue init` with explicit params needs `.field` when param shadows field:**
     ```zebra
     cue init(x: int, y: int)
-        this.x = x                   # 'x' param shadows 'x' field
-        this.y = y
+        .x = x                       # leading-dot shorthand: param `x` shadows field `x`
+        .y = y
     ```
+    Bare `x = x` would be self-assignment of the parameter; `.x = x` reaches the field.
 
 11. **`for-else` on HashMap / string-split / chars iterators:** the `else` block
     is silently dropped (deferred work).  Only list `.items` iteration is fully

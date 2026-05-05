@@ -2241,6 +2241,24 @@ const Builder = struct {
             }) };
         }
 
+        // [args]  — list literal (3 children: lbracket, ArgList, rbracket)
+        // Lowers in CodeGen to a labeled-block that builds std.ArrayList(T).
+        if (kids.len == 3 and isLeafKind(kids[0], .lbracket) and isLeafKind(kids[2], .rbracket)) {
+            return .{ .list_lit = try b.box(Ast.ExprListLit, .{
+                .span      = s,
+                .elem_type = null,                              // inferred at TC time
+                .elems     = try b.buildArgExprs(kids[1]),
+            }) };
+        }
+        // []  — empty list literal (2 children: lbracket, rbracket)
+        if (kids.len == 2 and isLeafKind(kids[0], .lbracket) and isLeafKind(kids[1], .rbracket)) {
+            return .{ .list_lit = try b.box(Ast.ExprListLit, .{
+                .span      = s,
+                .elem_type = null,
+                .elems     = &.{},
+            }) };
+        }
+
         // if(cond, then, else) — ternary (8 children)
         if (kids.len == 8 and isLeafKind(kids[0], .kw_if)) {
             return .{ .if_expr = try b.box(Ast.ExprIf, .{

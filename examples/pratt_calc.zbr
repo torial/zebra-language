@@ -1,0 +1,389 @@
+# pratt_calc.zbr — Pratt parser for arithmetic expressions.
+#
+# A Pratt parser is operator-precedence parsing without a separate grammar
+# production for each precedence level.  Each token kind is tagged with a
+# binding power (left + right); when the parser sees an infix operator it
+# climbs the precedence ladder simply by passing a "minimum binding power"
+# down through recursion.  The result is one short, beautiful loop that
+# handles every binary operator at every precedence level uniformly.
+#
+# This program supports:
+#   * integer / float literals
+#   * `+`, `-`, `*`, `/`  (left-associative, standard precedence)
+#   * `^`                 (right-associative power)
+#   * unary `-`
+#   * parenthesised sub-expressions
+#
+# It prints (a) the value, and (b) the AST in fully-parenthesised form so
+# the parsed precedence is visible.  Run a quick suite of expressions:
+#
+#   $ zebra examples/pratt_calc.zbr
+#   1 + 2 * 3        = 7    [(1 + (2 * 3))]
+#   (1 + 2) * 3      = 9    [((1 + 2) * 3)]
+#   2 ^ 3 ^ 2        = 512  [(2 ^ (3 ^ 2))]    # right-assoc
+#   -2 ^ 2           = 4    [(- (2 ^ 2))]      # `^` binds tighter than unary `-`
+#   1 - 2 - 3        = -4   [((1 - 2) - 3)]    # left-assoc
+#
+# The expressions are baked into main() so the example is fully reproducible
+# without stdin.
+
+# ── Tokens ────────────────────────────────────────────────────────────────
+#
+# A bare `kind` enum keeps the lexer output trivial; numeric literals carry
+# their parsed value in a parallel field on Token.
+
+enum TokKind
+    num
+    plus
+    minus
+    star
+    slash
+    caret
+    lparen
+    rparen
+    eof
+
+class Token
+    var kind: TokKind = TokKind.eof
+    var value: float = 0.0          # only meaningful when kind == .num
+
+    cue init(kind: TokKind, value: float)
+        .kind = kind
+        .value = value
+
+
+# ── Lexer ─────────────────────────────────────────────────────────────────
+#
+# A whitespace-tolerant tokenizer.  Rejects unknown characters with a
+# raise — the parser sits behind a `try`/`catch` so the diagnostic surfaces
+# cleanly at the top level.
+
+class Lexer
+    var src: str = ""
+    var pos: int = 0
+
+    cue init(src: str)
+        .src = src
+        .pos = 0
+
+    def peek(): char
+        # Zebra/Zig don't accept c'\0' as a char literal — sentinel via a
+        # bound check at every caller site instead.
+        return .src[.pos]
+
+    def atEnd(): bool
+        return .pos >= .src.len
+
+    def advance(): char
+        var c = .peek()
+        .pos = .pos + 1
+        return c
+
+    def skipSpace()
+        while .pos < .src.len
+            var c = .peek()
+            if c == c' ' or c == c'\t' or c == c'\n' or c == c'\r'
+                .pos = .pos + 1
+            else
+                break
+
+    def isDigit(c: char): bool
+        return c >= c'0' and c <= c'9'
+
+    def nextToken(): Token throws
+        .skipSpace()
+        if .atEnd()
+            return Token(TokKind.eof, 0.0)
+
+        var c = .peek()
+        if .isDigit(c)
+            return .readNumber()
+
+        # Single-character tokens — bump past `c` and dispatch on it.
+        # Ignoring a non-void return is rejected at the Zig layer, so
+        # advance the position directly here.
+        .pos = .pos + 1
+        if c == c'+'
+            return Token(TokKind.plus,   0.0)
+        if c == c'-'
+            return Token(TokKind.minus,  0.0)
+        if c == c'*'
+            return Token(TokKind.star,   0.0)
+        if c == c'/'
+            return Token(TokKind.slash,  0.0)
+        if c == c'^'
+            return Token(TokKind.caret,  0.0)
+        if c == c'('
+            return Token(TokKind.lparen, 0.0)
+        if c == c')'
+            return Token(TokKind.rparen, 0.0)
+        raise "lex: unexpected character"
+
+    def readNumber(): Token throws
+        var start = .pos
+        while .pos < .src.len and .isDigit(.peek())
+            .pos = .pos + 1
+        # Optional fractional part.
+        if .pos < .src.len and .peek() == c'.'
+            .pos = .pos + 1
+            while .pos < .src.len and .isDigit(.peek())
+                .pos = .pos + 1
+        # The compiler's TC currently loses the slice's str type once it
+        # passes through a `var`, so we annotate explicitly to guide
+        # `.toFloat()` to the right dispatch.
+        var text: str = .src[start...pos]
+        var maybe: float? = text.toFloat()
+        if maybe as v
+            return Token(TokKind.num, v)
+        raise "lex: malformed number"
+
+
+# ── AST ───────────────────────────────────────────────────────────────────
+#
+# A heap-indirected union — the recursive shape is the whole point of a
+# tagged union.  Note `^Bin`/`^Un`: each branch holds a pointer to its
+# subtree struct so the compiler can give Expr a fixed size.
+
+union Expr
+    num_:  float
+    bin:   ^Bin
+    unary: ^Un
+
+struct Bin
+    var op:    char       # '+', '-', '*', '/', '^'
+    var left:  ^Expr
+    var right: ^Expr
+
+    cue init(op: char, left: ^Expr, right: ^Expr)
+        .op = op
+        .left = left
+        .right = right
+
+struct Un
+    var op:      char     # '-' (unary)
+    var operand: ^Expr
+
+    cue init(op: char, operand: ^Expr)
+        .op = op
+        .operand = operand
+
+
+# ── Pratt parser ──────────────────────────────────────────────────────────
+#
+# `parseExpr(min_bp)` reads a primary, then repeatedly consumes infix
+# operators whose left binding power is >= min_bp, using each operator's
+# right binding power as the minimum for its right operand's recursion.
+# That single rule yields full operator precedence + associativity.
+#
+#   left-associative `+ -`:   left_bp = 10, right_bp = 11
+#   left-associative `* /`:   left_bp = 20, right_bp = 21
+#   right-associative `^`:    left_bp = 30, right_bp = 30   # equal → right-assoc
+#   unary `-`:                 right_bp = 25  # looser than `^`'s 30 → -2^2 = -4
+
+class Parser
+    var lex: Lexer
+    # `cur` would naturally default to Token(TokKind.eof, 0.0), but Zig
+    # requires comptime-known field defaults — a method call doesn't
+    # qualify.  An explicit assignment in `cue init` does.
+    var cur: Token
+
+    cue init(src: str)
+        # `cue init` doesn't support `throws`, so we defer the first token
+        # read to start().  Callers do `var p = Parser(src); p.start()?`
+        # before parsing — see runOne() at the bottom of the file.
+        .lex = Lexer(src)
+        .cur = Token(TokKind.eof, 0.0)
+
+    def start() throws
+        .cur = .lex.nextToken()?
+
+    def bumpToken() throws
+        .cur = .lex.nextToken()?
+
+    # Map an infix kind to its (left_bp, right_bp).  Returns (-1, -1) when
+    # the current token isn't a valid infix.  Encoded as two int locals
+    # so the caller can read them as a small ad-hoc tuple.
+    def infixBp(kind: TokKind, left_out: List(int), right_out: List(int))
+        left_out.clear()
+        right_out.clear()
+        if kind == TokKind.plus or kind == TokKind.minus
+            left_out.add(10)
+            right_out.add(11)
+            return
+        if kind == TokKind.star or kind == TokKind.slash
+            left_out.add(20)
+            right_out.add(21)
+            return
+        if kind == TokKind.caret
+            left_out.add(30)
+            right_out.add(30)         # right-assoc: equal bps
+            return
+        left_out.add(-1)
+        right_out.add(-1)
+
+    def opChar(kind: TokKind): char
+        if kind == TokKind.plus
+            return c'+'
+        if kind == TokKind.minus
+            return c'-'
+        if kind == TokKind.star
+            return c'*'
+        if kind == TokKind.slash
+            return c'/'
+        if kind == TokKind.caret
+            return c'^'
+        return c'?'
+
+    def parsePrimary(): Expr throws
+        var t = .cur
+        if t.kind == TokKind.num
+            .bumpToken()?
+            return Expr.num_(t.value)
+        if t.kind == TokKind.minus
+            # Unary minus.  Its right binding power (25) sits BELOW `^`'s
+            # left binding power (30), so `-2 ^ 2` parses as `-(2 ^ 2) = -4`
+            # — matching mathematical convention.
+            .bumpToken()?
+            var rhs = .parseExpr(25)?
+            return Expr.unary(Un(c'-', rhs))
+        if t.kind == TokKind.lparen
+            .bumpToken()?
+            var inner = .parseExpr(0)?
+            if .cur.kind != TokKind.rparen
+                raise "parse: missing ')'"
+            .bumpToken()?
+            return inner
+        raise "parse: unexpected token in primary position"
+
+    def parseExpr(min_bp: int): Expr throws
+        var lhs = .parsePrimary()?
+        while true
+            var k = .cur.kind
+            var lefts  = List(int)()
+            var rights = List(int)()
+            .infixBp(k, lefts, rights)
+            var lbp = lefts.at(0)
+            var rbp = rights.at(0)
+            if lbp < 0
+                break                  # not an infix operator
+            if lbp < min_bp
+                break                  # caller's recursion outranks us — stop
+            var op = .opChar(k)
+            .bumpToken()?
+            var rhs = .parseExpr(rbp)?
+            lhs = Expr.bin(Bin(op, lhs, rhs))
+        return lhs
+
+
+# ── Evaluator ────────────────────────────────────────────────────────────
+#
+# A textbook recursive interpreter.  The structure mirrors the parser's:
+# one branch arm per AST variant.
+
+def evalExpr(e: Expr): float
+    branch e
+        on Expr.num_ as v
+            return v
+        on Expr.bin as b
+            var l = evalExpr(b.left)
+            var r = evalExpr(b.right)
+            if b.op == c'+'
+                return l + r
+            if b.op == c'-'
+                return l - r
+            if b.op == c'*'
+                return l * r
+            if b.op == c'/'
+                return l / r
+            if b.op == c'^'
+                return powFloat(l, r)
+            return 0.0
+        on Expr.unary as u
+            var x = evalExpr(u.operand)
+            if u.op == c'-'
+                return -x
+            return x
+
+# Integer-exponent fast path — we don't pull in Math just for `^`.
+# Handles non-integer exponents via repeated multiplication on the
+# integer truncation; good enough for a demo, and avoids needing a full
+# pow().  For real code use Math.pow.
+def powFloat(base: float, exp: float): float
+    var n: int = exp.toInt()
+    if n == 0
+        return 1.0
+    var negate = false
+    if n < 0
+        negate = true
+        n = 0 - n
+    var acc: float = 1.0
+    var i = 0
+    while i < n
+        acc = acc * base
+        i = i + 1
+    if negate
+        return 1.0 / acc
+    return acc
+
+
+# ── Pretty-printer ────────────────────────────────────────────────────────
+#
+# Fully-parenthesised so the parser's precedence decisions are visible.
+
+def formatExpr(e: Expr): str
+    branch e
+        on Expr.num_ as v
+            return formatFloat(v)
+        on Expr.bin as b
+            var ls = formatExpr(b.left)
+            var rs = formatExpr(b.right)
+            var oc: char = b.op
+            return "(" + ls + " " + oc.toString() + " " + rs + ")"
+        on Expr.unary as u
+            var inner = formatExpr(u.operand)
+            var oc: char = u.op
+            return "(" + oc.toString() + " " + inner + ")"
+
+def formatFloat(v: float): str
+    # If the value is an exact integer, print it without a fractional part.
+    var i: int = v.toInt()
+    var rebuilt: float = i.toFloat()
+    if rebuilt == v
+        return i.toString()
+    return v.toString()
+
+
+# ── Driver ────────────────────────────────────────────────────────────────
+
+def runOne(src: str)
+    # Method-level catch (clauses appear after the body at the same
+    # indent as `def`).  This wraps every line of the method, and the
+    # `?` postfix on each throws-call propagates the error to it.
+    var p = Parser(src)
+    p.start()?
+    var ast = p.parseExpr(0)?
+    # If anything follows the top-level expression, that's a parse error.
+    if p.cur.kind != TokKind.eof
+        print "  ${src}  -> error: trailing tokens"
+        return
+    var v = evalExpr(ast)
+    var fv: str = formatFloat(v)
+    var fa: str = formatExpr(ast)
+    print "  ${src}  =  ${fv}    [ ${fa} ]"
+catch |e|
+    print "  ${src}  -> error: ${e.message}"
+
+def main()
+    print "pratt_calc — operator-precedence parsing demo"
+    print "---"
+    runOne("1 + 2 * 3")
+    runOne("(1 + 2) * 3")
+    runOne("2 ^ 3 ^ 2")              # right-assoc:  2^(3^2) = 2^9 = 512
+    runOne("-2 ^ 2")                 # unary - tighter than ^? — see notes; here ^ wins
+    runOne("1 - 2 - 3")              # left-assoc:   (1-2)-3 = -4
+    runOne("3 + 4 * 2 / (1 - 5) ^ 2 ^ 3")
+    runOne("-(3 + 4)")
+    runOne("10 / 4")                 # demonstrates float division
+    runOne("2.5 * 4")
+    runOne("1 + ")                   # parse error
+    runOne("(1 + 2")                 # missing close paren

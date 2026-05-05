@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtDefer, StmtWith, StmtArenaScope, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise
+use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -314,6 +314,64 @@ def structNameFromType(t: Type_): str?
             return cm.type_name
         else
             return nil
+
+# Map an inferred Type_ to the Zig type-string used inside `std.ArrayList(...)`
+# when lowering `[a, b, c]` list literals.  Only the cases that can appear as
+# list elements are listed; anything else falls back to `[]const u8` which
+# triggers an obvious Zig type-mismatch (better than `anytype` silently
+# bleeding into the generated code).
+def zigTypeForListElem(t: Type_): str
+    branch t
+        on Type_.int_
+            return "i64"
+        on Type_.uint_
+            return "u64"
+        on Type_.int_n as n
+            if n == 8
+                return "i8"
+            if n == 16
+                return "i16"
+            if n == 32
+                return "i32"
+            if n == 64
+                return "i64"
+            if n == 128
+                return "i128"
+            return "i64"
+        on Type_.uint_n as n
+            if n == 8
+                return "u8"
+            if n == 16
+                return "u16"
+            if n == 32
+                return "u32"
+            if n == 64
+                return "u64"
+            if n == 128
+                return "u128"
+            return "u64"
+        on Type_.float_
+            return "f64"
+        on Type_.float_n as n
+            if n == 16
+                return "f16"
+            if n == 32
+                return "f32"
+            if n == 64
+                return "f64"
+            if n == 128
+                return "f128"
+            return "f64"
+        on Type_.bool_
+            return "bool"
+        on Type_.char_
+            return "u21"
+        on Type_.string_
+            return "[]const u8"
+        on Type_.str_slice
+            return "[]const u8"
+        else
+            return "[]const u8"
 
 def isUnionLikeName(name: str): bool
     # Known union type names from cross-module imports
@@ -2018,7 +2076,7 @@ struct Generator
                 w.emit(owner)
             if m.params.count() > 0
                 w.emit(", ")
-        genParamList(m.params)
+        genParamList(m.params, m.stmts)
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre to!))
@@ -2137,7 +2195,7 @@ struct Generator
     def genInit(ini: DeclInit)
         writeIndent()
         w.emit("pub fn init(")
-        genParamList(ini.params)
+        genParamList(ini.params, ini.stmts)
         w.emit(") ")
         if not is_struct_owner
             w.emit("*")
@@ -2187,6 +2245,21 @@ struct Generator
             # init has no user-visible `return EXPR` — pass nil return_type so any
             # `result` reference is statically rejected.
             var ec_i1 = bg.genEnsureBlock(ini.ensure_, "init", nil)
+            # BUG-095: pre-fill class fields that have declared defaults
+            # before running the user's `cue init` body.  Without this,
+            # any field the user does not explicitly assign retains Zig's
+            # `undefined` poison (0xAAAA…).  Mirrors the same pass already
+            # done for the synthetic-init path.  The user's body may
+            # overwrite these defaults, which is fine.
+            for fdecl in owner_members
+                if fdecl is Decl.var_ as fld
+                    if not fld.mods.is_static and fld.init_expr != nil
+                        bg.writeIndent()
+                        bg.w.emit("_self.")
+                        bg.w.emit(fld.name)
+                        bg.w.emit(" = ")
+                        bg.genExpr(fld.init_expr to!)
+                        bg.w.emit(";\n")
             bg.genStmts(istmts)
             if ec_i1.armed
                 ig.writeIndent()
@@ -2194,6 +2267,16 @@ struct Generator
         else
             ig.genRequireChecks(ini.require_, "init")
             var ec_i2 = ig.genEnsureBlock(ini.ensure_, "init", nil)
+            # BUG-095: same pre-fill for body-less `cue init` declarations.
+            for fdecl in owner_members
+                if fdecl is Decl.var_ as fld
+                    if not fld.mods.is_static and fld.init_expr != nil
+                        ig.writeIndent()
+                        ig.w.emit("_self.")
+                        ig.w.emit(fld.name)
+                        ig.w.emit(" = ")
+                        ig.genExpr(fld.init_expr to!)
+                        ig.w.emit(";\n")
             if ec_i2.armed
                 ig.writeIndent()
                 ig.w.emit("_ensure_armed = true;\n")
@@ -2432,7 +2515,7 @@ struct Generator
 
     # ── genParamList ──────────────────────────────────────────────────────────
 
-    def genParamList(params: List(Param))
+    def genParamList(params: List(Param), body: List(Stmt)?)
         var first = true
         for p in params
             if not first
@@ -2440,10 +2523,155 @@ struct Generator
             first = false
             w.emit(p.name)
             w.emit(": ")
+            # BUG-091: List(T)/HashMap(K,V) param mutated by body → emit *T
+            # so .append/.put can take *Self and the caller sees changes.
+            if paramNeedsAddrOf(p, body)
+                w.emit("*")
             if p.type_ != nil
                 genType(p.type_ to!)
             else
                 w.emit("anytype")
+
+    # ── BUG-091: addAddrOfMutations ──────────────────────────────────────────
+    # Walk stmts for any call whose ident-arg corresponds to a mutating-container
+    # param of the callee.  Add those ident names to `out` so the caller-side
+    # var/const decision treats them as mutated.  Without this, `&items` becomes
+    # `*const ArrayList` and Zig rejects the call.
+    #
+    # ORDERING REQUIREMENT: addAddrOfMutationsInExpr's instance-method arm
+    # (`f.helper(out)` where `f` is a local) calls `inferExpr(m.object, infer_ctx)`
+    # to resolve `f` -> "Filler.helper", then looks the params/body up.  This means
+    # `infer_ctx` MUST be seeded BEFORE genStmts runs -- which is currently
+    # guaranteed by genMethod and genInit calling `walkStmts(...)` then
+    # `withInferCtx(...)` on `bg` before invoking `bg.genStmts(...)`.  If a future
+    # refactor reorders genMethod (genStmts before walkStmts), instance-dispatch
+    # mutations will silently fall through to const, producing `&items` against
+    # `*const ArrayList` at the call site.  The static (`Class.method`) and self
+    # (`this.method`) shapes do NOT depend on infer_ctx, so they continue to work.
+
+    def addAddrOfMutationsInStmts(stmts: List(Stmt), out: StrSet)
+        for s in stmts
+            branch s
+                on Stmt.if_ as si
+                    addAddrOfMutationsInStmts(si.then_stmts, out)
+                    for ei in si.else_ifs
+                        addAddrOfMutationsInStmts(ei.stmts, out)
+                    if si.else_stmts != nil
+                        addAddrOfMutationsInStmts(si.else_stmts to!, out)
+                on Stmt.while_ as ww
+                    addAddrOfMutationsInStmts(ww.stmts, out)
+                on Stmt.for_in as fi
+                    addAddrOfMutationsInStmts(fi.stmts, out)
+                    if fi.else_ != nil
+                        addAddrOfMutationsInStmts(fi.else_ to!, out)
+                on Stmt.for_num as fnum
+                    addAddrOfMutationsInStmts(fnum.stmts, out)
+                on Stmt.branch_ as br
+                    for cc in br.cases
+                        addAddrOfMutationsInStmts(cc.stmts, out)
+                    if br.else_ != nil
+                        addAddrOfMutationsInStmts(br.else_ to!, out)
+                on Stmt.try_catch as tc
+                    addAddrOfMutationsInStmts(tc.stmts, out)
+                    for cl in tc.clauses
+                        addAddrOfMutationsInStmts(cl.stmts, out)
+                on Stmt.arena_scope as a2
+                    addAddrOfMutationsInStmts(a2.stmts, out)
+                on Stmt.with_ as ww2
+                    addAddrOfMutationsInStmts(ww2.stmts, out)
+                on Stmt.guard_ as g2
+                    addAddrOfMutationsInStmts(g2.else_stmts, out)
+                on Stmt.var_ as n
+                    if n.init_expr != nil
+                        addAddrOfMutationsInExpr(n.init_expr to!, out)
+                on Stmt.return_ as r
+                    if r.value != nil
+                        addAddrOfMutationsInExpr(r.value to!, out)
+                on Stmt.expr as e
+                    addAddrOfMutationsInExpr(e, out)
+                on Stmt.assign as a3
+                    addAddrOfMutationsInExpr(a3.target, out)
+                    addAddrOfMutationsInExpr(a3.value, out)
+                on Stmt.print_ as pp
+                    var ppi = 0
+                    while ppi < pp.args.count()
+                        addAddrOfMutationsInExpr(pp.args.at(ppi), out)
+                        ppi += 1
+                on Stmt.assert_ as asr
+                    addAddrOfMutationsInExpr(asr.cond, out)
+                else
+                    pass
+
+    def addAddrOfMutationsInExpr(e: Expr, out: StrSet)
+        if e is Expr.call as c
+            addAddrOfMutationsInExpr(c.callee, out)
+            for a in c.args
+                addAddrOfMutationsInExpr(a.value, out)
+            # Resolve the callee to find its params + body.
+            var key: str = ""
+            if c.callee is Expr.ident as id
+                key = id.name
+            else if c.callee is Expr.member as mem
+                branch mem.object
+                    on Expr.this_
+                        if owner != ""
+                            key = owner + "." + mem.member
+                    on Expr.ident as obj_id
+                        if class_names.contains_(obj_id.name)
+                            key = obj_id.name + "." + mem.member
+                        else if this.infer_ctx != nil
+                            var rt_a: Type_ = inferExpr(mem.object, this.infer_ctx to!)
+                            if rt_a is Type_.named as cn_a
+                                key = cn_a + "." + mem.member
+                    else
+                        pass
+            if key != ""
+                var ps = lookupFnParams(key)
+                if ps != nil
+                    var body = lookupFnBody(key)
+                    if body != nil
+                        var psl: List(Param) = ps to!
+                        var pi = 0
+                        var args_count = c.args.count()
+                        var pli = 0
+                        while pli < psl.count()
+                            if pi >= args_count
+                                break
+                            var p = psl.at(pli)
+                            var av = c.args.at(pi).value
+                            if av is Expr.ident as aid
+                                if paramNeedsAddrOf(p, body)
+                                    out.add(aid.name)
+                            pi += 1
+                            pli += 1
+            return
+        branch e
+            on Expr.binary as bx
+                addAddrOfMutationsInExpr(bx.left, out)
+                addAddrOfMutationsInExpr(bx.right, out)
+            on Expr.unary as ux
+                addAddrOfMutationsInExpr(ux.operand, out)
+            on Expr.member as mx
+                addAddrOfMutationsInExpr(mx.object, out)
+            on Expr.index as ix
+                addAddrOfMutationsInExpr(ix.object, out)
+                addAddrOfMutationsInExpr(ix.index, out)
+            on Expr.if_expr as ie
+                addAddrOfMutationsInExpr(ie.cond, out)
+                addAddrOfMutationsInExpr(ie.then_expr, out)
+                addAddrOfMutationsInExpr(ie.else_expr, out)
+            on Expr.orelse_ as oe
+                addAddrOfMutationsInExpr(oe.expr, out)
+                addAddrOfMutationsInExpr(oe.fallback, out)
+            on Expr.catch_ as ce
+                addAddrOfMutationsInExpr(ce.expr, out)
+                addAddrOfMutationsInExpr(ce.fallback, out)
+            on Expr.try_ as te
+                addAddrOfMutationsInExpr(te.expr, out)
+            on Expr.type_check as tc2
+                addAddrOfMutationsInExpr(tc2.expr, out)
+            else
+                pass
 
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
@@ -2452,7 +2680,11 @@ struct Generator
         # restore on exit. This prevents sibling branch arms from polluting each
         # other's const/var decisions via the method-wide mut_set.
         var saved_ms = mut_set
-        mut_set = scanMutations(stmts)
+        var ms: StrSet = scanMutations(stmts)
+        # BUG-091: idents passed as `&` to mutating-container params must be
+        # declared `var`, otherwise `&items` is `*const ArrayList`.
+        addAddrOfMutationsInStmts(stmts, ms)
+        mut_set = ms
         # Pre-scan: find lambda-assigned vars that are never referenced in the body.
         # Emit `_ = name;` for those at the end to suppress Zig's unused-const error.
         var unused_lambdas = StrSet()
@@ -2600,6 +2832,8 @@ struct Generator
                 on TypeRef.named as tn
                     if tn.name == "str" or tn.name == "String"
                         str_params.add(n.name)
+                    if tn.name == "StrSet"
+                        strset_locals.add(n.name)
                 on TypeRef.generic as gtn
                     if gtn.name == "List"
                         list_locals.add(n.name)
@@ -2619,6 +2853,17 @@ struct Generator
                                     hashmap_str_val_locals.add(n.name)
                 else
                     pass
+        # Detect List from list-literal init: `var names = ["a", "b"]`.
+        # Without this, downstream dispatches (e.g. `name in names` and
+        # `.count()`/`.at()` rewrites that consult list_locals) miss
+        # locals that came from a `[...]` literal rather than `List(T)()`.
+        if n.init_expr != nil
+            if n.init_expr to! is Expr.list_lit as ll_init_decl
+                list_locals.add(n.name)
+                if ll_init_decl.elems.count() > 0 and this.infer_ctx != nil
+                    var et: Type_ = inferExpr(ll_init_decl.elems.at(0), this.infer_ctx to!)
+                    if isString(et)
+                        list_str_locals.add(n.name)
         # Detect StrSet from init expression (StrSet() has no type annotation)
         if n.init_expr != nil
             if isStrSetCtor(n.init_expr to!)
@@ -2657,6 +2902,70 @@ struct Generator
                 genGenericCtorExpr(ie, n.type_)
                 w.emit(";\n")
                 return
+            # `var x: List(T) = [a, b, c]` (or `[]`) — the LHS annotation
+            # provides the element type, which the literal's expression-
+            # position emit can't see.  We emit the var with its declared
+            # type, then a chain of `.append(...)` calls.
+            if n.type_ != nil
+                if (n.type_ to!) is TypeRef.generic as gtll
+                    if gtll.name == "List"
+                        if ie is Expr.list_lit as ll_init
+                            w.emit(": ")
+                            genType(n.type_ to!)
+                            w.emit(" = ")
+                            genType(n.type_ to!)
+                            w.emit("{};\n")
+                            var lli = 0
+                            while lli < ll_init.elems.count()
+                                writeIndent()
+                                w.emit(n.name + ".append(_allocator, ")
+                                genExpr(ll_init.elems.at(lli))
+                                w.emit(") catch @panic(\"OOM\");\n")
+                                lli += 1
+                            return
+            # BUG-092: var lines: List(str) = s.split(sep) / s.lines() —
+            # auto-collect SplitIterator into an ArrayList.  Use a labeled
+            # block so const/var both work (the outer var holds the result;
+            # the block's local _ll_N is mutated then break-returned).
+            if n.type_ != nil
+                if ie is Expr.call as ec092
+                    if (n.type_ to!) is TypeRef.generic as gt092
+                        if gt092.name == "List"
+                            if ec092.callee is Expr.member as mem092
+                                if mem092.member == "split" or mem092.member == "lines"
+                                    var uid092 = w.nextUid()
+                                    var lbl092: str = "blk092_" + uid092.toString()
+                                    var lname092: str = "_ll_" + uid092.toString()
+                                    var sname092: str = "_split_iter_" + uid092.toString()
+                                    var ename092: str = "_se_" + uid092.toString()
+                                    w.emit(": ")
+                                    genType(n.type_ to!)
+                                    w.emit(" = ")
+                                    w.emit(lbl092)
+                                    w.emit(": { var ")
+                                    w.emit(lname092)
+                                    w.emit(": ")
+                                    genType(n.type_ to!)
+                                    w.emit(" = ")
+                                    genType(n.type_ to!)
+                                    w.emit("{}; var ")
+                                    w.emit(sname092)
+                                    w.emit(" = ")
+                                    genExpr(ie)
+                                    w.emit("; while (")
+                                    w.emit(sname092)
+                                    w.emit(".next()) |")
+                                    w.emit(ename092)
+                                    w.emit("| { ")
+                                    w.emit(lname092)
+                                    w.emit(".append(_allocator, ")
+                                    w.emit(ename092)
+                                    w.emit(") catch @panic(\"OOM\"); } break :")
+                                    w.emit(lbl092)
+                                    w.emit(" ")
+                                    w.emit(lname092)
+                                    w.emit("; };\n")
+                                    return
         # Type annotation if present
         if n.type_ != nil and n.init_expr == nil
             w.emit(": ")
@@ -3350,6 +3659,54 @@ struct Generator
             w.emit("}\n")
         else
             var vname = fi.vars.at(0)
+            if isToRangeIter(fi.iter)
+                # for i in start.to(end) → numeric range loop
+                # Lower to: { var i: i64 = <start>; const _stop_i: i64 = <end>;
+                #             while (i < _stop_i) : (i += 1) { body } }
+                # NOTE: emitToRangeReceiver handles the `^Expr` deref —
+                # the codegen auto-derefs only when the field access is
+                # the immediate argument of a function expecting Expr.
+                var range_call = fi.iter.call
+                var range_end:  Expr = range_call.args.at(0).value
+                writeIndent()
+                w.emit("{\n")
+                ig.writeIndent()
+                ig.w.emit("var " + vname + ": i64 = ")
+                emitToRangeReceiver(fi.iter)
+                ig.w.emit(";\n")
+                ig.writeIndent()
+                ig.w.emit("const _stop_" + vname + ": i64 = ")
+                genExpr(range_end)
+                ig.w.emit(";\n")
+                var label_to: str? = nil
+                var wg_to = ig
+                var bg_to = ig.indented()
+                if fi.else_ != nil
+                    var uid_to = w.nextUid()
+                    label_to = "_fels_" + uid_to.toString()
+                    ig.writeIndent()
+                    ig.w.emit("const " + label_to to! + " = " + label_to to! + ": {\n")
+                    wg_to = ig.indented()
+                    bg_to = wg_to.indented()
+                    bg_to.for_else_label = label_to to!
+                wg_to.writeIndent()
+                wg_to.w.emit("while (" + vname + " < _stop_" + vname + ") : (" + vname + " += 1) {\n")
+                bg_to.genStmts(fi.stmts)
+                wg_to.writeIndent()
+                wg_to.w.emit("}\n")
+                if label_to != nil
+                    wg_to.writeIndent()
+                    wg_to.w.emit("break :" + label_to to! + " true;\n")
+                    ig.writeIndent()
+                    ig.w.emit("};\n")
+                    ig.writeIndent()
+                    ig.w.emit("if (" + label_to to! + ") {\n")
+                    wg_to.genStmts(fi.else_ to!)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
+                writeIndent()
+                w.emit("}\n")
+                return
             if isSplitIter(fi.iter)
                 # for p in str.split(sep) → while loop with splitSequence iterator
                 # for line in str.lines() → splitScalar with '\n'
@@ -3495,6 +3852,26 @@ struct Generator
             if c.callee is Expr.member as m
                 return m.member == "bytes"
         return false
+
+    # Detect `n.to(end)` — a numeric range iterator, parsed as a method call.
+    # In a for-in context this lowers to a `for var in start:end` style numeric
+    # loop (Zig: `while (var < stop) : (var += 1)`).
+    def isToRangeIter(e: Expr): bool
+        if e is Expr.call as c
+            if c.args.count() == 1
+                if c.callee is Expr.member as m
+                    return m.member == "to"
+        return false
+
+    # Emit the receiver of a `n.to(end)` expression — i.e. just `n`.
+    # Uses `branch` + `is X as m` binding so codegen auto-derefs the
+    # `^Expr` field correctly (same trick as emitBytesIterObject).
+    def emitToRangeReceiver(e: Expr)
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                genExpr(m.object)
+                return
+        genExpr(e)
 
     # Emit the string object from `s.bytes()` — used by genForIn bytes iterator handling.
     # `s.bytes()` call: callee is Expr.member{object: ^s, member:"bytes"}, emit just the object.
@@ -4914,20 +5291,40 @@ struct Generator
             on Expr.lambda as lam
                 genLambda(lam)
             on Expr.list_lit as ll
-                # List literal: build dynamically
-                w.emit("blk: { var _ll = std.ArrayList(")
+                # `[a, b, c]` lowers to a labeled-block that builds a
+                # std.ArrayList(T).  Element type comes from:
+                #   1. the explicit `elem_type` field (currently always nil
+                #      from the parse path — reserved for a future syntax),
+                #   2. inferExpr on the first element,
+                #   3. fallback to `[]const u8` (which is wrong for non-str,
+                #      but at least the resulting Zig error points here).
+                # An empty `[]` from `var x: List(T) = []` is handled in
+                # genLocalVar before this branch fires; a bare `[]` in
+                # expression position uses the fallback.
+                var ll_uid = w.nextUid()
+                var ll_label: str = "blk_ll_" + ll_uid.toString()
+                var ll_var:   str = "_ll_" + ll_uid.toString()
+                w.emit("(" + ll_label + ": { var " + ll_var + ": std.ArrayList(")
+                var elem_zig: str = "[]const u8"
                 if ll.elem_type != nil
+                    # honoured for future explicit-typed list literal
                     genType(ll.elem_type to!)
+                    w.emit(") = std.ArrayList(")
+                    genType(ll.elem_type to!)
+                    w.emit("){}; ")
+                else if ll.elems.count() > 0 and this.infer_ctx != nil
+                    var et: Type_ = inferExpr(ll.elems.at(0), this.infer_ctx to!)
+                    elem_zig = zigTypeForListElem(et)
+                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + "){}; ")
                 else
-                    w.emit("anytype")
-                w.emit("{}; ")
+                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + "){}; ")
                 var li = 0
                 while li < ll.elems.count()
-                    w.emit("_ll.append(_allocator, ")
+                    w.emit(ll_var + ".append(_allocator, ")
                     genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
-                w.emit("break :blk _ll; }")
+                w.emit("break :" + ll_label + " " + ll_var + "; })")
             on Expr.dict_lit as dl
                 w.emit("blk: { var _dl = std.StringHashMap(anytype).init(_allocator); ")
                 for en in dl.entries
@@ -5069,11 +5466,32 @@ struct Generator
             w.emit(")")
             return
         if b.op == BinaryOp.int_div or b.op == BinaryOp.div
-            w.emit("@divTrunc(")
-            genExpr(b.left)
-            w.emit(", ")
-            genExpr(b.right)
-            w.emit(")")
+            # `//` is always integer-division; bare `/` becomes Zig `/` for
+            # floats and `@divTrunc` for ints.  Without this discrimination,
+            # `2.5 / 4.0` would compile to `@divTrunc(2.5, 4.0)` which Zig
+            # rejects (or worse, with `int_div` semantics, silently rounds).
+            var is_float_div = false
+            if b.op == BinaryOp.div and this.infer_ctx != nil
+                var lt: Type_ = inferExpr(b.left, this.infer_ctx to!)
+                branch lt
+                    on Type_.float_
+                        is_float_div = true
+                    on Type_.float_n as _
+                        is_float_div = true
+                    else
+                        pass
+            if is_float_div
+                w.emit("(")
+                genExpr(b.left)
+                w.emit(" / ")
+                genExpr(b.right)
+                w.emit(")")
+            else
+                w.emit("@divTrunc(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
             return
         if b.op == BinaryOp.pow
             w.emit("std.math.pow(i64, ")
@@ -5083,17 +5501,43 @@ struct Generator
             w.emit(")")
             return
         if b.op == BinaryOp.in_
-            # @[...] literal on right → _zebra_in handles tuple via inline for.
+            # `_zebra_in` handles ArrayList, HashMap, and tuple literals
+            # uniformly via comptime dispatch in the runtime preamble.
+            # Use it whenever the right operand is plausibly a container:
+            #   - `@[…]` array literal
+            #   - a List(T) or HashMap(K,V) — recognised via list_locals /
+            #     hashmap_locals tracking, or via TC's inferred type.
+            # Strings stay on the substring fast path (std.mem.indexOf).
+            var in_use_zebra_in = false
             branch b.right
                 on Expr.array_lit
-                    w.emit("_zebra_in(")
-                    genExpr(b.left)
-                    w.emit(", ")
-                    genExpr(b.right)
-                    w.emit(")")
-                    return
+                    in_use_zebra_in = true
+                on Expr.list_lit
+                    in_use_zebra_in = true
+                on Expr.ident as in_id
+                    if list_locals.contains_(in_id.name) or hashmap_locals.contains_(in_id.name)
+                        in_use_zebra_in = true
+                    else if this.infer_ctx != nil
+                        var rt: Type_ = inferExpr(b.right, this.infer_ctx to!)
+                        # The TC may not yet know the variable's declared
+                        # generic type, but the local tracking sets above
+                        # cover the common cases.  When TC does know,
+                        # `.named` over List/HashMap also routes here.
+                        branch rt
+                            on Type_.named as nm
+                                if nm == "List" or nm == "HashMap"
+                                    in_use_zebra_in = true
+                            else
+                                pass
                 else
                     pass
+            if in_use_zebra_in
+                w.emit("_zebra_in(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
+                return
             # Default: string substring check via std.mem.indexOf.
             w.emit("(std.mem.indexOf(u8, ")
             genExpr(b.right)
@@ -5640,9 +6084,11 @@ struct Generator
         genExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
+        var reg_body: List(Stmt)? = nil
         if c.callee is Expr.ident as reg_id
             reg_params = lookupFnParams(reg_id.name)
-        genArgListFull(c.args, reg_params)
+            reg_body = lookupFnBody(reg_id.name)
+        genArgListFull(c.args, reg_params, reg_body)
         w.emit(")")
 
     # Returns true if `e` is `catch_var.details` — used to detect e.details.toString() pattern.
@@ -6151,9 +6597,19 @@ struct Generator
                 w.emit("}) catch unreachable)")
             return
         if mname == "toFloat"
-            w.emit("@as(f64, @floatFromInt(")
-            genExpr(m.object)
-            w.emit("))")
+            # Mirror `toInt`'s str-vs-numeric dispatch: a string parses
+            # via std.fmt.parseFloat (catching → 0.0), while a numeric
+            # value lifts via @floatFromInt.  Without this branch, a
+            # `text.toFloat()` on a string slice emits @floatFromInt(text)
+            # which Zig rejects with "expected integer type, found []const u8".
+            if isStringBoth(m.object, "toFloat")
+                w.emit("(std.fmt.parseFloat(f64, ")
+                genExpr(m.object)
+                w.emit(") catch 0.0)")
+            else
+                w.emit("@as(f64, @floatFromInt(")
+                genExpr(m.object)
+                w.emit("))")
             return
         if mname == "toInt"
             if isStringBoth(m.object, "toInt")
@@ -6478,6 +6934,30 @@ struct Generator
         w.emit(".")
         w.emit(mname)
         w.emit("(")
+        # BUG-091: resolve callee params+body so we can take `&` for List/HashMap
+        # params that the body mutates.  Covers static (Class.method), self
+        # (this.method), and instance (var.method via infer_ctx) call shapes.
+        var mc_params: List(Param)? = nil
+        var mc_body: List(Stmt)? = nil
+        branch m.object
+            on Expr.this_
+                if owner != ""
+                    var tk = owner + "." + mname
+                    mc_params = lookupFnParams(tk)
+                    mc_body = lookupFnBody(tk)
+            on Expr.ident as obj_id_p
+                if class_names.contains_(obj_id_p.name)
+                    var sk = obj_id_p.name + "." + mname
+                    mc_params = lookupFnParams(sk)
+                    mc_body = lookupFnBody(sk)
+                else if this.infer_ctx != nil
+                    var rt_m: Type_ = inferExpr(m.object, this.infer_ctx to!)
+                    if rt_m is Type_.named as cn_m
+                        var ik = cn_m + "." + mname
+                        mc_params = lookupFnParams(ik)
+                        mc_body = lookupFnBody(ik)
+            else
+                pass
         # Named-arg reordering: if any arg is labeled and we can find param order, emit in param order.
         var did_reorder = false
         var has_named = false
@@ -6495,10 +6975,17 @@ struct Generator
                 if pcsv != nil
                     var first2 = true
                     var pos_idx: int = 0
+                    var pname_idx: int = 0
                     for pname in (pcsv to!).split(",")
                         if not first2
                             w.emit(", ")
                         first2 = false
+                        # BUG-091: addr-of for this param if needed.
+                        var needs_addr_n: bool = false
+                        if mc_params != nil
+                            var psr = mc_params to!
+                            if pname_idx < psr.count()
+                                needs_addr_n = paramNeedsAddrOf(psr.at(pname_idx), mc_body)
                         # Find named arg matching this param first.
                         var found = false
                         var ai: int = 0
@@ -6506,6 +6993,8 @@ struct Generator
                             var a = args.at(ai)
                             if a.name != nil
                                 if (a.name to!) == pname
+                                    if needs_addr_n
+                                        w.emit("&")
                                     genExpr(a.value)
                                     found = true
                                     break
@@ -6516,19 +7005,30 @@ struct Generator
                                 var pa = args.at(pos_idx)
                                 pos_idx += 1
                                 if pa.name == nil
+                                    if needs_addr_n
+                                        w.emit("&")
                                     genExpr(pa.value)
                                     found = true
                                     break
                         if not found
                             w.emit("undefined")
+                        pname_idx += 1
                     did_reorder = true
         if not did_reorder
             var first = true
+            var ai_p: int = 0
             for a in args
                 if not first
                     w.emit(", ")
                 first = false
+                # BUG-091: take `&` when the corresponding param needs addr-of.
+                if mc_params != nil
+                    var msp = mc_params to!
+                    if ai_p < msp.count()
+                        if paramNeedsAddrOf(msp.at(ai_p), mc_body)
+                            w.emit("&")
                 genExpr(a.value)
+                ai_p += 1
         w.emit(")")
         if callee_throws2 and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
@@ -6615,25 +7115,54 @@ struct Generator
                                     return ndm.params
         return nil
 
-    def genArgListFull(args: List(Arg), params: List(Param)?)
+    # BUG-091: parallel to lookupFnParams — return the body so call-site emit
+    # can run paramNeedsAddrOf and decide whether to take `&` for each arg.
+    def lookupFnBody(key: str): List(Stmt)?
+        for decl in module_decls
+            if decl is Decl.method as m
+                var mname: str = m.name
+                if mname == key
+                    return m.stmts
+            if decl is Decl.class_ as c
+                var cname: str = c.name
+                for mem in c.members
+                    if mem is Decl.method as dm
+                        var full_key: str = cname + "." + dm.name
+                        if full_key == key
+                            return dm.stmts
+                    if mem is Decl.init as di
+                        var init_key: str = cname + ".init"
+                        if init_key == key
+                            return di.stmts
+                    if mem is Decl.namespace_ as ns
+                        for ndecl in ns.decls
+                            if ndecl is Decl.method as ndm
+                                var ns_key: str = cname + "." + ndm.name
+                                if ns_key == key
+                                    return ndm.stmts
+        return nil
+
+    def genArgListFull(args: List(Arg), params: List(Param)?, body: List(Stmt)?)
         if params == nil
             genArgList(args)
             return
         # Delegate to a typed-parameter helper so .count()/.at() rewrite correctly
         # (the bootstrap compiler only rewrites list methods on function parameters).
-        genArgListNamed(args, params to!)
+        genArgListNamed(args, params to!, body)
 
     # Inner worker for genArgListFull — ps is a proper parameter so list rewrites apply.
     # Uses `for p in ps` (no .count()/.at() on ps) to avoid selfhost list-rewrite gaps.
     # Full algorithm: for each param, try named match, then positional, then default.
     # This produces byte-identical output to genArgList for purely positional calls.
-    def genArgListNamed(args: List(Arg), ps: List(Param))
+    # body (when non-nil) drives BUG-091 addr-of detection.
+    def genArgListNamed(args: List(Arg), ps: List(Param), body: List(Stmt)?)
         var first = true
         var pos_idx: int = 0
         for p in ps
             if not first
                 w.emit(", ")
             first = false
+            var needs_addr = paramNeedsAddrOf(p, body)
             var p_name_str: str = p.name
             var found = false
             var ai: int = 0
@@ -6641,6 +7170,8 @@ struct Generator
                 var a = args.at(ai)
                 if a.name != nil
                     if (a.name to!) == p_name_str
+                        if needs_addr
+                            w.emit("&")
                         genExpr(a.value)
                         found = true
                         break
@@ -6650,6 +7181,8 @@ struct Generator
                     var pa = args.at(pos_idx)
                     pos_idx += 1
                     if pa.name == nil
+                        if needs_addr
+                            w.emit("&")
                         genExpr(pa.value)
                         found = true
                         break

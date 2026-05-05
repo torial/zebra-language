@@ -92,6 +92,7 @@ union PNode
     expr_lambda: PLambda
     expr_tuple_lit: ^PTupleLit
     expr_array_lit: ^PArrayLit
+    expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -1985,6 +1986,19 @@ class Parser
                     var callee = List(PNode)()
                     callee.add(PNode.expr_member(PMember(base, mname)))
                     expr = PNode.expr_call(PCall(callee, args))
+                else if this.textIs("to") and this.peekAt(1).text == "("
+                    # expr.to(args) — `to` is a keyword (used in `expr to T`,
+                    # `expr to!`, `expr to?`) but is also allowed as a method
+                    # name in postfix call position so numeric range loops
+                    # `for i in 0.to(5)` and similar reads naturally.
+                    this.advance()  # consume "to"
+                    this.advance()  # consume "("
+                    const args = .parseCallArgs()
+                    var base = List(PNode)()
+                    base.add(expr)
+                    var callee = List(PNode)()
+                    callee.add(PNode.expr_member(PMember(base, "to")))
+                    expr = PNode.expr_call(PCall(callee, args))
                 else if .isIntLit()
                     # expr.0 — tuple element access by numeric index
                     const field = this.peek().text
@@ -2122,6 +2136,21 @@ class Parser
                     elems.add(.parseExpr())
             .expectText("]")
             return PNode.expr_array_lit(PArrayLit(elems))
+        else if this.textIs("[")
+            # [elem, elem, ...] — list literal.  Lowers in codegen to a
+            # labeled-block that builds std.ArrayList(T).  At the parse
+            # level we share PArrayLit's shape with the @[...] form.
+            this.advance()
+            var elems = List(PNode)()
+            if not this.textIs("]")
+                elems.add(.parseExpr())
+                while this.textIs(",")
+                    this.advance()
+                    if this.textIs("]")
+                        break
+                    elems.add(.parseExpr())
+            .expectText("]")
+            return PNode.expr_list_lit(PArrayLit(elems))
         else if this.textIs("(")
             this.advance()
             const first = .parseExpr()
