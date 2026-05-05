@@ -303,6 +303,20 @@ pub const Type = union(enum) {
         return eql(from, to);
     }
 
+    /// Any of the three "I don't know a concrete type" variants:
+    /// `.context_dependent`, `.unknown` (opaque), or `.unresolved`.
+    /// Use this in consumer sites that previously tested `t == .unknown`
+    /// for "skip this check" semantics — the same skip applies to all
+    /// three abstract types.  Sites that specifically need to distinguish
+    /// (e.g., expectation sites that should emit on `.unresolved` only)
+    /// should pattern-match on the variant instead.
+    pub fn isAbstract(t: Type) bool {
+        return switch (t) {
+            .context_dependent, .unknown, .unresolved => true,
+            else => false,
+        };
+    }
+
     /// Human-readable name for diagnostics.
     pub fn name(t: Type) []const u8 {
         return switch (t) {
@@ -1163,6 +1177,17 @@ const TypeChecker = struct {
             const actual = try tc.inferExpr(init_expr);
             if (n.type_) |*tr| {
                 const declared = tc.typeFromRef(tr);
+                // BUG-099 alarm bell: if the RHS is `.unresolved` (the TC
+                // failed to derive a type it ought to have known) and the
+                // expectation site has a concrete type, emit a diagnostic
+                // pointing at the carried span — the source location where
+                // the type was lost (e.g., the offending sub-expression).
+                if (actual == .unresolved and !declared.isAbstract()) {
+                    try tc.emitError(actual.unresolved,
+                        "cannot determine type for value assigned to '{s}: {s}'",
+                        .{ n.name, declared.name() });
+                    return;
+                }
                 if (!Type.isAssignable(actual, declared))
                     try tc.emitMismatch(spanOf(init_expr), actual, declared);
             }
@@ -1787,11 +1812,16 @@ const TypeChecker = struct {
     fn inferIdent(tc: TypeChecker, e: *const Ast.ExprIdent) Type {
         // Check if this ident is nil-narrowed in the current scope.
         if (tc.narrowed_types.get(e.name)) |narrowed| return narrowed;
-        const sym = tc.resolve.exprs.get(e) orelse return .unknown;
+        // BUG-099: resolver miss → `.unresolved` (alarm bell). The carried
+        // span lets a downstream expectation site emit a diagnostic that
+        // points back at this exact ident.
+        const sym = tc.resolve.exprs.get(e) orelse return .{ .unresolved = e.span };
         const t = tc.symbolType(sym);
         if (t != .unknown) return t;
         // Check if this ident is a loop variable with a known element type.
-        return tc.loop_var_types.get(e.name) orelse .unknown;
+        // If neither the symbol table nor loop_var_types know the type,
+        // it's `.unresolved` — the TC ought to have known but didn't.
+        return tc.loop_var_types.get(e.name) orelse Type{ .unresolved = e.span };
     }
 
     fn inferMember(tc: TypeChecker, e: *Ast.ExprMember) anyerror!Type {

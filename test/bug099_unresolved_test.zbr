@@ -1,0 +1,24 @@
+# bug099_unresolved_test.zbr — BUG-099 alarm-bell verification.
+#
+# Before BUG-099 split: `var x: int = Math` silently typechecked because
+# `Math` (a namespace) inferred to `.unknown` (overloaded), and
+# `isAssignable` treats `.unknown` on either side as OK ("error already
+# reported"). Result: no diagnostic, broken Zig output downstream.
+#
+# After BUG-099 split: `inferIdent` returns `.unresolved` carrying the
+# ident's span, and the expectation site (var with type annotation)
+# emits a precise diagnostic at the carried span.
+#
+# This test expects a TC diagnostic — running it through `zebra` should
+# print "cannot determine type for value assigned to 'x: int'" pointing
+# at the `Math` reference.
+#
+# Why namespaces are the demo case: a namespace symbol passes Resolve
+# (it's a known name) but `symbolType` returns abstract for it (a
+# namespace isn't a value). After BUG-099 the chain
+# Resolve→inferIdent→symbolType→loop_var_types→fallback now fires the
+# alarm bell instead of silently flowing `.unknown`.
+
+def main()
+    var x: int = Math
+    print x
