@@ -1741,10 +1741,10 @@ const TypeChecker = struct {
                 }
                 break :blk .string;
             },
-            .nil            => .unknown, // context-dependent nilable
+            .nil            => .context_dependent, // BUG-099: context-dependent nilable
             .this           => tc.ext_self_type orelse
                               if (tc.owner_sym) |s| Type{ .named = s } else .unknown,
-            .zig_lit        => .unknown, // opaque backend literal
+            .zig_lit        => .unknown, // BUG-099: opaque-by-design backend literal
             .ident          => |*e| tc.inferIdent(e),
             .member         => |e| try tc.inferMember(e),
             .call           => |e| try tc.inferCall(e),
@@ -1764,7 +1764,7 @@ const TypeChecker = struct {
             .binary         => |e| try tc.inferBinary(e),
             .unary          => |e| try tc.inferUnary(e),
             .cast           => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk tc.typeFromRef(&e.target); },
-            .to_nilable     => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk .unknown; },
+            .to_nilable     => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk .context_dependent; },
             .to_non_nil     => |e| blk: {
                 // `expr to!` — force-unwrap optional; result is the inner type.
                 const inner = try tc.inferExpr(e.expr);
@@ -1775,9 +1775,12 @@ const TypeChecker = struct {
             .catch_         => |e| try tc.inferCatch(e),
             .if_expr        => |e| try tc.inferIfExpr(e),
             .lambda         => |e| try tc.inferLambda(e),
-            .list_lit       => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .unknown; },
-            .dict_lit       => |e| blk: { for (e.entries) |en| { _ = try tc.inferExpr(en.key); _ = try tc.inferExpr(en.value); } break :blk .unknown; },
-            .array_lit      => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .unknown; },
+            // BUG-099: literal element types are filled in by context (the
+            // expectation site's declared collection type). BUG-106 follow-up
+            // will check element-type homogeneity here.
+            .list_lit       => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .context_dependent; },
+            .dict_lit       => |e| blk: { for (e.entries) |en| { _ = try tc.inferExpr(en.key); _ = try tc.inferExpr(en.value); } break :blk .context_dependent; },
+            .array_lit      => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .context_dependent; },
             .old            => |e| try tc.inferExpr(e.expr),
             .result_        => tc.return_type, // `result` has the current function's return type
             // try expr — may be error propagation OR optional-unwrap (`opt?.x`).
@@ -1842,14 +1845,18 @@ const TypeChecker = struct {
                         if (iface.methods.get(key)) |t| return t;
                     }
                 }
-                return .unknown;
+                // BUG-099: cross-module member miss is a silent TC failure.
+                // Mark .unresolved so an expectation site can blame e.span.
+                return .{ .unresolved = e.span };
             };
         }
         const obj_type = try tc.inferExpr(e.object);
         // Tuple index access: p.0, p.1, …
         if (obj_type == .tuple) {
-            const idx = std.fmt.parseInt(usize, e.member, 10) catch return .unknown;
+            // BUG-099: non-numeric tuple member is a silent TC failure → .unresolved.
+            const idx = std.fmt.parseInt(usize, e.member, 10) catch return Type{ .unresolved = e.span };
             if (idx < obj_type.tuple.len) return obj_type.tuple[idx];
+            // Out-of-bounds: error already emitted, stay .unknown (already-reported).
             try tc.emitError(e.span, "tuple index {} out of bounds (tuple has {} elements)",
                 .{ idx, obj_type.tuple.len });
             return .unknown;
@@ -1940,7 +1947,9 @@ const TypeChecker = struct {
         // e.g. `p.first` on `Pair(str,int)` → look up `first`, substitute A→str.
         if (obj_type == .generic_named) {
             const gn = obj_type.generic_named;
-            if (gn.sym.decl != .class) return .unknown;
+            // BUG-099: a generic_named whose decl isn't a class is a TC failure
+            // (the resolver should have flagged earlier). Mark .unresolved.
+            if (gn.sym.decl != .class) return Type{ .unresolved = e.span };
             const cls = gn.sym.decl.class;
             if (gn.sym.own_scope) |scope| {
                 if (scope.lookupLocal(e.member)) |member_sym| {
@@ -1948,15 +1957,17 @@ const TypeChecker = struct {
                     switch (member_sym.decl) {
                         .var_   => |v| if (v.type_) |*t| return tc.substituteTypeParam(t, cls, gn.args),
                         .param  => |p| if (p.type_) |*t| return tc.substituteTypeParam(t, cls, gn.args),
-                        // Methods: return symbolType (method return types handled in inferCall).
-                        .method => return .unknown, // resolved later in inferCall
+                        // Methods: context-dependent — return type filled in by inferCall.
+                        .method => return .context_dependent,
                         else    => {},
                     }
                     return tc.symbolType(member_sym);
                 }
             }
         }
-        return .unknown;
+        // BUG-099: inferMember exhausted all branches without finding the member.
+        // Silent TC failure → .unresolved with span pointing at the access site.
+        return .{ .unresolved = e.span };
     }
 
     /// Infer the element type that loop variables will have when iterating `iter`.
@@ -2125,7 +2136,9 @@ const TypeChecker = struct {
                     }
                 }
             }
-            return .unknown;
+            // BUG-099: generic-construction syntax used but callee didn't
+            // resolve to a class. Silent TC failure → .unresolved.
+            return Type{ .unresolved = e.span };
         }
 
         // Special case: direct call of a named method — return its declared
@@ -2989,7 +3002,10 @@ const TypeChecker = struct {
     fn typeFromRef(tc: TypeChecker, tr: *const Ast.TypeRef) Type {
         return switch (tr.*) {
             .named => |*n| blk: {
-                const resolved = tc.resolve.types.get(n) orelse break :blk .unknown;
+                // BUG-099: name not in resolver's types map → silent TC failure.
+                // The resolver should have flagged earlier, but mark .unresolved
+                // so downstream expectation sites blame n.span if it slips through.
+                const resolved = tc.resolve.types.get(n) orelse break :blk Type{ .unresolved = n.span };
                 break :blk switch (resolved) {
                     .builtin => blk2: {
                         const t = builtinType(n.name);
