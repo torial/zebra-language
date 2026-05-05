@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-05 (Phase 13 sweeps #1+#2 complete; BUG-111/112/113 closed; §19 selfhost TC diags Phase 1 shipped; BUG-099 split shipped; §19.5b typecheck-merge subcommand shipped — oracle-prep cluster COMPLETE)
+**Last updated:** 2026-05-06 (BUG-099 selfhost port complete: `Type_` three-way split + `isAbstractType()` + alarm bell behind `InferCtx.strict`; bootstrap 5/5, smoke 44/44)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -31,8 +31,7 @@ File: `src/CodeGen.zig` NFA preamble. Effort: L
 
 **BUG-099 cluster (TC reliability keystone)** — see §19.5a below.
 
-**BUG-109 / BUG-110** — `Http.serve` `.reuse_address` policy + bind-error
-panic instead of throws. See `BUGS.md`.
+**BUG-109 / BUG-110** — ✅ FIXED 2026-05-05 — `reuse_address = false` + clean print-and-return on bind failure.
 
 **Phase 13 cluster (style-guide–driven sweep targets, BUG-111..115)** —
 all queued for the 0.13 syntax-cleanup window. See §12 below for the
@@ -101,11 +100,12 @@ audit (`C:/tmp/zebra-tc-audit.md`).  Most of these would meaningfully improve da
 workflow *without* waiting for a full Zebra-VCS rewrite (which is now reframed as a
 post-1.0 capstone — see item 13).
 
-**a. BUG-099 — Split overloaded `.unknown`** ✅ COMPLETE (2026-05-05)
-Three-way split shipped in `src/TypeChecker.zig`: `.context_dependent` / `.unknown` / `.unresolved`.
+**a. BUG-099 — Split overloaded `.unknown`** ✅ COMPLETE (Zig 2026-05-05, selfhost 2026-05-06)
+Three-way split shipped in `src/TypeChecker.zig` and ported to `selfhost/typechecker.zbr`.
 Goal state achieved: zero false `.unresolved` emissions on accepted programs (bootstrap 5/5,
-smoke 43/43, full test suite). Side effects: BUG-105, BUG-106, BUG-108 (partial) fixed.
-Selfhost port of the split is a future item — selfhost TC currently uses `unknown_` only.
+smoke 44/44, full test suite). Side effects: BUG-105, BUG-106, BUG-108 (partial) fixed.
+Selfhost port: `context_dependent` / `unknown_` / `unresolved` variants + `isAbstractType()`
+helper + alarm bell behind `InferCtx.strict` (enabled by `typecheck-merge` subcommand only).
 
 **b. `zebra typecheck-merge` subcommand** ✅ COMPLETE (2026-05-05)
 `zebra typecheck-merge <file.zbr>` — extracts both sides of a conflict-marked file
@@ -391,6 +391,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-111 closed as not-a-bug — compound assign already works | 2026-05-05 |
 | BUG-113 closed as not-reproduced — slice TC works correctly | 2026-05-05 |
 | BUG-099 `.unknown` three-way split (`.context_dependent`/`.unknown`/`.unresolved`); zero false `.unresolved` on accepted programs; bootstrap 5/5, smoke 43/43 | 2026-05-05 |
+| BUG-099 selfhost port: `Type_` three-way split in `typechecker.zbr`; `isAbstractType()` helper; alarm bell behind `InferCtx.strict` (typecheck-merge only); bootstrap 5/5, smoke 44/44 | 2026-05-06 |
 | §19 selfhost TC diagnostics Phase 1: `Diagnostic` struct + `InferCtx.errors` + primitive mismatch detection; `selfhost_compat` 2/2 PASS; bootstrap 5/5 | 2026-05-05 |
 | §19.5b `zebra typecheck-merge` subcommand: conflict-side extraction + TC check; line-number preservation; diff3 support; git hook installer; bootstrap 5/5 | 2026-05-05 |
 

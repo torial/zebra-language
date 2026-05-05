@@ -315,7 +315,7 @@ def powFloat(base: float, exp: float): float
     var negate = false
     if n < 0
         negate = true
-        n = 0 - n
+        n = -n
     var acc: float = 1.0
     var i = 0
     while i < n

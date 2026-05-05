@@ -1,0 +1,24 @@
+# bug093_strlen_test.zbr — s.len returns i64, not usize.
+# Previously: var n: int = s.len failed with "expected i64, found usize".
+# Arithmetic (s.len - 3) also failed: "uint vs int" type mismatch.
+
+def main()
+    var s: str = "hello.md"
+
+    # s.len assigned to int
+    var n: int = s.len
+    assert n == 8, "length"
+
+    # comparison still works
+    assert s.len > 3, "len > 3"
+    assert s.len == 8, "len == 8"
+
+    # arithmetic with int literal
+    var trimmed_len: int = s.len - 3
+    assert trimmed_len == 5, "len - 3"
+
+    # slice using len
+    var stem: str = s[0..s.len - 3]
+    assert stem == "hello", "stem"
+
+    print "ok"

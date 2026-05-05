@@ -363,7 +363,5 @@ class Resolver
 
 # -- Main ----------------------------------------------------------------------
 
-class Main
-    static
-        def main
-            print "resolver: loaded (run resolver_test.zbr to exercise)"
+def main()
+    print "resolver: loaded (run resolver_test.zbr to exercise)"

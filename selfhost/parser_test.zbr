@@ -253,10 +253,8 @@ class ParserTest
                 assert false, "var: expected class_"
         print "testVarStmt: OK"
 
-class Main
-    static
-        def main
-            var t = ParserTest()
-            t.run()?
-        catch |e|
-            print "FAILED: " + e.message
+def main()
+    var t = ParserTest()
+    t.run()?
+catch |e|
+    print "FAILED: " + e.message

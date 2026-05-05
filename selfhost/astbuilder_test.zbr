@@ -423,10 +423,8 @@ class ASTBuilderTest
                 assert false, "expected raise_ stmt"
         print "testRaiseMessage: OK"
 
-class Main
-    static
-        def main
-            var t = ASTBuilderTest()
-            t.run()?
-        catch |e|
-            print "FAILED: " + e.message
+def main()
+    var t = ASTBuilderTest()
+    t.run()?
+catch |e|
+    print "FAILED: " + e.message

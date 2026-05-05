@@ -238,17 +238,15 @@ def testGenFieldDeclSB
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-class Main
-    static
-        def main
-            testWriter()
-            testGenerator()
-            testGenTypePrimitive()
-            testGenTypeGenerics()
-            testGenTypeCompound()
-            testGenEnum()
-            testGenUnion()
-            testGenStruct()
-            testGenClass()
-            testGenFieldDeclSB()
-            print "codegen_test: all OK"
+def main()
+    testWriter()
+    testGenerator()
+    testGenTypePrimitive()
+    testGenTypeGenerics()
+    testGenTypeCompound()
+    testGenEnum()
+    testGenUnion()
+    testGenStruct()
+    testGenClass()
+    testGenFieldDeclSB()
+    print "codegen_test: all OK"

@@ -1843,3 +1843,59 @@ passing after removal confirms Option 2 coverage is complete.
 Bootstrap:  5/5 PASS (byte-identical round-trip)
 Smoke:      19/19 PASS
 ```
+
+---
+
+## BUG-099 Selfhost Port: `Type_` Three-Way Split (2026-05-06)
+
+**Goal:** Port the BUG-099 three-way type taxonomy from `src/TypeChecker.zig` to
+`selfhost/typechecker.zbr` so the selfhost TC speaks the same semantic language as the
+Zig backend.
+
+### Architecture
+
+**Three new `Type_` variants** (`selfhost/typechecker.zbr`):
+
+- `context_dependent` — type depends on usage context; the outer checker resolves it.
+  Assigned to: nil literal inner type, `result` outside a return-typed context, if-capture
+  variable defaults (before the condition-type is narrowed).
+
+- `unresolved` — TC alarm bell: inference failed at a site where it should have succeeded.
+  Assigned to: ident miss (not local, not class, not self-field), member-access fallback
+  (field/method not in registry), call fallback (function not found), index/slice on
+  unrecognised receiver, and the `inferExpr` catch-all.
+
+- `unknown_` — unchanged; intentional opaque/don't-care cases: `this` outside a class body,
+  loop-var defaults, `addClassMembers` no-annotation fields, `unbind` sentinel.
+
+**`isAbstractType(t: Type_): bool`** — mirrors `src/TypeChecker.zig isAbstract()`. Returns
+true for all three abstract variants.
+
+**`typeTag()` extended** — `context_dependent` → `"ctx"`, `unresolved` → `"unres"`.
+
+**`codegen.zbr` format-spec** — the `getFormatSpec` helper already had `on Type_.unknown_: pass`
+(fall through to heuristic). Two new arms added alongside it for `context_dependent` and
+`unresolved`, preserving the same fall-through semantics.
+
+### Alarm bell
+
+`InferCtx` gains a `strict: bool` field (default `false`). `checkVarDecl` gains an early
+check: when `ctx.strict && inferred is Type_.unresolved`, an error is emitted (`"unresolved
+type for init expr of '<name>' (TC gap)"`). The method returns without further mismatch
+checks.
+
+`strict` is set to `true` only by the `typecheck-merge` subcommand path
+(`tcCheckSide` in `main.zbr`). This gates the alarm behind the intentional
+diagnostic mode so normal compilation is unaffected by TC gaps not yet closed.
+
+**Why gated?** `main.zbr` calls `sys.exit(1)` when `checkModule` returns with errors. If the
+alarm fired unconditionally, any selfhost file with an unresolved primitive-annotated var
+would break the bootstrap round-trip. The `strict` flag lets the alarm exist in the codebase
+now, ready to be tightened once all TC gaps are closed.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      44/44 PASS
+```

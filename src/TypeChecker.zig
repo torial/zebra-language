@@ -1274,24 +1274,21 @@ const TypeChecker = struct {
             .for_in   => |s| {
                 _ = try tc.inferExpr(s.iter);
                 // Special-case HashMap(K,V) two-var iteration: first var = key, second = value.
-                const is_hashmap_two_var = blk: {
-                    if (s.vars.len < 2) break :blk false;
-                    if (s.iter.* != .ident) break :blk false;
-                    const sym = tc.resolve.exprs.get(&s.iter.ident) orelse break :blk false;
+                // hm_dt is non-null iff the iter is an ident whose declared type is HashMap(K,V).
+                const hm_dt: ?Ast.TypeRef = blk: {
+                    if (s.vars.len < 2) break :blk null;
+                    if (s.iter.* != .ident) break :blk null;
+                    const sym = tc.resolve.exprs.get(&s.iter.ident) orelse break :blk null;
                     const dt: ?Ast.TypeRef = switch (sym.decl) {
                         .var_  => |dv| dv.type_,
                         .param => |p|  p.type_,
                         else   => null,
                     };
-                    if (dt == null) break :blk false;
-                    break :blk dt.? == .generic and std.mem.eql(u8, dt.?.generic.name, "HashMap");
+                    const t = dt orelse break :blk null;
+                    if (t != .generic or !std.mem.eql(u8, t.generic.name, "HashMap")) break :blk null;
+                    break :blk t;
                 };
-                if (is_hashmap_two_var) {
-                    // Register key and value types from HashMap generic args.
-                    const dt = blk: {
-                        const sym = tc.resolve.exprs.get(&s.iter.ident).?;
-                        break :blk switch (sym.decl) { .var_ => |dv| dv.type_.?, .param => |p| p.type_.?, else => unreachable };
-                    };
+                if (hm_dt) |dt| {
                     const key_type = if (dt.generic.args.len > 0) tc.typeFromRef(&dt.generic.args[0]) else .unknown;
                     const val_type = if (dt.generic.args.len > 1) tc.typeFromRef(&dt.generic.args[1]) else .unknown;
                     if (!key_type.isAbstract()) try tc.loop_var_types.put(s.vars[0], key_type);

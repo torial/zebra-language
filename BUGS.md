@@ -148,9 +148,10 @@ Closing as not-reproduced.
 
 ---
 
-### BUG-109: `Http.serve` runtime hardcodes `.reuse_address = true` — allows silent duplicate binds
+### BUG-109: ✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
 - **Severity:** Medium (footgun for test apps; not a crash, but a "wait, why are four copies running?" surprise)
-- **Status:** Open
+- **Status:** Fixed — `selfhost/stdlib_preamble.zig` line 525: `reuse_address = true` → `false`.
+- **Original description:**
 - **Symptom:** The runtime `_http_serve` (emitted by `src/CodeGen.zig`) calls `std.net.Address.initIp4(.{0,0,0,0}, port).listen(.{ .reuse_address = true })`. The `reuse_address = true` setting allows multiple processes to successfully `listen()` on the same port; the OS load-balances incoming connections across them. Concrete observed consequence: 2026-04-21 → 2026-05-04 the box accumulated 4 stray `server_test.exe` processes all coexisting on 8080, undetected until manual `netstat` inspection.
 - **Reproducer:** Run `server_test.exe` (built from `test/server_test.zbr`) twice in succession in separate terminals — both bind successfully and both serve traffic. No error from the second bind.
 - **Root cause:** `src/CodeGen.zig` emits `.reuse_address = true` unconditionally in the `_http_serve` preamble (line ~459 in current emitted output). The flag is appropriate for fast-restart-after-crash workflows (avoids TIME_WAIT delay) but inappropriate for "did I accidentally start two of these?" detection.
@@ -164,9 +165,10 @@ Closing as not-reproduced.
 
 ---
 
-### BUG-110: `Http.serve` panics on bind error instead of returning a typed error
+### BUG-110: ✅ FIXED 2026-05-05 — bind error prints clean message instead of panic
 - **Severity:** Low (only triggers on bind failure; rare in practice)
-- **Status:** Open
+- **Status:** Fixed — `selfhost/stdlib_preamble.zig`: `catch |e| @panic(...)` replaced with `std.debug.print` + `return`. Http.serve remains non-throws (making it throws would ripple into TC/codegen — deferred).
+- **Original description:**
 - **Symptom:** The runtime `_http_serve` handles bind failure with `... .listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e))`. On any bind failure (port busy with `reuse_address = false`, permission denied for low ports, address-not-available), the program dies with a Zig panic and stack trace rather than a clean error. Counterpart of BUG-107 (TC halt-on-diagnostics audit) but at runtime: the failure is communicated by panic rather than by the language's structured error path.
 - **Reproducer:** With BUG-109 fixed (`reuse_address = false`), running `server_test.exe` twice produces a panic on the second run instead of a clean error message.
 - **Root cause:** `src/CodeGen.zig` emits the `catch |e| @panic(@errorName(e))` pattern in `_http_serve`. The right shape is to make `Http.serve` `throws` so callers can `catch |err| { print "Could not bind: ${err}" }`.
@@ -176,30 +178,29 @@ Closing as not-reproduced.
 
 ---
 
-### BUG-099: ✅ FIXED 2026-05-05 — Type three-way split shipped
+### BUG-099: ✅ FIXED 2026-05-05 — Type three-way split shipped (Zig + selfhost)
 
-The `.context_dependent` / `.unknown` / `.unresolved` split is now in
-`src/TypeChecker.zig`. `.unresolved` carries an `Ast.Span` for blame.
-Alarm bell fires at `checkVarDecl` expectation sites. Producer audit
-is conservative — only unambiguous TC failures (resolver-miss in
-`inferIdent`, generic-construction non-class callee, typeFromRef name
-miss, tuple non-numeric index) emit `.unresolved`. Member-access misses
-softened to `.unknown` after bootstrap_check surfaced false alarms on
-legitimate cross-module variant-payload accesses.
+**Zig backend (src/TypeChecker.zig):** `.context_dependent` / `.unknown` /
+`.unresolved` split. `.unresolved` carries an `Ast.Span` for blame. Alarm bell
+fires at `checkVarDecl` expectation sites.
 
-Goal state achieved: zero false `.unresolved` emissions on accepted
-programs (verified by bootstrap_check 5/5 round-trip + 43/43 selfhost
-smoke + full test/*.zbr suite).
+**Selfhost port (selfhost/typechecker.zbr):** Completed 2026-05-06. Three new
+`Type_` variants added:
+- `context_dependent` — nil literal inner type, `result` outside return context,
+  if-capture defaults; resolved by the outer checker.
+- `unresolved` — TC failed to infer: ident miss, member miss, call fallback,
+  index/slice fallback, expr catch-all.
+- `unknown_` — unchanged: intentional opaque cases (`this` outside class,
+  loop-var default, `addClassMembers` no-annotation, `unbind` sentinel).
 
-Closed downstream as side effects: BUG-105 (enum_member/union_variant
-→ parent type), BUG-106 (literal element-type homogeneity), BUG-108
-(partial — `this` outside class defensive emitError).
+`isAbstractType()` helper mirrors `src/TypeChecker.zig isAbstract()`.
+Alarm bell added to `checkVarDecl` behind `ctx.strict` flag (enabled by
+`typecheck-merge` subcommand only; safe for normal compilation).
+`codegen.zbr` format-spec updated to fall through for all three abstract types.
 
-Remaining BUG-108 work (index/slice on non-indexable, `expr_types.get`
-fallbacks) deferred — has legitimate non-error cases that would
-false-positive.
+Verified: bootstrap 5/5 round-trip, 44/44 selfhost smoke, full test suite clean.
 
-See commits 429ff98d → 4c84c51b for the audit trail. Migrating to
+See commits 429ff98d → 4c84c51b (Zig) for the audit trail. Migrating to
 FixedBugs.md.
 
 ---
@@ -423,9 +424,13 @@ REMAINING (deferred):
 
 ---
 
-### BUG-094: `for k, v in HashMap` emits spurious `_ = k;` plus loses key/value formatting
+### BUG-094: ✅ FIXED 2026-05-05 — HashMap two-var for-in works in both backends
 - **Severity:** Medium (the QUICKSTART-canonical iteration form is unusable; the rest of the book has examples that won't compile)
-- **Status:** Open
+- **Status:** Fixed:
+  - `selfhost/codegen.zbr`: `_ = kname;` discard is now guarded by `nameUsedInStmts`; same guard added for `vname`.
+  - `src/CodeGen.zig genForIn`: early dispatch `if (s.vars.len == 2) return genForInHashMap(s)` added before the type-inference path (Zig backend was falling through to native for-loop syntax, causing "extra capture" error).
+  - Test: `test/bug094_hashmap_kv_test.zbr` (all 4 k/v used/unused permutations); added to selfhost_smoke.sh.
+- **Original description:**
 - **Symptom:** Both backends fail on `for k, v in some_hashmap`:
   - **Selfhost (`zebra.exe`):** emits `const name = ...; _ = name;` immediately followed by usage in the loop body — Zig rejects with "pointless discard of local constant ... used here". Even when the discard is suppressed, `print "${name}: ${age}"` falls back to `{any}` for `name` because the formatter doesn't see the `[]const u8` type for the for-binding.
   - **Zig backend (`zebra-bootstrap.exe`):** rejects the syntax outright with "extra capture in for loop" — the multi-binding form was never wired up here.

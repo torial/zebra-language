@@ -108,6 +108,8 @@ smoke test/hashmap_this_field_test.zbr
 smoke test/hashmap_param_field_test.zbr
 # HashMap.remove() and HashMap.count() without type annotation (infer from init expr).
 smoke test/hashmap_remove_test.zbr
+# BUG-094: for k, v in HashMap — all 4 used/unused permutations must emit valid Zig.
+smoke test/bug094_hashmap_kv_test.zbr
 
 # BUG-002: guard/try error propagation — verified via try/catch round-trip.
 smoke test/guard_test.zbr

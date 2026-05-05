@@ -82,8 +82,6 @@ class AstTest
             else
                 assert false, "expected nilable variant"
 
-class Main
-    static
-        def main
-            var t = AstTest()
-            t.run()
+def main()
+    var t = AstTest()
+    t.run()

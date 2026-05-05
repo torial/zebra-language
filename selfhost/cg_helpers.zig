@@ -525,7 +525,10 @@ fn _http_serve(port: u16, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e));
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
     defer _srv.deinit();
     while (true) {
         const _conn = _srv.accept() catch continue;
@@ -1569,7 +1572,7 @@ pub const StrSet = struct {
     }
 
     pub fn add(self: *StrSet, s: []const u8) void {
-        if (!(_zebra_gt(s.len, 0))) std.debug.panic("require failed in 'add'\n", .{});
+        if (!(_zebra_gt(@as(i64, @intCast(s.len)), 0))) std.debug.panic("require failed in 'add'\n", .{});
 // zbr:selfhost/cg_helpers.zbr:54
         if ((!self.contains_(s))) {
             self._items.append(_allocator, _intern(s)) catch @panic("OOM");

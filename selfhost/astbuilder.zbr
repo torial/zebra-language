@@ -1068,6 +1068,5 @@ class ASTBuilder
             return TypeRef.void_()
         return tr to!
 
-class Main
-    static def main
-        print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"
+def main()
+    print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"

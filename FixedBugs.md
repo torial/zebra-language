@@ -14,10 +14,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
-### BUG-099: Type `.unknown` three-way split — FIXED 2026-05-05
-- **Status:** Fixed in `src/TypeChecker.zig`. Bootstrap 5/5, smoke 43/43, full test suite. See commits `429ff98` → `fe61ebe`.
-- **Was:** `Type.unknown` overloaded three semantically distinct cases: context-dependent (nil, result), opaque-by-design (zig_lit, generics), and unresolved (TC gave up). Downstream checks couldn't distinguish them, so `var x: int = undefined_call()` silently typechecked.
-- **Fix:** Three-way split into `.context_dependent` (legitimate; propagates without alarm), `.unknown` (opaque by design; never errors), `.unresolved` (alarm bell; expectation sites emit a diagnostic). Producer audit: only unambiguous TC failures emit `.unresolved` — member-access misses softened to `.unknown` to avoid false alarms on cross-module patterns. Consumer comparisons widened to `isAbstract()` helper. Goal state achieved: zero false `.unresolved` emissions on accepted programs.
+### BUG-099: Type `.unknown` three-way split — FIXED 2026-05-05 (Zig) + 2026-05-06 (selfhost)
+- **Status:** Fixed in `src/TypeChecker.zig` (2026-05-05) and `selfhost/typechecker.zbr` (2026-05-06). Bootstrap 5/5, smoke 44/44, full test suite.
+- **Was:** `Type.unknown` / `Type_.unknown_` overloaded three semantically distinct cases: context-dependent (nil, result), opaque-by-design (zig_lit, generics), and unresolved (TC gave up). Downstream checks couldn't distinguish them, so `var x: int = undefined_call()` silently typechecked.
+- **Fix (Zig):** Three-way split into `.context_dependent`, `.unknown`, `.unresolved: Ast.Span`. Alarm bell fires at `checkVarDecl`. See commits `429ff98` → `fe61ebe`.
+- **Fix (selfhost):** `Type_` union gains `context_dependent` and `unresolved`. Twelve `inferExpr`/`walkStmt` sites reclassified: nil inner + result outside return + if-capture defaults → `context_dependent`; ident/member/call/index/slice/expr fallbacks → `unresolved`; intentional opaque cases unchanged (`unknown_`). `isAbstractType()` helper mirrors `isAbstract()`. Alarm bell added to `checkVarDecl` behind `InferCtx.strict` (enabled by `typecheck-merge` only; off for normal compilation to avoid false alarms on TC gaps not yet closed). `codegen.zbr` format-spec falls through for all three abstract variants.
 - **Closed as side effects:** BUG-105 (enum_member/union_variant → parent type), BUG-106 (literal element-type homogeneity), BUG-108 (partial — `this` outside class defensive emitError).
 
 ---

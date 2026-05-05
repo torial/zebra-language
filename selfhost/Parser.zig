@@ -525,7 +525,10 @@ fn _http_serve(port: u16, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e));
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
     defer _srv.deinit();
     while (true) {
         const _conn = _srv.accept() catch continue;

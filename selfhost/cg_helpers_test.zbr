@@ -266,25 +266,23 @@ def testScanMutations() throws
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-class Main
-    static
-        def main
-            testStrSet()
-            testAssignOpStr()
-            testBinaryOpStr()
-            testTypeRefStrSimple()
-            testTypeRefStrGeneric()
-            testTypeRefStrTuple()
-            testTypeRefStrBoxed()
-            testNilNarrowVarSimple()
-            testNilNarrowVar()
-            testExprHasTry()
-            testBodyHasRaise()
-            testNameUsedInExprSimple()
-            testNameUsedInExprBinary()
-            testNameUsedInStmts()
-            testAnalyzeEscapes()
-            testScanMutations()
-            print "cg_helpers_test: all OK"
-        catch |_e|
-            assert false, "unexpected error in cg_helpers_test"
+def main()
+    testStrSet()
+    testAssignOpStr()
+    testBinaryOpStr()
+    testTypeRefStrSimple()
+    testTypeRefStrGeneric()
+    testTypeRefStrTuple()
+    testTypeRefStrBoxed()
+    testNilNarrowVarSimple()
+    testNilNarrowVar()
+    testExprHasTry()
+    testBodyHasRaise()
+    testNameUsedInExprSimple()
+    testNameUsedInExprBinary()
+    testNameUsedInStmts()
+    testAnalyzeEscapes()
+    testScanMutations()
+    print "cg_helpers_test: all OK"
+catch |_e|
+    assert false, "unexpected error in cg_helpers_test"

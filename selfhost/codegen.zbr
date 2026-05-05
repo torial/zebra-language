@@ -3638,10 +3638,14 @@ struct Generator
             wg.w.emit("while (_it_" + kname + ".next()) |_ent_" + kname + "| {\n")
             bg.writeIndent()
             bg.w.emit("const " + kname + " = _ent_" + kname + ".key_ptr.*;\n")
-            bg.writeIndent()
-            bg.w.emit("_ = " + kname + ";\n")
+            if not nameUsedInStmts(kname, fi.stmts)
+                bg.writeIndent()
+                bg.w.emit("_ = " + kname + ";\n")
             bg.writeIndent()
             bg.w.emit("const " + vname + " = _ent_" + kname + ".value_ptr.*;\n")
+            if not nameUsedInStmts(vname, fi.stmts)
+                bg.writeIndent()
+                bg.w.emit("_ = " + vname + ";\n")
             bg.genStmts(fi.stmts)
             wg.writeIndent()
             wg.w.emit("}\n")
@@ -4513,6 +4517,10 @@ struct Generator
                     return "{d}"
                 on Type_.unknown_
                     pass  # fall through to heuristic when type is undetermined
+                on Type_.context_dependent
+                    pass  # fall through to heuristic
+                on Type_.unresolved
+                    pass  # fall through to heuristic
                 else
                     return "{any}"
         # Type undetermined: check structural heuristic; default to {any} (safe for any type).
@@ -5189,6 +5197,12 @@ struct Generator
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
                         w.emit(".count()))")
+                        return
+                    # str.len or any other .len — always usize in Zig, cast to i64
+                    if m.member == "len"
+                        w.emit("@as(i64, @intCast(")
+                        genExpr(m.object)
+                        w.emit(".len))")
                         return
                 # Tuple index access: p.0 → p.@"0"
                 if m.member.len > 0 and m.member.isNumeric()

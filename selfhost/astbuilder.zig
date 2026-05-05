@@ -525,7 +525,10 @@ fn _http_serve(port: u16, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e));
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
     defer _srv.deinit();
     while (true) {
         const _conn = _srv.accept() catch continue;
@@ -1684,7 +1687,7 @@ pub fn zstatic() Modifiers {
 
 pub fn stripStringQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/astbuilder.zbr:37
-    if ((text.len == 0)) {
+    if ((@as(i64, @intCast(text.len)) == 0)) {
 // zbr:selfhost/astbuilder.zbr:38
         return text;
     }
@@ -1694,7 +1697,7 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/astbuilder.zbr:42
-    if (_zebra_lt(text.len, 2)) {
+    if (_zebra_lt(@as(i64, @intCast(text.len)), 2)) {
 // zbr:selfhost/astbuilder.zbr:43
         return text;
     }
@@ -1748,7 +1751,7 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
 
 pub fn stripZigQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/astbuilder.zbr:76
-    if (_zebra_lt(text.len, 5)) {
+    if (_zebra_lt(@as(i64, @intCast(text.len)), 5)) {
 // zbr:selfhost/astbuilder.zbr:77
         return text;
     }
@@ -1792,7 +1795,7 @@ pub fn stripZigQuotes(text: []const u8) []const u8 {
 
 pub fn stripRawAndEscape(text: []const u8) []const u8 {
 // zbr:selfhost/astbuilder.zbr:100
-    if (_zebra_lt(text.len, 3)) {
+    if (_zebra_lt(@as(i64, @intCast(text.len)), 3)) {
 // zbr:selfhost/astbuilder.zbr:101
         return text;
     }
@@ -1863,7 +1866,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
 
 pub fn stripCharQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/astbuilder.zbr:135
-    if (_zebra_lt(text.len, 3)) {
+    if (_zebra_lt(@as(i64, @intCast(text.len)), 3)) {
 // zbr:selfhost/astbuilder.zbr:136
         return text;
     }
@@ -2758,7 +2761,7 @@ pub const ASTBuilder = struct {
                     },
                 }
 // zbr:selfhost/astbuilder.zbr:624
-                if ((tname.len == 0)) {
+                if ((@as(i64, @intCast(tname.len)) == 0)) {
 // zbr:selfhost/astbuilder.zbr:625
                     return null;
                 }
@@ -3083,7 +3086,7 @@ pub const ASTBuilder = struct {
                             parts.append(_allocator, StringPart{ .literal = stripStringQuotes(text) }) catch @panic("OOM");
                         },
                         .expr_format => |fspec| {
-                            parts.append(_allocator, StringPart{ .format = fspec[@as(usize, @intCast(1))..@as(usize, @intCast(fspec.len))] }) catch @panic("OOM");
+                            parts.append(_allocator, StringPart{ .format = fspec[@as(usize, @intCast(1))..@as(usize, @intCast(@as(i64, @intCast(fspec.len))))] }) catch @panic("OOM");
                         },
                         else => |_| {
 // zbr:selfhost/astbuilder.zbr:813
@@ -3587,37 +3590,20 @@ const _reflect_ASTBuilder_name: []const u8 = "ASTBuilder";
 const _reflect_ASTBuilder_fields: []const []const u8 = &.{"next_old_uid"};
 const _reflect_ASTBuilder_field_types: []const []const u8 = &.{"int"};
 
-pub const Main = struct {
-    _type_tag: u64 = _ttag_Main,
-    pub fn main() void {
-        std.debug.print("{s}\n", .{"astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"});
-    }
-
-    pub fn init() *Main {
-        const self = _allocator.create(Main) catch @panic("OOM");
-        self._type_tag = _ttag_Main;
-        return self;
-    }
-
-};
-const _ttag_Main: u64 = _zbr_hash("Main");
-const _reflect_Main_name: []const u8 = "Main";
-const _reflect_Main_fields: []const []const u8 = &.{};
-const _reflect_Main_field_types: []const []const u8 = &.{};
+pub fn main() void {
+    std.debug.print("{s}\n", .{"astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"});
+}
 
 const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_ASTBuilder) return _reflect_ASTBuilder_name;
-    if (tag == _ttag_Main) return _reflect_Main_name;
     return "unknown";
 }
 fn _reflect_lookup_fields(tag: u64) _ReflectStrSlice {
     if (tag == _ttag_ASTBuilder) return .{ .items = _reflect_ASTBuilder_fields };
-    if (tag == _ttag_Main) return .{ .items = _reflect_Main_fields };
     return .{ .items = &.{} };
 }
 fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
     if (tag == _ttag_ASTBuilder) return .{ .items = _reflect_ASTBuilder_field_types };
-    if (tag == _ttag_Main) return .{ .items = _reflect_Main_field_types };
     return .{ .items = &.{} };
 }

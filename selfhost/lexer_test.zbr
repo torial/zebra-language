@@ -131,7 +131,5 @@ class LexerTest
             testExposing()
             print "=== Tests complete ==="
 
-class Main
-    static
-        def main
-            LexerTest.main()
+def main()
+    LexerTest.main()

@@ -3823,8 +3823,9 @@ const Generator = struct {
             },
             .named => |n| {
                 if (isStringTypeName(n.name) and std.mem.eql(u8, prop, "len")) {
+                    try g.w.writeAll("@as(i64, @intCast(");
                     try g.genExpr(object);
-                    try g.w.writeAll(".len");
+                    try g.w.writeAll(".len))");
                     return true;
                 }
                 if (std.mem.eql(u8, n.name, "DateTime")) {
@@ -6670,6 +6671,10 @@ const Generator = struct {
 
         // for x in str.split(delim) — emit while loop over splitSequence iterator
         if (g.isSplitCallOnString(s.iter)) return g.genForInSplit(s);
+
+        // for k, v in map — 2-var form is HashMap-only in Zebra; dispatch early
+        // so type-inference gaps don't fall through to the native Zig for-loop path.
+        if (s.vars.len == 2) return g.genForInHashMap(s);
 
         // Detect stdlib container types for special iteration patterns.
         if (g.getExprDeclaredType(s.iter)) |tr| {

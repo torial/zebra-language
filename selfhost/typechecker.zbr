@@ -94,6 +94,16 @@ union Type_
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
     unknown_
 
+    # Type depends on usage context (nil literal, result outside return context).
+    # The outer checker must resolve this before it becomes concrete.
+    context_dependent
+
+    # TC failed to derive a type it should have known — member miss, ident miss,
+    # lookup failure.  Alarm bell: any site that returns this indicates a gap in
+    # the selfhost TC.  Carries no payload in Phase 1; will gain a span in a
+    # future phase to match src/TypeChecker.zig's unresolved: Ast.Span.
+    unresolved
+
 # ── Per-class type info ──────────────────────────────────────────────────────
 # Holds the subset of a class declaration's typing surface that
 # codegen.zbr's heuristics currently approximate:
@@ -504,6 +514,10 @@ class InferCtx
     var scope: HashMap(str, Type_)
     var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
     var errors: List(Diagnostic)
+    # When true, checkVarDecl also flags `unresolved` inferred types for
+    # primitive-annotated decls — alarm bell for TC gaps.  Off by default
+    # so normal compilation is unaffected; enabled by typecheck-merge.
+    var strict: bool
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -512,6 +526,7 @@ class InferCtx
         scope = HashMap()
         .current_return_type = nil
         errors = List(Diagnostic)()
+        .strict = false
 
     def withReturnType(rt: Type_?)
         .current_return_type = rt
@@ -522,6 +537,9 @@ class InferCtx
     # standalone callers (tests) don't need to build a dep table.
     def withDepTypes(dt: ModuleTypes)
         .dep_types = dt
+
+    def enableStrict()
+        .strict = true
 
     def addErr(file: str, line: int, col: int, message: str)
         errors.add(Diagnostic(file, line, col, message))
@@ -703,6 +721,10 @@ def typeTag(t: Type_): str
             return "sset"
         on Type_.unknown_
             return "unk"
+        on Type_.context_dependent
+            return "ctx"
+        on Type_.unresolved
+            return "unres"
         else
             return "?"
 
@@ -724,6 +746,19 @@ def isNumeric(t: Type_): bool
         else
             return false
 
+# Helper: true iff t is one of the three abstract/placeholder types.
+# Mirrors src/TypeChecker.zig isAbstract().
+def isAbstractType(t: Type_): bool
+    branch t
+        on Type_.unknown_
+            return true
+        on Type_.context_dependent
+            return true
+        on Type_.unresolved
+            return true
+        else
+            return false
+
 def inferExpr(e: Expr, ctx: InferCtx): Type_
     branch e
         on Expr.int_lit as _
@@ -739,10 +774,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.string_interp
             return Type_.string_
         on Expr.nil_ as _
-            # Represents untyped nil — wraps unknown_ for optional compatibility.
-            # Workaround: bind to local first so selfhost's box emit has a named
-            # Type_ value (not a bare tag ref) for @TypeOf inspection.
-            var inner_unk: Type_ = Type_.unknown_
+            # Represents untyped nil — wraps context_dependent: the outer checker
+            # resolves the inner type from context (e.g. the declared field type).
+            var inner_unk: Type_ = Type_.context_dependent
             return Type_.optional(inner_unk)
         on Expr.this_ as _
             if ctx.current_class == ""
@@ -753,7 +787,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # member access (e.g., `ensure result.len > 0`) gets correct codegen.
             if ctx.current_return_type != nil
                 return ctx.current_return_type to!
-            return Type_.unknown_
+            return Type_.context_dependent
         on Expr.ident as id
             var nm: str = id.name
             if ctx.hasLocal(nm)
@@ -770,7 +804,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 var fft: Type_? = ctx.module_types.fieldType(ctx.current_class, nm)
                 if fft != nil
                     return fft to!
-            return Type_.unknown_
+            return Type_.unresolved
         on Expr.member as m
             # Phase 17d — infer the object's type recursively, then look up
             # the field through module_types + dep_types. Unwraps `^T` and
@@ -796,7 +830,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             var mm: str = m.member
             if mm == "stdout" or mm == "stderr"
                 return Type_.string_
-            return Type_.unknown_
+            return Type_.unresolved
         on Expr.call as c
             # Constructor or class name used: callee: `Foo(args)` → named("Foo").
             branch c.callee
@@ -820,7 +854,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     var mf: Type_? = ctx.methodReturnAny("", cname)
                     if mf != nil
                         return mf to!
-                    return Type_.unknown_
+                    return Type_.unresolved
                 on Expr.member as mem
                     # Universal primitive conversion: `x.toString()` yields str
                     # regardless of x's static type (int/float/char/bool all
@@ -912,9 +946,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if not ctx.hasLocal(mid.name) and not ctx.hasClassAny(mid.name)
                                 if ctx.dep_types.hasClass(mem.member)
                                     return Type_.named(internString(mem.member))
-                    return Type_.unknown_
+                    return Type_.unresolved
                 else
-                    return Type_.unknown_
+                    return Type_.unresolved
         on Expr.try_ as et
             # `expr?` — propagate the inner type; the `?` suffix only affects
             # control flow (error propagation).
@@ -1008,7 +1042,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 on Type_.str_slice
                     return Type_.string_
                 else
-                    return Type_.unknown_
+                    return Type_.unresolved
         on Expr.slice as esl
             # s[a..b] — slice type depends on receiver type.
             var sl_recv: Type_ = inferExpr(esl.object, ctx)
@@ -1018,9 +1052,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 on Type_.str_slice
                     return Type_.str_slice
                 else
-                    return Type_.unknown_
+                    return Type_.unresolved
         else
-            return Type_.unknown_
+            return Type_.unresolved
 
 # ── Branch-on narrowing helper ───────────────────────────────────────────────
 # Given an on-case value like `Foo.bar` (parsed: Expr.member with object =
@@ -1104,7 +1138,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.if_ as si
             walkExpr(si.cond, ctx)
             if si.is_capture != nil
-                var cap_t: Type_ = Type_.unknown_
+                var cap_t: Type_ = Type_.context_dependent
                 if si.cond is Expr.type_check as tce
                     if tce.variant_name != nil
                         # Union-variant capture: look up payload type.
@@ -1130,7 +1164,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
                 if ei.is_capture != nil
-                    var ei_cap_t: Type_ = Type_.unknown_
+                    var ei_cap_t: Type_ = Type_.context_dependent
                     if ei.cond is Expr.type_check as eice
                         if eice.variant_name != nil
                             var e_type_nm: str = eice.type_name
@@ -1320,6 +1354,11 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.init_expr == nil
         return
     var inferred: Type_ = inferExpr(dv.init_expr to!, ctx)
+    # Strict mode (typecheck-merge only): flag inference gaps — TC should have
+    # known the init-expr type for a primitive-annotated var but didn't.
+    if ctx.strict and inferred is Type_.unresolved
+        ctx.addErr(file, dv.span.line, dv.span.col, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+        return
     if not isPrimitive(inferred)
         return
     if not typesCompatible(declared, inferred)
@@ -1385,15 +1424,14 @@ def checkModule(m: Module, file: str, ctx: InferCtx)
         checkDecl(decl, file, ctx)
 
 
-class Main
-    static def main()
-        # Smoke-test entry point so this file compiles/runs standalone.
-        # Real tests live in typechecker_test.zbr.
-        var mt: ModuleTypes = ModuleTypes()
-        var ct: ClassTypes = ClassTypes("Foo")
-        ct.setField("name", Type_.string_)
-        mt.addClass(ct)
-        if mt.hasClass("Foo")
-            print "ok"
-        else
-            print "fail"
+def main()
+    # Smoke-test entry point so this file compiles/runs standalone.
+    # Real tests live in typechecker_test.zbr.
+    var mt: ModuleTypes = ModuleTypes()
+    var ct: ClassTypes = ClassTypes("Foo")
+    ct.setField("name", Type_.string_)
+    mt.addClass(ct)
+    if mt.hasClass("Foo")
+        print "ok"
+    else
+        print "fail"
