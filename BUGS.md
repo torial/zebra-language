@@ -86,7 +86,23 @@ Closing as not-reproduced. No code change needed for BUG-111.
 
 ---
 
-### BUG-113: `pratt_calc.zbr:134` slice expression loses `str` type through a `var` binding
+### BUG-113: ✅ NOT-REPRODUCED 2026-05-05 — slice TC works correctly
+
+Verified: `var text = src[0..3]` correctly types `text` as `str` and
+`text.toFloat()` dispatches correctly without an explicit `: str`
+annotation.  Both forms (annotated + bare) produce identical output.
+
+The original `pratt_calc.zbr:134` author comment described a real
+limitation at the time it was written, but the TC has since improved
+(possibly via the BUG-099 work that made type inference more
+disciplined, or via earlier inferenceupdates).  The annotation in
+pratt_calc is now redundant but harmless — left in place.
+
+Closing as not-reproduced.
+
+---
+
+### BUG-113 (original entry, retained for context):
 - **Severity:** Medium (forces explicit annotations downstream of any string slice)
 - **Status:** Open — TC inference gap
 - **Symptom:** `var text = this.src[start..pos]` infers `text` as something that doesn't dispatch `.toFloat()` correctly, requiring users to write `var text: str = this.src[start..pos]`. The author of `pratt_calc.zbr` documented this in a comment at line 132–134:
