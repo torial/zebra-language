@@ -1,0 +1,7 @@
+# bug108_this_outside_class_test.zbr — BUG-108 P3-1 verification.
+# `this` outside a class/struct/with-block context should now produce
+# a defensive diagnostic instead of silently returning .unknown.
+
+def main()
+    var x = this
+    print x

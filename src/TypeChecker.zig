@@ -1742,8 +1742,16 @@ const TypeChecker = struct {
                 break :blk .string;
             },
             .nil            => .context_dependent, // BUG-099: context-dependent nilable
-            .this           => tc.ext_self_type orelse
-                              if (tc.owner_sym) |s| Type{ .named = s } else .unknown,
+            // BUG-108: `this` outside class/struct/with-block is a TC
+            // failure. Emit a defensive diagnostic at the `this` site and
+            // return .unknown (already-reported) to avoid double-reporting
+            // at downstream expectation sites.
+            .this           => |sp| blk: {
+                if (tc.ext_self_type) |t| break :blk t;
+                if (tc.owner_sym)  |s| break :blk Type{ .named = s };
+                try tc.emitError(sp, "'this' used outside a class/struct method or 'with' block", .{});
+                break :blk .unknown;
+            },
             .zig_lit        => .unknown, // BUG-099: opaque-by-design backend literal
             .ident          => |*e| tc.inferIdent(e),
             .member         => |e| try tc.inferMember(e),
