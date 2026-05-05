@@ -1,20 +1,18 @@
-﻿# Zebra Style Guide — DRAFT
+﻿# Zebra Style Guide
 
-> **Status:** v0 draft for review. Not authoritative. Once Sean signs off section
-> by section, the contents (or curated subset) move into `STYLE_GUIDE.md` at
-> repo root and become a sweep target across `selfhost/`, `test/`, and
-> `examples/`.
+> **Status:** canonical (promoted from `docs/STYLE_GUIDE_DRAFT.md` on
+> 2026-05-05 after the Phase 13 sweep cluster shipped).  This file is the
+> authoritative reference for what to *prefer* when authoring `.zbr` code.
+> For what's *possible* at all, read [QUICKSTART.md](QUICKSTART.md) first —
+> sections cross-referenced as `QS §N`.
 >
 > **Confidence markers:**
 > - ✅ ESTABLISHED — repeated in QUICKSTART + recent code; safe to enforce.
-> - 📋 PROPOSED — Claude's recommendation; needs Sean's call.
-> - ❓ OPEN — codebase is split; surfaces a decision Sean should make.
-> - ⚠️ COMPILER-DRIVEN — current "rule" is a workaround for a known limit;
->   flips when the bug clears. Tracked separately in §X.
-
-This guide is "of the possible, what to prefer." For *what's possible at all*,
-read [QUICKSTART.md](../QUICKSTART.md) first — sections cross-referenced as
-`QS §N`.
+> - 📋 PROPOSED — Claude's recommendation; awaiting refinement on contact.
+> - ❓ OPEN — codebase is split; surfaces a decision still pending.
+> - ⚠️ COMPILER-DRIVEN — pattern existed because a compiler limitation
+>   forced it. Tracked separately in §13. When the bug clears, the rule
+>   flips. **Not** canonical style.
 
 ---
 
@@ -822,91 +820,67 @@ def infixBp(kind: TokKind): BpPair
 
 ## §13. Compiler-limit-driven patterns (NOT canonical style)
 
-These patterns exist because the compiler currently can't express the natural
-form. They are workarounds — when each underlying bug clears, the rule flips
-to the natural form. **Sweep the codebase when each lands.**
+This section tracks patterns that exist (or existed) as workarounds for
+real or perceived compiler limitations.  When the underlying bug clears,
+the rule flips to the natural form.
 
-📋 **Tracking:** each item in this section that's a real compiler limitation
-(not just a stale code pattern) should get a tracking BUG-XXX filed against
-the **0.13 syntax-cleanup window** (per `project_zebra.md` release table:
-*"0.13 — Syntax & ergonomics cleanup"*). When 0.13 closes its bugs, sweep
-the codebase mechanically: each rule in this section becomes a single grep.
+### Lesson learned (2026-05-05): verify before filing
 
-### 13.1 `this.field = this.field + 1` instead of `this.field += 1` ⚠️ — BUG-111
+The Phase 13 audit (drafted 2026-05-04, executed 2026-05-05) filed five
+"compiler-limit-driven" workarounds based on **codebase evidence alone**
+(zero grep hits, in-source author comments, observed call-site patterns).
+When the actual fix work began, **three of the five turned out to be
+already-fixed** — the limitations had been silently resolved by earlier
+TC/codegen improvements but the workarounds in code persisted as fossil
+patterns.
 
-Verified: zero occurrences of `this.field += 1` across the entire codebase.
-The compound-assign form on `this.X` (and presumably `.X`) is broken or
-unsupported.  Filed as **BUG-111** against the 0.13 syntax-cleanup window.
-Until fixed:
+The cost: filing entries that didn't need filing, and a small but real
+risk of "fixing" non-bugs.  The discipline going forward:
 
-```zebra
-# Current workaround:
-this.pos = this.pos + 1
+> **For any compiler-limit observation, write a one-line repro and
+> confirm the failure mode is real before filing.**  "Zero codebase
+> occurrences" or "in-source author comment" ≠ "compiler limitation."
+
+### Phase 13 outcomes (2026-05-05)
+
+| Pre-Phase-13 entry | Status after verification |
+|---|---|
+| **§13.1** `this.field +=` (BUG-111) | ✅ Closed not-a-bug. Compound assign on `.field`/`this.field`/`obj.field` all work. Sweep target only — convert `this.x = this.x + 1` to `.x += 1` opportunistically. |
+| **§13.2** Slice-through-var loses str type (BUG-113) | ✅ Closed not-reproduced. `var text = src[a..b]` correctly types as `str`; `text.toFloat()` dispatches. The `pratt_calc.zbr:134` annotation is now redundant but harmless. |
+| **§13.3** `0 - x` unary negation | ✅ Verified `-x` works. Sweep target only. |
+| **§13.4** Method-chain in expression position (BUG-027) | ✅ Confirmed fixed (BUG-027 closed 2026-04-23 via labeled blocks; both `var`-init and call-arg positions covered). |
+| **§13.5** `selfhost/main.zbr` uses `class Main` | ✅ Done — swept to top-level `def main()` 2026-05-04. |
+| **§13.6** Selfhost uses `this.` everywhere | ✅ Done — 1,141-site sweep to `.field` shorthand 2026-05-05. |
+| **`def name: T` shorthand** (BUG-112) | ✅ Done — 38-site sweep + grammar removal in both backends. |
+| **`_underscore` private prefix** (BUG-115) | 📋 Open language proposal — deferred to 0.14/1.0. No new prefixes; existing left as-is. |
+
+**No compiler-limit-driven workaround patterns are currently in force.**
+Code authored from 2026-05-05 forward should follow the canonical rules
+in §1–§12 + §14–§22 without exception.
+
+### Future entries to this section
+
+If a real compiler limitation surfaces during normal development,
+add a new §13.N entry here following the format:
+
+```
+### 13.N <one-line description> ⚠️ — BUG-XXX
+
+**Repro (verified <date>):**
+[minimal one-line .zbr that demonstrates the failure]
+
+**Failure observed:**
+[exact compiler error or wrong output]
+
+**Workaround:**
+[the canonical pattern code currently uses]
+
+**When fixed:** sweep the codebase for [grep target] and replace.
 ```
 
-Once fixed: rewrite to `this.pos += 1`. **Don't enshrine the verbose form
-as style.**
-
-### 13.2 Type-annotating substring slices ⚠️ — BUG-113
-
-Filed as **BUG-113** against the 0.13 syntax-cleanup window.
-`pratt_calc.zbr:134` — comment from the file itself:
-> "the compiler's TC currently loses the slice's str type once it passes
-> through a `var`, so we annotate explicitly to guide `.toFloat()` to the
-> right dispatch."
-
-```zebra
-# Workaround:
-var text: str = this.src[start..this.pos]
-var maybe: float? = text.toFloat()
-
-# Future canonical:
-var maybe = this.src[start..this.pos].toFloat()
-```
-
-### 13.3 `0 - x` for unary negation — RESOLVED: not a workaround
-
-Verified 2026-05-04: unary `-x` works on `int` and `float`. The `0 - x` and
-`0.0 - x` forms in `pratt_calc.zbr:304` and elsewhere are unnecessary. Plain
-sweep target — replace with `-x`. Not compiler-driven.
-
-### 13.4 Method-chain temporaries in expression position ⚠️ — BUG-027 (partial)
-
-Tracked as **BUG-027** in `BUGS.md`.  Status as of 2026-05-04 is mixed:
-the var-init / return / assignment positions were fixed (commits de0ec8e
-+ 8c16fd9 via `hoistCallChain`); the `BUGS.md` entry says
-expression-position (call args, compound expressions) **remains open**,
-while `NEXT_STEPS.md` reference table says BUG-027 was fully closed
-2026-04-23 via labeled blocks.  These two disagree.
-
-📋 **Verification action:** before the 0.13 sweep, write a one-line
-reproducer for `process(makeConfig().withOwner("Foo"))` and confirm it
-compiles + runs.  If yes, update QS §27 gotcha #7 + close §13.4 here.
-If no, BUG-027 reopens specifically for the expression-position arm.
-
-Currently:
-```zebra
-# WORKS — var-init / return / assignment:
-var c = makeConfig().indented().withOwner("Foo")
-
-# NEEDS MANUAL TEMP — call argument position:
-var c0 = makeConfig().indented()
-process(c0.withOwner("Foo"))
-```
-
-When BUG-(method-chain-expression-position) lands: sweep manual temps in
-`test/` and selfhost.
-
-### 13.5 `selfhost/*.zbr` uses `class Main` ⚠️
-
-Top-level `def main()` is now supported. Selfhost wasn't ported. Sweep when
-no other in-flight changes block it.
-
-### 13.6 Selfhost uses `this.` everywhere — see §1 Q1 ⚠️
-
-If Q1 resolves to (a) bare access, this becomes a sweep target. Listed here
-so the sweep is mechanical: grep `this\.` inside method bodies, remove unless
-the next token shadows a parameter name.
+The repro is the load-bearing piece — without it, the entry is
+speculation, and Phase 13 demonstrated speculation has a high
+false-positive rate.
 
 ---
 
@@ -1126,24 +1100,26 @@ language feature.
 
 ## §20. Anti-patterns checklist (sweep targets)
 
-When the guide is finalised, each of these becomes a grep / lint check.
+Each row is a grep / lint check.  Items marked **swept** had the bulk
+sweep run on 2026-05-05; opportunistic future occurrences should still
+be flagged in review.
 
-| Anti-pattern                                         | Sweep target                      | See |
-|------------------------------------------------------|-----------------------------------|-----|
-| `this.field` instead of `.field`                     | Replace with `.field`             | §1 Q1, §7 |
-| `if x != nil` followed by `x to!`                    | Replace with `if x as n`          | §8.1 |
-| `count.toString() + " items"` style concat           | Replace with `"${count} items"`   | §11.1 |
-| `_underscorePrefix` on **new** fields                | Don't add; existing left as-is    | §1 Q3, §21 Q-d |
-| `def name: T` no-paren form                          | Convert to `def name(): T`        | §1 Q2 |
-| `class Main` + `static def main` in new code         | Replace with `def main()`         | §2.4 |
-| `List(int)` out-params instead of struct return      | Refactor to struct                | §12.3 |
-| `^ClassName` in union variants                       | Compile error — remove `^`        | §6.2 |
-| `0 - x` / `0.0 - x` instead of `-x`                  | Replace                           | §13.3 |
-| `: void` return annotation                           | Drop                              | §5.1 |
-| Bare `raise "msg"` with no `tag:` prefix             | Add tag                           | §9.5 |
-| `for-else` over HashMap/chars/split                  | Convert to manual sentinel        | §12.2 |
-| Positional `true` / `false` in call args             | Named form: `flag: true`          | §5.4 |
-| `'string'` with no `"` in content                    | Convert to `"string"`             | §11.3 |
+| Anti-pattern                                         | Sweep target                      | Status | See |
+|------------------------------------------------------|-----------------------------------|--------|-----|
+| `this.field` instead of `.field`                     | Replace with `.field`             | ✅ swept selfhost | §1 Q1, §7 |
+| `def name: T` no-paren form                          | Convert to `def name(): T`        | ✅ swept + grammar removed | §1 Q2 |
+| `class Main` + `static def main` in new code         | Replace with `def main()`         | ⚠️ selfhost done; book examples remain | §2.4 |
+| `if x != nil` followed by `x to!`                    | Replace with `if x as n`          | review | §8.1 |
+| `count.toString() + " items"` style concat           | Replace with `"${count} items"`   | review | §11.1 |
+| `_underscorePrefix` on **new** fields                | Don't add; existing left as-is    | enforce going forward | §1 Q3, §21 Q-d |
+| `List(int)` out-params instead of struct return      | Refactor to struct                | review | §12.3 |
+| `^ClassName` in union variants                       | Compile error — remove `^`        | enforced by compiler | §6.2 |
+| `0 - x` / `0.0 - x` instead of `-x`                  | Replace                           | review | §13 outcomes |
+| `: void` return annotation                           | Drop                              | review | §5.1 |
+| Bare `raise "msg"` with no `tag:` prefix             | Add tag (compiler code only)      | review | §9.5 |
+| `for-else` over HashMap/chars/split                  | Convert to manual sentinel        | review (deferred work) | §12.2 |
+| Positional `true` / `false` in call args             | Named form: `flag: true`          | review | §5.4 |
+| `'string'` with no `"` in content                    | Convert to `"string"`             | review | §11.3 |
 
 ---
 
@@ -1271,20 +1247,40 @@ it:
 
 ---
 
-## §22. Process — once this guide is approved
+## §23. Process record (2026-05-05)
 
-1. Lock the rules. Move from `docs/STYLE_GUIDE_DRAFT.md` →
-   `STYLE_GUIDE.md` at repo root.
-2. Sweep order (lowest-blast-radius first):
-   1. `examples/` (~6 files)
-   2. `test/` (~150 files; mechanical changes only)
-   3. `selfhost/*.zbr` (last; round-trip via bootstrap_check.sh after)
-3. After each sweep batch: `zig build test` + `zig build update-selfhost` +
-   `tools/bootstrap_check.sh` to confirm no regressions.
-4. Each compiler-limit-driven rule (§13) gets a tracking BUG-XXX so when the
-   bug closes, the sweep is one grep.
+This section documents how the guide was promoted to canonical, for
+reference if a future major-version rewrite needs to repeat the process.
 
----
+**Phase 1 — Draft (2026-05-04, last session):**
+- `docs/STYLE_GUIDE_DRAFT.md` written from QUICKSTART + selfhost code +
+  user feedback on three foundational decisions (§1 Q1/Q2/Q3) and four
+  smaller calls (§21 Q-a/Q-b/Q-c/Q-d).
+- BUGS.md entries BUG-111..115 filed as "compiler-limit-driven"
+  workarounds.
 
-*End of draft. Sean: please review section by section. Suggestion: start
-with §1 (the three Open Questions); the rest is downstream.*
+**Phase 2 — Sweep + Verify (2026-05-05, this session):**
+- Sweep #1: `this.field` → `.field` across 9 selfhost `.zbr` files.
+  1,141 sites. `zig build` + `zig build test` + `tools/bootstrap_check.sh`
+  PASS 5/5 byte-identical.
+- Sweep #2: `def name: T` → `def name(): T`. 38 sites across 17 files.
+  Bootstrap_check PASS 5/5.
+- BUG-112: removed no-paren-with-return from grammar (both backends).
+  14 test fixtures updated. Bootstrap_check PASS 5/5.
+- BUG-111: closed not-a-bug after one-line repro showed compound assign
+  works in all three forms.
+- BUG-113: closed not-reproduced after one-line repro showed slice TC
+  works correctly.
+
+**Phase 3 — Promote (2026-05-05):**
+- `docs/STYLE_GUIDE_DRAFT.md` → `STYLE_GUIDE.md` at repo root.
+- §13 rewritten to reflect "verify before filing" lesson + Phase 13
+  outcomes table.
+- §20 anti-patterns updated with sweep status column.
+- Cross-references updated in QUICKSTART, project_zebra wiki, NEXT_STEPS.
+
+**Lesson (now embedded in §13):** "compiler-limitation" entries need a
+verified one-line repro before filing.  Three of the five BUG-111..115
+entries closed without code changes — they were filed on codebase
+evidence (zero grep hits, in-source author comments), not on
+verified repros.

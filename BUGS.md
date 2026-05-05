@@ -65,10 +65,10 @@ Closing as not-reproduced. No code change needed for BUG-111.
       def advance()
           .pos += 1     # expected: codegen `self.pos += 1`
   ```
-- **Why it matters now:** the style guide (see `docs/STYLE_GUIDE_DRAFT.md` §13.1) has flagged the verbose form as compiler-driven, *not* canonical. When this fixes, the sweep is one grep across selfhost.
+- **Why it matters now:** the style guide (see `STYLE_GUIDE.md` §13.1) has flagged the verbose form as compiler-driven, *not* canonical. When this fixes, the sweep is one grep across selfhost.
 - **Fix sketch:** investigate whether the parser admits compound-assign on a member-access LHS, then whether codegen emits the correct shape. Likely a 1-line parser fix + codegen verification.
 - **Discovered:** 2026-05-04 during style guide drafting.
-- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.1.
+- **Source:** `STYLE_GUIDE.md` §13.1.
 
 ---
 
@@ -82,7 +82,7 @@ Closing as not-reproduced. No code change needed for BUG-111.
   2. Remove the no-paren rule from `parser.zbr` and `src/Parser.zig` so it can't drift back in.
   3. Tokenizer / TC unaffected — they already canonicalise both.
 - **Discovered:** 2026-05-04 during style guide drafting.
-- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §1 Q2.
+- **Source:** `STYLE_GUIDE.md` §1 Q2.
 
 ---
 
@@ -115,7 +115,7 @@ Closing as not-reproduced.
   ```
 - **Fix sketch:** check `inferExpr` for the slice arm — `str[int..int]` should infer back to `str`. Likely a missing case in either the bootstrap or selfhost typechecker (or both, given parity work).
 - **Discovered:** 2026-05-04 during style guide drafting; the workaround is in `pratt_calc.zbr:134`.
-- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.2.
+- **Source:** `STYLE_GUIDE.md` §13.2.
 
 ---
 
@@ -123,7 +123,7 @@ Closing as not-reproduced.
 - **Severity:** N/A
 - **Status:** Filed for sweep tracking, not for fix
 - **Note:** Verified 2026-05-04: unary `-x` works correctly on int and float (`var y = -x` codegens to `-x`). The `0 - x` and `0.0 - x` forms in `examples/pratt_calc.zbr:304` and elsewhere are stylistic legacy, not compiler workarounds. Sweep target: replace with `-x` during the phase 13 cleanup pass. No compiler fix needed; this entry exists so the sweep is greppable.
-- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §13.3.
+- **Source:** `STYLE_GUIDE.md` §13.3.
 
 ---
 
@@ -135,7 +135,7 @@ Closing as not-reproduced.
 - **Style guide stance (2026-05-04):** Drop the `_` convention until/unless real keywords land. Compiler-emitted internals (`_allocator`, `_arena`, `_intern`, `_str_pool`, `_error_ctx`) are out of scope.
 - **Cost sketch (if implementing):** parser arm for the visibility token; resolver enforces at member-access; codegen unaffected (Zig has no equivalent — emit `pub` / non-`pub` only). Scope of "internal" (module-private) needs design — Zig has it via `pub` boundary; Zebra would need an analogous module model.
 - **Discovered:** 2026-05-04 during style guide drafting.
-- **Source:** `docs/STYLE_GUIDE_DRAFT.md` §1 Q3.
+- **Source:** `STYLE_GUIDE.md` §1 Q3.
 
 ---
 

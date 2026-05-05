@@ -146,7 +146,7 @@ parse from there, accumulate errors across restarts.  Catches "missing paren in 
 `errors: []ParseError`, decision logic for safe restart points).  1.0-era.
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
-Phase 13 work cluster. Style guide draft (`docs/STYLE_GUIDE_DRAFT.md`)
+Phase 13 work cluster. Style guide draft (`STYLE_GUIDE.md`)
 identifies the canonical forms; sweep targets and compiler-driven workarounds
 flow into this milestone.
 
@@ -167,7 +167,7 @@ flow into this milestone.
 - Book documentation for `sig`, raw strings, `"""`
 
 See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`,
-`docs/STYLE_GUIDE_DRAFT.md` §13.
+`STYLE_GUIDE.md` §13.
 
 ### 20. SIMD types — Milestone 0.11 headliner
 `f32x8`, `i16x16`, `f32x4` etc. naming convention (`{element_type}x{lanes}`). Auto-fallback to scalar loop when the target lacks the vector width.  
@@ -385,7 +385,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `result` capture in `ensure`: `kw_result` + `Expr.result_` + `_ensure_armed` flag; closes BUG-087; 40/40 smoke | 2026-04-27 |
 | Selfhost cutover (zebra.exe = selfhost binary) — Phase 22 | 2026-04-21 |
 | `str` Comparable verified excluded already at `TypeChecker.zig:2982` (no fiat-by-default; `bool` and `string` excluded explicitly) | (verified 2026-04-?) |
-| Style guide draft committed at `docs/STYLE_GUIDE_DRAFT.md` (foundational §1 decisions resolved 2026-05-04) | 2026-05-04 |
+| Style guide draft committed at `STYLE_GUIDE.md` (foundational §1 decisions resolved 2026-05-04) | 2026-05-04 |
 | Phase 13 BUGS-111..115 filed for the syntax-cleanup window | 2026-05-04 |
 
 ---
