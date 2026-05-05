@@ -18,3 +18,9 @@ _parity_sh/
 # Generated IDE project (Zig output from IDE/ZebraIDE.zbr)
 IDE/ZebraIDE_gui/
 
+# Test fixture compile artifacts
+test/selfhost_compat/*.zig
+
+# Claude Code internal
+.claude/scheduled_tasks.lock
+
