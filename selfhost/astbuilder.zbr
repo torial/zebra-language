@@ -158,7 +158,7 @@ class ASTBuilder
     var next_old_uid: int
 
     cue init()
-        this.next_old_uid = 0
+        .next_old_uid = 0
 
     # Entry point: convert a parsed PModule into a full ast.zbr Module.
     static def build(pm: PModule, file: str): Module throws

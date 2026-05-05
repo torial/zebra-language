@@ -1030,17 +1030,17 @@ struct CallChain
     var args: List(Arg)
 
     cue init(recv: Expr, method: String, args: List(Arg))
-        this.recv = recv
-        this.method = method
-        this.args = args
+        .recv = recv
+        .method = method
+        .args = args
 
 struct EnsureCtx
     var armed: bool
     var uses_result: bool
 
     cue init(armed: bool, uses_result: bool)
-        this.armed = armed
-        this.uses_result = uses_result
+        .armed = armed
+        .uses_result = uses_result
 
 def tryChain(e: Expr): CallChain?
     if e is Expr.call as c
@@ -1143,59 +1143,59 @@ struct Generator
              catch_var: str, source_file: str, class_names: StrSet,
              module_types: ModuleTypes, dep_types: ModuleTypes,
              module_decls: List(Decl))
-        this.w                     = w
-        this.indent                = indent
-        this.owner                 = owner
-        this.in_method             = in_method
-        this.is_struct_owner       = is_struct_owner
-        this.is_generic            = is_generic
-        this.current_method_throws = current_method_throws
-        this.try_block_label       = try_block_label
-        this.catch_var             = catch_var
-        this.source_file           = source_file
-        this.class_names           = class_names
-        this.union_names           = StrSet()
-        this.enum_names            = StrSet()
-        this.struct_names          = StrSet()
-        this.toString_types        = StrSet()
-        this.boxed_variants        = StrSet()
-        this.ref_fields            = StrSet()
-        this.opt_ref_fields        = StrSet()
-        this.unwrapped_imports     = StrSet()
+        .w                     = w
+        .indent                = indent
+        .owner                 = owner
+        .in_method             = in_method
+        .is_struct_owner       = is_struct_owner
+        .is_generic            = is_generic
+        .current_method_throws = current_method_throws
+        .try_block_label       = try_block_label
+        .catch_var             = catch_var
+        .source_file           = source_file
+        .class_names           = class_names
+        .union_names           = StrSet()
+        .enum_names            = StrSet()
+        .struct_names          = StrSet()
+        .toString_types        = StrSet()
+        .boxed_variants        = StrSet()
+        .ref_fields            = StrSet()
+        .opt_ref_fields        = StrSet()
+        .unwrapped_imports     = StrSet()
         # Phase 7b field initializations
-        this.mut_set               = nil
-        this.ret_set               = nil
-        this.nil_narrowed          = nil
-        this.try_err_var           = nil
-        this.owner_members         = List(Decl)()
-        this.owner_invariants      = List(Expr)()
-        this.param_names           = nil
-        this.str_params            = StrSet()
-        this.list_locals           = StrSet()
-        this.list_str_locals       = StrSet()
-        this.strset_locals         = StrSet()
-        this.hashmap_locals        = StrSet()
-        this.hashmap_str_key_locals = StrSet()
-        this.hashmap_str_val_locals = StrSet()
-        this.ptr_field_bindings    = StrSet()
-        this.opt_ptr_field_bindings = StrSet()
-        this.for_loop_deref        = StrSet()
-        this.for_loop_vars         = StrSet()
-        this.for_else_label        = nil
-        this.in_try_expr           = false
-        this.self_name             = "self"
-        this.capture_fields        = StrSet()
-        this.closure_vars          = StrSet()
-        this.module_types          = module_types
-        this.dep_types             = dep_types
-        this.infer_ctx             = nil
-        this.arena_counter         = 0
-        this.throws_methods        = StrSet()
-        this.module_decls          = module_decls
-        this.in_ensure_emit        = false
-        this.strip_contracts       = false
-        this.ensure_armed_active   = false
-        this.ensure_uses_result    = false
+        .mut_set               = nil
+        .ret_set               = nil
+        .nil_narrowed          = nil
+        .try_err_var           = nil
+        .owner_members         = List(Decl)()
+        .owner_invariants      = List(Expr)()
+        .param_names           = nil
+        .str_params            = StrSet()
+        .list_locals           = StrSet()
+        .list_str_locals       = StrSet()
+        .strset_locals         = StrSet()
+        .hashmap_locals        = StrSet()
+        .hashmap_str_key_locals = StrSet()
+        .hashmap_str_val_locals = StrSet()
+        .ptr_field_bindings    = StrSet()
+        .opt_ptr_field_bindings = StrSet()
+        .for_loop_deref        = StrSet()
+        .for_loop_vars         = StrSet()
+        .for_else_label        = nil
+        .in_try_expr           = false
+        .self_name             = "self"
+        .capture_fields        = StrSet()
+        .closure_vars          = StrSet()
+        .module_types          = module_types
+        .dep_types             = dep_types
+        .infer_ctx             = nil
+        .arena_counter         = 0
+        .throws_methods        = StrSet()
+        .module_decls          = module_decls
+        .in_ensure_emit        = false
+        .strip_contracts       = false
+        .ensure_armed_active   = false
+        .ensure_uses_result    = false
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1296,9 +1296,9 @@ struct Generator
     def isUnionType(t: Type_): bool
         branch t
             on Type_.named as tn
-                if this.module_types.hasUnion(tn)
+                if .module_types.hasUnion(tn)
                     return true
-                if this.dep_types.hasUnion(tn)
+                if .dep_types.hasUnion(tn)
                     return true
                 return false
             else
@@ -1307,9 +1307,9 @@ struct Generator
     # Phase 17d: walker-derived "is this expression a string?" — replaces the
     # isStringExpr name-pattern heuristic when infer_ctx is populated.
     def isStringWalker(e: Expr): bool
-        if this.infer_ctx == nil
+        if .infer_ctx == nil
             return false
-        var t: Type_ = inferExpr(e, this.infer_ctx to!)
+        var t: Type_ = inferExpr(e, .infer_ctx to!)
         return isString(t)
 
     # Phase 17d — walker-derived string detection replaces the name-pattern
@@ -1318,8 +1318,8 @@ struct Generator
     # bypass genMethod / genInit). Flipped after corpus runs showed the
     # walker is a strict superset of the heuristic over all selfhost files.
     def isStringBoth(e: Expr, site: str): bool
-        if this.infer_ctx != nil
-            if this.isStringWalker(e)
+        if .infer_ctx != nil
+            if .isStringWalker(e)
                 return true
         return isStringExpr(e)
 
@@ -2109,8 +2109,8 @@ struct Generator
             # expression-level type inference has a populated scope map. Used
             # during emit (e.g., at ctor-arg boxing) to replace name-pattern
             # heuristics with walker-derived types.
-            var ctx17c = InferCtx(this.module_types, owner)
-            ctx17c.withDepTypes(this.dep_types)
+            var ctx17c = InferCtx(.module_types, owner)
+            ctx17c.withDepTypes(.dep_types)
             if m.return_type != nil
                 ctx17c.withReturnType(typeFromRef(m.return_type to!))
             for pp in m.params
@@ -2232,8 +2232,8 @@ struct Generator
                 ps.add(p.name)
             var bg = ig.withMethodCtx(nil, rs, false, owner_members, ps, StrSet(), "_self")
             # Phase 17c — seed InferCtx for the init body: well (see genMethod).
-            var ctx17ci = InferCtx(this.module_types, owner)
-            ctx17ci.withDepTypes(this.dep_types)
+            var ctx17ci = InferCtx(.module_types, owner)
+            ctx17ci.withDepTypes(.dep_types)
             for pp in ini.params
                 if pp.type_ != nil
                     ctx17ci.bind(pp.name, typeFromRef(pp.type_ to!))
@@ -2547,7 +2547,7 @@ struct Generator
     # refactor reorders genMethod (genStmts before walkStmts), instance-dispatch
     # mutations will silently fall through to const, producing `&items` against
     # `*const ArrayList` at the call site.  The static (`Class.method`) and self
-    # (`this.method`) shapes do NOT depend on infer_ctx, so they continue to work.
+    # (`.method`) shapes do NOT depend on infer_ctx, so they continue to work.
 
     def addAddrOfMutationsInStmts(stmts: List(Stmt), out: StrSet)
         for s in stmts
@@ -2619,8 +2619,8 @@ struct Generator
                     on Expr.ident as obj_id
                         if class_names.contains_(obj_id.name)
                             key = obj_id.name + "." + mem.member
-                        else if this.infer_ctx != nil
-                            var rt_a: Type_ = inferExpr(mem.object, this.infer_ctx to!)
+                        else if .infer_ctx != nil
+                            var rt_a: Type_ = inferExpr(mem.object, .infer_ctx to!)
                             if rt_a is Type_.named as cn_a
                                 key = cn_a + "." + mem.member
                     else
@@ -2799,8 +2799,8 @@ struct Generator
                 var chain = ch to!
                 mc_recv = hoistCallChain(chain.recv)
                 mc_field = chain.method
-                if this.infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(chain.recv, this.infer_ctx to!)
+                if .infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx to!)
                     if recv_t is Type_.named as cn
                         if isClassMethodThrows(cn, chain.method)
                             mc_throws = true
@@ -2860,8 +2860,8 @@ struct Generator
         if n.init_expr != nil
             if n.init_expr to! is Expr.list_lit as ll_init_decl
                 list_locals.add(n.name)
-                if ll_init_decl.elems.count() > 0 and this.infer_ctx != nil
-                    var et: Type_ = inferExpr(ll_init_decl.elems.at(0), this.infer_ctx to!)
+                if ll_init_decl.elems.count() > 0 and .infer_ctx != nil
+                    var et: Type_ = inferExpr(ll_init_decl.elems.at(0), .infer_ctx to!)
                     if isString(et)
                         list_str_locals.add(n.name)
         # Detect StrSet from init expression (StrSet() has no type annotation)
@@ -2884,7 +2884,7 @@ struct Generator
                         hashmap_str_val_locals.add(n.name)
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
-            if this.isStringBoth(n.init_expr to!, "var_decl")
+            if .isStringBoth(n.init_expr to!, "var_decl")
                 str_params.add(n.name)
         # Track capture-lambda vars for .call() dispatch at call sites
         if n.init_expr != nil
@@ -3284,7 +3284,7 @@ struct Generator
         if target is Expr.index as ix
             var nm = getMemberFieldName(ix.object)
             if nm != nil
-                if hashmap_locals.contains_(nm to!) or fieldIsHashMap(this.module_types, this.dep_types, nm to!)
+                if hashmap_locals.contains_(nm to!) or fieldIsHashMap(.module_types, .dep_types, nm to!)
                     genExpr(ix.object)
                     w.emit(".put(")
                     genExpr(ix.index)
@@ -3440,8 +3440,8 @@ struct Generator
                 w.emit(";\n")
                 writeIndent()
                 var stmt_is_throws: bool = false
-                if this.infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(obj, this.infer_ctx to!)
+                if .infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(obj, .infer_ctx to!)
                     if recv_t is Type_.named as recv_cn
                         if isClassMethodThrows(recv_cn, method_name)
                             stmt_is_throws = true
@@ -3510,9 +3510,9 @@ struct Generator
                         ig.w.emit("." + variant + ";\n")
                     # Track ^T fields for this binding to enable auto-deref (mirrors genBranch)
                     if union_nm.len > 0 and variant.len > 0
-                        var vp_ = this.module_types.variantPayload(union_nm, variant)
+                        var vp_ = .module_types.variantPayload(union_nm, variant)
                         if vp_ == nil
-                            vp_ = this.dep_types.variantPayload(union_nm, variant)
+                            vp_ = .dep_types.variantPayload(union_nm, variant)
                         if vp_ != nil
                             var sname = structNameFromType(vp_ to!)
                             if sname != nil
@@ -3913,8 +3913,8 @@ struct Generator
         if e is Expr.call as c
             if c.callee is Expr.member as m
                 if m.member == "findAll" or m.member == "groups"
-                    if this.infer_ctx != nil
-                        var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
+                    if .infer_ctx != nil
+                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
                         branch recv_t
                             on Type_.regex
                                 return true
@@ -4364,9 +4364,9 @@ struct Generator
                             uname = upart
                             break
                     if uname.len > 0 and vname.len > 0
-                        var vp_ = this.module_types.variantPayload(uname, vname)
+                        var vp_ = .module_types.variantPayload(uname, vname)
                         if vp_ == nil
-                            vp_ = this.dep_types.variantPayload(uname, vname)
+                            vp_ = .dep_types.variantPayload(uname, vname)
                         if vp_ != nil
                             var sname = structNameFromType(vp_ to!)
                             if sname != nil
@@ -4444,7 +4444,7 @@ struct Generator
             if ai > 0
                 w.emit(" ")
             var arg = p.args.at(ai)
-            w.emit(this.printFmtSpec(arg))
+            w.emit(.printFmtSpec(arg))
             ai += 1
         if p.newline
             w.emit("\\n")
@@ -4455,8 +4455,8 @@ struct Generator
                 w.emit(", ")
             var parg = p.args.at(ai2)
             var needs_unwrap = false
-            if this.infer_ctx != nil
-                var pt: Type_ = inferExpr(parg, this.infer_ctx to!)
+            if .infer_ctx != nil
+                var pt: Type_ = inferExpr(parg, .infer_ctx to!)
                 if pt is Type_.optional as poi
                     if poi is Type_.string_ or poi is Type_.str_slice
                         needs_unwrap = true
@@ -4484,8 +4484,8 @@ struct Generator
     def printFmtSpec(e: Expr): str
         if isStringLitArg(e)
             return "{s}"
-        if this.infer_ctx != nil
-            var t: Type_ = inferExpr(e, this.infer_ctx to!)
+        if .infer_ctx != nil
+            var t: Type_ = inferExpr(e, .infer_ctx to!)
             # Unwrap one optional layer: inside nil-check bodies the value is
             # guaranteed non-nil; genPrint will emit `.?` on the Zig value.
             if t is Type_.optional as opt_inner
@@ -4544,8 +4544,8 @@ struct Generator
             # cover all current target corpus files (all int details).
             var det: Expr = r.details to!
             var det_t: Type_ = Type_.unknown_
-            if this.infer_ctx != nil
-                det_t = inferExpr(det, this.infer_ctx to!)
+            if .infer_ctx != nil
+                det_t = inferExpr(det, .infer_ctx to!)
             var uid: int = w.nextUid()
             var is_prim: bool = false
             branch det_t
@@ -5179,7 +5179,7 @@ struct Generator
                     if fname != nil
                         var fn2 = fname to!
                         is_list_obj = isListField(fn2) or list_locals.contains_(fn2) or isKnownListField(fn2)
-                        is_hm_obj = hashmap_locals.contains_(fn2) or fieldIsHashMap(this.module_types, this.dep_types, fn2)
+                        is_hm_obj = hashmap_locals.contains_(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
@@ -5218,7 +5218,7 @@ struct Generator
                 var is_hm_idx = false
                 if idx_obj_nm != nil
                     var idx_nm = idx_obj_nm to!
-                    is_hm_idx = hashmap_locals.contains_(idx_nm) or fieldIsHashMap(this.module_types, this.dep_types, idx_nm)
+                    is_hm_idx = hashmap_locals.contains_(idx_nm) or fieldIsHashMap(.module_types, .dep_types, idx_nm)
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
@@ -5312,8 +5312,8 @@ struct Generator
                     w.emit(") = std.ArrayList(")
                     genType(ll.elem_type to!)
                     w.emit("){}; ")
-                else if ll.elems.count() > 0 and this.infer_ctx != nil
-                    var et: Type_ = inferExpr(ll.elems.at(0), this.infer_ctx to!)
+                else if ll.elems.count() > 0 and .infer_ctx != nil
+                    var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx to!)
                     elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + "){}; ")
                 else
@@ -5451,7 +5451,7 @@ struct Generator
     def genBinary(b: ExprBinary)
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
-            if this.isStringBoth(b.left, "bin_add_l") or this.isStringBoth(b.right, "bin_add_r")
+            if .isStringBoth(b.left, "bin_add_l") or .isStringBoth(b.right, "bin_add_r")
                 w.emit("_str_concat(")
                 genExpr(b.left)
                 w.emit(", ")
@@ -5471,8 +5471,8 @@ struct Generator
             # `2.5 / 4.0` would compile to `@divTrunc(2.5, 4.0)` which Zig
             # rejects (or worse, with `int_div` semantics, silently rounds).
             var is_float_div = false
-            if b.op == BinaryOp.div and this.infer_ctx != nil
-                var lt: Type_ = inferExpr(b.left, this.infer_ctx to!)
+            if b.op == BinaryOp.div and .infer_ctx != nil
+                var lt: Type_ = inferExpr(b.left, .infer_ctx to!)
                 branch lt
                     on Type_.float_
                         is_float_div = true
@@ -5517,8 +5517,8 @@ struct Generator
                 on Expr.ident as in_id
                     if list_locals.contains_(in_id.name) or hashmap_locals.contains_(in_id.name)
                         in_use_zebra_in = true
-                    else if this.infer_ctx != nil
-                        var rt: Type_ = inferExpr(b.right, this.infer_ctx to!)
+                    else if .infer_ctx != nil
+                        var rt: Type_ = inferExpr(b.right, .infer_ctx to!)
                         # The TC may not yet know the variable's declared
                         # generic type, but the local tracking sets above
                         # cover the common cases.  When TC does know,
@@ -5567,7 +5567,7 @@ struct Generator
                         either_nil = true
                     else
                         pass
-            if not either_nil and (this.isStringBoth(b.left, "bin_eq_l") or this.isStringBoth(b.right, "bin_eq_r"))
+            if not either_nil and (.isStringBoth(b.left, "bin_eq_l") or .isStringBoth(b.right, "bin_eq_r"))
                 if b.op == BinaryOp.ne
                     w.emit("!")
                 w.emit("std.mem.eql(u8, ")
@@ -5775,8 +5775,8 @@ struct Generator
                             i = i + 1
                     if has_fmt
                         var ex_type: Type_ = Type_.unknown_
-                        if this.infer_ctx != nil
-                            ex_type = inferExpr(e, this.infer_ctx to!)
+                        if .infer_ctx != nil
+                            ex_type = inferExpr(e, .infer_ctx to!)
                         var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
                         fmt_str = fmt_str + "{" + zig_spec + "}"
                         cast_types.add(bitCastType(fmt_spec, ex_type))
@@ -5784,14 +5784,14 @@ struct Generator
                     else
                         # Implicit toString: named type with toString() method → {s}.
                         var ts: bool = false
-                        if this.infer_ctx != nil
-                            var et: Type_ = inferExpr(e, this.infer_ctx to!)
+                        if .infer_ctx != nil
+                            var et: Type_ = inferExpr(e, .infer_ctx to!)
                             if et is Type_.named as tn
                                 if toString_types.contains_(tn)
                                     ts = true
                         if ts
                             fmt_str = fmt_str + "{s}"
-                        else if this.isStringBoth(e, "interp_fmt")
+                        else if .isStringBoth(e, "interp_fmt")
                             fmt_str = fmt_str + "{s}"
                         else
                             fmt_str = fmt_str + "{}"
@@ -5845,7 +5845,7 @@ struct Generator
         var cm_obj = getMemberObjectIdent(c.callee)
         var cm_mem = getMemberName(c.callee)
         if cm_obj != nil and cm_mem != nil
-            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or this.dep_types.hasClass(cm_mem to!)
+            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or .dep_types.hasClass(cm_mem to!)
             if is_xm_ctor
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
@@ -5927,7 +5927,7 @@ struct Generator
             var xmu_mod = xmu_list.at(0)
             var xmu_union = xmu_list.at(1)
             var xmu_variant = xmu_list.at(2)
-            if this.dep_types.hasUnion(xmu_union)
+            if .dep_types.hasUnion(xmu_union)
                 var xmu_key = makeDottedKey(xmu_union, xmu_variant)
                 var xmu_boxed = boxed_variants.contains_(xmu_key)
                 w.emit(xmu_mod)
@@ -6037,11 +6037,11 @@ struct Generator
                     # of them legitimately require `&local` / boxing since
                     # the receiving ctor param is `^Expr` and Zig does not
                     # implicitly take addresses of values.
-                    var is_ref_param: bool = ctorParamAtIsRefTo(this.module_types, this.dep_types, id.name, arg_idx)
+                    var is_ref_param: bool = ctorParamAtIsRefTo(.module_types, .dep_types, id.name, arg_idx)
                     var should_box: bool = false
-                    if is_ref_param and this.infer_ctx != nil
-                        var wt17c: Type_ = inferExpr(a.value, this.infer_ctx to!)
-                        should_box = this.isUnionType(wt17c)
+                    if is_ref_param and .infer_ctx != nil
+                        var wt17c: Type_ = inferExpr(a.value, .infer_ctx to!)
+                        should_box = .isUnionType(wt17c)
                     if is_ref_param and should_box
                         # Box: heap-allocate for ^T parameter
                         var lbl = box_labels.at(box_idx)
@@ -6108,8 +6108,8 @@ struct Generator
                 w.emit("(if (_error_ctx.details) |_det| _det.toString() else \"\")")
                 return
         # Regex instance methods: re.match/find/findAll/replace/groups
-        if this.infer_ctx != nil
-            var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
+        if .infer_ctx != nil
+            var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
             branch recv_t
                 on Type_.regex
                     if mname == "match"
@@ -6216,7 +6216,7 @@ struct Generator
             var is_class_ref = false
             if add_obj_name != nil
                 var add_nm = add_obj_name to!
-                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(this.module_types, this.dep_types, add_nm)
+                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
             if not is_strset and not is_class_ref
                 var add_item_is_str = false
@@ -6247,13 +6247,13 @@ struct Generator
             var is_hashmap_cnt = false
             if cnt_obj_name != nil
                 var cnt_nm = cnt_obj_name to!
-                is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(this.module_types, this.dep_types, cnt_nm)
-                is_hashmap_cnt = hashmap_locals.contains_(cnt_nm) or fieldIsHashMap(this.module_types, this.dep_types, cnt_nm)
+                is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(.module_types, .dep_types, cnt_nm)
+                is_hashmap_cnt = hashmap_locals.contains_(cnt_nm) or fieldIsHashMap(.module_types, .dep_types, cnt_nm)
             if is_strset_cnt or is_hashmap_cnt
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
                 w.emit(".count()))")
-            else if this.isStringBoth(m.object, "count_recv")
+            else if .isStringBoth(m.object, "count_recv")
                 # BUG-071: str.count(substr) → std.mem.count
                 w.emit("@as(i64, @intCast(std.mem.count(u8, ")
                 genExpr(m.object)
@@ -6282,7 +6282,7 @@ struct Generator
             var is_hashmap_rem = false
             if rem_obj_name != nil
                 var rem_nm = rem_obj_name to!
-                is_hashmap_rem = hashmap_locals.contains_(rem_nm) or fieldIsHashMap(this.module_types, this.dep_types, rem_nm)
+                is_hashmap_rem = hashmap_locals.contains_(rem_nm) or fieldIsHashMap(.module_types, .dep_types, rem_nm)
             if is_hashmap_rem
                 w.emit("_ = ")
                 genExpr(m.object)
@@ -6305,8 +6305,8 @@ struct Generator
                 var clr_nm = clr_obj_name to!
                 if list_locals.contains_(clr_nm)
                     is_list_like = true
-                else if this.infer_ctx != nil
-                    var clr_t = inferExpr(m.object, this.infer_ctx to!)
+                else if .infer_ctx != nil
+                    var clr_t = inferExpr(m.object, .infer_ctx to!)
                     branch clr_t
                         on Type_.string_builder
                             is_list_like = true
@@ -6366,7 +6366,7 @@ struct Generator
             var is_strset_obj = false
             if cont_obj_name != nil
                 var cont_nm = cont_obj_name to!
-                is_strset_obj = strset_locals.contains_(cont_nm) or fieldIsStrSet(this.module_types, this.dep_types, cont_nm)
+                is_strset_obj = strset_locals.contains_(cont_nm) or fieldIsStrSet(.module_types, .dep_types, cont_nm)
             if is_strset_obj
                 w.emit(".contains_(")
             else
@@ -6382,7 +6382,7 @@ struct Generator
             var set_recv = getMemberFieldName(m.object)
             if set_recv != nil
                 var sname = set_recv to!
-                if hashmap_locals.contains_(sname) or fieldIsHashMap(this.module_types, this.dep_types, sname)
+                if hashmap_locals.contains_(sname) or fieldIsHashMap(.module_types, .dep_types, sname)
                     var key_is_str = hashmap_str_key_locals.contains_(sname)
                     var val_is_str = hashmap_str_val_locals.contains_(sname)
                     if not key_is_str or not val_is_str
@@ -6418,7 +6418,7 @@ struct Generator
                 genExpr(args.at(0).value)
             w.emit(")")
             return
-        if mname == "contains" and not this.isStringBoth(m.object, "contains_recv")
+        if mname == "contains" and not .isStringBoth(m.object, "contains_recv")
             genExpr(m.object)
             w.emit(".contains(")
             if args.count() > 0
@@ -6580,8 +6580,8 @@ struct Generator
             # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
             # Int/other receivers need decimal string via allocPrint.
             var is_char_recv = false
-            if this.infer_ctx != nil
-                var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
+            if .infer_ctx != nil
+                var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
                 branch recv_t
                     on Type_.char_
                         is_char_recv = true
@@ -6625,7 +6625,7 @@ struct Generator
         if m.object is Expr.ident as id
             if id.name == "Math"
                 # If user defined class Math, skip stdlib dispatch
-                if not (this.module_types.hasClass("Math") or this.dep_types.hasClass("Math"))
+                if not (.module_types.hasClass("Math") or .dep_types.hasClass("Math"))
                     genMathCall(mname, args)
                     return
             if id.name == "File"
@@ -6900,8 +6900,8 @@ struct Generator
             var mc_uid: int = w.nextUid()
             var mc_lbl: str = "blk_" + mc_uid.toString()
             var chain_throws: bool = false
-            if this.infer_ctx != nil
-                var recv_t: Type_ = inferExpr(m.object, this.infer_ctx to!)
+            if .infer_ctx != nil
+                var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
                 if recv_t is Type_.named as recv_cn
                     if isClassMethodThrows(recv_cn, mname)
                         chain_throws = true
@@ -6936,7 +6936,7 @@ struct Generator
         w.emit("(")
         # BUG-091: resolve callee params+body so we can take `&` for List/HashMap
         # params that the body mutates.  Covers static (Class.method), self
-        # (this.method), and instance (var.method via infer_ctx) call shapes.
+        # (.method), and instance (var.method via infer_ctx) call shapes.
         var mc_params: List(Param)? = nil
         var mc_body: List(Stmt)? = nil
         branch m.object
@@ -6950,8 +6950,8 @@ struct Generator
                     var sk = obj_id_p.name + "." + mname
                     mc_params = lookupFnParams(sk)
                     mc_body = lookupFnBody(sk)
-                else if this.infer_ctx != nil
-                    var rt_m: Type_ = inferExpr(m.object, this.infer_ctx to!)
+                else if .infer_ctx != nil
+                    var rt_m: Type_ = inferExpr(m.object, .infer_ctx to!)
                     if rt_m is Type_.named as cn_m
                         var ik = cn_m + "." + mname
                         mc_params = lookupFnParams(ik)
@@ -6965,8 +6965,8 @@ struct Generator
             if a.name != nil
                 has_named = true
                 break
-        if has_named and this.infer_ctx != nil
-            var rt: Type_ = inferExpr(m.object, this.infer_ctx to!)
+        if has_named and .infer_ctx != nil
+            var rt: Type_ = inferExpr(m.object, .infer_ctx to!)
             if rt is Type_.named as recv_cn
                 var recv_class: str = recv_cn
                 var pcsv: str? = module_types.methodParamsCsv(recv_class, mname)

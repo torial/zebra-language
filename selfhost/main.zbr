@@ -55,14 +55,14 @@ class MultiCompiler
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
 
     cue init(preamble_path: str, output_dir: str)
-        this.visited = List(str)()
-        this.dep_class_names = List(str)()
-        this.dep_types = ModuleTypes()
-        this.preamble_path = preamble_path
-        this.output_dir = output_dir
-        this.c_sources = List(str)()
-        this.c_i_dirs = List(str)()
-        this.strip_contracts = false
+        .visited = List(str)()
+        .dep_class_names = List(str)()
+        .dep_types = ModuleTypes()
+        .preamble_path = preamble_path
+        .output_dir = output_dir
+        .c_sources = List(str)()
+        .c_i_dirs = List(str)()
+        .strip_contracts = false
 
     def alreadyVisited(p: str): bool
         var i: int = 0

@@ -37,7 +37,7 @@ use Parser exposing PNode, PParam
 struct ResolveError
     var message: str
     cue init(message: str)
-        this.message = message
+        .message = message
 
 # -- Resolver -----------------------------------------------------------------
 # Results are accessed via getter methods (errorCount, firstError, symbolCount)
@@ -55,29 +55,29 @@ class Resolver
     var file_name   : str
 
     cue init(file_name: str)
-        this.module_scope  = HashMap()
-        this.class_scope   = HashMap()
-        this.method_scope  = HashMap()
-        this.errors        = List(ResolveError)()
-        this.symbol_count  = 0
-        this.file_name     = file_name
+        .module_scope  = HashMap()
+        .class_scope   = HashMap()
+        .method_scope  = HashMap()
+        .errors        = List(ResolveError)()
+        .symbol_count  = 0
+        .file_name     = file_name
 
     # -- Result accessors (return primitives for cross-module use) -------------
 
     def errorCount(): int
-        return this.errors.len
+        return .errors.len
 
     def symbolCount(): int
-        return this.symbol_count
+        return .symbol_count
 
     def firstError(): str
-        if this.errors.len > 0
-            return this.errors.at(0).message
+        if .errors.len > 0
+            return .errors.at(0).message
         return ""
 
     def allErrorMessages(): str
         var b: StringBuilder = StringBuilder()
-        for e in this.errors
+        for e in .errors
             b.append(e.message)
             b.append("\n")
         return b.build()
@@ -97,27 +97,27 @@ class Resolver
     def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
-                this.module_scope.put(c.name, 0)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(c.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.struct_ as s
-                this.module_scope.put(s.name, 0)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(s.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.union_decl as u
-                this.module_scope.put(u.name, 0)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(u.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.enum_ as e
-                this.module_scope.put(e.name, 0)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(e.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.sig_ as sg
-                this.module_scope.put(sg.name, 0)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(sg.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.method_ as m
-                this.module_scope.put(m.name, 1)
-                this.symbol_count = this.symbol_count + 1
+                .module_scope.put(m.name, 1)
+                .symbol_count = .symbol_count + 1
             on PNode.use_ as u
-                this.module_scope.put(u.path, 5)
+                .module_scope.put(u.path, 5)
                 for name in u.exposed
-                    this.module_scope.put(name, 5)
+                    .module_scope.put(name, 5)
             else
                 pass
 
@@ -142,11 +142,11 @@ class Resolver
     # `members` is passed by value (shallow copy of the List header) - safe for
     # read-only iteration; the underlying array is shared with the parse tree.
     def enterClass(name: str, members: List(PNode), type_params: List(str)) throws
-        this.class_scope = HashMap()
+        .class_scope = HashMap()
         # Register generic type params so they resolve: valid names in method bodies
         for tp in type_params
-            this.class_scope.put(tp, 6)
-            this.symbol_count = this.symbol_count + 1
+            .class_scope.put(tp, 6)
+            .symbol_count = .symbol_count + 1
         # Sub-pass: collect field and method names before resolving any body
         for member in members
             .collectMember(member)
@@ -157,11 +157,11 @@ class Resolver
     def collectMember(member: PNode) throws
         branch member
             on PNode.method_ as m
-                this.class_scope.put(m.name, 1)
-                this.symbol_count = this.symbol_count + 1
+                .class_scope.put(m.name, 1)
+                .symbol_count = .symbol_count + 1
             on PNode.field_ as f
-                this.class_scope.put(f.name, 2)
-                this.symbol_count = this.symbol_count + 1
+                .class_scope.put(f.name, 2)
+                .symbol_count = .symbol_count + 1
             else
                 pass
 
@@ -176,10 +176,10 @@ class Resolver
 
     # Enter a method: reset the method scope, declare params, then walk statements.
     def enterMethod(params: List(PParam), stmts: List(PNode)) throws
-        this.method_scope = HashMap()
+        .method_scope = HashMap()
         for p in params
-            this.method_scope.put(p.name, 3)
-            this.symbol_count = this.symbol_count + 1
+            .method_scope.put(p.name, 3)
+            .symbol_count = .symbol_count + 1
         .resolveStmts(stmts)
 
     # -- Statement walking -----------------------------------------------------
@@ -194,14 +194,14 @@ class Resolver
                 # Resolve init before declaring - so `var x = x` errors
                 for expr in v.init_expr
                     .resolveExpr(expr)
-                this.method_scope.put(v.name, 4)
-                this.symbol_count = this.symbol_count + 1
+                .method_scope.put(v.name, 4)
+                .symbol_count = .symbol_count + 1
             on PNode.stmt_destruct as d
                 for expr in d.init_expr
                     .resolveExpr(expr)
                 for nm in d.names
-                    this.method_scope.put(nm, 4)
-                    this.symbol_count = this.symbol_count + 1
+                    .method_scope.put(nm, 4)
+                    .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
                     .resolveExpr(expr)
@@ -209,8 +209,8 @@ class Resolver
                 for expr in i.cond
                     .resolveExpr(expr)
                 if i.is_capture != nil
-                    this.method_scope.put(i.is_capture to!, 4)
-                    this.symbol_count = this.symbol_count + 1
+                    .method_scope.put(i.is_capture to!, 4)
+                    .symbol_count = .symbol_count + 1
                 .resolveStmts(i.then_stmts)
                 .resolveStmts(i.else_stmts)
             on PNode.stmt_while as w
@@ -221,7 +221,7 @@ class Resolver
                 for expr in f.iter
                     .resolveExpr(expr)
                 for var_name in f.var_names
-                    this.method_scope.put(var_name, 4)
+                    .method_scope.put(var_name, 4)
                 .resolveStmts(f.stmts)
                 .resolveStmts(f.else_stmts)
             on PNode.stmt_assign as a
@@ -240,14 +240,14 @@ class Resolver
             on PNode.stmt_try_catch as tc
                 .resolveStmts(tc.body_stmts)
                 if tc.catch_binding != ""
-                    this.method_scope.put(tc.catch_binding, 4)
+                    .method_scope.put(tc.catch_binding, 4)
                 .resolveStmts(tc.catch_stmts)
             on PNode.stmt_branch as br
                 for expr in br.subject
                     .resolveExpr(expr)
                 for arm in br.arms
                     if arm.binding != ""
-                        this.method_scope.put(arm.binding, 4)
+                        .method_scope.put(arm.binding, 4)
                     .resolveStmts(arm.stmts)
                 .resolveStmts(br.else_stmts)
             on PNode.stmt_expr as inner
@@ -269,7 +269,7 @@ class Resolver
         branch expr
             on PNode.expr_id as id
                 if not .isInScope(id.name)
-                    this.errors.add(ResolveError(this.file_name + ":" + id.line.toString() + ":" + id.col.toString() + ": error: undefined name: '" + id.name + "'"))
+                    .errors.add(ResolveError(.file_name + ":" + id.line.toString() + ":" + id.col.toString() + ": error: undefined name: '" + id.name + "'"))
             on PNode.expr_binary as b
                 for e in b.left
                     .resolveExpr(e)
@@ -321,11 +321,11 @@ class Resolver
     # -- Scope lookup ----------------------------------------------------------
 
     def isInScope(name: str): bool
-        if this.method_scope.contains(name)
+        if .method_scope.contains(name)
             return true
-        if this.class_scope.contains(name)
+        if .class_scope.contains(name)
             return true
-        if this.module_scope.contains(name)
+        if .module_scope.contains(name)
             return true
         if .isBuiltin(name)
             return true

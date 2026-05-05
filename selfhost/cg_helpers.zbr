@@ -314,7 +314,7 @@ def bodyHasRaise(stmts: List(Stmt)): bool
 
 # ── bodyNeedsErrVar ───────────────────────────────────────────────────────────
 # Returns true if the body requires a mutable _try_err variable.
-# Identical to bodyHasRaise: both raise_ and bare try_ expressions trigger this.
+# Identical to bodyHasRaise: both raise_ and bare try_ expressions trigger .
 
 def bodyNeedsErrVar(stmts: List(Stmt)): bool
     return bodyHasRaise(stmts)

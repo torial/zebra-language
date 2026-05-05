@@ -40,8 +40,8 @@ struct CrossModuleType
     var type_name: str
 
     cue init(module: str, type_name: str)
-        this.module = internString(module)
-        this.type_name = internString(type_name)
+        .module = internString(module)
+        .type_name = internString(type_name)
 
 # ── Type representation ──────────────────────────────────────────────────────
 # Skeleton variant set for Phase 16a. Phases 17–19 add:
@@ -109,52 +109,52 @@ class ClassTypes
     var ctor_params: List(Type_)
 
     cue init(name: str)
-        this.name = internString(name)
+        .name = internString(name)
         field_types = HashMap()
         method_returns = HashMap()
         method_params = HashMap()
         ctor_params = List(Type_)()
 
     def setField(field_name: str, t: Type_)
-        this.field_types.put(internString(field_name), t)
+        .field_types.put(internString(field_name), t)
 
     def setMethodReturn(method_name: str, t: Type_)
-        this.method_returns.put(internString(method_name), t)
+        .method_returns.put(internString(method_name), t)
 
     def setMethodParams(method_name: str, params_csv: str)
-        this.method_params.put(internString(method_name), internString(params_csv))
+        .method_params.put(internString(method_name), internString(params_csv))
 
     def addCtorParam(t: Type_)
-        this.ctor_params.add(t)
+        .ctor_params.add(t)
 
     def fieldType(field_name: str): Type_?
-        if this.field_types.contains(field_name)
-            return this.field_types.fetch(field_name)
+        if .field_types.contains(field_name)
+            return .field_types.fetch(field_name)
         return nil
 
     def methodReturn(method_name: str): Type_?
-        if this.method_returns.contains(method_name)
-            return this.method_returns.fetch(method_name)
+        if .method_returns.contains(method_name)
+            return .method_returns.fetch(method_name)
         return nil
 
     def methodParamsCsv(method_name: str): str?
-        if this.method_params.contains(method_name)
-            return this.method_params.fetch(method_name)
+        if .method_params.contains(method_name)
+            return .method_params.fetch(method_name)
         return nil
 
     def ctorParamAt(idx: int): Type_?
         if idx < 0
             return nil
-        if idx >= this.ctor_params.len
+        if idx >= .ctor_params.len
             return nil
-        return this.ctor_params.at(idx)
+        return .ctor_params.at(idx)
 
     def ctorParamCount(): int
-        return this.ctor_params.len
+        return .ctor_params.len
 
 # ── Module-level type table ──────────────────────────────────────────────────
 # Aggregates ClassTypes for every user-defined class/struct in a module.
-# Phase 16b adds a builder that walks an ast.Module to populate this.
+# Phase 16b adds a builder that walks an ast.Module to populate .
 
 class ModuleTypes
     var classes: HashMap(str, ClassTypes)
@@ -198,73 +198,73 @@ class ModuleTypes
         union_names = HashMap()
 
     def addClass(c: ClassTypes)
-        this.classes.put(c.name, c)
+        .classes.put(c.name, c)
 
     def addStrSetField(field_name: str)
-        this.strset_field_names.put(internString(field_name), true)
+        .strset_field_names.put(internString(field_name), true)
 
     def hasStrSetField(field_name: str): bool
-        return this.strset_field_names.contains(field_name)
+        return .strset_field_names.contains(field_name)
 
     def addHashMapField(field_name: str)
-        this.hashmap_field_names.put(internString(field_name), true)
+        .hashmap_field_names.put(internString(field_name), true)
 
     def hasHashMapField(field_name: str): bool
-        return this.hashmap_field_names.contains(field_name)
+        return .hashmap_field_names.contains(field_name)
 
     def addUnion(name: str)
-        this.union_names.put(internString(name), true)
+        .union_names.put(internString(name), true)
 
     def hasUnion(name: str): bool
-        return this.union_names.contains(name)
+        return .union_names.contains(name)
 
     def addVariantPayload(union_name: str, variant_name: str, t: Type_)
         # Concatenation already produces a fresh owned str, so no additional
         # internString is needed on the composed key.
         var key: str = union_name + "." + variant_name
-        this.variant_payloads.put(key, t)
+        .variant_payloads.put(key, t)
         branch t
             on Type_.ref_to
-                this.boxed_variant_keys.add(key)
+                .boxed_variant_keys.add(key)
             else
                 pass
 
     def variantPayload(union_name: str, variant_name: str): Type_?
         var key: str = union_name + "." + variant_name
-        if this.variant_payloads.contains(key)
-            return this.variant_payloads.fetch(key)
+        if .variant_payloads.contains(key)
+            return .variant_payloads.fetch(key)
         return nil
 
     def hasClass(class_name: str): bool
-        return this.classes.contains(class_name)
+        return .classes.contains(class_name)
 
     def classOf(class_name: str): ClassTypes?
-        if this.classes.contains(class_name)
-            return this.classes.fetch(class_name)
+        if .classes.contains(class_name)
+            return .classes.fetch(class_name)
         return nil
 
     def fieldType(class_name: str, field_name: str): Type_?
-        if not this.classes.contains(class_name)
+        if not .classes.contains(class_name)
             return nil
-        var c: ClassTypes = this.classes.fetch(class_name)
+        var c: ClassTypes = .classes.fetch(class_name)
         return c.fieldType(field_name)
 
     def methodReturn(class_name: str, method_name: str): Type_?
-        if not this.classes.contains(class_name)
+        if not .classes.contains(class_name)
             return nil
-        var c: ClassTypes = this.classes.fetch(class_name)
+        var c: ClassTypes = .classes.fetch(class_name)
         return c.methodReturn(method_name)
 
     def methodParamsCsv(class_name: str, method_name: str): str?
-        if not this.classes.contains(class_name)
+        if not .classes.contains(class_name)
             return nil
-        var c: ClassTypes = this.classes.fetch(class_name)
+        var c: ClassTypes = .classes.fetch(class_name)
         return c.methodParamsCsv(method_name)
 
     def ctorParamAt(class_name: str, idx: int): Type_?
-        if not this.classes.contains(class_name)
+        if not .classes.contains(class_name)
             return nil
-        var c: ClassTypes = this.classes.fetch(class_name)
+        var c: ClassTypes = .classes.fetch(class_name)
         return c.ctorParamAt(idx)
 
 # ── Built-in name → Type_ mapping ────────────────────────────────────────────
@@ -477,7 +477,7 @@ def buildModuleTypes(m: Module): ModuleTypes
     return mt
 
 # ── Expression-level inference ───────────────────────────────────────────────
-# InferCtx holds the module's type table and the current class (for `this.x`).
+# InferCtx holds the module's type table and the current class (for `.x`).
 # A scope map is intentionally absent in Phase 16b — local variable tracking
 # lands in Phase 17. Callers may still seed the scope HashMap when useful.
 
@@ -489,27 +489,27 @@ class InferCtx
     var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
 
     cue init(module_types: ModuleTypes, current_class: str)
-        this.module_types = module_types
-        this.dep_types = ModuleTypes()
-        this.current_class = current_class
+        .module_types = module_types
+        .dep_types = ModuleTypes()
+        .current_class = current_class
         scope = HashMap()
-        this.current_return_type = nil
+        .current_return_type = nil
 
     def withReturnType(rt: Type_?)
-        this.current_return_type = rt
+        .current_return_type = rt
 
     # Phase 17c — attach merged dependency ModuleTypes (from codegen's
     # buildModuleTypes over transitive deps) so inferExpr can see unions /
     # classes defined in imported modules. Defaults to empty ModuleTypes so
     # standalone callers (tests) don't need to build a dep table.
     def withDepTypes(dt: ModuleTypes)
-        this.dep_types = dt
+        .dep_types = dt
 
     # True if a named union is known in this module OR in any dep.
     def hasUnion(name: str): bool
-        if this.module_types.hasUnion(name)
+        if .module_types.hasUnion(name)
             return true
-        return this.dep_types.hasUnion(name)
+        return .dep_types.hasUnion(name)
 
     def bind(name: str, t: Type_)
         scope.put(name, t)
@@ -534,10 +534,10 @@ class InferCtx
     # compiling parser/resolver/codegen, all of which take AST struct params
     # from ast.zbr). These two helpers mirror hasUnion's module+dep fallback.
     def fieldTypeAny(class_name: str, field_name: str): Type_?
-        var ft: Type_? = this.module_types.fieldType(class_name, field_name)
+        var ft: Type_? = .module_types.fieldType(class_name, field_name)
         if ft != nil
             return ft
-        ft = this.dep_types.fieldType(class_name, field_name)
+        ft = .dep_types.fieldType(class_name, field_name)
         if ft != nil
             return ft
         # Cross-module qualified name fallback — parsed types keep the
@@ -546,37 +546,37 @@ class InferCtx
         # resolves cross-module field access.
         var bare: str = stripModulePrefix(class_name)
         if bare != class_name
-            ft = this.module_types.fieldType(bare, field_name)
+            ft = .module_types.fieldType(bare, field_name)
             if ft != nil
                 return ft
-            return this.dep_types.fieldType(bare, field_name)
+            return .dep_types.fieldType(bare, field_name)
         return nil
 
     def methodReturnAny(class_name: str, method_name: str): Type_?
-        var mr: Type_? = this.module_types.methodReturn(class_name, method_name)
+        var mr: Type_? = .module_types.methodReturn(class_name, method_name)
         if mr != nil
             return mr
-        mr = this.dep_types.methodReturn(class_name, method_name)
+        mr = .dep_types.methodReturn(class_name, method_name)
         if mr != nil
             return mr
         var bare: str = stripModulePrefix(class_name)
         if bare != class_name
-            mr = this.module_types.methodReturn(bare, method_name)
+            mr = .module_types.methodReturn(bare, method_name)
             if mr != nil
                 return mr
-            return this.dep_types.methodReturn(bare, method_name)
+            return .dep_types.methodReturn(bare, method_name)
         return nil
 
     def hasClassAny(class_name: str): bool
-        if this.module_types.hasClass(class_name)
+        if .module_types.hasClass(class_name)
             return true
-        if this.dep_types.hasClass(class_name)
+        if .dep_types.hasClass(class_name)
             return true
         var bare: str = stripModulePrefix(class_name)
         if bare != class_name
-            if this.module_types.hasClass(bare)
+            if .module_types.hasClass(bare)
                 return true
-            return this.dep_types.hasClass(bare)
+            return .dep_types.hasClass(bare)
         return false
 
 # Strip the leading "Module." from a qualified type name, leaving the
