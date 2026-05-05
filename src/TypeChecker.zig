@@ -677,7 +677,7 @@ fn extractFromMembers(
             }
             // For user-defined return types, record the type name so cross-module
             // method calls can return a typed cross_module value instead of .unknown.
-            if (ret == .unknown) {
+            if (ret.isAbstract()) {
                 if (meth.return_type) |*rt| {
                     if (namedTypeStr(rt, resolve)) |tname| {
                         const imrt_key = try alloc.dupe(u8, key);
@@ -694,7 +694,7 @@ fn extractFromMembers(
             if (v.type_) |*tr| {
                 // For user-defined field types, record the type name for cross-module
                 // chained access: inst.field.method() needs inst.field to be typed.
-                if (t == .unknown) {
+                if (t.isAbstract()) {
                     if (namedTypeStr(tr, resolve)) |tname| {
                         const ift_key = try alloc.dupe(u8, key);
                         const ift_val = try alloc.dupe(u8, tname);
@@ -797,7 +797,7 @@ fn simpleTypeFromRef(
         },
         .nilable => |inner| blk: {
             const inner_t = simpleTypeFromRef(inner, resolve, alloc);
-            if (inner_t == .unknown) break :blk .unknown;
+            if (inner_t.isAbstract()) break :blk inner_t;
             const boxed = alloc.create(Type) catch break :blk .unknown;
             boxed.* = inner_t;
             break :blk Type{ .optional = boxed };
@@ -1231,9 +1231,9 @@ const TypeChecker = struct {
                 if (narrow_then) |nr| {
                     const opt_type = tc.expr_types.get(nr.expr) orelse .unknown;
                     const inner = if (opt_type == .optional) opt_type.optional.* else .unknown;
-                    if (inner != .unknown) try tc.narrowed_types.put(nr.name, inner);
+                    if (!inner.isAbstract()) try tc.narrowed_types.put(nr.name, inner);
                     try tc.checkStmts(s.then_body);
-                    if (inner != .unknown) _ = tc.narrowed_types.remove(nr.name);
+                    if (!inner.isAbstract()) _ = tc.narrowed_types.remove(nr.name);
                 } else {
                     try tc.checkStmts(s.then_body);
                 }
@@ -1254,9 +1254,9 @@ const TypeChecker = struct {
                     if (narrow_else) |nr| {
                         const opt_type = tc.expr_types.get(nr.expr) orelse .unknown;
                         const inner = if (opt_type == .optional) opt_type.optional.* else .unknown;
-                        if (inner != .unknown) try tc.narrowed_types.put(nr.name, inner);
+                        if (!inner.isAbstract()) try tc.narrowed_types.put(nr.name, inner);
                         try tc.checkStmts(eb);
-                        if (inner != .unknown) _ = tc.narrowed_types.remove(nr.name);
+                        if (!inner.isAbstract()) _ = tc.narrowed_types.remove(nr.name);
                     } else {
                         try tc.checkStmts(eb);
                     }
@@ -1294,8 +1294,8 @@ const TypeChecker = struct {
                     };
                     const key_type = if (dt.generic.args.len > 0) tc.typeFromRef(&dt.generic.args[0]) else .unknown;
                     const val_type = if (dt.generic.args.len > 1) tc.typeFromRef(&dt.generic.args[1]) else .unknown;
-                    if (key_type != .unknown) try tc.loop_var_types.put(s.vars[0], key_type);
-                    if (val_type != .unknown) try tc.loop_var_types.put(s.vars[1], val_type);
+                    if (!key_type.isAbstract()) try tc.loop_var_types.put(s.vars[0], key_type);
+                    if (!val_type.isAbstract()) try tc.loop_var_types.put(s.vars[1], val_type);
                     // If value type is List(T), record element type so inner for-in loops
                     // on the value variable get the correct print format specifier.
                     if (dt.generic.args.len >= 2) {
@@ -1305,7 +1305,7 @@ const TypeChecker = struct {
                             val_tr.generic.args.len > 0)
                         {
                             const elem_t = tc.typeFromRef(&val_tr.generic.args[0]);
-                            if (elem_t != .unknown)
+                            if (!elem_t.isAbstract())
                                 try tc.list_elem_types.put(s.vars[1], elem_t);
                         }
                     }
@@ -1316,12 +1316,12 @@ const TypeChecker = struct {
                     _ = tc.list_elem_types.remove(s.vars[1]);
                 } else {
                     const elem = tc.inferForInElemType(s.iter);
-                    if (elem != .unknown) {
+                    if (!elem.isAbstract()) {
                         for (s.vars) |vname| try tc.loop_var_types.put(vname, elem);
                     }
                     if (s.where) |w| try tc.checkBoolExpr(w);
                     try tc.checkStmts(s.body);
-                    if (elem != .unknown) {
+                    if (!elem.isAbstract()) {
                         for (s.vars) |vname| _ = tc.loop_var_types.remove(vname);
                     }
                 }
@@ -1364,7 +1364,7 @@ const TypeChecker = struct {
                                                     const uv = vsym.decl.union_variant;
                                                     if (uv.payload) |*payload_ref| {
                                                         const pt = tc.typeFromRef(payload_ref);
-                                                        if (pt != .unknown)
+                                                        if (!pt.isAbstract())
                                                             try tc.narrowed_types.put(bname, pt);
                                                     }
                                                 }
@@ -1402,7 +1402,7 @@ const TypeChecker = struct {
                                                     if (actual_mod) |mod| {
                                                         _ = mod_alias; // the path-based alias is less reliable
                                                         const primitive = builtinType(payload_struct_name);
-                                                        if (primitive != .unknown) {
+                                                        if (!primitive.isAbstract()) {
                                                             try tc.narrowed_types.put(bname, primitive);
                                                         } else {
                                                             try tc.narrowed_types.put(bname, .{ .cross_module = .{
@@ -1429,7 +1429,7 @@ const TypeChecker = struct {
                                             defer tc.map_alloc.free(lookup_key);
                                             if (iface.variant_payload_types.get(lookup_key)) |payload_struct_name| {
                                                 const primitive = builtinType(payload_struct_name);
-                                                if (primitive != .unknown) {
+                                                if (!primitive.isAbstract()) {
                                                     try tc.narrowed_types.put(bname, primitive);
                                                 } else {
                                                     try tc.narrowed_types.put(bname, .{ .cross_module = .{
@@ -1544,7 +1544,7 @@ const TypeChecker = struct {
                                 try tc.emitError(s.span,
                                     "destructuring expects {} names but tuple has {} elements",
                                     .{ s.names.len, init_type.tuple.len });
-                        } else if (init_type != .unknown) {
+                        } else if (!init_type.isAbstract()) {
                             try tc.emitError(s.span,
                                 "destructuring requires a tuple, got '{s}'", .{init_type.name()});
                         }
@@ -1554,7 +1554,7 @@ const TypeChecker = struct {
                         // The RHS must be a named type (class/struct).  We don't
                         // validate individual field names here — Zig will catch
                         // unknown fields at compile time.
-                        if (init_type != .named and init_type != .unknown) {
+                        if (init_type != .named and !init_type.isAbstract()) {
                             try tc.emitError(s.span,
                                 "struct destructuring requires a class or struct, got '{s}'",
                                 .{init_type.name()});
@@ -1567,7 +1567,7 @@ const TypeChecker = struct {
                                 for (s.names) |fname| {
                                     if (scope.lookupLocal(fname)) |fsym| {
                                         const ftype = tc.symbolType(fsym);
-                                        if (ftype != .unknown)
+                                        if (!ftype.isAbstract())
                                             try tc.loop_var_types.put(fname, ftype);
                                     }
                                 }
@@ -1586,7 +1586,7 @@ const TypeChecker = struct {
             if (!Type.isAssignable(actual, tc.return_type))
                 try tc.emitMismatch(spanOf(v), actual, tc.return_type);
         } else {
-            if (tc.return_type != .void_ and tc.return_type != .unknown)
+            if (tc.return_type != .void_ and !tc.return_type.isAbstract())
                 try tc.emitError(s.span, "return without value in non-void method", .{});
         }
     }
@@ -1599,7 +1599,7 @@ const TypeChecker = struct {
                 try tc.emitMismatch(spanOf(s.value), rhs, lhs);
         } else {
             // Compound ops (+= -= etc.) require numeric LHS.
-            if (!lhs.isNumeric() and lhs != .unknown)
+            if (!lhs.isNumeric() and !lhs.isAbstract())
                 try tc.emitError(s.span, "compound assignment requires numeric type, got '{s}'", .{lhs.name()});
         }
     }
@@ -1608,7 +1608,7 @@ const TypeChecker = struct {
 
     fn checkBoolExpr(tc: TypeChecker, e: *const Ast.Expr) anyerror!void {
         const t = try tc.inferExpr(e);
-        if (t != .bool and t != .unknown)
+        if (t != .bool and !t.isAbstract())
             try tc.emitMismatch(spanOf(e), t, .bool);
     }
 
@@ -1625,7 +1625,7 @@ const TypeChecker = struct {
             if (tc_node.variant_name == null) {
                 const subj = try tc.inferExpr(tc_node.expr);
                 if (subj == .optional) return subj.optional.*;
-                if (subj != .unknown)
+                if (!subj.isAbstract())
                     try tc.emitError(spanOf(cond),
                         "`if x is {s} as n` requires x to be {s}? (got '{s}')",
                         .{ tc_node.type_name, tc_node.type_name, subj.name() });
@@ -1636,7 +1636,7 @@ const TypeChecker = struct {
             // Option B: `if x as n` — condition itself must be optional.
             const t = try tc.inferExpr(cond);
             if (t == .optional) return t.optional.*;
-            if (t != .unknown)
+            if (!t.isAbstract())
                 try tc.emitError(spanOf(cond),
                     "`if x as n` requires an optional type, got '{s}'",
                     .{t.name()});
@@ -1655,7 +1655,7 @@ const TypeChecker = struct {
                             const uv = vsym.decl.union_variant;
                             if (uv.payload) |*payload_ref| {
                                 const pt = tc.typeFromRef(payload_ref);
-                                if (pt != .unknown) return pt;
+                                if (!pt.isAbstract()) return pt;
                             }
                         }
                     }
@@ -1675,7 +1675,7 @@ const TypeChecker = struct {
                         if (entry.value_ptr.variant_payload_types.get(lookup_key)) |payload_struct_name| {
                             if (entry.value_ptr.types.contains(type_name)) {
                                 const primitive = builtinType(payload_struct_name);
-                                if (primitive != .unknown) return primitive;
+                                if (!primitive.isAbstract()) return primitive;
                                 return Type{ .cross_module = .{
                                     .module    = entry.key_ptr.*,
                                     .type_name = payload_struct_name,
@@ -1696,7 +1696,7 @@ const TypeChecker = struct {
                     defer tc.map_alloc.free(lookup_key);
                     if (iface.variant_payload_types.get(lookup_key)) |payload_struct_name| {
                         const primitive = builtinType(payload_struct_name);
-                        if (primitive != .unknown) return primitive;
+                        if (!primitive.isAbstract()) return primitive;
                         return Type{ .cross_module = .{
                             .module    = cm.module,
                             .type_name = payload_struct_name,
@@ -1710,7 +1710,7 @@ const TypeChecker = struct {
 
     fn inferNumericExpr(tc: TypeChecker, e: *const Ast.Expr) anyerror!Type {
         const t = try tc.inferExpr(e);
-        if (!t.isNumeric() and t != .unknown)
+        if (!t.isNumeric() and !t.isAbstract())
             try tc.emitError(spanOf(e), "expected numeric type, got '{s}'", .{t.name()});
         return t;
     }
@@ -1817,7 +1817,7 @@ const TypeChecker = struct {
         // points back at this exact ident.
         const sym = tc.resolve.exprs.get(e) orelse return .{ .unresolved = e.span };
         const t = tc.symbolType(sym);
-        if (t != .unknown) return t;
+        if (!t.isAbstract()) return t;
         // Check if this ident is a loop variable with a known element type.
         // If neither the symbol table nor loop_var_types know the type,
         // it's `.unresolved` — the TC ought to have known but didn't.
@@ -1925,8 +1925,8 @@ const TypeChecker = struct {
                     const key = try std.fmt.allocPrint(tc.map_alloc,
                         "{s}.{s}", .{ cm.type_name, e.member });
                     defer tc.map_alloc.free(key);
-                    if (iface.fields.get(key))  |t| if (t != .unknown) return t;
-                    if (iface.methods.get(key)) |t| if (t != .unknown) return t;
+                    if (iface.fields.get(key))  |t| if (!t.isAbstract()) return t;
+                    if (iface.methods.get(key)) |t| if (!t.isAbstract()) return t;
                     // For user-defined field types: return a typed cross_module value
                     // so chained access (inst.field.method()) stays typed.
                     if (iface.instance_field_types.get(key)) |tname|
@@ -2022,7 +2022,7 @@ const TypeChecker = struct {
                     {
                         const elem_tr = &dt.generic.args[0];
                         const t = tc.typeFromRef(elem_tr);
-                        if (t != .unknown) return t;
+                        if (!t.isAbstract()) return t;
                     }
                 }
             }
@@ -2543,8 +2543,8 @@ const TypeChecker = struct {
                             const key = try std.fmt.allocPrint(tc.map_alloc,
                                 "{s}.{s}", .{ cm.type_name, mem.member });
                             defer tc.map_alloc.free(key);
-                            if (iface.methods.get(key)) |ret| if (ret != .unknown) return ret;
-                            if (iface.fields.get(key))  |ret| if (ret != .unknown) return ret;
+                            if (iface.methods.get(key)) |ret| if (!ret.isAbstract()) return ret;
+                            if (iface.fields.get(key))  |ret| if (!ret.isAbstract()) return ret;
                             // For user-defined return types: return a typed cross_module value.
                             if (iface.instance_method_return_types.get(key)) |tname|
                                 return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
@@ -2581,7 +2581,7 @@ const TypeChecker = struct {
                                 const key = try std.fmt.allocPrint(tc.map_alloc,
                                     "{s}.{s}", .{ class_sym.name, mem.member });
                                 defer tc.map_alloc.free(key);
-                                if (iface.methods.get(key)) |ret| if (ret != .unknown) return ret;
+                                if (iface.methods.get(key)) |ret| if (!ret.isAbstract()) return ret;
                                 if (iface.instance_method_return_types.get(key)) |tname|
                                     return Type{ .cross_module = .{ .module = mod_alias, .type_name = tname } };
                             }
@@ -2823,9 +2823,9 @@ const TypeChecker = struct {
 
             // Logical: operands must be bool.
             .and_, .or_ => blk: {
-                if (lt != .bool and lt != .unknown)
+                if (lt != .bool and !lt.isAbstract())
                     try tc.emitMismatch(spanOf(e.left), lt, .bool);
-                if (rt != .bool and rt != .unknown)
+                if (rt != .bool and !rt.isAbstract())
                     try tc.emitMismatch(spanOf(e.right), rt, .bool);
                 break :blk .bool;
             },
@@ -2833,7 +2833,7 @@ const TypeChecker = struct {
             // String repetition: str * int → string.
             .mul => blk: {
                 if (lt == .string and (rt.isIntFamily() or rt.isUintFamily())) break :blk .string;
-                if (lt == .unknown or rt == .unknown) break :blk .unknown;
+                if (lt.isAbstract() or rt.isAbstract()) break :blk .unknown;
                 if (!lt.isNumeric())
                     try tc.emitError(spanOf(e.left), "arithmetic requires numeric type, got '{s}'", .{lt.name()});
                 if (!rt.isNumeric())
@@ -2847,7 +2847,7 @@ const TypeChecker = struct {
             .add, .sub, .div, .int_div, .mod, .pow => blk: {
                 // String + String → string concatenation.
                 if (e.op == .add and lt == .string) break :blk .string;
-                if (lt == .unknown or rt == .unknown) break :blk .unknown;
+                if (lt.isAbstract() or rt.isAbstract()) break :blk .unknown;
                 if (!lt.isNumeric())
                     try tc.emitError(spanOf(e.left), "arithmetic requires numeric type, got '{s}'", .{lt.name()});
                 if (!rt.isNumeric())
@@ -2859,9 +2859,9 @@ const TypeChecker = struct {
 
             // Bitwise: operands must be integer family.
             .bit_and, .bit_or, .bit_xor, .shl, .shr => blk: {
-                if (!lt.isIntFamily() and !lt.isUintFamily() and lt != .unknown)
+                if (!lt.isIntFamily() and !lt.isUintFamily() and !lt.isAbstract())
                     try tc.emitError(spanOf(e.left), "bitwise operator requires integer type, got '{s}'", .{lt.name()});
-                if (!rt.isIntFamily() and !rt.isUintFamily() and rt != .unknown)
+                if (!rt.isIntFamily() and !rt.isUintFamily() and !rt.isAbstract())
                     try tc.emitError(spanOf(e.right), "bitwise operator requires integer type, got '{s}'", .{rt.name()});
                 break :blk lt; // preserve the operand type
             },
@@ -2875,17 +2875,17 @@ const TypeChecker = struct {
         const ot = try tc.inferExpr(e.operand);
         return switch (e.op) {
             .neg => blk: {
-                if (!ot.isNumeric() and ot != .unknown)
+                if (!ot.isNumeric() and !ot.isAbstract())
                     try tc.emitError(spanOf(e.operand), "unary '-' requires numeric type, got '{s}'", .{ot.name()});
                 break :blk if (ot.isNumeric()) ot else .unknown;
             },
             .not_ => blk: {
-                if (ot != .bool and ot != .unknown)
+                if (ot != .bool and !ot.isAbstract())
                     try tc.emitMismatch(spanOf(e.operand), ot, .bool);
                 break :blk .bool;
             },
             .bit_not => blk: {
-                if (!ot.isIntFamily() and !ot.isUintFamily() and ot != .unknown)
+                if (!ot.isIntFamily() and !ot.isUintFamily() and !ot.isAbstract())
                     try tc.emitError(spanOf(e.operand), "bitwise 'not' requires integer type, got '{s}'", .{ot.name()});
                 break :blk ot; // preserve the operand type
             },
@@ -2899,18 +2899,18 @@ const TypeChecker = struct {
         // Unwrap: `opt orelse fallback` has the inner (non-optional) type.
         const inner = if (et == .optional) et.optional.* else et;
         // Fallback must be assignable to the inner type.
-        if (inner != .unknown and ft != .unknown and !Type.isAssignable(ft, inner))
+        if (!inner.isAbstract() and !ft.isAbstract() and !Type.isAssignable(ft, inner))
             try tc.emitMismatch(spanOf(e.fallback), ft, inner);
         // When the optional's inner type is unknown (e.g., generic type param),
         // use the fallback's type so print/assignment gets a concrete type hint.
-        return if (inner != .unknown) inner else ft;
+        return if (!inner.isAbstract()) inner else ft;
     }
 
     fn inferCatch(tc: TypeChecker, e: *Ast.ExprCatch) anyerror!Type {
         const et = try tc.inferExpr(e.expr);
         const ft = try tc.inferExpr(e.fallback);
         // The fallback should be assignable to the non-error form of expr's type.
-        if (et != .unknown and ft != .unknown and !Type.isAssignable(ft, et))
+        if (!et.isAbstract() and !ft.isAbstract() and !Type.isAssignable(ft, et))
             try tc.emitMismatch(spanOf(e.fallback), ft, et);
         return et;
     }
@@ -2920,9 +2920,9 @@ const TypeChecker = struct {
         const tt = try tc.inferExpr(e.then_expr);
         const et = try tc.inferExpr(e.else_expr);
         // Both branches should have the same type.
-        if (tt != .unknown and et != .unknown and !Type.isAssignable(et, tt))
+        if (!tt.isAbstract() and !et.isAbstract() and !Type.isAssignable(et, tt))
             try tc.emitMismatch(spanOf(e.else_expr), et, tt);
-        return if (tt != .unknown) tt else et;
+        return if (!tt.isAbstract()) tt else et;
     }
 
     fn inferLambda(tc: TypeChecker, e: *Ast.ExprLambda) anyerror!Type {
@@ -2954,7 +2954,7 @@ const TypeChecker = struct {
                     // Prefer the explicitly declared type.
                     if (decl.type_) |*t| {
                         const declared = tc.typeFromRef(t);
-                        if (declared != .unknown) return declared;
+                        if (!declared.isAbstract()) return declared;
                     }
                     // Fall back to the type inferred from the initialiser, if any.
                     if (decl.init) |init| return tc.expr_types.get(init) orelse .unknown;
@@ -2993,7 +2993,7 @@ const TypeChecker = struct {
                 break :blk switch (resolved) {
                     .builtin => blk2: {
                         const t = builtinType(n.name);
-                        if (t != .unknown) break :blk2 t;
+                        if (!t.isAbstract()) break :blk2 t;
                         // Cross-module TypeRef: "ModAlias.TypeName" — look up in imported_modules.
                         if (std.mem.indexOfScalar(u8, n.name, '.')) |dot| {
                             const mod       = n.name[0..dot];
