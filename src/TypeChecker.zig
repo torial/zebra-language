@@ -1783,12 +1783,76 @@ const TypeChecker = struct {
             .catch_         => |e| try tc.inferCatch(e),
             .if_expr        => |e| try tc.inferIfExpr(e),
             .lambda         => |e| try tc.inferLambda(e),
-            // BUG-099: literal element types are filled in by context (the
-            // expectation site's declared collection type). BUG-106 follow-up
-            // will check element-type homogeneity here.
-            .list_lit       => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .context_dependent; },
-            .dict_lit       => |e| blk: { for (e.entries) |en| { _ = try tc.inferExpr(en.key); _ = try tc.inferExpr(en.value); } break :blk .context_dependent; },
-            .array_lit      => |e| blk: { for (e.elems) |el| _ = try tc.inferExpr(el);  break :blk .context_dependent; },
+            // BUG-099 + BUG-106: literal element types come from context, but
+            // we check element-type homogeneity here so heterogeneous literals
+            // (e.g. [1, "two"]) error precisely at the offending element span
+            // rather than silently typechecking and miscompiling downstream.
+            //
+            // Homogeneity rule: pick the first non-abstract element's type as
+            // the "anchor"; every subsequent non-abstract element must be
+            // isAssignable to (or from) the anchor.  Numeric literals like
+            // [1, 2.0] pass because int/float are mutually isAssignable.
+            .list_lit       => |e| blk: {
+                var anchor: ?Type = null;
+                for (e.elems) |el| {
+                    const t = try tc.inferExpr(el);
+                    if (t.isAbstract()) continue;
+                    if (anchor) |a| {
+                        if (!Type.isAssignable(t, a) and !Type.isAssignable(a, t)) {
+                            try tc.emitError(spanOf(el),
+                                "list literal has heterogeneous element types: '{s}' is not compatible with '{s}'",
+                                .{ t.name(), a.name() });
+                            break;
+                        }
+                    } else anchor = t;
+                }
+                break :blk .context_dependent;
+            },
+            .array_lit      => |e| blk: {
+                var anchor: ?Type = null;
+                for (e.elems) |el| {
+                    const t = try tc.inferExpr(el);
+                    if (t.isAbstract()) continue;
+                    if (anchor) |a| {
+                        if (!Type.isAssignable(t, a) and !Type.isAssignable(a, t)) {
+                            try tc.emitError(spanOf(el),
+                                "array literal has heterogeneous element types: '{s}' is not compatible with '{s}'",
+                                .{ t.name(), a.name() });
+                            break;
+                        }
+                    } else anchor = t;
+                }
+                break :blk .context_dependent;
+            },
+            .dict_lit       => |e| blk: {
+                var key_anchor: ?Type = null;
+                var val_anchor: ?Type = null;
+                for (e.entries) |en| {
+                    const kt = try tc.inferExpr(en.key);
+                    const vt = try tc.inferExpr(en.value);
+                    if (!kt.isAbstract()) {
+                        if (key_anchor) |a| {
+                            if (!Type.isAssignable(kt, a) and !Type.isAssignable(a, kt)) {
+                                try tc.emitError(spanOf(en.key),
+                                    "dict literal has heterogeneous key types: '{s}' is not compatible with '{s}'",
+                                    .{ kt.name(), a.name() });
+                                break;
+                            }
+                        } else key_anchor = kt;
+                    }
+                    if (!vt.isAbstract()) {
+                        if (val_anchor) |a| {
+                            if (!Type.isAssignable(vt, a) and !Type.isAssignable(a, vt)) {
+                                try tc.emitError(spanOf(en.value),
+                                    "dict literal has heterogeneous value types: '{s}' is not compatible with '{s}'",
+                                    .{ vt.name(), a.name() });
+                                break;
+                            }
+                        } else val_anchor = vt;
+                    }
+                }
+                break :blk .context_dependent;
+            },
             .old            => |e| try tc.inferExpr(e.expr),
             .result_        => tc.return_type, // `result` has the current function's return type
             // try expr — may be error propagation OR optional-unwrap (`opt?.x`).
@@ -1829,10 +1893,13 @@ const TypeChecker = struct {
         const sym = tc.resolve.exprs.get(e) orelse return .{ .unresolved = e.span };
         const t = tc.symbolType(sym);
         if (!t.isAbstract()) return t;
-        // Check if this ident is a loop variable with a known element type.
-        // If neither the symbol table nor loop_var_types know the type,
-        // it's `.unresolved` — the TC ought to have known but didn't.
-        return tc.loop_var_types.get(e.name) orelse Type{ .unresolved = e.span };
+        // Loop-variable / abstract-symbol fallback: the symbol exists but
+        // symbolType returned an abstract type (typically because the iter's
+        // element type was abstract — a known TC limitation for cross-module
+        // fields and unmodeled stdlib return shapes, not a user error).
+        // Return .unknown (opaque) so the alarm bell only fires on actual
+        // resolver failures, not on TC inference gaps.
+        return tc.loop_var_types.get(e.name) orelse .unknown;
     }
 
     fn inferMember(tc: TypeChecker, e: *Ast.ExprMember) anyerror!Type {
@@ -1853,9 +1920,13 @@ const TypeChecker = struct {
                         if (iface.methods.get(key)) |t| return t;
                     }
                 }
-                // BUG-099: cross-module member miss is a silent TC failure.
-                // Mark .unresolved so an expectation site can blame e.span.
-                return .{ .unresolved = e.span };
+                // BUG-099 walked back: cross-module member miss is often
+                // a TC limitation (incomplete imported_modules iface tables
+                // for variant payload structs), not a user error. Stay
+                // .unknown so we don't fire the alarm bell on legitimate
+                // selfhost patterns. Real cross-module typos fall through
+                // to other diagnostics (resolver-level checks).
+                return .unknown;
             };
         }
         const obj_type = try tc.inferExpr(e.object);
@@ -1981,9 +2052,11 @@ const TypeChecker = struct {
                 }
             }
         }
-        // BUG-099: inferMember exhausted all branches without finding the member.
-        // Silent TC failure → .unresolved with span pointing at the access site.
-        return .{ .unresolved = e.span };
+        // BUG-099 walked back: inferMember exhausting branches often means
+        // the obj_type was abstract (cross-module variant payload, generic
+        // type param, or genuinely-opaque type) — TC limitation, not user
+        // error. Stay .unknown to avoid false alarm bells.
+        return .unknown;
     }
 
     /// Infer the element type that loop variables will have when iterating `iter`.

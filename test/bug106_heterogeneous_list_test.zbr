@@ -1,0 +1,13 @@
+# bug106_heterogeneous_list_test.zbr — BUG-106 verification.
+#
+# Before: [1, "two", 3] silently typechecked (RHS .unknown).
+# After:  TC walks elements, picks first non-abstract as anchor, errors
+#         at the offending element span if subsequent elements aren't
+#         mutually isAssignable.
+#
+# Numeric mixes like [1, 2.0] should still pass because int/float are
+# mutually isAssignable in Zebra (the "untyped numeric literal" principle).
+
+def main()
+    var xs = [1, "two", 3]
+    print xs

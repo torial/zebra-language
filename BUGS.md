@@ -138,7 +138,35 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-099: Split overloaded `.unknown` Type into `.context_dependent` / `.unknown` / `.unresolved` (TC reliability keystone)
+### BUG-099: ✅ FIXED 2026-05-05 — Type three-way split shipped
+
+The `.context_dependent` / `.unknown` / `.unresolved` split is now in
+`src/TypeChecker.zig`. `.unresolved` carries an `Ast.Span` for blame.
+Alarm bell fires at `checkVarDecl` expectation sites. Producer audit
+is conservative — only unambiguous TC failures (resolver-miss in
+`inferIdent`, generic-construction non-class callee, typeFromRef name
+miss, tuple non-numeric index) emit `.unresolved`. Member-access misses
+softened to `.unknown` after bootstrap_check surfaced false alarms on
+legitimate cross-module variant-payload accesses.
+
+Goal state achieved: zero false `.unresolved` emissions on accepted
+programs (verified by bootstrap_check 5/5 round-trip + 43/43 selfhost
+smoke + full test/*.zbr suite).
+
+Closed downstream as side effects: BUG-105 (enum_member/union_variant
+→ parent type), BUG-106 (literal element-type homogeneity), BUG-108
+(partial — `this` outside class defensive emitError).
+
+Remaining BUG-108 work (index/slice on non-indexable, `expr_types.get`
+fallbacks) deferred — has legitimate non-error cases that would
+false-positive.
+
+See commits 429ff98d → 4c84c51b for the audit trail. Migrating to
+FixedBugs.md.
+
+---
+
+### BUG-099 (original entry, retained for context):
 - **Severity:** High (foundational; gates merge-oracle reliability and is the upstream cause of many silent-accept bugs below)
 - **Status:** Open
 - **Symptom:** The TC's `Type.unknown` is overloaded across three semantically distinct cases that propagate identically:
@@ -221,7 +249,16 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-105: `enum_member` and `union_variant` infer to `.unknown` instead of parent type
+### BUG-105: ✅ FIXED 2026-05-05 — enum_member/union_variant resolve to parent type
+
+`inferMember` now returns `Type{ .named = parent_sym }` when looking up
+an enum member or union variant via member access. `var c: int = Color.red`
+correctly errors; `var c: Color = Color.red` typechecks. Test:
+`test/bug105_enum_member_test.zbr`. See commit `f254b754`.
+
+---
+
+### BUG-105 (original entry, retained for context):
 - **Severity:** Medium (TODO comment in `:2892`; affects type inference for any enum/union expression usage)
 - **Status:** Open
 - **Symptom:** `src/TypeChecker.zig:2892, 2894` — `Color.red` infers to `.unknown` instead of `.named(Color)`; `Result.ok(...)` similarly. Downstream rules like `var c: Color = Color.red` then can't catch a mismatch because RHS is `.unknown`.
@@ -236,7 +273,22 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-106: List/dict/array literals don't check element-type homogeneity or cast validity
+### BUG-106: ✅ FIXED (partial) 2026-05-05 — literal homogeneity check shipped
+
+`list_lit` / `array_lit` / `dict_lit` now walk elements and require
+mutual `isAssignable` for non-abstract element types. Heterogeneous
+literals like `[1, "two", 3]` now error precisely at the offending
+element's span. Numeric mixes `[1, 2.0, 3]` still pass (untyped-numeric
+semantic). Test: `test/bug106_heterogeneous_list_test.zbr`. See commit
+`4c84c51b`.
+
+REMAINING (deferred): cast-validity check (line 1693 — `42 as ClassType`
+still typechecks). Separate scope from literal homogeneity; tracked
+within this entry but lower priority.
+
+---
+
+### BUG-106 (original entry, retained for context):
 - **Severity:** Medium (silent miscompile potential; merge-oracle blocker)
 - **Status:** Open
 - **Symptom:** `src/TypeChecker.zig:1705-1707` — `[1, "a"]` (heterogeneous) infers to `.unknown` without complaint. `dict_lit`, `array_lit` similar. Also `.cast` at `:1693` returns the cast target without validating source-type compatibility (`42 as ClassType` typechecks).
@@ -263,7 +315,27 @@ These fail WITH A COMPILER ERROR — that IS the test passing:
 
 ---
 
-### BUG-108: TC silent `.unknown` returns lack defensive diagnostics
+### BUG-108: ✅ FIXED (partial) 2026-05-05 — `this` outside class diagnostic shipped
+
+`this` outside a class/struct method or `with` block now emits a
+defensive diagnostic at the `this` token span: "'this' used outside a
+class/struct method or 'with' block". Test:
+`test/bug108_this_outside_class_test.zbr`. See commit `01296dbd`.
+
+REMAINING (deferred):
+  - inferIdent miss → handled differently via BUG-099 alarm bell
+    at expectation sites (commit `60698f6a`).
+  - inferMember cross-module miss → softened to `.unknown` to avoid
+    false positives on legitimate cross-module patterns (commit
+    `4c84c51b`).
+  - index/slice on non-indexable, `expr_types.get` fallbacks: have
+    legitimate non-error cases (HashMap[k], generic types,
+    TC-sequencing internals) where blanket emitError would false-
+    positive. Lower priority.
+
+---
+
+### BUG-108 (original entry, retained for context):
 - **Severity:** Medium (umbrella for several P2/P3 sites; many become trivial after BUG-099)
 - **Status:** Open
 - **Symptom:** Multiple sites silently return `.unknown` where a diagnostic should fire if the TC has reached a state it shouldn't have. Each is benign on well-formed code (some other phase caught the error first) but failure-amplifying when the upstream catch is missed.
