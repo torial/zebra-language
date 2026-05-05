@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateEntryPoint, generateDep, generateDepWith
-use typechecker exposing ModuleTypes, populateModuleTypes
+use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -112,6 +112,15 @@ class MultiCompiler
 
                 # Step 4: Build AST from merged PModule
                 const module = ASTBuilder.build(merged_pm, zbr_path)?
+
+                # Step 4.5: Selfhost type-check pass (primitive mismatch detection)
+                var tc_mt: ModuleTypes = buildModuleTypes(module)
+                var tc_ctx: InferCtx = InferCtx(tc_mt, "")
+                tc_ctx.withDepTypes(dep_types)
+                checkModule(module, zbr_path, tc_ctx)
+                if tc_ctx.hasErrors()
+                    sys.errln(tc_ctx.errorMessages())
+                    sys.exit(1)
 
                 # Step 5: Generate Zig
                 var zig_src: str = ""

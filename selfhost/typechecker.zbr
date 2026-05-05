@@ -476,6 +476,22 @@ def buildModuleTypes(m: Module): ModuleTypes
     populateModuleTypes(mt, m)
     return mt
 
+# ── Diagnostic ───────────────────────────────────────────────────────────────
+# Mirrors the Binder.Diagnostic shape used by the bootstrap backend.
+# Format emitted by errorMessages(): `file:LINE:COL: error: message`
+
+struct Diagnostic
+    var file: str
+    var line: int
+    var col: int
+    var message: str
+
+    cue init(file: str, line: int, col: int, message: str)
+        .file = file
+        .line = line
+        .col = col
+        .message = message
+
 # ── Expression-level inference ───────────────────────────────────────────────
 # InferCtx holds the module's type table and the current class (for `.x`).
 # A scope map is intentionally absent in Phase 16b — local variable tracking
@@ -487,6 +503,7 @@ class InferCtx
     var current_class: str
     var scope: HashMap(str, Type_)
     var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
+    var errors: List(Diagnostic)
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -494,6 +511,7 @@ class InferCtx
         .current_class = current_class
         scope = HashMap()
         .current_return_type = nil
+        errors = List(Diagnostic)()
 
     def withReturnType(rt: Type_?)
         .current_return_type = rt
@@ -504,6 +522,21 @@ class InferCtx
     # standalone callers (tests) don't need to build a dep table.
     def withDepTypes(dt: ModuleTypes)
         .dep_types = dt
+
+    def addErr(file: str, line: int, col: int, message: str)
+        errors.add(Diagnostic(file, line, col, message))
+
+    def hasErrors(): bool
+        return errors.len > 0
+
+    def errorMessages(): str
+        var sb: StringBuilder = StringBuilder()
+        var i: int = 0
+        while i < errors.len
+            var d: Diagnostic = errors.at(i)
+            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": error: " + d.message + "\n")
+            i = i + 1
+        return sb.build()
 
     # True if a named union is known in this module OR in any dep.
     def hasUnion(name: str): bool
@@ -1243,6 +1276,114 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.contract as sc
             for e in sc.exprs
                 walkExpr(e, ctx)
+
+
+# ── Type-checking pass ───────────────────────────────────────────────────────
+# Lightweight first-pass checker: catches primitive type mismatches in
+# annotated var decls. Complements the bootstrap TC (src/TypeChecker.zig) for
+# the selfhost binary path. Diagnostics accumulated in ctx.errors.
+#
+# Scope: only concrete primitive mismatches (int/bool/char/float/str).
+# Named/generic types are skipped — too many false-positive risks without a
+# full type registry that includes enums and cross-module generics.
+
+def isPrimitive(t: Type_): bool
+    branch t
+        on Type_.int_
+            return true
+        on Type_.uint_
+            return true
+        on Type_.float_
+            return true
+        on Type_.bool_
+            return true
+        on Type_.char_
+            return true
+        on Type_.string_
+            return true
+        else
+            return false
+
+def typesCompatible(declared: Type_, inferred: Type_): bool
+    if not isPrimitive(declared)
+        return true
+    if not isPrimitive(inferred)
+        return true
+    return typeTag(declared) == typeTag(inferred)
+
+def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
+    if dv.type_ == nil
+        return
+    var declared: Type_ = typeFromRef(dv.type_ to!)
+    if not isPrimitive(declared)
+        return
+    if dv.init_expr == nil
+        return
+    var inferred: Type_ = inferExpr(dv.init_expr to!, ctx)
+    if not isPrimitive(inferred)
+        return
+    if not typesCompatible(declared, inferred)
+        ctx.addErr(file, dv.span.line, dv.span.col, "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
+
+def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
+    for s in stmts
+        branch s
+            on Stmt.var_ as dv
+                checkVarDecl(dv, file, ctx)
+                # Bind the local so later stmts in the same block can infer it.
+                var bt: Type_ = Type_.unknown_
+                if dv.type_ != nil
+                    bt = typeFromRef(dv.type_ to!)
+                else
+                    if dv.init_expr != nil
+                        bt = inferExpr(dv.init_expr to!, ctx)
+                ctx.bind(dv.name, bt)
+            on Stmt.if_ as si
+                checkStmts(si.then_stmts, file, ctx)
+                for ei in si.else_ifs
+                    checkStmts(ei.stmts, file, ctx)
+                if si.else_stmts != nil
+                    checkStmts(si.else_stmts to!, file, ctx)
+            on Stmt.while_ as sw
+                checkStmts(sw.stmts, file, ctx)
+            on Stmt.for_in as sfi
+                checkStmts(sfi.stmts, file, ctx)
+            on Stmt.try_catch as stc
+                checkStmts(stc.stmts, file, ctx)
+                for cc in stc.clauses
+                    checkStmts(cc.stmts, file, ctx)
+            else
+                pass
+
+def checkDecl(decl: Decl, file: str, ctx: InferCtx)
+    branch decl
+        on Decl.method as dm
+            if dm.stmts != nil
+                var saved_class: str = ctx.current_class
+                if dm.return_type != nil
+                    ctx.withReturnType(typeFromRef(dm.return_type to!))
+                for p in dm.params
+                    var pt: Type_ = Type_.unknown_
+                    if p.type_ != nil
+                        pt = typeFromRef(p.type_ to!)
+                    ctx.bind(p.name, pt)
+                checkStmts(dm.stmts to!, file, ctx)
+                ctx.current_class = saved_class
+        on Decl.class_ as dc
+            var saved_class: str = ctx.current_class
+            ctx.current_class = dc.name
+            for m in dc.members
+                checkDecl(m, file, ctx)
+            ctx.current_class = saved_class
+        on Decl.var_ as dv
+            checkVarDecl(dv, file, ctx)
+        else
+            pass
+
+def checkModule(m: Module, file: str, ctx: InferCtx)
+    for decl in m.decls
+        checkDecl(decl, file, ctx)
+
 
 class Main
     static def main()
