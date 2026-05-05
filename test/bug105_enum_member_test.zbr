@@ -1,0 +1,20 @@
+# bug105_enum_member_test.zbr — BUG-105 verification.
+#
+# Before BUG-099 + BUG-105 fixes:
+#   var c: int = Color.red    # silently typechecked (Color.red was .unknown)
+#
+# After fixes:
+#   - Color.red infers to .named(Color) (parent enum type)
+#   - var c: int = Color.red errors at the expectation site
+#   - var c: Color = Color.red typechecks correctly
+#
+# This file expects a TC diagnostic on the bad assignment.
+
+enum Color
+    red
+    green
+    blue
+
+def main()
+    var c: int = Color.red
+    print c

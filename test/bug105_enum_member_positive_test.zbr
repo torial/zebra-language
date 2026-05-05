@@ -1,0 +1,17 @@
+# bug105_enum_member_positive_test.zbr — BUG-105 positive path.
+# Verifies that correct enum-typed assignment passes after the fix.
+
+enum Color
+    red
+    green
+    blue
+
+def main()
+    var c: Color = Color.red
+    branch c
+        on Color.red
+            print "red"
+        on Color.green
+            print "green"
+        on Color.blue
+            print "blue"

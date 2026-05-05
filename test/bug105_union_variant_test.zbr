@@ -1,0 +1,14 @@
+# bug105_union_variant_test.zbr — verify union variant member access
+# also infers to parent type after BUG-105 fix.
+#
+# Note: this tests the bare-variant case. Variants WITH payloads are
+# typically constructed via call form (Wrap.unit() / Wrap.item(payload))
+# which goes through inferCall, not inferMember.
+
+union Wrap
+    unit
+    item: int
+
+def main()
+    var w: int = Wrap.unit
+    print w

@@ -1919,6 +1919,14 @@ const TypeChecker = struct {
             const sym = resolved_obj_type.named;
             if (sym.own_scope) |scope| {
                 if (scope.lookupLocal(e.member)) |member_sym| {
+                    // BUG-105: enum members and union variants take the
+                    // PARENT enum/union as their value type, not symbolType's
+                    // generic .unknown.  This lets `var c: Color = Color.red`
+                    // typecheck and `var c: int = Color.red` error correctly.
+                    if (member_sym.kind == .enum_member and sym.kind == .enum_)
+                        return Type{ .named = sym };
+                    if (member_sym.kind == .union_variant and sym.kind == .union_)
+                        return Type{ .named = sym };
                     return tc.symbolType(member_sym);
                 }
             }
