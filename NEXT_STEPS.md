@@ -73,22 +73,26 @@ All four phases shipped 2026-04-24 to 2026-04-27. Bootstrap 5/5; 40/40 smoke.
 Both backends parity. Design doc `wiki/pages/concepts/concept_zebra-0.12-contracts.md`
 refreshed 2026-05-04 to reflect as-shipped state. Closed BUG-087 as a side effect.
 
-### 19. Error recovery — current state and remaining gaps
+### 19. Error recovery — current state and remaining gaps ✅ PHASE 1 COMPLETE
 **Bootstrap backend largely done** (verified 2026-04-26 via multi-error fixture):
 Bind, Resolve, and TypeCheck collect-and-continue via `Diagnostic` lists;
 main.zig prints all of them before halting. 5-error fixture reports all 5.
 Tokenizer positioned diagnostics + CRLF hint, AstBuilder TODO panics — both
 shipped 2026-04-27.
 
-**Remaining gap:**
-- **Selfhost typechecker has no diagnostic infrastructure** (audited 2026-04-27):
-  selfhost/typechecker.zbr is inference-only, with no `errors` list, no `addErr` helper,
-  and no integration path through selfhost main for printing.  As a result, `var x: T = "s"`
-  type mismatches and `var a: NotAType = 1` unresolved-type-in-type-position diagnostics
-  exist only in the bootstrap backend.  Selfhost still reports undefined-name errors via
-  selfhost/resolver.zbr, so the parity gap is 3-of-5 on a 5-error fixture.  Closing it is
-  a real piece of work (Diagnostic type, error list threaded through every checkStmt arm,
-  wiring to main.zbr's print loop), not a small parity tweak.
+**Selfhost TC diagnostics shipped 2026-05-05:**
+- `Diagnostic{file,line,col,message}` struct + `InferCtx.errors` list + `addErr/hasErrors/errorMessages`
+- `checkVarDecl/checkStmts/checkDecl/checkModule` walk; catches primitive type mismatches
+- `selfhost/main.zbr` step 4.5: TC check runs before codegen; exits on first error set
+- `test/selfhost_compat/run_compat.sh` 2/2 PASS; bootstrap 5/5
+- Scope: concrete primitive mismatches only (int/bool/char/float/str). Named/enum types
+  deferred — enum not tracked in ModuleTypes; would false-positive without full registry.
+
+**Remaining gaps:**
+- Named type checking (enum, struct, class) — needs enum tracking in ModuleTypes first
+- Unresolved type in type position — same prerequisite
+- Multi-error fixture parity: selfhost still only catches resolver + TC primitive errors;
+  bootstrap catches 5 error classes; delta closes further as BUG-099 progresses
 
 ### 19.5. TC reliability + extracted VCS-helper features (oracle-prep cluster)
 
@@ -110,12 +114,9 @@ that earns its place pre-1.0.  Runs on a git merge-result and emits typed diagno
 instead of `<<<<<<<` markers.  Integrates as a git `pre-merge-commit` hook.  Cleanly
 extractable from the larger VCS rewrite.  **Effort:** 1–2 days once BUG-099 lands.
 
-**c. Per-commit zip snapshot git hook**  ★ immediate stash-hazard relief
-20-line shell script as a git `post-commit` hook; saves a workspace zip to
-`.git/zsnapshots/<commit-id>.zip`.  Solves the "lost work via stash misuse" class of
-bugs that hit Zebra twice (see `concept_vcs-alternatives` Tier 1 items).  Costs disk
-space; pays for itself the first time it's needed.  **Effort:** 1 hour. **Independent**
-of the rest of the cluster — could land tomorrow.
+**c. Per-commit zip snapshot git hook** ✅ COMPLETE
+Shipped: `.git/hooks/post-commit` saves `zsnapshots/<commit-id>.zip` on every commit.
+Evidence: `[zsnapshot] saved <hash>.zip` lines visible in all recent commits.
 
 **d. Bootstrap-check feedback latency**
 `tools/bootstrap_check.sh` is the integration safety net but slow under CPU throttle
@@ -123,10 +124,8 @@ of the rest of the cluster — could land tomorrow.
 (parallel build steps, cache invalidation tightening).  Concrete sub-items deferred
 until profiling identifies hotspots.  **Effort:** unknown; gated on profiling pass.
 
-**e. (item 19, already queued) — selfhost TC diagnostics**
-Listed here for cluster context.  Without item 19, selfhost cannot serve as the merge
-oracle (no diagnostics → only "passes / fails to compile" binary).  Sequencing: 19 →
-BUG-099 → typecheck-merge subcommand.
+**e. selfhost TC diagnostics** ✅ COMPLETE (shipped 2026-05-05, see §19 above)
+Sequencing now: BUG-099 → §19.5b typecheck-merge subcommand.
 
 **Cluster framing:** items a, b, e all chain toward "the typecheck-as-merge-oracle is a
 real, daily-useful tool" without committing to building a VCS.  Item c is independent
