@@ -144,9 +144,43 @@ pub const Type = union(enum) {
     fn_sig: *const Ast.DeclSig,
 
     // ── Special ───────────────────────────────────────────────────────────────
-    /// Cannot determine type: upstream error or unsupported construct.
-    /// Suppresses further cascading errors.
+    //
+    // Three-way split of the former overloaded `.unknown` (BUG-099, 2026-05-04):
+    //
+    //   .context_dependent — type depends on usage context (e.g., `nil`,
+    //                        `result` reference inside a fn whose return
+    //                        type is being inferred). Legitimate; propagates
+    //                        without complaint until a concrete-type
+    //                        expectation site supplies a hint.
+    //
+    //   .unknown           — opaque-by-design. The TC genuinely cannot and
+    //                        should not assign a concrete type (e.g.,
+    //                        `zig_lit`, opaque cross-module externs,
+    //                        unsubstituted generic type params).
+    //                        Legitimate; never errors at expectation sites.
+    //
+    //   .unresolved        — alarm bell. The TC failed to derive a type it
+    //                        ought to have known (member miss, undefined
+    //                        call, lookup failure). Carries the source span
+    //                        of where the type was lost so an expectation
+    //                        site can emit a precise diagnostic.
+    //                        Goal: zero `.unresolved` at typecheck-end on
+    //                        accepted programs.
+    //
+    // All three replace the former `.unknown`. Sites that previously
+    // returned `.unknown` are audited and re-classified — see commit
+    // history under BUG-099 for the audit trail.
+
+    /// Type depends on usage context — supplied at expectation site.
+    context_dependent,
+
+    /// Opaque-by-design: TC genuinely cannot assign a concrete type.
     unknown,
+
+    /// TC failed to derive a type it should have known. Span points at
+    /// the source location where the type was lost so the expectation
+    /// site can blame it precisely.
+    unresolved: Ast.Span,
 
     /// Two types are the same value.
     pub fn eql(a: Type, b: Type) bool {
@@ -220,17 +254,28 @@ pub const Type = union(enum) {
             },
             .fn_ref         => |sa| switch (b) { .fn_ref => |sb| sa == sb, else => false },
             .fn_sig         => |da| switch (b) { .fn_sig => |db| da == db, else => false },
-            .unknown        => b == .unknown,
+            // BUG-099: three-way split of the former `.unknown`. Equality
+            // ignores the carried span on `.unresolved` — two unresolved
+            // types from different sites are still both "TC gave up."
+            .context_dependent => b == .context_dependent,
+            .unknown           => b == .unknown,
+            .unresolved        => switch (b) { .unresolved => true, else => false },
         };
     }
 
     /// `from` can be assigned where `to` is expected.
-    /// `unknown` on either side bypasses the check (error already reported).
+    /// `.context_dependent` and `.unknown` on either side bypass the check
+    /// (legitimate cases; no diagnostic to suppress here). `.unresolved`
+    /// also bypasses the local check, but the EXPECTATION SITE is
+    /// responsible for emitting the diagnostic before falling through —
+    /// see `expectType()` / call-arg / return checking.
     /// All numeric types are assignment-compatible with each other at the
     /// Zebra level — Zig enforces the actual range/precision constraints.
     /// This reflects the "integer literals are untyped" principle.
     pub fn isAssignable(from: Type, to: Type) bool {
+        if (from == .context_dependent or to == .context_dependent) return true;
         if (from == .unknown or to == .unknown) return true;
+        if (from == .unresolved or to == .unresolved) return true;
         // Any numeric → any numeric: defer to Zig.
         if (from.isNumeric() and to.isNumeric()) return true;
         // char (u21) is assignment-compatible with integer types — it IS a codepoint.
@@ -301,7 +346,10 @@ pub const Type = union(enum) {
             .cross_module   => |cm| cm.type_name,
             .fn_ref         => |s| s.name,
             .fn_sig         => |d| d.name,
-            .unknown        => "<unknown>",
+            // BUG-099 three-way split.
+            .context_dependent => "<context-dependent>",
+            .unknown           => "<unknown>",
+            .unresolved        => "<unresolved>",
         };
     }
 

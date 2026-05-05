@@ -10487,7 +10487,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .bool                          => "{}",
         .float, .float_n               => "{d}",
         .char                          => "{u}",
-        .void_, .unknown, .named,
+        .void_, .unknown, .context_dependent, .unresolved, .named,
         .string_builder,
         .http_request,
         .http_response,
