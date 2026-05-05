@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-04 (added item 23 — 0.14 memory model + concurrency primitives milestone, splitting `<-` arena copy-out + `Chan(T)` + allocator context off from 1.0; triage pass; phase 13 cluster expanded with style-guide bugs)
+**Last updated:** 2026-05-05 (Phase 13 sweeps #1+#2 complete; BUG-111/112/113 closed; §19 selfhost TC diags Phase 1 shipped; BUG-099 split shipped; oracle-prep §19.5b is next)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -101,18 +101,19 @@ audit (`C:/tmp/zebra-tc-audit.md`).  Most of these would meaningfully improve da
 workflow *without* waiting for a full Zebra-VCS rewrite (which is now reframed as a
 post-1.0 capstone — see item 13).
 
-**a. BUG-099 — Split overloaded `.unknown`**  ★ keystone
-Three-way split into `.context_dependent` / `.unknown` / `.unresolved`. Gates merge-oracle
-reliability and is the upstream cause of half the silent-accept bugs (BUG-105, BUG-106,
-BUG-108).  Goal state: zero `.unresolved` instances at typecheck completion on a valid
-program.  See `BUGS.md` BUG-099 for full design.  **Effort:** session-sized; touches
-`Type` definition + every site currently returning `.unknown` for re-classification.
+**a. BUG-099 — Split overloaded `.unknown`** ✅ COMPLETE (2026-05-05)
+Three-way split shipped in `src/TypeChecker.zig`: `.context_dependent` / `.unknown` / `.unresolved`.
+Goal state achieved: zero false `.unresolved` emissions on accepted programs (bootstrap 5/5,
+smoke 43/43, full test suite). Side effects: BUG-105, BUG-106, BUG-108 (partial) fixed.
+Selfhost port of the split is a future item — selfhost TC currently uses `unknown_` only.
 
 **b. `zebra typecheck-merge` subcommand**  ★ extracts oracle benefit pre-VCS
 The only piece of the Zebra-VCS-as-merge-oracle thesis (`concept_zebra-vcs-architecture`)
 that earns its place pre-1.0.  Runs on a git merge-result and emits typed diagnostics
 instead of `<<<<<<<` markers.  Integrates as a git `pre-merge-commit` hook.  Cleanly
-extractable from the larger VCS rewrite.  **Effort:** 1–2 days once BUG-099 lands.
+extractable from the larger VCS rewrite.  **Effort:** 1–2 days.
+**Prerequisites satisfied:** §19.5a (BUG-099) ✅, §19.5e (selfhost TC diags) ✅.
+Next in the oracle chain.
 
 **c. Per-commit zip snapshot git hook** ✅ COMPLETE
 Shipped: `.git/hooks/post-commit` saves `zsnapshots/<commit-id>.zip` on every commit.
@@ -150,13 +151,13 @@ identifies the canonical forms; sweep targets and compiler-driven workarounds
 flow into this milestone.
 
 **Compiler fixes (BUGS.md tracking):**
-- **BUG-111** — `this.field += 1` / `.field += 1` compound assignment (verified zero uses repo-wide; users have learned to write the verbose form)
-- **BUG-112** — Remove `def name: T` no-paren shorthand from grammar (38 occurrences sweep target first)
-- **BUG-113** — Slice expression loses `str` type through a `var` binding (per `pratt_calc.zbr:132–134` in-source comment)
+- **BUG-111** ✅ closed as not-a-bug (2026-05-05) — compound assign already works; zero uses of non-working form found repo-wide
+- **BUG-112** ✅ complete (2026-05-05) — grammar rule removed; 38 sites swept to `def name(): T` form across 17 files
+- **BUG-113** ✅ closed as not-reproduced (2026-05-05) — slice TC works correctly in current compiler
 - **BUG-115** — Real `private` / `internal` visibility keywords (language proposal; `_` prefix has zero compiler enforcement today)
 
 **Style guide sweeps (mechanical, no compiler change):**
-- `this.field` → `.field` (1,149 occurrences in selfhost; QUICKSTART §5 + style guide §7)
+- `this.field` → `.field` ✅ 1,141 sites swept across 9 selfhost files (2026-05-05)
 - `0 - x` / `0.0 - x` → `-x` (BUG-114 filed for tracking only — `-x` already works)
 - `class Main` + `static def main` → top-level `def main()` (selfhost/main.zbr first)
 - `_underscore` private prefix → drop (pending BUG-115 decision)
@@ -386,6 +387,12 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | `str` Comparable verified excluded already at `TypeChecker.zig:2982` (no fiat-by-default; `bool` and `string` excluded explicitly) | (verified 2026-04-?) |
 | Style guide draft committed at `STYLE_GUIDE.md` (foundational §1 decisions resolved 2026-05-04) | 2026-05-04 |
 | Phase 13 BUGS-111..115 filed for the syntax-cleanup window | 2026-05-04 |
+| Phase 13 sweep #1: `this.field → .field` — 1,141 sites across 9 selfhost files | 2026-05-05 |
+| Phase 13 sweep #2: `def name: T → def name(): T` — 38 sites across 17 files; grammar rule removed (BUG-112) | 2026-05-05 |
+| BUG-111 closed as not-a-bug — compound assign already works | 2026-05-05 |
+| BUG-113 closed as not-reproduced — slice TC works correctly | 2026-05-05 |
+| BUG-099 `.unknown` three-way split (`.context_dependent`/`.unknown`/`.unresolved`); zero false `.unresolved` on accepted programs; bootstrap 5/5, smoke 43/43 | 2026-05-05 |
+| §19 selfhost TC diagnostics Phase 1: `Diagnostic` struct + `InferCtx.errors` + primitive mismatch detection; `selfhost_compat` 2/2 PASS; bootstrap 5/5 | 2026-05-05 |
 
 ---
 

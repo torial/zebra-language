@@ -72,9 +72,18 @@ Closing as not-reproduced. No code change needed for BUG-111.
 
 ---
 
-### BUG-112: `def name: T` no-paren shorthand should be removed from grammar (phase 13)
+### BUG-112: ✅ FIXED 2026-05-05 — no-paren shorthand removed
+
+Grammar rule removed from both `src/Parser.zig` and `selfhost/parser.zbr`.
+38-site sweep (`def name: T → def name(): T`) across 17 files completed.
+Bootstrap 5/5, smoke 43/43. See commits `2f7e767` + `598a533`.
+Migrated to FixedBugs.md.
+
+---
+
+### BUG-112 (original entry, retained for context):
 - **Severity:** Low (cosmetic; both forms work today)
-- **Status:** Open — phase 0.13 syntax-cleanup window
+- **Status:** Fixed 2026-05-05
 - **Symptom:** `def name: T` and `def name(): T` are both legal and equivalent. Callers always write `obj.name()` regardless. The no-paren form is a vestige of the removed `prop`/`get`/`set` machinery (per `project_remove_property_keywords.md`) — it survives but no longer carries weight, and visually contradicts the call-site syntax (footgun: reads as a getter that doesn't need parens at the call site, which isn't true).
 - **Repo data:** 38 no-paren occurrences across 17 files; 124 explicit-paren occurrences across 25 files. The repo's revealed preference is `def name(): T`.
 - **Fix sketch:**

@@ -5,6 +5,66 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### §19: Selfhost TC diagnostics — SHIPPED 2026-05-05
+- **Status:** Shipped in `selfhost/typechecker.zbr` + `selfhost/main.zbr`. Compat test 2/2 PASS, bootstrap 5/5.
+- **Was:** `selfhost/typechecker.zbr` had inference-only infrastructure (no `errors` list, no `addErr`, no print path). Type mismatches in the selfhost pipeline were only caught after codegen by the downstream Zig compiler, producing `path:LINE:` (no col) format errors.
+- **Fix:** Added `Diagnostic{file,line,col,message}` struct, `InferCtx.errors: List(Diagnostic)` + `addErr/hasErrors/errorMessages`, `isPrimitive/typesCompatible` predicates, and `checkVarDecl/checkStmts/checkDecl/checkModule` walk. Wired into `main.zbr` step 4.5 (after ASTBuilder, before codegen). Selfhost now emits `path:LINE:COL: error: type mismatch: expected int, found str` at TC time.
+- **Scope:** Concrete primitive mismatches only (int/bool/char/float/str). Named/enum types deferred — enum not tracked in ModuleTypes; would false-positive without full registry.
+- **Test:** `test/selfhost_compat/run_compat.sh` updated to PASS when selfhost catches an error with col but bootstrap backend doesn't (known gap: bootstrap error comes from Zig compiler post-codegen).
+
+---
+
+### BUG-099: Type `.unknown` three-way split — FIXED 2026-05-05
+- **Status:** Fixed in `src/TypeChecker.zig`. Bootstrap 5/5, smoke 43/43, full test suite. See commits `429ff98` → `fe61ebe`.
+- **Was:** `Type.unknown` overloaded three semantically distinct cases: context-dependent (nil, result), opaque-by-design (zig_lit, generics), and unresolved (TC gave up). Downstream checks couldn't distinguish them, so `var x: int = undefined_call()` silently typechecked.
+- **Fix:** Three-way split into `.context_dependent` (legitimate; propagates without alarm), `.unknown` (opaque by design; never errors), `.unresolved` (alarm bell; expectation sites emit a diagnostic). Producer audit: only unambiguous TC failures emit `.unresolved` — member-access misses softened to `.unknown` to avoid false alarms on cross-module patterns. Consumer comparisons widened to `isAbstract()` helper. Goal state achieved: zero false `.unresolved` emissions on accepted programs.
+- **Closed as side effects:** BUG-105 (enum_member/union_variant → parent type), BUG-106 (literal element-type homogeneity), BUG-108 (partial — `this` outside class defensive emitError).
+
+---
+
+### BUG-105: `Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 2026-05-05
+- **Status:** Fixed in `src/TypeChecker.zig:inferMember`. Test: `test/bug105_enum_member_test.zbr`, `test/bug105_union_variant_test.zbr`. See commit `f254b75`.
+- **Was:** `inferMember` returned `.unknown` for enum-member and union-variant access (`Color.red`, `Result.ok(...)`). Downstream `var c: int = Color.red` silently typechecked.
+- **Fix:** `inferMember` now returns `Type{ .named = parent_sym }` when the member resolves to an enum member or union variant. `var c: Color = Color.red` typechecks; `var c: int = Color.red` correctly errors.
+
+---
+
+### BUG-106: Heterogeneous list literals `[1, "two"]` silently typecheck — FIXED (partial) 2026-05-05
+- **Status:** Literal homogeneity check shipped. Cast-validity check deferred. Test: `test/bug106_heterogeneous_list_test.zbr`. See commit `fe61ebe`.
+- **Was:** `list_lit`, `array_lit`, `dict_lit` inferred to `.unknown` without checking element type consistency. `[1, "two", 3]` was silently accepted.
+- **Fix:** Element-type walk now requires mutual `isAssignable` for non-abstract element types. Heterogeneous literals error at the offending element's span. Numeric mixes `[1, 2.0, 3]` still pass (untyped-numeric semantic). Cast-validity check (line 1693 — `42 as ClassType` still typechecks) deferred — separate scope, lower priority.
+
+---
+
+### BUG-108: Silent `.unknown` at `this` outside class — FIXED (partial) 2026-05-05
+- **Status:** `this`-outside-class diagnostic shipped. Other sites deferred. Test: `test/bug108_this_outside_class_test.zbr`. See commit `01296db`.
+- **Was:** `this` used outside a class/struct method or `with` block silently returned `.unknown` with no diagnostic.
+- **Fix:** `this` outside valid context now emits "'this' used outside a class/struct method or 'with' block" at the `this` token span.
+- **Remaining (deferred):** `inferMember` cross-module miss softened to `.unknown` (false-positive risk on legitimate patterns); index/slice on non-indexable; `expr_types.get` fallbacks with legitimate non-error cases.
+
+---
+
+### BUG-111: Compound assign `.field += 1` — NOT-A-BUG 2026-05-05
+- **Status:** Closed as not-reproduced. Verified 2026-05-05 in both backends.
+- **Was (reported):** `this.count += 1` / `.count += 1` suspected to fail; zero occurrences in repo suggesting users avoided the form.
+- **Verified:** `.count += 1`, `this.count += 1`, `obj.count += 5` all parse, codegen, and run correctly. The zero-occurrence data was stylistic legacy (authors wrote `this.X = this.X + 1` before `.field` shorthand was canonical), not a compiler limitation.
+
+---
+
+### BUG-112: `def name: T` no-paren shorthand removed from grammar — FIXED 2026-05-05
+- **Status:** Fixed 2026-05-05. Grammar rule removed from both backends. 38-site sweep done. Bootstrap 5/5. See commits `2f7e767` (grammar removal) + `598a533` (38-site sweep).
+- **Was:** `def name: T` and `def name(): T` were both legal. The no-paren form was a vestige of the removed `prop`/`get`/`set` machinery — visually contradicted call-site syntax (callers always write `obj.name()`).
+- **Fix:** No-paren rule removed from `src/Parser.zig` and `selfhost/parser.zbr`. All 38 occurrences across 17 files swept to `def name(): T`. Style guide §1 Q2 updated to reflect canonical form.
+
+---
+
+### BUG-113: Slice TC loses `str` type through `var` binding — NOT-REPRODUCED 2026-05-05
+- **Status:** Closed as not-reproduced. Verified 2026-05-05.
+- **Was (reported):** `var text = src[0..3]` suspected to infer something other than `str`, requiring explicit `: str` annotation for `.toFloat()` to dispatch. Author comment in `pratt_calc.zbr:132–134` documented this workaround.
+- **Verified:** Both the annotated and unannotated forms produce identical output. The TC improvement (likely via BUG-099 work) resolved the underlying inference gap. The `pratt_calc.zbr` annotation is now redundant but harmless — left in place.
+
+---
+
 ### BUG-087: `ensure` defer fires on the error path of throws functions — FIXED
 - **Status:** Fixed 2026-04-27 in both backends. `_ensure_armed` flag set only on the success path; defer check gated on the flag. Tests: `contract_result_throws_test.zbr`, `contract_ensure_falloff_test.zbr`.
 - **Was:** A throws function with an `ensure` clause that raised mid-body caused the ensure check to fire on the error path. Result: program panicked with "ensure failed in '<fn>'" and the user's `try/catch` never saw the original exception. Zig `defer` runs on both success and error returns, but `genEnsureBlock` emitted a plain `defer { if (!(expr)) panic; }` with no success-vs-error discrimination.

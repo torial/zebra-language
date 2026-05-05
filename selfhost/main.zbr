@@ -367,6 +367,99 @@ class MultiCompiler
             pmi = pmi + 1
         return PModule(merged_decls)
 
+# ── typecheck-merge helpers ───────────────────────────────────────────────────
+
+# Extract one side of a conflict-marked file while preserving line numbers.
+# Lines not included in the wanted side are replaced with a blank line so
+# diagnostic line numbers stay aligned with the original conflict-marked file.
+# Handles both standard (3-way) and diff3 (|||||||) conflict styles.
+def extractConflictSide(src: str, want_ours: bool): str
+    var sb: StringBuilder = StringBuilder()
+    var state: int = 0   # 0=normal  1=in_ours  2=in_base(diff3)  3=in_theirs
+    for line in src.split("\n")
+        if line.startsWith("<<<<<<<")
+            state = 1
+            sb.append("\n")
+        else if line.startsWith("|||||||")
+            state = 2
+            sb.append("\n")
+        else if line.startsWith("=======")
+            state = 3
+            sb.append("\n")
+        else if line.startsWith(">>>>>>>")
+            state = 0
+            sb.append("\n")
+        else if state == 0
+            sb.append(line + "\n")
+        else if state == 1 and want_ours
+            sb.append(line + "\n")
+        else if state == 3 and not want_ours
+            sb.append(line + "\n")
+        else
+            sb.append("\n")
+    return sb.build()
+
+# Run the selfhost TC pipeline on src (a string), collecting diagnostics into diags.
+# Catches parse/resolve/build errors and reports them as diagnostic strings so the
+# caller gets a clean list regardless. Does not compile to Zig.
+def tcCheckSide(src: str, path: str, diags: List(str))
+    var pm_node = try Parser.Parser.parse(src, path)
+    var resolver = Resolver.Resolver(path)
+    try resolver.resolve(pm_node)
+    if resolver.errorCount() > 0
+        for line in resolver.allErrorMessages().split("\n")
+            if line.trimLeft() != ""
+                diags.add(line)
+        return
+    if pm_node is PNode.module_ as pm
+        var module = try ASTBuilder.build(pm, path)
+        var tc_mt: ModuleTypes = buildModuleTypes(module)
+        var tc_ctx: InferCtx = InferCtx(tc_mt, "")
+        checkModule(module, path, tc_ctx)
+        if tc_ctx.hasErrors()
+            for line in tc_ctx.errorMessages().split("\n")
+                if line.trimLeft() != ""
+                    diags.add(line)
+catch |e|
+    diags.add("error: " + e.message)
+
+# Type-check both sides of a conflict-marked .zbr file and report results.
+# Exit code is always 0 (informational); wrap in a stricter hook if you want
+# blocking behaviour. Integrates as a git pre-merge-commit hook via
+# tools/install_merge_hook.sh.
+def runTypecheckMerge(path: str) throws
+    if not File.exists(path)
+        raise "typecheck-merge: file not found: " + path
+    var src: str = File.read(path)
+    if not src.contains("<<<<<<<")
+        sys.errln("typecheck-merge: no conflict markers in " + path)
+        return
+
+    var ours_src: str = extractConflictSide(src, true)
+    var theirs_src: str = extractConflictSide(src, false)
+    var ours_diags: List(str) = List(str)()
+    var theirs_diags: List(str) = List(str)()
+    tcCheckSide(ours_src, path, ours_diags)
+    tcCheckSide(theirs_src, path, theirs_diags)
+
+    sys.errln("typecheck-merge: " + path)
+    if ours_diags.count() == 0
+        sys.errln("  ours (HEAD): CLEAN")
+    else
+        sys.errln("  ours (HEAD): " + ours_diags.count().toString() + " type error(s)")
+        var oi: int = 0
+        while oi < ours_diags.count()
+            sys.errln("    " + ours_diags.at(oi))
+            oi = oi + 1
+    if theirs_diags.count() == 0
+        sys.errln("  theirs: CLEAN")
+    else
+        sys.errln("  theirs: " + theirs_diags.count().toString() + " type error(s)")
+        var ti: int = 0
+        while ti < theirs_diags.count()
+            sys.errln("    " + theirs_diags.at(ti))
+            ti = ti + 1
+
 def main()
     var args = Arg.parse()
 
@@ -375,6 +468,17 @@ def main()
     if args.contains("--version")
         sys.errln("zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)")
         sys.exit(0)
+
+    # -- typecheck-merge subcommand ----------------------------------------
+
+    if args.positional(0) as first_pos
+        if first_pos == "typecheck-merge"
+            if args.positional(1) as merge_file
+                try runTypecheckMerge(merge_file)
+                sys.exit(0)
+            else
+                sys.errln("usage: zebra typecheck-merge <file.zbr>")
+                sys.exit(1)
 
     # -- Source path -------------------------------------------------------
     # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
@@ -399,6 +503,7 @@ def main()
         sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
         sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
         sys.errln("  zebra --version                          print version and exit")
+        sys.errln("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict")
         sys.exit(1)
 
     var path = src_path to!

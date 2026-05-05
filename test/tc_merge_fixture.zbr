@@ -1,0 +1,22 @@
+# Test fixture for `zebra typecheck-merge`.
+# ours (HEAD) side has a primitive type mismatch; theirs is correct.
+# Expected output:
+#   typecheck-merge: test/tc_merge_fixture.zbr
+#     ours (HEAD): 1 type error(s)
+#       test/tc_merge_fixture.zbr:15:0: error: type mismatch: expected int, found str
+#     theirs: CLEAN
+
+def compute(): int
+    return 42
+
+def main()
+    var count: int = compute()
+<<<<<<< HEAD
+    var label: int = "wrong type"
+||||||| common ancestor
+    var label: str = "label"
+=======
+    var label: str = "updated label"
+>>>>>>> fix-branch
+    print count
+    print label
