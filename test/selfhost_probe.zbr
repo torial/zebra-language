@@ -38,7 +38,7 @@ class Diag
         message = msg
         line    = l
         col     = c
-    def show: str
+    def show(): str
         return message
 
 # ── 4. Branch dispatch — top-level free function with inline return syntax ───
@@ -63,12 +63,12 @@ class Lexer
     def push(k: TokenKind, t: str, l: int, c: int)
         tokens.append(Token(k, t, l, c))
 
-    def peek: TokenKind
+    def peek(): TokenKind
         if pos < tokens.len
             return tokens[pos].kind
         return TokenKind.eof()
 
-    def advance: Token
+    def advance(): Token
         var t = tokens[pos]
         pos = pos + 1
         return t

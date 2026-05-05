@@ -6,7 +6,7 @@ class FileInfo
         path = p
         code = c
 
-    def toString: str
+    def toString(): str
         return "FileInfo(".concat(path).concat(")")
 
 class Main

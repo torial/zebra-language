@@ -1,11 +1,11 @@
 extend String
-    def shout: str
+    def shout(): str
         return this.upper().concat("!")
 
-    def isLong: bool
+    def isLong(): bool
         return this.len > 5
 
-    def greet: str
+    def greet(): str
         return "Hello, ".concat(this).concat("!")
 
 class Main

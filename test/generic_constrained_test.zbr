@@ -18,7 +18,7 @@ class MinHeap(T where T implements Comparable)
     cue init(seed: T)
         best = seed
 
-    def top: T
+    def top(): T
         return best
 
 class Main

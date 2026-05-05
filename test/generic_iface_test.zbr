@@ -1,5 +1,5 @@
 interface Printable
-    def label: str
+    def label(): str
 
 class Num
     var val: int
@@ -14,10 +14,10 @@ class Box(T) implements Printable
     cue init(v: T)
         value = v
 
-    def label: str
+    def label(): str
         return "Box"
 
-    def get: T
+    def get(): T
         return value
 
 class Main

@@ -4,7 +4,7 @@ class Counter
     def increment
         count = count + 1
 
-    def value: int
+    def value(): int
         return count
 
 class Program

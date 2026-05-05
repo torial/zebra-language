@@ -3,5 +3,5 @@
 
 class PartialSharedTest
     static
-        def describe: str
+        def describe(): str
             return "PartialSharedTest v1"

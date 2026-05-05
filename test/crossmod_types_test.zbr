@@ -10,7 +10,7 @@ class Segment
         start = crossmod_types_lib.Point(sx, sy)
         end_  = crossmod_types_lib.Point(ex, ey)
 
-    def label: str
+    def label(): str
         return "${start.show()} to ${end_.show()}"
 
 class Main

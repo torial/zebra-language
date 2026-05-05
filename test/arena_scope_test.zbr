@@ -7,7 +7,7 @@ class Counter
         n = 0
     def inc
         n = n + 1
-    def value: int
+    def value(): int
         return n
 
 class Main

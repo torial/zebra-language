@@ -1,16 +1,16 @@
 interface Greetable
-    def greet: str
+    def greet(): str
     def greetName(name: str): str
 
 class English implements Greetable
-    def greet: str
+    def greet(): str
         return "Hello"
 
     def greetName(name: str): str
         return "Hello, ".concat(name)
 
 class Spanish implements Greetable
-    def greet: str
+    def greet(): str
         return "Hola"
 
     def greetName(name: str): str
@@ -25,7 +25,7 @@ class Counter
     def increment
         count = count + 1
 
-    def value: int
+    def value(): int
         return count
 
 class Main

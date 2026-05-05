@@ -6,7 +6,7 @@ class Point
         x = x + dx
         y = y + dy
 
-    def describe: String
+    def describe(): String
         return "(" + x.toString() + ", " + y.toString() + ")"
 
 class Program

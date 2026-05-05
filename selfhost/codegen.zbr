@@ -1209,17 +1209,17 @@ struct Generator
             strip_contracts = true
         return g
 
-    def asMethod: Generator
+    def asMethod(): Generator
         var g = this except
             in_method = true
         return g
 
-    def asStructOwner: Generator
+    def asStructOwner(): Generator
         var g = this except
             is_struct_owner = true
         return g
 
-    def indented: Generator
+    def indented(): Generator
         var g = this except
             indent = indent + 1
         return g
@@ -1237,7 +1237,7 @@ struct Generator
             ensure_uses_result  = false
         return g
 
-    def withThrows: Generator
+    def withThrows(): Generator
         var g = this except
             current_method_throws = true
         return g

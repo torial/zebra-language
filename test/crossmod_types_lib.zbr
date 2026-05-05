@@ -7,10 +7,10 @@ class Point
         x = px
         y = py
 
-    def distFromOrigin: float
+    def distFromOrigin(): float
         var dx = x * x
         var dy = y * y
         return Math.sqrt(dx + dy)
 
-    def show: str
+    def show(): str
         return "(${x}, ${y})"

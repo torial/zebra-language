@@ -18,7 +18,7 @@ class Writer
     def append(s: str)
         buf.append(s)
 
-    def result: str
+    def result(): str
         return buf.build()
 
 class SharedState
@@ -57,12 +57,12 @@ struct Generator
             owner = new_owner
         return g
 
-    def withIndent: Generator
+    def withIndent(): Generator
         var g = this except
             indent = indent + 1
         return g
 
-    def withMethod: Generator
+    def withMethod(): Generator
         var g = this except
             in_method = true
         return g
