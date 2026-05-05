@@ -228,7 +228,7 @@ test "parse: method with pass body" {
 
 test "parse: return with expression" {
     // StmtReturn → kw_return Expr(Atom(string_single)) eol
-    try expectAccepts("class Foo\n\tdef greet: String\n\t\treturn 'hello'\n");
+    try expectAccepts("class Foo\n\tdef greet(): String\n\t\treturn 'hello'\n");
 }
 
 test "parse: assignment statement" {
@@ -326,7 +326,7 @@ test "parse: dotted namespace" {
 
 test "parse: extend declaration" {
     // ExtendDecl → kw_extend TypeRef … MemberDeclList
-    try expectAccepts("extend String\n\tdef doubled: String\n\t\treturn this + this\n");
+    try expectAccepts("extend String\n\tdef doubled(): String\n\t\treturn this + this\n");
 }
 
 // ── Acceptance: is / has clauses ──────────────────────────────────────────────
@@ -486,7 +486,7 @@ test "parse: error union type !T in parameter" {
 }
 
 test "parse: error union type !T as return type" {
-    try expectAccepts("class Foo\n\tdef run: !String\n\t\treturn 'ok'\n");
+    try expectAccepts("class Foo\n\tdef run(): !String\n\t\treturn 'ok'\n");
 }
 
 test "parse: orelse operator" {

@@ -108,7 +108,7 @@ test "var and const member" {
 test "error union type and orelse" {
     try expectPrint(
         \\class Loader
-        \\    def load: !String
+        \\    def load(): !String
         \\        return zig"hello"
         \\
     ,
@@ -138,7 +138,7 @@ test "defer and errdefer" {
 test "orelse expression" {
     try expectPrint(
         \\class Opt
-        \\    def fetch: int
+        \\    def fetch(): int
         \\        return x orelse 0
         \\
     ,
@@ -152,7 +152,7 @@ test "orelse expression" {
 test "catch expression" {
     try expectPrint(
         \\class Safe
-        \\    def run: int
+        \\    def run(): int
         \\        return doIt catch 0
         \\
     ,
@@ -166,7 +166,7 @@ test "catch expression" {
 test "catch with error binding" {
     try expectPrint(
         \\class Safe
-        \\    def run: int
+        \\    def run(): int
         \\        return doIt catch |e| 0
         \\
     ,

@@ -543,22 +543,25 @@ const method_rules: []const Rule = &.{
         n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.ContractBlock),
     } },
     // No-arg form: bare id, no parens.
+    // BUG-112: ReturnAnnotOpt removed from bare-id rules — `def name: T` is
+    // no longer parsed.  Use `def name(): T` instead.  The bare-id form is
+    // retained only for void no-arg methods like `def main` / `def run`.
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
-        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol),
+        n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol),
     } },
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
-        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block),
+        n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block),
     } },
     // No-arg method body with catch clauses.
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
-        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block), n(.CatchClauseList),
+        n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.Block), n(.CatchClauseList),
     } },
     .{ .lhs = .MethodDecl, .rhs = &.{
         n(.ModList), t(.kw_def), t(.id),
-        n(.ReturnAnnotOpt), n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.ContractBlock),
+        n(.ThrowsOpt), n(.IsClauseOpt), n(.HasOpt), n(.WeavesOpt), t(.eol), n(.ContractBlock),
     } },
 
     .{ .lhs = .ReturnAnnotOpt, .rhs = &.{} }, // ε

@@ -1175,7 +1175,7 @@ test "resolve: method param type and return type" {
 test "resolve: local variable visible after declaration" {
     var tr = try resolveSnippet(
         \\class Foo
-        \\    def run: int
+        \\    def run(): int
         \\        var x: int = 0
         \\        return x
         \\
@@ -1206,7 +1206,7 @@ test "resolve: unknown type emits error" {
 test "resolve: unknown ident in body emits error" {
     var tr = try resolveSnippet(
         \\class Foo
-        \\    def run: int
+        \\    def run(): int
         \\        return missing
         \\
     );

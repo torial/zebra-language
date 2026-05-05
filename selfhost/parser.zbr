@@ -1303,7 +1303,9 @@ class Parser
                     params.add(PParam(pname, ptype, pdefault))
             .expectText(")")
         var return_type = ""
-        if .textIs(":")
+        # BUG-112: only allow return-type annotation when method has parens.
+        # `def name: T` no-paren shorthand is non-canonical; use `def name(): T`.
+        if has_params and .textIs(":")
             .advance()
             return_type = .eatTypeName()
             if .textIs("?")
