@@ -2831,11 +2831,7 @@ struct Generator
                         # Zig rejects discarding a non-void expr as a statement.
                         if .infer_ctx != nil
                             var stmt_t: Type_ = inferExpr(e, .infer_ctx to!)
-                            var is_void: bool = stmt_t is Type_.void_
-                            var is_unk: bool = stmt_t is Type_.unknown_
-                            var is_unres: bool = stmt_t is Type_.unresolved
-                            var is_ctx_dep: bool = stmt_t is Type_.context_dependent
-                            if not is_void and not is_unk and not is_unres and not is_ctx_dep
+                            if not stmt_t is Type_.void_ and not stmt_t is Type_.unknown_ and not stmt_t is Type_.unresolved and not stmt_t is Type_.context_dependent
                                 w.emit("_ = ")
                         genExpr(e)
                         w.emit(";\n")
