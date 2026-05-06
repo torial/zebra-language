@@ -264,10 +264,12 @@ FixedBugs.md.
 
 ### BUG-103: TC `extractFromDecls`/`extractFromMembers` silently skip unknown declaration variants
 - **Severity:** Low (only triggers on adding a new `Ast.Decl` variant; latent reliability hazard)
-- **Status:** Open
-- **Symptom:** `src/TypeChecker.zig:553, 583, 691, 862, 866` use `else => {}` in metadata-collection passes. A future `Ast.Decl` variant would be silently skipped, contributing no metadata and producing downstream `.unknown` types instead of a clear "I missed this."
-- **Reproducer:** Add a new `Decl` variant (or audit what an `enum_`/`mixin`/`extend` variant contributes vs other variants). The contrast is `checkTopDecl` at `:1011` which has no `else` arm at all — Zig's exhaustiveness checker forces every variant to be handled.
-- **Fix sketch:** Replace each `else => {}` with explicit handling for known variants and `else => @panic("unhandled decl variant: …")` (debug builds) or a TC diagnostic (release). Match the strict exhaustiveness pattern of `checkTopDecl`.
+- **Status:** Closed — fixed 2026-05-06
+- **Resolution:** All 4 `else => {}` catch-alls in the metadata-collection passes replaced with fully exhaustive arms listing every `Ast.Decl` variant explicitly. Adding a new `Ast.Decl` variant now causes a Zig compile error at all 4 sites (same guarantee `checkTopDecl` already had). Behavioral change: none — all new arms are `{}`. Bootstrap 5/5, smoke 44/44, full test suite.
+  - `extractFromDecls` (4 new arms: `.use`, `.interface`, `.mixin`, `.extend`, `.sig_`, `.var_`, `.init`)
+  - `extractFromMembers` (10 new arms: everything except `.method`, `.var_`, `.init`)
+  - `collectExtMethodsInDecls` inner switch (extend members: 12 new arms)
+  - `collectExtMethodsInDecls` outer switch (top-level decls: 11 new arms)
 - **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-1]).
 
 ---

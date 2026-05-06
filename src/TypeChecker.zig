@@ -642,7 +642,13 @@ fn extractFromDecls(
                 }
             }
         },
-        else => {},
+        .use       => {},  // import declaration; nothing to extract
+        .interface => {},  // interface method sigs not extracted today (separate gap)
+        .mixin     => {},  // mixin members not extracted today
+        .extend    => {},  // extension methods collected by collectExtMethodsInDecls
+        .sig_      => {},  // type alias; no class context
+        .var_      => {},  // top-level var; no class context to register under
+        .init      => {},  // top-level init is malformed; skip safely
     };
 }
 
@@ -750,7 +756,16 @@ fn extractFromMembers(
                 }
             }
         },
-        else => {},
+        .use       => {},  // can't appear in a class body in valid Zebra
+        .namespace => {},
+        .class     => {},
+        .interface => {},
+        .struct_   => {},
+        .mixin     => {},
+        .enum_     => {},
+        .extend    => {},
+        .union_    => {},
+        .sig_      => {},
     };
 }
 
@@ -921,11 +936,32 @@ fn collectExtMethodsInDecls(
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{tname, meth.name});
                     try out.put(key, meth);
                 },
-                else => {},
+                .use       => {},  // can't appear in an extend body in valid Zebra
+                .namespace => {},
+                .class     => {},
+                .interface => {},
+                .struct_   => {},
+                .mixin     => {},
+                .enum_     => {},
+                .var_      => {},  // extend var fields; not collected here
+                .init      => {},  // extend ctors; not collected here
+                .extend    => {},
+                .union_    => {},
+                .sig_      => {},
             };
         },
         .namespace => |n| try collectExtMethodsInDecls(n.decls, out, alloc),
-        else => {},
+        .use       => {},  // import; no extension methods
+        .class     => {},
+        .interface => {},
+        .struct_   => {},
+        .mixin     => {},
+        .enum_     => {},
+        .method    => {},  // top-level fn; not an extension method
+        .var_      => {},
+        .init      => {},
+        .union_    => {},
+        .sig_      => {},
     };
 }
 
