@@ -161,6 +161,16 @@ flow into this milestone.
 - `class Main` + `static def main` → top-level `def main()` ✅ 103 files swept 2026-05-06 (`tools/sweep_class_main.py`)
 - `_underscore` private prefix → drop (pending BUG-115 decision)
 
+**Stdlib additions — Zebra scripting readiness gate:**
+- `Dir.walk(path): List(str)` — recursive file-tree listing.  Blocks every
+  file-glob Python script from being ported to Zebra.  `Dir.list` (flat) exists;
+  `walk` is a small addition to `src/CodeGen.zig` `genDirCall` + selfhost parity.
+- `Regex.replace(pattern, replacement): str` — regex substitution (not just
+  match/find).  Blocks `branch_to_if_is.py`, `migrate_colon_syntax.py`, and
+  book sweep scripts.  One new codegen arm + selfhost parity.
+- Once both land, every Python sweep script in `tools/` has a clear Zebra port.
+  See `SCRIPTING_TOOLS.md` for the full catalog and porting order.
+
 **Other cleanup carried over:**
 - `^T` auto-boxing edge case fixes (W11 in `concept_zebra-language-warts.md`)
 - Book documentation for `sig`, raw strings, `"""`
