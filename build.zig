@@ -210,9 +210,13 @@ pub fn build(b: *std.Build) void {
 
     // ── Selfhost update ───────────────────────────────────────────────────────
     //
-    // `zig build update-selfhost` runs bootstrap steps 1+2 then re-emits all
-    // selfhost/*.zig via the freshly-built selfhost-A binary.  After this step,
-    // run `zig build` again to rebuild zebra.exe from the refreshed .zig files.
+    // `zig build update-selfhost` emits all selfhost/*.zig from selfhost/*.zbr
+    // using zebra-bootstrap.exe (the authoritative Zig-compiled compiler).
+    // Using bootstrap — not the selfhost binary — avoids the chicken-and-egg
+    // where a codegen bug in selfhost/codegen.zbr causes the selfhost binary to
+    // regenerate that same bug. Round-trip fidelity is tested separately by
+    // `zig build bootstrap` (the full 5-step check).
+    // After this step, run `zig build` again to rebuild zebra.exe.
     // Does NOT call zig build recursively — that would cause a recursive build
     // error; the two-step idiom is intentional.
     const update_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--update" });
