@@ -181,6 +181,9 @@ smoke test/json_parse_strict_tc_test.zbr
 # Dir.walk: recursive file-tree enumeration.
 smoke test/dir_walk_test.zbr
 
+# Scripting tools: first Zebra port of an escape-hatch guard script.
+smoke tools/escape_hatches_check.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

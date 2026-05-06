@@ -35,13 +35,15 @@ Used to measure convergence progress during parity sprints.
 **When to use:** Before/after a parity sprint to count mismatches.
 **Zebra port:** Needs `sys.run()` + `Dir.walk()`.
 
-### `tools/escape_hatches_check.sh`
-**Language:** Bash  
+### `tools/escape_hatches_check.sh` / `tools/escape_hatches_check.zbr`
+**Language:** Bash (shell) + Zebra (port — ✅ first completed Zebra tool)  
 **Purpose:** Guards against `page_allocator` calls creeping into Zebra source,
-codegen, or the preamble.  Grep-based; exits non-zero if any are found.
-**When to use:** Pre-commit hook candidate.
-**Zebra port:** Can be written today — `File.read` + `str.contains`.
-Blocked only by `Dir.walk` for the file-glob step.
+codegen, or the preamble.  Counts matching lines; exits non-zero if count drifts
+from the hard-coded baseline.
+**When to use:** Pre-commit hook candidate.  Shell version runs in `zig build test`.
+**Zebra port status:** ✅ DONE 2026-05-05.  Uses `Dir.list` + `File.read` +
+`str.split` + `str.contains`.  Outputs identical results to the shell version.
+Timing: zbr→zig compile ~179ms, zig run ~228ms; comparable to shell ~518ms.
 
 ### `tools/install_merge_hook.sh`
 **Language:** Bash  
@@ -145,18 +147,18 @@ script above has a working Zebra equivalent checked into the repo.
 | Feature | Status | Blocks |
 |---------|--------|--------|
 | `Dir.walk(path): List(str)` — recursive file tree | ✅ DONE 2026-05-05 | All file-glob scripts |
-| `Regex.replace(pattern, repl): str` — substitution (not just match) | pending | `branch_to_if_is`, `migrate_colon_syntax`, `book_fix_as_return` |
+| `re.replace(text, repl): str` — regex substitution on a compiled `Regex` | ✅ DONE (shipped with regex engine) | `branch_to_if_is`, `migrate_colon_syntax`, `book_fix_as_return` |
 | `sys.run()` robustness — capture stdout+stderr, exit code | pending | `bootstrap_check`, `corpus_snapshot`, REPL |
 | `sys.readLine(): str?` — stdin readline | pending | REPL |
 
-`Dir.walk` has landed. `Regex.replace` is the next blocker — see `NEXT_STEPS.md` §12.
+Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re.replace` both available). Only item 6 (`zebra-repl`) still needs `sys.run` / `sys.readLine`.
 
-### Porting order (once blockers land)
+### Porting order
 
 1. `book_strip_invisibles.zbr` — simplest; only `Dir.walk` + `str.replace`
 2. `sweep_class_main.zbr` — `Dir.walk` + multiline string transform; good
    stress test of Zebra string handling
-3. `escape_hatches_check.zbr` — grep-style; tests `str.contains` at scale
+3. ✅ `escape_hatches_check.zbr` — DONE 2026-05-05; first completed Zebra tool port
 4. `book_scan_unicode.zbr` — needs char iteration; drives that feature
 5. `branch_to_if_is.zbr` + `migrate_colon_syntax.zbr` — regex-replace variants
 6. `zebra-repl.zbr` — needs `sys.run` + `sys.readLine`; caps the gate

@@ -1,0 +1,63 @@
+# escape_hatches_check.zbr — guard against new page_allocator uses creeping
+# into Zebra source / codegen / preamble.
+#
+# Port of tools/escape_hatches_check.sh.
+# Counts lines containing "page_allocator" in two scopes and compares to
+# hard-coded baselines.  Bump the baseline when a new, reviewed use lands.
+#
+# Baselines (2026-05-05):
+#   EXPECTED_PREAMBLE = 43   (selfhost/stdlib_preamble.zig)
+#   EXPECTED_SRC      = 5    (src/*.zig — flat; no subdirs scanned)
+#
+# To update: bump the var below, add a cluster comment in the shell version too.
+
+def countLines(text: str, needle: str): int
+    var n = 0
+    for line in text.split("\n")
+        if needle in line
+            n = n + 1
+    return n
+
+def main()
+    var expected_preamble = 43
+    var expected_src      = 5
+
+    # ── Preamble check ────────────────────────────────────────────────────────
+    var preamble_text  = File.read("selfhost/stdlib_preamble.zig")
+    var actual_preamble = countLines(preamble_text, "page_allocator")
+
+    # ── src/*.zig check ───────────────────────────────────────────────────────
+    var actual_src = 0
+    var src_entries = Dir.list("src")
+    for entry in src_entries
+        if entry.endsWith(".zig")
+            var src_text = File.read("src/" + entry)
+            actual_src = actual_src + countLines(src_text, "page_allocator")
+
+    # ── Compare and report ────────────────────────────────────────────────────
+    var fail = false
+
+    if actual_preamble != expected_preamble
+        sys.errln("escape_hatches_check: stdlib_preamble.zig count drift")
+        sys.errln("  expected: " + expected_preamble.toString() + "  actual: " + actual_preamble.toString())
+        sys.errln("  file:     selfhost/stdlib_preamble.zig")
+        fail = true
+
+    if actual_src != expected_src
+        sys.errln("escape_hatches_check: src/ page_allocator count drift")
+        sys.errln("  expected: " + expected_src.toString() + "  actual: " + actual_src.toString())
+        sys.errln("  file(s):  src/*.zig")
+        fail = true
+
+    if fail
+        sys.errln("")
+        sys.errln("If the new page_allocator use is intentional and reviewed:")
+        sys.errln("  1. Verify it has a comment explaining why it must outlive the")
+        sys.errln("     program arena (typically: survives an arena_scope rewind).")
+        sys.errln("  2. Bump the matching expected_* in tools/escape_hatches_check.zbr.")
+        sys.errln("  3. Bump the matching EXPECTED_* in tools/escape_hatches_check.sh.")
+        sys.exit(1)
+
+    print "escape_hatches_check: OK"
+    print "  selfhost/stdlib_preamble.zig: " + actual_preamble.toString() + " page_allocator uses (baseline " + expected_preamble.toString() + ")"
+    print "  src/*.zig:                    " + actual_src.toString() + " page_allocator uses (baseline " + expected_src.toString() + ")"

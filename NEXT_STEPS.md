@@ -164,10 +164,10 @@ flow into this milestone.
 **Stdlib additions — Zebra scripting readiness gate:**
 - ✅ `Dir.walk(path): List(str)` — DONE 2026-05-05.  Both backends; 45/45 smoke;
   bootstrap 5/5.  Paths are `root/relative/path` with `/` separators.
-- `Regex.replace(pattern, replacement): str` — regex substitution (not just
-  match/find).  Blocks `branch_to_if_is.py`, `migrate_colon_syntax.py`, and
-  book sweep scripts.  One new codegen arm + selfhost parity.
-- Once both land, every Python sweep script in `tools/` has a clear Zebra port.
+- ✅ `re.replace(text, repl): str` — DONE (shipped with regex engine; `_regex_replace` in preamble).
+  Codegen arm in both backends.  `branch_to_if_is.py` / `migrate_colon_syntax.py` ports unblocked.
+- ✅ **Scripting gate items 1–5 fully unblocked** (Dir.walk + re.replace both available).
+  `sys.run()` / `sys.readLine()` still needed for item 6 (REPL port).
   See `SCRIPTING_TOOLS.md` for the full catalog and porting order.
 
 **Other cleanup carried over:**
