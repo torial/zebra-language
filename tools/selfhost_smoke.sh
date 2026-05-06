@@ -178,6 +178,9 @@ smoke test/json_parse_strict_test.zbr
 # a future codegen change making TC inference necessary.
 smoke test/json_parse_strict_tc_test.zbr
 
+# Dir.walk: recursive file-tree enumeration.
+smoke test/dir_walk_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

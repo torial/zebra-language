@@ -1,0 +1,25 @@
+def main()
+    # Dir.walk returns all file paths under a directory, recursively.
+    # Use the test/ directory itself as a known non-empty tree.
+    var files = Dir.walk("examples")
+    var found = false
+    for f in files
+        if f.endsWith(".zbr")
+            found = true
+    assert found, "Dir.walk should find at least one .zbr file under examples/"
+
+    # Paths should use forward slashes and include the root prefix.
+    var all_fwd = true
+    for f in files
+        if "\\" in f
+            all_fwd = false
+    assert all_fwd, "Dir.walk paths should use '/' separators, not '\\'"
+
+    # Paths should start with the root argument.
+    var all_rooted = true
+    for f in files
+        if not f.startsWith("examples/")
+            all_rooted = false
+    assert all_rooted, "Dir.walk paths should be prefixed with the root argument"
+
+    print "dir_walk_test: ok (" + files.count().toString() + " files found)"

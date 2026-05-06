@@ -162,9 +162,8 @@ flow into this milestone.
 - `_underscore` private prefix → drop (pending BUG-115 decision)
 
 **Stdlib additions — Zebra scripting readiness gate:**
-- `Dir.walk(path): List(str)` — recursive file-tree listing.  Blocks every
-  file-glob Python script from being ported to Zebra.  `Dir.list` (flat) exists;
-  `walk` is a small addition to `src/CodeGen.zig` `genDirCall` + selfhost parity.
+- ✅ `Dir.walk(path): List(str)` — DONE 2026-05-05.  Both backends; 45/45 smoke;
+  bootstrap 5/5.  Paths are `root/relative/path` with `/` separators.
 - `Regex.replace(pattern, replacement): str` — regex substitution (not just
   match/find).  Blocks `branch_to_if_is.py`, `migrate_colon_syntax.py`, and
   book sweep scripts.  One new codegen arm + selfhost parity.

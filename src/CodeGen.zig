@@ -4028,7 +4028,8 @@ const Generator = struct {
     //   Dir.delete(path)        → void (removes empty dir; ignores not-found)
     //   Dir.deleteAll(path)     → void (removes dir tree recursively)
     //   Dir.exists(path)        → bool
-    //   Dir.list(path)          → List(str)  (entry names)
+    //   Dir.list(path)          → List(str)  (entry names, flat)
+    //   Dir.walk(path)          → List(str)  (all file paths recursively, root-prefixed, '/' separators)
     fn genDirCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "create")) {
             try g.w.writeAll("(std.fs.cwd().makeDir(");
@@ -4083,6 +4084,44 @@ const Generator = struct {
             try bg.w.writeAll("}\n");
             try bg.writeIndent();
             try bg.w.writeAll("break :blk _dl_list;\n");
+            try g.writeIndent();
+            try g.w.writeAll("})");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "walk")) {
+            // Dir.walk(path) → ArrayList([]const u8) of all file paths recursively,
+            // rooted at path, '/' separators, path prefix included.
+            try g.w.writeAll("(blk_dw: {\n");
+            const bg = g.indented();
+            try bg.writeIndent();
+            try bg.w.writeAll("const _dw_root = ");
+            if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\".\"");
+            try bg.w.writeAll(";\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("var _dw_dir = std.fs.cwd().openDir(_dw_root, .{ .iterate = true }) catch @panic(\"Dir.walk error\");\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("defer _dw_dir.close();\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("var _dw_walker = _dw_dir.walk(_allocator) catch @panic(\"Dir.walk alloc error\");\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("defer _dw_walker.deinit();\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("var _dw_list = std.ArrayList([]const u8){};\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("while (_dw_walker.next() catch null) |_dw_entry| {\n");
+            const ig = bg.indented();
+            try ig.writeIndent();
+            try ig.w.writeAll("if (_dw_entry.kind != .file) continue;\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("const _dw_raw = std.fmt.allocPrint(_allocator, \"{s}/{s}\", .{ _dw_root, _dw_entry.path }) catch @panic(\"OOM\");\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("for (_dw_raw) |*_dw_c| if (_dw_c.* == '\\\\') { _dw_c.* = '/'; };\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("_dw_list.append(_allocator, _dw_raw) catch @panic(\"OOM\");\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("}\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("break :blk_dw _dw_list;\n");
             try g.writeIndent();
             try g.w.writeAll("})");
             return true;

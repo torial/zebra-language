@@ -142,15 +142,14 @@ script above has a working Zebra equivalent checked into the repo.
 
 ### Missing features (blockers)
 
-| Feature | Blocks |
-|---------|--------|
-| `Dir.walk(path): List(str)` — recursive file tree | All file-glob scripts |
-| `Regex.replace(pattern, repl): str` — substitution (not just match) | `branch_to_if_is`, `migrate_colon_syntax`, `book_fix_as_return` |
-| `sys.run()` robustness — capture stdout+stderr, exit code | `bootstrap_check`, `corpus_snapshot`, REPL |
-| `sys.readLine(): str?` — stdin readline | REPL |
+| Feature | Status | Blocks |
+|---------|--------|--------|
+| `Dir.walk(path): List(str)` — recursive file tree | ✅ DONE 2026-05-05 | All file-glob scripts |
+| `Regex.replace(pattern, repl): str` — substitution (not just match) | pending | `branch_to_if_is`, `migrate_colon_syntax`, `book_fix_as_return` |
+| `sys.run()` robustness — capture stdout+stderr, exit code | pending | `bootstrap_check`, `corpus_snapshot`, REPL |
+| `sys.readLine(): str?` — stdin readline | pending | REPL |
 
-Both `Dir.walk` and `Regex.replace` are filed in `NEXT_STEPS.md` (§12 /
-stdlib cluster) as the next stdlib additions.
+`Dir.walk` has landed. `Regex.replace` is the next blocker — see `NEXT_STEPS.md` §12.
 
 ### Porting order (once blockers land)
 
