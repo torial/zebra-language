@@ -156,8 +156,8 @@ Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re
 ### Porting order
 
 1. ✅ `book_strip_invisibles.zbr` — DONE 2026-05-05; `File.listDir` + `str.replace`
-2. ✅ `sweep_class_main.zbr` — DONE 2026-05-05; revealed BUG-116/117/118 (char methods,
-   List.join, struct ctor) in selfhost; workarounds applied
+2. ✅ `sweep_class_main.zbr` — DONE 2026-05-05; BUG-116/117/118 (char methods, List.join,
+   struct ctor) fixed 2026-05-05; workarounds removed from tool source after fixes
 3. ✅ `escape_hatches_check.zbr` — DONE 2026-05-05; first completed Zebra tool port
 4. `book_scan_unicode.zbr` — needs char iteration; drives that feature
 5. `branch_to_if_is.zbr` + `migrate_colon_syntax.zbr` — regex-replace variants

@@ -1001,16 +1001,21 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator)
     defer alloc.free(main_zig);
     try std.fs.cwd().copyFile(zig_path, std.fs.cwd(), main_zig, .{});
 
-    // 3. Write build.zig and build.zig.zon.
+    // 3. Write build.zig and build.zig.zon — but only on first creation.
+    // If a customised build.zig already exists (e.g. IDE/ZebraIDE_gui/ with
+    // C++ sources), preserve it so project-specific settings survive regens.
     inline for (.{
         .{ "build.zig",     gui_project_build_zig     },
         .{ "build.zig.zon", gui_project_build_zig_zon },
     }) |pair| {
         const fpath = try std.fs.path.join(alloc, &.{ proj, pair[0] });
         defer alloc.free(fpath);
-        const f = try std.fs.cwd().createFile(fpath, .{});
-        defer f.close();
-        try f.writeAll(pair[1]);
+        // Skip if the file already exists.
+        std.fs.cwd().access(fpath, .{}) catch {
+            const f = try std.fs.cwd().createFile(fpath, .{});
+            defer f.close();
+            try f.writeAll(pair[1]);
+        };
     }
 
     // 4. Absolute path of the project dir (needed for child.cwd).

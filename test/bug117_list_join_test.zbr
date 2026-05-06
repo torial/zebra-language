@@ -1,0 +1,22 @@
+# BUG-117: List.join(sep) — selfhost emitted inverted args to std.mem.join:
+# std.mem.join(_allocator, list, sep.items) instead of std.mem.join(_allocator, sep, list.items)
+
+def main()
+    var parts: List(str) = List()
+    parts.add("alpha")
+    parts.add("beta")
+    parts.add("gamma")
+
+    var joined = parts.join(", ")
+    assert joined == "alpha, beta, gamma", "expected 'alpha, beta, gamma', got '" + joined + "'"
+
+    var newline_joined = parts.join("\n")
+    var lines: List(str) = newline_joined.split("\n")
+    assert lines.count() == 3, "expected 3 lines, got " + lines.count().toString()
+    assert lines.at(0) == "alpha", "expected alpha, got " + lines.at(0)
+
+    var empty: List(str) = List()
+    var empty_joined = empty.join("-")
+    assert empty_joined == "", "expected empty string, got '" + empty_joined + "'"
+
+    print "bug117_list_join_test: ok"

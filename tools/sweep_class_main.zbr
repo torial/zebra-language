@@ -18,11 +18,8 @@
 # Also rewrites Main.method( -> method( for any lifted methods.
 # Run from repo root: zebra tools/sweep_class_main.zbr [--dry-run]
 #
-# Selfhost workarounds (bugs filed separately):
-#   - char.isAlpha()/isWhitespace() not dispatched → use startsWith
-#   - List.join(sep) codegen inverted → use StringBuilder helper
-#   - Struct construction generates .init() with no init defined → split into two fns
-#   - for i in 0 to expr fails with non-literal bound → use while loops
+# Selfhost notes:
+#   - for i in 0 to expr fails with non-literal bound → use while loops (ongoing limitation)
 
 def extractWord(s: str): str
     # Extract leading identifier up to first '(' or ' '.
@@ -31,16 +28,6 @@ def extractWord(s: str): str
     var before_tr = before_p.trimRight()
     var parts_s: List(str) = before_tr.split(" ")
     return parts_s.at(0)
-
-def linesJoin(parts: List(str), sep: str): str
-    var sb = StringBuilder()
-    var k = 0
-    while k < parts.count()
-        if k > 0
-            sb.append(sep)
-        sb.append(parts.at(k))
-        k = k + 1
-    return sb.build()
 
 def findClassMainStart(lines: List(str)): int
     var n = lines.count()
@@ -130,7 +117,7 @@ def transform(content: str): str?
         out.add(lines.at(di))
         di = di + 1
 
-    var text = linesJoin(out, "\n")
+    var text = out.join("\n")
 
     for name in lifted
         if name != "main"

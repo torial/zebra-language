@@ -69,8 +69,17 @@ Main.main
 
 ZebraIDE uses the `_GuiBackend` fn-ptr isolation layer. Swapping
 `_gui_active_backend` changes the renderer without touching any Zebra code.
-The `codeEditorFn` slot in `_GuiBackend` is reserved for a future
-ImGuiColorTextEdit integration; it currently delegates to `inputTextMultiline`.
+
+The `CodeEditor` widget is backed by **BalazsJako/ImGuiColorTextEdit** via a
+thin C shim (`src/TextEditorC.h` / `src/TextEditorC.cpp`). The GLFW backend
+calls `te_c.te_render()` directly from `_code_editor_render()`, bypassing the
+`_GuiBackend` fn-ptr table. The stub backend falls back to `inputMultiline`.
+
+The vendored C++ files live in `vendor/ImGuiColorTextEdit/`. The project
+`build.zig` was patched at `TextEditor.cpp` adoption to add:
+- `addCSourceFiles` for `TextEditor.cpp` + `TextEditorC.cpp`
+- `addIncludePath` for zgui's `libs/imgui/` headers
+- `linkLibCpp()` for the C++ standard library
 
 ## Key Language Features Exercised
 

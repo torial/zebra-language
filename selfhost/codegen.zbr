@@ -393,6 +393,14 @@ def isEnumLikeName(name: str): bool
         return true
     return false
 
+def declMembersHaveInit(members: List(Decl)): bool
+    # Returns true if the member list contains a cue init declaration.
+    # Uses di.params.count() to reference `di` so Zig does not emit unused-const.
+    for mem in members
+        if mem is Decl.init as di
+            return di.params.count() >= 0
+    return false
+
 def getIdentName(e: Expr): str?
     branch e
         on Expr.ident as id
@@ -685,8 +693,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         # Only uppercase names — lowercase are functions, not types
                         if isUpperCase(exposed_name)
                             g.struct_names.add(exposed_name)
+                            g.struct_with_init.add(exposed_name)  # cross-module structs all have cue init
             on Decl.struct_ as s
                 g.struct_names.add(s.name)
+                if declMembersHaveInit(s.members)
+                    g.struct_with_init.add(s.name)
                 for mem in s.members
                     if mem is Decl.method as dm
                         if dm.throws_
@@ -1089,7 +1100,8 @@ struct Generator
     var class_names          : StrSet  # names of classes → emit *ClassName in genType
     var union_names          : StrSet  # names of unions → emit union construction
     var enum_names           : StrSet  # names of enums → emit enum construction
-    var struct_names         : StrSet  # names of structs → emit struct.init() construction
+    var struct_names         : StrSet  # names of structs visible in this module
+    var struct_with_init     : StrSet  # subset of struct_names that have cue init → emit .init()
     var toString_types       : StrSet  # names of types that have a toString() method
     var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
@@ -1157,6 +1169,7 @@ struct Generator
         .union_names           = StrSet()
         .enum_names            = StrSet()
         .struct_names          = StrSet()
+        .struct_with_init      = StrSet()
         .toString_types        = StrSet()
         .boxed_variants        = StrSet()
         .ref_fields            = StrSet()
@@ -1737,9 +1750,53 @@ struct Generator
                 on Decl.method as m
                     ig.genMethod(m)
                 on Decl.init as ini
+                    struct_with_init.add(n.name)
                     ig.genInit(ini)
                 else
                     pass
+        # Synthetic pub fn init(fields...) StructName for plain structs (no cue init).
+        # Normalises all structs so callers can use StructName.init(...) uniformly.
+        if not struct_with_init.contains_(n.name)
+            var sig_ig = ig.indented()
+            ig.writeIndent()
+            w.emit("pub fn init(")
+            var si_first = true
+            for si_decl in n.members
+                if si_decl is Decl.var_ as si_fld
+                    if si_fld.mods.is_static
+                        continue
+                    if not si_first
+                        w.emit(", ")
+                    si_first = false
+                    w.emit(si_fld.name)
+                    w.emit(": ")
+                    if si_fld.type_ != nil
+                        ig.genType(si_fld.type_ to!)
+                    else
+                        w.emit("anytype")
+            w.emit(") ")
+            w.emit(n.name)
+            w.emit(" {\n")
+            sig_ig.writeIndent()
+            if si_first
+                w.emit("return .{};\n")
+            else
+                w.emit("return .{")
+                var si_first2 = true
+                for si_decl2 in n.members
+                    if si_decl2 is Decl.var_ as si_fld2
+                        if si_fld2.mods.is_static
+                            continue
+                        if not si_first2
+                            w.emit(",")
+                        si_first2 = false
+                        w.emit(" .")
+                        w.emit(si_fld2.name)
+                        w.emit(" = ")
+                        w.emit(si_fld2.name)
+                w.emit(" };\n")
+            ig.writeIndent()
+            w.emit("}\n\n")
         if n.invariants.count() > 0 and not strip_contracts
             ig.genInvariantCheckFn()
         if n.ifaces.count() > 0
@@ -2771,6 +2828,15 @@ struct Generator
                             w.emit(";")
                         w.emit("\n")
                     else
+                        # Zig rejects discarding a non-void expr as a statement.
+                        if .infer_ctx != nil
+                            var stmt_t: Type_ = inferExpr(e, .infer_ctx to!)
+                            var is_void: bool = stmt_t is Type_.void_
+                            var is_unk: bool = stmt_t is Type_.unknown_
+                            var is_unres: bool = stmt_t is Type_.unresolved
+                            var is_ctx_dep: bool = stmt_t is Type_.context_dependent
+                            if not is_void and not is_unk and not is_unres and not is_ctx_dep
+                                w.emit("_ = ")
                         genExpr(e)
                         w.emit(";\n")
             on Stmt.pass_
@@ -6037,9 +6103,9 @@ struct Generator
             if id.name == "StringBuilder" and c.args.count() == 0
                 w.emit("std.ArrayList(u8){}")
                 return
-        # Class/struct constructor: ClassName(args) → ClassName.init(args)
+        # BUG-118: class constructor → .init(args); struct without cue init → struct literal
         if c.callee is Expr.ident as id
-            if class_names.contains_(id.name) or struct_names.contains_(id.name)
+            if class_names.contains_(id.name) or struct_with_init.contains_(id.name)
                 w.emit(id.name)
                 w.emit(".init(")
                 var first2 = true
@@ -6085,6 +6151,26 @@ struct Generator
                         genExpr(a.value)
                     arg_idx = arg_idx + 1
                 w.emit(")")
+                return
+            # BUG-118: plain struct (no cue init) → struct literal StructName{ .field = val }
+            if struct_names.contains_(id.name)
+                w.emit(id.name)
+                w.emit("{")
+                var first_sf = true
+                for a in c.args
+                    if first_sf
+                        w.emit(" ")
+                    else
+                        w.emit(", ")
+                    first_sf = false
+                    if a.name != nil
+                        w.emit(".")
+                        w.emit(a.name to!)
+                        w.emit(" = ")
+                    genExpr(a.value)
+                if not first_sf
+                    w.emit(" ")
+                w.emit("}")
                 return
         # Bare method call: method(args) → self.method(args) or Owner.method(args)
         if c.callee is Expr.ident as id
@@ -6576,13 +6662,14 @@ struct Generator
             w.emit(")")
             return
         if mname == "join"
+            # BUG-117: std.mem.join(alloc, separator, slices) — separator first, list.items second
             w.emit("(std.mem.join(_allocator, ")
-            genExpr(m.object)
-            w.emit(", ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
-                w.emit("&.{}")
+                w.emit("\"\"")
+            w.emit(", ")
+            genExpr(m.object)
             w.emit(".items) catch @panic(\"OOM\"))")
             return
         if mname == "codePointCount"
@@ -6734,6 +6821,46 @@ struct Generator
                 return
             if id.name == "Reflect"
                 genReflectCall(mname, args)
+                return
+        # BUG-116: char methods — dispatch to std.ascii predicates when receiver is char_
+        if mname == "isAlpha" or mname == "isDigit" or mname == "isWhitespace" or mname == "isUpper" or mname == "isLower" or mname == "toUpper" or mname == "toLower"
+            var is_char116 = false
+            if .infer_ctx != nil
+                var recv116: Type_ = inferExpr(m.object, .infer_ctx to!)
+                branch recv116
+                    on Type_.char_
+                        is_char116 = true
+                    else
+                        pass
+            if is_char116
+                if mname == "isAlpha"
+                    w.emit("std.ascii.isAlphabetic(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit(")))")
+                else if mname == "isDigit"
+                    w.emit("std.ascii.isDigit(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit(")))")
+                else if mname == "isWhitespace"
+                    w.emit("std.ascii.isWhitespace(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit(")))")
+                else if mname == "isUpper"
+                    w.emit("std.ascii.isUpper(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit(")))")
+                else if mname == "isLower"
+                    w.emit("std.ascii.isLower(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit(")))")
+                else if mname == "toUpper"
+                    w.emit("@as(u21, std.ascii.toUpper(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit("))))")
+                else if mname == "toLower"
+                    w.emit("@as(u21, std.ascii.toLower(@as(u8, @truncate(")
+                    genExpr(m.object)
+                    w.emit("))))")
                 return
         # String methods ([]const u8 has no methods in Zig — use std.mem functions)
         if mname == "contains" and args.count() > 0

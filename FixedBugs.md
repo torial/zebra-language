@@ -5,6 +5,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-118: selfhost — struct construction emits `Struct.init()` with no init method — FIXED 2026-05-05; synthetic init 2026-05-06
+- **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
+- **Was:** `Point(x: 1, y: 2)` emitted `Point.init(1, 2)`. Plain structs have no `pub fn init`; only classes (and structs with `cue init`) do.
+- **Fix (2026-05-05):** `genCall` in `selfhost/codegen.zbr` now tracks two separate StrSets: `struct_names` (all structs) and `struct_with_init` (structs with `cue init`, including all cross-module exposed structs). Plain structs (in `struct_names` but not `struct_with_init`) emit `Struct{ .field = val }` literal syntax. Added `declMembersHaveInit` helper to avoid unused-binding Zig error.
+- **Enhancement (2026-05-06):** Both backends now emit a synthetic `pub fn init(fields...) StructName { return .{ ... }; }` in `genStruct` for every plain struct (no explicit `cue init`). This normalises all struct definitions — `StructName.init(...)` is now always callable. The call site continues to use struct literal syntax (order-independent) for construction; the synthetic init is available for Zig interop and future uniform-construction refactors.
+- **Test:** `test/bug118_struct_ctor_test.zbr` — constructs `Point(x: 3, y: 4)` and `RGB(r: 255, g: 128, b: 0)`.
+
+---
+
+### BUG-117: selfhost — `List.join(sep)` codegen emits inverted arguments — FIXED 2026-05-05
+- **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
+- **Was:** `items.join(sep)` emitted `std.mem.join(_allocator, items, sep.items)` — separator and slices swapped, `.items` on separator.
+- **Fix:** `genMemberCall` `join` arm now emits separator first: `std.mem.join(_allocator, sep, items.items)`.
+- **Test:** `test/bug117_list_join_test.zbr` — joins `["alpha", "beta", "gamma"]` with `", "`.
+
+---
+
+### BUG-116: selfhost — `char.isAlpha()` / `char.isDigit()` / `char.isWhitespace()` not dispatched — FIXED 2026-05-05
+- **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
+- **Was:** Char methods fell through to pass-through path, emitting invalid `u21.isAlpha()` Zig.
+- **Fix:** Added char dispatch block before the string methods section in `genMemberCall`. Detects `Type_.char_` receiver via `inferExpr` and emits `std.ascii.isAlphabetic(@as(u8, @truncate(c)))` etc. Covers: `isAlpha`, `isDigit`, `isWhitespace`, `isUpper`, `isLower`, `toUpper`, `toLower`. Mirrors `genCharMethod` in `src/CodeGen.zig`.
+- **Test:** `test/bug116_char_methods_test.zbr` — counts alpha/digit/space chars, tests isUpper/isLower, verifies toUpper via StringBuilder.
+
+---
+
 ### §19: Selfhost TC diagnostics — SHIPPED 2026-05-05
 - **Status:** Shipped in `selfhost/typechecker.zbr` + `selfhost/main.zbr`. Compat test 2/2 PASS, bootstrap 5/5.
 - **Was:** `selfhost/typechecker.zbr` had inference-only infrastructure (no `errors` list, no `addErr`, no print path). Type mismatches in the selfhost pipeline were only caught after codegen by the downstream Zig compiler, producing `path:LINE:` (no col) format errors.

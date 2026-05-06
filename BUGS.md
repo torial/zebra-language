@@ -1,43 +1,10 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-118. Next new bug: BUG-119.**
+**Last bug number generated: BUG-119. Next new bug: BUG-120.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
-
----
-
-### BUG-116: selfhost — `char.isAlpha()` / `char.isDigit()` / `char.isWhitespace()` not dispatched
-- **Severity:** Medium (correctness gap — emits `u21.isAlpha()` which Zig rejects)
-- **Status:** Open
-- **Symptom:** Calling char methods (`isAlpha`, `isDigit`, `isWhitespace`, `isUpper`, `isLower`) on a `char` variable in the selfhost compiler falls through to the default pass-through path and emits `c.isAlpha()` as a Zig method call. Zig rejects this since `u21` has no methods.
-- **Root cause:** `genMemberCall` in `selfhost/codegen.zbr` has no `char` type dispatch arm. The bootstrap compiler has `genCharMethod` (dispatches on TC type `char`) which the selfhost has not yet ported.
-- **Fix:** Add a char type check in `genMemberCall` (check `inferExpr(m.object)` == `Type_.char_`) and emit `std.ascii.isAlphabetic(@as(u8, @truncate(c)))` etc., matching `genCharMethod` in `src/CodeGen.zig`.
-- **Workaround:** Avoid `char` method calls; use `str.startsWith(...)` or string comparisons instead.
-- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
-
----
-
-### BUG-117: selfhost — `List.join(sep)` codegen emits inverted arguments
-- **Severity:** Medium (correctness gap — generates type-error Zig)
-- **Status:** Open
-- **Symptom:** `items.join(sep)` generates `std.mem.join(_allocator, items, sep.items)` — the separator and slices arguments are swapped, and `sep.items` fails because `[]const u8` has no `.items` field.
-- **Root cause:** `genMemberCall` in `selfhost/codegen.zbr` at the `join` arm emits the object as the separator and appends `.items` to the separator expression instead of to the list. The correct Zig is `std.mem.join(_allocator, sep, items.items)`.
-- **Fix:** Swap the arguments in the `join` emit arm and move `.items` to the list object, not the separator.
-- **Workaround:** Use a `StringBuilder` with a manual loop instead of `list.join(sep)`.
-- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
-
----
-
-### BUG-118: selfhost — struct construction emits `Struct.init()` with no init method
-- **Severity:** Medium (correctness gap — generates type-error Zig for plain structs)
-- **Status:** Open
-- **Symptom:** `Point(x: 1, y: 2)` in the selfhost compiler emits `Point.init(1, 2)` — but plain `struct` types have no `pub fn init` method, so Zig rejects it with "struct has no member named 'init'".
-- **Root cause:** `genCall` in `selfhost/codegen.zbr` treats structs the same as classes (both call `.init()`). Classes have `cue init` which generates a `pub fn init`; plain structs do not.
-- **Fix:** In `genCall`, when the callee is a `struct_name` (not a `class_name`), emit Zig struct literal syntax: `Struct{ .field = val, ... }` with named fields, instead of `Struct.init(...)`.
-- **Workaround:** Avoid plain `struct` types with field constructors in selfhost-compiled code; refactor return values to use `int` sentinels or restructure the functions.
-- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
 
 ---
 
@@ -699,4 +666,30 @@ REMAINING (deferred):
 
 ---
 
-*Last updated: 2026-04-24 — BUG-085 closed: static-field bare-name emit; DESIGN-002 closed: collectAndEmitOldSnapshots 8 missing arms added + regression test*
+### BUG-119: Selfhost `isListField` fails for `List` fields accessed through function parameters
+- **Severity:** Medium (codegen silently emits wrong Zig — `.len` instead of `.items.len`)
+- **Status:** Open — proper fix deferred; workaround: add accessor method to the class
+- **Symptom:** In a free function (not a class method) that receives a class instance as a parameter, accessing `.len` on a `List` field of that instance generates `state.diags.len` instead of `state.diags.items.len`. The generated Zig fails to compile because `std.ArrayList` has no `.len` field.
+- **Reproducer:**
+  ```zebra
+  class IDEState
+      var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
+
+  def renderDiags(gc: Gui, state: IDEState, editor: CodeEditor)
+      gc.text("Count: ${state.diags.len}")   # ← wrong: emits .len not .items.len
+  ```
+- **Root cause:** In `selfhost/codegen.zbr`, the `.len` property handler calls `isListField(fname)` which only inspects `owner_members` (the current class's declared fields). For free functions, `owner_members` is empty. The `isKnownListField(fname)` hardcoded fallback only covers compiler-internal field names (`args`, `params`, `stmts`, etc.) — "diags" is not in that list.
+- **Proper fix:** Add a `list_field_names: HashMap(str, bool)` reverse index to `ModuleTypes` in `selfhost/typechecker.zbr`, populated by `addClassMembers` (parallel to the existing `hashmap_field_names` and `strset_field_names`). Add a `fieldIsList(mt, dep_mt, name)` helper (parallel to `fieldIsHashMap`). Call it in the `.len` handler in `codegen.zbr`. ~3 files, ~25 lines.
+- **Workaround:** Add a helper method to the class that accesses the List field from within the method body, where `owner_members` is populated:
+  ```zebra
+  class IDEState
+      var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
+      def diagCount(): int
+          return .diags.len   # inside the method, isListField("diags") works
+  ```
+  Then call `state.diagCount()` at the free-function call site.
+- **Discovered:** 2026-05-06 while compiling `IDE/ZebraIDE.zbr`.
+
+---
+
+*Last updated: 2026-05-06 — BUG-119 filed: selfhost isListField fails for List fields accessed through function parameters*

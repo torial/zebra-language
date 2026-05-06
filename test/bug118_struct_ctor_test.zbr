@@ -1,0 +1,28 @@
+# BUG-118: plain struct construction — selfhost emitted Struct.init(args) for structs
+# without cue init, but only classes/structs-with-init have a pub fn init().
+# Fixed by routing plain structs to Struct{ .field = val } literal syntax.
+
+struct Point
+    var x: int
+    var y: int
+
+struct RGB
+    var r: int
+    var g: int
+    var b: int
+
+def manhattan(p: Point): int
+    return p.x + p.y
+
+def main()
+    var p = Point(x: 3, y: 4)
+    assert p.x == 3, "expected x=3, got " + p.x.toString()
+    assert p.y == 4, "expected y=4, got " + p.y.toString()
+    assert manhattan(p) == 7, "expected manhattan=7, got " + manhattan(p).toString()
+
+    var color = RGB(r: 255, g: 128, b: 0)
+    assert color.r == 255, "expected r=255, got " + color.r.toString()
+    assert color.g == 128, "expected g=128, got " + color.g.toString()
+    assert color.b == 0,   "expected b=0, got " + color.b.toString()
+
+    print "bug118_struct_ctor_test: ok"

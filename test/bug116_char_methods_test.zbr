@@ -1,0 +1,39 @@
+# BUG-116: char method dispatch — isAlpha/isDigit/isWhitespace/isUpper/isLower/toUpper/toLower
+# Selfhost genMemberCall had no char_ receiver branch; fell through to string methods
+# emitting invalid `u21.isAlpha(...)` Zig. Fixed by inferring receiver type in genMemberCall.
+
+def main()
+    var text = "Hello World 123"
+    var alpha_count: int = 0
+    var digit_count: int = 0
+    var space_count: int = 0
+    for c in text.chars()
+        if c.isAlpha()
+            alpha_count = alpha_count + 1
+        if c.isDigit()
+            digit_count = digit_count + 1
+        if c.isWhitespace()
+            space_count = space_count + 1
+    assert alpha_count == 10, "expected 10 alpha, got " + alpha_count.toString()
+    assert digit_count == 3, "expected 3 digits, got " + digit_count.toString()
+    assert space_count == 2, "expected 2 spaces, got " + space_count.toString()
+
+    # isUpper / isLower
+    var upper_count: int = 0
+    var lower_count: int = 0
+    for c in text.chars()
+        if c.isUpper()
+            upper_count = upper_count + 1
+        if c.isLower()
+            lower_count = lower_count + 1
+    assert upper_count == 2, "expected 2 upper, got " + upper_count.toString()
+    assert lower_count == 8, "expected 8 lower, got " + lower_count.toString()
+
+    # toUpper / toLower
+    var sb = StringBuilder()
+    for c in "hello".chars()
+        sb.appendChar(c.toUpper())
+    var up = sb.build()
+    assert up == "HELLO", "expected HELLO, got " + up
+
+    print "bug116_char_methods_test: ok"
