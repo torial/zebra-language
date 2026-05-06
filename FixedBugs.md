@@ -14,6 +14,16 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-102: Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
+- **Status:** Fixed. All 41 `to!` sites in `selfhost/typechecker.zbr` are now guarded. Bootstrap 5/5, smoke 44/44.
+- **Was:** `selfhost/typechecker.zbr` had ~41 `to!` force-unwrap operations in various states of guardedness. Several appeared unguarded. A nil at any unguarded `to!` is a hard panic with no diagnostic.
+- **Fix:** Full audit of all 41 sites:
+  - 20 converted to `if x as v` (idiomatic) — applies to `String?`, `List(Stmt)?`, `Type_?` same-file locals and cross-module fields where the bootstrap TC tracks optionality correctly
+  - 21 kept as `if x != nil: ... to!` with `# safe:` annotation — required for cross-module `TypeRef?` and `^Expr?` fields, which the bootstrap TC does not track as optional (pre-existing gap)
+- **Note:** The TC gap where `TypeRef?`/`^Expr?` cross-module fields aren't inferred as optional is a separate issue from BUG-102. The guarded `to!` pattern is the correct workaround for those 21 sites.
+
+---
+
 ### BUG-099: Type `.unknown` three-way split — FIXED 2026-05-05 (Zig) + 2026-05-06 (selfhost)
 - **Status:** Fixed in `src/TypeChecker.zig` (2026-05-05) and `selfhost/typechecker.zbr` (2026-05-06). Bootstrap 5/5, smoke 44/44, full test suite.
 - **Was:** `Type.unknown` / `Type_.unknown_` overloaded three semantically distinct cases: context-dependent (nil, result), opaque-by-design (zig_lit, generics), and unresolved (TC gave up). Downstream checks couldn't distinguish them, so `var x: int = undefined_call()` silently typechecked.

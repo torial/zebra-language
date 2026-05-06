@@ -252,18 +252,12 @@ FixedBugs.md.
 
 ### BUG-102: Selfhost typechecker has 65+ `to!` force-unwraps — audit needed
 - **Severity:** Medium (each is a potential panic with no diagnostic; unknown how many are unguarded)
-- **Status:** Open
-- **Symptom:** `selfhost/typechecker.zbr` contains roughly 65 `to!` force-unwrap operations. Several are preceded by explicit nil-checks (safe); several appear unguarded. A nil at any unguarded `to!` is a hard panic with no diagnostic and no recovery.
-- **Specific suspects from initial scan:**
-  - `:722  return ctx.current_return_type to!` — fires if `result`/`return` is encountered outside any function context
-  - `:1015 var pt_val: Type_ = pt to!` — payload type unwrap; fires if union variant has no payload
-  - `:1079 var var_nm: str = tce.variant_name to!` — branch arm variant name; parser-shape dependent
-  - `:1095 ctx.bind(si.is_capture to!, cap_t)` — capture binding without an `as` name
-- **Reproducer:** Per-site reproducer needs construction; the audit found the count, not concrete crashes.
-- **Root cause:** Selfhost was written in `to!`-heavy style before `if x as n` binding form became idiomatic. Many `to!` calls are now unnecessarily aggressive.
-- **Fix sketch:** Triage the 65 sites by hot-path frequency. For each:
-  1. If the AST shape that nils the optional is provably impossible from any parser output, leave a comment proving why (`# safe: parser guarantees …`).
-  2. Otherwise convert to `if x as y` with a defensive diagnostic emit (gated on BUG-104's diag infrastructure).
+- **Status:** Closed — fixed 2026-05-06
+- **Resolution:** Full audit of all `to!` sites in `selfhost/typechecker.zbr`. All 41 sites are now guarded:
+  - 20 converted to `if x as v` (idiomatic optional-unwrap) — works for `String?`, `List(Stmt)?`, `Type_?` same-file locals and cross-module fields
+  - 21 kept as `if x != nil: ... to!` with `# safe: nil checked above` or `# safe: nil returned above` comment — required for cross-module `TypeRef?` and `^Expr?` fields (bootstrap TC gap: doesn't track these as optional; tracked separately)
+  - Zero unguarded `to!` remain
+- **TC gap note:** The Zig bootstrap TC (`src/TypeChecker.zig`) does not correctly infer `TypeRef?` and `^Expr?` cross-module field types as optional, causing `if x as v` to fail with "requires an optional type, got 'TypeRef'". This is a pre-existing gap, not introduced by this fix. The safe guarded `to!` pattern is the correct workaround until that gap is closed.
 - **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-3]).
 
 ---
