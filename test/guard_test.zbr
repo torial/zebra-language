@@ -23,20 +23,18 @@ def testGuardFail()
 catch |e|
     print "guard raised: ".concat(e.message)
 
-class Main
-    static
-        def main
-            # block form guard — success path
-            testGuardSuccess()
+def main()
+    # block form guard — success path
+    testGuardSuccess()
 
-            # inline form guard
-            var c = Validator.firstChar("hello")
-            print c
+    # inline form guard
+    var c = Validator.firstChar("hello")
+    print c
 
-            var empty = Validator.firstChar("")
-            print empty
+    var empty = Validator.firstChar("")
+    print empty
 
-            # guard that fires — verify error propagates with correct message
-            testGuardFail()
+    # guard that fires — verify error propagates with correct message
+    testGuardFail()
 
-            print "ok"
+    print "ok"

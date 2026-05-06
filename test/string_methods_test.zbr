@@ -1,52 +1,50 @@
-class Main
-    static
-        def main
-            # ── len property ─────────────────────────────────────────────
-            var greeting: str = "hello"
-            print greeting.len        # 5
+def main()
+    # ── len property ─────────────────────────────────────────────
+    var greeting: str = "hello"
+    print greeting.len        # 5
 
-            # ── trimLeft / trimRight ──────────────────────────────────────
-            var padded: str = "  hi  "
-            print padded.trimLeft()   # "hi  "
-            print padded.trimRight()  # "  hi"
+    # ── trimLeft / trimRight ──────────────────────────────────────
+    var padded: str = "  hi  "
+    print padded.trimLeft()   # "hi  "
+    print padded.trimRight()  # "  hi"
 
-            # ── isEmpty ───────────────────────────────────────────────────
-            var empty: str = ""
-            print empty.isEmpty()     # true
-            print greeting.isEmpty()  # false
+    # ── isEmpty ───────────────────────────────────────────────────
+    var empty: str = ""
+    print empty.isEmpty()     # true
+    print greeting.isEmpty()  # false
 
-            # ── count ─────────────────────────────────────────────────────
-            var sentence: str = "banana"
-            print sentence.count("an")  # 2
+    # ── count ─────────────────────────────────────────────────────
+    var sentence: str = "banana"
+    print sentence.count("an")  # 2
 
-            # ── join ──────────────────────────────────────────────────────
-            var words: List(str) = List()
-            words.add("one")
-            words.add("two")
-            words.add("three")
-            print ", ".join(words)     # "one, two, three"
+    # ── join ──────────────────────────────────────────────────────
+    var words: List(str) = List()
+    words.add("one")
+    words.add("two")
+    words.add("three")
+    print ", ".join(words)     # "one, two, three"
 
-            # ── lines ─────────────────────────────────────────────────────
-            var text: str = "line1\nline2\nline3"
-            for line in text.lines()
-                print line
+    # ── lines ─────────────────────────────────────────────────────
+    var text: str = "line1\nline2\nline3"
+    for line in text.lines()
+        print line
 
-            # ── reverse ───────────────────────────────────────────────────
-            print greeting.reverse()   # "olleh"
+    # ── reverse ───────────────────────────────────────────────────
+    print greeting.reverse()   # "olleh"
 
-            # ── toHex ─────────────────────────────────────────────────────
-            var hi: str = "hi"
-            print hi.toHex()           # "6869"
+    # ── toHex ─────────────────────────────────────────────────────
+    var hi: str = "hi"
+    print hi.toHex()           # "6869"
 
-            # ── padLeft / padRight with custom fill ───────────────────────
-            print greeting.padLeft(8, '*')   # "***hello"
-            print greeting.padRight(8, '-')  # "hello---"
+    # ── padLeft / padRight with custom fill ───────────────────────
+    print greeting.padLeft(8, '*')   # "***hello"
+    print greeting.padRight(8, '-')  # "hello---"
 
-            # ── isAlpha / isNumeric ────────────────────────────────────────
-            var alpha: str = "hello"
-            var digits: str = "12345"
-            var mixed: str = "hi2"
-            print alpha.isAlpha()    # true
-            print digits.isAlpha()   # false
-            print digits.isNumeric() # true
-            print mixed.isNumeric()  # false
+    # ── isAlpha / isNumeric ────────────────────────────────────────
+    var alpha: str = "hello"
+    var digits: str = "12345"
+    var mixed: str = "hi2"
+    print alpha.isAlpha()    # true
+    print digits.isAlpha()   # false
+    print digits.isNumeric() # true
+    print mixed.isNumeric()  # false

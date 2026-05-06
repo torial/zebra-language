@@ -1,21 +1,19 @@
-class Main
-    static
-        def doubleIt(x: int): int
-            ensure
-                result == x * 2
-            return x * 2
+def doubleIt(x: int): int
+    ensure
+        result == x * 2
+    return x * 2
 
-        def absolute(n: int): int
-            ensure
-                result >= 0
-            if n < 0
-                return -n
-            return n
+def absolute(n: int): int
+    ensure
+        result >= 0
+    if n < 0
+        return -n
+    return n
 
-        def main
-            assert Main.doubleIt(5) == 10
-            assert Main.doubleIt(-3) == -6
-            assert Main.absolute(7) == 7
-            assert Main.absolute(-7) == 7
-            assert Main.absolute(0) == 0
-            print "contract_result_test OK"
+def main()
+    assert doubleIt(5) == 10
+    assert doubleIt(-3) == -6
+    assert absolute(7) == 7
+    assert absolute(-7) == 7
+    assert absolute(0) == 0
+    print "contract_result_test OK"

@@ -3,13 +3,11 @@ union Expr
     add: int
     neg
 
-class Main
-    static
-        def main
-            var e = Expr.num(42)
-            branch e
-                on Expr.num as n
-                    print n
-                on Expr.add as n
-                    print n
-            # missing: on Expr.neg -- should now give Zebra error, not Zig error
+def main()
+    var e = Expr.num(42)
+    branch e
+        on Expr.num as n
+            print n
+        on Expr.add as n
+            print n
+    # missing: on Expr.neg -- should now give Zebra error, not Zig error

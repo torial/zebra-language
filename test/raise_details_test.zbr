@@ -9,22 +9,20 @@ class FileInfo
     def toString(): str
         return "FileInfo(".concat(path).concat(")")
 
-class Main
-    static
-        def tryRead(path: str) throws
-            raise "file not found", FileInfo(path, 404)
+def tryRead(path: str) throws
+    raise "file not found", FileInfo(path, 404)
 
-        def testRaiseWithDetails()
-            Main.tryRead("data.txt")
-        catch |e|
-            print e.message
-            print e.details.toString()
+def testRaiseWithDetails()
+    tryRead("data.txt")
+catch |e|
+    print e.message
+    print e.details.toString()
 
-        def testSimpleRaise()
-            raise "simple error"
-        catch |e|
-            print e.message
+def testSimpleRaise()
+    raise "simple error"
+catch |e|
+    print e.message
 
-        def main
-            testRaiseWithDetails()
-            testSimpleRaise()
+def main()
+    testRaiseWithDetails()
+    testSimpleRaise()

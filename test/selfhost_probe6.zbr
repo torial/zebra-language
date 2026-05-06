@@ -267,14 +267,12 @@ def test_nested_ctx()
 
 # -- main --
 
-class Main
-    static
-        def main
-            test_multiline()
-            test_struct_except()
-            test_string_builder()
-            test_many_variants()
-            test_dispatch_chain()
-            test_struct_return()
-            test_nested_ctx()
-            print 'selfhost_probe6: all OK'
+def main()
+    test_multiline()
+    test_struct_except()
+    test_string_builder()
+    test_many_variants()
+    test_dispatch_chain()
+    test_struct_return()
+    test_nested_ctx()
+    print 'selfhost_probe6: all OK'

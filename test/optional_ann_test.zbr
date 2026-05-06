@@ -2,31 +2,29 @@
 # Previously only primitives were annotated; optionals could silently get the
 # wrong Zig type if TC returned .optional(.string) and the annotation was omitted.
 
-class Main
-    static
-        def findFirst(items: List(str), prefix: str): str?
-            for item in items
-                if item.contains(prefix)
-                    return item
-            return nil
+def findFirst(items: List(str), prefix: str): str?
+    for item in items
+        if item.contains(prefix)
+            return item
+    return nil
 
-        def main
-            var items: List(str) = List()
-            items.add("apple")
-            items.add("banana")
-            items.add("cherry")
+def main()
+    var items: List(str) = List()
+    items.add("apple")
+    items.add("banana")
+    items.add("cherry")
 
-            # Optional result — should annotate: ?[]const u8 when mutable
-            var found = Main.findFirst(items, "ban")
-            if found != nil
-                print "found"
-            else
-                print "not found"
+    # Optional result — should annotate: ?[]const u8 when mutable
+    var found = findFirst(items, "ban")
+    if found != nil
+        print "found"
+    else
+        print "not found"
 
-            var missing = Main.findFirst(items, "xyz")
-            if missing == nil
-                print "correctly nil"
-            else
-                print "unexpected"
+    var missing = findFirst(items, "xyz")
+    if missing == nil
+        print "correctly nil"
+    else
+        print "unexpected"
 
-            print "optional_ann_test: done"
+    print "optional_ann_test: done"

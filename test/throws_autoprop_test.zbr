@@ -18,9 +18,7 @@ class ErrorPropTest
     catch |_e|
         print "caught: OK"
 
-class Main
-    static
-        def main
-            var t = ErrorPropTest()
-            t.run()
-            print "throws_autoprop_test: passed"
+def main()
+    var t = ErrorPropTest()
+    t.run()
+    print "throws_autoprop_test: passed"

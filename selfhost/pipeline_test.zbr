@@ -164,10 +164,8 @@ class PipelineTest
         assert zig.contains("Main.main()"), "expected Main.main() call in entry"
         print "testFullRoundTrip: OK"
 
-class Main
-    static
-        def main
-            var t = PipelineTest()
-            t.run()?
-        catch |e|
-            print "FAILED: " + e.message
+def main()
+    var t = PipelineTest()
+    t.run()?
+catch |e|
+    print "FAILED: " + e.message

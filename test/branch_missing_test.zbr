@@ -3,13 +3,11 @@ union Color
     green
     blue
 
-class Main
-    static
-        def main
-            var c: Color = Color.red
-            branch c
-                on Color.red
-                    print "red"
-                on Color.green
-                    print "green"
-            # missing: on Color.blue
+def main()
+    var c: Color = Color.red
+    branch c
+        on Color.red
+            print "red"
+        on Color.green
+            print "green"
+    # missing: on Color.blue

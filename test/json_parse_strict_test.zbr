@@ -8,40 +8,38 @@ class User
     var rate: float = 0.0
     var ok: bool = false
 
-class Main
-    static
-        def main
-            # Happy path — all fields present with correct types.
-            var ok_src = "{\"name\":\"Alice\",\"age\":30,\"rate\":1.5,\"ok\":true}"
-            if Json.parseStrict(User, ok_src) as u
-                assert u.name == "Alice"
-                assert u.age == 30
-                assert u.rate == 1.5
-                assert u.ok == true
-            else
-                assert false  # should have parsed
+def main()
+    # Happy path — all fields present with correct types.
+    var ok_src = "{\"name\":\"Alice\",\"age\":30,\"rate\":1.5,\"ok\":true}"
+    if Json.parseStrict(User, ok_src) as u
+        assert u.name == "Alice"
+        assert u.age == 30
+        assert u.rate == 1.5
+        assert u.ok == true
+    else
+        assert false  # should have parsed
 
-            # Missing key → null.
-            var miss_src = "{\"name\":\"Bob\",\"age\":40,\"rate\":2.0}"
-            assert Json.parseStrict(User, miss_src) == nil
+    # Missing key → null.
+    var miss_src = "{\"name\":\"Bob\",\"age\":40,\"rate\":2.0}"
+    assert Json.parseStrict(User, miss_src) == nil
 
-            # Extra key → null (strict).
-            var extra_src = "{\"name\":\"Carol\",\"age\":25,\"rate\":0.5,\"ok\":false,\"surprise\":1}"
-            assert Json.parseStrict(User, extra_src) == nil
+    # Extra key → null (strict).
+    var extra_src = "{\"name\":\"Carol\",\"age\":25,\"rate\":0.5,\"ok\":false,\"surprise\":1}"
+    assert Json.parseStrict(User, extra_src) == nil
 
-            # Wrong type → null.
-            var wrong_src = "{\"name\":42,\"age\":30,\"rate\":1.5,\"ok\":true}"
-            assert Json.parseStrict(User, wrong_src) == nil
+    # Wrong type → null.
+    var wrong_src = "{\"name\":42,\"age\":30,\"rate\":1.5,\"ok\":true}"
+    assert Json.parseStrict(User, wrong_src) == nil
 
-            # Top-level not an object → null.
-            var arr_src = "[1, 2, 3]"
-            assert Json.parseStrict(User, arr_src) == nil
+    # Top-level not an object → null.
+    var arr_src = "[1, 2, 3]"
+    assert Json.parseStrict(User, arr_src) == nil
 
-            # Float field accepts integer JSON values (5 → 5.0).
-            var int_for_float = "{\"name\":\"D\",\"age\":1,\"rate\":5,\"ok\":true}"
-            if Json.parseStrict(User, int_for_float) as up
-                assert up.rate == 5.0
-            else
-                assert false
+    # Float field accepts integer JSON values (5 → 5.0).
+    var int_for_float = "{\"name\":\"D\",\"age\":1,\"rate\":5,\"ok\":true}"
+    if Json.parseStrict(User, int_for_float) as up
+        assert up.rate == 5.0
+    else
+        assert false
 
-            print "json_parse_strict_test OK"
+    print "json_parse_strict_test OK"

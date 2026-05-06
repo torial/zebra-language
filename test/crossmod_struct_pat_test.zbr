@@ -1,25 +1,23 @@
 use crossmod_types_lib
 
-class Main
-    static
-        def main
-            var p = crossmod_types_lib.Point(3, 4)
-            var label: str = "none"
-            branch p
-                on crossmod_types_lib.Point(x: 0, y: 0)
-                    label = "origin"
-                on crossmod_types_lib.Point(x: 3)
-                    label = "x is 3"
-                else
-                    label = "other"
-            assert label == "x is 3"
+def main()
+    var p = crossmod_types_lib.Point(3, 4)
+    var label: str = "none"
+    branch p
+        on crossmod_types_lib.Point(x: 0, y: 0)
+            label = "origin"
+        on crossmod_types_lib.Point(x: 3)
+            label = "x is 3"
+        else
+            label = "other"
+    assert label == "x is 3"
 
-            var p2 = crossmod_types_lib.Point(0, 0)
-            branch p2
-                on crossmod_types_lib.Point(x: 0, y: 0)
-                    label = "origin"
-                else
-                    label = "other"
-            assert label == "origin"
+    var p2 = crossmod_types_lib.Point(0, 0)
+    branch p2
+        on crossmod_types_lib.Point(x: 0, y: 0)
+            label = "origin"
+        else
+            label = "other"
+    assert label == "origin"
 
-            print "crossmod_struct_pat_test OK"
+    print "crossmod_struct_pat_test OK"

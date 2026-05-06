@@ -1,27 +1,25 @@
-class Main
-    static
-        def main
-            # char.toString() — convert Unicode codepoint to UTF-8 string
-            var word: str = "abc"
-            var chars_list: List(str) = List()
-            for c in word.chars()
-                chars_list.add(c.toString())
-            for s in chars_list
-                print s    # a, b, c
+def main()
+    # char.toString() — convert Unicode codepoint to UTF-8 string
+    var word: str = "abc"
+    var chars_list: List(str) = List()
+    for c in word.chars()
+        chars_list.add(c.toString())
+    for s in chars_list
+        print s    # a, b, c
 
-            # Greek char
-            var greek: str = "λόγος"
-            var gchars: List(str) = List()
-            for c in greek.chars()
-                gchars.add(c.toString())
-            print gchars.count()    # 5
+    # Greek char
+    var greek: str = "λόγος"
+    var gchars: List(str) = List()
+    for c in greek.chars()
+        gchars.add(c.toString())
+    print gchars.count()    # 5
 
-            # list.at(i) with runtime index
-            var i = 0
-            while i < chars_list.count()
-                print chars_list.at(i)
-                i = i + 1
+    # list.at(i) with runtime index
+    var i = 0
+    while i < chars_list.count()
+        print chars_list.at(i)
+        i = i + 1
 
-            # codePointCount returns int (usable in arithmetic)
-            var n = word.codePointCount()
-            print n - 2    # 1
+    # codePointCount returns int (usable in arithmetic)
+    var n = word.codePointCount()
+    print n - 2    # 1

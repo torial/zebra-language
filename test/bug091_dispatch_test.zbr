@@ -13,15 +13,13 @@ class Filler
         this.helperList(items)
         assert items.count() == 2, "self count"
 
-class Main
-    static
-        def main
-            var f = Filler()
-            f.runSelf()
+def main()
+    var f = Filler()
+    f.runSelf()
 
-            # Instance call from outside.
-            var items2: List(str) = List(str)()
-            f.helperList(items2)
-            assert items2.count() == 2, "instance count"
+    # Instance call from outside.
+    var items2: List(str) = List(str)()
+    f.helperList(items2)
+    assert items2.count() == 2, "instance count"
 
-            print "ok"
+    print "ok"

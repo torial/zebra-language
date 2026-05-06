@@ -10,10 +10,8 @@ def testOptionalTypes()
 catch |e|
     print "FAIL: " + e.message
 
-class Main
-    static
-        def main
-            assert TcTypes.describe(TcType.int_())    == "int"
-            assert TcTypes.describe(TcType.unknown()) == "unknown"
-            testOptionalTypes()
-            print "multi-file selfhost smoke: OK"
+def main()
+    assert TcTypes.describe(TcType.int_())    == "int"
+    assert TcTypes.describe(TcType.unknown()) == "unknown"
+    testOptionalTypes()
+    print "multi-file selfhost smoke: OK"

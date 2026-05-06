@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-06 (BUG-099 selfhost port complete: `Type_` three-way split + `isAbstractType()` + alarm bell behind `InferCtx.strict`; bootstrap 5/5, smoke 44/44)
+**Last updated:** 2026-05-06 (BUG-102/103/104 robustness; Phase 13 style sweeps: BUG-114 done, class-Main→def-main() 103 files; bootstrap 5/5, smoke 44/44)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -157,8 +157,8 @@ flow into this milestone.
 
 **Style guide sweeps (mechanical, no compiler change):**
 - `this.field` → `.field` ✅ 1,141 sites swept across 9 selfhost files (2026-05-05)
-- `0 - x` / `0.0 - x` → `-x` (BUG-114 filed for tracking only — `-x` already works)
-- `class Main` + `static def main` → top-level `def main()` (selfhost/main.zbr first)
+- `0 - x` / `0.0 - x` → `-x` ✅ already clean (verified 2026-05-06)
+- `class Main` + `static def main` → top-level `def main()` ✅ 103 files swept 2026-05-06 (`tools/sweep_class_main.py`)
 - `_underscore` private prefix → drop (pending BUG-115 decision)
 
 **Other cleanup carried over:**

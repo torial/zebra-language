@@ -1,10 +1,8 @@
 # Error sample for Zebra IDE
 # This file contains intentional errors for demonstration
 
-class Main
-    static
-        def main
-            var msg = "type error on next line
-            var x = msg + 1
+def main()
+    var msg = "type error on next line
+    var x = msg + 1
 
-            var y = undefinedVar
+    var y = undefinedVar

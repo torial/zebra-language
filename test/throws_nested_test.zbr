@@ -47,9 +47,7 @@ def testCase3()
 catch |_e|
     pass
 
-class Main
-    static
-        def main
-            testCase1()
-            testCase3()
-            print "throws_nested_test: passed"
+def main()
+    testCase1()
+    testCase3()
+    print "throws_nested_test: passed"

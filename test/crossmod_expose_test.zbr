@@ -9,39 +9,37 @@
 
 use crossmod_expose_lib exposing Tag, Bag, Shape
 
-class Main
-    static
-        def main
-            test1BranchOnExposedUnion()
-            test2ForInOverExposedClassList()
-            print "crossmod_expose: all OK"
+def main()
+    test1BranchOnExposedUnion()
+    test2ForInOverExposedClassList()
+    print "crossmod_expose: all OK"
 
-        def test1BranchOnExposedUnion
-            var s: Shape = Shape.box(Tag("hello", 5))
-            branch s
-                on Shape.box as r
-                    # String concat on exposed struct field (BUG-075 regression check)
-                    var label = r.name + " label"
-                    assert label == "hello label", "concat on exposed field: '${label}'"
-                    assert r.weight == 5, "weight: ${r.weight}"
-                on Shape.dot
-                    assert false, "wrong branch"
-            print "test1 OK"
+def test1BranchOnExposedUnion
+    var s: Shape = Shape.box(Tag("hello", 5))
+    branch s
+        on Shape.box as r
+            # String concat on exposed struct field (BUG-075 regression check)
+            var label = r.name + " label"
+            assert label == "hello label", "concat on exposed field: '${label}'"
+            assert r.weight == 5, "weight: ${r.weight}"
+        on Shape.dot
+            assert false, "wrong branch"
+    print "test1 OK"
 
-        def test2ForInOverExposedClassList
-            var b = Bag("test-bag")
-            b.add(Tag("alpha", 10))
-            b.add(Tag("beta", 20))
-            b.add(Tag("gamma", 30))
-            var total = 0
-            for t in b.items
-                total += t.weight
-            assert total == 60, "total weight: ${total}"
-            # String concat on loop-bound exposed struct field
-            var names = ""
-            for t in b.items
-                if names != ""
-                    names = names + ","
-                names = names + t.name
-            assert names == "alpha,beta,gamma", "names: '${names}'"
-            print "test2 OK"
+def test2ForInOverExposedClassList
+    var b = Bag("test-bag")
+    b.add(Tag("alpha", 10))
+    b.add(Tag("beta", 20))
+    b.add(Tag("gamma", 30))
+    var total = 0
+    for t in b.items
+        total += t.weight
+    assert total == 60, "total weight: ${total}"
+    # String concat on loop-bound exposed struct field
+    var names = ""
+    for t in b.items
+        if names != ""
+            names = names + ","
+        names = names + t.name
+    assert names == "alpha,beta,gamma", "names: '${names}'"
+    print "test2 OK"

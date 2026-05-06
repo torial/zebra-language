@@ -1,8 +1,6 @@
-class Main
-    static
-        def main
-            var args = sys.args()
-            print args.count()
-            sys.errln("hello stderr")
-            if args.count() > 1
-                print args.at(1)
+def main()
+    var args = sys.args()
+    print args.count()
+    sys.errln("hello stderr")
+    if args.count() > 1
+        print args.at(1)

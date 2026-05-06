@@ -1,7 +1,5 @@
-class Main
-    static
-        def frame(g: Gui)
-            g.text("Hello from GUI")
+def frame(g: Gui)
+    g.text("Hello from GUI")
 
-        def main
-            Gui.run("Test", 400, 300, frame)
+def main()
+    Gui.run("Test", 400, 300, frame)

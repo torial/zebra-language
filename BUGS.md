@@ -128,10 +128,9 @@ Closing as not-reproduced.
 
 ---
 
-### BUG-114: `0 - x` / `0.0 - x` instead of `-x` — sweep target (NOT a bug)
+### BUG-114: `0 - x` / `0.0 - x` instead of `-x` — ✅ SWEPT 2026-05-06
 - **Severity:** N/A
-- **Status:** Filed for sweep tracking, not for fix
-- **Note:** Verified 2026-05-04: unary `-x` works correctly on int and float (`var y = -x` codegens to `-x`). The `0 - x` and `0.0 - x` forms in `examples/pratt_calc.zbr:304` and elsewhere are stylistic legacy, not compiler workarounds. Sweep target: replace with `-x` during the phase 13 cleanup pass. No compiler fix needed; this entry exists so the sweep is greppable.
+- **Status:** Closed — sweep complete; no `0 - x` / `0.0 - x` occurrences remain in any `.zbr` file.
 - **Source:** `STYLE_GUIDE.md` §13.3.
 
 ---

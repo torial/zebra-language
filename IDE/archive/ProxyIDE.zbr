@@ -99,127 +99,125 @@ class ProxyIDEState
 # Main UI
 # ────────────────────────────────────────────────────────────────────────────
 
-class Main
-    static
-        # Main frame callback for Gui.run
-        def ideFrame(g as Gui)
-            capture
-                var state as ProxyIDEState = ProxyIDEState()
+# Main frame callback for Gui.run
+def ideFrame(g as Gui)
+    capture
+        var state as ProxyIDEState = ProxyIDEState()
 
-            # Initialize on first frame
-            if state.lastLoaded.len == 0
-                Main.loadFile(state)
+    # Initialize on first frame
+    if state.lastLoaded.len == 0
+        loadFile(state)
 
-            # Render UI sections
-            Main.renderFileBar(g, state)
-            g.separator()
-            Main.renderEditor(g, state)
-            g.separator()
-            Main.renderDiagnostics(g, state)
-            g.separator()
-            Main.renderOutput(g, state)
+    # Render UI sections
+    renderFileBar(g, state)
+    g.separator()
+    renderEditor(g, state)
+    g.separator()
+    renderDiagnostics(g, state)
+    g.separator()
+    renderOutput(g, state)
 
-        # File operations bar
-        def renderFileBar(g as Gui, state as ProxyIDEState)
-            g.text("File: ${state.filepath}")
+# File operations bar
+def renderFileBar(g as Gui, state as ProxyIDEState)
+    g.text("File: ${state.filepath}")
 
-            g.sameLine()
-            if g.button("Open")
-                Main.loadFile(state)
+    g.sameLine()
+    if g.button("Open")
+        loadFile(state)
 
-            g.sameLine()
-            if g.button("Save")
-                Main.saveFile(state)
+    g.sameLine()
+    if g.button("Save")
+        saveFile(state)
 
-            g.sameLine()
-            if g.button("Check")
-                Main.doCheck(state)
+    g.sameLine()
+    if g.button("Check")
+        doCheck(state)
 
-            g.sameLine()
-            if g.button("Run")
-                Main.doRun(state)
+    g.sameLine()
+    if g.button("Run")
+        doRun(state)
 
-            var indicator = ""
-            if state.isDirty
-                indicator = " *"
-            g.sameLine()
-            g.text("${state.errorCount} errors${indicator}")
+    var indicator = ""
+    if state.isDirty
+        indicator = " *"
+    g.sameLine()
+    g.text("${state.errorCount} errors${indicator}")
 
-        # Source code display and editing area
-        def renderEditor(g as Gui, state as ProxyIDEState)
-            g.text("═══════ SOURCE CODE ═══════")
+# Source code display and editing area
+def renderEditor(g as Gui, state as ProxyIDEState)
+    g.text("═══════ SOURCE CODE ═══════")
 
-            # Display source line by line with line numbers
-            var lines = state.sourceCode.split("\n")
-            var lineNum = 0
-            for line in lines
-                lineNum = lineNum + 1
-                var displayLine = "${lineNum}:  ${line}"
-                g.text(displayLine)
+    # Display source line by line with line numbers
+    var lines = state.sourceCode.split("\n")
+    var lineNum = 0
+    for line in lines
+        lineNum = lineNum + 1
+        var displayLine = "${lineNum}:  ${line}"
+        g.text(displayLine)
 
-            # Note about editing
-            g.text("")
-            g.text("[Proxy: Source is read-only. Edit directly in the file and reload.]")
+    # Note about editing
+    g.text("")
+    g.text("[Proxy: Source is read-only. Edit directly in the file and reload.]")
 
-        # Diagnostics panel
-        def renderDiagnostics(g as Gui, state as ProxyIDEState)
-            g.text("═══════ DIAGNOSTICS ═══════")
+# Diagnostics panel
+def renderDiagnostics(g as Gui, state as ProxyIDEState)
+    g.text("═══════ DIAGNOSTICS ═══════")
 
-            if state.diagnostics.count() == 0
-                g.text("✓ No errors")
-            else
-                for d in state.diagnostics
-                    var icon = "⚠"
-                    if d.isError
-                        icon = "✗"
-                    g.text("${icon}  Line ${d.line}:${d.col}  ${d.message}")
+    if state.diagnostics.count() == 0
+        g.text("✓ No errors")
+    else
+        for d in state.diagnostics
+            var icon = "⚠"
+            if d.isError
+                icon = "✗"
+            g.text("${icon}  Line ${d.line}:${d.col}  ${d.message}")
 
-        # Program output display
-        def renderOutput(g as Gui, state as ProxyIDEState)
-            g.text("═══════ OUTPUT ═══════")
+# Program output display
+def renderOutput(g as Gui, state as ProxyIDEState)
+    g.text("═══════ OUTPUT ═══════")
 
-            if state.output.len == 0
-                g.text("[Run a program to see output here]")
-            else
-                # Show output line by line
-                var outLines = state.output.split("\n")
-                for line in outLines
-                    if line.len > 0
-                        g.text(line)
+    if state.output.len == 0
+        g.text("[Run a program to see output here]")
+    else
+        # Show output line by line
+        var outLines = state.output.split("\n")
+        for line in outLines
+            if line.len > 0
+                g.text(line)
 
-        # Load file from disk
-        def loadFile(state as ProxyIDEState)
-            var result = File.read(state.filepath)
+# Load file from disk
+def loadFile(state as ProxyIDEState)
+    var result = File.read(state.filepath)
 
-            if result.isOk()
-                state.sourceCode = result.value()
-                state.lastLoaded = state.filepath
-                state.isDirty = false
-                state.diagnostics = List()
-                state.output = ""
-            else
-                state.sourceCode = ""
-                state.lastLoaded = state.filepath
+    if result.isOk()
+        state.sourceCode = result.value()
+        state.lastLoaded = state.filepath
+        state.isDirty = false
+        state.diagnostics = List()
+        state.output = ""
+    else
+        state.sourceCode = ""
+        state.lastLoaded = state.filepath
 
-        # Save file to disk
-        def saveFile(state as ProxyIDEState)
-            var result = File.write(state.filepath, state.sourceCode)
-            if result.isOk()
-                state.isDirty = false
+# Save file to disk
+def saveFile(state as ProxyIDEState)
+    var result = File.write(state.filepath, state.sourceCode)
+    if result.isOk()
+        state.isDirty = false
 
-        # Check button: run mock compiler
-        def doCheck(state as ProxyIDEState)
-            state.diagnostics = MockCompiler.check(state.filepath, state.sourceCode)
+# Check button: run mock compiler
+def doCheck(state as ProxyIDEState)
+    state.diagnostics = MockCompiler.check(state.filepath, state.sourceCode)
 
-            state.errorCount = 0
-            for d in state.diagnostics
-                if d.isError
-                    state.errorCount = state.errorCount + 1
+    state.errorCount = 0
+    for d in state.diagnostics
+        if d.isError
+            state.errorCount = state.errorCount + 1
 
-        # Run button: simulate program execution
-        def doRun(state as ProxyIDEState)
-            state.output = MockCompiler.run(state.filepath)
+# Run button: simulate program execution
+def doRun(state as ProxyIDEState)
+    state.output = MockCompiler.run(state.filepath)
 
-        # Entry point
-        def main
-            Gui.run("Zebra Proxy IDE", 800, 900, ideFrame)
+# Entry point
+def main()
+    Gui.run("Zebra Proxy IDE", 800, 900, ideFrame)

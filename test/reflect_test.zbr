@@ -3,35 +3,33 @@ class Product
     var price: float
     var qty  : int
 
-class Main
-    static
-        def main
-            var p = Product()
-            p.name  = "Widget"
-            p.price = 9.99
-            p.qty   = 42
+def main()
+    var p = Product()
+    p.name  = "Widget"
+    p.price = 9.99
+    p.qty   = 42
 
-            # className
-            var cname = Reflect.className(p)
-            assert cname == "Product", "className"
+    # className
+    var cname = Reflect.className(p)
+    assert cname == "Product", "className"
 
-            # fieldNames
-            var fields = Reflect.fieldNames(p)
-            assert fields.count() == 3, "field count"
-            assert fields.at(0) == "name",  "field 0"
-            assert fields.at(1) == "price", "field 1"
-            assert fields.at(2) == "qty",   "field 2"
+    # fieldNames
+    var fields = Reflect.fieldNames(p)
+    assert fields.count() == 3, "field count"
+    assert fields.at(0) == "name",  "field 0"
+    assert fields.at(1) == "price", "field 1"
+    assert fields.at(2) == "qty",   "field 2"
 
-            # fieldTypes
-            var types = Reflect.fieldTypes(p)
-            assert types.at(0) == "str",   "type str"
-            assert types.at(1) == "float", "type float"
-            assert types.at(2) == "int",   "type int"
+    # fieldTypes
+    var types = Reflect.fieldTypes(p)
+    assert types.at(0) == "str",   "type str"
+    assert types.at(1) == "float", "type float"
+    assert types.at(2) == "int",   "type int"
 
-            # for-in over fieldNames
-            var joined = ""
-            for f in Reflect.fieldNames(p)
-                joined = joined + f + ";"
-            assert joined == "name;price;qty;", "for-in fieldNames"
+    # for-in over fieldNames
+    var joined = ""
+    for f in Reflect.fieldNames(p)
+        joined = joined + f + ";"
+    assert joined == "name;price;qty;", "for-in fieldNames"
 
-            print "reflect_test: all assertions passed"
+    print "reflect_test: all assertions passed"

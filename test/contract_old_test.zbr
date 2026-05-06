@@ -6,9 +6,7 @@ class BankAccount
             balance == old balance + amount
         balance = balance + amount
 
-class Main
-    static
-        def main
-            var acc = BankAccount()
-            acc.deposit(100)
-            print acc.balance
+def main()
+    var acc = BankAccount()
+    acc.deposit(100)
+    print acc.balance

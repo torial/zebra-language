@@ -1,11 +1,9 @@
-class Main
-    static
-        def main
-            var n: int = 42
-            var f: float = 3.14
-            var s1 = n.toString()
-            var s2 = f.toString()
-            print s1
-            print s2
-            var big: int = -100
-            print big.toString()
+def main()
+    var n: int = 42
+    var f: float = 3.14
+    var s1 = n.toString()
+    var s2 = f.toString()
+    print s1
+    print s2
+    var big: int = -100
+    print big.toString()

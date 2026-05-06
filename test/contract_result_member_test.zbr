@@ -2,29 +2,27 @@
 # type, so member access (result.len, result.startsWith(...), etc.) works.
 # Without proper TC inference, `result.len` would emit `.items.len` heuristic.
 
-class Main
-    static
-        def fmtSum(x: int, y: int): str
-            ensure
-                result.len > 0
-                result.startsWith("sum")
-            return "sum=${x}+${y}"
+def fmtSum(x: int, y: int): str
+    ensure
+        result.len > 0
+        result.startsWith("sum")
+    return "sum=${x}+${y}"
 
-        def negate(n: int): int
-            ensure
-                result == -n
-            return -n
+def negate(n: int): int
+    ensure
+        result == -n
+    return -n
 
-        def takeFirst(xs: List(int)): int
-            ensure
-                result == xs.at(0)
-            return xs.at(0)
+def takeFirst(xs: List(int)): int
+    ensure
+        result == xs.at(0)
+    return xs.at(0)
 
-        def main
-            assert fmtSum(2, 3) == "sum=2+3"
-            assert negate(7) == -7
-            var nums = List(int)()
-            nums.add(42)
-            nums.add(99)
-            assert takeFirst(nums) == 42
-            print "contract_result_member_test OK"
+def main()
+    assert fmtSum(2, 3) == "sum=2+3"
+    assert negate(7) == -7
+    var nums = List(int)()
+    nums.add(42)
+    nums.add(99)
+    assert takeFirst(nums) == 42
+    print "contract_result_member_test OK"

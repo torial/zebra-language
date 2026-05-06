@@ -27,16 +27,14 @@ struct Box
             v = tmp.v + delta
         return out
 
-class Main
-    static
-        def main
-            var b = Box(10)
-            var b2 = b.bumped(5)
-            assert b.v == 10     # original unchanged
-            assert b2.v == 15    # this except produced copy
+def main()
+    var b = Box(10)
+    var b2 = b.bumped(5)
+    assert b.v == 10     # original unchanged
+    assert b2.v == 15    # this except produced copy
 
-            var b3 = b.viaLocal(7)
-            assert b.v == 10     # original still unchanged
-            assert b3.v == 17    # local except produced copy
+    var b3 = b.viaLocal(7)
+    assert b.v == 10     # original still unchanged
+    assert b3.v == 17    # local except produced copy
 
-            print 'BUG-031 verification: OK'
+    print 'BUG-031 verification: OK'

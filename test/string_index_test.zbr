@@ -1,9 +1,7 @@
-class Main
-    static
-        def main
-            var s: str = "hello"
-            var c = s[0]
-            print c
-            var sub = s[1..3]
-            print sub
-            print s.len
+def main()
+    var s: str = "hello"
+    var c = s[0]
+    print c
+    var sub = s[1..3]
+    print sub
+    print s.len

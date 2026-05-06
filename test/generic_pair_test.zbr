@@ -9,19 +9,17 @@ class Pair(A, B)
     def swap(): Pair(B, A)
         return Pair(B, A)(second, first)
 
-class Main
-    static
-        def main
-            var p = Pair(str, int)("hello", 42)
-            print p.second     # 42
+def main()
+    var p = Pair(str, int)("hello", 42)
+    print p.second     # 42
 
-            var q = Pair(int, bool)(100, true)
-            print q.first      # 100
-            print q.second     # true
+    var q = Pair(int, bool)(100, true)
+    print q.first      # 100
+    print q.second     # true
 
-            var r = Pair(int, str)(1, "one")
-            print r.first      # 1
+    var r = Pair(int, str)(1, "one")
+    print r.first      # 1
 
-            # swap: Pair(int, str) → Pair(str, int)
-            var s = r.swap()
-            print s.second     # 1
+    # swap: Pair(int, str) → Pair(str, int)
+    var s = r.swap()
+    print s.second     # 1

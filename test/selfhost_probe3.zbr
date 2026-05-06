@@ -63,17 +63,15 @@ class Lexer
         pos = pos + 1
         return t
 
-class Main
-    static
-        def main
-            var t = Token(TokenKind.ident(), "foo", 1, 0)
-            assert t.text == "foo"
-            assert t.span.line == 1
+def main()
+    var t = Token(TokenKind.ident(), "foo", 1, 0)
+    assert t.text == "foo"
+    assert t.span.line == 1
 
-            assert Helper.kindName(TokenKind.plus()) == "plus"
-            assert Helper.kindName(TokenKind.eof())  == "eof"
+    assert Helper.kindName(TokenKind.plus()) == "plus"
+    assert Helper.kindName(TokenKind.eof())  == "eof"
 
-            var d = Diag("unexpected token", 3, 7)
-            assert d.show() == "unexpected token"
+    var d = Diag("unexpected token", 3, 7)
+    assert d.show() == "unexpected token"
 
-            print "self-hosting probe OK"
+    print "self-hosting probe OK"

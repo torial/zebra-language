@@ -28,17 +28,15 @@ class Counter
     def value(): int
         return count
 
-class Main
-    static
-        def main
-            var e = English()
-            var s = Spanish()
-            print e.greet()
-            print s.greet()
-            print e.greetName("Alice")
-            print s.greetName("Bob")
-            var c = Counter()
-            c.increment()
-            c.increment()
-            c.increment()
-            print c.value()
+def main()
+    var e = English()
+    var s = Spanish()
+    print e.greet()
+    print s.greet()
+    print e.greetName("Alice")
+    print s.greetName("Bob")
+    var c = Counter()
+    c.increment()
+    c.increment()
+    c.increment()
+    print c.value()

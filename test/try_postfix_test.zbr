@@ -17,13 +17,11 @@ def testSafeDivFail()
 catch |e|
     print "caught: ".concat(e.message)
 
-class Main
-    static
-        def main
-            # try prefix propagates errors on failure
-            testSafeDiv()
+def main()
+    # try prefix propagates errors on failure
+    testSafeDiv()
 
-            # division by zero — verify error is raised with correct message
-            testSafeDivFail()
+    # division by zero — verify error is raised with correct message
+    testSafeDivFail()
 
-            print "ok"
+    print "ok"

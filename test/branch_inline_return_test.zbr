@@ -70,40 +70,38 @@ def opCode(o: Op): int
 
         on Op.neg return 40
 
-class Main
-    static
-        def main
-            # Simple values
-            assert opName(Op.add())   == "add"
-            assert opName(Op.neg())   == "neg"
-            assert opSymbol(Op.mul()) == "*"
+def main()
+    # Simple values
+    assert opName(Op.add())   == "add"
+    assert opName(Op.neg())   == "neg"
+    assert opSymbol(Op.mul()) == "*"
 
-            # Binary expression in return
-            assert opPriority(Op.add()) == 1
-            assert opPriority(Op.mul()) == 2
-            assert opPriority(Op.neg()) == 3
+    # Binary expression in return
+    assert opPriority(Op.add()) == 1
+    assert opPriority(Op.mul()) == 2
+    assert opPriority(Op.neg()) == 3
 
-            # Bool returns
-            assert isAdditive(Op.add()) == true
-            assert isAdditive(Op.mul()) == false
+    # Bool returns
+    assert isAdditive(Op.add()) == true
+    assert isAdditive(Op.mul()) == false
 
-            # Top-level call from inside class method (is_top_level flag)
-            var c = Calc(10)
-            assert c.describe(Op.add()) == "add"
-            assert c.scaled(5) == 50
+    # Top-level call from inside class method (is_top_level flag)
+    var c = Calc(10)
+    assert c.describe(Op.add()) == "add"
+    assert c.scaled(5) == 50
 
-            # Blank lines between on-clauses (blank-line fix)
-            assert opCode(Op.add()) == 10
-            assert opCode(Op.sub()) == 20
-            assert opCode(Op.mul()) == 30
-            assert opCode(Op.neg()) == 40
+    # Blank lines between on-clauses (blank-line fix)
+    assert opCode(Op.add()) == 10
+    assert opCode(Op.sub()) == 20
+    assert opCode(Op.mul()) == 30
+    assert opCode(Op.neg()) == 40
 
-            # Comma inline form (regression guard)
-            var x = Op.mul()
-            branch x
-                on Op.add, print "unexpected"
-                on Op.sub, print "unexpected"
-                on Op.mul, print "matched mul"
-                on Op.neg, print "unexpected"
+    # Comma inline form (regression guard)
+    var x = Op.mul()
+    branch x
+        on Op.add, print "unexpected"
+        on Op.sub, print "unexpected"
+        on Op.mul, print "matched mul"
+        on Op.neg, print "unexpected"
 
-            print "branch inline return OK"
+    print "branch inline return OK"

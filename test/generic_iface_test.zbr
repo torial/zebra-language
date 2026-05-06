@@ -20,11 +20,9 @@ class Box(T) implements Printable
     def get(): T
         return value
 
-class Main
-    static
-        def main
-            var b = Box(Num)(Num(42))
-            # b.label() produces {any} format for generic instance (known TC gap);
-            # verify the method works by checking the stored value instead.
-            print b.get().val
-            print "generic_iface OK"
+def main()
+    var b = Box(Num)(Num(42))
+    # b.label() produces {any} format for generic instance (known TC gap);
+    # verify the method works by checking the stored value instead.
+    print b.get().val
+    print "generic_iface OK"

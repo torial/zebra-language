@@ -96,86 +96,84 @@ class IDEState
 # Per-frame helpers (called from ideFrame lambda each frame)
 # ────────────────────────────────────────────────────────────────────────────
 
-class Main
-    static
-        def renderToolbar(g: Gui, state: IDEState, editor: CodeEditor)
-            if g.button("Open")
-                if File.exists(state.filepath)
-                    editor.setText(File.read(state.filepath))
-                    state.diags = List(IDEDiagnostic)()
-                    state.output = ""
-                    state.dirty = false
-            g.sameLine()
-            if g.button("Save")
-                var src = editor.getText()
-                File.write(state.filepath, src)
-                state.dirty = false
-            g.sameLine()
-            if g.button("Check  (F5)")
-                Main.doCheck(state, editor)
-            g.sameLine()
-            if g.button("Run  (F9)")
-                Main.doRun(state, editor)
-            g.sameLine()
-            state.filepath = g.input("##filepath", state.filepath)
-            if state.dirty
-                g.sameLine()
-                g.text("*")
-
-        def renderBody(g: Gui, state: IDEState, editor: CodeEditor)
-            editor.setErrorMarkers(state.diags)
-            editor.render(g, "##code", 700, 500)
-            g.sameLine()
-            g.panel("##diags", def(gc: Gui)
-                var errorCount = 0
-                for d in state.diags
-                    if d.is_error
-                        errorCount = errorCount + 1
-                gc.text("Errors: ${errorCount}")
-                gc.separator()
-                for d in state.diags
-                    var icon = "!"
-                    if d.is_error
-                        icon = "X"
-                    gc.text("${icon} ${d.line}:${d.col}  ${d.message}")
-            )
-
-        def renderOutput(g: Gui, state: IDEState)
-            g.text("Output:")
-            var outputEditor = CodeEditor()
-            outputEditor.setReadOnly(true)
-            outputEditor.setText(state.output)
-            outputEditor.render(g, "##output", 990, 120)
-
-        def doCheck(state: IDEState, editor: CodeEditor)
-            var src = editor.getText()
-            var tmpFile = "_ide_tmp_check.zbr"
-            File.write(tmpFile, src)
-            state.diags = CompilerBridge.check(tmpFile)
-            state.lastCheck = src
-            state.dirty = true
-
-        def doRun(state: IDEState, editor: CodeEditor)
-            var src = editor.getText()
-            File.write(state.filepath, src)
+def renderToolbar(g: Gui, state: IDEState, editor: CodeEditor)
+    if g.button("Open")
+        if File.exists(state.filepath)
+            editor.setText(File.read(state.filepath))
+            state.diags = List(IDEDiagnostic)()
+            state.output = ""
             state.dirty = false
-            state.output = CompilerBridge.runFile(state.filepath)
+    g.sameLine()
+    if g.button("Save")
+        var src = editor.getText()
+        File.write(state.filepath, src)
+        state.dirty = false
+    g.sameLine()
+    if g.button("Check  (F5)")
+        doCheck(state, editor)
+    g.sameLine()
+    if g.button("Run  (F9)")
+        doRun(state, editor)
+    g.sameLine()
+    state.filepath = g.input("##filepath", state.filepath)
+    if state.dirty
+        g.sameLine()
+        g.text("*")
 
-        def main
-            var frame = def(g: Gui)
-                capture
-                    var state: IDEState = IDEState()
-                    var editor: CodeEditor = CodeEditor.forZebra()
-                    var inited: bool = false
-                if not inited
-                    if File.exists(state.filepath)
-                        var content = File.read(state.filepath)
-                        editor.setText(content)
-                        state.lastCheck = content
-                    inited = true
-                Main.renderToolbar(g, state, editor)
-                g.separator()
-                Main.renderBody(g, state, editor)
-                g.separator()
-                Main.renderOutput(g, state)
-            Gui.run("Zebra IDE", 1000, 750, frame)
+def renderBody(g: Gui, state: IDEState, editor: CodeEditor)
+    editor.setErrorMarkers(state.diags)
+    editor.render(g, "##code", 700, 500)
+    g.sameLine()
+    g.panel("##diags", def(gc: Gui)
+        var errorCount = 0
+        for d in state.diags
+            if d.is_error
+                errorCount = errorCount + 1
+        gc.text("Errors: ${errorCount}")
+        gc.separator()
+        for d in state.diags
+            var icon = "!"
+            if d.is_error
+                icon = "X"
+            gc.text("${icon} ${d.line}:${d.col}  ${d.message}")
+    )
+
+def renderOutput(g: Gui, state: IDEState)
+    g.text("Output:")
+    var outputEditor = CodeEditor()
+    outputEditor.setReadOnly(true)
+    outputEditor.setText(state.output)
+    outputEditor.render(g, "##output", 990, 120)
+
+def doCheck(state: IDEState, editor: CodeEditor)
+    var src = editor.getText()
+    var tmpFile = "_ide_tmp_check.zbr"
+    File.write(tmpFile, src)
+    state.diags = CompilerBridge.check(tmpFile)
+    state.lastCheck = src
+    state.dirty = true
+
+def doRun(state: IDEState, editor: CodeEditor)
+    var src = editor.getText()
+    File.write(state.filepath, src)
+    state.dirty = false
+    state.output = CompilerBridge.runFile(state.filepath)
+
+def main()
+    var frame = def(g: Gui)
+        capture
+            var state: IDEState = IDEState()
+            var editor: CodeEditor = CodeEditor.forZebra()
+            var inited: bool = false
+        if not inited
+            if File.exists(state.filepath)
+                var content = File.read(state.filepath)
+                editor.setText(content)
+                state.lastCheck = content
+            inited = true
+        renderToolbar(g, state, editor)
+        g.separator()
+        renderBody(g, state, editor)
+        g.separator()
+        renderOutput(g, state)
+    Gui.run("Zebra IDE", 1000, 750, frame)

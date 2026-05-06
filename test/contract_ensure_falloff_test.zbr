@@ -11,11 +11,9 @@ class Counter
         value = value + 1
         # Falls off the end — no explicit return.
 
-class Main
-    static
-        def main
-            var c = Counter()
-            c.bump()
-            c.bump()
-            assert c.value == 2
-            print "contract_ensure_falloff_test OK"
+def main()
+    var c = Counter()
+    c.bump()
+    c.bump()
+    assert c.value == 2
+    print "contract_ensure_falloff_test OK"

@@ -4,12 +4,10 @@ class Box(T)
     cue init(v: T)
         value = v
 
-class Main
-    static
-        def main
-            var b = Box(int)(42)
-            print b is Box           # true  — bare class check
-            print not (b is Box)     # false
+def main()
+    var b = Box(int)(42)
+    print b is Box           # true  — bare class check
+    print not (b is Box)     # false
 
-            var s = Box(str)("hi")
-            print s is Box           # true  — same class, different type arg
+    var s = Box(str)("hi")
+    print s is Box           # true  — same class, different type arg

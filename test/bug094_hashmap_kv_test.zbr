@@ -2,36 +2,34 @@
 # Previously selfhost always emitted `_ = k;` even when k was used (Zig error).
 # Previously Zig backend fell through to native for-loop (extra capture error).
 
-class Main
-    static
-        def main
-            var m: HashMap(str, int) = HashMap(str, int)()
-            m.put("a", 1)
-            m.put("b", 2)
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.put("a", 1)
+    m.put("b", 2)
 
-            # Permutation 1: both k and v used
-            var sum1: int = 0
-            for k, v in m
-                if k == "a" or k == "b"
-                    sum1 = sum1 + v
-            assert sum1 == 3, "both used"
+    # Permutation 1: both k and v used
+    var sum1: int = 0
+    for k, v in m
+        if k == "a" or k == "b"
+            sum1 = sum1 + v
+    assert sum1 == 3, "both used"
 
-            # Permutation 2: k used, v unused
-            var keys: List(str) = List(str)()
-            for k, v in m
-                keys.add(k)
-            assert keys.count() == 2, "k used v unused"
+    # Permutation 2: k used, v unused
+    var keys: List(str) = List(str)()
+    for k, v in m
+        keys.add(k)
+    assert keys.count() == 2, "k used v unused"
 
-            # Permutation 3: k unused, v used
-            var sum3: int = 0
-            for k, v in m
-                sum3 = sum3 + v
-            assert sum3 == 3, "k unused v used"
+    # Permutation 3: k unused, v used
+    var sum3: int = 0
+    for k, v in m
+        sum3 = sum3 + v
+    assert sum3 == 3, "k unused v used"
 
-            # Permutation 4: both unused (just iterate)
-            var count: int = 0
-            for k, v in m
-                count = count + 1
-            assert count == 2, "both unused"
+    # Permutation 4: both unused (just iterate)
+    var count: int = 0
+    for k, v in m
+        count = count + 1
+    assert count == 2, "both unused"
 
-            print "ok"
+    print "ok"

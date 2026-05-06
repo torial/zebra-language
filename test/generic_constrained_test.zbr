@@ -21,10 +21,8 @@ class MinHeap(T where T implements Comparable)
     def top(): T
         return best
 
-class Main
-    static
-        def main
-            # Score implements Comparable → accepted
-            var h = MinHeap(Score)(Score(42))
-            print h.top().value    # 42
-            print "constrained generics OK"
+def main()
+    # Score implements Comparable → accepted
+    var h = MinHeap(Score)(Score(42))
+    print h.top().value    # 42
+    print "constrained generics OK"

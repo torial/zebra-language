@@ -5,11 +5,9 @@ class PartialSharedTest
         def greet(name: str): str
             return "Hello, " + name
 
-class Main
-    static
-        def main
-            var msg = PartialSharedTest.greet("world")
-            print msg
-            var desc = PartialSharedTest.describe()
-            print desc
-            print "partial_shared_test: done"
+def main()
+    var msg = PartialSharedTest.greet("world")
+    print msg
+    var desc = PartialSharedTest.describe()
+    print desc
+    print "partial_shared_test: done"

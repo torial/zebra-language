@@ -75,20 +75,18 @@ class Lexer
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-class Main
-    static
-        def main
-            # Token round-trip
-            var t = Token(TokenKind.ident(), "foo", 1, 0)
-            assert t.text == "foo"
-            assert t.span.line == 1
+def main()
+    # Token round-trip
+    var t = Token(TokenKind.ident(), "foo", 1, 0)
+    assert t.text == "foo"
+    assert t.span.line == 1
 
-            # Top-level free function dispatch
-            assert kindName(TokenKind.plus()) == "plus"
-            assert kindName(TokenKind.eof())  == "eof"
+    # Top-level free function dispatch
+    assert kindName(TokenKind.plus()) == "plus"
+    assert kindName(TokenKind.eof())  == "eof"
 
-            # Diagnostic
-            var d = Diag("unexpected token", 3, 7)
-            assert d.show() == "unexpected token"
+    # Diagnostic
+    var d = Diag("unexpected token", 3, 7)
+    assert d.show() == "unexpected token"
 
-            print "self-hosting probe OK"
+    print "self-hosting probe OK"

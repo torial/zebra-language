@@ -4,30 +4,28 @@ enum Direction
     east
     west
 
-class Main
-    static
-        def main
-            var d: Direction = Direction.north
-            branch d
-                on Direction.north
-                    print "north"
-                on Direction.south
-                    print "south"
-                on Direction.east
-                    print "east"
-                on Direction.west
-                    print "west"
+def main()
+    var d: Direction = Direction.north
+    branch d
+        on Direction.north
+            print "north"
+        on Direction.south
+            print "south"
+        on Direction.east
+            print "east"
+        on Direction.west
+            print "west"
 
-            var d2: Direction = Direction.east
-            branch d2
-                on Direction.east, Direction.west
-                    print "horizontal"
-                else
-                    print "vertical"
+    var d2: Direction = Direction.east
+    branch d2
+        on Direction.east, Direction.west
+            print "horizontal"
+        else
+            print "vertical"
 
-            var d3: Direction = Direction.south
-            branch d3
-                on Direction.north
-                    print "going north"
-                else
-                    print "not north"
+    var d3: Direction = Direction.south
+    branch d3
+        on Direction.north
+            print "going north"
+        else
+            print "not north"

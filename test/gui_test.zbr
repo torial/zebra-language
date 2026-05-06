@@ -1,14 +1,12 @@
-class Main
-    static
-        def main
-            var frame = def(g: Gui)
-                capture
-                    var count: int = 0
-                g.text("Count: ${count}")
-                if g.button("Increment")
-                    count = count + 1
-                if g.button("Reset")
-                    count = 0
-                g.separator()
-                g.text("Done!")
-            Gui.run("Counter", 400, 300, frame)
+def main()
+    var frame = def(g: Gui)
+        capture
+            var count: int = 0
+        g.text("Count: ${count}")
+        if g.button("Increment")
+            count = count + 1
+        if g.button("Reset")
+            count = 0
+        g.separator()
+        g.text("Done!")
+    Gui.run("Counter", 400, 300, frame)

@@ -24,20 +24,18 @@ class Stack(T)
     def isEmpty(): bool
         return count == 0
 
-class Main
-    static
-        def main
-            var s = Stack(int)()
-            s.push(10)
-            s.push(20)
-            s.push(30)
-            print s.pop()        # 30
-            print s.pop()        # 20
-            print s.count        # 1
-            print s.isEmpty()    # false
+def main()
+    var s = Stack(int)()
+    s.push(10)
+    s.push(20)
+    s.push(30)
+    print s.pop()        # 30
+    print s.pop()        # 20
+    print s.count        # 1
+    print s.isEmpty()    # false
 
-            var ss = Stack(str)()
-            ss.push("hello")
-            ss.push("world")
-            print ss.pop() orelse ""     # world
-            print ss.peek() orelse ""    # hello
+    var ss = Stack(str)()
+    ss.push("hello")
+    ss.push("world")
+    print ss.pop() orelse ""     # world
+    print ss.peek() orelse ""    # hello

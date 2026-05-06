@@ -10,22 +10,20 @@ class Cat
     cue init(n: str)
         name = n
 
-class Main
-    static
-        def main
-            var d = Dog("Rex", "Labrador")
-            var c = Cat("Whiskers")
+def main()
+    var d = Dog("Rex", "Labrador")
+    var c = Cat("Whiskers")
 
-            # is checks — same-type always true
-            if d is Dog
-                print "d is Dog: true"
+    # is checks — same-type always true
+    if d is Dog
+        print "d is Dog: true"
 
-            if c is Cat
-                print "c is Cat: true"
+    if c is Cat
+        print "c is Cat: true"
 
-            # cross-type is false (different _type_id)
-            if not (d is Cat)
-                print "d is not Cat: correct"
+    # cross-type is false (different _type_id)
+    if not (d is Cat)
+        print "d is not Cat: correct"
 
-            if not (c is Dog)
-                print "c is not Dog: correct"
+    if not (c is Dog)
+        print "c is not Dog: correct"

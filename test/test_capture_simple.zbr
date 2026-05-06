@@ -1,9 +1,7 @@
-class Main
-    static
-        def main
-            var x: int = 5
-            var get_x = def(): int
-                capture
-                    var x: int = x
-                return x
-            print get_x()    # 5
+def main()
+    var x: int = 5
+    var get_x = def(): int
+        capture
+            var x: int = x
+        return x
+    print get_x()    # 5
