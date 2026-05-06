@@ -345,8 +345,8 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "same",        .kw_same },
     .{ "require",     .kw_require },
     .{ "ensure",      .kw_ensure },
-    .{ "old",         .kw_old },
-    .{ "result",      .kw_result },
+    // "old" and "result" are context-sensitive: emitted as kw_old/kw_result only
+    // inside ensure blocks by Tokenizer. They are NOT in the keyword map.
     .{ "implies",     .kw_implies },
     .{ "assert",      .kw_assert },
     .{ "branch",      .kw_branch },

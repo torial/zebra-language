@@ -154,6 +154,8 @@ smoke test/contract_ensure_falloff_test.zbr
 # ensure with `result` member access: TC must infer result's return type
 # so result.len, result.startsWith, etc. emit correct codegen.
 smoke test/contract_result_member_test.zbr
+# result/old as plain identifiers outside ensure (context-sensitive keyword test).
+smoke test/contract_ident_test.zbr
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr
@@ -183,6 +185,13 @@ smoke test/dir_walk_test.zbr
 
 # BUG-088: def-level try/catch in non-void return function must not implicitly fall off.
 smoke test/bug088_try_return_test.zbr
+
+# BUG-116: char method dispatch (isAlpha/isDigit/isWhitespace/isUpper/isLower/toUpper/toLower).
+smoke test/bug116_char_methods_test.zbr
+# BUG-117: List.join(sep) — swap inverted args to std.mem.join (separator first, list.items second).
+smoke test/bug117_list_join_test.zbr
+# BUG-118: plain struct construction → struct literal (no cue init means no .init() method).
+smoke test/bug118_struct_ctor_test.zbr
 
 # Scripting tools: first Zebra port of an escape-hatch guard script.
 smoke tools/escape_hatches_check.zbr

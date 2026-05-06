@@ -270,10 +270,8 @@ class Keywords
             return TokenKind.kw_require()
         if word == "ensure"
             return TokenKind.kw_ensure()
-        if word == "old"
-            return TokenKind.kw_old()
-        if word == "result"
-            return TokenKind.kw_result()
+        # "old" and "result" are context-sensitive: upgraded to kw_old/kw_result
+        # by Lexer.scanIdentOrKeyword only when inside an ensure block.
         if word == "implies"
             return TokenKind.kw_implies()
         if word == "assert"

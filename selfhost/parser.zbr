@@ -746,6 +746,20 @@ class Parser
             else
                 return false
 
+    def isKwOld(): bool
+        branch .peek().kind
+            on TokenKind.kw_old
+                return true
+            else
+                return false
+
+    def isKwResult(): bool
+        branch .peek().kind
+            on TokenKind.kw_result
+                return true
+            else
+                return false
+
     def isStringPartFormat(): bool
         branch .peek().kind
             on TokenKind.string_part_format
@@ -1965,7 +1979,7 @@ class Parser
             .advance()
             const operand = .parseUnary()
             return PNode.expr_try(operand)
-        if .textIs("old")
+        if .isKwOld()
             # `old expr` — pre-call value in `ensure` contracts (Expr8 → kw_old Expr9).
             .advance()
             const operand = .parseUnary()
@@ -2094,7 +2108,7 @@ class Parser
         else if .textIs("this")
             .advance()
             return PNode.expr_this()
-        else if .textIs("result")
+        else if .isKwResult()
             .advance()
             return PNode.expr_result()
         else if .isIntLit()

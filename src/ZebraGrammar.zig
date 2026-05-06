@@ -706,10 +706,6 @@ const aspect_rules: []const Rule = &.{
     .{ .lhs = .AspectBodyItem, .rhs = &.{
         t(.kw_on), t(.open_call), t(.id), t(.rparen), t(.eol), n(.Block),
     } },
-    // on after(result) — `result` is now `kw_result` (contracts), so accept it explicitly.
-    .{ .lhs = .AspectBodyItem, .rhs = &.{
-        t(.kw_on), t(.open_call), t(.kw_result), t(.rparen), t(.eol), n(.Block),
-    } },
     // on error  (`error` is a keyword, so it's kw_error not id)
     .{ .lhs = .AspectBodyItem, .rhs = &.{ t(.kw_on), t(.kw_error), t(.eol), n(.Block) } },
     // on error(e)  (kw_error followed by lparen, not open_call)

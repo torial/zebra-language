@@ -74,6 +74,9 @@ class Lexer
     var afterLambdaParams: bool
     var lambdaBodyActive : bool
     var lambdaIndentLevel: int
+    # Ensure-block context-sensitive keyword tracking
+    var afterEnsureEol  : bool
+    var ensureBaseDepth : int
 
     cue init()
         src              = ""
@@ -89,6 +92,8 @@ class Lexer
         afterLambdaParams = false
         lambdaBodyActive  = false
         lambdaIndentLevel = 0
+        afterEnsureEol    = false
+        ensureBaseDepth   = 0
 
     static def tokenize(source: str): List(Token.Token) throws
         var lex = Lexer()
@@ -183,12 +188,19 @@ class Lexer
             level = spaces / 4
         else
             level = tabs
+        var oldDepth = indentDepth
         while level > indentDepth
             emit(TokenKind.indent(), "", ln, 1)
             indentDepth = indentDepth + 1
         while level < indentDepth
             emit(TokenKind.dedent(), "", ln, 1)
             indentDepth = indentDepth - 1
+        if afterEnsureEol
+            if level > oldDepth
+                ensureBaseDepth = level
+            afterEnsureEol = false
+        if ensureBaseDepth > 0 and level < ensureBaseDepth
+            ensureBaseDepth = 0
         if lambdaBodyActive and indentDepth <= lambdaIndentLevel
             lambdaBodyActive = false
 
@@ -290,8 +302,30 @@ class Lexer
 
         # Keyword or identifier
         var kw = Token.Keywords.lookup(word)
+
+        # `old` and `result` are context-sensitive: keywords only inside an
+        # ensure block, and never after a dot (field/method access position).
+        var prevDot = false
+        if out.len > 0
+            branch out.at(out.len - 1).kind
+                on TokenKind.dot
+                    prevDot = true
+                else
+                    pass
+        if ensureBaseDepth > 0 and not prevDot
+            if word == "old"
+                kw = TokenKind.kw_old()
+            if word == "result"
+                kw = TokenKind.kw_result()
+
         if kw <> nil
-            emit(kw to!, word, ln, cl)
+            var resolvedKw = kw to!
+            emit(resolvedKw, word, ln, cl)
+            branch resolvedKw
+                on TokenKind.kw_ensure
+                    afterEnsureEol = true
+                else
+                    pass
             return
 
         # open_call: identifier immediately followed by (

@@ -1,0 +1,11 @@
+# Verify that `result` and `old` work as plain identifiers outside ensure blocks.
+# They are only context-sensitive keywords *inside* ensure bodies.
+
+def compute(): int
+    var result = 10
+    var old = 3
+    return result + old
+
+def main()
+    var v = compute()
+    print v

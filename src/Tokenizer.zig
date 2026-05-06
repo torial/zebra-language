@@ -139,6 +139,17 @@ const Tokenizer = struct {
     /// indent_depth when the lambda body started; used to detect dedent-out.
     lambda_indent_level: u32 = 0,
 
+    // ── Ensure-block context-sensitive keyword tracking ───────────────────
+    // `old` and `result` are only keywords inside an `ensure` block body.
+    // after_ensure_eol: set when kw_ensure is emitted; cleared on next indent
+    //                   (entering the ensure body). Ensures the paren_depth>0
+    //                   early return in processIndentation cannot fire between
+    //                   `ensure` and its body (valid code has no parens there).
+    // ensure_base_depth: indent_depth of the ensure body content (0 = outside).
+
+    after_ensure_eol: bool = false,
+    ensure_base_depth: u32 = 0,
+
     // ── Low-level helpers ─────────────────────────────────────────────────
 
     fn col(self: *const Tokenizer) u16 {
@@ -313,6 +324,8 @@ const Tokenizer = struct {
             break :blk spaces / 4;
         } else tabs;
 
+        const old_depth = self.indent_depth;
+
         while (level > self.indent_depth) {
             try self.emit(.indent, "", ln, 1);
             self.indent_depth += 1;
@@ -320,6 +333,17 @@ const Tokenizer = struct {
         while (level < self.indent_depth) {
             try self.emit(.dedent, "", ln, 1);
             self.indent_depth -= 1;
+        }
+
+        // Ensure block entry: first indent after `ensure eol`.
+        if (self.after_ensure_eol) {
+            if (level > old_depth) self.ensure_base_depth = level;
+            self.after_ensure_eol = false;
+        }
+
+        // Ensure block exit: dedented to below the ensure body depth.
+        if (self.ensure_base_depth > 0 and level < self.ensure_base_depth) {
+            self.ensure_base_depth = 0;
         }
 
         // Detect dedent back to or below the lambda's start level — body is done.
@@ -489,7 +513,17 @@ const Tokenizer = struct {
 
         // ── Keyword or identifier ─────────────────────────────────────────
 
-        const kind: TokenKind = tk.keyword_map.get(word) orelse .id;
+        const base_kind: TokenKind = tk.keyword_map.get(word) orelse .id;
+
+        // `old` and `result` are context-sensitive: only keywords inside an
+        // ensure block, and never after a dot (where they are field/method names).
+        const prev_dot = self.out.items.len > 0 and
+                         self.out.items[self.out.items.len - 1].kind == .dot;
+        var kind = base_kind;
+        if (self.ensure_base_depth > 0 and !prev_dot) {
+            if (std.mem.eql(u8, word, "old"))    kind = .kw_old;
+            if (std.mem.eql(u8, word, "result")) kind = .kw_result;
+        }
 
         // open_call — non-keyword identifier immediately followed by `(`
         if (kind == .id and self.peek() == '(') {
@@ -501,6 +535,8 @@ const Tokenizer = struct {
         }
 
         try self.emit(kind, word, ln, cl);
+        // Arm the ensure-block tracker: next indent enters the ensure body.
+        if (kind == .kw_ensure) self.after_ensure_eol = true;
     }
 
     // ── Char literals  'x'  '\n'  (also legacy c'x' c"x") ───────────────────
