@@ -127,13 +127,13 @@ histogram.  Run before a PDF build to catch rendering hazards.
 Zebra has `str.codePointCount` but not yet a codepoint-by-codepoint iterator
 for histogram building.  Near-term port once `Dir.walk` + char iteration land.
 
-### `tools/book_strip_invisibles.py`
-**Language:** Python  
+### `tools/book_strip_invisibles.py` / `tools/book_strip_invisibles.zbr`
+**Language:** Python → ✅ Zebra port DONE 2026-05-05  
 **Origin:** `C:/tmp/strip_invisibles.py`  
 **Purpose:** Strips U+FEFF (BOM) and U+FE0F (variation selector-16) from all
 book `.md` files.  Both are invisible and break PDF rendering.
-**Zebra port:** Needs `Dir.walk` + `str.replace` (literal char).  Very simple
-port once `Dir.walk` exists — no regex required.
+**Zebra port:** Uses `File.listDir` (per-Part, non-recursive) + `str.replace`
+with literal UTF-8 bytes for the invisible characters.  48/48 smoke.
 
 ---
 
@@ -155,7 +155,7 @@ Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re
 
 ### Porting order
 
-1. `book_strip_invisibles.zbr` — simplest; only `Dir.walk` + `str.replace`
+1. ✅ `book_strip_invisibles.zbr` — DONE 2026-05-05; `File.listDir` + `str.replace`
 2. `sweep_class_main.zbr` — `Dir.walk` + multiline string transform; good
    stress test of Zebra string handling
 3. ✅ `escape_hatches_check.zbr` — DONE 2026-05-05; first completed Zebra tool port

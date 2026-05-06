@@ -1,0 +1,36 @@
+# Strip U+FEFF (BOM / zero-width no-break space) and U+FE0F (variation
+# selector-16) from every .md file in the five Part directories of the
+# zebra-language-book repo.  Port of tools/book_strip_invisibles.py.
+
+def countOcc(text: str, needle: str): int
+    return text.split(needle).count() - 1
+
+def main()
+    var root = "C:/Projects/zebra-language-book"
+    var parts: List(str) = List()
+    parts.add("Part-1-Foundations")
+    parts.add("Part-2-Objects-and-Interfaces")
+    parts.add("Part-3-Advanced-Features")
+    parts.add("Part-4-Practical-Projects")
+    parts.add("Part-5-Ecosystem")
+
+    var bom  = "﻿"
+    var vs16 = "️"
+
+    var total = 0
+    for part in parts
+        var part_path = root + "/" + part
+        var entries = File.listDir(part_path)
+        for entry in entries
+            if not entry.endsWith(".md")
+                continue
+            var path = part_path + "/" + entry
+            var text = File.read(path)
+            var cleaned = text.replace(bom, "")
+            cleaned = cleaned.replace(vs16, "")
+            if cleaned != text
+                File.write(path, cleaned)
+                var removed = countOcc(text, bom) + countOcc(text, vs16)
+                total = total + removed
+                print part + "/" + entry + ": removed " + removed.toString()
+    print "total: " + total.toString()

@@ -186,6 +186,8 @@ smoke test/bug088_try_return_test.zbr
 
 # Scripting tools: first Zebra port of an escape-hatch guard script.
 smoke tools/escape_hatches_check.zbr
+# Scripting tool #1: strip invisible glyphs (U+FEFF / U+FE0F) from book .md files.
+smoke tools/book_strip_invisibles.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
