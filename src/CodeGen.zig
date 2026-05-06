@@ -1755,11 +1755,22 @@ const Generator = struct {
             \\    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
             \\    inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
             \\    inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-            \\    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-            \\    beginPanelFn:  *const fn (label: []const u8) bool,
-            \\    endPanelFn:    *const fn () void,
-            \\    beginWindowFn: *const fn (label: []const u8) bool,
-            \\    endWindowFn:   *const fn () void,
+            \\    beginPanelFn:       *const fn (label: []const u8) bool,
+            \\    endPanelFn:         *const fn () void,
+            \\    beginWindowFn:      *const fn (label: []const u8) bool,
+            \\    endWindowFn:        *const fn () void,
+            \\    selectableFn:       *const fn (label: []const u8) bool,
+            \\    textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
+            \\    beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
+            \\    tableSetupColumnFn: *const fn (label: []const u8) void,
+            \\    tableHeadersRowFn:  *const fn () void,
+            \\    tableNextRowFn:     *const fn () void,
+            \\    tableNextColumnFn:  *const fn () bool,
+            \\    endTableFn:         *const fn () void,
+            \\    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
+            \\    endChildFn:         *const fn () void,
+            \\    treeNodeFn:         *const fn (label: []const u8) bool,
+            \\    treePopFn:          *const fn () void,
             \\};
             \\const GuiContext = struct {
             \\    _b: *const _GuiBackend,
@@ -1774,6 +1785,25 @@ const Generator = struct {
             \\    pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
             \\    pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
             \\    pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
+            \\    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+            \\    pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
+            \\        self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
+            \\    }
+            \\    pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
+            \\    pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+            \\    pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
+            \\    pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
+            \\    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+            \\    pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+            \\    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
+            \\        const _vis = self._b.beginChildFn(id, w, h);
+            \\        if (_vis) {
+            \\            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            \\        }
+            \\        self._b.endChildFn();
+            \\    }
+            \\    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+            \\    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
             \\    pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
             \\        if (self._b.beginPanelFn(label)) {
             \\            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1806,27 +1836,27 @@ const Generator = struct {
             \\}
             \\
         );
-        // ── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ──
-        try g.w.writeAll(
-            \\const _CodeEditor = struct { text: []const u8, read_only: bool };
-            \\fn _code_editor_new() *_CodeEditor {
-            \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
-            \\    _ed.* = .{ .text = "", .read_only = false };
-            \\    return _ed;
-            \\}
-            \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
-            \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
-            \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
-            \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-            \\    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
-            \\    if (!_ed.read_only) { _ed.text = _r; }
-            \\}
-            \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-            \\
-        );
-        // ── Backend-specific implementation ────────────────────────────────────
+        // ── Backend-specific implementation (includes _CodeEditor) ───────────
         switch (g.gui_backend) {
             .stub => try g.w.writeAll(
+                \\// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
+                \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+                \\fn _code_editor_new() *_CodeEditor {
+                \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+                \\    _ed.* = .{ .text = "", .read_only = false };
+                \\    return _ed;
+                \\}
+                \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+                \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+                \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+                \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+                \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+                \\    if (!_ed.read_only) { _ed.text = _r; }
+                \\}
+                \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+                \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
                 \\// ─── Stub backend (single frame, prints to stderr) ───────────────────────────
                 \\fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
                 \\    _ = title; _ = width; _ = height;
@@ -1875,27 +1905,50 @@ const Generator = struct {
                 \\    return true;
                 \\}
                 \\fn _stub_end_window() void {}
+                \\fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
+                \\fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
+                \\fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+                \\fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
+                \\fn _stub_table_headers_row() void {}
+                \\fn _stub_table_next_row() void {}
+                \\fn _stub_table_next_column() bool { return true; }
+                \\fn _stub_end_table() void {}
+                \\fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+                \\fn _stub_end_child() void {}
+                \\fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
+                \\fn _stub_tree_pop() void {}
                 \\const _gui_stub_backend = _GuiBackend{
-                \\    .initFn        = _stub_init,
-                \\    .deinitFn      = _stub_deinit,
-                \\    .newFrameFn    = _stub_new_frame,
-                \\    .endFrameFn    = _stub_end_frame,
-                \\    .textFn        = _stub_text,
-                \\    .separatorFn   = _stub_separator,
-                \\    .sameLineFn    = _stub_same_line,
-                \\    .spacingFn     = _stub_spacing,
-                \\    .indentFn      = _stub_indent,
-                \\    .unindentFn    = _stub_unindent,
-                \\    .buttonFn      = _stub_button,
-                \\    .checkboxFn    = _stub_checkbox,
-                \\    .sliderFn      = _stub_slider,
-                \\    .inputFn       = _stub_input,
-                \\    .inputMultilineFn = _stub_input_multiline,
-                \\    .codeEditorFn  = _stub_input_multiline,
-                \\    .beginPanelFn  = _stub_begin_panel,
-                \\    .endPanelFn    = _stub_end_panel,
-                \\    .beginWindowFn = _stub_begin_window,
-                \\    .endWindowFn   = _stub_end_window,
+                \\    .initFn             = _stub_init,
+                \\    .deinitFn           = _stub_deinit,
+                \\    .newFrameFn         = _stub_new_frame,
+                \\    .endFrameFn         = _stub_end_frame,
+                \\    .textFn             = _stub_text,
+                \\    .separatorFn        = _stub_separator,
+                \\    .sameLineFn         = _stub_same_line,
+                \\    .spacingFn          = _stub_spacing,
+                \\    .indentFn           = _stub_indent,
+                \\    .unindentFn         = _stub_unindent,
+                \\    .buttonFn           = _stub_button,
+                \\    .checkboxFn         = _stub_checkbox,
+                \\    .sliderFn           = _stub_slider,
+                \\    .inputFn            = _stub_input,
+                \\    .inputMultilineFn   = _stub_input_multiline,
+                \\    .beginPanelFn       = _stub_begin_panel,
+                \\    .endPanelFn         = _stub_end_panel,
+                \\    .beginWindowFn      = _stub_begin_window,
+                \\    .endWindowFn        = _stub_end_window,
+                \\    .selectableFn       = _stub_selectable,
+                \\    .textColoredFn      = _stub_text_colored,
+                \\    .beginTableFn       = _stub_begin_table,
+                \\    .tableSetupColumnFn = _stub_table_setup_column,
+                \\    .tableHeadersRowFn  = _stub_table_headers_row,
+                \\    .tableNextRowFn     = _stub_table_next_row,
+                \\    .tableNextColumnFn  = _stub_table_next_column,
+                \\    .endTableFn         = _stub_end_table,
+                \\    .beginChildFn       = _stub_begin_child,
+                \\    .endChildFn         = _stub_end_child,
+                \\    .treeNodeFn         = _stub_tree_node,
+                \\    .treePopFn          = _stub_tree_pop,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -1904,6 +1957,46 @@ const Generator = struct {
             // Requires a `zig build` project (not bare `zig run`).
             // main.zig wires up a generated project dir when uses_gui is true.
             .glfw => try g.w.writeAll(
+                \\// ─── CodeEditor widget — ImGuiColorTextEdit via C shim ───────────────────────
+                \\const te_c = @cImport(@cInclude("TextEditorC.h"));
+                \\const _CodeEditor = struct { handle: te_c.TE_Handle, read_only: bool };
+                \\fn _code_editor_new() *_CodeEditor {
+                \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+                \\    _ed.* = .{ .handle = te_c.te_create(), .read_only = false };
+                \\    return _ed;
+                \\}
+                \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
+                \\    const _z = _allocator.dupeZ(u8, text) catch return;
+                \\    defer _allocator.free(_z);
+                \\    te_c.te_set_text(_ed.handle, _z);
+                \\}
+                \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
+                \\    const _c = te_c.te_get_text(_ed.handle) orelse return "";
+                \\    return _allocator.dupe(u8, std.mem.span(_c)) catch "";
+                \\}
+                \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
+                \\    _ed.read_only = v;
+                \\    te_c.te_set_readonly(_ed.handle, if (v) @as(c_int, 1) else @as(c_int, 0));
+                \\}
+                \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+                \\    _ = _g;
+                \\    const _z = _allocator.dupeZ(u8, id) catch return;
+                \\    defer _allocator.free(_z);
+                \\    te_c.te_render(_ed.handle, _z, @floatCast(w), @floatCast(h));
+                \\}
+                \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void {
+                \\    te_c.te_clear_errors(_ed.handle);
+                \\    for (_m.items) |_d| {
+                \\        const _mz = _allocator.dupeZ(u8, _d.message) catch continue;
+                \\        defer _allocator.free(_mz);
+                \\        te_c.te_add_error(_ed.handle, @intCast(_d.line), _mz);
+                \\    }
+                \\}
+                \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { return @intCast(te_c.te_get_cursor_line(_ed.handle)); }
+                \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { return @intCast(te_c.te_get_cursor_col(_ed.handle)); }
+                \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void {
+                \\    te_c.te_set_cursor_position(_ed.handle, @intCast(line), @intCast(col));
+                \\}
                 \\// ─── zgui GLFW+OpenGL3 backend ──────────────────────────────────────────────
                 \\const zgui    = @import("zgui");
                 \\const zglfw   = @import("zglfw");
@@ -2017,27 +2110,74 @@ const Generator = struct {
                 \\    return zgui.begin(_z, .{});
                 \\}
                 \\fn _imgui_end_window() void { zgui.end(); }
+                \\fn _imgui_selectable(label: []const u8) bool {
+                \\    const _z = _allocator.dupeZ(u8, label) catch return false;
+                \\    defer _allocator.free(_z);
+                \\    return zgui.selectable(_z, .{});
+                \\}
+                \\fn _imgui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
+                \\    zgui.pushStyleColor4f(.{ .idx = .text, .c = .{ r, gv, b_, a } });
+                \\    zgui.textUnformatted(s);
+                \\    zgui.popStyleColor(.{});
+                \\}
+                \\fn _imgui_begin_table(id: []const u8, cols: i64) bool {
+                \\    const _z = _allocator.dupeZ(u8, id) catch return false;
+                \\    defer _allocator.free(_z);
+                \\    return zgui.beginTable(_z, .{ .column = @intCast(cols) });
+                \\}
+                \\fn _imgui_table_setup_column(label: []const u8) void {
+                \\    const _z = _allocator.dupeZ(u8, label) catch return;
+                \\    defer _allocator.free(_z);
+                \\    zgui.tableSetupColumn(_z, .{});
+                \\}
+                \\fn _imgui_table_headers_row() void { zgui.tableHeadersRow(); }
+                \\fn _imgui_table_next_row() void { zgui.tableNextRow(.{}); }
+                \\fn _imgui_table_next_column() bool { return zgui.tableNextColumn(); }
+                \\fn _imgui_end_table() void { zgui.endTable(); }
+                \\fn _imgui_begin_child(id: []const u8, w: f64, h: f64) bool {
+                \\    const _z = _allocator.dupeZ(u8, id) catch return false;
+                \\    defer _allocator.free(_z);
+                \\    return zgui.beginChild(_z, .{ .w = @floatCast(w), .h = @floatCast(h) });
+                \\}
+                \\fn _imgui_end_child() void { zgui.endChild(); }
+                \\fn _imgui_tree_node(label: []const u8) bool {
+                \\    const _z = _allocator.dupeZ(u8, label) catch return false;
+                \\    defer _allocator.free(_z);
+                \\    return zgui.treeNode(_z);
+                \\}
+                \\fn _imgui_tree_pop() void { zgui.treePop(); }
                 \\const _gui_imgui_backend = _GuiBackend{
-                \\    .initFn        = _imgui_init,
-                \\    .deinitFn      = _imgui_deinit,
-                \\    .newFrameFn    = _imgui_new_frame,
-                \\    .endFrameFn    = _imgui_end_frame,
-                \\    .textFn        = _imgui_text,
-                \\    .separatorFn   = _imgui_separator,
-                \\    .sameLineFn    = _imgui_same_line,
-                \\    .spacingFn     = _imgui_spacing,
-                \\    .indentFn      = _imgui_indent,
-                \\    .unindentFn    = _imgui_unindent,
-                \\    .buttonFn      = _imgui_button,
-                \\    .checkboxFn    = _imgui_checkbox,
-                \\    .sliderFn      = _imgui_slider,
-                \\    .inputFn       = _imgui_input,
-                \\    .inputMultilineFn = _imgui_input_multiline,
-                \\    .codeEditorFn  = _imgui_input_multiline,
-                \\    .beginPanelFn  = _imgui_begin_panel,
-                \\    .endPanelFn    = _imgui_end_panel,
-                \\    .beginWindowFn = _imgui_begin_window,
-                \\    .endWindowFn   = _imgui_end_window,
+                \\    .initFn             = _imgui_init,
+                \\    .deinitFn           = _imgui_deinit,
+                \\    .newFrameFn         = _imgui_new_frame,
+                \\    .endFrameFn         = _imgui_end_frame,
+                \\    .textFn             = _imgui_text,
+                \\    .separatorFn        = _imgui_separator,
+                \\    .sameLineFn         = _imgui_same_line,
+                \\    .spacingFn          = _imgui_spacing,
+                \\    .indentFn           = _imgui_indent,
+                \\    .unindentFn         = _imgui_unindent,
+                \\    .buttonFn           = _imgui_button,
+                \\    .checkboxFn         = _imgui_checkbox,
+                \\    .sliderFn           = _imgui_slider,
+                \\    .inputFn            = _imgui_input,
+                \\    .inputMultilineFn   = _imgui_input_multiline,
+                \\    .beginPanelFn       = _imgui_begin_panel,
+                \\    .endPanelFn         = _imgui_end_panel,
+                \\    .beginWindowFn      = _imgui_begin_window,
+                \\    .endWindowFn        = _imgui_end_window,
+                \\    .selectableFn       = _imgui_selectable,
+                \\    .textColoredFn      = _imgui_text_colored,
+                \\    .beginTableFn       = _imgui_begin_table,
+                \\    .tableSetupColumnFn = _imgui_table_setup_column,
+                \\    .tableHeadersRowFn  = _imgui_table_headers_row,
+                \\    .tableNextRowFn     = _imgui_table_next_row,
+                \\    .tableNextColumnFn  = _imgui_table_next_column,
+                \\    .endTableFn         = _imgui_end_table,
+                \\    .beginChildFn       = _imgui_begin_child,
+                \\    .endChildFn         = _imgui_end_child,
+                \\    .treeNodeFn         = _imgui_tree_node,
+                \\    .treePopFn          = _imgui_tree_pop,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
                 \\
@@ -2045,6 +2185,24 @@ const Generator = struct {
             // sdl2 / dx12 not yet implemented — fall through to stub.
             .sdl2, .dx12 => try g.w.writeAll(
                 \\// TODO: sdl2/dx12 GUI backend not yet implemented; using stub.
+                \\// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
+                \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+                \\fn _code_editor_new() *_CodeEditor {
+                \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+                \\    _ed.* = .{ .text = "", .read_only = false };
+                \\    return _ed;
+                \\}
+                \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+                \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+                \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+                \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+                \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+                \\    if (!_ed.read_only) { _ed.text = _r; }
+                \\}
+                \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+                \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
                 \\fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
                 \\    _ = title; _ = width; _ = height;
                 \\}
@@ -2092,27 +2250,50 @@ const Generator = struct {
                 \\    return true;
                 \\}
                 \\fn _stub_end_window() void {}
+                \\fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
+                \\fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
+                \\fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+                \\fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
+                \\fn _stub_table_headers_row() void {}
+                \\fn _stub_table_next_row() void {}
+                \\fn _stub_table_next_column() bool { return true; }
+                \\fn _stub_end_table() void {}
+                \\fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+                \\fn _stub_end_child() void {}
+                \\fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
+                \\fn _stub_tree_pop() void {}
                 \\const _gui_stub_backend = _GuiBackend{
-                \\    .initFn        = _stub_init,
-                \\    .deinitFn      = _stub_deinit,
-                \\    .newFrameFn    = _stub_new_frame,
-                \\    .endFrameFn    = _stub_end_frame,
-                \\    .textFn        = _stub_text,
-                \\    .separatorFn   = _stub_separator,
-                \\    .sameLineFn    = _stub_same_line,
-                \\    .spacingFn     = _stub_spacing,
-                \\    .indentFn      = _stub_indent,
-                \\    .unindentFn    = _stub_unindent,
-                \\    .buttonFn      = _stub_button,
-                \\    .checkboxFn    = _stub_checkbox,
-                \\    .sliderFn      = _stub_slider,
-                \\    .inputFn       = _stub_input,
-                \\    .inputMultilineFn = _stub_input_multiline,
-                \\    .codeEditorFn  = _stub_input_multiline,
-                \\    .beginPanelFn  = _stub_begin_panel,
-                \\    .endPanelFn    = _stub_end_panel,
-                \\    .beginWindowFn = _stub_begin_window,
-                \\    .endWindowFn   = _stub_end_window,
+                \\    .initFn             = _stub_init,
+                \\    .deinitFn           = _stub_deinit,
+                \\    .newFrameFn         = _stub_new_frame,
+                \\    .endFrameFn         = _stub_end_frame,
+                \\    .textFn             = _stub_text,
+                \\    .separatorFn        = _stub_separator,
+                \\    .sameLineFn         = _stub_same_line,
+                \\    .spacingFn          = _stub_spacing,
+                \\    .indentFn           = _stub_indent,
+                \\    .unindentFn         = _stub_unindent,
+                \\    .buttonFn           = _stub_button,
+                \\    .checkboxFn         = _stub_checkbox,
+                \\    .sliderFn           = _stub_slider,
+                \\    .inputFn            = _stub_input,
+                \\    .inputMultilineFn   = _stub_input_multiline,
+                \\    .beginPanelFn       = _stub_begin_panel,
+                \\    .endPanelFn         = _stub_end_panel,
+                \\    .beginWindowFn      = _stub_begin_window,
+                \\    .endWindowFn        = _stub_end_window,
+                \\    .selectableFn       = _stub_selectable,
+                \\    .textColoredFn      = _stub_text_colored,
+                \\    .beginTableFn       = _stub_begin_table,
+                \\    .tableSetupColumnFn = _stub_table_setup_column,
+                \\    .tableHeadersRowFn  = _stub_table_headers_row,
+                \\    .tableNextRowFn     = _stub_table_next_row,
+                \\    .tableNextColumnFn  = _stub_table_next_column,
+                \\    .endTableFn         = _stub_end_table,
+                \\    .beginChildFn       = _stub_begin_child,
+                \\    .endChildFn         = _stub_end_child,
+                \\    .treeNodeFn         = _stub_tree_node,
+                \\    .treePopFn          = _stub_tree_pop,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2785,6 +2966,42 @@ const Generator = struct {
         try g.w.print("pub const {s} = struct {{\n", .{n.name});
         const ig = sg.indented();
         for (n.members) |decl| try ig.genMember(decl);
+        // Synthetic `pub fn init(fields...) StructName` for structs without explicit `cue init`.
+        // Normalises all structs so callers can use StructName.init(...) uniformly.
+        var has_cue_init_s = false;
+        for (n.members) |m| if (m == .init) { has_cue_init_s = true; break; };
+        if (!has_cue_init_s) {
+            try ig.writeIndent();
+            try ig.w.writeAll("pub fn init(");
+            var fi: usize = 0;
+            for (n.members) |m| {
+                if (m != .var_) continue;
+                if (m.var_.mods.static_) continue;
+                if (fi > 0) try ig.w.writeAll(", ");
+                try ig.w.print("{s}: ", .{m.var_.name});
+                if (m.var_.type_) |tr| try ig.genType(tr) else try ig.w.writeAll("anytype");
+                fi += 1;
+            }
+            try ig.w.print(") {s} {{\n", .{n.name});
+            const sig = ig.indented();
+            try sig.writeIndent();
+            if (fi == 0) {
+                try sig.w.writeAll("return .{};\n");
+            } else {
+                try sig.w.writeAll("return .{");
+                var fj: usize = 0;
+                for (n.members) |m| {
+                    if (m != .var_) continue;
+                    if (m.var_.mods.static_) continue;
+                    if (fj > 0) try sig.w.writeAll(",");
+                    try sig.w.print(" .{s} = {s}", .{ m.var_.name, m.var_.name });
+                    fj += 1;
+                }
+                try sig.w.writeAll(" };\n");
+            }
+            try ig.writeIndent();
+            try ig.w.writeAll("}\n\n");
+        }
         if (n.invariants.len > 0 and !g.strip_contracts) try ig.genInvariantCheckFn();
         if (n.implements.len > 0) {
             try ig.w.writeAll("\n");
@@ -3348,6 +3565,12 @@ const Generator = struct {
                     }
                 }
                 try g.writeIndent();
+                // Zig 0.15 rejects discarding a non-void expression as a statement;
+                // emit `_ = expr;` when the TC has a definitive non-void type.
+                if (g.tc) |tc| {
+                    const t = tc.expr_types.get(e) orelse .unknown;
+                    if (t != .void_ and t != .unknown) try g.w.writeAll("_ = ");
+                }
                 try g.genExpr(e);
                 // Inside a try block, a call to a `throws` method must have its
                 // error captured and redirected to the block's tracking variable.
@@ -5326,7 +5549,7 @@ const Generator = struct {
         return false;
     }
 
-    /// editor.setText / getText / setReadOnly / setErrorMarkers / render
+    /// editor.setText / getText / getCursorLine / getCursorCol / setCursorPosition / setReadOnly / setErrorMarkers / render
     fn genCodeEditorMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "setText")) {
             try g.w.writeAll("_code_editor_set_text(");
@@ -5339,6 +5562,28 @@ const Generator = struct {
         if (std.mem.eql(u8, method, "getText")) {
             try g.w.writeAll("_code_editor_get_text(");
             try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "getCursorLine")) {
+            try g.w.writeAll("_code_editor_get_cursor_line(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "getCursorCol")) {
+            try g.w.writeAll("_code_editor_get_cursor_col(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setCursorPosition")) {
+            try g.w.writeAll("_code_editor_set_cursor_position(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("1");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("1");
             try g.w.writeAll(")");
             return true;
         }
@@ -5374,11 +5619,17 @@ const Generator = struct {
     /// For void-returning statement calls with allocating string args, use genGuiWidgetStmt.
     fn genGuiWidgetMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         const known = std.StaticStringMap(void).initComptime(&.{
-            .{ "text",      {} }, .{ "separator", {} }, .{ "sameLine",  {} },
-            .{ "spacing",   {} }, .{ "indent",    {} }, .{ "unindent",  {} },
-            .{ "button",    {} }, .{ "checkbox",  {} }, .{ "slider",         {} },
+            .{ "text",      {} }, .{ "separator",      {} }, .{ "sameLine",  {} },
+            .{ "spacing",   {} }, .{ "indent",         {} }, .{ "unindent",  {} },
+            .{ "button",    {} }, .{ "checkbox",       {} }, .{ "slider",    {} },
             .{ "input",     {} }, .{ "inputMultiline", {} },
-            .{ "panel",     {} }, .{ "window",    {} },
+            .{ "panel",     {} }, .{ "window",         {} },
+            .{ "selectable",       {} }, .{ "textColored",     {} },
+            .{ "beginTable",       {} }, .{ "tableSetupColumn",{} },
+            .{ "tableHeadersRow",  {} }, .{ "tableNextRow",    {} },
+            .{ "tableNextColumn",  {} }, .{ "endTable",        {} },
+            .{ "childWindow",      {} },
+            .{ "treeNode",         {} }, .{ "treePop",         {} },
         });
         if (known.get(method) == null) return false;
         try g.genExpr(obj);
@@ -5407,9 +5658,12 @@ const Generator = struct {
             });
         if (!is_gui) return false;
         const void_methods = std.StaticStringMap(void).initComptime(&.{
-            .{ "text", {} }, .{ "separator", {} }, .{ "sameLine", {} },
-            .{ "spacing", {} }, .{ "indent", {} }, .{ "unindent", {} },
-            .{ "panel", {} }, .{ "window", {} },
+            .{ "text",    {} }, .{ "separator",     {} }, .{ "sameLine",    {} },
+            .{ "spacing", {} }, .{ "indent",        {} }, .{ "unindent",    {} },
+            .{ "panel",   {} }, .{ "window",        {} }, .{ "textColored", {} },
+            .{ "tableSetupColumn", {} }, .{ "tableHeadersRow", {} },
+            .{ "tableNextRow",     {} }, .{ "tableNextColumn", {} },
+            .{ "endTable",         {} }, .{ "childWindow",     {} }, .{ "treePop", {} },
         });
         if (void_methods.get(mem.member) == null) return false;
         // Check if any arg is allocating.

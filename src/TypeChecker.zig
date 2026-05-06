@@ -2204,6 +2204,42 @@ const TypeChecker = struct {
                 }
             }
         }
+        // Same-file struct/class field: `obj.field` where field is declared as List(T).
+        // Handles patterns like `for f in state.files` where `state: IDEState` and
+        // IDEState has `files: List(str)`.
+        if (iter.* == .member) {
+            const mem = iter.member;
+            const obj_sym: ?*const Symbol = blk: {
+                if (mem.object.* == .ident) {
+                    break :blk tc.resolve.exprs.get(&mem.object.ident);
+                }
+                break :blk null;
+            };
+            if (obj_sym) |sym| {
+                const obj_t = tc.symbolType(sym);
+                if (obj_t == .named) {
+                    const cls_sym = obj_t.named;
+                    if (cls_sym.own_scope) |scope| {
+                        if (scope.lookupLocal(mem.member)) |field_sym| {
+                            const ft_opt: ?*const Ast.TypeRef = switch (field_sym.decl) {
+                                .var_  => |fv| if (fv.type_) |*t| t else null,
+                                .param => |p|  if (p.type_) |*t| t else null,
+                                else   => null,
+                            };
+                            if (ft_opt) |ft| {
+                                if (ft.* == .generic and
+                                    std.mem.eql(u8, ft.generic.name, "List") and
+                                    ft.generic.args.len > 0)
+                                {
+                                    const elem_t = tc.typeFromRef(&ft.generic.args[0]);
+                                    if (!elem_t.isAbstract()) return elem_t;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // for_num loop var → int (handled at the call site)
         return .unknown;
     }
@@ -2842,18 +2878,24 @@ const TypeChecker = struct {
         }
         // CodeEditor methods
         if (obj_type == .code_editor) {
-            if (std.mem.eql(u8, method, "getText")) return .string;
-            return .void_; // setText, setErrorMarkers, setReadOnly, render
+            if (std.mem.eql(u8, method, "getText"))        return .string;
+            if (std.mem.eql(u8, method, "getCursorLine")) return .int;
+            if (std.mem.eql(u8, method, "getCursorCol"))  return .int;
+            return .void_; // setText, setErrorMarkers, setReadOnly, setCursorPosition, render
         }
         // Gui widget methods (on gui_context receiver)
         if (obj_type == .gui_context) {
-            if (std.mem.eql(u8, method, "button"))   return .bool;
-            if (std.mem.eql(u8, method, "checkbox")) return .bool;
-            if (std.mem.eql(u8, method, "slider"))   return .float;
-            if (std.mem.eql(u8, method, "input"))         return .string;
-            if (std.mem.eql(u8, method, "inputMultiline")) return .string;
+            if (std.mem.eql(u8, method, "button"))          return .bool;
+            if (std.mem.eql(u8, method, "checkbox"))        return .bool;
+            if (std.mem.eql(u8, method, "selectable"))      return .bool;
+            if (std.mem.eql(u8, method, "treeNode"))        return .bool;
+            if (std.mem.eql(u8, method, "beginTable"))      return .bool;
+            if (std.mem.eql(u8, method, "tableNextColumn")) return .bool;
+            if (std.mem.eql(u8, method, "slider"))          return .float;
+            if (std.mem.eql(u8, method, "input"))           return .string;
+            if (std.mem.eql(u8, method, "inputMultiline"))  return .string;
             // void-returning widgets
-            return .void_;  // text, separator, sameLine, spacing, indent, unindent, panel, window
+            return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, …
         }
         // Shell methods
         if (obj_type == .shell) {

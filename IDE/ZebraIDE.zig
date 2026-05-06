@@ -5,9 +5,17 @@ const std     = @import("std");
 const builtin = @import("builtin");
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = undefined;
+var _allocator: std.mem.Allocator = _arena.allocator();
+var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+// === STDLIB_PREAMBLE_HELPERS_START ===
+fn _intern(s: []const u8) []const u8 {
+    if (_str_pool.get(s)) |existing| return existing;
+    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    _str_pool.put(owned, owned) catch @panic("OOM");
+    return owned;
 }
 
 const _Stringable = struct {
@@ -19,10 +27,6 @@ const _Stringable = struct {
 };
 const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
-pub fn _zbr_error_msg() []const u8 {
-    if (_error_ctx.message.len > 0) return _error_ctx.message;
-    return "";
-}
 fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     return a < b;
@@ -39,11 +43,22 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
-/// `item in container` — membership test for List, string (substring), HashMap.
+/// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
-    // Struct types: ArrayList (has .items field) or HashMap (has .contains decl).
+    // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
+    if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
+        inline for (container) |elem| {
+            if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+                if (std.mem.eql(u8, elem, item)) return true;
+            } else {
+                if (elem == item) return true;
+            }
+        }
+        return false;
+    }
+    // Named struct types: ArrayList (has .items field) or HashMap (has .contains decl).
     if (comptime @typeInfo(C) == .@"struct") {
         if (comptime @hasField(C, "items")) {
             for (container.items) |elem| {
@@ -81,7 +96,48 @@ fn _zbr_hash(comptime s: []const u8) u32 {
     comptime var h: u32 = 2166136261;
     comptime for (s) |c| { h ^= c; h *%= 16777619; };
     return h;
-}fn _pad_fill(fill: anytype) u8 {
+}fn _Result(comptime T: type, comptime E: type) type {
+    return union(enum) {
+        ok: T,
+        err: E,
+        pub fn isOk(self: @This()) bool { return self == .ok; }
+        pub fn isErr(self: @This()) bool { return self == .err; }
+        pub fn unwrap(self: @This()) T {
+            return switch (self) { .ok => |v| v, .err => std.debug.panic("unwrap() on error Result\n", .{}) };
+        }
+        pub fn unwrapOr(self: @This(), default: T) T {
+            return switch (self) { .ok => |v| v, .err => default };
+        }
+        pub fn okValue(self: @This()) ?T {
+            return switch (self) { .ok => |v| v, .err => null };
+        }
+        pub fn errValue(self: @This()) ?E {
+            return switch (self) { .ok => null, .err => |e| e };
+        }
+        /// map(f) — apply f to the ok value; propagate err unchanged.
+        /// f may be a fn pointer or a capture-closure struct with a `call` method.
+        pub fn map(self: @This(), f: anytype) _Result(
+            @TypeOf(if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))), E
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| .{ .ok = if (_is_fn) f(v) else f.call(v) },
+                .err => |e| .{ .err = e },
+            };
+        }
+        /// flatMap(f) — apply f to the ok value; f must return Result(U, E).
+        pub fn flatMap(self: @This(), f: anytype) @TypeOf(
+            if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))
+        ) {
+            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            return switch (self) {
+                .ok  => |v| if (_is_fn) f(v) else f.call(v),
+                .err => |e| .{ .err = e },
+            };
+        }
+    };
+}
+fn _pad_fill(fill: anytype) u8 {
     if (comptime @typeInfo(@TypeOf(fill)) == .pointer) return fill[0];
     return @as(u8, @intCast(fill));
 }
@@ -456,7 +512,10 @@ fn _http_serve(port: u16, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e));
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
     defer _srv.deinit();
     while (true) {
         const _conn = _srv.accept() catch continue;
@@ -1040,6 +1099,10 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+pub fn _zbr_error_msg() []const u8 {
+    if (_error_ctx.message.len > 0) return _error_ctx.message;
+    return "";
+}
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
@@ -1059,10 +1122,22 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    beginPanelFn:  *const fn (label: []const u8) bool,
-    endPanelFn:    *const fn () void,
-    beginWindowFn: *const fn (label: []const u8) bool,
-    endWindowFn:   *const fn () void,
+    beginPanelFn:       *const fn (label: []const u8) bool,
+    endPanelFn:         *const fn () void,
+    beginWindowFn:      *const fn (label: []const u8) bool,
+    endWindowFn:        *const fn () void,
+    selectableFn:       *const fn (label: []const u8) bool,
+    textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
+    beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
+    tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableHeadersRowFn:  *const fn () void,
+    tableNextRowFn:     *const fn () void,
+    tableNextColumnFn:  *const fn () bool,
+    endTableFn:         *const fn () void,
+    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
+    endChildFn:         *const fn () void,
+    treeNodeFn:         *const fn (label: []const u8) bool,
+    treePopFn:          *const fn () void,
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
@@ -1077,6 +1152,25 @@ const GuiContext = struct {
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
+    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
+        self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
+    }
+    pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
+    pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
+    pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
+    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
+        const _vis = self._b.beginChildFn(id, w, h);
+        if (_vis) {
+            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+        }
+        self._b.endChildFn();
+    }
+    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
             if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1107,20 +1201,46 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
-const _CodeEditor = struct { text: []const u8, read_only: bool };
+// ─── CodeEditor widget — ImGuiColorTextEdit via C shim ───────────────────────
+const te_c = @cImport(@cInclude("TextEditorC.h"));
+const _CodeEditor = struct { handle: te_c.TE_Handle, read_only: bool };
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
-    _ed.* = .{ .text = "", .read_only = false };
+    _ed.* = .{ .handle = te_c.te_create(), .read_only = false };
     return _ed;
 }
-fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
-fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
-fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
-fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g.inputMultiline(id, _ed.text, w, h);
-    if (!_ed.read_only) { _ed.text = _r; }
+fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
+    const _z = _allocator.dupeZ(u8, text) catch return;
+    defer _allocator.free(_z);
+    te_c.te_set_text(_ed.handle, _z);
 }
-fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
+    const _c = te_c.te_get_text(_ed.handle) orelse return "";
+    return _allocator.dupe(u8, std.mem.span(_c)) catch "";
+}
+fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
+    _ed.read_only = v;
+    te_c.te_set_readonly(_ed.handle, if (v) @as(c_int, 1) else @as(c_int, 0));
+}
+fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+    _ = _g;
+    const _z = _allocator.dupeZ(u8, id) catch return;
+    defer _allocator.free(_z);
+    te_c.te_render(_ed.handle, _z, @floatCast(w), @floatCast(h));
+}
+fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void {
+    te_c.te_clear_errors(_ed.handle);
+    for (_m.items) |_d| {
+        const _mz = _allocator.dupeZ(u8, _d.message) catch continue;
+        defer _allocator.free(_mz);
+        te_c.te_add_error(_ed.handle, @intCast(_d.line), _mz);
+    }
+}
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { return @intCast(te_c.te_get_cursor_line(_ed.handle)); }
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { return @intCast(te_c.te_get_cursor_col(_ed.handle)); }
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void {
+    te_c.te_set_cursor_position(_ed.handle, @intCast(line), @intCast(col));
+}
 // ─── zgui GLFW+OpenGL3 backend ──────────────────────────────────────────────
 const zgui    = @import("zgui");
 const zglfw   = @import("zglfw");
@@ -1234,26 +1354,74 @@ fn _imgui_begin_window(label: []const u8) bool {
     return zgui.begin(_z, .{});
 }
 fn _imgui_end_window() void { zgui.end(); }
+fn _imgui_selectable(label: []const u8) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return false;
+    defer _allocator.free(_z);
+    return zgui.selectable(_z, .{});
+}
+fn _imgui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
+    zgui.pushStyleColor4f(.{ .idx = .text, .c = .{ r, gv, b_, a } });
+    zgui.textUnformatted(s);
+    zgui.popStyleColor(.{});
+}
+fn _imgui_begin_table(id: []const u8, cols: i64) bool {
+    const _z = _allocator.dupeZ(u8, id) catch return false;
+    defer _allocator.free(_z);
+    return zgui.beginTable(_z, .{ .column = @intCast(cols) });
+}
+fn _imgui_table_setup_column(label: []const u8) void {
+    const _z = _allocator.dupeZ(u8, label) catch return;
+    defer _allocator.free(_z);
+    zgui.tableSetupColumn(_z, .{});
+}
+fn _imgui_table_headers_row() void { zgui.tableHeadersRow(); }
+fn _imgui_table_next_row() void { zgui.tableNextRow(.{}); }
+fn _imgui_table_next_column() bool { return zgui.tableNextColumn(); }
+fn _imgui_end_table() void { zgui.endTable(); }
+fn _imgui_begin_child(id: []const u8, w: f64, h: f64) bool {
+    const _z = _allocator.dupeZ(u8, id) catch return false;
+    defer _allocator.free(_z);
+    return zgui.beginChild(_z, .{ .w = @floatCast(w), .h = @floatCast(h) });
+}
+fn _imgui_end_child() void { zgui.endChild(); }
+fn _imgui_tree_node(label: []const u8) bool {
+    const _z = _allocator.dupeZ(u8, label) catch return false;
+    defer _allocator.free(_z);
+    return zgui.treeNode(_z);
+}
+fn _imgui_tree_pop() void { zgui.treePop(); }
 const _gui_imgui_backend = _GuiBackend{
-    .initFn        = _imgui_init,
-    .deinitFn      = _imgui_deinit,
-    .newFrameFn    = _imgui_new_frame,
-    .endFrameFn    = _imgui_end_frame,
-    .textFn        = _imgui_text,
-    .separatorFn   = _imgui_separator,
-    .sameLineFn    = _imgui_same_line,
-    .spacingFn     = _imgui_spacing,
-    .indentFn      = _imgui_indent,
-    .unindentFn    = _imgui_unindent,
-    .buttonFn      = _imgui_button,
-    .checkboxFn    = _imgui_checkbox,
-    .sliderFn      = _imgui_slider,
-    .inputFn       = _imgui_input,
-    .inputMultilineFn = _imgui_input_multiline,
-    .beginPanelFn  = _imgui_begin_panel,
-    .endPanelFn    = _imgui_end_panel,
-    .beginWindowFn = _imgui_begin_window,
-    .endWindowFn   = _imgui_end_window,
+    .initFn             = _imgui_init,
+    .deinitFn           = _imgui_deinit,
+    .newFrameFn         = _imgui_new_frame,
+    .endFrameFn         = _imgui_end_frame,
+    .textFn             = _imgui_text,
+    .separatorFn        = _imgui_separator,
+    .sameLineFn         = _imgui_same_line,
+    .spacingFn          = _imgui_spacing,
+    .indentFn           = _imgui_indent,
+    .unindentFn         = _imgui_unindent,
+    .buttonFn           = _imgui_button,
+    .checkboxFn         = _imgui_checkbox,
+    .sliderFn           = _imgui_slider,
+    .inputFn            = _imgui_input,
+    .inputMultilineFn   = _imgui_input_multiline,
+    .beginPanelFn       = _imgui_begin_panel,
+    .endPanelFn         = _imgui_end_panel,
+    .beginWindowFn      = _imgui_begin_window,
+    .endWindowFn        = _imgui_end_window,
+    .selectableFn       = _imgui_selectable,
+    .textColoredFn      = _imgui_text_colored,
+    .beginTableFn       = _imgui_begin_table,
+    .tableSetupColumnFn = _imgui_table_setup_column,
+    .tableHeadersRowFn  = _imgui_table_headers_row,
+    .tableNextRowFn     = _imgui_table_next_row,
+    .tableNextColumnFn  = _imgui_table_next_column,
+    .endTableFn         = _imgui_end_table,
+    .beginChildFn       = _imgui_begin_child,
+    .endChildFn         = _imgui_end_child,
+    .treeNodeFn         = _imgui_tree_node,
+    .treePopFn          = _imgui_tree_pop,
 };
 const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
 fn _hex_encode(bytes: []const u8) []const u8 {
@@ -1512,6 +1680,22 @@ const TimerHandle = struct {
     }
 };
 fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+// ── Progress stdlib ──────────────────────────────────────────────────────────
+var _progress_root_started: bool = false;
+var _progress_root: std.Progress.Node = undefined;
+fn _progress_ensure_root() void {
+    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+}
+const ProgressBar = struct {
+    _node: std.Progress.Node,
+    pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
+    pub fn done(self: ProgressBar) void { self._node.end(); }
+};
+fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+    _progress_ensure_root();
+    const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
+    return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
 pub const IDEDiagnostic = struct {
     _type_tag: u64 = _ttag_IDEDiagnostic,
     line: i64 = 0,
@@ -1545,9 +1729,9 @@ pub const CompilerBridge = struct {
 // zbr:IDE/ZebraIDE.zbr:27
         argv.append(_allocator, filepath) catch unreachable;
 // zbr:IDE/ZebraIDE.zbr:28
-        const result = _sys_run(argv);
+        const run_out = _sys_run(argv);
 // zbr:IDE/ZebraIDE.zbr:29
-        return CompilerBridge.parseOutput(result.stderr);
+        return CompilerBridge.parseOutput(run_out.stderr);
     }
 
     pub fn runFile(filepath: []const u8) []const u8 {
@@ -1558,14 +1742,14 @@ pub const CompilerBridge = struct {
 // zbr:IDE/ZebraIDE.zbr:34
         argv.append(_allocator, filepath) catch unreachable;
 // zbr:IDE/ZebraIDE.zbr:35
-        const result = _sys_run(argv);
+        const run_out = _sys_run(argv);
 // zbr:IDE/ZebraIDE.zbr:36
-        if ((result.exit_code == 0)) {
+        if ((run_out.exit_code == 0)) {
 // zbr:IDE/ZebraIDE.zbr:37
-            return result.stdout;
+            return run_out.stdout;
         }
 // zbr:IDE/ZebraIDE.zbr:38
-        return result.stderr;
+        return run_out.stderr;
     }
 
     pub fn parseOutput(raw: []const u8) std.ArrayList(*IDEDiagnostic) {
@@ -1633,7 +1817,7 @@ pub const CompilerBridge = struct {
 // zbr:IDE/ZebraIDE.zbr:68
         const colStr = std.mem.trim(u8, ln[@intCast((colon2 + 1))..@intCast(colon3)], &std.ascii.whitespace);
 // zbr:IDE/ZebraIDE.zbr:69
-        const rest = std.mem.trim(u8, ln[@intCast((colon3 + 1))..@intCast(ln.len)], &std.ascii.whitespace);
+        const rest = std.mem.trim(u8, ln[@intCast((colon3 + 1))..@intCast(@as(i64, @intCast(ln.len)))], &std.ascii.whitespace);
 // zbr:IDE/ZebraIDE.zbr:70
         const lineNum = (std.fmt.parseInt(i64, lineStr, 10) catch 0);
 // zbr:IDE/ZebraIDE.zbr:71
@@ -1663,7 +1847,7 @@ pub const CompilerBridge = struct {
 // zbr:IDE/ZebraIDE.zbr:82
         d.end_col = (colNum + 1);
 // zbr:IDE/ZebraIDE.zbr:83
-        d.message = message;
+        d.message = _intern(message);
 // zbr:IDE/ZebraIDE.zbr:84
         d.is_error = isError;
 // zbr:IDE/ZebraIDE.zbr:85
@@ -1691,6 +1875,17 @@ pub const IDEState = struct {
     output: []const u8 = "",
     dirty: bool = false,
     lastCheck: []const u8 = "",
+    files: std.ArrayList([]const u8) = std.ArrayList([]const u8){},
+    pub fn diagCount(self: *IDEState) i64 {
+// zbr:IDE/ZebraIDE.zbr:97
+        return @as(i64, @intCast(self.diags.items.len));
+    }
+
+    pub fn fileCount(self: *IDEState) i64 {
+// zbr:IDE/ZebraIDE.zbr:100
+        return @as(i64, @intCast(self.files.items.len));
+    }
+
     pub fn init() *IDEState {
         const self = _allocator.create(IDEState) catch @panic("OOM");
         self.* = .{};
@@ -1702,202 +1897,289 @@ pub const IDEState = struct {
 
 const _ttag_IDEState: u64 = 3059296944;
 const _reflect_IDEState_name: []const u8 = "IDEState";
-const _reflect_IDEState_fields: []const []const u8 = &.{"filepath", "diags", "output", "dirty", "lastCheck"};
-const _reflect_IDEState_field_types: []const []const u8 = &.{"str", "List(IDEDiagnostic)", "str", "bool", "str"};
+const _reflect_IDEState_fields: []const []const u8 = &.{"filepath", "diags", "output", "dirty", "lastCheck", "files"};
+const _reflect_IDEState_field_types: []const []const u8 = &.{"str", "List(IDEDiagnostic)", "str", "bool", "str", "List(str)"};
 
-pub const Main = struct {
-    _type_tag: u64 = _ttag_Main,
-    pub fn renderToolbar(g: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
-// zbr:IDE/ZebraIDE.zbr:102
-        if (g.button("Open")) {
-// zbr:IDE/ZebraIDE.zbr:103
-            if ((blk: { std.fs.cwd().access(state.filepath, .{}) catch break :blk false; break :blk true; })) {
-// zbr:IDE/ZebraIDE.zbr:104
-                _code_editor_set_text(editor, (std.fs.cwd().readFileAlloc(_allocator, state.filepath, std.math.maxInt(usize)) catch @panic("File.read error")));
-// zbr:IDE/ZebraIDE.zbr:105
-                state.diags = std.ArrayList(*IDEDiagnostic){};
-// zbr:IDE/ZebraIDE.zbr:106
-                state.output = "";
+pub fn renderToolbar(g: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
 // zbr:IDE/ZebraIDE.zbr:107
-                state.dirty = false;
-            }
-        }
+    if (g.button("Open")) {
 // zbr:IDE/ZebraIDE.zbr:108
-        g.sameLine();
+        if ((blk: { std.fs.cwd().access(state.filepath, .{}) catch break :blk false; break :blk true; })) {
 // zbr:IDE/ZebraIDE.zbr:109
-        if (g.button("Save")) {
+            _code_editor_set_text(editor, (std.fs.cwd().readFileAlloc(_allocator, state.filepath, std.math.maxInt(usize)) catch @panic("File.read error")));
 // zbr:IDE/ZebraIDE.zbr:110
-            const src = _code_editor_get_text(editor);
+            state.diags = std.ArrayList(*IDEDiagnostic){};
 // zbr:IDE/ZebraIDE.zbr:111
-            (std.fs.cwd().writeFile(.{ .sub_path = state.filepath, .data = src }) catch @panic("File.write error"));
+            state.output = _intern("");
 // zbr:IDE/ZebraIDE.zbr:112
             state.dirty = false;
         }
+    }
 // zbr:IDE/ZebraIDE.zbr:113
-        g.sameLine();
+    g.sameLine();
 // zbr:IDE/ZebraIDE.zbr:114
-        if (g.button("Check  (F5)")) {
+    if (g.button("Save")) {
 // zbr:IDE/ZebraIDE.zbr:115
-            Main.doCheck(state, editor);
-        }
+        const src = _code_editor_get_text(editor);
 // zbr:IDE/ZebraIDE.zbr:116
-        g.sameLine();
-// zbr:IDE/ZebraIDE.zbr:117
-        if (g.button("Run  (F9)")) {
-// zbr:IDE/ZebraIDE.zbr:118
-            Main.doRun(state, editor);
-        }
-// zbr:IDE/ZebraIDE.zbr:119
-        g.sameLine();
-// zbr:IDE/ZebraIDE.zbr:120
-        var title: []const u8 = state.filepath;
-// zbr:IDE/ZebraIDE.zbr:121
-        if (state.dirty) {
-// zbr:IDE/ZebraIDE.zbr:122
-            title = (std.fmt.allocPrint(_allocator, "{s} *", .{state.filepath}) catch @panic("OOM"));
-        }
-// zbr:IDE/ZebraIDE.zbr:123
-        g.text(title);
-    }
-
-    pub fn renderBody(g: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
-// zbr:IDE/ZebraIDE.zbr:126
-        _code_editor_set_error_markers(editor, state.diags);
-// zbr:IDE/ZebraIDE.zbr:127
-        _code_editor_render(editor, g, "##code", 700, 500);
-// zbr:IDE/ZebraIDE.zbr:128
-        g.sameLine();
-// zbr:IDE/ZebraIDE.zbr:129
-        g.panel("##diags", (struct {
-            state: @TypeOf(state),
-         fn call(self: @This(), gc: GuiContext) void {
-// zbr:IDE/ZebraIDE.zbr:130
-            var errorCount: i64 = 0;
-// zbr:IDE/ZebraIDE.zbr:131
-            for (self.state.diags.items) |d| {
-// zbr:IDE/ZebraIDE.zbr:132
-                if (d.is_error) {
-// zbr:IDE/ZebraIDE.zbr:133
-                    errorCount = (errorCount + 1);
-                }
-            }
-// zbr:IDE/ZebraIDE.zbr:134
-            {
-                const _gw0 = (std.fmt.allocPrint(_allocator, "Errors: {}", .{errorCount}) catch @panic("OOM"));
-                gc.text(_gw0);
-            }
-// zbr:IDE/ZebraIDE.zbr:135
-            gc.separator();
-// zbr:IDE/ZebraIDE.zbr:136
-            for (self.state.diags.items) |d| {
-// zbr:IDE/ZebraIDE.zbr:137
-                var icon: []const u8 = "!";
-// zbr:IDE/ZebraIDE.zbr:138
-                if (d.is_error) {
-// zbr:IDE/ZebraIDE.zbr:139
-                    icon = "X";
-                }
-// zbr:IDE/ZebraIDE.zbr:140
-                {
-                    const _gw0 = (std.fmt.allocPrint(_allocator, "{s} {any}:{any}  {any}", .{icon, d.line, d.col, d.message}) catch @panic("OOM"));
-                    gc.text(_gw0);
-                }
-            }
-         } }{ .state = state, }));
-    }
-
-    pub fn renderOutput(g: GuiContext, state: *IDEState) void {
-// zbr:IDE/ZebraIDE.zbr:144
-        g.text("Output:");
-// zbr:IDE/ZebraIDE.zbr:145
-        const outputEditor = _code_editor_new();
-// zbr:IDE/ZebraIDE.zbr:146
-        _code_editor_set_readonly(outputEditor, true);
-// zbr:IDE/ZebraIDE.zbr:147
-        _code_editor_set_text(outputEditor, state.output);
-// zbr:IDE/ZebraIDE.zbr:148
-        _code_editor_render(outputEditor, g, "##output", 990, 120);
-    }
-
-    pub fn doCheck(state: *IDEState, editor: *_CodeEditor) void {
-// zbr:IDE/ZebraIDE.zbr:151
-        const src = _code_editor_get_text(editor);
-// zbr:IDE/ZebraIDE.zbr:152
-        const tmpFile = "_ide_tmp_check.zbr";
-// zbr:IDE/ZebraIDE.zbr:153
-        (std.fs.cwd().writeFile(.{ .sub_path = tmpFile, .data = src }) catch @panic("File.write error"));
-// zbr:IDE/ZebraIDE.zbr:154
-        state.diags = CompilerBridge.check(tmpFile);
-// zbr:IDE/ZebraIDE.zbr:155
-        state.lastCheck = src;
-// zbr:IDE/ZebraIDE.zbr:156
-        state.dirty = true;
-    }
-
-    pub fn doRun(state: *IDEState, editor: *_CodeEditor) void {
-// zbr:IDE/ZebraIDE.zbr:159
-        const src = _code_editor_get_text(editor);
-// zbr:IDE/ZebraIDE.zbr:160
         (std.fs.cwd().writeFile(.{ .sub_path = state.filepath, .data = src }) catch @panic("File.write error"));
-// zbr:IDE/ZebraIDE.zbr:161
+// zbr:IDE/ZebraIDE.zbr:117
         state.dirty = false;
-// zbr:IDE/ZebraIDE.zbr:162
-        state.output = CompilerBridge.runFile(state.filepath);
     }
+// zbr:IDE/ZebraIDE.zbr:118
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:119
+    if (g.button("Check  (F5)")) {
+// zbr:IDE/ZebraIDE.zbr:120
+        doCheck(state, editor);
+    }
+// zbr:IDE/ZebraIDE.zbr:121
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:122
+    if (g.button("Run  (F9)")) {
+// zbr:IDE/ZebraIDE.zbr:123
+        doRun(state, editor);
+    }
+// zbr:IDE/ZebraIDE.zbr:124
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:125
+    state.filepath = _intern(g.input("##filepath", state.filepath));
+// zbr:IDE/ZebraIDE.zbr:126
+    if (state.dirty) {
+// zbr:IDE/ZebraIDE.zbr:127
+        g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:128
+        g.text("*");
+    }
+// zbr:IDE/ZebraIDE.zbr:129
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:130
+    {
+        const _gw0 = (std.fmt.allocPrint(_allocator, "  Ln {}  Col {}", .{_code_editor_get_cursor_line(editor), _code_editor_get_cursor_col(editor)}) catch @panic("OOM"));
+        g.text(_gw0);
+    }
+}
 
-    pub fn main() void {
-// zbr:IDE/ZebraIDE.zbr:165
-        const frame = struct {
-            state: *IDEState,
-            editor: *_CodeEditor,
-            inited: bool,
-            fn call(self: *@This(), g: GuiContext) void {
-// zbr:IDE/ZebraIDE.zbr:170
-                if ((!self.inited)) {
-// zbr:IDE/ZebraIDE.zbr:171
-                    if ((blk: { std.fs.cwd().access(self.state.filepath, .{}) catch break :blk false; break :blk true; })) {
-// zbr:IDE/ZebraIDE.zbr:172
-                        const content = (std.fs.cwd().readFileAlloc(_allocator, self.state.filepath, std.math.maxInt(usize)) catch @panic("File.read error"));
-// zbr:IDE/ZebraIDE.zbr:173
-                        _code_editor_set_text(self.editor, content);
-// zbr:IDE/ZebraIDE.zbr:174
-                        self.state.lastCheck = content;
-                    }
-// zbr:IDE/ZebraIDE.zbr:175
-                    self.inited = true;
-                }
-// zbr:IDE/ZebraIDE.zbr:176
-                Main.renderToolbar(g, self.state, self.editor);
-// zbr:IDE/ZebraIDE.zbr:177
-                g.separator();
-// zbr:IDE/ZebraIDE.zbr:178
-                Main.renderBody(g, self.state, self.editor);
-// zbr:IDE/ZebraIDE.zbr:179
-                g.separator();
-// zbr:IDE/ZebraIDE.zbr:180
-                Main.renderOutput(g, self.state);
+pub fn renderDiags(gc: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:133
+    var errorCount: i64 = 0;
+// zbr:IDE/ZebraIDE.zbr:134
+    for (state.diags.items) |d| {
+// zbr:IDE/ZebraIDE.zbr:135
+        if (d.is_error) {
+// zbr:IDE/ZebraIDE.zbr:136
+            errorCount = (errorCount + 1);
+        }
+    }
+// zbr:IDE/ZebraIDE.zbr:137
+    {
+        const _gw0 = (std.fmt.allocPrint(_allocator, "Errors: {} / {}", .{errorCount, state.diagCount()}) catch @panic("OOM"));
+        gc.text(_gw0);
+    }
+// zbr:IDE/ZebraIDE.zbr:138
+    gc.separator();
+// zbr:IDE/ZebraIDE.zbr:139
+    if (gc.beginTable("##diagtbl", 3)) {
+// zbr:IDE/ZebraIDE.zbr:140
+        gc.tableSetupColumn("T");
+// zbr:IDE/ZebraIDE.zbr:141
+        gc.tableSetupColumn("Ln:Col");
+// zbr:IDE/ZebraIDE.zbr:142
+        gc.tableSetupColumn("Message");
+// zbr:IDE/ZebraIDE.zbr:143
+        gc.tableHeadersRow();
+// zbr:IDE/ZebraIDE.zbr:144
+        for (state.diags.items) |d| {
+// zbr:IDE/ZebraIDE.zbr:145
+            gc.tableNextRow();
+// zbr:IDE/ZebraIDE.zbr:146
+            _ = gc.tableNextColumn();
+// zbr:IDE/ZebraIDE.zbr:147
+            if (d.is_error) {
+// zbr:IDE/ZebraIDE.zbr:148
+                gc.textColored(1.0, 0.35, 0.35, 1.0, "E");
+            } else {
+// zbr:IDE/ZebraIDE.zbr:150
+                gc.textColored(1.0, 0.80, 0.20, 1.0, "W");
             }
-        }{ .state = IDEState.init(), .editor = _code_editor_new(), .inited = false, };
+// zbr:IDE/ZebraIDE.zbr:151
+            _ = gc.tableNextColumn();
+// zbr:IDE/ZebraIDE.zbr:152
+            if (gc.selectable((std.fmt.allocPrint(_allocator, "{}:{}##loc{}_{}", .{d.line, d.col, d.line, d.col}) catch @panic("OOM")))) {
+// zbr:IDE/ZebraIDE.zbr:153
+                _code_editor_set_cursor_position(editor, d.line, d.col);
+            }
+// zbr:IDE/ZebraIDE.zbr:154
+            _ = gc.tableNextColumn();
+// zbr:IDE/ZebraIDE.zbr:155
+            gc.text(d.message);
+        }
+// zbr:IDE/ZebraIDE.zbr:156
+        gc.endTable();
+    }
+}
+
+pub fn renderFileBrowser(gc: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:159
+    if (gc.button("Refresh")) {
+// zbr:IDE/ZebraIDE.zbr:160
+        state.files = (blk_dw: {
+            const _dw_root = ".";
+            var _dw_dir = std.fs.cwd().openDir(_dw_root, .{ .iterate = true }) catch @panic("Dir.walk error");
+            defer _dw_dir.close();
+            var _dw_walker = _dw_dir.walk(_allocator) catch @panic("Dir.walk alloc error");
+            defer _dw_walker.deinit();
+            var _dw_list = std.ArrayList([]const u8){};
+            while (_dw_walker.next() catch null) |_dw_entry| {
+                if (_dw_entry.kind != .file) continue;
+                const _dw_raw = std.fmt.allocPrint(_allocator, "{s}/{s}", .{ _dw_root, _dw_entry.path }) catch @panic("OOM");
+                for (_dw_raw) |*_dw_c| if (_dw_c.* == '\\') { _dw_c.* = '/'; };
+                _dw_list.append(_allocator, _dw_raw) catch @panic("OOM");
+            }
+            break :blk_dw _dw_list;
+        });
+    }
+// zbr:IDE/ZebraIDE.zbr:161
+    gc.separator();
+// zbr:IDE/ZebraIDE.zbr:162
+    for (state.files.items) |f| {
+// zbr:IDE/ZebraIDE.zbr:163
+        if (std.mem.endsWith(u8, f, ".zbr")) {
+// zbr:IDE/ZebraIDE.zbr:164
+            if (gc.selectable(f)) {
+// zbr:IDE/ZebraIDE.zbr:165
+                state.filepath = _intern(f);
+// zbr:IDE/ZebraIDE.zbr:166
+                if ((blk: { std.fs.cwd().access(f, .{}) catch break :blk false; break :blk true; })) {
+// zbr:IDE/ZebraIDE.zbr:167
+                    _code_editor_set_text(editor, (std.fs.cwd().readFileAlloc(_allocator, f, std.math.maxInt(usize)) catch @panic("File.read error")));
+// zbr:IDE/ZebraIDE.zbr:168
+                    state.diags = std.ArrayList(*IDEDiagnostic){};
+// zbr:IDE/ZebraIDE.zbr:169
+                    state.output = _intern("");
+// zbr:IDE/ZebraIDE.zbr:170
+                    state.dirty = false;
+                }
+            }
+        }
+    }
+}
+
+pub fn renderBody(g: GuiContext, state: *IDEState, editor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:173
+    _code_editor_set_error_markers(editor, state.diags);
+// zbr:IDE/ZebraIDE.zbr:174
+    g.childWindow("##browser", 180, 520, (struct {
+        state: @TypeOf(state),
+        editor: @TypeOf(editor),
+     fn call(self: @This(), gc: GuiContext) void {
+// zbr:IDE/ZebraIDE.zbr:175
+        renderFileBrowser(gc, self.state, self.editor);
+     } }{ .state = state, .editor = editor, }));
+// zbr:IDE/ZebraIDE.zbr:177
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:178
+    _code_editor_render(editor, g, "##code", 620, 520);
+// zbr:IDE/ZebraIDE.zbr:179
+    g.sameLine();
+// zbr:IDE/ZebraIDE.zbr:180
+    g.childWindow("##diagspanel", 0, 520, (struct {
+        state: @TypeOf(state),
+        editor: @TypeOf(editor),
+     fn call(self: @This(), gc: GuiContext) void {
 // zbr:IDE/ZebraIDE.zbr:181
-        _gui_run("Zebra IDE", 1000, 750, frame);
-    }
+        renderDiags(gc, self.state, self.editor);
+     } }{ .state = state, .editor = editor, }));
+}
 
-    pub fn init() *Main {
-        const self = _allocator.create(Main) catch @panic("OOM");
-        self.* = .{};
-        self._type_tag = _ttag_Main;
-        return self;
-    }
+pub fn renderOutput(g: GuiContext, state: *IDEState, outputEditor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:185
+    g.text("Output:");
+// zbr:IDE/ZebraIDE.zbr:186
+    _code_editor_set_text(outputEditor, state.output);
+// zbr:IDE/ZebraIDE.zbr:187
+    _code_editor_render(outputEditor, g, "##output", 990, 120);
+}
 
-};
+pub fn doCheck(state: *IDEState, editor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:190
+    const src = _code_editor_get_text(editor);
+// zbr:IDE/ZebraIDE.zbr:191
+    const tmpFile = "_ide_tmp_check.zbr";
+// zbr:IDE/ZebraIDE.zbr:192
+    (std.fs.cwd().writeFile(.{ .sub_path = tmpFile, .data = src }) catch @panic("File.write error"));
+// zbr:IDE/ZebraIDE.zbr:193
+    state.diags = CompilerBridge.check(tmpFile);
+// zbr:IDE/ZebraIDE.zbr:194
+    state.lastCheck = _intern(src);
+// zbr:IDE/ZebraIDE.zbr:195
+    state.dirty = true;
+}
 
-const _ttag_Main: u64 = 1366325544;
-const _reflect_Main_name: []const u8 = "Main";
-const _reflect_Main_fields: []const []const u8 = &.{};
-const _reflect_Main_field_types: []const []const u8 = &.{};
+pub fn doRun(state: *IDEState, editor: *_CodeEditor) void {
+// zbr:IDE/ZebraIDE.zbr:198
+    const src = _code_editor_get_text(editor);
+// zbr:IDE/ZebraIDE.zbr:199
+    (std.fs.cwd().writeFile(.{ .sub_path = state.filepath, .data = src }) catch @panic("File.write error"));
+// zbr:IDE/ZebraIDE.zbr:200
+    state.dirty = false;
+// zbr:IDE/ZebraIDE.zbr:201
+    state.output = _intern(CompilerBridge.runFile(state.filepath));
+}
 
 pub fn main() void {
-    _allocator = _arena.allocator();
-    defer _arena.deinit();
-    Main.main();
+// zbr:IDE/ZebraIDE.zbr:204
+    const frame = struct {
+        state: *IDEState,
+        editor: *_CodeEditor,
+        outputEditor: *_CodeEditor,
+        inited: bool,
+        fn call(self: *@This(), g: GuiContext) void {
+// zbr:IDE/ZebraIDE.zbr:210
+            if ((!self.inited)) {
+// zbr:IDE/ZebraIDE.zbr:211
+                if ((blk: { std.fs.cwd().access(self.state.filepath, .{}) catch break :blk false; break :blk true; })) {
+// zbr:IDE/ZebraIDE.zbr:212
+                    const content = (std.fs.cwd().readFileAlloc(_allocator, self.state.filepath, std.math.maxInt(usize)) catch @panic("File.read error"));
+// zbr:IDE/ZebraIDE.zbr:213
+                    _code_editor_set_text(self.editor, content);
+// zbr:IDE/ZebraIDE.zbr:214
+                    self.state.lastCheck = _intern(content);
+                }
+// zbr:IDE/ZebraIDE.zbr:215
+                _code_editor_set_readonly(self.outputEditor, true);
+// zbr:IDE/ZebraIDE.zbr:216
+                self.state.files = (blk_dw: {
+                    const _dw_root = ".";
+                    var _dw_dir = std.fs.cwd().openDir(_dw_root, .{ .iterate = true }) catch @panic("Dir.walk error");
+                    defer _dw_dir.close();
+                    var _dw_walker = _dw_dir.walk(_allocator) catch @panic("Dir.walk alloc error");
+                    defer _dw_walker.deinit();
+                    var _dw_list = std.ArrayList([]const u8){};
+                    while (_dw_walker.next() catch null) |_dw_entry| {
+                        if (_dw_entry.kind != .file) continue;
+                        const _dw_raw = std.fmt.allocPrint(_allocator, "{s}/{s}", .{ _dw_root, _dw_entry.path }) catch @panic("OOM");
+                        for (_dw_raw) |*_dw_c| if (_dw_c.* == '\\') { _dw_c.* = '/'; };
+                        _dw_list.append(_allocator, _dw_raw) catch @panic("OOM");
+                    }
+                    break :blk_dw _dw_list;
+                });
+// zbr:IDE/ZebraIDE.zbr:217
+                self.inited = true;
+            }
+// zbr:IDE/ZebraIDE.zbr:218
+            renderToolbar(g, self.state, self.editor);
+// zbr:IDE/ZebraIDE.zbr:219
+            g.separator();
+// zbr:IDE/ZebraIDE.zbr:220
+            renderBody(g, self.state, self.editor);
+// zbr:IDE/ZebraIDE.zbr:221
+            g.separator();
+// zbr:IDE/ZebraIDE.zbr:222
+            renderOutput(g, self.state, self.outputEditor);
+        }
+    }{ .state = IDEState.init(), .editor = _code_editor_new(), .outputEditor = _code_editor_new(), .inited = false, };
+// zbr:IDE/ZebraIDE.zbr:223
+    _gui_run("Zebra IDE", 1200, 800, frame);
 }
+

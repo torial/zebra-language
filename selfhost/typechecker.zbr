@@ -1199,6 +1199,17 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 loop_var_t = Type_.char_
             else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
                 loop_var_t = Type_.string_
+            else if fi.vars.count() == 1
+                # `for x in obj.field` where field: List(str) on a same-file/dep struct.
+                if fi.iter is Expr.member as iter_mem
+                    if iter_mem.object is Expr.ident as iter_obj
+                        if ctx.hasLocal(iter_obj.name)
+                            var obj_t: Type_ = ctx.localType(iter_obj.name)
+                            if obj_t is Type_.named as class_name
+                                var ft: Type_? = ctx.fieldTypeAny(class_name, iter_mem.member)
+                                if ft as ft_val
+                                    if ft_val is Type_.str_slice
+                                        loop_var_t = Type_.string_
             for v in fi.vars
                 ctx.bind(v, loop_var_t)
             walkStmts(fi.stmts, ctx)
