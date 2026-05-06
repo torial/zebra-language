@@ -188,6 +188,8 @@ smoke test/bug088_try_return_test.zbr
 smoke tools/escape_hatches_check.zbr
 # Scripting tool #1: strip invisible glyphs (U+FEFF / U+FE0F) from book .md files.
 smoke tools/book_strip_invisibles.zbr
+# Scripting tool #2: class Main → top-level def sweep.
+smoke tools/sweep_class_main.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

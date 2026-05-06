@@ -1,0 +1,181 @@
+# Sweep: class Main { static { ... } } -> top-level defs.
+# Port of tools/sweep_class_main.py.
+#
+# Converts the old entry-point pattern:
+#   class Main
+#       static
+#           def foo(params): RetType
+#               body
+#           def main
+#               body
+#
+# to:
+#   def foo(params): RetType
+#       body
+#   def main()
+#       body
+#
+# Also rewrites Main.method( -> method( for any lifted methods.
+# Run from repo root: zebra tools/sweep_class_main.zbr [--dry-run]
+#
+# Selfhost workarounds (bugs filed separately):
+#   - char.isAlpha()/isWhitespace() not dispatched → use startsWith
+#   - List.join(sep) codegen inverted → use StringBuilder helper
+#   - Struct construction generates .init() with no init defined → split into two fns
+#   - for i in 0 to expr fails with non-literal bound → use while loops
+
+def extractWord(s: str): str
+    # Extract leading identifier up to first '(' or ' '.
+    var parts_p: List(str) = s.split("(")
+    var before_p: str = parts_p.at(0)
+    var before_tr = before_p.trimRight()
+    var parts_s: List(str) = before_tr.split(" ")
+    return parts_s.at(0)
+
+def linesJoin(parts: List(str), sep: str): str
+    var sb = StringBuilder()
+    var k = 0
+    while k < parts.count()
+        if k > 0
+            sb.append(sep)
+        sb.append(parts.at(k))
+        k = k + 1
+    return sb.build()
+
+def findClassMainStart(lines: List(str)): int
+    var n = lines.count()
+    var i = 0
+    while i < n
+        var li: str = lines.at(i)
+        if li.trimRight() == "class Main"
+            return i
+        i = i + 1
+    return -1
+
+def findClassMainEnd(lines: List(str), lo: int): int
+    var n = lines.count()
+    var j = lo + 1
+    while j < n
+        var lj: str = lines.at(j)
+        var s = lj.trimRight()
+        if s.len > 0
+            if not (lj.startsWith(" ") or lj.startsWith("\t"))
+                return j
+        j = j + 1
+    return n
+
+def liftedNames(lines: List(str), lo: int, hi: int): List(str)
+    var names: List(str) = List()
+    var i = lo
+    while i < hi
+        var line: str = lines.at(i)
+        if line.startsWith("        def ")
+            var rest = line[12..line.len]
+            var name = extractWord(rest)
+            if name.len > 0
+                names.add(name)
+        i = i + 1
+    return names
+
+def transform(content: str): str?
+    var lines: List(str) = content.split("\n")
+    var lo = findClassMainStart(lines)
+    if lo < 0
+        return nil
+    var hi = findClassMainEnd(lines, lo)
+
+    # Find '    static' line immediately after class Main
+    var static_idx: int = -1
+    var si = lo + 1
+    while si < hi
+        var lsi: str = lines.at(si)
+        var s = lsi.trimRight()
+        if s == "    static"
+            static_idx = si
+            break
+        if s.len > 0
+            return nil
+        si = si + 1
+    if static_idx < 0
+        return nil
+
+    var lifted = liftedNames(lines, lo, hi)
+
+    var out: List(str) = List()
+    var bi = 0
+    while bi < lo
+        out.add(lines.at(bi))
+        bi = bi + 1
+
+    var ci = static_idx + 1
+    while ci < hi
+        var line: str = lines.at(ci)
+        var line_tr = line.trimRight()
+        if line_tr.len == 0
+            out.add("")
+            ci = ci + 1
+            continue
+        if line.startsWith("        ")
+            var new_line = line[8..line.len]
+            var new_line_tr = new_line.trimRight()
+            if new_line_tr == "def main"
+                new_line = "def main()"
+            out.add(new_line)
+        else
+            out.add(line)
+        ci = ci + 1
+
+    var di = hi
+    while di < lines.count()
+        out.add(lines.at(di))
+        di = di + 1
+
+    var text = linesJoin(out, "\n")
+
+    for name in lifted
+        if name != "main"
+            text = text.replace("Main." + name + "(", name + "(")
+
+    if text == content
+        return nil
+    return text
+
+def main()
+    var args = Arg.parse()
+    var dry_run = args.flag("--dry-run", "-n")
+
+    var dirs: List(str) = List()
+    dirs.add("test")
+    dirs.add("examples")
+    dirs.add("selfhost")
+    dirs.add("tools")
+    dirs.add("IDE")
+    var changed = 0
+    var skipped = 0
+
+    for dir_ in dirs
+        if not File.exists(dir_)
+            continue
+        var files = Dir.walk(dir_)
+        files.sort()
+        for path in files
+            if not path.endsWith(".zbr")
+                skipped = skipped + 1
+                continue
+            var original = File.read(path)
+            var rewritten = transform(original)
+            if rewritten == nil
+                skipped = skipped + 1
+                continue
+            changed = changed + 1
+            if not dry_run
+                File.write(path, rewritten to!)
+                print "  converted: " + path
+            else
+                print "  [dry-run] would convert: " + path
+
+    print ""
+    var verb = ""
+    if dry_run
+        verb = "would be "
+    print changed.toString() + " files " + verb + "converted, " + skipped.toString() + " already clean or skipped."

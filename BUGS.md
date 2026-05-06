@@ -1,10 +1,43 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-115. Next new bug: BUG-116.**
+**Last bug number generated: BUG-118. Next new bug: BUG-119.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
 Fixed / closed bugs have been moved to `FixedBugs.md`.
+
+---
+
+### BUG-116: selfhost — `char.isAlpha()` / `char.isDigit()` / `char.isWhitespace()` not dispatched
+- **Severity:** Medium (correctness gap — emits `u21.isAlpha()` which Zig rejects)
+- **Status:** Open
+- **Symptom:** Calling char methods (`isAlpha`, `isDigit`, `isWhitespace`, `isUpper`, `isLower`) on a `char` variable in the selfhost compiler falls through to the default pass-through path and emits `c.isAlpha()` as a Zig method call. Zig rejects this since `u21` has no methods.
+- **Root cause:** `genMemberCall` in `selfhost/codegen.zbr` has no `char` type dispatch arm. The bootstrap compiler has `genCharMethod` (dispatches on TC type `char`) which the selfhost has not yet ported.
+- **Fix:** Add a char type check in `genMemberCall` (check `inferExpr(m.object)` == `Type_.char_`) and emit `std.ascii.isAlphabetic(@as(u8, @truncate(c)))` etc., matching `genCharMethod` in `src/CodeGen.zig`.
+- **Workaround:** Avoid `char` method calls; use `str.startsWith(...)` or string comparisons instead.
+- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
+
+---
+
+### BUG-117: selfhost — `List.join(sep)` codegen emits inverted arguments
+- **Severity:** Medium (correctness gap — generates type-error Zig)
+- **Status:** Open
+- **Symptom:** `items.join(sep)` generates `std.mem.join(_allocator, items, sep.items)` — the separator and slices arguments are swapped, and `sep.items` fails because `[]const u8` has no `.items` field.
+- **Root cause:** `genMemberCall` in `selfhost/codegen.zbr` at the `join` arm emits the object as the separator and appends `.items` to the separator expression instead of to the list. The correct Zig is `std.mem.join(_allocator, sep, items.items)`.
+- **Fix:** Swap the arguments in the `join` emit arm and move `.items` to the list object, not the separator.
+- **Workaround:** Use a `StringBuilder` with a manual loop instead of `list.join(sep)`.
+- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
+
+---
+
+### BUG-118: selfhost — struct construction emits `Struct.init()` with no init method
+- **Severity:** Medium (correctness gap — generates type-error Zig for plain structs)
+- **Status:** Open
+- **Symptom:** `Point(x: 1, y: 2)` in the selfhost compiler emits `Point.init(1, 2)` — but plain `struct` types have no `pub fn init` method, so Zig rejects it with "struct has no member named 'init'".
+- **Root cause:** `genCall` in `selfhost/codegen.zbr` treats structs the same as classes (both call `.init()`). Classes have `cue init` which generates a `pub fn init`; plain structs do not.
+- **Fix:** In `genCall`, when the callee is a `struct_name` (not a `class_name`), emit Zig struct literal syntax: `Struct{ .field = val, ... }` with named fields, instead of `Struct.init(...)`.
+- **Workaround:** Avoid plain `struct` types with field constructors in selfhost-compiled code; refactor return values to use `int` sentinels or restructure the functions.
+- **Discovered:** While porting `sweep_class_main.zbr` (scripting tool #2).
 
 ---
 
