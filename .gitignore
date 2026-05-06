@@ -21,6 +21,11 @@ IDE/ZebraIDE_gui/
 # Test fixture compile artifacts
 test/selfhost_compat/*.zig
 
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
 # Claude Code internal
 .claude/scheduled_tasks.lock
 
