@@ -227,14 +227,13 @@ FixedBugs.md.
 
 ---
 
-### BUG-100: `else => unreachable` in TC for-in HashMap two-var iteration is reachable
-- **Severity:** Medium (panic on parseable input; rare path)
-- **Status:** Open
-- **Symptom:** `src/TypeChecker.zig:1220` panics when `for k, v in expr` is evaluated and `expr` is an ident whose Symbol resolves to anything other than `var_` or `param` (e.g., a method, class, or namespace name).
-- **Reproducer:** Construct a program where a `for k, v in someMethod` references a method directly. The structural guard at `:1207` (`if (s.iter.* != .ident) break :blk false;`) passes, the `is_hashmap_two_var` branch sets up, then `:1220`'s `switch (sym.decl) { .var_, .param, else => unreachable }` panics.
-- **Root cause:** The guard at `:1207` only checks AST shape; it doesn't guard the symbol kind. The line above (`:1212`) handles the same shape with `else => null`; line `:1220` should match that pattern.
-- **Fix sketch:** Replace `else => unreachable` with `else => return .unknown` (or `.unresolved` after BUG-099) and emit a diagnostic: `'<name>' is not iterable as HashMap`.
-- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-1]).
+### BUG-100: ✅ FIXED (side-effect of BUG-099, 2026-05-05)
+- **Symptom was:** `else => unreachable` panic when `for k, v in <non-var ident>`.
+- **Fix:** The BUG-099 three-way Type split rewrote the surrounding TC block; the
+  `is_hashmap_two_var` switch now uses `else => null` (line ~1321 current), so
+  a method/class/namespace ident simply yields `hm_dt = null` and the loop falls
+  through to normal for-in handling — no panic.
+- **Verified 2026-05-05:** `for k, v in getMap()` + HashMap two-var smoke pass.
 
 ---
 
@@ -513,11 +512,11 @@ REMAINING (deferred):
 
 ### BUG-088: def-level `try/catch` in non-void return function falls off the end
 - **Severity:** Medium (correctness — Zig refuses to compile the generated code)
-- **Status:** Open
+- **Status:** Fixed
 - **Symptom:** A method using the `def...catch` form (catch clause attached to the def itself, not a nested try/catch block) with a non-void return type fails to compile. The generated Zig has a `return` inside the success path, an unreachable `break`, then an `if (_try_err_1 != null) return ...;` afterwards — but no return on the path through both blocks where neither error occurred and the success block didn't already return. Zig errors with "function with non-void return type implicitly returns" + "unreachable code" at the orphan `break`.
-- **Reproducer:** A `def f(): str` with `var v = try X()` followed by `return "ok"` and a `catch` clause returning `"err"` — see the original `contract_result_throws_test.zbr` shape (now restructured to side-effect form to avoid this).
-- **Root cause:** The labeled-block lowering for def-level catch doesn't restructure the success path's return into a `break :blk EXPR` with a typed labeled-block result.
-- **Workaround:** Use a void function with side effects (mutate a passed-in object, print) instead of returning from the def-level try/catch block.
+- **Reproducer:** A `def f(): str` with `var v = try X()` followed by `return "ok"` and a `catch` clause returning `"err"` — see `test/bug088_try_return_test.zbr`.
+- **Root cause:** `body_ends_in_break` in `genTryCatch` didn't handle `.return_` as a terminal statement; the orphan `break :_try_blk` was always emitted.
+- **Fix:** `genTryCatch` now checks if the last stmt is `.return_`; if so, skips the `break :_try_blk` and emits `unreachable;` after the catch block. Both `src/CodeGen.zig` and `selfhost/codegen.zbr` updated. Also fixed `genBranch` to emit `=> |_| {` for `as _` discard on boxed union variants (was generating invalid `const _ = …`).
 - **Discovered:** While writing `contract_result_throws_test.zbr` for the BUG-087 fix.
 
 ---

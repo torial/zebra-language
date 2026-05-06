@@ -7578,9 +7578,15 @@ const Generator = struct {
                         PayloadKind.other;
                     if (payload_kind == .ref_payload) {
                         // Pointer payload: |bname_ptr| { const bname = bname_ptr.*; ... }
-                        try bg.w.print(" => |{s}_ptr| {{\n", .{bname});
-                        try bg.indented().writeIndent();
-                        try bg.indented().w.print("const {s} = {s}_ptr.*;\n", .{ bname, bname });
+                        // When binding is "_" (discard), skip the dereference — Zig accepts
+                        // |_| { directly even for pointer payloads.
+                        if (std.mem.eql(u8, bname, "_")) {
+                            try bg.w.writeAll(" => |_| {\n");
+                        } else {
+                            try bg.w.print(" => |{s}_ptr| {{\n", .{bname});
+                            try bg.indented().writeIndent();
+                            try bg.indented().w.print("const {s} = {s}_ptr.*;\n", .{ bname, bname });
+                        }
                     } else {
                         try bg.w.print(" => |{s}| {{\n", .{bname});
                     }
@@ -8079,12 +8085,13 @@ const Generator = struct {
         try tg.genStmts(s.body);
 
         // Normal-exit break (no error) — skip if the body's last statement
-        // already unconditionally breaks (raise, or throws-call with its own break).
-        const body_ends_in_break = blk: {
-            if (s.body.len == 0) break :blk false;
-            break :blk s.body[s.body.len - 1] == .raise;
-        };
-        if (!body_ends_in_break) {
+        // already unconditionally transfers control:
+        //   - raise    → break + err recorded (already handled by genRaise)
+        //   - return_  → function return (no break needed; success path exits directly)
+        const last_stmt_tag: ?std.meta.Tag(Ast.Stmt) = if (s.body.len > 0) s.body[s.body.len - 1] else null;
+        const body_ends_in_jump = last_stmt_tag == .raise or last_stmt_tag == .return_;
+        const body_ends_in_return = last_stmt_tag == .return_;
+        if (!body_ends_in_jump) {
             try g.indented().writeIndent();
             try g.w.print("break :{s};\n", .{blk_label});
         }
@@ -8102,6 +8109,14 @@ const Generator = struct {
         try g.indented().withCatchVar(catch_name).genStmts(first.body);
         try g.writeIndent();
         try g.w.writeAll("}\n");
+        // When the success path always returns (body_ends_in_return), after the
+        // block we are guaranteed to be on the error path.  The catch if-block
+        // above handles it, so the fall-through is unreachable — tell Zig so it
+        // doesn't emit "function with non-void return type implicitly returns".
+        if (body_ends_in_return) {
+            try g.writeIndent();
+            try g.w.writeAll("unreachable;\n");
+        }
 
         for (s.clauses[1..]) |extra| {
             try g.writeIndent();

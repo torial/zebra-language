@@ -1,0 +1,15 @@
+class Outer
+    def getLabel(): str
+        var v: str = try compute()
+        return "ok:" + v
+    catch
+        return "err"
+
+    def compute(): str throws
+        return "hello"
+
+def main()
+    var o = Outer()
+    var got = o.getLabel()
+    assert got == "ok:hello", "expected ok:hello, got " + got
+    print "bug088_try_return_test: ok"

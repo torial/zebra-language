@@ -181,6 +181,9 @@ smoke test/json_parse_strict_tc_test.zbr
 # Dir.walk: recursive file-tree enumeration.
 smoke test/dir_walk_test.zbr
 
+# BUG-088: def-level try/catch in non-void return function must not implicitly fall off.
+smoke test/bug088_try_return_test.zbr
+
 # Scripting tools: first Zebra port of an escape-hatch guard script.
 smoke tools/escape_hatches_check.zbr
 

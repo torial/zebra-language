@@ -4333,19 +4333,20 @@ struct Generator
                     needs_deref = boxed_variants.contains_(vkey to!)
             if has_binding
                 if cas.binding != nil
-                    if needs_deref
+                    var bnd = cas.binding to!
+                    if needs_deref and bnd != "_"
                         ig.w.emit("|_ptr_")
-                        ig.w.emit(cas.binding to!)
+                        ig.w.emit(bnd)
                         ig.w.emit("| ")
                     else
                         ig.w.emit("|")
-                        ig.w.emit(cas.binding to!)
+                        ig.w.emit(bnd)
                         ig.w.emit("| ")
                 else
                     ig.w.emit("|_| ")
             ig.w.emit("{\n")
             var iig = ig.indented()
-            if needs_deref
+            if needs_deref and (cas.binding == nil or cas.binding to! != "_")
                 iig.writeIndent()
                 iig.w.emit("const ")
                 iig.w.emit(cas.binding to!)
@@ -4748,6 +4749,16 @@ struct Generator
     #   if (_try_err != null) { // catch body }
 
     def genTryCatch(tc: StmtTryCatch)
+        # Detect if the last stmt is a return_ — if so the success path always
+        # exits the function directly, so we skip the trailing break and emit
+        # `unreachable` after the catch block (BUG-088 fix).
+        var last_is_return = false
+        if tc.stmts.count() > 0
+            branch tc.stmts.at(tc.stmts.count() - 1)
+                on Stmt.return_ as _
+                    last_is_return = true
+                else
+                    pass
         writeIndent()
         w.emit("{\n")
         var ig = indented()
@@ -4760,8 +4771,9 @@ struct Generator
         var iig = ig.indented()
         var try_gen = iig.withTryLabel("_try_blk", "_try_err")
         try_gen.genStmts(tc.stmts)
-        iig.writeIndent()
-        iig.w.emit("break :_try_blk;\n")
+        if not last_is_return
+            iig.writeIndent()
+            iig.w.emit("break :_try_blk;\n")
         ig.writeIndent()
         ig.w.emit("}\n")
         ig.writeIndent()
@@ -4778,6 +4790,9 @@ struct Generator
             catch_gen.genStmts(cl.stmts)
         ig.writeIndent()
         ig.w.emit("}\n")
+        if last_is_return
+            ig.writeIndent()
+            ig.w.emit("unreachable;\n")
         writeIndent()
         w.emit("}\n")
 
