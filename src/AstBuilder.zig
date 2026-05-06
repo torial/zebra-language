@@ -106,8 +106,9 @@ const Builder = struct {
             const name = if (at_text.len > 0 and at_text[0] == '@') at_text[1..] else at_text;
             if (std.mem.eql(u8, name, "reflectable")) {
                 pending_reflectable.* = true;
+            } else {
+                std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
-            // Unknown @directive: ignored silently (was a panic; future-reserved).
             return;
         }
         var d = try b.buildTopDecl(td);

@@ -908,6 +908,8 @@ class Parser
                     .skipEol()
                     if dtext == "@reflectable"
                         pending_reflectable = true
+                    else
+                        sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
                     saw_directive = true
                 else
                     saw_directive = false

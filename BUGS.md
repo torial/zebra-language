@@ -276,10 +276,8 @@ FixedBugs.md.
 
 ### BUG-104: Unknown `@directive` silently ignored by AstBuilder
 - **Severity:** Low (typical case is benign; impacts merge-oracle and forward-compat)
-- **Status:** Open
-- **Symptom:** `src/AstBuilder.zig:107-111` ("Unknown @directive: ignored silently (was a panic; future-reserved).") drops unrecognized at-directives without a diagnostic. A merge that introduces `@reflectable_v2` against a compiler that hasn't shipped support would be silently accepted with the directive's intended effect missing.
-- **Reproducer:** Add `@nonsense_directive` before any class declaration; compiles cleanly, no warning.
-- **Fix sketch:** Convert to a warning-level diagnostic: `unknown @-directive '@foo'; ignored`. Merge-oracle can then surface the divergence.
+- **Status:** Closed — fixed 2026-05-06
+- **Resolution:** `src/AstBuilder.zig` now emits `warning: unknown @-directive '@foo'; ignored` via `std.debug.print` to stderr when an unrecognized `@name` directive is encountered. `selfhost/parser.zbr` emits the same message via `sys.errln`. Compilation continues normally; only the unknown directive is ignored. Bootstrap 5/5, smoke 44/44.
 - **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-2]).
 
 ---
