@@ -696,7 +696,7 @@ REMAINING (deferred):
 
 ### BUG-120: Selfhost codegen `.add()` → `.append()` rewrite fires on class method calls via lowercase variables
 - **Severity:** Medium (silent miscompile — method call becomes a list append; Zig rejects with "no field or member function named 'append'")
-- **Status:** Open — workaround: avoid naming methods `add` on user-defined classes
+- **Status:** Fixed 2026-05-07 — see `FixedBugs.md`
 - **Symptom:** In `selfhost/codegen.zbr`, the `.add()` → `.append()` heuristic only guards on `isUpperCase(receiver_name)` (capital first letter = namespace/class static call, e.g., `Math.add()`). Lowercase instance variables (e.g., `c: Calc`) are not guarded. So `c.add(2, 3)` where `c` is a `Calc` instance incorrectly emits `c.append(_allocator, 2)`, which Zig rejects.
 - **Reproducer:**
   ```zebra
@@ -714,4 +714,4 @@ REMAINING (deferred):
 
 ---
 
-*Last updated: 2026-05-07 — BUG-120 filed: selfhost .add() rewrite fires on user class methods via lowercase variables*
+*Last updated: 2026-05-07 — BUG-120 filed and fixed: selfhost .add() rewrite fires on user class methods via lowercase variables; fix uses InferCtx to detect class instances*

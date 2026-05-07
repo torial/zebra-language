@@ -1705,16 +1705,16 @@ fn _sys_getenv(key: []const u8) ?[]const u8 {
 
 pub const Calc = struct {
     _type_tag: u64 = _ttag_Calc,
-    pub fn addValues(self: *Calc, a: i64, b: i64) i64 {
-        _profile_start("Calc.addValues");
+    pub fn add(self: *Calc, a: i64, b: i64) i64 {
+        _profile_start("Calc.add");
         defer _profile_end();
         _ = self;
 // zbr:test/profile_attr_test.zbr:5
         return (a + b);
     }
 
-    pub fn mulValues(self: *Calc, a: i64, b: i64) i64 {
-        _profile_start("Calc.mulValues");
+    pub fn mul(self: *Calc, a: i64, b: i64) i64 {
+        _profile_start("Calc.mul");
         defer _profile_end();
         _ = self;
 // zbr:test/profile_attr_test.zbr:9
@@ -1733,8 +1733,8 @@ const _reflect_Calc_name: []const u8 = "Calc";
 const _reflect_Calc_fields: []const []const u8 = &.{};
 const _reflect_Calc_field_types: []const []const u8 = &.{};
 
-pub fn helperFn(n: i64) i64 {
-    _profile_start("helperFn");
+pub fn helper(n: i64) i64 {
+    _profile_start("helper");
     defer _profile_end();
 // zbr:test/profile_attr_test.zbr:13
     return (n * 2);
@@ -1744,15 +1744,15 @@ pub fn main() void {
 // zbr:test/profile_attr_test.zbr:16
     var c = Calc.init();
 // zbr:test/profile_attr_test.zbr:17
-    const r1 = c.addValues(2, 3);
+    const r1 = c.add(2, 3);
 // zbr:test/profile_attr_test.zbr:18
     std.debug.assert((r1 == 5));
 // zbr:test/profile_attr_test.zbr:19
-    const r2 = c.mulValues(4, 5);
+    const r2 = c.mul(4, 5);
 // zbr:test/profile_attr_test.zbr:20
     std.debug.assert((r2 == 20));
 // zbr:test/profile_attr_test.zbr:21
-    const r3 = helperFn(7);
+    const r3 = helper(7);
 // zbr:test/profile_attr_test.zbr:22
     std.debug.assert((r3 == 14));
     _profile_report();

@@ -5,6 +5,14 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-120: selfhost — `.add()` → `.append()` rewrite fires on user class method calls via lowercase vars — FIXED 2026-05-07
+- **Status:** Fixed. Bootstrap 5/5, smoke 64/64.
+- **Was:** `selfhost/codegen.zbr` `.add()` heuristic only guarded on `isUpperCase(receiver_name)` (BUG-061). Lowercase instance variables (`c: Calc`) passed the guard, so `c.add(2, 3)` was incorrectly emitted as `c.append(_allocator, 2)`.
+- **Fix:** Consult `InferCtx` at the call site before rewriting. If `inferExpr(m.object, infer_ctx)` returns `Type_.named(nc)` with `nc.len > 0`, the receiver is a class instance — skip the rewrite. The InferCtx pre-walk in `genMethod` already seeds all local variable types (params + inferred vars), so this works for annotated params, unannotated vars initialised with class ctors/method returns, and chained calls.
+- **Test:** `test/profile_attr_test.zbr` — calls `c.add(2, 3)` where `c: Calc`; workaround method rename (`addValues`) reverted back to `add`.
+
+---
+
 ### BUG-118: selfhost — struct construction emits `Struct.init()` with no init method — FIXED 2026-05-05; synthetic init 2026-05-06
 - **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
 - **Was:** `Point(x: 1, y: 2)` emitted `Point.init(1, 2)`. Plain structs have no `pub fn init`; only classes (and structs with `cue init`) do.
