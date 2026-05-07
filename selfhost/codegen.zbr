@@ -2162,6 +2162,22 @@ struct Generator
                         if nt.name == "str" or nt.name == "String"
                             sp.add(p.name)
             w.emit(" {\n")
+            # @profile: record entry time and defer _profile_end() on any exit path.
+            if m.mods.is_profile
+                var prof_ig = indented()
+                prof_ig.writeIndent()
+                if owner != ""
+                    prof_ig.w.emit("_profile_start(\"")
+                    prof_ig.w.emit(owner)
+                    prof_ig.w.emit(".")
+                    prof_ig.w.emit(m.name)
+                    prof_ig.w.emit("\");\n")
+                else
+                    prof_ig.w.emit("_profile_start(\"")
+                    prof_ig.w.emit(m.name)
+                    prof_ig.w.emit("\");\n")
+                prof_ig.writeIndent()
+                prof_ig.w.emit("defer _profile_end();\n")
             # Invariant exit check — public instance methods only.
             # Private helpers may temporarily break invariants; shared methods have no `self`.
             if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts

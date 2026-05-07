@@ -186,6 +186,9 @@ smoke test/dir_walk_test.zbr
 # BUG-088: def-level try/catch in non-void return function must not implicitly fall off.
 smoke test/bug088_try_return_test.zbr
 
+# @profile method attribute: wraps body with _profile_start/defer _profile_end.
+smoke test/profile_attr_test.zbr
+
 # BUG-116: char method dispatch (isAlpha/isDigit/isWhitespace/isUpper/isLower/toUpper/toLower).
 smoke test/bug116_char_methods_test.zbr
 # BUG-117: List.join(sep) — swap inverted args to std.mem.join (separator first, list.items second).

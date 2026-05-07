@@ -73,10 +73,11 @@ const Builder = struct {
 
     fn collectTopDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl)) !void {
         var pending_reflectable = false;
-        return b.collectTopDeclsInner(node, out, &pending_reflectable);
+        var pending_profile = false;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -84,20 +85,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -106,6 +107,8 @@ const Builder = struct {
             const name = if (at_text.len > 0 and at_text[0] == '@') at_text[1..] else at_text;
             if (std.mem.eql(u8, name, "reflectable")) {
                 pending_reflectable.* = true;
+            } else if (std.mem.eql(u8, name, "profile")) {
+                pending_profile.* = true;
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -120,6 +123,15 @@ const Builder = struct {
                 ),
             };
             pending_reflectable.* = false;
+        }
+        if (pending_profile.*) {
+            applyProfile(&d) catch |err| switch (err) {
+                error.ProfileOnNonMethod => std.debug.panic(
+                    "@profile can only precede `def` declarations",
+                    .{},
+                ),
+            };
+            pending_profile.* = false;
         }
         try out.append(b.arena, d);
     }
@@ -166,6 +178,13 @@ const Builder = struct {
             .class   => |c| c.mods.reflectable = true,
             .struct_ => |s| s.mods.reflectable = true,
             else     => return error.ReflectableOnNonClass,
+        }
+    }
+
+    fn applyProfile(d: *Ast.Decl) error{ProfileOnNonMethod}!void {
+        switch (d.*) {
+            .method => |m| m.mods.profile = true,
+            else    => return error.ProfileOnNonMethod,
         }
     }
 
@@ -495,11 +514,12 @@ const Builder = struct {
 
     fn buildMemberDeclList(b: Builder, node: TN) anyerror![]const Ast.Decl {
         var out = std.ArrayList(Ast.Decl){};
-        try b.collectMemberDecls(node, &out);
+        var pending_profile = false;
+        try b.collectMemberDecls(node, &out, &pending_profile);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl)) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -509,7 +529,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out);
+                try b.collectMemberDecls(kids[0], out, pending_profile);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -519,10 +539,31 @@ const Builder = struct {
                     .SharedGroupDecl => try b.collectSharedGroupDecl(inner_decl, out),
                     // These carry no code-gen payload; skip silently.
                     .TestMemberDecl,
-                    .InvariantDecl,
-                    .AtDirective,
-                    .AspectDecl      => {},
-                    else             => try out.append(b.arena, try b.buildMemberDecl(kids[1])),
+                    .InvariantDecl => {},
+                    .AspectDecl    => {},
+                    .AtDirective   => {
+                        const at_kids = ch(inner_decl);
+                        const at_text = leafText(at_kids[0], b.tokens);
+                        const name = if (at_text.len > 0 and at_text[0] == '@') at_text[1..] else at_text;
+                        if (std.mem.eql(u8, name, "profile")) {
+                            pending_profile.* = true;
+                        } else {
+                            std.debug.print("warning: unknown member @-directive '@{s}'; ignored\n", .{name});
+                        }
+                    },
+                    else => {
+                        var d = try b.buildMemberDecl(kids[1]);
+                        if (pending_profile.*) {
+                            applyProfile(&d) catch |err| switch (err) {
+                                error.ProfileOnNonMethod => std.debug.print(
+                                    "warning: @profile can only precede a method declaration; ignored\n",
+                                    .{},
+                                ),
+                            };
+                            pending_profile.* = false;
+                        }
+                        try out.append(b.arena, d);
+                    },
                 }
             },
             .leaf => {},
@@ -534,7 +575,8 @@ const Builder = struct {
         // SharedGroupDecl → kw_static eol indent MemberDeclList dedent
         const kids = ch(node);
         const start = out.items.len;
-        try b.collectMemberDecls(kids[3], out);
+        var pending_profile = false;
+        try b.collectMemberDecls(kids[3], out, &pending_profile);
         for (out.items[start..]) |*d| setShared(d);
     }
 

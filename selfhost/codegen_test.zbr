@@ -21,10 +21,10 @@ def zspan(): Span
     return Span(0, 0, 0, 0)
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false, false)
 
 def zstatic(): Modifiers
-    return Modifiers(false, false, false, true, false, false, false)
+    return Modifiers(false, false, false, true, false, false, false, false)
 
 def namedTr(name: str): TypeRef
     return TypeRef.named(NamedTypeRef(zspan(), name))

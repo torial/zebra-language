@@ -192,7 +192,7 @@ Items that land in the same window as SIMD or that unlock the 0.12/0.13 work:
 - **JSON auto-inference** — `Json.parse(T, str)` infers target struct without a separate `as T` annotation
 - **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering
 - ✅ **Profiler (Part A)** — static `Profile` module: `start/end/report/dump_folded/reset`; stack-based instrumentation with flamegraph-compatible folded output; both backends; 56/56 smoke; bootstrap 5/5 (2026-05-06)
-- **Profiler (Part B)** — `@profile` method attribute: compiler wraps body with `_profile_start`/`defer _profile_end` automatically; touches Modifiers + grammar + AstBuilder + CodeGen
+- ✅ **Profiler (Part B)** — `@profile` method attribute: compiler wraps body with `_profile_start`/`defer _profile_end` automatically; Modifiers + AstBuilder + CodeGen + selfhost parity; 64/64 smoke; bootstrap 5/5 (2026-05-07)
 See `wiki/pages/projects/project_zebra.md` (milestone table 0.11).
 
 ---

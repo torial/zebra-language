@@ -61,8 +61,9 @@ struct Modifiers
     var is_readonly: bool
     var is_extern: bool
     var is_reflectable: bool
+    var is_profile: bool
 
-    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool)
+    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool)
         .is_public = is_public
         .is_private = is_private
         .is_abstract = is_abstract
@@ -70,6 +71,7 @@ struct Modifiers
         .is_readonly = is_readonly
         .is_extern = is_extern
         .is_reflectable = is_reflectable
+        .is_profile = is_profile
 
 # ── Generic type parameter ────────────────────────────────────────────────────
 

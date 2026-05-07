@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-119. Next new bug: BUG-120.**
+**Last bug number generated: BUG-120. Next new bug: BUG-121.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -692,4 +692,26 @@ REMAINING (deferred):
 
 ---
 
-*Last updated: 2026-05-06 — BUG-119 filed: selfhost isListField fails for List fields accessed through function parameters*
+---
+
+### BUG-120: Selfhost codegen `.add()` → `.append()` rewrite fires on class method calls via lowercase variables
+- **Severity:** Medium (silent miscompile — method call becomes a list append; Zig rejects with "no field or member function named 'append'")
+- **Status:** Open — workaround: avoid naming methods `add` on user-defined classes
+- **Symptom:** In `selfhost/codegen.zbr`, the `.add()` → `.append()` heuristic only guards on `isUpperCase(receiver_name)` (capital first letter = namespace/class static call, e.g., `Math.add()`). Lowercase instance variables (e.g., `c: Calc`) are not guarded. So `c.add(2, 3)` where `c` is a `Calc` instance incorrectly emits `c.append(_allocator, 2)`, which Zig rejects.
+- **Reproducer:**
+  ```zebra
+  class Calc
+      def add(a: int, b: int): int
+          return a + b
+  def main()
+      var c = Calc()
+      var r = c.add(2, 3)   # ← selfhost emits: c.append(_allocator, 2) — WRONG
+  ```
+- **Root cause:** `codegen.zbr` around line 3949: the guard `isUpperCase(receiver_name)` (BUG-061 fix) protects `ClassName.add()` but not `instance.add()`. A correct fix needs to check the receiver's inferred type — if the receiver is not a List (or HashMap), the rewrite must not apply. This requires InferCtx type tracking at the call site.
+- **Proper fix:** Consult `InferCtx` at the `.add()`/`.remove()` etc. call site to confirm the receiver infers to `List(T)` before applying the rewrite. If the receiver is a class instance, skip the rewrite entirely.
+- **Workaround:** Avoid naming methods `add` (or any other List-method name: `remove`, `contains`, `get`, `pop`, `insert`, etc.) on user-defined classes when compiling via the selfhost backend. The Zig bootstrap backend is unaffected.
+- **Discovered:** 2026-05-07 during `@profile` attribute implementation (test initially used `def add`/`def mul`, which triggered the rewrite; renamed to `addValues`/`mulValues` as workaround).
+
+---
+
+*Last updated: 2026-05-07 — BUG-120 filed: selfhost .add() rewrite fires on user class methods via lowercase variables*

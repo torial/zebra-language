@@ -110,6 +110,9 @@ pub const Modifiers = packed struct {
     /// (currently: Json.parseStrict).  Set by AstBuilder when a preceding
     /// `@reflectable` directive is consumed.
     reflectable: bool = false,
+    /// `@profile` annotation — wraps method body with `_profile_start`/`defer _profile_end`.
+    /// Set by AstBuilder when a preceding `@profile` directive is consumed.
+    profile: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────

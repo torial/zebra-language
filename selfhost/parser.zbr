@@ -275,13 +275,15 @@ struct PMethod
     var params: List(PParam)
     var return_type: str
     var stmts: List(PNode)
-    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode))
+    var is_profile: bool
+    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool)
         .name = name
         .is_static = is_static
         .throws_ = throws_
         .params = params
         .return_type = return_type
         .stmts = stmts
+        .is_profile = is_profile
 
 struct PInit
     var params: List(PParam)
@@ -917,9 +919,10 @@ class Parser
     # -- Top-level declarations ------------------------------------------------
 
     def parseTopDecl(): PNode throws
-        # `@directive` annotation — currently only `@reflectable` recognized.
+        # `@directive` annotation — @reflectable and @profile recognized.
         # Consume the directive and apply it to the immediately-following decl.
         var pending_reflectable: bool = false
+        var pending_profile: bool = false
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -930,6 +933,8 @@ class Parser
                     .skipEol()
                     if dtext == "@reflectable"
                         pending_reflectable = true
+                    else if dtext == "@profile"
+                        pending_profile = true
                     else
                         sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
                     saw_directive = true
@@ -955,9 +960,9 @@ class Parser
             return .parseSigDecl()
         else if .textIs("static")
             .advance()
-            return .parseMethodDecl(true)
+            return .parseMethodDecl(true, pending_profile)
         else if .textIs("def")
-            return .parseMethodDecl(false)
+            return .parseMethodDecl(false, pending_profile)
         raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws
@@ -1214,8 +1219,17 @@ class Parser
     # -- Member declarations ---------------------------------------------------
 
     def parseMemberDecl(is_static: bool): PNode throws
+        var pending_profile: bool = false
+        while .peek().kind == TokenKind.at_id
+            const dtext = .peek().text
+            .advance()
+            .skipEol()
+            if dtext == "@profile"
+                pending_profile = true
+            else
+                sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
         if .textIs("def")
-            return .parseMethodDecl(is_static)
+            return .parseMethodDecl(is_static, pending_profile)
         else if .textIs("var")
             return .parseDeclField(false, is_static)
         else if .textIs("const")
@@ -1295,7 +1309,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool): PNode throws
+    def parseMethodDecl(is_static: bool, is_profile: bool): PNode throws
         const line = .peek().line
         .expectText("def")
         var name = ""
@@ -1356,7 +1370,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts))
+        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts, is_profile))
 
     # -- Block and statements --------------------------------------------------
 

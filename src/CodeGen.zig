@@ -3297,6 +3297,19 @@ const Generator = struct {
 
             try g.w.writeAll(" {\n");
 
+            // @profile: record entry time and defer _profile_end() on any exit path.
+            if (n.mods.profile) {
+                const ig = mg.indented();
+                try ig.writeIndent();
+                if (g.owner.len > 0) {
+                    try ig.w.print("_profile_start(\"{s}.{s}\");\n", .{ g.owner, n.name });
+                } else {
+                    try ig.w.print("_profile_start(\"{s}\");\n", .{n.name});
+                }
+                try ig.writeIndent();
+                try ig.w.writeAll("defer _profile_end();\n");
+            }
+
             // Invariant deferred exit check — public instance methods only.
             // Private helpers may temporarily break invariants; shared methods have no `self`.
             // Note: `defer` also runs on error exit paths — callers see the panic before

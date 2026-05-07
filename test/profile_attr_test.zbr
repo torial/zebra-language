@@ -1,0 +1,25 @@
+
+class Calc
+    @profile
+    def addValues(a: int, b: int): int
+        return a + b
+
+    @profile
+    def mulValues(a: int, b: int): int
+        return a * b
+
+@profile
+def helperFn(n: int): int
+    return n * 2
+
+def main()
+    var c = Calc()
+    var r1 = c.addValues(2, 3)
+    assert r1 == 5
+    var r2 = c.mulValues(4, 5)
+    assert r2 == 20
+    var r3 = helperFn(7)
+    assert r3 == 14
+    Profile.report()
+    Profile.reset()
+    print "profile_attr OK"
