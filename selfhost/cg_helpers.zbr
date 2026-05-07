@@ -216,6 +216,11 @@ def exprHasTry(expr: Expr): bool
                     if exprHasTry(e)
                         return true
             return false
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if exprHasTry(op)
+                    return true
+            return false
         on Expr.dict_lit as d
             for entry in d.entries
                 if exprHasTry(entry.key)
@@ -431,6 +436,11 @@ def nameUsedInExpr(name: str, expr: Expr): bool
                 if nameUsedInExpr(name, f.value)
                     return true
             return false
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if nameUsedInExpr(name, op)
+                    return true
+            return false
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no idents
             return false
@@ -587,6 +597,9 @@ def collectAllIdents(expr: Expr, out: StrSet)
             for part in si.parts
                 if part is StringPart.expr_ as e
                     collectAllIdents(e, out)
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                collectAllIdents(op, out)
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no user idents
             pass
@@ -793,6 +806,9 @@ def scanMutationsInExpr(expr: Expr, out: StrSet)
             for part in si.parts
                 if part is StringPart.expr_ as e
                     scanMutationsInExpr(e, out)
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                scanMutationsInExpr(op, out)
         else
             pass
 

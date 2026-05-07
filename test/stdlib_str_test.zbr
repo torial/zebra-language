@@ -1,0 +1,42 @@
+def main()
+    var s = "Hello World"
+
+    # Case-insensitive comparison
+    assert s.eqlIgnoreCase("hello world")
+    assert not s.eqlIgnoreCase("hello")
+
+    # Character class predicates
+    assert "abc123".isAlphanumeric()
+    assert not "abc!".isAlphanumeric()
+    assert "hello".isPrintable()
+
+    # Case-insensitive prefix/suffix/contains
+    assert s.startsWithIgnoreCase("hello")
+    assert s.endsWithIgnoreCase("WORLD")
+    assert s.containsIgnoreCase("lo wo")
+    assert not s.containsIgnoreCase("xyz")
+
+    # Case-insensitive indexOf (returns -1 when not found)
+    var idx = s.indexOfIgnoreCase("world")
+    assert idx == 6
+    var idx2 = s.indexOfIgnoreCase("xyz")
+    assert idx2 == -1
+
+    # lastIndexOf
+    var rep = "aababc"
+    assert rep.lastIndexOf("ab") == 3
+
+    # indexOfFrom
+    var iof = "hello hello".indexOfFrom("hello", 1)
+    assert iof == 6
+
+    # toIntBase
+    assert "ff".toIntBase(16) == 255
+    assert "10".toIntBase(2) == 2
+    assert "77".toIntBase(8) == 63
+
+    # tokenize (skips empty tokens unlike split)
+    var tokens = "one  two   three".tokenize(" ")
+    assert tokens.count() == 3
+
+    print "stdlib_str OK"

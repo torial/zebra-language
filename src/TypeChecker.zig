@@ -1914,6 +1914,14 @@ const TypeChecker = struct {
                 _ = try tc.inferExpr(e.expr);
                 break :blk .bool;
             },
+
+            // `a < b < c` — chained comparison always produces bool.
+            // Infer all operand types so TC-driven codegen (e.g. string vs int dispatch)
+            // has the information it needs.
+            .chained_cmp => |cc| blk: {
+                for (cc.operands) |op| _ = try tc.inferExpr(op);
+                break :blk .bool;
+            },
         };
     }
 
@@ -2369,10 +2377,14 @@ const TypeChecker = struct {
                 // File.* static methods: special-case the File builtin.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "File")) {
                     _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "read"))      return .string;
                     if (std.mem.eql(u8, mem.member, "readLines")) return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "listDir"))   return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "exists"))    return .bool;
+                    if (std.mem.eql(u8, mem.member, "isFile"))    return .bool;
+                    if (std.mem.eql(u8, mem.member, "isDir"))     return .bool;
+                    if (std.mem.eql(u8, mem.member, "size"))      return .int;
                     return .void_;
                 }
                 // Dir.* static methods.
@@ -2385,21 +2397,34 @@ const TypeChecker = struct {
                 // Path.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Path")) {
                     _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "isAbsolute")) return .bool;
                     if (std.mem.eql(u8, mem.member, "join") or
                         std.mem.eql(u8, mem.member, "basename") or
                         std.mem.eql(u8, mem.member, "dirname") or
                         std.mem.eql(u8, mem.member, "ext") or
-                        std.mem.eql(u8, mem.member, "stem")) return .string;
+                        std.mem.eql(u8, mem.member, "stem") or
+                        std.mem.eql(u8, mem.member, "absolute")) return .string;
                     return .void_;
                 }
                 // Math.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Math")) {
                     _ = try tc.inferExpr(mem.object);
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
-                    // isNaN / isInf return bool; everything else returns float
+                    // bool-returning predicates
                     if (std.mem.eql(u8, mem.member, "isNaN") or
-                        std.mem.eql(u8, mem.member, "isInf")) return .bool;
+                        std.mem.eql(u8, mem.member, "isInf") or
+                        std.mem.eql(u8, mem.member, "isPowerOfTwo")) return .bool;
+                    // int-returning operations
+                    if (std.mem.eql(u8, mem.member, "gcd") or
+                        std.mem.eql(u8, mem.member, "lcm") or
+                        std.mem.eql(u8, mem.member, "abs") or
+                        std.mem.eql(u8, mem.member, "min") or
+                        std.mem.eql(u8, mem.member, "max") or
+                        std.mem.eql(u8, mem.member, "wrap") or
+                        std.mem.eql(u8, mem.member, "popcount") or
+                        std.mem.eql(u8, mem.member, "clz") or
+                        std.mem.eql(u8, mem.member, "ctz")) return .int;
                     return .float;
                 }
                 // Shell.* static methods.
@@ -2473,9 +2498,11 @@ const TypeChecker = struct {
                 // sys.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "sys")) {
                     _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "getenv"))  return .unknown; // ?str
                     if (std.mem.eql(u8, mem.member, "args"))    return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "run"))     return .sys_run_result;
+                    if (std.mem.eql(u8, mem.member, "cwd"))     return .string;
                     if (std.mem.eql(u8, mem.member, "exit"))    return .void_;
                     if (std.mem.eql(u8, mem.member, "err"))     return .void_;
                     if (std.mem.eql(u8, mem.member, "errln"))   return .void_;
@@ -2507,21 +2534,37 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "fieldTypes")) return .str_slice;
                     return .unknown;
                 }
-                // Hash.* static methods — all return a hex string.
+                // Hash.* static methods — crypto hashes return hex string, fast hashes return int.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Hash")) {
                     _ = try tc.inferExpr(mem.object);
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
-                    return .string;
+                    if (std.mem.eql(u8, mem.member, "crc32") or
+                        std.mem.eql(u8, mem.member, "fnv64") or
+                        std.mem.eql(u8, mem.member, "xxHash64")) return .int;
+                    return .string; // sha256/sha512/md5/blake3/hmac256/hmac512
                 }
                 // Random.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Random")) {
                     _ = try tc.inferExpr(mem.object);
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
-                    if (std.mem.eql(u8, mem.member, "randInt"))  return .int;
-                    if (std.mem.eql(u8, mem.member, "randFloat")) return .float;
+                    if (std.mem.eql(u8, mem.member, "randInt"))   return .int;
+                    if (std.mem.eql(u8, mem.member, "randFloat") or
+                        std.mem.eql(u8, mem.member, "gaussian"))  return .float;
                     if (std.mem.eql(u8, mem.member, "randBool"))  return .bool;
-                    if (std.mem.eql(u8, mem.member, "bytes"))     return .string;
+                    if (std.mem.eql(u8, mem.member, "bytes") or
+                        std.mem.eql(u8, mem.member, "weighted"))  return .string;
                     return .void_; // shuffle, seed; choice returns unknown element type
+                }
+                // Base64.* static methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Base64")) {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "encode") or
+                        std.mem.eql(u8, mem.member, "encodeUrl")) return .string;
+                    // decode/decodeUrl return ?str
+                    const boxed = tc.map_alloc.create(Type) catch return .string;
+                    boxed.* = .string;
+                    return .{ .optional = boxed };
                 }
                 // Arg.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Arg")) {
@@ -2606,6 +2649,12 @@ const TypeChecker = struct {
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "bar")) return .progress_bar;
                     return .unknown;
+                }
+                // Profile.* static methods — all void.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Profile")) {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    return .void_;
                 }
                 // ProgressBar instance method calls.
                 if (try tc.inferExpr(mem.object) == .progress_bar) {
@@ -2833,16 +2882,19 @@ const TypeChecker = struct {
                 .{ "padLeft",   {} }, .{ "padRight",  {} }, .{ "center",    {} }, .{ "bytes",     {} },
                 .{ "join",           {} }, .{ "lines",        {} }, .{ "reverse",    {} },
                 .{ "toHex",          {} }, .{ "fromHex",      {} }, .{ "chars",      {} },
-                .{ "substring",      {} },
+                .{ "substring",      {} }, .{ "encodeBase64", {} }, .{ "decodeBase64", {} },
             });
             const str_int = std.StaticStringMap(void).initComptime(&.{
-                .{ "toInt",          {} }, .{ "indexOf",      {} }, .{ "count",      {} },
-                .{ "codePointCount", {} },
+                .{ "toInt",           {} }, .{ "indexOf",          {} }, .{ "count",         {} },
+                .{ "codePointCount",  {} }, .{ "lastIndexOf",      {} }, .{ "indexOfFrom",   {} },
+                .{ "toIntBase",       {} }, .{ "indexOfIgnoreCase",{} },
             });
             const str_bool = std.StaticStringMap(void).initComptime(&.{
-                .{ "contains",     {} }, .{ "startsWith",  {} }, .{ "endsWith",    {} },
-                .{ "isEmpty",      {} }, .{ "isAlpha",     {} }, .{ "isNumeric",   {} },
-                .{ "isValidUtf8",  {} },
+                .{ "contains",              {} }, .{ "startsWith",          {} }, .{ "endsWith",    {} },
+                .{ "isEmpty",               {} }, .{ "isAlpha",             {} }, .{ "isNumeric",   {} },
+                .{ "isValidUtf8",           {} }, .{ "eqlIgnoreCase",       {} }, .{ "isAlphanumeric", {} },
+                .{ "isPrintable",           {} }, .{ "startsWithIgnoreCase", {} }, .{ "endsWithIgnoreCase", {} },
+                .{ "containsIgnoreCase",    {} },
             });
             if (str_string.get(method) != null) return .string;
             if (str_int.get(method)    != null) return .int;
@@ -2915,7 +2967,8 @@ const TypeChecker = struct {
                 std.mem.eql(u8, method, "equals"))    return .bool;
             if (std.mem.eql(u8, method, "daysBetween") or
                 std.mem.eql(u8, method, "secondsBetween") or
-                std.mem.eql(u8, method, "toEpoch"))       return .int;
+                std.mem.eql(u8, method, "toEpoch") or
+                std.mem.eql(u8, method, "timestamp"))     return .int;
             if (std.mem.eql(u8, method, "toIso8601") or
                 std.mem.eql(u8, method, "format"))        return .string;
             if (std.mem.eql(u8, method, "inCalendar"))    return .calendar_view;
@@ -3369,6 +3422,7 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
         .try_          => |e| e.span,
         .tuple_lit     => |e| e.span,
         .type_check    => |e| e.span,
+        .chained_cmp   => |e| e.span,
     };
 }
 

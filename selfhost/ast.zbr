@@ -706,6 +706,7 @@ union Expr
     try_: ^ExprTry
     tuple_lit: ^ExprTuple
     type_check: ^ExprTypeCheck
+    chained_cmp: ^ExprChainedCmp
     except_: ^ExprExcept
     old_: ^ExprOld
     result_: Span
@@ -972,6 +973,18 @@ struct ExprTypeCheck
         .expr = expr
         .type_name = type_name
         .variant_name = nil
+
+# chained comparison: a < b < c (desugared to and-chain at codegen)
+
+struct ExprChainedCmp
+    var span: Span
+    var ops: List(String)       # operator strings, e.g. ["<", "<"]
+    var operands: List(Expr)    # length = ops.count() + 1
+
+    cue init(span: Span, ops: List(String), operands: List(Expr))
+        .span = span
+        .ops = ops
+        .operands = operands
 
 # nilable / nil-check operators
 

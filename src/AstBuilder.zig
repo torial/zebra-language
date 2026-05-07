@@ -1031,7 +1031,9 @@ const Builder = struct {
                 .message = if (kids.len == 5) try b.box(Ast.Expr, try b.buildExpr(kids[3])) else null,
             }) },
             .StmtIf       => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtIf(inner)) },
+            .StmtUnless   => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtUnless(inner)) },
             .StmtWhile    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtWhile(inner)) },
+            .StmtUntil    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtUntil(inner)) },
             .StmtForIn    => .{ .for_in  = try b.box(Ast.StmtForIn,  try b.buildStmtForIn(inner)) },
             .StmtForNum   => .{ .for_num = try b.box(Ast.StmtForNum, try b.buildStmtForNum(inner)) },
             .StmtBranch   => .{ .branch  = try b.box(Ast.StmtBranch, try b.buildStmtBranch(inner)) },
@@ -1184,6 +1186,44 @@ const Builder = struct {
             .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
             .body      = try b.buildBlock(kids[3]),
             .post_body = if (kids.len > 4) try b.buildBlock(kids[6]) else null,
+        };
+    }
+
+    fn buildStmtUnless(b: Builder, node: TN) anyerror!Ast.StmtIf {
+        // kw_unless Expr eol Block — desugar: negate condition, no else
+        const kids = ch(node);
+        const s = spanOf(kids[1], b.tokens);
+        const raw_cond = try b.buildExpr(kids[1]);
+        const not_cond = Ast.Expr{ .unary = try b.box(Ast.ExprUnary, .{
+            .span    = s,
+            .op      = .not_,
+            .operand = try b.box(Ast.Expr, raw_cond),
+        }) };
+        return .{
+            .span      = spanOf(node, b.tokens),
+            .cond      = try b.box(Ast.Expr, not_cond),
+            .then_body = try b.buildBlock(kids[3]),
+            .else_ifs  = &.{},
+            .else_body = null,
+        };
+    }
+
+    fn buildStmtUntil(b: Builder, node: TN) anyerror!Ast.StmtWhile {
+        // kw_until Expr eol Block — desugar: negate condition
+        const kids = ch(node);
+        const s = spanOf(kids[1], b.tokens);
+        const raw_cond = try b.buildExpr(kids[1]);
+        const not_cond = Ast.Expr{ .unary = try b.box(Ast.ExprUnary, .{
+            .span    = s,
+            .op      = .not_,
+            .operand = try b.box(Ast.Expr, raw_cond),
+        }) };
+        return .{
+            .span      = spanOf(node, b.tokens),
+            .bind      = null,
+            .cond      = try b.box(Ast.Expr, not_cond),
+            .body      = try b.buildBlock(kids[3]),
+            .post_body = null,
         };
     }
 
@@ -2012,14 +2052,14 @@ const Builder = struct {
                 else
                     mk.bin(b, s, .eq, left, right),
                 .kw_in     => mk.bin(b, s, .in_,     left, right),
-                .eq        => mk.bin(b, s, .eq,      left, right),
-                .ne,
-                .bang_equals => mk.bin(b, s, .ne, left, right), // <> and != both mean not-equal
-
-                .lt        => mk.bin(b, s, .lt,      left, right),
-                .le        => mk.bin(b, s, .le,      left, right),
-                .gt        => mk.bin(b, s, .gt,      left, right),
-                .ge        => mk.bin(b, s, .ge,      left, right),
+                // Chainable comparison operators: build/extend an ExprChainedCmp
+                // when two or more comparison ops appear in sequence (a < b < c).
+                .eq              => try b.buildChainedCmp(s, .eq, left, right),
+                .ne, .bang_equals => try b.buildChainedCmp(s, .ne, left, right),
+                .lt              => try b.buildChainedCmp(s, .lt, left, right),
+                .le              => try b.buildChainedCmp(s, .le, left, right),
+                .gt              => try b.buildChainedCmp(s, .gt, left, right),
+                .ge              => try b.buildChainedCmp(s, .ge, left, right),
                 .plus      => mk.bin(b, s, .add,     left, right),
                 .minus     => mk.bin(b, s, .sub,     left, right),
                 .star      => mk.bin(b, s, .mul,     left, right),
@@ -2561,6 +2601,63 @@ const Builder = struct {
         } else {
             try b.flattenExprListNE(kids[0], out);
             try out.append(b.arena,try b.box(Ast.Expr, try b.buildExpr(kids[2])));
+        }
+    }
+
+    // ── Chained comparison builder ────────────────────────────────────────────
+
+    /// True for the six ops that can participate in a chained comparison.
+    fn isChainableCmpOp(op: Ast.BinaryOp) bool {
+        return switch (op) {
+            .lt, .le, .gt, .ge, .eq, .ne => true,
+            else => false,
+        };
+    }
+
+    /// Build or extend a chained comparison node for `a op b` where `left`
+    /// may already be a chained_cmp or a binary comparison.
+    ///
+    ///   a < b        → binary{lt, a, b}      (first occurrence — no chain yet)
+    ///   a < b < c    → chained_cmp{[lt,lt], [a,b,c]}
+    ///   a < b < c <d → chained_cmp{[lt,lt,lt], [a,b,c,d]}
+    fn buildChainedCmp(b: Builder, s: Ast.Span, op: Ast.BinaryOp, left: *Ast.Expr, right: *Ast.Expr) anyerror!Ast.Expr {
+        if (left.* == .chained_cmp) {
+            // Extend existing chain: append new op + right operand.
+            const cc = left.chained_cmp;
+            const new_ops = try b.arena.alloc(Ast.BinaryOp, cc.ops.len + 1);
+            @memcpy(new_ops[0..cc.ops.len], cc.ops);
+            new_ops[cc.ops.len] = op;
+            const new_operands = try b.arena.alloc(*Ast.Expr, cc.operands.len + 1);
+            @memcpy(new_operands[0..cc.operands.len], cc.operands);
+            new_operands[cc.operands.len] = right;
+            return .{ .chained_cmp = try b.box(Ast.ExprChainedCmp, .{
+                .span     = s,
+                .ops      = new_ops,
+                .operands = new_operands,
+            }) };
+        } else if (left.* == .binary and isChainableCmpOp(left.binary.op)) {
+            // Promote a simple binary comparison to a 2-link chain.
+            const inner = left.binary;
+            const cc_ops = try b.arena.alloc(Ast.BinaryOp, 2);
+            cc_ops[0] = inner.op;
+            cc_ops[1] = op;
+            const cc_operands = try b.arena.alloc(*Ast.Expr, 3);
+            cc_operands[0] = inner.left;
+            cc_operands[1] = inner.right; // shared middle — same pointer, no duplication at AST level
+            cc_operands[2] = right;
+            return .{ .chained_cmp = try b.box(Ast.ExprChainedCmp, .{
+                .span     = s,
+                .ops      = cc_ops,
+                .operands = cc_operands,
+            }) };
+        } else {
+            // First (and only) comparison in this subexpression — plain binary.
+            return .{ .binary = try b.box(Ast.ExprBinary, .{
+                .span  = s,
+                .op    = op,
+                .left  = left,
+                .right = right,
+            }) };
         }
     }
 

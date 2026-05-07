@@ -93,6 +93,7 @@ union PNode
     expr_tuple_lit: ^PTupleLit
     expr_array_lit: ^PArrayLit
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
+    expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -510,6 +511,13 @@ struct PUnary
     cue init(op: str, operand: List(PNode))
         .op = op
         .operand = operand
+
+struct PChainedCmp
+    var ops: List(str)      # operator strings (length N)
+    var operands: List(PNode)  # expressions (length N+1)
+    cue init(ops: List(str), operands: List(PNode))
+        .ops = ops
+        .operands = operands
 
 struct PExprId
     var name: str
@@ -1383,8 +1391,12 @@ class Parser
             return .parseReturnStmt()
         else if .textIs("if")
             return .parseIfStmt()
+        else if .textIs("unless")
+            return .parseUnlessStmt()
         else if .textIs("while")
             return .parseWhileStmt()
+        else if .textIs("until")
+            return .parseUntilStmt()
         else if .textIs("for")
             return .parseForInStmt()
         else if .textIs("var")
@@ -1452,6 +1464,35 @@ class Parser
         var pif = PIf(cond_list, then_stmts, else_stmts, line)
         pif.is_capture = capture_name
         return PNode.stmt_if(pif)
+
+    def parseUnlessStmt(): PNode throws
+        const line = .peek().line
+        .expectText("unless")
+        const cond_expr = .parseExpr()
+        .skipEol()
+        const then_stmts = .parseBlock()
+        if .textIs("else")
+            raise "unless does not support an else clause; use 'if not ...' instead"
+        var not_operand = List(PNode)()
+        not_operand.add(cond_expr)
+        var not_cond = PNode.expr_unary(PUnary("not", not_operand))
+        var cond_list = List(PNode)()
+        cond_list.add(not_cond)
+        var empty_else = List(PNode)()
+        return PNode.stmt_if(PIf(cond_list, then_stmts, empty_else, line))
+
+    def parseUntilStmt(): PNode throws
+        const line = .peek().line
+        .expectText("until")
+        const cond_expr = .parseExpr()
+        .skipEol()
+        const stmts = .parseBlock()
+        var not_operand = List(PNode)()
+        not_operand.add(cond_expr)
+        var not_cond = PNode.expr_unary(PUnary("not", not_operand))
+        var cond_list = List(PNode)()
+        cond_list.add(not_cond)
+        return PNode.stmt_while(PWhile(cond_list, stmts, line))
 
     def parseWhileStmt(): PNode throws
         const line = .peek().line
@@ -1932,6 +1973,50 @@ class Parser
         if op != ""
             .advance()
             const right = .parseAddSub()
+            # Check if this is a chainable comparison op that may start/extend a chain.
+            # Chainable: == != < <= > >=  (not: is, in)
+            if op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+                # Peek for another comparison op to decide if this is a chain.
+                var next_op: str = ""
+                if .textIs("==")
+                    next_op = "=="
+                else if .textIs("!=") or .textIs("<>")
+                    next_op = "!="
+                else if .textIs("<=")
+                    next_op = "<="
+                else if .textIs(">=")
+                    next_op = ">="
+                else if .textIs("<")
+                    next_op = "<"
+                else if .textIs(">")
+                    next_op = ">"
+                if next_op != ""
+                    # Build a chain: accumulate operands + ops until no more chainable ops.
+                    var chain_ops: List(str) = List(str)()
+                    var chain_nodes: List(PNode) = List(PNode)()
+                    chain_ops.add(op)
+                    chain_nodes.add(left)
+                    chain_nodes.add(right)
+                    while next_op != ""
+                        chain_ops.add(next_op)
+                        .advance()
+                        const next_right = .parseAddSub()
+                        chain_nodes.add(next_right)
+                        next_op = ""
+                        if .textIs("==")
+                            next_op = "=="
+                        else if .textIs("!=") or .textIs("<>")
+                            next_op = "!="
+                        else if .textIs("<=")
+                            next_op = "<="
+                        else if .textIs(">=")
+                            next_op = ">="
+                        else if .textIs("<")
+                            next_op = "<"
+                        else if .textIs(">")
+                            next_op = ">"
+                    return PNode.expr_chained_cmp(PChainedCmp(chain_ops, chain_nodes))
+            # Non-chaining or single comparison: plain binary.
             var l = List(PNode)()
             l.add(left)
             var r = List(PNode)()

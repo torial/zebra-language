@@ -1,0 +1,15 @@
+def main()
+    Profile.start("outer")
+    var i = 0
+    while i < 100
+        i = i + 1
+    Profile.start("inner")
+    var j = 0
+    while j < 50
+        j = j + 1
+    Profile.end()
+    Profile.end()
+    Profile.report()
+    Profile.dump_folded()
+    Profile.reset()
+    print "profile OK"

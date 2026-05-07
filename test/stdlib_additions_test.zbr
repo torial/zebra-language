@@ -1,0 +1,101 @@
+
+def main()
+    # ── Math constants ──────────────────────────────────────────────────────────
+    assert Math.PHI > 1.6 and Math.PHI < 1.7
+    assert Math.SQRT2 > 1.41 and Math.SQRT2 < 1.42
+    assert Math.LN2 > 0.69 and Math.LN2 < 0.70
+    assert Math.LN10 > 2.30 and Math.LN10 < 2.31
+
+    # ── Math methods ────────────────────────────────────────────────────────────
+    assert Math.sinh(0.0) == 0.0
+    assert Math.cosh(0.0) == 1.0
+    assert Math.tanh(0.0) == 0.0
+    assert Math.cbrt(8.0) > 1.99 and Math.cbrt(8.0) < 2.01
+    assert Math.hypot(3.0, 4.0) > 4.99 and Math.hypot(3.0, 4.0) < 5.01
+    assert Math.lerp(0.0, 10.0, 0.5) > 4.99 and Math.lerp(0.0, 10.0, 0.5) < 5.01
+    assert Math.gcd(12, 8) == 4
+    assert Math.lcm(4, 6) == 12
+    assert Math.toRadians(180.0) > 3.14 and Math.toRadians(180.0) < 3.15
+    assert Math.toDegrees(Math.PI) > 179.9 and Math.toDegrees(Math.PI) < 180.1
+    assert Math.isPowerOfTwo(8)
+    assert not Math.isPowerOfTwo(7)
+    assert Math.wrap(-1, 5) == 4
+    assert Math.popcount(7) == 3
+    assert Math.clz(1) == 63
+    assert Math.ctz(8) == 3
+    assert Math.log1p(0.0) == 0.0
+    assert Math.expm1(0.0) == 0.0
+
+    # ── String methods ──────────────────────────────────────────────────────────
+    assert "hello world".lastIndexOf("o") == 7
+    assert "hello world".lastIndexOf("z") == -1
+    assert "Hello".eqlIgnoreCase("hello")
+    assert "abc123".isAlphanumeric()
+    assert not "abc 123".isAlphanumeric()
+    assert "hello".isPrintable()
+    assert "Hello".startsWithIgnoreCase("he")
+    assert "Hello World".endsWithIgnoreCase("WORLD")
+    assert "Hello World".containsIgnoreCase("HELLO")
+    assert "Hello World".indexOfIgnoreCase("world") == 6
+    assert "hello world".indexOfFrom("o", 5) == 7
+    assert "FF".toIntBase(16) == 255
+    assert "1010".toIntBase(2) == 10
+    var parts = "  hello   world  ".tokenize(" ")
+    assert parts.count() == 2
+
+    # ── Base64 ──────────────────────────────────────────────────────────────────
+    var enc = Base64.encode("hello")
+    assert enc == "aGVsbG8="
+    var dec = Base64.decode("aGVsbG8=")
+    if dec as s
+        assert s == "hello"
+    var enc_url = Base64.encodeUrl("hello")
+    assert enc_url == "aGVsbG8"
+    # Instance methods
+    var enc2 = "hello".encodeBase64()
+    assert enc2 == "aGVsbG8="
+    var dec2 = "aGVsbG8=".decodeBase64()
+    assert dec2 == "hello"
+
+    # ── Hash fast hashes ────────────────────────────────────────────────────────
+    var crc = Hash.crc32("hello")
+    assert crc != 0
+    var fnv = Hash.fnv64("hello")
+    assert fnv != 0
+    var xx = Hash.xxHash64("hello")
+    assert xx != 0
+    var hmac = Hash.hmac512("key", "data")
+    assert hmac.len > 0
+
+    # ── Random gaussian ─────────────────────────────────────────────────────────
+    var g = Random.gaussian(0.0, 1.0)
+    # Gaussian sample is a valid float (hard to assert range in deterministic test)
+    assert g > -100.0 and g < 100.0
+
+    # ── File additions ──────────────────────────────────────────────────────────
+    File.write("_test_stdlib_tmp.txt", "hello\nworld")
+    assert File.exists("_test_stdlib_tmp.txt")
+    assert File.isFile("_test_stdlib_tmp.txt")
+    assert not File.isDir("_test_stdlib_tmp.txt")
+    var sz = File.size("_test_stdlib_tmp.txt")
+    assert sz == 11
+    File.writeLines("_test_stdlib_lines.txt", ["line1", "line2"])
+    var lines = File.readLines("_test_stdlib_lines.txt")
+    assert lines.count() >= 2
+    File.delete("_test_stdlib_tmp.txt")
+    File.delete("_test_stdlib_lines.txt")
+
+    # ── sys additions ───────────────────────────────────────────────────────────
+    var cwd = sys.cwd()
+    assert cwd.len > 0
+
+    # ── Path additions ──────────────────────────────────────────────────────────
+    var abs = Path.absolute(".")
+    assert abs.len > 0
+
+    # ── DateTime.timestamp ──────────────────────────────────────────────────────
+    var now = DateTime.now()
+    var ts = now.timestamp()
+    assert ts > 1000000000
+
+    print "stdlib_additions OK"

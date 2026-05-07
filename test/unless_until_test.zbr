@@ -1,0 +1,23 @@
+class UnlessUntilTest
+    def run
+        # unless: fires when condition is false
+        var x = 5
+        unless x > 10
+            x = x + 1
+        assert x == 6
+
+        # unless: skips when condition is true
+        unless x < 10
+            x = 99
+        assert x == 6
+
+        # until: loops while condition is false
+        var n = 0
+        until n >= 3
+            n = n + 1
+        assert n == 3
+
+        print "unless/until OK"
+
+def main()
+    UnlessUntilTest().run()

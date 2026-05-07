@@ -1,0 +1,59 @@
+def main()
+    # Constants
+    assert Math.PI > 3.14 and Math.PI < 3.15
+    assert Math.E  > 2.71 and Math.E  < 2.72
+    assert Math.TAU > 6.28 and Math.TAU < 6.29
+    assert Math.PHI > 1.61 and Math.PHI < 1.62
+    assert Math.SQRT2 > 1.41 and Math.SQRT2 < 1.42
+    assert Math.LN2 > 0.69 and Math.LN2 < 0.70
+    assert Math.LN10 > 2.30 and Math.LN10 < 2.31
+
+    # Hyperbolic trig
+    assert Math.sinh(0.0) == 0.0
+    assert Math.cosh(0.0) == 1.0
+    assert Math.tanh(0.0) == 0.0
+    assert Math.asinh(0.0) == 0.0
+    assert Math.acosh(1.0) == 0.0
+    assert Math.atanh(0.0) == 0.0
+
+    # cbrt
+    var cbrt8 = Math.cbrt(8.0)
+    assert cbrt8 > 1.99 and cbrt8 < 2.01
+
+    # log1p / expm1
+    assert Math.log1p(0.0) == 0.0
+    assert Math.expm1(0.0) == 0.0
+
+    # hypot
+    var h = Math.hypot(3.0, 4.0)
+    assert h > 4.99 and h < 5.01
+
+    # lerp
+    var l = Math.lerp(0.0, 10.0, 0.5)
+    assert l > 4.99 and l < 5.01
+
+    # gcd / lcm
+    assert Math.gcd(12, 8) == 4
+    assert Math.lcm(4, 6) == 12
+
+    # toRadians / toDegrees
+    var rad = Math.toRadians(180.0)
+    assert rad > 3.14 and rad < 3.15
+    var deg = Math.toDegrees(Math.PI)
+    assert deg > 179.9 and deg < 180.1
+
+    # isPowerOfTwo
+    assert Math.isPowerOfTwo(8)
+    assert not Math.isPowerOfTwo(7)
+
+    # wrap (value mod range, always non-negative)
+    var w = Math.wrap(10, 8)
+    assert w == 2
+
+    # popcount / clz / ctz
+    assert Math.popcount(255) == 8
+    assert Math.popcount(0) == 0
+    assert Math.clz(1) == 63
+    assert Math.ctz(8) == 3
+
+    print "stdlib_math OK"

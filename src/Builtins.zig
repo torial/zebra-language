@@ -111,6 +111,10 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     // Stdlib progress indicator
     .{ "Progress",      {} },
     .{ "ProgressBar",   {} },
+    // Stdlib profiler
+    .{ "Profile",       {} },
+    // Stdlib Base64 encoding
+    .{ "Base64",        {} },
 });
 
 /// Generic container types that require explicit initialization as local variables.

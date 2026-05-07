@@ -1,0 +1,23 @@
+def main()
+    # CRC32
+    var crc = Hash.crc32("hello")
+    assert crc != 0
+
+    # FNV-1a 64-bit
+    var fnv = Hash.fnv64("hello")
+    assert fnv != 0
+
+    # XXHash64
+    var xx = Hash.xxHash64("hello")
+    assert xx != 0
+
+    # Different inputs produce different hashes
+    assert Hash.crc32("hello") != Hash.crc32("world")
+    assert Hash.fnv64("hello") != Hash.fnv64("world")
+    assert Hash.xxHash64("hello") != Hash.xxHash64("world")
+
+    # HMAC-SHA512 returns a hex string
+    var hmac = Hash.hmac512("key", "message")
+    assert hmac.len == 128   # 64 bytes = 128 hex chars
+
+    print "stdlib_hash OK"

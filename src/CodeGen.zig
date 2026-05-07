@@ -671,6 +671,10 @@ fn exprHasTry(expr: *const Ast.Expr, tc_opt: ?*const TypeChecker.TypeCheckResult
             break :blk true;
         },
         .binary => |e| exprHasTry(e.left, tc_opt) or exprHasTry(e.right, tc_opt),
+        .chained_cmp => |cc| blk: {
+            for (cc.operands) |op| if (exprHasTry(op, tc_opt)) break :blk true;
+            break :blk false;
+        },
         .unary  => |e| exprHasTry(e.operand, tc_opt),
         .call   => |e| blk: {
             if (exprHasTry(e.callee, tc_opt)) break :blk true;
@@ -708,6 +712,7 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
             };
         },
         .binary      => |e| { try refsInExpr(e.left, r, o);    try refsInExpr(e.right, r, o); },
+        .chained_cmp => |cc| { for (cc.operands) |op| try refsInExpr(op, r, o); },
         .unary       => |e| try refsInExpr(e.operand, r, o),
         .call        => |e| { try refsInExpr(e.callee, r, o);  for (e.args) |a| try refsInExpr(a.value, r, o); },
         .member      => |e| try refsInExpr(e.object, r, o),
@@ -770,6 +775,10 @@ fn containsResultRef(expr: *const Ast.Expr) bool {
         .dict_lit      => |e| blk: { for (e.entries) |en| if (containsResultRef(en.key) or containsResultRef(en.value)) break :blk true; break :blk false; },
         .string_interp => |e| blk: { for (e.parts) |p| switch (p) { .expr => |ex| if (containsResultRef(ex)) break :blk true, else => {} }; break :blk false; },
         .type_check    => |e| containsResultRef(e.expr),
+        .chained_cmp   => |cc| blk: {
+            for (cc.operands) |op| if (containsResultRef(op)) break :blk true;
+            break :blk false;
+        },
         .lambda        => false, // result inside a lambda body refers to the lambda's own ensure (n/a today)
         .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit => false,
@@ -801,6 +810,7 @@ fn collectOldExprs(expr: *const Ast.Expr, alloc: Allocator, out: *std.ArrayListU
         .dict_lit    => |e| { for (e.entries) |en| { try collectOldExprs(en.key, alloc, out); try collectOldExprs(en.value, alloc, out); } },
         .string_interp => |e| { for (e.parts) |p| switch (p) { .expr => |ex| try collectOldExprs(ex, alloc, out), else => {} }; },
         .type_check  => |e| try collectOldExprs(e.expr, alloc, out),
+        .chained_cmp => |cc| { for (cc.operands) |op| try collectOldExprs(op, alloc, out); },
         .lambda      => {},  // old doesn't make sense inside a lambda body
         .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit, .result_ => {},
@@ -850,6 +860,7 @@ fn collectAllIdents(expr: *const Ast.Expr, set: *std.StringHashMap(void)) anyerr
                                   if (s.stop)  |b| try collectAllIdents(b, set); },
         .tuple_lit     => |t|  { for (t.elems)    |e| try collectAllIdents(e, set); },
         .type_check    => |t|  try collectAllIdents(t.expr, set),
+        .chained_cmp   => |cc| { for (cc.operands) |op| try collectAllIdents(op, set); },
         .list_lit      => |l|  { for (l.elems)    |e| try collectAllIdents(e, set); },
         .array_lit     => |a|  { for (a.elems)    |e| try collectAllIdents(e, set); },
         .dict_lit      => |d|  { for (d.entries) |e| { try collectAllIdents(e.key, set); try collectAllIdents(e.value, set); } },
@@ -1166,8 +1177,9 @@ fn scanMutationsInExpr(
         .if_expr   => |e| { try scanMutationsInExpr(e.cond, set, tc_opt); try scanMutationsInExpr(e.then_expr, set, tc_opt); try scanMutationsInExpr(e.else_expr, set, tc_opt); },
         .orelse_   => |e| { try scanMutationsInExpr(e.expr, set, tc_opt); try scanMutationsInExpr(e.fallback, set, tc_opt); },
         .catch_    => |e| { try scanMutationsInExpr(e.expr, set, tc_opt); try scanMutationsInExpr(e.fallback, set, tc_opt); },
-        .tuple_lit  => |e| { for (e.elems) |el| try scanMutationsInExpr(el, set, tc_opt); },
-        .type_check => |e| try scanMutationsInExpr(e.expr, set, tc_opt),
+        .tuple_lit   => |e| { for (e.elems) |el| try scanMutationsInExpr(el, set, tc_opt); },
+        .type_check  => |e| try scanMutationsInExpr(e.expr, set, tc_opt),
+        .chained_cmp => |cc| { for (cc.operands) |op| try scanMutationsInExpr(op, set, tc_opt); },
         // `expr?` — recurse so that `localVar.method()?` marks `localVar` as mutated.
         .try_       => |e| try scanMutationsInExpr(e.expr, set, tc_opt),
         else        => {},
@@ -1325,8 +1337,9 @@ fn addAddrOfMutationsInExpr(
         .if_expr   => |e| { try addAddrOfMutationsInExpr(e.cond, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.then_expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.else_expr, set, alloc, tc_opt, resolve); },
         .orelse_   => |e| { try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.fallback, set, alloc, tc_opt, resolve); },
         .catch_    => |e| { try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(e.fallback, set, alloc, tc_opt, resolve); },
-        .tuple_lit  => |e| { for (e.elems) |el| try addAddrOfMutationsInExpr(el, set, alloc, tc_opt, resolve); },
-        .type_check => |e| try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve),
+        .tuple_lit   => |e| { for (e.elems) |el| try addAddrOfMutationsInExpr(el, set, alloc, tc_opt, resolve); },
+        .type_check  => |e| try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve),
+        .chained_cmp => |cc| { for (cc.operands) |op| try addAddrOfMutationsInExpr(op, set, alloc, tc_opt, resolve); },
         .try_       => |e| try addAddrOfMutationsInExpr(e.expr, set, alloc, tc_opt, resolve),
         else        => {},
     }
@@ -1387,6 +1400,10 @@ fn nameUsedInExpr(name: []const u8, expr: *const Ast.Expr) bool {
         .index     => |e| nameUsedInExpr(name, e.object) or nameUsedInExpr(name, e.index),
         .tuple_lit => |e| blk: {
             for (e.elems) |el| if (nameUsedInExpr(name, el)) break :blk true;
+            break :blk false;
+        },
+        .chained_cmp => |cc| blk: {
+            for (cc.operands) |op| if (nameUsedInExpr(name, op)) break :blk true;
             break :blk false;
         },
         else       => false,
@@ -3502,6 +3519,7 @@ const Generator = struct {
             .try_          => |x| x.span,
             .tuple_lit     => |x| x.span,
             .type_check    => |x| x.span,
+            .chained_cmp   => |x| x.span,
         };
     }
 
@@ -4215,6 +4233,36 @@ const Generator = struct {
             try g.w.writeAll("})");
             return true;
         }
+        if (std.mem.eql(u8, method, "size")) {
+            // File.size(path) → i64 bytes, or -1 if missing
+            try g.w.writeAll("(blk: { const _fs_stat = std.fs.cwd().statFile(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(") catch break :blk @as(i64, -1); break :blk @as(i64, @intCast(_fs_stat.size)); })");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "isFile")) {
+            // File.isFile(path) → bool
+            try g.w.writeAll("(blk: { const _fi_stat = std.fs.cwd().statFile(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(") catch break :blk false; break :blk _fi_stat.kind == .file; })");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "isDir")) {
+            // File.isDir(path) → bool; statFile fails on directories on Windows so use openDir
+            try g.w.writeAll("(blk: { var _fd_dir = std.fs.cwd().openDir(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", .{}) catch break :blk false; _fd_dir.close(); break :blk true; })");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "writeLines")) {
+            // File.writeLines(path, lines: List(str)) → void
+            try g.w.writeAll("_file_write_lines(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "listDir")) {
             // File.listDir(path) → ArrayList([]const u8) of entry names in directory.
             try g.w.writeAll("(blk: {\n");
@@ -4411,6 +4459,13 @@ const Generator = struct {
             try g.w.writeAll("))");
             return true;
         }
+        if (std.mem.eql(u8, method, "absolute")) {
+            // Path.absolute(p) → resolved absolute path; returns p unchanged on error
+            try g.w.writeAll("(blk: { const _pp = ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll("; break :blk std.fs.cwd().realpathAlloc(_allocator, _pp) catch _pp; })");
+            return true;
+        }
         return false;
     }
 
@@ -4509,6 +4564,102 @@ const Generator = struct {
             try g.w.writeByte(')');
             return true;
         }
+        // Hyperbolic trig
+        if (std.mem.eql(u8, method, "sinh"))  { try one(g, "sinh",  args); return true; }
+        if (std.mem.eql(u8, method, "cosh"))  { try one(g, "cosh",  args); return true; }
+        if (std.mem.eql(u8, method, "tanh"))  { try one(g, "tanh",  args); return true; }
+        if (std.mem.eql(u8, method, "asinh")) { try one(g, "asinh", args); return true; }
+        if (std.mem.eql(u8, method, "acosh")) { try one(g, "acosh", args); return true; }
+        if (std.mem.eql(u8, method, "atanh")) { try one(g, "atanh", args); return true; }
+        // Cube root, numerically stable variants
+        if (std.mem.eql(u8, method, "cbrt"))  { try one(g, "cbrt",  args); return true; }
+        if (std.mem.eql(u8, method, "log1p")) { try one(g, "log1p", args); return true; }
+        if (std.mem.eql(u8, method, "expm1")) { try one(g, "expm1", args); return true; }
+        // Euclidean distance: hypot(a, b)
+        if (std.mem.eql(u8, method, "hypot")) {
+            try g.w.writeAll("std.math.hypot(@as(f64, ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("), @as(f64, ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))");
+            return true;
+        }
+        // Linear interpolation: lerp(a, b, t)
+        if (std.mem.eql(u8, method, "lerp")) {
+            try g.w.writeAll("std.math.lerp(@as(f64, ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("), @as(f64, ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll("), @as(f64, ");
+            if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))");
+            return true;
+        }
+        // Number theory: gcd(a,b), lcm(a,b) — Euclidean algorithm, returns i64
+        if (std.mem.eql(u8, method, "gcd")) {
+            try g.w.writeAll("(blk: { var _ga = @as(i64, @intCast(@abs(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))); var _gb = @as(i64, @intCast(@abs(");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))); while (_gb != 0) { const _gt = _gb; _gb = @mod(_ga, _gb); _ga = _gt; } break :blk _ga; })");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "lcm")) {
+            try g.w.writeAll("(blk: { const _la = @as(i64, @intCast(@abs(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))); const _lb = @as(i64, @intCast(@abs(");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))); var _lg = _la; var _lh = _lb; while (_lh != 0) { const _lt = _lh; _lh = @mod(_lg, _lh); _lg = _lt; } break :blk if (_lg == 0) @as(i64, 0) else @divExact(_la, _lg) * _lb; })");
+            return true;
+        }
+        // Angle conversion
+        if (std.mem.eql(u8, method, "toRadians")) {
+            try g.w.writeAll("std.math.degreesToRadians(@as(f64, ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "toDegrees")) {
+            try g.w.writeAll("std.math.radiansToDegrees(@as(f64, ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("))");
+            return true;
+        }
+        // Integer predicates
+        if (std.mem.eql(u8, method, "isPowerOfTwo")) {
+            try g.w.writeAll("(blk: { const _po2 = ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll("; break :blk _po2 > 0 and (_po2 & (_po2 - 1)) == 0; })");
+            return true;
+        }
+        // wrap(x, r) → Python-style always-non-negative modulo
+        if (std.mem.eql(u8, method, "wrap")) {
+            try g.w.writeAll("@mod(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("1");
+            try g.w.writeByte(')');
+            return true;
+        }
+        // Bit operations
+        if (std.mem.eql(u8, method, "popcount")) {
+            try g.w.writeAll("@as(i64, @intCast(@popCount(@as(u64, @intCast(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "clz")) {
+            try g.w.writeAll("@as(i64, @intCast(@clz(@as(u64, @intCast(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "ctz")) {
+            try g.w.writeAll("@as(i64, @intCast(@ctz(@as(u64, @intCast(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))))");
+            return true;
+        }
         return false;
     }
 
@@ -4551,7 +4702,7 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "getenv")) {
-            try g.w.writeAll("std.posix.getenv(");
+            try g.w.writeAll("_sys_getenv(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")");
             return true;
@@ -4568,6 +4719,20 @@ const Generator = struct {
             try g.w.writeAll("std.Thread.sleep(@as(u64, @intCast(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
             try g.w.writeAll(")) * std.time.ns_per_ms)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "cwd")) {
+            // sys.cwd() → current working directory as str
+            try g.w.writeAll("(std.fs.cwd().realpathAlloc(_allocator, \".\") catch \"\")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setenv")) {
+            // sys.setenv(key, val) → set an environment variable
+            try g.w.writeAll("_sys_setenv(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
             return true;
         }
         return false;
@@ -4689,6 +4854,13 @@ const Generator = struct {
             try g.w.writeAll(", ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")");
+            return true;
+        }
+        // Unix timestamp in seconds (epoch_ms / 1000)
+        if (std.mem.eql(u8, method, "timestamp")) {
+            try g.w.writeAll("@divFloor(");
+            try g.genExpr(object);
+            try g.w.writeAll(".epoch_ms, 1000)");
             return true;
         }
         // Calendar view
@@ -4842,10 +5014,13 @@ const Generator = struct {
     // ── Hash static calls ────────────────────────────────────────────────────
     fn genHashCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         const fn_map = std.StaticStringMap([]const u8).initComptime(&.{
-            .{ "sha256",  "_hash_sha256"  },
-            .{ "sha512",  "_hash_sha512"  },
-            .{ "md5",     "_hash_md5"     },
-            .{ "blake3",  "_hash_blake3"  },
+            .{ "sha256",    "_hash_sha256"    },
+            .{ "sha512",    "_hash_sha512"    },
+            .{ "md5",       "_hash_md5"       },
+            .{ "blake3",    "_hash_blake3"    },
+            .{ "crc32",     "_hash_crc32"     },
+            .{ "fnv64",     "_hash_fnv64"     },
+            .{ "xxHash64",  "_hash_xxhash64"  },
         });
         if (fn_map.get(method)) |fn_name| {
             try g.w.writeAll(fn_name);
@@ -4856,6 +5031,14 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "hmac256")) {
             try g.w.writeAll("_hash_hmac256(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "hmac512")) {
+            try g.w.writeAll("_hash_hmac512(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(", ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
@@ -4910,6 +5093,24 @@ const Generator = struct {
                 try g.genExpr(args[0].value);
                 try g.w.writeAll(".items))");
             }
+            return true;
+        }
+        // gaussian(mean, stddev) — Box-Muller normal distribution
+        if (std.mem.eql(u8, method, "gaussian")) {
+            try g.w.writeAll("_random_gaussian(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0.0");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("1.0");
+            try g.w.writeAll(")");
+            return true;
+        }
+        // weighted(items, weights) — weighted random choice
+        if (std.mem.eql(u8, method, "weighted")) {
+            try g.w.writeAll("_random_weighted(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
             return true;
         }
         return false;
@@ -5102,6 +5303,50 @@ const Generator = struct {
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
             try g.w.writeAll(", ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"progress\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    // ── Profile static calls ────────────────────────────────────────────────
+    fn genProfileCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "start")) {
+            try g.w.writeAll("_profile_start(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "end"))           { try g.w.writeAll("_profile_end()");           return true; }
+        if (std.mem.eql(u8, method, "report"))        { try g.w.writeAll("_profile_report()");       return true; }
+        if (std.mem.eql(u8, method, "dump_folded"))   { try g.w.writeAll("_profile_dump_folded()");  return true; }
+        if (std.mem.eql(u8, method, "reset"))         { try g.w.writeAll("_profile_reset()");        return true; }
+        return false;
+    }
+
+    // ── Base64 static calls ───────────────────────────────────────────────────
+    fn genBase64Call(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "encode")) {
+            try g.w.writeAll("_base64_encode(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "decode")) {
+            try g.w.writeAll("_base64_decode(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "encodeUrl")) {
+            try g.w.writeAll("_base64_encode_url(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "decodeUrl")) {
+            try g.w.writeAll("_base64_decode_url(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")");
             return true;
         }
@@ -6243,6 +6488,117 @@ const Generator = struct {
         // Note: chars() is reserved for future Unicode codepoint iteration.
         if (std.mem.eql(u8, method, "bytes")) {
             try g.genExpr(obj);
+            return true;
+        }
+        // ── lastIndexOf ───────────────────────────────────────────────────────
+        if (std.mem.eql(u8, method, "lastIndexOf")) {
+            try g.w.writeAll("(if (std.mem.lastIndexOf(u8, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1))");
+            return true;
+        }
+        // ── eqlIgnoreCase ─────────────────────────────────────────────────────
+        if (std.mem.eql(u8, method, "eqlIgnoreCase")) {
+            try g.w.writeAll("std.ascii.eqlIgnoreCase(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        // ── isAlphanumeric ────────────────────────────────────────────────────
+        if (std.mem.eql(u8, method, "isAlphanumeric")) {
+            try g.w.writeAll("(blk: { if (");
+            try g.genExpr(obj);
+            try g.w.writeAll(".len == 0) break :blk false; for (");
+            try g.genExpr(obj);
+            try g.w.writeAll(") |_an| { if (!std.ascii.isAlphanumeric(_an)) break :blk false; } break :blk true; })");
+            return true;
+        }
+        // ── isPrintable ───────────────────────────────────────────────────────
+        if (std.mem.eql(u8, method, "isPrintable")) {
+            try g.w.writeAll("(blk: { if (");
+            try g.genExpr(obj);
+            try g.w.writeAll(".len == 0) break :blk false; for (");
+            try g.genExpr(obj);
+            try g.w.writeAll(") |_pr| { if (!std.ascii.isPrint(_pr)) break :blk false; } break :blk true; })");
+            return true;
+        }
+        // ── case-insensitive search ───────────────────────────────────────────
+        if (std.mem.eql(u8, method, "startsWithIgnoreCase")) {
+            try g.w.writeAll("std.ascii.startsWithIgnoreCase(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "endsWithIgnoreCase")) {
+            try g.w.writeAll("std.ascii.endsWithIgnoreCase(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "containsIgnoreCase")) {
+            try g.w.writeAll("(std.ascii.indexOfIgnoreCase(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(") != null)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "indexOfIgnoreCase")) {
+            try g.w.writeAll("(if (std.ascii.indexOfIgnoreCase(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")) |_ii| @as(i64, @intCast(_ii)) else @as(i64, -1))");
+            return true;
+        }
+        // ── indexOfFrom(sub, start) ───────────────────────────────────────────
+        if (std.mem.eql(u8, method, "indexOfFrom")) {
+            try g.w.writeAll("(if (std.mem.indexOfPos(u8, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(", @intCast(");
+            if (args.len > 1) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll("), ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")) |_if| @as(i64, @intCast(_if)) else @as(i64, -1))");
+            return true;
+        }
+        // ── toIntBase(base) ───────────────────────────────────────────────────
+        if (std.mem.eql(u8, method, "toIntBase")) {
+            try g.w.writeAll("(std.fmt.parseInt(i64, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(", @intCast(");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("10");
+            try g.w.writeAll(")) catch 0)");
+            return true;
+        }
+        // ── tokenize(delim) — split skipping empty tokens, returns ArrayList ────
+        if (std.mem.eql(u8, method, "tokenize")) {
+            try g.w.writeAll("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\" \"");
+            try g.w.writeAll("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })");
+            return true;
+        }
+        // ── Base64 instance methods (ergonomic form) ──────────────────────────
+        if (std.mem.eql(u8, method, "encodeBase64")) {
+            try g.w.writeAll("_base64_encode(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "decodeBase64")) {
+            try g.w.writeAll("_base64_decode_str(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
             return true;
         }
         return false;
@@ -8508,13 +8864,17 @@ const Generator = struct {
                         }
                     }
                 }
-                // Math constants: Math.PI, Math.E, Math.TAU, Math.INF, Math.NAN
+                // Math constants: Math.PI, Math.E, Math.TAU, Math.INF, Math.NAN, Math.PHI, etc.
                 if (e.object.* == .ident and std.mem.eql(u8, e.object.ident.name, "Math")) {
-                    if (std.mem.eql(u8, e.member, "PI"))  { try g.w.writeAll("std.math.pi");      break :sw; }
-                    if (std.mem.eql(u8, e.member, "E"))   { try g.w.writeAll("std.math.e");       break :sw; }
-                    if (std.mem.eql(u8, e.member, "TAU")) { try g.w.writeAll("std.math.tau");     break :sw; }
-                    if (std.mem.eql(u8, e.member, "INF")) { try g.w.writeAll("std.math.inf(f64)"); break :sw; }
-                    if (std.mem.eql(u8, e.member, "NAN")) { try g.w.writeAll("std.math.nan(f64)"); break :sw; }
+                    if (std.mem.eql(u8, e.member, "PI"))    { try g.w.writeAll("std.math.pi");      break :sw; }
+                    if (std.mem.eql(u8, e.member, "E"))     { try g.w.writeAll("std.math.e");       break :sw; }
+                    if (std.mem.eql(u8, e.member, "TAU"))   { try g.w.writeAll("std.math.tau");     break :sw; }
+                    if (std.mem.eql(u8, e.member, "INF"))   { try g.w.writeAll("std.math.inf(f64)"); break :sw; }
+                    if (std.mem.eql(u8, e.member, "NAN"))   { try g.w.writeAll("std.math.nan(f64)"); break :sw; }
+                    if (std.mem.eql(u8, e.member, "PHI"))   { try g.w.writeAll("std.math.phi");     break :sw; }
+                    if (std.mem.eql(u8, e.member, "SQRT2")) { try g.w.writeAll("std.math.sqrt2");   break :sw; }
+                    if (std.mem.eql(u8, e.member, "LN2"))   { try g.w.writeAll("std.math.ln2");     break :sw; }
+                    if (std.mem.eql(u8, e.member, "LN10"))  { try g.w.writeAll("std.math.ln10");    break :sw; }
                 }
                 // Tuple index access: p.0 → p.@"0"
                 if (e.member.len > 0 and std.ascii.isDigit(e.member[0])) {
@@ -8866,6 +9226,59 @@ const Generator = struct {
                 } else {
                     try g.w.print("._type_tag == _ttag_{s})", .{e.type_name});
                 }
+            },
+
+            // `a < b < c` — chained comparison.
+            // Emits a labeled block that captures each middle operand in a temp
+            // const so each expression is evaluated exactly once (Python semantics).
+            // Pattern: (_cchain_N: { const _cm0_N = b; break :_cchain_N (_zebra_lt(a, _cm0_N) and _zebra_lt(_cm0_N, c)); })
+            .chained_cmp => |cc| {
+                const uid = g.nextUid();
+                const n = cc.ops.len; // number of operator/pair slots
+                // Open labeled block
+                try g.w.print("(_cchain_{d}: {{", .{uid});
+                // Declare temps for each middle operand (indices 1..n-1 of operands)
+                for (0..n - 1) |i| {
+                    try g.w.print("const _cm{d}_{d} = ", .{i, uid});
+                    try g.genExpr(cc.operands[i + 1]);
+                    try g.w.writeAll("; ");
+                }
+                try g.w.print("break :_cchain_{d} (", .{uid});
+                for (0..n) |i| {
+                    if (i > 0) try g.w.writeAll(" and ");
+                    const op = cc.ops[i];
+                    switch (op) {
+                        .lt, .le, .gt, .ge => {
+                            const helper: []const u8 = switch (op) {
+                                .lt => "_zebra_lt", .le => "_zebra_le",
+                                .gt => "_zebra_gt", .ge => "_zebra_ge",
+                                else => unreachable,
+                            };
+                            try g.w.writeAll(helper);
+                            try g.w.writeAll("(");
+                            if (i == 0) try g.genExpr(cc.operands[0])
+                            else        try g.w.print("_cm{d}_{d}", .{i - 1, uid});
+                            try g.w.writeAll(", ");
+                            if (i == n - 1) try g.genExpr(cc.operands[n])
+                            else            try g.w.print("_cm{d}_{d}", .{i, uid});
+                            try g.w.writeAll(")");
+                        },
+                        .eq, .ne => {
+                            // Use _zebra_eq/_zebra_ne helpers so string equality works correctly.
+                            const helper: []const u8 = if (op == .eq) "_zebra_eq" else "_zebra_ne";
+                            try g.w.writeAll(helper);
+                            try g.w.writeAll("(");
+                            if (i == 0) try g.genExpr(cc.operands[0])
+                            else        try g.w.print("_cm{d}_{d}", .{i - 1, uid});
+                            try g.w.writeAll(", ");
+                            if (i == n - 1) try g.genExpr(cc.operands[n])
+                            else            try g.w.print("_cm{d}_{d}", .{i, uid});
+                            try g.w.writeAll(")");
+                        },
+                        else => unreachable,
+                    }
+                }
+                try g.w.writeAll("); })");
             },
         }
     }
@@ -9601,6 +10014,20 @@ const Generator = struct {
             const mem = e.callee.member;
             if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Progress")) {
                 if (try g.genProgressCall(mem.member, e.args)) return;
+            }
+        }
+        // Profile static calls: Profile.start/stop/report/dump_folded/reset.
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Profile")) {
+                if (try g.genProfileCall(mem.member, e.args)) return;
+            }
+        }
+        // Base64 static calls: Base64.encode/decode/encodeUrl/decodeUrl.
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Base64")) {
+                if (try g.genBase64Call(mem.member, e.args)) return;
             }
         }
         // HttpResponse factory: HttpResponse.ok(body), HttpResponse.notFound(body), etc.

@@ -495,6 +495,11 @@ def exprMentionsThis(e: Expr): bool
             return false
         on Expr.except_ as ex
             return exprMentionsThis(ex.base)
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if exprMentionsThis(op)
+                    return true
+            return false
         else
             pass
     return false
@@ -992,6 +997,8 @@ def exprLine(e: Expr): int
         on Expr.except_ as x
             return x.span.line
         on Expr.old_ as x
+            return x.span.line
+        on Expr.chained_cmp as x
             return x.span.line
 
 def stmtLine(s: Stmt): int
@@ -2727,6 +2734,9 @@ struct Generator
                 addAddrOfMutationsInExpr(te.expr, out)
             on Expr.type_check as tc2
                 addAddrOfMutationsInExpr(tc2.expr, out)
+            on Expr.chained_cmp as cc
+                for op in cc.operands
+                    addAddrOfMutationsInExpr(op, out)
             else
                 pass
 
@@ -4960,6 +4970,11 @@ struct Generator
                         if containsResultRef(ep)
                             return true
                 return false
+            on Expr.chained_cmp as cc
+                for op in cc.operands
+                    if containsResultRef(op)
+                        return true
+                return false
             else
                 return false
 
@@ -5035,6 +5050,9 @@ struct Generator
                 collectAndEmitOldSnapshots(ex.base)
                 for f in ex.fields
                     collectAndEmitOldSnapshots(f.value)
+            on Expr.chained_cmp as cc
+                for op in cc.operands
+                    collectAndEmitOldSnapshots(op)
             else
                 pass
 
@@ -5281,6 +5299,36 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".len))")
                         return
+                # Math constants: Math.PI, Math.E, Math.TAU, Math.PHI, etc.
+                if m.object is Expr.ident as math_id
+                    if math_id.name == "Math"
+                        if m.member == "PI"
+                            w.emit("std.math.pi")
+                            return
+                        if m.member == "E"
+                            w.emit("std.math.e")
+                            return
+                        if m.member == "TAU"
+                            w.emit("std.math.tau")
+                            return
+                        if m.member == "INF"
+                            w.emit("std.math.inf(f64)")
+                            return
+                        if m.member == "NAN"
+                            w.emit("std.math.nan(f64)")
+                            return
+                        if m.member == "PHI"
+                            w.emit("std.math.phi")
+                            return
+                        if m.member == "SQRT2"
+                            w.emit("std.math.sqrt2")
+                            return
+                        if m.member == "LN2"
+                            w.emit("std.math.ln2")
+                            return
+                        if m.member == "LN10"
+                            w.emit("std.math.ln10")
+                            return
                 # Tuple index access: p.0 → p.@"0"
                 if m.member.len > 0 and m.member.isNumeric()
                     genExpr(m.object)
@@ -5478,6 +5526,51 @@ struct Generator
                     w.emit(o.uid.toString())
                 else
                     genExpr(o.operand)
+            on Expr.chained_cmp as cc
+                # a < b < c → (_cchain_N: { const _cm0_N = b; break :_cchain_N (_zebra_lt(a, _cm0_N) and _zebra_lt(_cm0_N, c)); })
+                var cc_uid = w.nextUid()
+                var cc_n = cc.ops.count()
+                w.emit("(_cchain_" + cc_uid.toString() + ": {")
+                # Emit temps for middle operands (indices 1..n-1)
+                var cc_ti = 0
+                while cc_ti < cc_n - 1
+                    w.emit("const _cm" + cc_ti.toString() + "_" + cc_uid.toString() + " = ")
+                    genExpr(cc.operands.at(cc_ti + 1))
+                    w.emit("; ")
+                    cc_ti = cc_ti + 1
+                w.emit("break :_cchain_" + cc_uid.toString() + " (")
+                var cc_ci = 0
+                while cc_ci < cc_n
+                    if cc_ci > 0
+                        w.emit(" and ")
+                    var cc_op = cc.ops.at(cc_ci)
+                    if cc_op == "=="
+                        w.emit("_zebra_eq(")
+                    else if cc_op == "!="
+                        w.emit("_zebra_ne(")
+                    else if cc_op == "<"
+                        w.emit("_zebra_lt(")
+                    else if cc_op == "<="
+                        w.emit("_zebra_le(")
+                    else if cc_op == ">"
+                        w.emit("_zebra_gt(")
+                    else
+                        w.emit("_zebra_ge(")
+                    # Left operand: first operand or previous temp
+                    if cc_ci == 0
+                        genExpr(cc.operands.at(0))
+                    else
+                        w.emit("_cm" + (cc_ci - 1).toString() + "_" + cc_uid.toString())
+                    w.emit(", ")
+                    # Right operand: current temp or last operand
+                    if cc_ci < cc_n - 1
+                        w.emit("_cm" + cc_ci.toString() + "_" + cc_uid.toString())
+                    else
+                        genExpr(cc.operands.at(cc_n))
+                    w.emit(")")
+                    cc_ci = cc_ci + 1
+                w.emit("); })")
+
             on Expr.except_ as ex
                 # struct update: blk: { var _tmp = base; _tmp.f = v; break :blk _tmp; }
                 w.emit("blk: { var _except_tmp = ")
@@ -6785,6 +6878,12 @@ struct Generator
             if id.name == "Progress"
                 genProgressCall(mname, args)
                 return
+            if id.name == "Profile"
+                genProfileCall(mname, args)
+                return
+            if id.name == "Base64"
+                genBase64Call(mname, args)
+                return
             if id.name == "Uri"
                 genUriCall(mname, args)
                 return
@@ -6997,6 +7096,84 @@ struct Generator
             w.emit(", ")
             genExpr(args.at(0).value)
             w.emit(")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1))")
+            return
+        if mname == "eqlIgnoreCase" and args.count() > 0
+            w.emit("std.ascii.eqlIgnoreCase(")
+            genExpr(m.object)
+            w.emit(", ")
+            genExpr(args.at(0).value)
+            w.emit(")")
+            return
+        if mname == "isAlphanumeric"
+            w.emit("(blk_ian: { const _ian_s = ")
+            genExpr(m.object)
+            w.emit("; if (_ian_s.len == 0) break :blk_ian false; for (_ian_s) |_ian_c| { if (!std.ascii.isAlphanumeric(_ian_c)) break :blk_ian false; } break :blk_ian true; })")
+            return
+        if mname == "isPrintable"
+            w.emit("(blk_ipr: { const _ipr_s = ")
+            genExpr(m.object)
+            w.emit("; if (_ipr_s.len == 0) break :blk_ipr false; for (_ipr_s) |_ipr_c| { if (!std.ascii.isPrint(_ipr_c)) break :blk_ipr false; } break :blk_ipr true; })")
+            return
+        if mname == "startsWithIgnoreCase" and args.count() > 0
+            w.emit("(blk_swic: { const _swic_s = ")
+            genExpr(m.object)
+            w.emit("; const _swic_p = ")
+            genExpr(args.at(0).value)
+            w.emit("; break :blk_swic _swic_s.len >= _swic_p.len and std.ascii.eqlIgnoreCase(_swic_s[0.._swic_p.len], _swic_p); })")
+            return
+        if mname == "endsWithIgnoreCase" and args.count() > 0
+            w.emit("(blk_ewic: { const _ewic_s = ")
+            genExpr(m.object)
+            w.emit("; const _ewic_p = ")
+            genExpr(args.at(0).value)
+            w.emit("; break :blk_ewic _ewic_s.len >= _ewic_p.len and std.ascii.eqlIgnoreCase(_ewic_s[_ewic_s.len - _ewic_p.len..], _ewic_p); })")
+            return
+        if mname == "containsIgnoreCase" and args.count() > 0
+            w.emit("(blk_cic: { const _cic_s = ")
+            genExpr(m.object)
+            w.emit("; const _cic_p = ")
+            genExpr(args.at(0).value)
+            w.emit("; var _cic_i: usize = 0; while (_cic_i + _cic_p.len <= _cic_s.len) : (_cic_i += 1) { if (std.ascii.eqlIgnoreCase(_cic_s[_cic_i.._cic_i + _cic_p.len], _cic_p)) break :blk_cic true; } break :blk_cic false; })")
+            return
+        if mname == "indexOfIgnoreCase" and args.count() > 0
+            w.emit("(blk_ioic: { const _ioic_s = ")
+            genExpr(m.object)
+            w.emit("; const _ioic_p = ")
+            genExpr(args.at(0).value)
+            w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
+            return
+        if mname == "indexOfFrom" and args.count() >= 2
+            w.emit("(if (std.mem.indexOfPos(u8, ")
+            genExpr(m.object)
+            w.emit(", @intCast(")
+            genExpr(args.at(1).value)
+            w.emit("), ")
+            genExpr(args.at(0).value)
+            w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
+            return
+        if mname == "toIntBase" and args.count() > 0
+            w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")
+            genExpr(args.at(0).value)
+            w.emit("); break :blk_tib @as(i64, std.fmt.parseInt(i64, ")
+            genExpr(m.object)
+            w.emit(", _tib_base) catch 0); })")
+            return
+        if mname == "tokenize" and args.count() > 0 and isStringBoth(m.object, "tokenize")
+            w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
+            genExpr(m.object)
+            w.emit(", ")
+            genExpr(args.at(0).value)
+            w.emit("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+            return
+        if mname == "encodeBase64"
+            w.emit("_base64_encode(")
+            genExpr(m.object)
+            w.emit(")")
+            return
+        if mname == "decodeBase64"
+            w.emit("_base64_decode_str(")
+            genExpr(m.object)
+            w.emit(")")
             return
         if mname == "isAlpha"
             w.emit("(blk_ia: { if (")
@@ -7226,6 +7403,153 @@ struct Generator
             return
         if mname == "E"
             w.emit("std.math.e")
+            return
+        # Hyperbolic trig — std.math.* doesn't accept comptime_float; cast to f64
+        if mname == "sinh" or mname == "cosh" or mname == "tanh" or mname == "asinh" or mname == "acosh" or mname == "atanh"
+            w.emit("std.math.")
+            w.emit(mname)
+            w.emit("(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        # Cube root, numerically stable variants
+        if mname == "cbrt" or mname == "log1p" or mname == "expm1"
+            w.emit("std.math.")
+            w.emit(mname)
+            w.emit("(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        # Euclidean distance: hypot(a, b)
+        if mname == "hypot"
+            w.emit("std.math.hypot(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("), @as(f64, ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        # Linear interpolation: lerp(a, b, t)
+        if mname == "lerp"
+            w.emit("std.math.lerp(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("), @as(f64, ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit("), @as(f64, ")
+            if args.count() >= 3
+                genExpr(args.at(2).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        # Number theory: gcd/lcm — Euclidean algorithm, returns i64
+        if mname == "gcd"
+            w.emit("(blk_gcd: { var _ga = @as(i64, @intCast(@abs(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))); var _gb = @as(i64, @intCast(@abs(")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit("))); while (_gb != 0) { const _gt = _gb; _gb = @mod(_ga, _gb); _ga = _gt; } break :blk_gcd _ga; })")
+            return
+        if mname == "lcm"
+            w.emit("(blk_lcm: { const _la = @as(i64, @intCast(@abs(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))); const _lb = @as(i64, @intCast(@abs(")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit("))); var _lg = _la; var _lh = _lb; while (_lh != 0) { const _lt = _lh; _lh = @mod(_lg, _lh); _lg = _lt; } break :blk_lcm if (_lg == 0) @as(i64, 0) else @divExact(_la, _lg) * _lb; })")
+            return
+        # Angle conversion
+        if mname == "toRadians"
+            w.emit("(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(") * std.math.pi / 180.0)")
+            return
+        if mname == "toDegrees"
+            w.emit("(@as(f64, ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(") * 180.0 / std.math.pi)")
+            return
+        # Integer predicates
+        if mname == "isPowerOfTwo"
+            w.emit("(blk_po2: { const _po2 = ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("; break :blk_po2 _po2 > 0 and (_po2 & (_po2 - 1)) == 0; })")
+            return
+        # wrap(x, r) — Python-style always-non-negative modulo
+        if mname == "wrap"
+            w.emit("@mod(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("1")
+            w.emit(")")
+            return
+        # Bit operations
+        if mname == "popcount"
+            w.emit("@as(i64, @intCast(@popCount(@as(u64, @intCast(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")))))")
+            return
+        if mname == "clz"
+            w.emit("@as(i64, @intCast(@clz(@as(u64, @intCast(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")))))")
+            return
+        if mname == "ctz"
+            w.emit("@as(i64, @intCast(@ctz(@as(u64, @intCast(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")))))")
             return
         # Default: std.math.name(args)
         w.emit("std.math.")
@@ -7542,6 +7866,43 @@ struct Generator
                 w.emit("\"\"")
             w.emit(") catch @panic(\"File.delete error\"))")
             return
+        if mname == "size"
+            w.emit("(blk_fsz: { const _sz_stat = std.fs.cwd().statFile(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(") catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })")
+            return
+        if mname == "isFile"
+            w.emit("(blk_fif: { const _if_stat = std.fs.cwd().statFile(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(") catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })")
+            return
+        if mname == "isDir"
+            w.emit("(blk_fid: { var _fd_dir = std.fs.cwd().openDir(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", .{}) catch break :blk_fid false; _fd_dir.close(); break :blk_fid true; })")
+            return
+        if mname == "writeLines"
+            w.emit("_file_write_lines(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
         if mname == "modtime"
             w.emit("(blk_mt: {\n")
             writeIndent()
@@ -7611,7 +7972,7 @@ struct Generator
             w.emit("})")
             return
         if mname == "getenv"
-            w.emit("std.posix.getenv(")
+            w.emit("_sys_getenv(")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -7625,6 +7986,22 @@ struct Generator
             else
                 w.emit("0")
             w.emit(")) * std.time.ns_per_ms)")
+            return
+        if mname == "cwd"
+            w.emit("(std.fs.cwd().realpathAlloc(_allocator, \".\") catch @panic(\"sys.cwd error\"))")
+            return
+        if mname == "setenv"
+            w.emit("_sys_setenv(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
             return
         # Fallback: unknown sys method
         w.emit("@compileError(\"selfhost: unknown sys.")
@@ -7906,6 +8283,43 @@ struct Generator
                 w.emit("\"\"")
             w.emit(")")
             return
+        if mname == "crc32"
+            w.emit("_hash_crc32(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "fnv64"
+            w.emit("_hash_fnv64(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "xxHash64"
+            w.emit("_hash_xxhash64(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "hmac512"
+            w.emit("_hash_hmac512(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
         w.emit("@compileError(\"selfhost: unknown Hash.")
         w.emit(mname)
         w.emit("\")")
@@ -7953,6 +8367,19 @@ struct Generator
                 w.emit(".items[_rng().uintLessThan(usize, ")
                 genExpr(args.at(0).value)
                 w.emit(".items.len)]")
+            return
+        if mname == "gaussian"
+            w.emit("_random_gaussian(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0.0")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("1.0")
+            w.emit(")")
             return
         if mname == "shuffle"
             if args.count() > 0
@@ -8109,6 +8536,70 @@ struct Generator
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Progress.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── genProfileCall ───────────────────────────────────────────────────────
+    def genProfileCall(mname: str, args: List(Arg))
+        if mname == "start"
+            w.emit("_profile_start(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "end"
+            w.emit("_profile_end()")
+            return
+        if mname == "report"
+            w.emit("_profile_report()")
+            return
+        if mname == "dump_folded"
+            w.emit("_profile_dump_folded()")
+            return
+        if mname == "reset"
+            w.emit("_profile_reset()")
+            return
+        w.emit("@compileError(\"selfhost: unknown Profile.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── genBase64Call ────────────────────────────────────────────────────────
+    def genBase64Call(mname: str, args: List(Arg))
+        if mname == "encode"
+            w.emit("_base64_encode(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "decode"
+            w.emit("_base64_decode(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "encodeUrl"
+            w.emit("_base64_encode_url(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "decodeUrl"
+            w.emit("_base64_decode_url(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Base64.")
         w.emit(mname)
         w.emit("\")")
 
@@ -8440,6 +8931,14 @@ struct Generator
             else
                 w.emit("\"\"")
             w.emit("))")
+            return
+        if mname == "absolute"
+            w.emit("(blk_pa: { const _pp = ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit("; break :blk_pa std.fs.cwd().realpathAlloc(_allocator, _pp) catch _pp; })")
             return
         w.emit("@compileError(\"selfhost: unknown Path.")
         w.emit(mname)

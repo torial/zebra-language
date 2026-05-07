@@ -1,0 +1,28 @@
+def main()
+    var path = "test_stdlib_file_tmp.txt"
+
+    # writeLines
+    var lines: List(str) = List(str)()
+    lines.add("line one")
+    lines.add("line two")
+    lines.add("line three")
+    File.writeLines(path, lines)
+
+    # exists / isFile / isDir
+    assert File.exists(path)
+    assert File.isFile(path)
+    assert not File.isDir(path)
+
+    # size
+    var sz = File.size(path)
+    assert sz > 0
+
+    # isDir on a real directory
+    assert File.isDir("test")
+    assert not File.isFile("test")
+
+    # cleanup
+    File.delete(path)
+    assert not File.exists(path)
+
+    print "stdlib_file OK"

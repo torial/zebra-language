@@ -357,7 +357,7 @@ class Resolver
             return true
         if name == "Dir" or name == "Path" or name == "HttpResponse"
             return true
-        if name == "Progress"
+        if name == "Progress" or name == "Profile" or name == "Base64"
             return true
         return false
 

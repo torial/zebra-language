@@ -56,6 +56,14 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
+fn _zebra_eq(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return std.mem.eql(u8, a, b);
+    return a == b;
+}
+fn _zebra_ne(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return !std.mem.eql(u8, a, b);
+    return a != b;
+}
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
@@ -1540,6 +1548,159 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
     _progress_ensure_root();
     const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
     return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
+// ── Profile stdlib ────────────────────────────────────────────────────────────
+const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
+var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
+var _profile_name_stack: std.ArrayList([]const u8) = .{};
+var _profile_time_stack: std.ArrayList(i128) = .{};
+fn _profile_start(name: []const u8) void {
+    _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+}
+fn _profile_end() void {
+    const start_ns = _profile_time_stack.pop() orelse return;
+    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
+    var key_buf: std.ArrayList(u8) = .{};
+    defer key_buf.deinit(std.heap.page_allocator);
+    for (_profile_name_stack.items, 0..) |n, i| {
+        if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
+        key_buf.appendSlice(std.heap.page_allocator, n) catch @panic("OOM");
+    }
+    _ = _profile_name_stack.pop();
+    if (_profile_entries.getPtr(key_buf.items)) |e| {
+        e.total_ns += elapsed_ns;
+        e.call_count += 1;
+    } else {
+        const owned_key = std.heap.page_allocator.dupe(u8, key_buf.items) catch @panic("OOM");
+        _profile_entries.put(owned_key, .{ .total_ns = elapsed_ns, .call_count = 1 }) catch @panic("OOM");
+    }
+}
+fn _profile_report() void {
+    const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
+    var list: std.ArrayList(_ProfEntry) = .{};
+    defer list.deinit(std.heap.page_allocator);
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        list.append(std.heap.page_allocator, .{ .key = e.key_ptr.*, .total_ns = e.value_ptr.total_ns, .calls = e.value_ptr.call_count }) catch @panic("OOM");
+    }
+    const _Cmp = struct {
+        fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
+    };
+    std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
+    const _w = std.fs.File.stdout().deprecatedWriter();
+    _w.writeAll("── Profile report ───────────────────────────────────────────────\n") catch {};
+    for (list.items) |e| {
+        const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
+        _w.print("  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch {};
+    }
+}
+fn _profile_dump_folded() void {
+    const _w = std.fs.File.stdout().deprecatedWriter();
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
+        _w.print("{s} {d}\n", .{ e.key_ptr.*, us }) catch {};
+    }
+}
+fn _profile_reset() void {
+    _profile_entries.clearRetainingCapacity();
+    _profile_name_stack.clearRetainingCapacity();
+    _profile_time_stack.clearRetainingCapacity();
+}
+// ── Base64 stdlib ─────────────────────────────────────────────────────────────
+fn _base64_encode(s: []const u8) []const u8 {
+    const enc = std.base64.standard.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode(s: []const u8) ?[]const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+fn _base64_decode_str(s: []const u8) []const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch @panic("invalid base64");
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch @panic("invalid base64");
+    return out;
+}
+fn _base64_encode_url(s: []const u8) []const u8 {
+    const enc = std.base64.url_safe_no_pad.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode_url(s: []const u8) ?[]const u8 {
+    const dec = std.base64.url_safe_no_pad.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+// ── Hash fast (non-crypto) hashes ────────────────────────────────────────────
+fn _hash_crc32(s: []const u8) i64 {
+    return @as(i64, @intCast(std.hash.crc.Crc32.hash(s)));
+}
+fn _hash_fnv64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.Fnv1a_64.hash(s)));
+}
+fn _hash_xxhash64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
+}
+fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
+    var out: [std.crypto.auth.hmac.sha2.HmacSha512.mac_length]u8 = undefined;
+    std.crypto.auth.hmac.sha2.HmacSha512.create(&out, data, key);
+    return _hex_encode(&out);
+}
+// ── Random extended ───────────────────────────────────────────────────────────
+fn _random_gaussian(mean: f64, stddev: f64) f64 {
+    const _gu1 = _rng().float(f64);
+    const _gu2 = _rng().float(f64);
+    const _gz = @sqrt(-2.0 * @log(_gu1)) * @cos(2.0 * std.math.pi * _gu2);
+    return mean + stddev * _gz;
+}
+fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
+    if (items.items.len == 0) return "";
+    var total: f64 = 0.0;
+    for (weights.items) |w| total += w;
+    var r = _rng().float(f64) * total;
+    for (items.items, 0..) |item, i| {
+        r -= if (i < weights.items.len) weights.items[i] else 0.0;
+        if (r <= 0.0) return item;
+    }
+    return items.items[items.items.len - 1];
+}
+// ── File extended ─────────────────────────────────────────────────────────────
+fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
+    var content = std.ArrayList(u8){};
+    defer content.deinit(_allocator);
+    for (lines.items) |line| {
+        content.appendSlice(_allocator, line) catch return;
+        content.append(_allocator, '\n') catch return;
+    }
+    std.fs.cwd().writeFile(.{ .sub_path = path, .data = content.items }) catch {};
+}
+// ── sys extended ──────────────────────────────────────────────────────────────
+fn _sys_setenv(key: []const u8, val: []const u8) void {
+    if (comptime builtin.os.tag == .windows) {
+        const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
+        defer _allocator.free(key_w);
+        const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
+        defer _allocator.free(val_w);
+        _ = std.os.windows.kernel32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
+    } else {
+        std.posix.setenv(key, val) catch {};
+    }
+}
+fn _sys_getenv(key: []const u8) ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+    } else {
+        return std.posix.getenv(key);
+    }
 }
 
 const Token = @import("Token.zig");

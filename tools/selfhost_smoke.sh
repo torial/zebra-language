@@ -193,6 +193,23 @@ smoke test/bug117_list_join_test.zbr
 # BUG-118: plain struct construction → struct literal (no cue init means no .init() method).
 smoke test/bug118_struct_ctor_test.zbr
 
+# Chained comparisons: a < b < c desugars to labeled-block and-chain.
+smoke test/chained_cmp_test.zbr
+# unless/until: parser-level desugar to if-not / while-not.
+smoke test/unless_until_test.zbr
+# Profile stdlib: start/stop/report/dump_folded/reset (stack-based instrumentation).
+smoke test/profile_test.zbr
+
+# Stdlib additions: Math, Base64, String methods, Hash, File, misc (sys/Random/Path).
+smoke test/stdlib_math_test.zbr
+smoke test/stdlib_base64_test.zbr
+smoke test/stdlib_str_test.zbr
+smoke test/stdlib_hash_test.zbr
+smoke test/stdlib_file_test.zbr
+smoke test/stdlib_misc_test.zbr
+# Combined integration test: all stdlib additions together.
+smoke test/stdlib_additions_test.zbr
+
 # Scripting tools: first Zebra port of an escape-hatch guard script.
 smoke tools/escape_hatches_check.zbr
 # Scripting tool #1: strip invisible glyphs (U+FEFF / U+FE0F) from book .md files.

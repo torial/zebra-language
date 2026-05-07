@@ -518,6 +518,15 @@ const Printer = struct {
             .try_        => |n| { try p.w("(try ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .tuple_lit   => |n| { try p.w("(tuple", .{}); for (n.elems) |el| { try p.w(" ", .{}); try p.printExpr(el.*); } try p.w(")", .{}); },
             .type_check  => |n| { try p.w("(is ", .{}); try p.printExpr(n.expr.*); try p.w(" {s})", .{n.type_name}); },
+            .chained_cmp => |n| {
+                try p.w("(chain", .{});
+                for (n.operands, 0..) |op, i| {
+                    try p.w(" ", .{});
+                    try p.printExpr(op.*);
+                    if (i < n.ops.len) try p.w(" {s}", .{@tagName(n.ops[i])});
+                }
+                try p.w(")", .{});
+            },
         }
     }
 

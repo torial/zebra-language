@@ -1,0 +1,35 @@
+def main()
+    # sys.cwd() — returns current working directory
+    var cwd = sys.cwd()
+    assert cwd.len > 0
+
+    # sys.setenv() — set an environment variable
+    sys.setenv("ZEBRA_TEST_VAR", "hello_zebra")
+    var val = sys.getenv("ZEBRA_TEST_VAR")
+    assert val != nil
+    assert val to! == "hello_zebra"
+
+    # Random.gaussian() — normal distribution (mean=0, stddev=1)
+    var g = Random.gaussian()
+    # Just verify it returns a float in a plausible range
+    assert g > -10.0 and g < 10.0
+
+    # Random.weighted(keys, weights) — returns a weighted-random key
+    var keys: List(str) = List(str)()
+    keys.add("a")
+    keys.add("b")
+    keys.add("c")
+    var weights: List(float) = List(float)()
+    weights.add(1.0)
+    weights.add(0.0)
+    weights.add(0.0)
+    # With weight 1.0/0.0/0.0, "a" must always win
+    var choice = Random.weighted(keys, weights)
+    assert choice == "a"
+
+    # Path.absolute() — resolve a relative path to absolute
+    var abs = Path.absolute(".")
+    assert abs.len > 0
+    assert not abs.startsWith(".")
+
+    print "stdlib_misc OK"

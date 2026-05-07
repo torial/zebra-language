@@ -142,6 +142,8 @@ union TokenKind
     kw_else
     kw_lock
     kw_while
+    kw_unless
+    kw_until
     kw_for
     kw_break
     kw_continue
@@ -290,6 +292,10 @@ class Keywords
             return TokenKind.kw_lock()
         if word == "while"
             return TokenKind.kw_while()
+        if word == "unless"
+            return TokenKind.kw_unless()
+        if word == "until"
+            return TokenKind.kw_until()
         if word == "for"
             return TokenKind.kw_for()
         if word == "break"

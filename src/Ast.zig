@@ -606,6 +606,7 @@ pub const Expr = union(enum) {
     try_: *ExprTry,    // try expr — propagate error upward
     tuple_lit: *ExprTuple,  // (a, b, c) — tuple literal
     type_check: *ExprTypeCheck, // expr is TypeName — runtime type-ID check
+    chained_cmp: *ExprChainedCmp, // a < b < c — chained comparison (desugared to and-chain at codegen)
 };
 
 // ── Literal expressions ───────────────────────────────────────────────────────
@@ -894,6 +895,17 @@ pub const ExprTry = struct {
 pub const ExprTuple = struct {
     span:  Span,
     elems: []const *Expr,
+};
+
+/// `a < b < c` (or any chain of chainable comparison operators).
+/// `ops.len == operands.len - 1`. Each pair `(operands[i], ops[i], operands[i+1])`
+/// is one comparison; the whole chain desugars to all pairs joined by `and`.
+/// Chainable ops: lt, le, gt, ge, eq, ne.  Middle operands are captured in temp
+/// variables at codegen time so each expression is evaluated exactly once.
+pub const ExprChainedCmp = struct {
+    span:     Span,
+    ops:      []const BinaryOp,
+    operands: []const *Expr, // length = ops.len + 1
 };
 
 // ── Arena helpers ─────────────────────────────────────────────────────────────

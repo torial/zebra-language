@@ -1,0 +1,25 @@
+def main()
+    # Basic integer ordering chain
+    var x: int = 5
+    assert 0 < x < 10, "0 < x < 10 should be true"
+    assert not (0 < x < 4), "0 < x < 4 should be false"
+
+    # Homogeneous le chain
+    var a: int = 3
+    var b: int = 3
+    var c: int = 7
+    assert a <= b <= c, "a <= b <= c should be true"
+    assert not (a <= b <= 2), "a <= b <= 2 should be false"
+
+    # Mixed operators
+    assert 1 < 2 <= 5 < 10, "1 < 2 <= 5 < 10 should be true"
+
+    # Three-link chain: a < b < c < d
+    var n: int = 4
+    assert 1 < 2 < n < 100, "1 < 2 < n < 100 should be true"
+
+    # Standalone (non-chained) comparison still works
+    assert x < 10, "plain comparison should still work"
+    assert not (x < 3), "plain comparison false case"
+
+    print "chained_cmp tests passed"

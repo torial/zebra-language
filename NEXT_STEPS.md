@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-06 (BUG-102/103/104 robustness; Phase 13 style sweeps: BUG-114 done, class-Main→def-main() 103 files; bootstrap 5/5, smoke 44/44)
+**Last updated:** 2026-05-06 (`unless`/`until` — parser-level desugar; both backends; bootstrap 5/5, smoke 55/55)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -187,11 +187,12 @@ See `wiki/pages/concepts/concept_zebra-simd-design.md` for the complete design.
 Items that land in the same window as SIMD or that unlock the 0.12/0.13 work:
 - **gzip compress** — blocked on Zig 0.16 (`std.compress.flate.Compress` is `@panic("TODO")` in Zig 0.15.2); unblock once Zig upgrades
 - **`once` method modifier** — body executes at most once; result cached on the instance
-- **Chained comparisons** — `0 < x < 100` desugars to `0 < x and x < 100`
-- **`unless` / `until`** — negated conditional + loop forms
+- ✅ **Chained comparisons** — `0 < x < 100` desugars to labeled-block and-chain; both backends; 54/54 smoke; bootstrap 5/5 (2026-05-06)
+- ✅ **`unless` / `until`** — parser-level desugar; both backends; 55/55 smoke; bootstrap 5/5 (2026-05-06)
 - **JSON auto-inference** — `Json.parse(T, str)` infers target struct without a separate `as T` annotation
 - **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering
-- **Profiler** — sampling profiler; output compatible with flamegraph or Zig's tracy integration
+- ✅ **Profiler (Part A)** — static `Profile` module: `start/end/report/dump_folded/reset`; stack-based instrumentation with flamegraph-compatible folded output; both backends; 56/56 smoke; bootstrap 5/5 (2026-05-06)
+- **Profiler (Part B)** — `@profile` method attribute: compiler wraps body with `_profile_start`/`defer _profile_end` automatically; touches Modifiers + grammar + AstBuilder + CodeGen
 See `wiki/pages/projects/project_zebra.md` (milestone table 0.11).
 
 ---
@@ -403,6 +404,9 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | BUG-099 selfhost port: `Type_` three-way split in `typechecker.zbr`; `isAbstractType()` helper; alarm bell behind `InferCtx.strict` (typecheck-merge only); bootstrap 5/5, smoke 44/44 | 2026-05-06 |
 | §19 selfhost TC diagnostics Phase 1: `Diagnostic` struct + `InferCtx.errors` + primitive mismatch detection; `selfhost_compat` 2/2 PASS; bootstrap 5/5 | 2026-05-05 |
 | §19.5b `zebra typecheck-merge` subcommand: conflict-side extraction + TC check; line-number preservation; diff3 support; git hook installer; bootstrap 5/5 | 2026-05-05 |
+| Chained comparisons `a < b < c` — `ExprChainedCmp` AST; labeled-block and-chain with temps; `_zebra_eq`/`_zebra_ne` preamble; selfhost parser loop + all 6 selfhost phases; 54/54 smoke; bootstrap 5/5 | 2026-05-06 |
+| `unless`/`until` — parser-level desugar (`unless` → `if not`; `until` → `while not`); `unless...else` rejected at parse time; no new AST nodes; both backends; 55/55 smoke; bootstrap 5/5 | 2026-05-06 |
+| Stdlib gap sprint (Sprints 1–5): Math (constants, hyperbolic trig, cbrt, hypot, log1p, expm1, lerp, gcd, lcm, toRadians, toDegrees, isPowerOfTwo, wrap, popcount, clz, ctz); String (lastIndexOf, eqlIgnoreCase, isAlphanumeric, isPrintable, startsWithIgnoreCase, endsWithIgnoreCase, containsIgnoreCase, indexOfIgnoreCase, indexOfFrom, toIntBase, tokenize, encodeBase64, decodeBase64); Base64 module (encode/decode/encodeUrl/decodeUrl + preamble); Hash (crc32, fnv64, xxHash64, hmac512); File (size, isFile, isDir, writeLines); sys (cwd, setenv); Path.absolute; Random.gaussian, Random.weighted — all TC-inferred + selfhost-mirrored + 6 test files; 62/62 smoke; bootstrap 5/5 | 2026-05-06 |
 
 ---
 

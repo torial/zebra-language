@@ -670,11 +670,15 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "join" or name == "toString"
         return Type_.string_
+    if name == "tokenize" or name == "encodeBase64"
+        return Type_.string_
     if name == "count"
         return Type_.int_
     if name == "indexOf" or name == "lastIndexOf"
         return Type_.optional(Type_.int_)
     if name == "codePointCount" or name == "toInt"
+        return Type_.int_
+    if name == "indexOfFrom" or name == "toIntBase" or name == "indexOfIgnoreCase"
         return Type_.int_
     if name == "toFloat"
         return Type_.float_
@@ -682,8 +686,14 @@ def stringMethodReturn(name: str): Type_?
         return Type_.bool_
     if name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
         return Type_.bool_
+    if name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable"
+        return Type_.bool_
+    if name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase"
+        return Type_.bool_
     if name == "fromHex"
         return Type_.optional(Type_.string_)
+    if name == "decodeBase64" or name == "encodeBase64"
+        return Type_.string_
     return nil
 
 # Phase 17d diagnostic: short tag name for a Type_ variant. Caller may strip.
@@ -1053,6 +1063,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.str_slice
                 else
                     return Type_.unresolved
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                walkExpr(op, ctx)
+            return Type_.bool_
         else
             return Type_.unresolved
 

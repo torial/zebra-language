@@ -246,6 +246,8 @@ pub const TokenKind = enum {
     kw_else,
     kw_lock,
     kw_while,
+    kw_unless,   // unless cond { } — desugar to if not cond
+    kw_until,    // until cond { } — desugar to while not cond
     kw_for,
     kw_break,
     kw_continue,
@@ -356,6 +358,8 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "else",        .kw_else },
     .{ "lock",        .kw_lock },
     .{ "while",       .kw_while },
+    .{ "unless",      .kw_unless },
+    .{ "until",       .kw_until },
     .{ "for",         .kw_for },
     .{ "break",       .kw_break },
     .{ "continue",    .kw_continue },
