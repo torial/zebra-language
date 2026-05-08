@@ -27,7 +27,7 @@ cd "$REPO"
 # ── Baselines ─────────────────────────────────────────────────────────────
 #
 # selfhost/stdlib_preamble.zig — the runtime preamble embedded by both
-# backends.  Clusters (as of 2026-04-28):
+# backends.  Clusters (as of 2026-05-06):
 #   - 1× _arena root allocator (program arena lives on page_allocator)
 #   - 3× _str_pool / _intern (interned strings survive arena rewinds)
 #   - ~12× JSON parse/stringify/object/array/put-* (JsonValue outlives arenas)
@@ -35,7 +35,9 @@ cd "$REPO"
 #   - ~5× http_serve / Net misc helpers
 #   - ~16× misc utilities (Hash, Compress, etc.) where Zig stdlib APIs
 #          require an allocator and the result is meant to live forever
-EXPECTED_PREAMBLE=43
+#   - 9× Profile stdlib (HashMap + stack allocs that outlive arena rewinds;
+#         profile data must survive the scope that is being profiled)
+EXPECTED_PREAMBLE=52
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)
