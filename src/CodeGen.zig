@@ -1788,6 +1788,12 @@ const Generator = struct {
             \\    endChildFn:         *const fn () void,
             \\    treeNodeFn:         *const fn (label: []const u8) bool,
             \\    treePopFn:          *const fn () void,
+            \\    setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
+            \\    setColorsDarkFn:    *const fn () void,
+            \\    setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
+            \\    setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
+            \\    scaleAllSizesFn:    *const fn (scale: f32) void,
+            \\    getDpiFn:           *const fn () f32,
             \\};
             \\const GuiContext = struct {
             \\    _b: *const _GuiBackend,
@@ -1821,6 +1827,20 @@ const Generator = struct {
             \\    }
             \\    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
             \\    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+            \\    pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
+            \\        self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
+            \\    }
+            \\    pub fn setColorsDark(self: GuiContext) void { self._b.setColorsDarkFn(); }
+            \\    pub fn setStyleFloat(self: GuiContext, name: []const u8, value: f64) void {
+            \\        self._b.setStyleFloatFn(name, @floatCast(value));
+            \\    }
+            \\    pub fn setVec2(self: GuiContext, name: []const u8, x: f64, y: f64) void {
+            \\        self._b.setVec2Fn(name, @floatCast(x), @floatCast(y));
+            \\    }
+            \\    pub fn scaleAllSizes(self: GuiContext, scale: f64) void {
+            \\        self._b.scaleAllSizesFn(@floatCast(scale));
+            \\    }
+            \\    pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
             \\    pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
             \\        if (self._b.beginPanelFn(label)) {
             \\            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1934,6 +1954,12 @@ const Generator = struct {
                 \\fn _stub_end_child() void {}
                 \\fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
                 \\fn _stub_tree_pop() void {}
+                \\fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+                \\fn _stub_set_colors_dark() void {}
+                \\fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+                \\fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+                \\fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
+                \\fn _stub_get_dpi() f32 { return 1.0; }
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -1966,6 +1992,12 @@ const Generator = struct {
                 \\    .endChildFn         = _stub_end_child,
                 \\    .treeNodeFn         = _stub_tree_node,
                 \\    .treePopFn          = _stub_tree_pop,
+                \\    .setColorFn         = _stub_set_color,
+                \\    .setColorsDarkFn    = _stub_set_colors_dark,
+                \\    .setStyleFloatFn    = _stub_set_style_float,
+                \\    .setVec2Fn          = _stub_set_vec2,
+                \\    .scaleAllSizesFn    = _stub_scale_all_sizes,
+                \\    .getDpiFn           = _stub_get_dpi,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2253,6 +2285,40 @@ const Generator = struct {
                 \\    return zgui.treeNode(_z);
                 \\}
                 \\fn _imgui_tree_pop() void { zgui.treePop(); }
+                \\fn _imgui_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void {
+                \\    if (std.meta.stringToEnum(zgui.StyleCol, role)) |col| {
+                \\        zgui.getStyle().setColor(col, .{ r, g, b, a });
+                \\    }
+                \\}
+                \\fn _imgui_set_colors_dark() void { zgui.styleColorsDark(zgui.getStyle()); }
+                \\fn _imgui_set_style_float(name: []const u8, value: f32) void {
+                \\    const _s = zgui.getStyle();
+                \\    if (std.mem.eql(u8, name, "frame_rounding"))         { _s.frame_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "child_rounding"))     { _s.child_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "popup_rounding"))     { _s.popup_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "scrollbar_rounding")) { _s.scrollbar_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "grab_rounding"))      { _s.grab_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "tab_rounding"))       { _s.tab_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "window_rounding"))    { _s.window_rounding = value; }
+                \\    else if (std.mem.eql(u8, name, "scrollbar_size"))     { _s.scrollbar_size = value; }
+                \\    else if (std.mem.eql(u8, name, "grab_min_size"))      { _s.grab_min_size = value; }
+                \\    else if (std.mem.eql(u8, name, "window_border_size")) { _s.window_border_size = value; }
+                \\    else if (std.mem.eql(u8, name, "frame_border_size"))  { _s.frame_border_size = value; }
+                \\    else if (std.mem.eql(u8, name, "child_border_size"))  { _s.child_border_size = value; }
+                \\    else if (std.mem.eql(u8, name, "popup_border_size"))  { _s.popup_border_size = value; }
+                \\}
+                \\fn _imgui_set_vec2(name: []const u8, x: f32, y: f32) void {
+                \\    const _s = zgui.getStyle();
+                \\    if (std.mem.eql(u8, name, "frame_padding"))         { _s.frame_padding = .{ x, y }; }
+                \\    else if (std.mem.eql(u8, name, "item_spacing"))     { _s.item_spacing = .{ x, y }; }
+                \\    else if (std.mem.eql(u8, name, "window_padding"))   { _s.window_padding = .{ x, y }; }
+                \\}
+                \\fn _imgui_scale_all_sizes(scale: f32) void { zgui.getStyle().scaleAllSizes(scale); }
+                \\fn _imgui_get_dpi() f32 {
+                \\    const _mon = zglfw.getPrimaryMonitor() orelse return 1.0;
+                \\    const _cs = _mon.getContentScale();
+                \\    return @max(1.0, _cs[0]);
+                \\}
                 \\const _gui_imgui_backend = _GuiBackend{
                 \\    .initFn             = _imgui_init,
                 \\    .deinitFn           = _imgui_deinit,
@@ -2285,6 +2351,12 @@ const Generator = struct {
                 \\    .endChildFn         = _imgui_end_child,
                 \\    .treeNodeFn         = _imgui_tree_node,
                 \\    .treePopFn          = _imgui_tree_pop,
+                \\    .setColorFn         = _imgui_set_color,
+                \\    .setColorsDarkFn    = _imgui_set_colors_dark,
+                \\    .setStyleFloatFn    = _imgui_set_style_float,
+                \\    .setVec2Fn          = _imgui_set_vec2,
+                \\    .scaleAllSizesFn    = _imgui_scale_all_sizes,
+                \\    .getDpiFn           = _imgui_get_dpi,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
                 \\
@@ -2369,6 +2441,12 @@ const Generator = struct {
                 \\fn _stub_end_child() void {}
                 \\fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
                 \\fn _stub_tree_pop() void {}
+                \\fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+                \\fn _stub_set_colors_dark() void {}
+                \\fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+                \\fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+                \\fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
+                \\fn _stub_get_dpi() f32 { return 1.0; }
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -2401,6 +2479,12 @@ const Generator = struct {
                 \\    .endChildFn         = _stub_end_child,
                 \\    .treeNodeFn         = _stub_tree_node,
                 \\    .treePopFn          = _stub_tree_pop,
+                \\    .setColorFn         = _stub_set_color,
+                \\    .setColorsDarkFn    = _stub_set_colors_dark,
+                \\    .setStyleFloatFn    = _stub_set_style_float,
+                \\    .setVec2Fn          = _stub_set_vec2,
+                \\    .scaleAllSizesFn    = _stub_scale_all_sizes,
+                \\    .getDpiFn           = _stub_get_dpi,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -5879,7 +5963,7 @@ const Generator = struct {
 
     // ── Gui static + widget methods ──────────────────────────────────────────
 
-    /// Gui.run(title, width, height, callback) → _gui_run(...)
+    /// Gui.run / Gui.setColor / Gui.setColorsDark / Gui.setStyleFloat / Gui.setVec2 / Gui.scaleAllSizes / Gui.getDpi
     fn genGuiCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "run")) {
             if (g.uses_gui_ptr) |p| p.* = true;
@@ -5892,6 +5976,58 @@ const Generator = struct {
             try g.w.writeAll(", ");
             if (args.len >= 4) try g.genExpr(args[3].value) else try g.w.writeAll("undefined");
             try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setColor")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("_gui_active_backend.setColorFn(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", @as(f32, @floatCast(");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")), @as(f32, @floatCast(");
+            if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")), @as(f32, @floatCast(");
+            if (args.len >= 4) try g.genExpr(args[3].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")), @as(f32, @floatCast(");
+            if (args.len >= 5) try g.genExpr(args[4].value) else try g.w.writeAll("1");
+            try g.w.writeAll(")))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setColorsDark")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("_gui_active_backend.setColorsDarkFn()");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setStyleFloat")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("_gui_active_backend.setStyleFloatFn(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", @as(f32, @floatCast(");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setVec2")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("_gui_active_backend.setVec2Fn(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", @as(f32, @floatCast(");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")), @as(f32, @floatCast(");
+            if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "scaleAllSizes")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("_gui_active_backend.scaleAllSizesFn(@as(f32, @floatCast(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("1");
+            try g.w.writeAll(")))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "getDpi")) {
+            if (g.uses_gui_ptr) |p| p.* = true;
+            try g.w.writeAll("@as(f64, @floatCast(_gui_active_backend.getDpiFn()))");
             return true;
         }
         return false;

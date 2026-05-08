@@ -1140,11 +1140,28 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    beginPanelFn:  *const fn (label: []const u8) bool,
-    endPanelFn:    *const fn () void,
-    beginWindowFn: *const fn (label: []const u8) bool,
-    endWindowFn:   *const fn () void,
+    beginPanelFn:       *const fn (label: []const u8) bool,
+    endPanelFn:         *const fn () void,
+    beginWindowFn:      *const fn (label: []const u8) bool,
+    endWindowFn:        *const fn () void,
+    selectableFn:       *const fn (label: []const u8) bool,
+    textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
+    beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
+    tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableHeadersRowFn:  *const fn () void,
+    tableNextRowFn:     *const fn () void,
+    tableNextColumnFn:  *const fn () bool,
+    endTableFn:         *const fn () void,
+    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
+    endChildFn:         *const fn () void,
+    treeNodeFn:         *const fn (label: []const u8) bool,
+    treePopFn:          *const fn () void,
+    setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
+    setColorsDarkFn:    *const fn () void,
+    setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
+    setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
+    scaleAllSizesFn:    *const fn (scale: f32) void,
+    getDpiFn:           *const fn () f32,
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
@@ -1159,6 +1176,39 @@ const GuiContext = struct {
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
+    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
+        self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
+    }
+    pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
+    pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
+    pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
+    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
+        const _vis = self._b.beginChildFn(id, w, h);
+        if (_vis) {
+            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+        }
+        self._b.endChildFn();
+    }
+    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
+        self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
+    }
+    pub fn setColorsDark(self: GuiContext) void { self._b.setColorsDarkFn(); }
+    pub fn setStyleFloat(self: GuiContext, name: []const u8, value: f64) void {
+        self._b.setStyleFloatFn(name, @floatCast(value));
+    }
+    pub fn setVec2(self: GuiContext, name: []const u8, x: f64, y: f64) void {
+        self._b.setVec2Fn(name, @floatCast(x), @floatCast(y));
+    }
+    pub fn scaleAllSizes(self: GuiContext, scale: f64) void {
+        self._b.scaleAllSizesFn(@floatCast(scale));
+    }
+    pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
             if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1189,7 +1239,7 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
-// ─── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ────────
+// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
 const _CodeEditor = struct { text: []const u8, read_only: bool };
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
@@ -1200,11 +1250,13 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = 
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
 fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
+    const _r = _g.inputMultiline(id, _ed.text, w, h);
     if (!_ed.read_only) { _ed.text = _r; }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -1253,27 +1305,62 @@ fn _stub_begin_window(label: []const u8) bool {
     return true;
 }
 fn _stub_end_window() void {}
+fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
+fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
+fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
+fn _stub_table_headers_row() void {}
+fn _stub_table_next_row() void {}
+fn _stub_table_next_column() bool { return true; }
+fn _stub_end_table() void {}
+fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+fn _stub_end_child() void {}
+fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
+fn _stub_tree_pop() void {}
+fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+fn _stub_set_colors_dark() void {}
+fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
+fn _stub_get_dpi() f32 { return 1.0; }
 const _gui_stub_backend = _GuiBackend{
-    .initFn        = _stub_init,
-    .deinitFn      = _stub_deinit,
-    .newFrameFn    = _stub_new_frame,
-    .endFrameFn    = _stub_end_frame,
-    .textFn        = _stub_text,
-    .separatorFn   = _stub_separator,
-    .sameLineFn    = _stub_same_line,
-    .spacingFn     = _stub_spacing,
-    .indentFn      = _stub_indent,
-    .unindentFn    = _stub_unindent,
-    .buttonFn      = _stub_button,
-    .checkboxFn    = _stub_checkbox,
-    .sliderFn      = _stub_slider,
-    .inputFn       = _stub_input,
-    .inputMultilineFn = _stub_input_multiline,
-    .codeEditorFn  = _stub_input_multiline,
-    .beginPanelFn  = _stub_begin_panel,
-    .endPanelFn    = _stub_end_panel,
-    .beginWindowFn = _stub_begin_window,
-    .endWindowFn   = _stub_end_window,
+    .initFn             = _stub_init,
+    .deinitFn           = _stub_deinit,
+    .newFrameFn         = _stub_new_frame,
+    .endFrameFn         = _stub_end_frame,
+    .textFn             = _stub_text,
+    .separatorFn        = _stub_separator,
+    .sameLineFn         = _stub_same_line,
+    .spacingFn          = _stub_spacing,
+    .indentFn           = _stub_indent,
+    .unindentFn         = _stub_unindent,
+    .buttonFn           = _stub_button,
+    .checkboxFn         = _stub_checkbox,
+    .sliderFn           = _stub_slider,
+    .inputFn            = _stub_input,
+    .inputMultilineFn   = _stub_input_multiline,
+    .beginPanelFn       = _stub_begin_panel,
+    .endPanelFn         = _stub_end_panel,
+    .beginWindowFn      = _stub_begin_window,
+    .endWindowFn        = _stub_end_window,
+    .selectableFn       = _stub_selectable,
+    .textColoredFn      = _stub_text_colored,
+    .beginTableFn       = _stub_begin_table,
+    .tableSetupColumnFn = _stub_table_setup_column,
+    .tableHeadersRowFn  = _stub_table_headers_row,
+    .tableNextRowFn     = _stub_table_next_row,
+    .tableNextColumnFn  = _stub_table_next_column,
+    .endTableFn         = _stub_end_table,
+    .beginChildFn       = _stub_begin_child,
+    .endChildFn         = _stub_end_child,
+    .treeNodeFn         = _stub_tree_node,
+    .treePopFn          = _stub_tree_pop,
+    .setColorFn         = _stub_set_color,
+    .setColorsDarkFn    = _stub_set_colors_dark,
+    .setStyleFloatFn    = _stub_set_style_float,
+    .setVec2Fn          = _stub_set_vec2,
+    .scaleAllSizesFn    = _stub_scale_all_sizes,
+    .getDpiFn           = _stub_get_dpi,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===

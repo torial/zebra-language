@@ -8739,6 +8739,79 @@ struct Generator
                 w.emit("undefined")
             w.emit(")")
             return
+        if mname == "setColor"
+            w.emit("_gui_active_backend.setColorFn(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", @as(f32, @floatCast(")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit(")), @as(f32, @floatCast(")
+            if args.count() >= 3
+                genExpr(args.at(2).value)
+            else
+                w.emit("0")
+            w.emit(")), @as(f32, @floatCast(")
+            if args.count() >= 4
+                genExpr(args.at(3).value)
+            else
+                w.emit("0")
+            w.emit(")), @as(f32, @floatCast(")
+            if args.count() >= 5
+                genExpr(args.at(4).value)
+            else
+                w.emit("1")
+            w.emit(")))")
+            return
+        if mname == "setColorsDark"
+            w.emit("_gui_active_backend.setColorsDarkFn()")
+            return
+        if mname == "setStyleFloat"
+            w.emit("_gui_active_backend.setStyleFloatFn(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", @as(f32, @floatCast(")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit(")))")
+            return
+        if mname == "setVec2"
+            w.emit("_gui_active_backend.setVec2Fn(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", @as(f32, @floatCast(")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit(")), @as(f32, @floatCast(")
+            if args.count() >= 3
+                genExpr(args.at(2).value)
+            else
+                w.emit("0")
+            w.emit(")))")
+            return
+        if mname == "scaleAllSizes"
+            w.emit("_gui_active_backend.scaleAllSizesFn(@as(f32, @floatCast(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("1")
+            w.emit(")))")
+            return
+        if mname == "getDpi"
+            w.emit("@as(f64, @floatCast(_gui_active_backend.getDpiFn()))")
+            return
         w.emit("@compileError(\"selfhost: unknown Gui.")
         w.emit(mname)
         w.emit("\")")
