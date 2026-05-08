@@ -2133,6 +2133,11 @@ const TypeChecker = struct {
                     if (callee.member.object.* == .ident and
                         std.mem.eql(u8, callee.member.object.ident.name, "Net")) return .string;
                 }
+                // Reflect.fieldNames(obj) / Reflect.fieldTypes(obj) → each element is a string
+                if (std.mem.eql(u8, m, "fieldNames") or std.mem.eql(u8, m, "fieldTypes")) {
+                    if (callee.member.object.* == .ident and
+                        std.mem.eql(u8, callee.member.object.ident.name, "Reflect")) return .string;
+                }
             }
         }
         // str_slice / json_array variable — check expr_types first, then narrowed_types.

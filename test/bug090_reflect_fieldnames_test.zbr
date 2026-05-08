@@ -1,0 +1,20 @@
+# BUG-090: for n in Reflect.fieldNames(obj) — loop var type was unknown (printed as {any}).
+# Fix: inferForInElemType now recognises Reflect.fieldNames/fieldTypes as []str sources.
+
+@reflectable
+class User
+    var name: str = ""
+    var age: int = 0
+
+def main()
+    var u = User()
+    u.name = "Alice"
+    u.age = 30
+    var names: List(str) = List(str)()
+    for n in Reflect.fieldNames(u)
+        names.add(n)
+    assert names.count() == 2, "field count"
+    # field order: name, age (declaration order)
+    assert names.at(0) == "name", "first field"
+    assert names.at(1) == "age",  "second field"
+    print "ok"

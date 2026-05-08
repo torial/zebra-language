@@ -510,9 +510,14 @@ REMAINING (deferred):
 
 ---
 
-### BUG-090: `for n in Reflect.fieldNames(obj)` loses element type — `print n` emits `{any}`
+### BUG-090: ✅ FIXED 2026-05-08 — `for n in Reflect.fieldNames(obj)` element type is now `str`
 - **Severity:** Low (cosmetic; iteration itself is correct)
-- **Status:** Open
+- **Status:** Fixed:
+  - `src/TypeChecker.zig inferForInElemType`: added `Reflect.fieldNames` / `Reflect.fieldTypes` arm alongside `Net.resolve` — returns `.string`.
+  - `selfhost/typechecker.zbr isStrListCallExpr`: added `fieldNames` / `fieldTypes` to the member-name check.
+  - Test: `test/bug090_reflect_fieldnames_test.zbr`; added to `selfhost_smoke.sh`.
+  - Bootstrap 5/5.
+- **Original description:**
 - **Symptom:** Iterating a `Reflect.fieldNames(obj)` result (or any other `[]str`-returning stdlib call) loses the element type, so `print n` inside the loop emits the byte-array fallback instead of the string.
 - **Reproducer:**
   ```zebra

@@ -202,6 +202,8 @@ smoke test/bug091_dispatch_test.zbr
 smoke test/bug092_split_to_list_test.zbr
 # BUG-097: *ArrayList chain calls — Case 1 (ptr→ptr, no &) and Case 2 (ptr→value, .* deref).
 smoke test/bug097_ptr_param_chain_test.zbr
+# BUG-090: for n in Reflect.fieldNames(obj) — loop var element type is now str (not unknown).
+smoke test/bug090_reflect_fieldnames_test.zbr
 # BUG-096: List(SomeClass)() constructor — genTypeFromExpr must emit *ClassName for class type args.
 smoke test/bug096_list_class_ctor_test.zbr
 # BUG-093: s.len emits @as(i64,@intCast()) — matches QUICKSTART int contract.

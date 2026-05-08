@@ -1140,6 +1140,9 @@ def isStrListCallExpr(e: Expr): bool
                 return true
             if mem.member == "groups" or mem.member == "findAll"
                 return true
+            # BUG-090: Reflect.fieldNames / Reflect.fieldTypes return []str
+            if mem.member == "fieldNames" or mem.member == "fieldTypes"
+                return true
     return false
 
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
