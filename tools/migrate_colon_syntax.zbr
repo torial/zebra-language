@@ -1,0 +1,84 @@
+# Migrate Zebra source files from `as T` type-annotation syntax to `: T`.
+# Port of tools/migrate_colon_syntax.py.
+#
+# Rules:
+#   - Replace ` as T` with `: T` on lines that are NOT branch-on binding lines.
+#   - A branch-on line starts (after stripping) with `on `.
+#   - Only replaces when the token after `as` starts with an uppercase letter,
+#     `^`, `!`, or `?` (type-annotation starters), leaving `if x as n` capture
+#     bindings (lowercase variable names) intact.
+#
+# Note: this migration was already applied repo-wide before the `if x as n`
+# optional-unwrap syntax existed.  The tool is kept as a template and for
+# future one-shot migrations.
+#
+# Run from repo root: zebra tools/migrate_colon_syntax.zbr [--dry-run]
+
+def isTypeAnnotStart(ch: char): bool
+    return (ch >= c'A' and ch <= c'Z') or ch == c'^' or ch == c'!' or ch == c'?'
+
+def migrateLine(line: str): str
+    var trimmed = line.trimLeft()
+    if trimmed.startsWith("on ")
+        return line
+    if trimmed.startsWith("#")
+        return line
+    var parts: List(str) = line.split(" as ")
+    if parts.count() <= 1
+        return line
+    var result = parts.at(0)
+    var i = 1
+    while i < parts.count()
+        var part = parts.at(i)
+        var sep = " as "
+        if part.len > 0
+            var ch: char = part[0]
+            if isTypeAnnotStart(ch)
+                sep = ": "
+        result = result + sep + part
+        i = i + 1
+    return result
+
+def processFile(path: str, dry_run: bool): int
+    var text = File.read(path)
+    var lines: List(str) = text.split("\n")
+    var out: List(str) = List()
+    var changes = 0
+    for line in lines
+        var new_line = migrateLine(line)
+        if new_line != line
+            changes = changes + 1
+        out.add(new_line)
+    if changes > 0
+        var new_text = out.join("\n")
+        if not dry_run
+            File.write(path, new_text)
+        print "  " + path + ": " + changes.toString() + " line(s) changed"
+    return changes
+
+def main()
+    var args = Arg.parse()
+    var dry_run = args.flag("--dry-run", "-n")
+
+    var dirs: List(str) = List()
+    dirs.add("selfhost")
+    dirs.add("test")
+    dirs.add("examples")
+    dirs.add("tools")
+
+    var total = 0
+    for dir_ in dirs
+        if not File.exists(dir_)
+            continue
+        var files = Dir.walk(dir_)
+        files.sort()
+        for path in files
+            if not path.endsWith(".zbr")
+                continue
+            total = total + processFile(path, dry_run)
+
+    print ""
+    if dry_run
+        print "Total lines that would change: " + total.toString() + " (dry run)"
+    else
+        print "Total lines changed: " + total.toString()

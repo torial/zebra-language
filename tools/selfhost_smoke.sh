@@ -228,6 +228,8 @@ smoke tools/escape_hatches_check.zbr
 smoke tools/book_strip_invisibles.zbr
 # Scripting tool #2: class Main → top-level def sweep.
 smoke tools/sweep_class_main.zbr
+# Scripting tool #3: migrate `as T` type-annotation syntax to `: T`.
+smoke tools/migrate_colon_syntax.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
