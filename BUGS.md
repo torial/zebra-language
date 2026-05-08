@@ -467,19 +467,14 @@ REMAINING (deferred):
 
 ---
 
-### BUG-093: `s.len` is `usize`, no `int` conversion — arithmetic fails on slice indices
-- **Severity:** Low (forces awkward workarounds; comparisons still work)
-- **Status:** Open
-- **Symptom:** `s.len` codegens as `.len` on a `[]const u8`, which is `usize` in Zig.  Comparisons against `int` literals auto-promote (`if s.len > 3` works), but **subtraction fails**: `s.len - 3` for slice indices errors with "arithmetic operands must have the same type: 'uint' vs 'int'".  No `s.len.toInt()` builtin, and `s.len to int` is a parse error.
-- **Reproducer:**
-  ```zebra
-  var s: str = "hello.md"
-  var n: int = s.len             # ← "expected i64, found usize"
-  var trimmed: str = s[0..s.len - 3]   # ← "uint vs int" arithmetic error
-  ```
-- **Workaround:** Compute length via a counter loop (`for c in s: n = n + 1`), or use methods like `s.endsWith(...)` that don't require length arithmetic.
-- **Doc claim:** QUICKSTART §3 says `s.len` is `int`.  Either fix the codegen to emit a typed `i64` (with a runtime `@intCast`) or update the doc.
-- **Discovered:** 2026-04-29 while writing `book_extract.zbr` (needed `s.len - 3` to strip `.md` from filenames).
+### BUG-093: ✅ FIXED 2026-05-05 — `s.len` now emits `@as(i64, @intCast(...))` — returns `int`
+- **Severity:** Low (was forcing awkward workarounds; comparisons still worked)
+- **Status:** Fixed:
+  - `src/CodeGen.zig`: `isStringTypeName(n.name) and prop == "len"` path emits `@as(i64, @intCast(s.len))`.
+  - `selfhost/codegen.zbr`: same `@as(i64, @intCast(...))` wrapper in the genMember string path.
+  - Test: `test/bug093_strlen_test.zbr` (commit `dbd6fda`); added to `selfhost_smoke.sh`.
+- **Original symptom:** `s.len` codegenned as `.len` on `[]const u8` (usize), causing `var n: int = s.len` and `s.len - 3` arithmetic to fail with type mismatch.
+- **Discovered:** 2026-04-29 while writing `book_extract.zbr`.
 
 ---
 

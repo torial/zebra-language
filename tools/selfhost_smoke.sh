@@ -202,6 +202,8 @@ smoke test/bug091_dispatch_test.zbr
 smoke test/bug092_split_to_list_test.zbr
 # BUG-096: List(SomeClass)() constructor — genTypeFromExpr must emit *ClassName for class type args.
 smoke test/bug096_list_class_ctor_test.zbr
+# BUG-093: s.len emits @as(i64,@intCast()) — matches QUICKSTART int contract.
+smoke test/bug093_strlen_test.zbr
 
 # Chained comparisons: a < b < c desugars to labeled-block and-chain.
 smoke test/chained_cmp_test.zbr
