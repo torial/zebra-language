@@ -15,8 +15,12 @@ tools/*.zig
 # Generated parity-check outputs
 _parity_sh/
 
-# Generated IDE project (Zig output from IDE/ZebraIDE.zbr)
-IDE/ZebraIDE_gui/
+# IDE project — ignore artifacts and generated files; track build.zig, shims, vendor
+IDE/ZebraIDE_gui/.zig-cache/
+IDE/ZebraIDE_gui/zig-out/
+IDE/ZebraIDE_gui/imgui.ini
+IDE/ZebraIDE_gui/src/main.zig
+IDE/ZebraIDE_gui/src/fonts/
 
 # Test fixture compile artifacts
 test/selfhost_compat/*.zig
