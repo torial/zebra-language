@@ -1517,6 +1517,12 @@ const Generator = struct {
     /// Used to emit `// zbr:file:line` markers before each statement so
     /// that Zig compiler errors can be remapped to Zebra source locations.
     source_file: []const u8 = "",
+    /// BUG-097: param names in the current function that are emitted as
+    /// `*ArrayList` (because BUG-091 `paramNeedsAddrOf` returned true for them).
+    /// `genArgs` uses this for three-case logic: ptr→ptr (pass as-is),
+    /// ptr→value (emit `arg.*`), value→ptr (emit `&arg`).
+    /// Null at module scope and when no params need addr-of.
+    caller_ptr_params: ?*const std.StringHashMap(void) = null,
     /// True when generating the body of a generic class (emitted as a comptime
     /// function `pub fn Name(comptime T: type) type { return struct { … }; }`).
     /// Enables `@This()` instead of `owner` for self-type references in init/methods.
@@ -3468,6 +3474,17 @@ const Generator = struct {
             // Mutable map of closure-var names (populated lazily during genStmts)
             var cv_map = std.StringHashMap(void).init(g.alloc);
             defer cv_map.deinit();
+            // BUG-097: track which params are emitted as *ArrayList so genArgs
+            // can use three-case logic instead of binary &/no-& (see argIdentInCpp).
+            var cpp = std.StringHashMap(void).init(g.alloc);
+            defer cpp.deinit();
+            if (!is_tco) {
+                for (n.params) |p| {
+                    if (paramNeedsAddrOf(p, n.body, g.alloc, g.tc))
+                        try cpp.put(p.name, {});
+                }
+            }
+            mg.caller_ptr_params = if (cpp.count() > 0) &cpp else null;
 
             try g.w.writeAll(" {\n");
 
@@ -9724,6 +9741,16 @@ const Generator = struct {
         try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, uid });
     }
 
+    /// BUG-097: true iff `expr` is a bare identifier that appears in `cpp`
+    /// (the set of caller params emitted as `*ArrayList`).
+    fn argIdentInCpp(expr: *const Ast.Expr, cpp: ?*const std.StringHashMap(void)) bool {
+        const c = cpp orelse return false;
+        switch (expr.*) {
+            .ident => |id| return c.contains(id.name),
+            else   => return false,
+        }
+    }
+
     /// Emit a comma-separated argument list, honouring named args and defaults.
     /// If params is null or no arg is named, falls back to positional emission.
     /// `body` (when non-null) is the callee's body — used to decide whether a
@@ -9746,10 +9773,22 @@ const Generator = struct {
                             try g.genBoxedArgExpr(a.value, pt.ref_to.*);
                             continue;
                         };
-                        // BUG-091: take `&` for List/HashMap params mutated by the body.
+                        // BUG-091/097: addr-of, pass-through, or deref for container params.
                         if (paramNeedsAddrOf(ps[i], body, g.alloc, g.tc)) {
-                            try g.w.writeAll("&");
+                            if (argIdentInCpp(a.value, g.caller_ptr_params)) {
+                                // Case 1: arg is already *ArrayList, callee wants *ArrayList.
+                                try g.genArgExpr(a.value);
+                            } else {
+                                try g.w.writeAll("&");
+                                try g.genArgExpr(a.value);
+                            }
+                            continue;
+                        }
+                        // Case 2: arg is *ArrayList but callee wants plain ArrayList → deref.
+                        const ps_i_is_container = if (ps[i].type_) |pt| isContainerType(pt) else false;
+                        if (ps_i_is_container and argIdentInCpp(a.value, g.caller_ptr_params)) {
                             try g.genArgExpr(a.value);
+                            try g.w.writeAll(".*");
                             continue;
                         }
                     }
@@ -9781,12 +9820,22 @@ const Generator = struct {
                     break :blk pt == .ref_to;
                 } else false;
                 const param_needs_addr = if (i < ps.len) paramNeedsAddrOf(ps[i], body, g.alloc, g.tc) else false;
+                const param_is_container = if (i < ps.len) if (ps[i].type_) |pt| isContainerType(pt) else false else false;
                 if (maybe_expr) |expr| {
                     if (param_is_ref) {
                         try g.genBoxedArgExpr(expr, ps[i].type_.?.ref_to.*);
                     } else if (param_needs_addr) {
-                        try g.w.writeAll("&");
+                        if (argIdentInCpp(expr, g.caller_ptr_params)) {
+                            // Case 1: arg is already *ArrayList, callee wants *ArrayList.
+                            try g.genArgExpr(expr);
+                        } else {
+                            try g.w.writeAll("&");
+                            try g.genArgExpr(expr);
+                        }
+                    } else if (param_is_container and argIdentInCpp(expr, g.caller_ptr_params)) {
+                        // Case 2: arg is *ArrayList but callee wants plain ArrayList → deref.
                         try g.genArgExpr(expr);
+                        try g.w.writeAll(".*");
                     } else {
                         try g.genArgExpr(expr);
                     }

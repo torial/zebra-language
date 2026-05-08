@@ -1,0 +1,40 @@
+# BUG-097: List/HashMap *ArrayList chain call — two follow-on cases from BUG-091.
+#
+# Case 1 (*ArrayList double-addr): when fill() calls appendAll(dst, extra), dst is
+#   *ArrayList in fill's sig (direct mutation below) AND appendAll also takes *ArrayList.
+#   genArgs must NOT emit &dst again — that would produce **ArrayList (Zig rejects).
+#
+# Case 2 (*ArrayList where ArrayList expected): when fill() calls hasValue(dst, "alpha"),
+#   dst is *ArrayList in fill's param list but hasValue expects a plain ArrayList.
+#   genArgs must emit dst.* (deref) — not dst (type mismatch) or &dst (**ArrayList).
+
+def hasValue(items: List(str), x: str): bool
+    for item in items
+        if item == x
+            return true
+    return false
+
+def appendAll(dst: List(str), src: List(str))
+    for s in src
+        dst.add(s)
+
+# dst is directly mutated here (dst.add) so paramNeedsAddrOf detects it as *ArrayList.
+# Then:
+#   appendAll(dst, extra)    → Case 1: dst is *ArrayList, appendAll.dst also *ArrayList → pass as-is
+#   hasValue(dst, "alpha")   → Case 2: dst is *ArrayList, hasValue.items is plain ArrayList → dst.*
+def populate(dst: List(str), extra: List(str))
+    dst.add("seed")
+    appendAll(dst, extra)
+    assert hasValue(dst, "alpha"), "hasValue on ptr-param"
+
+def main()
+    var out: List(str) = List(str)()
+    var items: List(str) = List(str)()
+    items.add("alpha")
+    items.add("beta")
+    populate(out, items)
+    assert out.count() == 3, "count (seed+alpha+beta)"
+    assert out.at(0) == "seed", "first"
+    assert out.at(1) == "alpha", "second"
+    assert hasValue(out, "beta"), "hasValue direct"
+    print "ok"

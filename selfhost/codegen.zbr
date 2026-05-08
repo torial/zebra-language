@@ -1152,6 +1152,9 @@ struct Generator
     var strip_contracts      : bool     # true when --turbo: suppress require/ensure/invariant emit
     var ensure_armed_active  : bool     # true while emitting a fn body whose ensure emits _ensure_armed
     var ensure_uses_result   : bool     # true while emitting a fn body whose ensure references `result`
+    # BUG-097: param names emitted as *ArrayList in the current method (BUG-091).
+    # genArgListNamed uses this for three-case logic: ptr→ptr (pass), ptr→value (.*), value→ptr (&).
+    var caller_ptr_params    : StrSet
 
     invariant
         indent >= 0
@@ -1216,6 +1219,7 @@ struct Generator
         .strip_contracts       = false
         .ensure_armed_active   = false
         .ensure_uses_result    = false
+        .caller_ptr_params     = StrSet()
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1243,6 +1247,13 @@ struct Generator
         var g = this except
             indent = indent + 1
         return g
+
+    # BUG-097: true iff e is a bare identifier in caller_ptr_params
+    # (i.e., already emitted as *ArrayList in the current method signature).
+    def argIdentInCpp(e: Expr): bool
+        if e is Expr.ident as ei
+            return caller_ptr_params.contains_(ei.name)
+        return false
 
     def withEnsureCtx(armed: bool, uses_result: bool): Generator
         var g = this except
@@ -1364,6 +1375,7 @@ struct Generator
             hashmap_locals         = StrSet()
             hashmap_str_key_locals = StrSet()
             hashmap_str_val_locals = StrSet()
+            caller_ptr_params = StrSet()
         return g
 
     # ── Output helpers ────────────────────────────────────────────────────────
@@ -2200,6 +2212,11 @@ struct Generator
                     ctx17c.bind(pp.name, Type_.unknown_)
             walkStmts(mstmts, ctx17c)
             bg = bg.withInferCtx(ctx17c)
+            # BUG-097: record which params are emitted as *ArrayList so arg-emit
+            # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
+            for pptr in m.params
+                if paramNeedsAddrOf(pptr, m.stmts)
+                    bg.caller_ptr_params.add(pptr.name)
             # Track List/StrSet/HashMap params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
@@ -7330,12 +7347,15 @@ struct Generator
                         if not first2
                             w.emit(", ")
                         first2 = false
-                        # BUG-091: addr-of for this param if needed.
+                        # BUG-091/097: addr-of, pass-through, or deref for container params.
                         var needs_addr_n: bool = false
+                        var is_container_n: bool = false
                         if mc_params != nil
                             var psr = mc_params to!
                             if pname_idx < psr.count()
-                                needs_addr_n = paramNeedsAddrOf(psr.at(pname_idx), mc_body)
+                                var pn = psr.at(pname_idx)
+                                needs_addr_n = paramNeedsAddrOf(pn, mc_body)
+                                is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_ to!)
                         # Find named arg matching this param first.
                         var found = false
                         var ai: int = 0
@@ -7344,8 +7364,17 @@ struct Generator
                             if a.name != nil
                                 if (a.name to!) == pname
                                     if needs_addr_n
-                                        w.emit("&")
-                                    genExpr(a.value)
+                                        if argIdentInCpp(a.value)
+                                            genExpr(a.value)    # Case 1: ptr→ptr
+                                        else
+                                            w.emit("&")
+                                            genExpr(a.value)
+                                    else
+                                        if is_container_n and argIdentInCpp(a.value)
+                                            genExpr(a.value)
+                                            w.emit(".*")        # Case 2: ptr→value
+                                        else
+                                            genExpr(a.value)
                                     found = true
                                     break
                             ai += 1
@@ -7356,8 +7385,17 @@ struct Generator
                                 pos_idx += 1
                                 if pa.name == nil
                                     if needs_addr_n
-                                        w.emit("&")
-                                    genExpr(pa.value)
+                                        if argIdentInCpp(pa.value)
+                                            genExpr(pa.value)   # Case 1: ptr→ptr
+                                        else
+                                            w.emit("&")
+                                            genExpr(pa.value)
+                                    else
+                                        if is_container_n and argIdentInCpp(pa.value)
+                                            genExpr(pa.value)
+                                            w.emit(".*")        # Case 2: ptr→value
+                                        else
+                                            genExpr(pa.value)
                                     found = true
                                     break
                         if not found
@@ -7371,13 +7409,25 @@ struct Generator
                 if not first
                     w.emit(", ")
                 first = false
-                # BUG-091: take `&` when the corresponding param needs addr-of.
+                # BUG-091/097: three-case addr-of/pass/deref for container params.
+                var already_emitted = false
                 if mc_params != nil
                     var msp = mc_params to!
                     if ai_p < msp.count()
-                        if paramNeedsAddrOf(msp.at(ai_p), mc_body)
-                            w.emit("&")
-                genExpr(a.value)
+                        var mp = msp.at(ai_p)
+                        if paramNeedsAddrOf(mp, mc_body)
+                            if argIdentInCpp(a.value)
+                                genExpr(a.value)        # Case 1: ptr→ptr, no &
+                                already_emitted = true
+                            else
+                                w.emit("&")
+                        else
+                            if mp.type_ != nil and isContainerTypeRef(mp.type_ to!) and argIdentInCpp(a.value)
+                                genExpr(a.value)
+                                w.emit(".*")            # Case 2: ptr→value, deref
+                                already_emitted = true
+                if not already_emitted
+                    genExpr(a.value)
                 ai_p += 1
         w.emit(")")
         if callee_throws2 and try_block_label != nil and not in_try_expr
@@ -7660,6 +7710,7 @@ struct Generator
                 w.emit(", ")
             first = false
             var needs_addr = paramNeedsAddrOf(p, body)
+            var is_container = p.type_ != nil and isContainerTypeRef(p.type_ to!)
             var p_name_str: str = p.name
             var found = false
             var ai: int = 0
@@ -7668,8 +7719,17 @@ struct Generator
                 if a.name != nil
                     if (a.name to!) == p_name_str
                         if needs_addr
-                            w.emit("&")
-                        genExpr(a.value)
+                            if argIdentInCpp(a.value)
+                                genExpr(a.value)        # Case 1: ptr→ptr, no &
+                            else
+                                w.emit("&")
+                                genExpr(a.value)
+                        else
+                            if is_container and argIdentInCpp(a.value)
+                                genExpr(a.value)
+                                w.emit(".*")            # Case 2: ptr→value, deref
+                            else
+                                genExpr(a.value)
                         found = true
                         break
                 ai += 1
@@ -7679,8 +7739,17 @@ struct Generator
                     pos_idx += 1
                     if pa.name == nil
                         if needs_addr
-                            w.emit("&")
-                        genExpr(pa.value)
+                            if argIdentInCpp(pa.value)
+                                genExpr(pa.value)       # Case 1: ptr→ptr, no &
+                            else
+                                w.emit("&")
+                                genExpr(pa.value)
+                        else
+                            if is_container and argIdentInCpp(pa.value)
+                                genExpr(pa.value)
+                                w.emit(".*")            # Case 2: ptr→value, deref
+                            else
+                                genExpr(pa.value)
                         found = true
                         break
             if not found

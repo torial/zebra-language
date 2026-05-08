@@ -379,18 +379,23 @@ REMAINING (deferred):
 
 ---
 
-### BUG-097: `&out` follow-on of BUG-091 — passing already-`*ArrayList` arg through a chain
+### BUG-097: ✅ FIXED 2026-05-08 — `*ArrayList` chain call three-case logic
 - **Severity:** Medium (any function that takes a List/HashMap as a mutating out-param can't itself call helpers that take that container by value)
-- **Status:** Open
+- **Status:** Fixed:
+  - `src/CodeGen.zig`: added `caller_ptr_params: ?*const std.StringHashMap(void)` field to `Generator`; populated in `genMethod` for non-TCO methods; `argIdentInCpp` helper; three-case logic in both positional and named paths of `genArgs`.
+  - `selfhost/codegen.zbr`: `caller_ptr_params: StrSet` field added + initialized; `withMethodCtx` creates fresh StrSet; `genMethod` populates it after `withInferCtx`; `argIdentInCpp` method on `Generator`; three-case logic in `genArgListNamed`, method dispatch named-reorder path, and method dispatch positional path.
+  - Test: `test/bug097_ptr_param_chain_test.zbr`; added to `selfhost_smoke.sh`.
+  - Bootstrap 5/5.
+- **Original description:**
 - **Symptom:** With BUG-091's mutation-driven `*ArrayList` conversion, a function signature like `def freeVars(t: Term, out: List(str))` emits `out: *std.ArrayList(...)`. Two follow-on issues then surface in the same body:
   1. **Recursive call:** `freeVars(child, out)` — the call site still emits `&out` (because the formal param is mutating-container), producing `**ArrayList` for an arg expected as `*ArrayList`.
   2. **Helper call:** `hasName(out, name)` where `hasName` takes `out: List(str)` non-mutating (so its sig stays `ArrayList`). The call site emits `hasName(out, name)` with no `.*` deref, producing `*ArrayList` for an arg expected as `ArrayList`.
 - **Reproducer:** see `examples/lambda_calc.zbr`'s commit history — the original `freeVars(t: Term, out: List(str))` shape ran into both above; the file was rewritten to return-by-value instead.
-- **Root cause:** the `&` insertion in `genArgs`/`genArgListNamed` doesn't account for the caller's local already being `*ArrayList`. The decision rule needs to distinguish:
-  - arg is value, formal is `*Self` → emit `&arg`
-  - arg is already `*Self`, formal is `*Self` → emit `arg` (no `&`)
-  - arg is already `*Self`, formal is value → emit `arg.*` (deref)
-- **Workaround:** restructure to return-by-value, or thread the container through a class field instead of a parameter.
+- **Root cause:** the `&` insertion in `genArgs`/`genArgListNamed` didn't account for the caller's param already being `*ArrayList`. The decision rule now distinguishes:
+  - arg is value, formal is `*Self` → emit `&arg` (original BUG-091 behavior)
+  - arg is already `*Self`, formal is `*Self` → emit `arg` (Case 1: no double `&`)
+  - arg is already `*Self`, formal is value → emit `arg.*` (Case 2: deref)
+- **Workaround (obsolete):** restructure to return-by-value, or thread the container through a class field.
 - **Discovered:** 2026-04-30 while writing `examples/lambda_calc.zbr`.
 
 ---
