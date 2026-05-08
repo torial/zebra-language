@@ -395,9 +395,13 @@ REMAINING (deferred):
 
 ---
 
-### BUG-096: `List(SomeClass)()` constructor doesn't pointer-wrap the element type to match the field
+### BUG-096: ✅ FIXED 2026-05-07 — `List(SomeClass)()` constructor now pointer-wraps class type args
 - **Severity:** Low (only triggers when storing class instances in Lists declared as fields)
-- **Status:** Open
+- **Status:** Fixed:
+  - `selfhost/codegen.zbr genTypeFromExpr`: added `if class_names.contains_(id.name)` check before `zigPrimitive`; emits `"*" + id.name` for class types, matching `genType`'s behaviour.
+  - Zig backend (`src/CodeGen.zig genType`) was already correct; this was a selfhost-only gap.
+  - Test: `test/bug096_list_class_ctor_test.zbr`; added to `selfhost_smoke.sh`.
+- **Original status:** Open
 - **Symptom:** `class Holder { var results: List(Result) = ... }` where `Result` is a class. The field type emits as `std.ArrayList(*Result)` (correct — classes are reference-typed), but the constructor expression `List(Result)()` emits `std.ArrayList(Result){}` (without the pointer). Zig rejects the assignment with a type mismatch.
 - **Reproducer:**
   ```zebra
@@ -437,6 +441,29 @@ REMAINING (deferred):
 - **Workaround:** Read values back via `.get(known_key)` for spot lookups; iterate with a parallel `List(str)` of keys when you genuinely need to walk the whole map.
 - **Doc claim:** QUICKSTART §10 documents `for k, v in m` as the canonical iteration. Either fix both backends to support it, or amend the doc to point at the working pattern.
 - **Discovered:** 2026-04-30 while sweeping the book's Chapter 3 examples for the verbosity rewrite.
+
+---
+
+### BUG-092: ✅ FIXED 2026-05-07 — `var lines: List(str) = s.split(sep)` now auto-collects the iterator
+- **Severity:** Medium (typed `split` into a `List` is the obvious idiom; required an obscure workaround)
+- **Status:** Fixed:
+  - `src/CodeGen.zig genLocalVar`: when the declared type is `List(str)` and the init expr is a `split` call, the emitter now wraps the `SplitIterator` in a `std.ArrayList` collector loop automatically.
+  - `selfhost/codegen.zbr genLocalVar`: same collector inserted in the selfhost path.
+  - Test: `test/bug092_split_to_list_test.zbr`; added to `selfhost_smoke.sh`.
+- **Original symptom:** `var lines: List(str) = s.split("\n")` emitted the raw `SplitIterator` into the `ArrayList` slot, causing a Zig type mismatch at compile time.
+- **Discovered:** 2026-05-06 during stdlib `str` smoke pass.
+
+---
+
+### BUG-091: ✅ FIXED 2026-05-07 — `List`/`HashMap` params mutated inside body now emit `*ArrayList` and call sites take `&`
+- **Severity:** High (List/HashMap mutation via methods like `.add()` silently had no effect on the caller's copy)
+- **Status:** Fixed:
+  - `src/CodeGen.zig`: param declared `List(T)` or `HashMap(K,V)` that is mutated inside the body now emits `param: *std.ArrayList(T)` / `*std.AutoHashMap(K,V)`; call sites pass `&arg`.
+  - `selfhost/codegen.zbr`: same mutation-analysis pass + `&` insertion in `genArgs`/`genArgListNamed`.
+  - Tests: `test/bug091_list_param_test.zbr`, `test/bug091_dispatch_test.zbr`; both added to `selfhost_smoke.sh`.
+- **Original symptom:** `def addTo(items: List(str), x: str): void` emitting `items: std.ArrayList(str)` (value), so mutations never escaped back to the caller.
+- **Related:** BUG-097 (follow-on: passing an already-`*ArrayList` arg through a chain still has issues).
+- **Discovered:** 2026-05-06 during stdlib smoke pass.
 
 ---
 

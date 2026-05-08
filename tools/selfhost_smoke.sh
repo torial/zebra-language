@@ -195,6 +195,13 @@ smoke test/bug116_char_methods_test.zbr
 smoke test/bug117_list_join_test.zbr
 # BUG-118: plain struct construction → struct literal (no cue init means no .init() method).
 smoke test/bug118_struct_ctor_test.zbr
+# BUG-091: List/HashMap params mutated inside body emit *ArrayList and call site takes &.
+smoke test/bug091_list_param_test.zbr
+smoke test/bug091_dispatch_test.zbr
+# BUG-092: typed `var lines: List(str) = s.split(sep)` auto-collects SplitIterator.
+smoke test/bug092_split_to_list_test.zbr
+# BUG-096: List(SomeClass)() constructor — genTypeFromExpr must emit *ClassName for class type args.
+smoke test/bug096_list_class_ctor_test.zbr
 
 # Chained comparisons: a < b < c desugars to labeled-block and-chain.
 smoke test/chained_cmp_test.zbr

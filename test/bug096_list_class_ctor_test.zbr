@@ -1,0 +1,21 @@
+# BUG-096: List(SomeClass)() constructor — selfhost genTypeFromExpr emitted Result
+# instead of *Result for class type args.  Fixed by checking class_names in genTypeFromExpr.
+
+class Item
+    var label: str = ""
+    cue init(s: str)
+        .label = s
+
+class Container
+    var items: List(Item)
+    cue init()
+        .items = List(Item)()
+
+def main()
+    var c = Container()
+    c.items.add(Item("alpha"))
+    c.items.add(Item("beta"))
+    assert c.items.count() == 2, "count"
+    assert c.items.at(0).label == "alpha", "first"
+    assert c.items.at(1).label == "beta", "second"
+    print "ok"

@@ -56,6 +56,14 @@ fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
+fn _zebra_eq(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return std.mem.eql(u8, a, b);
+    return a == b;
+}
+fn _zebra_ne(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return !std.mem.eql(u8, a, b);
+    return a != b;
+}
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
@@ -1132,11 +1140,28 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    beginPanelFn:  *const fn (label: []const u8) bool,
-    endPanelFn:    *const fn () void,
-    beginWindowFn: *const fn (label: []const u8) bool,
-    endWindowFn:   *const fn () void,
+    beginPanelFn:       *const fn (label: []const u8) bool,
+    endPanelFn:         *const fn () void,
+    beginWindowFn:      *const fn (label: []const u8) bool,
+    endWindowFn:        *const fn () void,
+    selectableFn:       *const fn (label: []const u8) bool,
+    textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
+    beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
+    tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableHeadersRowFn:  *const fn () void,
+    tableNextRowFn:     *const fn () void,
+    tableNextColumnFn:  *const fn () bool,
+    endTableFn:         *const fn () void,
+    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
+    endChildFn:         *const fn () void,
+    treeNodeFn:         *const fn (label: []const u8) bool,
+    treePopFn:          *const fn () void,
+    setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
+    setColorsDarkFn:    *const fn () void,
+    setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
+    setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
+    scaleAllSizesFn:    *const fn (scale: f32) void,
+    getDpiFn:           *const fn () f32,
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
@@ -1151,6 +1176,39 @@ const GuiContext = struct {
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
+    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
+        self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
+    }
+    pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
+    pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
+    pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
+    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
+        const _vis = self._b.beginChildFn(id, w, h);
+        if (_vis) {
+            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+        }
+        self._b.endChildFn();
+    }
+    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
+        self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
+    }
+    pub fn setColorsDark(self: GuiContext) void { self._b.setColorsDarkFn(); }
+    pub fn setStyleFloat(self: GuiContext, name: []const u8, value: f64) void {
+        self._b.setStyleFloatFn(name, @floatCast(value));
+    }
+    pub fn setVec2(self: GuiContext, name: []const u8, x: f64, y: f64) void {
+        self._b.setVec2Fn(name, @floatCast(x), @floatCast(y));
+    }
+    pub fn scaleAllSizes(self: GuiContext, scale: f64) void {
+        self._b.scaleAllSizesFn(@floatCast(scale));
+    }
+    pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
             if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1181,7 +1239,7 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
-// ─── CodeEditor widget — Phase A: backed by GuiContext.inputMultiline ────────
+// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
 const _CodeEditor = struct { text: []const u8, read_only: bool };
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
@@ -1192,11 +1250,13 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = 
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
 fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
+    const _r = _g.inputMultiline(id, _ed.text, w, h);
     if (!_ed.read_only) { _ed.text = _r; }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -1245,27 +1305,62 @@ fn _stub_begin_window(label: []const u8) bool {
     return true;
 }
 fn _stub_end_window() void {}
+fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
+fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
+fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
+fn _stub_table_headers_row() void {}
+fn _stub_table_next_row() void {}
+fn _stub_table_next_column() bool { return true; }
+fn _stub_end_table() void {}
+fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+fn _stub_end_child() void {}
+fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
+fn _stub_tree_pop() void {}
+fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+fn _stub_set_colors_dark() void {}
+fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
+fn _stub_get_dpi() f32 { return 1.0; }
 const _gui_stub_backend = _GuiBackend{
-    .initFn        = _stub_init,
-    .deinitFn      = _stub_deinit,
-    .newFrameFn    = _stub_new_frame,
-    .endFrameFn    = _stub_end_frame,
-    .textFn        = _stub_text,
-    .separatorFn   = _stub_separator,
-    .sameLineFn    = _stub_same_line,
-    .spacingFn     = _stub_spacing,
-    .indentFn      = _stub_indent,
-    .unindentFn    = _stub_unindent,
-    .buttonFn      = _stub_button,
-    .checkboxFn    = _stub_checkbox,
-    .sliderFn      = _stub_slider,
-    .inputFn       = _stub_input,
-    .inputMultilineFn = _stub_input_multiline,
-    .codeEditorFn  = _stub_input_multiline,
-    .beginPanelFn  = _stub_begin_panel,
-    .endPanelFn    = _stub_end_panel,
-    .beginWindowFn = _stub_begin_window,
-    .endWindowFn   = _stub_end_window,
+    .initFn             = _stub_init,
+    .deinitFn           = _stub_deinit,
+    .newFrameFn         = _stub_new_frame,
+    .endFrameFn         = _stub_end_frame,
+    .textFn             = _stub_text,
+    .separatorFn        = _stub_separator,
+    .sameLineFn         = _stub_same_line,
+    .spacingFn          = _stub_spacing,
+    .indentFn           = _stub_indent,
+    .unindentFn         = _stub_unindent,
+    .buttonFn           = _stub_button,
+    .checkboxFn         = _stub_checkbox,
+    .sliderFn           = _stub_slider,
+    .inputFn            = _stub_input,
+    .inputMultilineFn   = _stub_input_multiline,
+    .beginPanelFn       = _stub_begin_panel,
+    .endPanelFn         = _stub_end_panel,
+    .beginWindowFn      = _stub_begin_window,
+    .endWindowFn        = _stub_end_window,
+    .selectableFn       = _stub_selectable,
+    .textColoredFn      = _stub_text_colored,
+    .beginTableFn       = _stub_begin_table,
+    .tableSetupColumnFn = _stub_table_setup_column,
+    .tableHeadersRowFn  = _stub_table_headers_row,
+    .tableNextRowFn     = _stub_table_next_row,
+    .tableNextColumnFn  = _stub_table_next_column,
+    .endTableFn         = _stub_end_table,
+    .beginChildFn       = _stub_begin_child,
+    .endChildFn         = _stub_end_child,
+    .treeNodeFn         = _stub_tree_node,
+    .treePopFn          = _stub_tree_pop,
+    .setColorFn         = _stub_set_color,
+    .setColorsDarkFn    = _stub_set_colors_dark,
+    .setStyleFloatFn    = _stub_set_style_float,
+    .setVec2Fn          = _stub_set_vec2,
+    .scaleAllSizesFn    = _stub_scale_all_sizes,
+    .getDpiFn           = _stub_get_dpi,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -1540,6 +1635,159 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
     _progress_ensure_root();
     const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
     return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
+}
+// ── Profile stdlib ────────────────────────────────────────────────────────────
+const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
+var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
+var _profile_name_stack: std.ArrayList([]const u8) = .{};
+var _profile_time_stack: std.ArrayList(i128) = .{};
+fn _profile_start(name: []const u8) void {
+    _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+}
+fn _profile_end() void {
+    const start_ns = _profile_time_stack.pop() orelse return;
+    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
+    var key_buf: std.ArrayList(u8) = .{};
+    defer key_buf.deinit(std.heap.page_allocator);
+    for (_profile_name_stack.items, 0..) |n, i| {
+        if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
+        key_buf.appendSlice(std.heap.page_allocator, n) catch @panic("OOM");
+    }
+    _ = _profile_name_stack.pop();
+    if (_profile_entries.getPtr(key_buf.items)) |e| {
+        e.total_ns += elapsed_ns;
+        e.call_count += 1;
+    } else {
+        const owned_key = std.heap.page_allocator.dupe(u8, key_buf.items) catch @panic("OOM");
+        _profile_entries.put(owned_key, .{ .total_ns = elapsed_ns, .call_count = 1 }) catch @panic("OOM");
+    }
+}
+fn _profile_report() void {
+    const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
+    var list: std.ArrayList(_ProfEntry) = .{};
+    defer list.deinit(std.heap.page_allocator);
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        list.append(std.heap.page_allocator, .{ .key = e.key_ptr.*, .total_ns = e.value_ptr.total_ns, .calls = e.value_ptr.call_count }) catch @panic("OOM");
+    }
+    const _Cmp = struct {
+        fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
+    };
+    std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
+    const _w = std.fs.File.stdout().deprecatedWriter();
+    _w.writeAll("── Profile report ───────────────────────────────────────────────\n") catch {};
+    for (list.items) |e| {
+        const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
+        _w.print("  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch {};
+    }
+}
+fn _profile_dump_folded() void {
+    const _w = std.fs.File.stdout().deprecatedWriter();
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
+        _w.print("{s} {d}\n", .{ e.key_ptr.*, us }) catch {};
+    }
+}
+fn _profile_reset() void {
+    _profile_entries.clearRetainingCapacity();
+    _profile_name_stack.clearRetainingCapacity();
+    _profile_time_stack.clearRetainingCapacity();
+}
+// ── Base64 stdlib ─────────────────────────────────────────────────────────────
+fn _base64_encode(s: []const u8) []const u8 {
+    const enc = std.base64.standard.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode(s: []const u8) ?[]const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+fn _base64_decode_str(s: []const u8) []const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch @panic("invalid base64");
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch @panic("invalid base64");
+    return out;
+}
+fn _base64_encode_url(s: []const u8) []const u8 {
+    const enc = std.base64.url_safe_no_pad.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode_url(s: []const u8) ?[]const u8 {
+    const dec = std.base64.url_safe_no_pad.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+// ── Hash fast (non-crypto) hashes ────────────────────────────────────────────
+fn _hash_crc32(s: []const u8) i64 {
+    return @as(i64, @intCast(std.hash.crc.Crc32.hash(s)));
+}
+fn _hash_fnv64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.Fnv1a_64.hash(s)));
+}
+fn _hash_xxhash64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
+}
+fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
+    var out: [std.crypto.auth.hmac.sha2.HmacSha512.mac_length]u8 = undefined;
+    std.crypto.auth.hmac.sha2.HmacSha512.create(&out, data, key);
+    return _hex_encode(&out);
+}
+// ── Random extended ───────────────────────────────────────────────────────────
+fn _random_gaussian(mean: f64, stddev: f64) f64 {
+    const _gu1 = _rng().float(f64);
+    const _gu2 = _rng().float(f64);
+    const _gz = @sqrt(-2.0 * @log(_gu1)) * @cos(2.0 * std.math.pi * _gu2);
+    return mean + stddev * _gz;
+}
+fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
+    if (items.items.len == 0) return "";
+    var total: f64 = 0.0;
+    for (weights.items) |w| total += w;
+    var r = _rng().float(f64) * total;
+    for (items.items, 0..) |item, i| {
+        r -= if (i < weights.items.len) weights.items[i] else 0.0;
+        if (r <= 0.0) return item;
+    }
+    return items.items[items.items.len - 1];
+}
+// ── File extended ─────────────────────────────────────────────────────────────
+fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
+    var content = std.ArrayList(u8){};
+    defer content.deinit(_allocator);
+    for (lines.items) |line| {
+        content.appendSlice(_allocator, line) catch return;
+        content.append(_allocator, '\n') catch return;
+    }
+    std.fs.cwd().writeFile(.{ .sub_path = path, .data = content.items }) catch {};
+}
+// ── sys extended ──────────────────────────────────────────────────────────────
+fn _sys_setenv(key: []const u8, val: []const u8) void {
+    if (comptime builtin.os.tag == .windows) {
+        const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
+        defer _allocator.free(key_w);
+        const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
+        defer _allocator.free(val_w);
+        _ = std.os.windows.kernel32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
+    } else {
+        std.posix.setenv(key, val) catch {};
+    }
+}
+fn _sys_getenv(key: []const u8) ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+    } else {
+        return std.posix.getenv(key);
+    }
 }
 
 pub const Filler = struct {

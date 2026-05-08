@@ -3262,6 +3262,9 @@ struct Generator
     def genTypeFromExpr(e: Expr)
         branch e
             on Expr.ident as id
+                if class_names.contains_(id.name)
+                    w.emit("*" + id.name)
+                    return
                 w.emit(zigPrimitive(id.name))
             on Expr.call as c
                 branch c.callee
