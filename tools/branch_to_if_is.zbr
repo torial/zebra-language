@@ -1,0 +1,231 @@
+# Convert single-arm `branch X on V as B … else pass` to `if X is V as B`.
+# Port of tools/branch_to_if_is.py.
+#
+# Only converts when:
+#   - exactly one `on ... as ...` arm (binding required)
+#   - else block contains only `pass` (ignoring blank lines)
+#
+# Run from repo root: zebra tools/branch_to_if_is.zbr [--dry-run]
+
+def leadingSpaces(s: str): int
+    var count = 0
+    while count < s.len and s[count] == c' '
+        count = count + 1
+    return count
+
+def repeatSpaces(n: int): str
+    var result = ""
+    var k = 0
+    while k < n
+        result = result + " "
+        k = k + 1
+    return result
+
+# Shift a body line by reducing its leading indentation.
+def shiftLine(line: str, reduction: int): str
+    var line_tr = line.trimRight()
+    if line_tr.len == 0
+        return ""
+    var cur = leadingSpaces(line_tr)
+    var new_indent = cur - reduction
+    if new_indent < 0
+        new_indent = 0
+    var content = line_tr.trimLeft()
+    return repeatSpaces(new_indent) + content
+
+# Parse `on VARIANT as BINDING`.
+# Returns a 2-element list: [variant, binding].
+# Returns ["", ""] if the line doesn't match the expected form.
+def parseOnBinding(content: str): List(str)
+    var result: List(str) = List()
+    if not content.startsWith("on ")
+        result.add("")
+        result.add("")
+        return result
+    var rest = content[3..content.len]
+    var parts: List(str) = rest.split(" as ")
+    if parts.count() < 2
+        result.add("")
+        result.add("")
+        return result
+    # Binding is the last segment
+    var last_idx = parts.count() - 1
+    var raw_binding: str = parts.at(last_idx)
+    var binding = raw_binding.trimRight()
+    # Binding must be a simple word (no spaces, not a bare `_` discard)
+    if binding.len == 0 or " " in binding or binding == "_"
+        result.add("")
+        result.add("")
+        return result
+    # Variant is all segments before the last, rejoined with " as "
+    var variant_parts: List(str) = List()
+    var k = 0
+    while k < last_idx
+        variant_parts.add(parts.at(k))
+        k = k + 1
+    var variant_raw = variant_parts.join(" as ")
+    var variant = variant_raw.trimRight()
+    result.add(variant)
+    result.add(binding)
+    return result
+
+def transformFile(path: str, dry_run: bool): int
+    var text = File.read(path)
+    var lines: List(str) = text.split("\n")
+    var out: List(str) = List()
+    var i = 0
+    var changes = 0
+    var n = lines.count()
+
+    while i < n
+        var line: str = lines.at(i)
+        var line_tr = line.trimRight()
+        var content = line_tr.trimLeft()
+        var b_indent = leadingSpaces(line_tr)
+
+        # Only try to transform `branch SUBJECT` lines
+        if not content.startsWith("branch ")
+            out.add(line)
+            i = i + 1
+            continue
+
+        var subject_raw = content[7..content.len]
+        var subject = subject_raw.trimLeft()
+
+        # Inner scan state
+        # state: 0=start, 1=on_body, 2=else_body, 3=abort
+        var on_indent: int = -1
+        var on_variant = ""
+        var on_binding = ""
+        var on_body: List(str) = List()
+        var else_body: List(str) = List()
+        var state = 0
+        var j = i + 1
+
+        while j < n
+            var line2: str = lines.at(j)
+            var line2_tr = line2.trimRight()
+            var c2 = line2_tr.trimLeft()
+            var ind2 = leadingSpaces(line2_tr)
+
+            # Blank line — collect into whichever body we're building
+            if c2.len == 0
+                if state == 1
+                    on_body.add(line2)
+                else if state == 2
+                    else_body.add(line2)
+                j = j + 1
+                continue
+
+            # Back to branch level or shallower → block ends
+            if ind2 <= b_indent
+                break
+
+            if state == 0
+                on_indent = ind2
+                var parsed = parseOnBinding(c2)
+                var pv: str = parsed.at(0)
+                var pb: str = parsed.at(1)
+                if pv.len > 0 and pb.len > 0
+                    on_variant = pv
+                    on_binding = pb
+                    state = 1
+                else
+                    state = 3
+                    break
+
+            else if state == 1
+                if ind2 == on_indent
+                    if c2.startsWith("on ")
+                        # Second on-arm → abort (only single-arm allowed)
+                        state = 3
+                        break
+                    else if c2 == "else" or c2.startsWith("else ")
+                        state = 2
+                    else
+                        on_body.add(line2)
+                else
+                    on_body.add(line2)
+
+            else if state == 2
+                else_body.add(line2)
+
+            j = j + 1
+
+        # Abort if state machine failed or no variant found
+        if state == 3 or on_variant.len == 0
+            out.add(line)
+            i = i + 1
+            continue
+
+        # Verify else body is exactly `pass` (ignoring blank/comment lines)
+        var non_blank_else: List(str) = List()
+        for el in else_body
+            var el_r = el.trimRight()
+            var el_c = el_r.trimLeft()
+            if el_c.len > 0
+                non_blank_else.add(el_c)
+        if non_blank_else.count() != 1
+            out.add(line)
+            i = i + 1
+            continue
+        var else_first: str = non_blank_else.at(0)
+        if else_first != "pass"
+            out.add(line)
+            i = i + 1
+            continue
+
+        # Trim trailing blank lines from on_body
+        var last_non_blank: int = -1
+        var kb = 0
+        while kb < on_body.count()
+            var bl: str = on_body.at(kb)
+            var bl_tr = bl.trimRight()
+            if bl_tr.len > 0
+                last_non_blank = kb
+            kb = kb + 1
+
+        # Calculate indent reduction: on_indent − b_indent
+        var indent_reduction = on_indent - b_indent
+
+        # Emit the rewritten if-is form
+        out.add(repeatSpaces(b_indent) + "if " + subject + " is " + on_variant + " as " + on_binding)
+        kb = 0
+        while kb <= last_non_blank
+            var body_line: str = on_body.at(kb)
+            out.add(shiftLine(body_line, indent_reduction))
+            kb = kb + 1
+
+        changes = changes + 1
+        i = j  # skip past the branch block
+
+    if changes > 0
+        var new_text = out.join("\n")
+        if not dry_run
+            File.write(path, new_text)
+        print "  " + path + ": " + changes.toString() + " branch(es) converted"
+    return changes
+
+def main()
+    var args = Arg.parse()
+    var dry_run = args.flag("--dry-run", "-n")
+
+    var dirs: List(str) = List()
+    dirs.add("selfhost")
+    dirs.add("test")
+
+    var total = 0
+    for dir_ in dirs
+        if not File.exists(dir_)
+            continue
+        var files = Dir.walk(dir_)
+        files.sort()
+        for path in files
+            if not path.endsWith(".zbr")
+                continue
+            total = total + transformFile(path, dry_run)
+
+    print ""
+    print "Total branches converted: " + total.toString()
+    if dry_run
+        print "(dry run)"

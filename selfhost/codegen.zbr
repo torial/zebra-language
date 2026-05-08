@@ -5726,12 +5726,9 @@ struct Generator
                         # generic type, but the local tracking sets above
                         # cover the common cases.  When TC does know,
                         # `.named` over List/HashMap also routes here.
-                        branch rt
-                            on Type_.named as nm
-                                if nm == "List" or nm == "HashMap"
-                                    in_use_zebra_in = true
-                            else
-                                pass
+                        if rt is Type_.named as nm
+                            if nm == "List" or nm == "HashMap"
+                                in_use_zebra_in = true
                 else
                     pass
             if in_use_zebra_in

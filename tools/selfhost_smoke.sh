@@ -230,6 +230,8 @@ smoke tools/book_strip_invisibles.zbr
 smoke tools/sweep_class_main.zbr
 # Scripting tool #3: migrate `as T` type-annotation syntax to `: T`.
 smoke tools/migrate_colon_syntax.zbr
+# Scripting tool #4: convert single-arm branch-on-as+else-pass to if-is-as form.
+smoke tools/branch_to_if_is.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

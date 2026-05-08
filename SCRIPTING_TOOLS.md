@@ -53,21 +53,25 @@ runs automatically on `git merge`.
 **Zebra port:** Needs `File.write` + `sys.run("chmod")`.
 `File.write` exists; `chmod` via `sys.run` would work.
 
-### `tools/branch_to_if_is.py`
-**Language:** Python  
+### `tools/branch_to_if_is.py` / `tools/branch_to_if_is.zbr`
+**Language:** Python → ✅ Zebra port DONE 2026-05-08  
 **Purpose:** Converts single-arm `branch X on V as B … else pass` to the
-idiomatic `if X is V as B` form.  Regex-based line transform.
+idiomatic `if X is V as B` form.  Multi-line state machine: tracks indentation,
+accumulates on-arm body, verifies else body is exactly `pass`.
 **When to use:** Style-guide sweep or after adding new selfhost code in the
-old branch style.
-**Zebra port:** Needs `Dir.walk` + `Regex.replace`.
+old branch style.  Skips `as _` discard bindings (Zig 0.15 rejects `_` as an id).
+**Zebra port notes:** Uses manual index-loop for stateful multi-line scanning;
+avoids method chaining on `List.at()` returns (uses temp vars).  Applied 1
+conversion to `selfhost/codegen.zbr` on first run.
 
-### `tools/migrate_colon_syntax.py`
-**Language:** Python  
+### `tools/migrate_colon_syntax.py` / `tools/migrate_colon_syntax.zbr`
+**Language:** Python → ✅ Zebra port DONE 2026-05-08  
 **Purpose:** Migrates `def name(params) as Type` annotation syntax to
-`def name(params): Type`.  Preserves `on X as y` branch bindings.
+`def name(params): Type`.  Preserves `on X as y` branch bindings and
+`if x as n` capture bindings (guards on uppercase-only replacement).
 **Status:** One-shot; already applied across the repo.
-**Zebra port:** Needs `Dir.walk` + `Regex.replace`.  Good template for future
-syntax-migration scripts.
+**Zebra port notes:** Splits on ` as `, replaces only when next char is uppercase
+or `^`/`!`/`?` — makes it safe for corpora that already have `if x as n` bindings.
 
 ### `tools/sweep_class_main.py`
 **Language:** Python  
@@ -160,7 +164,8 @@ Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re
    struct ctor) fixed 2026-05-05; workarounds removed from tool source after fixes
 3. ✅ `escape_hatches_check.zbr` — DONE 2026-05-05; first completed Zebra tool port
 4. `book_scan_unicode.zbr` — needs char iteration; drives that feature
-5. `branch_to_if_is.zbr` + `migrate_colon_syntax.zbr` — regex-replace variants
+5. ✅ `migrate_colon_syntax.zbr` — DONE 2026-05-08; `str.split` + `isTypeAnnotStart` guard
+5b. ✅ `branch_to_if_is.zbr` — DONE 2026-05-08; multi-line state machine (not regex-replace)
 6. `zebra-repl.zbr` — needs `sys.run` + `sys.readLine`; caps the gate
 
 When #6 is done, Zebra can bootstrap its own interactive tooling loop.
