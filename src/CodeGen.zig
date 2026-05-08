@@ -2030,8 +2030,11 @@ const Generator = struct {
                 \\    // Read the OS content scale so fonts and style dimensions match display density.
                 \\    const _cs = _gl_window.getContentScale();
                 \\    const _dpi: f32 = @max(1.0, _cs[0]);
-                \\    // UI font: Inter Regular — bundled in fonts/ alongside the source file.
-                \\    _ = zgui.io.addFontFromMemory(@embedFile("fonts/Inter-Regular.ttf"), 15.0 * _dpi);
+                \\    // UI font: Inter Regular — optional, loaded at runtime from vendor/fonts/.
+                \\    var _ui_font_buf: [std.fs.max_path_bytes]u8 = undefined;
+                \\    if (std.fs.cwd().realpath("vendor/fonts/Inter-Regular.ttf", &_ui_font_buf)) |abs_path| {
+                \\        _ = zgui.io.addFontFromFile(abs_path, 15.0 * _dpi);
+                \\    } else |_| {}
                 \\    // Mono font: Cascadia Mono for code editors.
                 \\    const MONO_FONT = "C:\\Windows\\Fonts\\CascadiaMono.ttf";
                 \\    if (std.fs.accessAbsolute(MONO_FONT, .{})) |_| {
