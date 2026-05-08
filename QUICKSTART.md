@@ -1360,9 +1360,12 @@ var present  = args.contains("--dry-run")    # bool
 | Call                              | Returns        | Notes                              |
 |-----------------------------------|----------------|-------------------------------------|
 | `Regex.compile(pattern)`          | `Regex`        | Compile a pattern (Thompson NFA)    |
-| `re.test(s)`                      | bool           | Match anywhere                      |
-| `re.match(s)`                     | bool           | Match from start                    |
-| `re.find(s)`                      | str            | First match                         |
+| `re.test(s)`                      | bool           | Match anywhere in `s`               |
+| `re.match(s)`                     | bool           | Match from start of `s`             |
+| `re.find(s)`                      | str            | First matching substring            |
+| `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
+| `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |
+| `re.groups(s)`                    | `[]str`        | Capture groups: index 0 = full match, 1+ = groups |
 
 ### `DateTime` — date/time
 
