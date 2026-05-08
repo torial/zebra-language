@@ -1999,7 +1999,9 @@ const Generator = struct {
                 \\    _ = _g;
                 \\    const _z = _allocator.dupeZ(u8, id) catch return;
                 \\    defer _allocator.free(_z);
+                \\    if (_mono_font) |mf| zgui.pushFont(mf, 0.0);
                 \\    te_c.te_render(_ed.handle, _z, @floatCast(w), @floatCast(h));
+                \\    if (_mono_font != null) zgui.popFont();
                 \\}
                 \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void {
                 \\    te_c.te_clear_errors(_ed.handle);
@@ -2019,6 +2021,90 @@ const Generator = struct {
                 \\const zglfw   = @import("zglfw");
                 \\const zopengl = @import("zopengl");
                 \\var _gl_window: *zglfw.Window = undefined;
+                \\var _mono_font: ?zgui.Font = null;
+                \\// iOS 5-inspired dark theme — "Space Navy"
+                \\// Deep navy base, accent blue (#1E78CB) for interactive elements,
+                \\// 7px frame rounding, visible 1px borders, generous padding.
+                \\fn _applyIOSTheme() void {
+                \\    // The zgui GLFW backend renders in physical pixels (DisplayFramebufferScale=1).
+                \\    // Read the OS content scale so fonts and style dimensions match display density.
+                \\    const _cs = _gl_window.getContentScale();
+                \\    const _dpi: f32 = @max(1.0, _cs[0]);
+                \\    // UI font: Inter Regular — bundled in fonts/ alongside the source file.
+                \\    _ = zgui.io.addFontFromMemory(@embedFile("fonts/Inter-Regular.ttf"), 15.0 * _dpi);
+                \\    // Mono font: Cascadia Mono for code editors.
+                \\    const MONO_FONT = "C:\\Windows\\Fonts\\CascadiaMono.ttf";
+                \\    if (std.fs.accessAbsolute(MONO_FONT, .{})) |_| {
+                \\        _mono_font = zgui.io.addFontFromFile(MONO_FONT, 13.0 * _dpi);
+                \\    } else |_| {}
+                \\    const s = zgui.getStyle();
+                \\    zgui.styleColorsDark(s);
+                \\    s.frame_rounding       = 7.0;
+                \\    s.child_rounding       = 8.0;
+                \\    s.popup_rounding       = 10.0;
+                \\    s.scrollbar_rounding   = 6.0;
+                \\    s.grab_rounding        = 5.0;
+                \\    s.tab_rounding         = 6.0;
+                \\    s.window_rounding      = 0.0;
+                \\    s.frame_padding        = .{ 10.0, 6.0 };
+                \\    s.item_spacing         = .{ 8.0,  6.0 };
+                \\    s.window_padding       = .{ 12.0, 12.0 };
+                \\    s.scrollbar_size       = 10.0;
+                \\    s.grab_min_size        = 10.0;
+                \\    s.window_border_size   = 0.0;
+                \\    s.frame_border_size    = 1.0;
+                \\    s.child_border_size    = 1.0;
+                \\    s.popup_border_size    = 1.0;
+                \\    s.setColor(.text,                    .{ 0.910, 0.929, 0.961, 1.00 });
+                \\    s.setColor(.text_disabled,           .{ 0.353, 0.396, 0.502, 1.00 });
+                \\    s.setColor(.window_bg,               .{ 0.102, 0.125, 0.208, 1.00 });
+                \\    s.setColor(.child_bg,                .{ 0.125, 0.157, 0.251, 1.00 });
+                \\    s.setColor(.popup_bg,                .{ 0.118, 0.149, 0.239, 0.97 });
+                \\    s.setColor(.border,                  .{ 0.165, 0.208, 0.376, 1.00 });
+                \\    s.setColor(.border_shadow,           .{ 0.000, 0.000, 0.000, 0.00 });
+                \\    s.setColor(.frame_bg,                .{ 0.118, 0.157, 0.271, 1.00 });
+                \\    s.setColor(.frame_bg_hovered,        .{ 0.161, 0.216, 0.380, 1.00 });
+                \\    s.setColor(.frame_bg_active,         .{ 0.196, 0.267, 0.451, 1.00 });
+                \\    s.setColor(.title_bg,                .{ 0.078, 0.094, 0.161, 1.00 });
+                \\    s.setColor(.title_bg_active,         .{ 0.118, 0.431, 0.784, 1.00 });
+                \\    s.setColor(.title_bg_collapsed,      .{ 0.078, 0.094, 0.161, 0.75 });
+                \\    s.setColor(.menu_bar_bg,             .{ 0.090, 0.110, 0.184, 1.00 });
+                \\    s.setColor(.scrollbar_bg,            .{ 0.102, 0.125, 0.208, 0.50 });
+                \\    s.setColor(.scrollbar_grab,          .{ 0.227, 0.314, 0.565, 1.00 });
+                \\    s.setColor(.scrollbar_grab_hovered,  .{ 0.278, 0.388, 0.659, 1.00 });
+                \\    s.setColor(.scrollbar_grab_active,   .{ 0.118, 0.471, 0.796, 1.00 });
+                \\    s.setColor(.check_mark,              .{ 0.118, 0.471, 0.796, 1.00 });
+                \\    s.setColor(.slider_grab,             .{ 0.118, 0.431, 0.784, 1.00 });
+                \\    s.setColor(.slider_grab_active,      .{ 0.118, 0.471, 0.796, 1.00 });
+                \\    s.setColor(.button,                  .{ 0.118, 0.431, 0.784, 0.90 });
+                \\    s.setColor(.button_hovered,          .{ 0.141, 0.471, 0.800, 1.00 });
+                \\    s.setColor(.button_active,           .{ 0.082, 0.345, 0.639, 1.00 });
+                \\    s.setColor(.header,                  .{ 0.118, 0.431, 0.784, 0.38 });
+                \\    s.setColor(.header_hovered,          .{ 0.118, 0.431, 0.784, 0.58 });
+                \\    s.setColor(.header_active,           .{ 0.118, 0.431, 0.784, 0.80 });
+                \\    s.setColor(.separator,               .{ 0.145, 0.188, 0.314, 1.00 });
+                \\    s.setColor(.separator_hovered,       .{ 0.118, 0.471, 0.796, 0.78 });
+                \\    s.setColor(.separator_active,        .{ 0.118, 0.471, 0.796, 1.00 });
+                \\    s.setColor(.resize_grip,             .{ 0.118, 0.431, 0.784, 0.25 });
+                \\    s.setColor(.resize_grip_hovered,     .{ 0.118, 0.471, 0.796, 0.55 });
+                \\    s.setColor(.resize_grip_active,      .{ 0.118, 0.471, 0.796, 0.90 });
+                \\    s.setColor(.tab,                     .{ 0.118, 0.157, 0.251, 1.00 });
+                \\    s.setColor(.tab_hovered,             .{ 0.118, 0.431, 0.784, 0.80 });
+                \\    s.setColor(.tab_selected,            .{ 0.118, 0.431, 0.784, 1.00 });
+                \\    s.setColor(.tab_dimmed,              .{ 0.098, 0.122, 0.200, 1.00 });
+                \\    s.setColor(.tab_dimmed_selected,     .{ 0.137, 0.188, 0.337, 1.00 });
+                \\    s.setColor(.table_header_bg,         .{ 0.118, 0.157, 0.271, 1.00 });
+                \\    s.setColor(.table_border_strong,     .{ 0.188, 0.251, 0.427, 1.00 });
+                \\    s.setColor(.table_border_light,      .{ 0.145, 0.196, 0.337, 1.00 });
+                \\    s.setColor(.table_row_bg,            .{ 0.000, 0.000, 0.000, 0.00 });
+                \\    s.setColor(.table_row_bg_alt,        .{ 0.157, 0.196, 0.318, 0.35 });
+                \\    s.setColor(.text_selected_bg,        .{ 0.118, 0.431, 0.784, 0.45 });
+                \\    s.setColor(.nav_cursor,              .{ 0.118, 0.471, 0.796, 1.00 });
+                \\    s.setColor(.nav_windowing_highlight, .{ 1.000, 1.000, 1.000, 0.70 });
+                \\    s.setColor(.nav_windowing_dim_bg,    .{ 0.078, 0.098, 0.165, 0.70 });
+                \\    s.setColor(.modal_window_dim_bg,     .{ 0.063, 0.078, 0.133, 0.65 });
+                \\    s.scaleAllSizes(_dpi);
+                \\}
                 \\fn _imgui_init(title: []const u8, width: i64, height: i64) anyerror!void {
                 \\    try zglfw.init();
                 \\    errdefer zglfw.terminate();
@@ -2036,6 +2122,7 @@ const Generator = struct {
                 \\    try zopengl.loadCoreProfile(zglfw.getProcAddress, 3, 3);
                 \\    zgui.init(_allocator);
                 \\    zgui.backend.init(_gl_window);
+                \\    _applyIOSTheme();
                 \\}
                 \\fn _imgui_deinit() void {
                 \\    zgui.backend.deinit();
@@ -2061,7 +2148,7 @@ const Generator = struct {
                 \\    zgui.end();
                 \\    const _fb = _gl_window.getFramebufferSize();
                 \\    zopengl.bindings.viewport(0, 0, _fb[0], _fb[1]);
-                \\    zopengl.bindings.clearColor(0.1, 0.1, 0.1, 1.0);
+                \\    zopengl.bindings.clearColor(0.102, 0.125, 0.208, 1.0);
                 \\    zopengl.bindings.clear(zopengl.bindings.COLOR_BUFFER_BIT);
                 \\    zgui.backend.draw();
                 \\    _gl_window.swapBuffers();
