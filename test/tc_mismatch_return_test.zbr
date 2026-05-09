@@ -1,0 +1,6 @@
+def makeInt(): int
+    return "hello"
+
+def main()
+    var n: int = makeInt()
+    print n.toString()

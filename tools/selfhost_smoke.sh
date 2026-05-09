@@ -68,6 +68,29 @@ smoke_turbo() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Run a fixture expected to FAIL TC with a specific diagnostic substring in stderr.
+smoke_tc_fail() {
+    local zbr="$1"
+    local expected_msg="$2"
+    local label
+    label="$(basename "$zbr" .zbr)"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        echo "  FAIL: $label (expected TC failure, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+    else
+        if grep -qF "$expected_msg" /tmp/smoke-err; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (wrong/missing diagnostic)" >&2
+            echo "    expected substring: $expected_msg" >&2
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 echo "── Selfhost smoke tests (emit-zig pipeline)"
 
 # Pure arithmetic / branching
@@ -243,6 +266,11 @@ smoke tools/migrate_colon_syntax.zbr
 smoke tools/branch_to_if_is.zbr
 # SIMD vector types: f32x8, i32x4, etc.
 smoke test/simd_test.zbr
+
+# Phase 2 TC diagnostics: bidirectional inference error fixtures.
+# These must FAIL compilation with a "type error" substring in stderr.
+smoke_tc_fail test/tc_mismatch_var_test.zbr "type mismatch"
+smoke_tc_fail test/tc_mismatch_return_test.zbr "type mismatch"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

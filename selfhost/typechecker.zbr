@@ -1416,6 +1416,25 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
         return true
     return typeTag(declared) == typeTag(inferred)
 
+# Thin wrapper around inferExpr that compares the result against an expected type.
+# Records a type_mismatch diagnostic on primitive-to-primitive conflicts and fills
+# context_dependent from expected (error recovery). Returns expected on mismatch.
+def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: InferCtx): Type_
+    var inferred: Type_ = inferExpr(e, ctx)
+    if expected == nil
+        return inferred
+    var exp: Type_ = expected to!  # safe: nil checked above
+    if inferred is Type_.context_dependent
+        return exp
+    if not isPrimitive(exp)
+        return inferred
+    if not isPrimitive(inferred)
+        return inferred
+    if not typesCompatible(exp, inferred)
+        ctx.addErr(file, line, col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
+        return exp
+    return inferred
+
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
@@ -1462,6 +1481,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(stc.stmts, file, ctx)
                 for cc in stc.clauses
                     checkStmts(cc.stmts, file, ctx)
+            on Stmt.return_ as sr
+                if ctx.current_return_type as ret_type
+                    if sr.value != nil
+                        checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
             else
                 pass
 
