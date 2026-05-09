@@ -1,0 +1,12 @@
+class Counter
+    var count: int = 0
+    def inc()
+        .count = .count + 1
+
+def makeInt(): int
+    var c = Counter()
+    with c
+        return "inside with"
+
+def main()
+    print makeInt().toString()

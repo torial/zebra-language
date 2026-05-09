@@ -268,9 +268,12 @@ smoke tools/branch_to_if_is.zbr
 smoke test/simd_test.zbr
 
 # Phase 2 TC diagnostics: bidirectional inference error fixtures.
-# These must FAIL compilation with a "type error" substring in stderr.
+# These must FAIL compilation with a "type mismatch" substring in stderr.
 smoke_tc_fail test/tc_mismatch_var_test.zbr "type mismatch"
 smoke_tc_fail test/tc_mismatch_return_test.zbr "type mismatch"
+# with/guard/arena_scope body coverage (checkStmts recursion extension).
+smoke_tc_fail test/tc_mismatch_with_test.zbr "type mismatch"
+smoke_tc_fail test/tc_mismatch_guard_test.zbr "type mismatch"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

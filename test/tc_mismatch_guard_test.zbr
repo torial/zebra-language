@@ -1,0 +1,7 @@
+def makeInt(n: int): int
+    guard n > 0 else
+        return "guard else"
+    return n
+
+def main()
+    print makeInt(1).toString()

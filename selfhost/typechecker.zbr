@@ -1419,6 +1419,9 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
 # Thin wrapper around inferExpr that compares the result against an expected type.
 # Records a type_mismatch diagnostic on primitive-to-primitive conflicts and fills
 # context_dependent from expected (error recovery). Returns expected on mismatch.
+# TODO BUG-121: col comes from the statement span, which is the keyword position.
+# All diagnostics currently report col 0. When span resolution is improved,
+# pass the actual expression start column here.
 def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: InferCtx): Type_
     var inferred: Type_ = inferExpr(e, ctx)
     if expected == nil
@@ -1485,6 +1488,12 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
                         checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
+            on Stmt.with_ as sw
+                checkStmts(sw.stmts, file, ctx)
+            on Stmt.guard_ as sg
+                checkStmts(sg.else_stmts, file, ctx)
+            on Stmt.arena_scope as sas
+                checkStmts(sas.stmts, file, ctx)
             else
                 pass
 

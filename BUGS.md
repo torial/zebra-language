@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-120. Next new bug: BUG-121.**
+**Last bug number generated: BUG-121. Next new bug: BUG-122.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -738,4 +738,18 @@ REMAINING (deferred):
 
 ---
 
-*Last updated: 2026-05-07 — BUG-120 filed and fixed: selfhost .add() rewrite fires on user class methods via lowercase variables; fix uses InferCtx to detect class instances*
+---
+
+### BUG-121: TC diagnostics always report col 0 — span resolution needed
+
+- **Severity:** Low (correct file:line, wrong column — usable but imprecise)
+- **Status:** Open — deferred; noted in `checkExpr` with a TODO comment
+- **Symptom:** All type-mismatch diagnostics emitted by `checkExpr` and `checkVarDecl` report column 0. The format `file:line:0: error: type mismatch: ...` is technically valid but unhelpful for editors and users.
+- **Root cause:** Statement spans record the keyword position (e.g., the `return` token or `var` token), not the expression start. Column within the line is stored as 0 in most spans because the parser does not yet thread byte-offset-within-line into `Span.col`.
+- **Proper fix:** Thread a true column (byte offset from start of line) into `Span` during tokenization. The tokenizer tracks `col` via `_col` already in `Lexer.zbr`; it needs to be passed through `PExprId` → `Span` in the ASTBuilder rather than defaulting to 0.
+- **Where noted:** `selfhost/typechecker.zbr` `checkExpr` — `TODO BUG-121` comment.
+- **Filed:** 2026-05-09
+
+---
+
+*Last updated: 2026-05-09 — BUG-121 filed: TC diagnostics report col 0; span resolution deferred*
