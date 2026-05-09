@@ -116,6 +116,7 @@ class ClassTypes
     var field_types: HashMap(str, Type_)
     var method_returns: HashMap(str, Type_)
     var method_params: HashMap(str, str)
+    var method_param_types: HashMap(str, str)  # method_name → "|"-joined typeTag per param
     var ctor_params: List(Type_)
 
     cue init(name: str)
@@ -123,6 +124,7 @@ class ClassTypes
         field_types = HashMap()
         method_returns = HashMap()
         method_params = HashMap()
+        method_param_types = HashMap()
         ctor_params = List(Type_)()
 
     def setField(field_name: str, t: Type_)
@@ -133,6 +135,19 @@ class ClassTypes
 
     def setMethodParams(method_name: str, params_csv: str)
         .method_params.put(internString(method_name), internString(params_csv))
+
+    def setMethodParamTypes(method_name: str, types_pipe: str)
+        .method_param_types.put(internString(method_name), internString(types_pipe))
+
+    def methodParamTypeAt(method_name: str, idx: int): Type_?
+        if not .method_param_types.contains(method_name)
+            return nil
+        var pipe: str = .method_param_types.fetch(method_name)
+        var types: List(str) = pipe.split("|")
+        if idx < 0 or idx >= types.count()
+            return nil
+        var tag: str = types.at(idx)
+        return paramTypeFromTag(tag)
 
     def addCtorParam(t: Type_)
         .ctor_params.add(t)
@@ -276,6 +291,12 @@ class ModuleTypes
             return nil
         var c: ClassTypes = .classes.fetch(class_name)
         return c.ctorParamAt(idx)
+
+    def methodParamTypeAt(class_name: str, method_name: str, idx: int): Type_?
+        if not .classes.contains(class_name)
+            return nil
+        var c: ClassTypes = .classes.fetch(class_name)
+        return c.methodParamTypeAt(method_name, idx)
 
 # ── Built-in name → Type_ mapping ────────────────────────────────────────────
 # Maps the plain type-name strings used in AST TypeRef.named nodes to Type_.
@@ -437,6 +458,20 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     pi += 1
                 if pcsv != ""
                     ct.setMethodParams(m.name, pcsv)
+                # Collect param types as "|"-joined typeTag strings for call-arg checking.
+                var ptypes_pipe: str = ""
+                var pti: int = 0
+                while pti < m.params.count()
+                    var p2 = m.params.at(pti)
+                    if pti > 0
+                        ptypes_pipe = ptypes_pipe + "|"
+                    if p2.type_ != nil
+                        ptypes_pipe = ptypes_pipe + typeTag(typeFromRef(p2.type_ to!))
+                    else
+                        ptypes_pipe = ptypes_pipe + "?"
+                    pti += 1
+                if ptypes_pipe != ""
+                    ct.setMethodParamTypes(m.name, ptypes_pipe)
             on Decl.init as ini
                 # Ctor params — first init wins (Zebra supports only one cue init per class).
                 if ct.ctorParamCount() == 0
@@ -488,6 +523,20 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type to!))  # safe: nil checked above
                 else
                     module_fns.setMethodReturn(topfn.name, Type_.void_)
+                # Collect param types for call-arg checking at call sites.
+                var tl_ptypes: str = ""
+                var tl_pti: int = 0
+                while tl_pti < topfn.params.count()
+                    var tl_p = topfn.params.at(tl_pti)
+                    if tl_pti > 0
+                        tl_ptypes = tl_ptypes + "|"
+                    if tl_p.type_ != nil
+                        tl_ptypes = tl_ptypes + typeTag(typeFromRef(tl_p.type_ to!))
+                    else
+                        tl_ptypes = tl_ptypes + "?"
+                    tl_pti += 1
+                if tl_ptypes != ""
+                    module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
             else
                 pass
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
@@ -639,6 +688,21 @@ class InferCtx
             if mr != nil
                 return mr
             return .dep_types.methodReturn(bare, method_name)
+        return nil
+
+    def methodParamTypeAtAny(class_name: str, method_name: str, idx: int): Type_?
+        var pt: Type_? = .module_types.methodParamTypeAt(class_name, method_name, idx)
+        if pt != nil
+            return pt
+        pt = .dep_types.methodParamTypeAt(class_name, method_name, idx)
+        if pt != nil
+            return pt
+        var bare: str = stripModulePrefix(class_name)
+        if bare != class_name
+            pt = .module_types.methodParamTypeAt(bare, method_name, idx)
+            if pt != nil
+                return pt
+            return .dep_types.methodParamTypeAt(bare, method_name, idx)
         return nil
 
     def hasClassAny(class_name: str): bool
@@ -1438,6 +1502,63 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         return exp
     return inferred
 
+# Reconstruct a primitive Type_ from a typeTag string. Returns nil for
+# non-primitive tags so checkCallExpr skips those param positions.
+def paramTypeFromTag(tag: str): Type_?
+    if tag == "int"
+        return Type_.int_
+    if tag == "uint"
+        return Type_.uint_
+    if tag == "flt"
+        return Type_.float_
+    if tag == "bool"
+        return Type_.bool_
+    if tag == "char"
+        return Type_.char_
+    if tag == "str"
+        return Type_.string_
+    return nil
+
+# Check argument types against declared param types at a call site.
+# Only catches primitive-to-primitive mismatches; skips named args, non-primitive
+# params, and calls whose callee type is not statically known. Uses line from
+# the enclosing statement (0 when no span is available — BUG-121).
+def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    # Bail if any arg is named — reordering complicates positional indexing.
+    for arg in call.args
+        if arg.name != nil
+            return
+    var lookup_class: str = ""
+    var lookup_method: str = ""
+    branch call.callee
+        on Expr.ident as cid
+            lookup_class = ctx.current_class  # "" at module scope
+            lookup_method = cid.name
+        on Expr.member as mem
+            var recv: Type_ = inferExpr(mem.object, ctx)
+            if recv is Type_.ref_to as rrt
+                recv = rrt
+            if recv is Type_.optional as rot
+                recv = rot
+            if recv is Type_.named as tn
+                lookup_class = tn
+                lookup_method = mem.member
+            else
+                return
+        else
+            return
+    # Check each positional argument against its declared param type.
+    var idx: int = 0
+    for arg in call.args
+        var expected: Type_? = nil
+        if lookup_class != ""
+            expected = ctx.methodParamTypeAtAny(lookup_class, lookup_method, idx)
+        if expected == nil
+            expected = ctx.methodParamTypeAtAny("", lookup_method, idx)
+        if expected != nil
+            checkExpr(arg.value, expected, file, line, 0, ctx)
+        idx += 1
+
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
@@ -1462,6 +1583,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
         branch s
             on Stmt.var_ as dv
                 checkVarDecl(dv, file, ctx)
+                # Also check call-arg types when init expr is a direct call.
+                if dv.init_expr != nil
+                    if dv.init_expr to! is Expr.call as var_call
+                        checkCallExpr(var_call, file, dv.span.line, ctx)
                 # Bind the local so later stmts in the same block can infer it.
                 var bt: Type_ = Type_.unknown_
                 if dv.type_ != nil
@@ -1488,6 +1613,16 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
                         checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
+                # Also check call-arg types when return value is a direct call.
+                if sr.value != nil
+                    if sr.value to! is Expr.call as ret_call
+                        checkCallExpr(ret_call, file, sr.span.line, ctx)
+            on Stmt.assign as sasn
+                if sasn.value is Expr.call as assign_call
+                    checkCallExpr(assign_call, file, 0, ctx)
+            on Stmt.expr as se
+                if se is Expr.call as stmt_call
+                    checkCallExpr(stmt_call, file, 0, ctx)
             on Stmt.with_ as sw
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.guard_ as sg

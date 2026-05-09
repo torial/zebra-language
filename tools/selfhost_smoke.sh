@@ -275,6 +275,12 @@ smoke_tc_fail test/tc_mismatch_return_test.zbr "type mismatch"
 smoke_tc_fail test/tc_mismatch_with_test.zbr "type mismatch"
 smoke_tc_fail test/tc_mismatch_guard_test.zbr "type mismatch"
 
+# Phase 3 TC diagnostics: call-arg type checking.
+# Positive: correct primitive arg types must compile clean.
+smoke test/tc_call_match_test.zbr
+# Negative: wrong primitive arg type must fail with "type mismatch".
+smoke_tc_fail test/tc_mismatch_call_test.zbr "type mismatch"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

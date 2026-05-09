@@ -1,0 +1,10 @@
+def greet(name: str)
+    print "Hello " + name
+
+def double(n: int): int
+    return n * 2
+
+def main()
+    greet("world")
+    var x: int = double(21)
+    print x.toString()
