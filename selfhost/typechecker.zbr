@@ -449,8 +449,13 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 pass
 
 def populateModuleTypes(mt: ModuleTypes, m: Module)
-    # "" sentinel collects module-level def return types for sibling lookup.
-    var module_fns = ClassTypes("")
+    # "" sentinel accumulates module-level def return types across all deps.
+    # Use existing ClassTypes("") if present so repeated calls merge rather
+    # than overwrite — dep_types is populated once per dep; without merge the
+    # last dep's functions would shadow all earlier ones.
+    if mt.classOf("") == nil
+        mt.addClass(ClassTypes(""))
+    var module_fns: ClassTypes = mt.classOf("") to!  # safe: ensured above
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
         branch decl
@@ -485,7 +490,6 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     module_fns.setMethodReturn(topfn.name, Type_.void_)
             else
                 pass
-    mt.addClass(module_fns)
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
     for decl in m.decls
         if decl is Decl.class_ as c
@@ -787,6 +791,28 @@ def isAbstractType(t: Type_): bool
             return true
         else
             return false
+
+class TcResult
+    var method_ctxs: HashMap(str, InferCtx)
+
+    cue init()
+        method_ctxs = HashMap()
+
+    def store(class_name: str, method_name: str, ctx: InferCtx)
+        var key: str = class_name + "." + method_name
+        method_ctxs.put(key, ctx)
+
+    def lookupVar(class_name: str, method_name: str, var_name: str): Type_?
+        var key: str = class_name + "." + method_name
+        if method_ctxs.contains(key)
+            var mctx: InferCtx = method_ctxs.fetch(key)
+            if mctx.hasLocal(var_name)
+                return mctx.localType(var_name)
+        return nil
+
+    def hasMethod(class_name: str, method_name: str): bool
+        var key: str = class_name + "." + method_name
+        return method_ctxs.contains(key)
 
 def inferExpr(e: Expr, ctx: InferCtx): Type_
     branch e
@@ -1439,7 +1465,7 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
             else
                 pass
 
-def checkDecl(decl: Decl, file: str, ctx: InferCtx)
+def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
     branch decl
         on Decl.method as dm
             if dm.stmts as dm_stmts
@@ -1452,21 +1478,34 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx)
                         pt = typeFromRef(p.type_ to!)  # safe: nil checked above
                     ctx.bind(p.name, pt)
                 checkStmts(dm_stmts, file, ctx)
+                var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
+                scope_ctx.withDepTypes(ctx.dep_types)
+                if dm.return_type != nil
+                    scope_ctx.withReturnType(typeFromRef(dm.return_type to!))
+                for pp in dm.params
+                    var ppt: Type_ = Type_.unknown_
+                    if pp.type_ != nil
+                        ppt = typeFromRef(pp.type_ to!)
+                    scope_ctx.bind(pp.name, ppt)
+                walkStmts(dm_stmts, scope_ctx)
+                tc_result.store(ctx.current_class, dm.name, scope_ctx)
                 ctx.current_class = saved_class
         on Decl.class_ as dc
             var saved_class: str = ctx.current_class
             ctx.current_class = dc.name
             for m in dc.members
-                checkDecl(m, file, ctx)
+                checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
         on Decl.var_ as dv
             checkVarDecl(dv, file, ctx)
         else
             pass
 
-def checkModule(m: Module, file: str, ctx: InferCtx)
+def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
+    var tc_result: TcResult = TcResult()
     for decl in m.decls
-        checkDecl(decl, file, ctx)
+        checkDecl(decl, file, ctx, tc_result)
+    return tc_result
 
 
 def main()

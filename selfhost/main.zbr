@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateEntryPoint, generateDep, generateDepWith
-use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule
+use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ class MultiCompiler
                 var tc_mt: ModuleTypes = buildModuleTypes(module)
                 var tc_ctx: InferCtx = InferCtx(tc_mt, "")
                 tc_ctx.withDepTypes(dep_types)
-                checkModule(module, zbr_path, tc_ctx)
+                var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
                 if tc_ctx.hasErrors()
                     sys.errln(tc_ctx.errorMessages())
                     sys.exit(1)
@@ -136,7 +136,7 @@ class MultiCompiler
                         if vpath != zbr_path
                             all_deps.add(.moduleNameOf(vpath))
                         vi = vi + 1
-                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts)?
+                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
                 else
                     zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
 
