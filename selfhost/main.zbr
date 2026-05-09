@@ -347,7 +347,7 @@ class MultiCompiler
                         while mi < extra_members.count()
                             new_members.add(extra_members.at(mi))
                             mi = mi + 1
-                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, new_members, List(PNode)(), rcls.is_reflectable)))
+                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable)))
                 else
                     merged_decls.add(rdecl)
             ri = ri + 1

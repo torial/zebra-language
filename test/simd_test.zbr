@@ -1,0 +1,44 @@
+# SIMD vector types: f32x8, i32x4, u8x16, etc.
+
+def main()
+    # Constructor: f32x8(v0, v1, ..., v7)
+    var a: f32x8 = f32x8(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+
+    # Splat: f32x8.splat(v)
+    var zero: f32x8 = f32x8.splat(0.0)
+
+    # Native arithmetic (+ - * /)
+    var b: f32x8 = a + zero
+    var b2: f32x8 = a * a
+
+    # sum() → @reduce(.Add, v)
+    var s: float32 = b.sum()
+    assert s == 36.0, "expected sum=36.0, got " + s.toString()
+
+    # dot(other) → @reduce(.Add, a * b)
+    var dp: float32 = a.dot(a)
+    assert dp == 204.0, "expected dot=204.0, got " + dp.toString()
+
+    # max_element() → @reduce(.Max, v)
+    var mx: float32 = a.max_element()
+    assert mx == 8.0, "expected max=8.0, got " + mx.toString()
+
+    # min_element() → @reduce(.Min, v)
+    var mn: float32 = a.min_element()
+    assert mn == 1.0, "expected min=1.0, got " + mn.toString()
+
+    # Integer vector
+    var iv: i32x4 = i32x4(10, 20, 30, 40)
+    var isum: int32 = iv.sum()
+    assert isum == 100, "expected isum=100, got " + isum.toString()
+
+    # splat on integer vector
+    var ones: i32x4 = i32x4.splat(1)
+    var isum2: int32 = ones.sum()
+    assert isum2 == 4, "expected isum2=4, got " + isum2.toString()
+
+    # Multiply element-wise and sum
+    var sq_sum: float32 = b2.sum()
+    assert sq_sum == 204.0, "expected b2.sum=204.0, got " + sq_sum.toString()
+
+    print "simd_test: ok"

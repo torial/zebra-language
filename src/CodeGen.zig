@@ -4234,7 +4234,7 @@ const Generator = struct {
                     .{ "add", {} }, .{ "at", {} }, .{ "remove", {} },
                     .{ "clear", {} }, .{ "contains", {} }, .{ "count", {} },
                     .{ "sort", {} }, .{ "sortBy", {} },
-                    .{ "any", {} }, .{ "all", {} },
+                    .{ "any", {} }, .{ "all", {} }, .{ "find", {} },
                 });
                 if (list_methods.get(method) != null) {
                     return g.genListMethod(object, false, method, args);
@@ -4668,6 +4668,62 @@ const Generator = struct {
             try g.w.writeAll("(blk: { const _pp = ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll("; break :blk std.fs.cwd().realpathAlloc(_allocator, _pp) catch _pp; })");
+            return true;
+        }
+        return false;
+    }
+
+    // ── SIMD helper methods ───────────────────────────────────────────────────
+
+    /// Emit a SIMD static constructor: `f32x8.splat(v)` or `f32x8.load(slice)`.
+    fn genSimdStaticCall(g: Generator, si: Builtins.SimdInfo, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "splat")) {
+            // f32x8.splat(v) → @as(@Vector(8, f32), @splat(@as(f32, v)))
+            try g.w.print("@as(@Vector({d}, {s}), @splat(@as({s}, ", .{ si.lanes, si.elem_zig, si.elem_zig });
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "load")) {
+            // f32x8.load(slice) → @as(@Vector(8, f32), slice[0..8].*)
+            try g.w.print("@as(@Vector({d}, {s}), ", .{ si.lanes, si.elem_zig });
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("&.{}");
+            try g.w.print("[0..{d}].*)", .{si.lanes});
+            return true;
+        }
+        return false;
+    }
+
+    /// Emit a SIMD instance method: `acc.sum()`, `a.dot(b)`, `a.max_element()`.
+    fn genSimdInstanceCall(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "sum")) {
+            // acc.sum() → @reduce(.Add, acc)
+            try g.w.writeAll("@reduce(.Add, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "dot")) {
+            // a.dot(b) → @reduce(.Add, a * b)
+            try g.w.writeAll("@reduce(.Add, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(" * ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "max_element")) {
+            // a.max_element() → @reduce(.Max, a)
+            try g.w.writeAll("@reduce(.Max, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "min_element")) {
+            // a.min_element() → @reduce(.Min, a)
+            try g.w.writeAll("@reduce(.Min, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
             return true;
         }
         return false;
@@ -6374,6 +6430,17 @@ const Generator = struct {
             try g.w.writeAll(", ");
             try g.genExpr(obj);
             try g.w.writeAll(".items)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "find")) {
+            if (args.len == 0) return false;
+            try g.w.writeAll("_zebra_list_find(std.meta.Child(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items)), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "any")) {
@@ -10069,6 +10136,27 @@ const Generator = struct {
                 return;
             }
         }
+        // SIMD vector constructor: f32x8(1.0, 2.0, ...) → @as(@Vector(8, f32), .{1.0, 2.0, ...})
+        if (e.callee.* == .ident) {
+            if (Builtins.parseSimdType(e.callee.ident.name)) |si| {
+                try g.w.print("@as(@Vector({d}, {s}), .{{", .{ si.lanes, si.elem_zig });
+                for (e.args, 0..) |arg, i| {
+                    if (i > 0) try g.w.writeAll(", ");
+                    try g.genExpr(arg.value);
+                }
+                try g.w.writeAll("})");
+                return;
+            }
+        }
+        // SIMD static constructors: f32x8.splat(v), f32x8.load(slice)
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident) {
+                if (Builtins.parseSimdType(mem.object.ident.name)) |si| {
+                    if (try g.genSimdStaticCall(si, mem.member, e.args)) return;
+                }
+            }
+        }
         // Constructor call for exposed class alias: `ExposedClass(args)` after
         // `use Mod exposing ExposedClass` → `ExposedClass.init(args)`.
         // Must be checked before the generic ident-call path below.
@@ -10481,6 +10569,7 @@ const Generator = struct {
                     .arg_result    => if (try g.genArgResultMethod(mem.object, mem.member, e.args)) return,
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
                     .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
+                    .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
                     .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     else           => {},
                 }
@@ -11179,6 +11268,11 @@ const Generator = struct {
     fn genType(g: Generator, tr: Ast.TypeRef) anyerror!void {
         switch (tr) {
             .named       => |n| {
+                // SIMD vector type annotation: f32x8, i16x16, u8x32, etc.
+                if (Builtins.parseSimdType(n.name)) |si| {
+                    try g.w.print("@Vector({d}, {s})", .{ si.lanes, si.elem_zig });
+                    return;
+                }
                 // Classes are reference types: emit `*ClassName` instead of `ClassName`.
                 // Structs, enums, unions, and primitives are value types (no pointer).
                 if (g.class_names.contains(n.name)) {
@@ -11539,6 +11633,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .timer_handle,
         .progress_bar,
         .code_editor,
+        .simd,
         .optional,
         .tuple,
         .generic_named,

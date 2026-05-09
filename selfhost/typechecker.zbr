@@ -451,6 +451,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
 def populateModuleTypes(mt: ModuleTypes, m: Module)
     # "" sentinel collects module-level def return types for sibling lookup.
     var module_fns = ClassTypes("")
+    # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
         branch decl
             on Decl.class_ as c
@@ -461,6 +462,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ct2 = ClassTypes(s.name)
                 addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
+            on Decl.mixin_ as mx
+                # Register mixin under its own name so pass 2 can merge it.
+                var mct = ClassTypes(mx.name)
+                addClassMembers(mt, mct, mx.members)
+                mt.addClass(mct)
             on Decl.union_ as u
                 # Index variant → payload Type_ for branch-on narrowing (17b).
                 var uname: str = u.name
@@ -480,6 +486,19 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
             else
                 pass
     mt.addClass(module_fns)
+    # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
+    for decl in m.decls
+        if decl is Decl.class_ as c
+            if c.mixins.count() > 0
+                var maybe_ct: ClassTypes? = mt.classOf(c.name)
+                if maybe_ct != nil
+                    var class_ct: ClassTypes = maybe_ct to!
+                    for mixin_ref in c.mixins
+                        if mixin_ref is TypeRef.named as nr
+                            for dep in m.decls
+                                if dep is Decl.mixin_ as mx
+                                    if mx.name == nr.name
+                                        addClassMembers(mt, class_ct, mx.members)
 
 def buildModuleTypes(m: Module): ModuleTypes
     var mt = ModuleTypes()

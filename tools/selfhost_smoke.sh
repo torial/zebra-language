@@ -204,10 +204,15 @@ smoke test/bug092_split_to_list_test.zbr
 smoke test/bug097_ptr_param_chain_test.zbr
 # BUG-090: for n in Reflect.fieldNames(obj) — loop var element type is now str (not unknown).
 smoke test/bug090_reflect_fieldnames_test.zbr
+# BUG-089: mixin method return type inferred correctly; count() guard avoids .items.len heuristic.
+smoke test/bug089_mixin_method_test.zbr
 # BUG-096: List(SomeClass)() constructor — genTypeFromExpr must emit *ClassName for class type args.
 smoke test/bug096_list_class_ctor_test.zbr
 # BUG-093: s.len emits @as(i64,@intCast()) — matches QUICKSTART int contract.
 smoke test/bug093_strlen_test.zbr
+
+# Guarded for-in (`for x in list if cond`) and List.find(pred).
+smoke test/for_in_guard_test.zbr
 
 # Chained comparisons: a < b < c desugars to labeled-block and-chain.
 smoke test/chained_cmp_test.zbr
@@ -236,6 +241,8 @@ smoke tools/sweep_class_main.zbr
 smoke tools/migrate_colon_syntax.zbr
 # Scripting tool #4: convert single-arm branch-on-as+else-pass to if-is-as form.
 smoke tools/branch_to_if_is.zbr
+# SIMD vector types: f32x8, i32x4, etc.
+smoke test/simd_test.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

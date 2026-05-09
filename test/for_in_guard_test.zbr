@@ -1,0 +1,65 @@
+def main()
+    # Default list path: filter even numbers
+    var nums: List(int) = List(int)()
+    nums.add(1)
+    nums.add(2)
+    nums.add(3)
+    nums.add(4)
+    nums.add(5)
+    var evens: List(int) = List(int)()
+    for n in nums if n % 2 == 0
+        evens.add(n)
+    assert evens.count() == 2, "expected 2 evens"
+    assert evens.at(0) == 2, "first even"
+    assert evens.at(1) == 4, "second even"
+
+    # Split path: filter non-empty parts
+    var parts = List(str)()
+    for p in "a,,b,,c".split(",") if p != ""
+        parts.add(p)
+    assert parts.count() == 3, "expected 3 non-empty parts"
+    assert parts.at(0) == "a", "split[0]"
+    assert parts.at(1) == "b", "split[1]"
+    assert parts.at(2) == "c", "split[2]"
+
+    # Chars path: collect only ASCII letters
+    var letters = List(str)()
+    for c in "h3ll0".chars() if c.isAlpha()
+        letters.add(c.toString())
+    assert letters.count() == 3, "expected 3 alpha chars"
+    assert letters.at(0) == "h", "char[0]"
+    assert letters.at(1) == "l", "char[1]"
+    assert letters.at(2) == "l", "char[2]"
+
+    # ToRange path: collect multiples of 3
+    var threes = List(int)()
+    for i in 0.to(10) if i % 3 == 0
+        threes.add(i)
+    assert threes.count() == 4, "expected 4 multiples-of-3 (0,3,6,9)"
+    assert threes.at(0) == 0, "three[0]"
+    assert threes.at(3) == 9, "three[3]"
+
+    # HashMap 2-var path: filter by value
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("a", 1)
+    m.set("b", 5)
+    m.set("c", 9)
+    var picks: List(int) = List(int)()
+    for k, v in m if v > 3
+        picks.add(v)
+    assert picks.count() == 2, "hashmap guard count"
+
+    # List.find() — first match or nil
+    var scores: List(int) = List(int)()
+    scores.add(3)
+    scores.add(7)
+    scores.add(12)
+    scores.add(5)
+    var found = scores.find(def(x) = x > 6)
+    assert found != nil, "find should succeed"
+    assert found to! == 7, "find value"
+
+    var not_found = scores.find(def(x) = x > 100)
+    assert not_found == nil, "find on no-match returns nil"
+
+    print "ok"

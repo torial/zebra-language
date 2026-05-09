@@ -483,29 +483,21 @@ REMAINING (deferred):
 
 ---
 
-### BUG-089: `print` of a mixin-method `str` return falls back to `{any}` byte-array formatting
+### BUG-089: ✅ FIXED 2026-05-08 — mixin method return type correctly inferred; methods emitted into class
 - **Severity:** Low (cosmetic — wrong output format; does not affect type-annotated locals)
-- **Status:** Open
+- **Status:** Fixed:
+  - `src/TypeChecker.zig inferMember`: after `own_scope.lookupLocal` misses, iterate `sym.decl.class.adds` and look up each mixin's `own_scope` (resolver populates these). Returns `tc.symbolType(member_sym)`.
+  - `selfhost/typechecker.zbr populateModuleTypes`: two-pass fix — pass 1 registers mixins as their own `ClassTypes`; pass 2 merges mixin methods into each class that `adds` them via `addClassMembers`.
+  - `selfhost/codegen.zbr genClass`: after own members, iterate `n.mixins`, find matching `Decl.mixin_` in `module_decls`, and call `ig.genMethod` for each mixin method.
+  - `selfhost/codegen.zbr count dispatch`: before `.items.len` fallback, check via `inferExpr` if receiver is a class with a user-defined `count()` method — if so, pass through as a normal call.
+  - `selfhost/parser.zbr`: added `mixin_: ^PClass` to `PNode` union; `parseMixinDecl()`; `adds` clause parsing in `parseClassDecl`; `mixins: List(str)` field to `PClass`.
+  - `selfhost/astbuilder.zbr`: added `buildMixin()`, `PNode.mixin_` dispatch arm, and mixin TypeRef population in `buildClass`.
+  - `selfhost/main.zbr`: updated `PClass(...)` constructor call to pass `mixins` field.
+  - Test: `test/bug089_mixin_method_test.zbr`; added to `selfhost_smoke.sh`. Bootstrap 5/5.
+- **Original description:**
 - **Symptom:** Calling a mixin method that returns `str` directly inside `print` emits the bytes as a `[]const u8` integer-array fallback instead of as text.
-- **Reproducer:**
-  ```zebra
-  mixin Greeter
-      def hi(): str
-          return "hi"
-
-  class Foo adds Greeter
-      cue init()
-          pass
-
-  class Main
-      static
-          def main
-              var f = Foo()
-              print f.hi()        # prints `{ 104, 105 }`, not `hi`
-  ```
 - **Generated Zig:** `std.debug.print("{any}\n", .{f.hi()});` — wrong format specifier; should be `"{s}\n"`.
-- **Root cause:** TC inferExpr on a mixin-derived method call does not surface the declared return type, so the print-emission path in CodeGen sees `Type.unknown` and falls back to `{any}`.  Direct access via a typed local (`var s: str = f.hi(); print s`) emits `{s}` correctly — confirming this is a TC propagation gap on the call site, not a codegen format selector bug.
-- **Workaround:** Assign to a `: str`-annotated local before printing.
+- **Root cause:** TC `inferMember` didn't search `adds Mixin` scopes for methods — returned `.unknown`. Also, selfhost didn't parse `mixin` declarations or `adds` clauses at all.
 - **Discovered:** 2026-04-28 while spot-verifying QUICKSTART.md examples.
 
 ---

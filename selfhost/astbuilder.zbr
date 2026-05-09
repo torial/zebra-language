@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp
 
 def zspan(): Span
@@ -187,6 +187,8 @@ class ASTBuilder
                 return .buildStruct(s)?
             on PNode.interface_ as i
                 return .buildInterface(i)?
+            on PNode.mixin_ as mx
+                return .buildMixin(mx)?
             on PNode.extend_ as ex
                 return .buildExtend(ex)?
             on PNode.enum_ as e
@@ -210,6 +212,8 @@ class ASTBuilder
         for iface in c.ifaces
             ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
         var mixins: List(TypeRef) = List(TypeRef)()
+        for mixin_name in c.mixins
+            mixins.add(TypeRef.named(NamedTypeRef(zspan(), mixin_name)))
         var tparams: List(TypeParam) = List(TypeParam)()
         for tp in c.type_params
             tparams.add(TypeParam(tp, nil))
@@ -231,6 +235,14 @@ class ASTBuilder
         for iface in c.ifaces
             ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
         return Decl.interface_(DeclInterface(zspan(), zmods(), c.name, ifaces, members))
+
+    # ── Mixin ─────────────────────────────────────────────────────────────────
+
+    def buildMixin(c: PClass): Decl throws
+        var members: List(Decl) = List(Decl)()
+        for pn in c.members
+            members.add(.buildMember(pn)?)
+        return Decl.mixin_(DeclMixin(zspan(), zmods(), c.name, members))
 
     # ── Extend ────────────────────────────────────────────────────────────────
 
@@ -441,7 +453,10 @@ class ASTBuilder
                 var else_stmts: List(Stmt)? = nil
                 if pfor.else_stmts.len > 0
                     else_stmts = .buildStmts(pfor.else_stmts)?
-                return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, stmts, else_stmts))
+                if pfor.filter.count() > 0
+                    const filter_expr = .buildExpr(pfor.filter.at(0))?
+                    return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, filter_expr, stmts, else_stmts))
+                return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, nil, stmts, else_stmts))
 
             on PNode.stmt_for_num as pfn
                 const start_expr = .buildExpr(pfn.start.at(0))?
@@ -590,11 +605,11 @@ class ASTBuilder
             var binding_opt: str? = nil
             if arm.binding != ""
                 binding_opt = arm.binding
-            var guard_exprs = List(Expr)()
-            if arm.guard_cond.count() > 0
-                var gexpr = .buildExpr(arm.guard_cond.at(0))?
-                guard_exprs.add(gexpr)
-            var bo = BranchOn(zspan(), values, arm_stmts, binding_opt, guard_exprs)
+            var filter_exprs = List(Expr)()
+            if arm.filter_cond.count() > 0
+                var gexpr = .buildExpr(arm.filter_cond.at(0))?
+                filter_exprs.add(gexpr)
+            var bo = BranchOn(zspan(), values, arm_stmts, binding_opt, filter_exprs)
             # Struct pattern: parser stored the full call node in struct_pat_node.
             if arm.struct_pat_node.count() > 0
                 var call_expr = .buildExpr(arm.struct_pat_node.at(0))?

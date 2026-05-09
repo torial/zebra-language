@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-06 (`unless`/`until` — parser-level desugar; both backends; bootstrap 5/5, smoke 55/55)
+**Last updated:** 2026-05-08 (guarded for-in + `List.find(pred)` — both backends; bootstrap 5/5, smoke 75/75)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -177,10 +177,9 @@ flow into this milestone.
 See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`,
 `STYLE_GUIDE.md` §13.
 
-### 20. SIMD types — Milestone 0.11 headliner
-`f32x8`, `i16x16`, `f32x4` etc. naming convention (`{element_type}x{lanes}`). Auto-fallback to scalar loop when the target lacks the vector width.  
-**Impl coordinates:** `src/Builtins.zig` (SIMD builtins), `src/TypeChecker.zig` (simd type inference), `src/CodeGen.zig` (`genSimdCall`); selfhost parity in `selfhost/codegen.zbr`.  
-**Motivation:** LynseDB brute-force vector search; llama.cpp–style dot-product hotpaths.  
+### 20. ✅ SIMD types — Milestone 0.11 headliner — COMPLETE 2026-05-08
+`f32x8`, `i16x16`, `f32x4` etc. naming convention (`{element_type}x{lanes}`). Constructor, splat, load, arithmetic, sum/dot/max_element/min_element reductions. Both Zig and selfhost backends. 76/76 smoke, bootstrap 5/5.  
+**Impl:** `src/Builtins.zig` (`parseSimdType`/`SimdInfo`), `src/TypeChecker.zig` (`Type.simd`), `src/CodeGen.zig` (`genSimdStaticCall`/`genSimdInstanceCall`); selfhost parity in `selfhost/resolver.zbr` (`isSimdName`) + `selfhost/codegen.zbr` (`isSimdTypeName`/`genSimdCtor`/`genSimdStaticCall`/`genSimdInstanceCall` + `genType` SIMD arm); `selfhost/cg_helpers.zbr` SIMD reductions added to `isReadOnlyMethod`. QUICKSTART.md §32 added.  
 See `wiki/pages/concepts/concept_zebra-simd-design.md` for the complete design.
 
 ### 21. Milestone 0.11 supporting cluster
@@ -193,6 +192,8 @@ Items that land in the same window as SIMD or that unlock the 0.12/0.13 work:
 - **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering
 - ✅ **Profiler (Part A)** — static `Profile` module: `start/end/report/dump_folded/reset`; stack-based instrumentation with flamegraph-compatible folded output; both backends; 56/56 smoke; bootstrap 5/5 (2026-05-06)
 - ✅ **Profiler (Part B)** — `@profile` method attribute: compiler wraps body with `_profile_start`/`defer _profile_end` automatically; Modifiers + AstBuilder + CodeGen + selfhost parity; 64/64 smoke; bootstrap 5/5 (2026-05-07)
+- ✅ **Guarded for-in + `List.find`** — `for x in list if cond`; all 7 dispatch paths; `List.find(pred)` → first match or nil; selfhost parity; 75/75 smoke; bootstrap 5/5 (2026-05-08)
+- ✅ **SIMD types** — `f32x8`/`i32x4`/etc.; constructor, splat, load, arithmetic, reductions (sum/dot/max_element/min_element); both backends; 76/76 smoke; bootstrap 5/5 (2026-05-08)
 See `wiki/pages/projects/project_zebra.md` (milestone table 0.11).
 
 ---
@@ -406,6 +407,7 @@ RESERVED — wait for Zebra 1.0. See: `wiki/pages/projects/project_intertextual.
 | §19.5b `zebra typecheck-merge` subcommand: conflict-side extraction + TC check; line-number preservation; diff3 support; git hook installer; bootstrap 5/5 | 2026-05-05 |
 | Chained comparisons `a < b < c` — `ExprChainedCmp` AST; labeled-block and-chain with temps; `_zebra_eq`/`_zebra_ne` preamble; selfhost parser loop + all 6 selfhost phases; 54/54 smoke; bootstrap 5/5 | 2026-05-06 |
 | `unless`/`until` — parser-level desugar (`unless` → `if not`; `until` → `while not`); `unless...else` rejected at parse time; no new AST nodes; both backends; 55/55 smoke; bootstrap 5/5 | 2026-05-06 |
+| Guarded for-in (`for x in list if cond`) — all 7 dispatch paths (HashMap 2-var, ToRange, Split/Lines, Chars, Bytes, RegexSlice/Items, default list); `if (!(cond)) continue;` guard injected in all paths; `List.find(pred)` first-match-or-nil; `_zebra_list_find` preamble helper; selfhost parity (emitForGuard method, filter field in PForIn/StmtForIn); 75/75 smoke; bootstrap 5/5 | 2026-05-08 |
 | Stdlib gap sprint (Sprints 1–5): Math (constants, hyperbolic trig, cbrt, hypot, log1p, expm1, lerp, gcd, lcm, toRadians, toDegrees, isPowerOfTwo, wrap, popcount, clz, ctz); String (lastIndexOf, eqlIgnoreCase, isAlphanumeric, isPrintable, startsWithIgnoreCase, endsWithIgnoreCase, containsIgnoreCase, indexOfIgnoreCase, indexOfFrom, toIntBase, tokenize, encodeBase64, decodeBase64); Base64 module (encode/decode/encodeUrl/decodeUrl + preamble); Hash (crc32, fnv64, xxHash64, hmac512); File (size, isFile, isDir, writeLines); sys (cwd, setenv); Path.absolute; Random.gaussian, Random.weighted — all TC-inferred + selfhost-mirrored + 6 test files; 62/62 smoke; bootstrap 5/5 | 2026-05-06 |
 
 ---

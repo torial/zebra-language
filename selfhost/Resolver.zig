@@ -211,6 +211,10 @@ fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool
     for (list.items) |item| { if (!pred(item)) return false; }
     return true;
 }
+fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T {
+    for (list.items) |item| { if (pred(item)) return item; }
+    return null;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     const _r = std.process.Child.run(.{
@@ -2319,7 +2323,6 @@ pub const Resolver = struct {
     }
 
     pub fn isBuiltin(self: *Resolver, name: []const u8) bool {
-        _ = self;
 // zbr:selfhost/Resolver.zbr:336
         if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
 // zbr:selfhost/Resolver.zbr:337
@@ -2381,6 +2384,51 @@ pub const Resolver = struct {
             return true;
         }
 // zbr:selfhost/Resolver.zbr:362
+        if (self.isSimdName(name)) {
+// zbr:selfhost/Resolver.zbr:363
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:364
+        return false;
+    }
+
+    pub fn isSimdName(self: *Resolver, name: []const u8) bool {
+        _ = self;
+// zbr:selfhost/Resolver.zbr:368
+        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
+// zbr:selfhost/Resolver.zbr:369
+            return false;
+        }
+// zbr:selfhost/Resolver.zbr:370
+        const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+// zbr:selfhost/Resolver.zbr:371
+        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
+// zbr:selfhost/Resolver.zbr:372
+            return false;
+        }
+// zbr:selfhost/Resolver.zbr:373
+        if (std.mem.eql(u8, parts.items[@intCast(1)], "")) {
+// zbr:selfhost/Resolver.zbr:374
+            return false;
+        }
+// zbr:selfhost/Resolver.zbr:375
+        const prefix = parts.items[@intCast(0)];
+// zbr:selfhost/Resolver.zbr:376
+        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
+// zbr:selfhost/Resolver.zbr:377
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:378
+        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+// zbr:selfhost/Resolver.zbr:379
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:380
+        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+// zbr:selfhost/Resolver.zbr:381
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:382
         return false;
     }
 

@@ -462,13 +462,15 @@ struct StmtForIn
     var span: Span
     var vars: List(String)
     var iter: ^Expr
+    var filter: ^Expr?
     var stmts: List(Stmt)
     var else_: List(Stmt)?
 
-    cue init(span: Span, vars: List(String), iter: ^Expr, stmts: List(Stmt), else_: List(Stmt)?)
+    cue init(span: Span, vars: List(String), iter: ^Expr, filter: ^Expr?, stmts: List(Stmt), else_: List(Stmt)?)
         .span = span
         .vars = vars
         .iter = iter
+        .filter = filter
         .stmts = stmts
         .else_ = else_
 

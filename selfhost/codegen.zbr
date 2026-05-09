@@ -1405,6 +1405,14 @@ struct Generator
     def genType(tr: TypeRef)
         branch tr
             on TypeRef.named as n
+                if isSimdTypeName(n.name)
+                    var sparts: List(str) = n.name.split("x")
+                    w.emit("@Vector(")
+                    w.emit(sparts.at(1))
+                    w.emit(", ")
+                    w.emit(simdElemZig(sparts.at(0)))
+                    w.emit(")")
+                    return
                 if class_names.contains_(n.name)
                     w.emit("*")
                     w.emit(n.name)
@@ -1935,6 +1943,15 @@ struct Generator
                     has_init = true
                 else
                     pass
+        # BUG-089: generate methods from added mixins.
+        for mixin_ref in n.mixins
+            if mixin_ref is TypeRef.named as nr
+                for mdecl in module_decls
+                    if mdecl is Decl.mixin_ as mx
+                        if mx.name == nr.name
+                            for mmem in mx.members
+                                if mmem is Decl.method as mm
+                                    ig.genMethod(mm)
         # Synthetic default init for classes without explicit cue init
         if not has_init
             ig.writeIndent()
@@ -3754,6 +3771,7 @@ struct Generator
             if not nameUsedInStmts(vname, fi.stmts)
                 bg.writeIndent()
                 bg.w.emit("_ = " + vname + ";\n")
+            bg.emitForGuard(fi)
             bg.genStmts(fi.stmts)
             wg.writeIndent()
             wg.w.emit("}\n")
@@ -3803,6 +3821,7 @@ struct Generator
                     bg_to.for_else_label = label_to to!
                 wg_to.writeIndent()
                 wg_to.w.emit("while (" + vname + " < _stop_" + vname + ") : (" + vname + " += 1) {\n")
+                bg_to.emitForGuard(fi)
                 bg_to.genStmts(fi.stmts)
                 wg_to.writeIndent()
                 wg_to.w.emit("}\n")
@@ -3849,6 +3868,7 @@ struct Generator
                 wg.w.emit("while (_it_" + vname + ".next()) |" + vname + "| {\n")
                 # split() elements are []const u8 — mark loop var as string for printFmtSpec
                 str_params.add(vname)
+                bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
                 wg.writeIndent()
                 wg.w.emit("}\n")
@@ -3885,6 +3905,7 @@ struct Generator
                     bg.for_else_label = label to!
                 wg.writeIndent()
                 wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + vname + "| {\n")
+                bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
                 wg.writeIndent()
                 wg.w.emit("}\n")
@@ -3907,6 +3928,7 @@ struct Generator
                 emitBytesIterObject(fi.iter)
                 w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
+                ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
                     writeIndent()
@@ -3924,6 +3946,7 @@ struct Generator
                 # Regex groups/findAll yield []const u8 elements — mark loop var as string
                 if isRegexSliceIter(fi.iter)
                     str_params.add(vname)
+                ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
                     writeIndent()
@@ -3949,6 +3972,7 @@ struct Generator
                         str_params.add(vname)
                 # Mark this variable: a for-loop var to suppress stale branch deref
                 for_loop_vars.add(vname)
+                ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
                     # for-else: Zig native for...else runs when no break occurred
@@ -3957,6 +3981,16 @@ struct Generator
                     ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
+
+    # Emit `if (!(cond)) continue;` guard at the top of a for-in loop body.
+    # `self` is the body-level generator (ig or bg) so indentation is correct.
+    def emitForGuard(fi: StmtForIn)
+        if fi.filter == nil
+            return
+        writeIndent()
+        w.emit("if (!(")
+        genExpr(fi.filter to!)
+        w.emit(")) continue;\n")
 
     # Detect `str.bytes()`: a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
     def isBytesIter(e: Expr): bool
@@ -6225,6 +6259,11 @@ struct Generator
             if id.name == "StringBuilder" and c.args.count() == 0
                 w.emit("std.ArrayList(u8){}")
                 return
+        # SIMD vector constructor: f32x8(1.0, ...) → @as(@Vector(8, f32), .{1.0, ...})
+        if c.callee is Expr.ident as simd_id
+            if isSimdTypeName(simd_id.name)
+                genSimdCtor(simd_id.name, c.args)
+                return
         # BUG-118: class constructor → .init(args); struct without cue init → struct literal
         if c.callee is Expr.ident as id
             if class_names.contains_(id.name) or struct_with_init.contains_(id.name)
@@ -6506,9 +6545,20 @@ struct Generator
                     w.emit("\"\"")
                 w.emit(")))")
             else
-                w.emit("@as(i64, @intCast(")
-                genExpr(m.object)
-                w.emit(".items.len))")
+                # BUG-089: if receiver is a class with a user-defined count(), pass through.
+                var cnt_is_user_method = false
+                if .infer_ctx != nil
+                    var cnt_recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                    if cnt_recv_t is Type_.named as cnt_cname
+                        if .infer_ctx to!.methodReturnAny(cnt_cname, "count") != nil
+                            cnt_is_user_method = true
+                if cnt_is_user_method
+                    genExpr(m.object)
+                    w.emit(".count()")
+                else
+                    w.emit("@as(i64, @intCast(")
+                    genExpr(m.object)
+                    w.emit(".items.len))")
             return
         if mname == "at"
             genExpr(m.object)
@@ -6592,6 +6642,16 @@ struct Generator
         if mname == "all"
             if args.count() > 0
                 w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
+        if mname == "find"
+            if args.count() > 0
+                w.emit("_zebra_list_find(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
                 genExpr(args.at(0).value)
@@ -6864,6 +6924,11 @@ struct Generator
                 genExpr(m.object)
                 w.emit("))")
             return
+        # SIMD static methods: f32x8.splat(v), f32x8.load(slice)
+        if m.object is Expr.ident as simd_obj_id
+            if isSimdTypeName(simd_obj_id.name)
+                genSimdStaticCall(simd_obj_id.name, mname, args)
+                return
         # Math / File / sys namespace dispatch
         if m.object is Expr.ident as id
             if id.name == "Math"
@@ -6955,6 +7020,14 @@ struct Generator
             if id.name == "Reflect"
                 genReflectCall(mname, args)
                 return
+        # SIMD instance methods: sum/dot/max_element/min_element
+        # Safe dispatch by name — none of these clash with string/list/stdlib methods.
+        if mname == "sum" or mname == "max_element" or mname == "min_element"
+            genSimdInstanceCall(m.object, mname, args)
+            return
+        if mname == "dot" and args.count() > 0
+            genSimdInstanceCall(m.object, mname, args)
+            return
         # BUG-116: char methods — dispatch to std.ascii predicates when receiver is char_
         if mname == "isAlpha" or mname == "isDigit" or mname == "isWhitespace" or mname == "isUpper" or mname == "isLower" or mname == "toUpper" or mname == "toLower"
             var is_char116 = false
@@ -7432,6 +7505,130 @@ struct Generator
         w.emit(")")
         if callee_throws2 and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
+
+    # ── SIMD helpers ─────────────────────────────────────────────────────────
+
+    def isSimdTypeName(name: str): bool
+        if not name.contains("x")
+            return false
+        var parts: List(str) = name.split("x")
+        if parts.count() != 2
+            return false
+        if parts.at(1) == ""
+            return false
+        var prefix = parts.at(0)
+        if prefix == "f16" or prefix == "f32" or prefix == "f64"
+            return true
+        if prefix == "i8" or prefix == "i16" or prefix == "i32" or prefix == "i64"
+            return true
+        if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
+            return true
+        return false
+
+    def simdElemZig(prefix: str): str
+        if prefix == "f16"
+            return "f16"
+        if prefix == "f32"
+            return "f32"
+        if prefix == "f64"
+            return "f64"
+        if prefix == "i8"
+            return "i8"
+        if prefix == "i16"
+            return "i16"
+        if prefix == "i32"
+            return "i32"
+        if prefix == "i64"
+            return "i64"
+        if prefix == "u8"
+            return "u8"
+        if prefix == "u16"
+            return "u16"
+        if prefix == "u32"
+            return "u32"
+        if prefix == "u64"
+            return "u64"
+        return "i64"
+
+    def genSimdCtor(name: str, args: List(Arg))
+        # f32x8(1.0, ...) → @as(@Vector(8, f32), .{1.0, ...})
+        var parts: List(str) = name.split("x")
+        var elem_zig = simdElemZig(parts.at(0))
+        var lanes = parts.at(1)
+        w.emit("@as(@Vector(")
+        w.emit(lanes)
+        w.emit(", ")
+        w.emit(elem_zig)
+        w.emit("), .{")
+        var first_sa = true
+        for a in args
+            if not first_sa
+                w.emit(", ")
+            first_sa = false
+            genExpr(a.value)
+        w.emit("})")
+
+    def genSimdStaticCall(type_name: str, mname: str, args: List(Arg))
+        var parts: List(str) = type_name.split("x")
+        var elem_zig = simdElemZig(parts.at(0))
+        var lanes = parts.at(1)
+        if mname == "splat"
+            # f32x8.splat(v) → @as(@Vector(8, f32), @splat(@as(f32, v)))
+            w.emit("@as(@Vector(")
+            w.emit(lanes)
+            w.emit(", ")
+            w.emit(elem_zig)
+            w.emit("), @splat(@as(")
+            w.emit(elem_zig)
+            w.emit(", ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")))")
+            return
+        if mname == "load"
+            # f32x8.load(slice) → @as(@Vector(8, f32), slice[0..8].*)
+            w.emit("@as(@Vector(")
+            w.emit(lanes)
+            w.emit(", ")
+            w.emit(elem_zig)
+            w.emit("), ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit("[0..")
+            w.emit(lanes)
+            w.emit("].*)")
+            return
+
+    def genSimdInstanceCall(obj: Expr, mname: str, args: List(Arg))
+        if mname == "sum"
+            w.emit("@reduce(.Add, ")
+            genExpr(obj)
+            w.emit(")")
+            return
+        if mname == "dot"
+            w.emit("@reduce(.Add, ")
+            genExpr(obj)
+            w.emit(" * ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        if mname == "max_element"
+            w.emit("@reduce(.Max, ")
+            genExpr(obj)
+            w.emit(")")
+            return
+        if mname == "min_element"
+            w.emit("@reduce(.Min, ")
+            genExpr(obj)
+            w.emit(")")
+            return
 
     def genMathCall(mname: str, args: List(Arg))
         if mname == "sqrt"

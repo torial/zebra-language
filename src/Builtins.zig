@@ -125,9 +125,9 @@ pub const MUTABLE_COLLECTIONS = std.StaticStringMap(void).initComptime(&.{
     .{ "HashMap", {} },
 });
 
-/// Returns true iff `name` is a built-in type name.
+/// Returns true iff `name` is a built-in type name (static table or SIMD pattern).
 pub fn isBuiltin(name: []const u8) bool {
-    return NAMES.get(name) != null;
+    return NAMES.get(name) != null or isSimdTypeName(name);
 }
 
 /// Returns true iff `name` is a mutable collection type that requires explicit
@@ -212,6 +212,58 @@ pub fn writeZigSizedType(w: anytype, name: []const u8) !bool {
         return true;
     }
     return false;
+}
+
+// ── SIMD type detection ───────────────────────────────────────────────────────
+
+/// Parsed metadata for a SIMD vector type like `f32x8` or `i16x16`.
+pub const SimdInfo = struct {
+    elem: ScalarKind,
+    lanes: u32,
+    elem_zig: []const u8, // Zig element type name ("f32", "i16", etc.)
+};
+
+/// Parse a SIMD type name of the form `{elemType}x{lanes}`.
+/// Valid element types: f16, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64.
+/// Returns null if the name does not match the pattern.
+pub fn parseSimdType(name: []const u8) ?SimdInfo {
+    const x = std.mem.indexOf(u8, name, "x") orelse return null;
+    if (x == 0 or x + 1 >= name.len) return null;
+    const elem_result = parseSimdElem(name[0..x]) orelse return null;
+    const lanes = parseSimdLanes(name[x + 1..]) orelse return null;
+    return .{ .elem = elem_result.kind, .lanes = lanes, .elem_zig = elem_result.zig_name };
+}
+
+/// Returns true iff `name` is a valid SIMD vector type name.
+pub fn isSimdTypeName(name: []const u8) bool {
+    return parseSimdType(name) != null;
+}
+
+const SimdElemResult = struct { kind: ScalarKind, zig_name: []const u8 };
+
+fn parseSimdElem(s: []const u8) ?SimdElemResult {
+    if (std.mem.eql(u8, s, "i8"))  return .{ .kind = .{ .int_n = 8 },    .zig_name = "i8" };
+    if (std.mem.eql(u8, s, "i16")) return .{ .kind = .{ .int_n = 16 },   .zig_name = "i16" };
+    if (std.mem.eql(u8, s, "i32")) return .{ .kind = .{ .int_n = 32 },   .zig_name = "i32" };
+    if (std.mem.eql(u8, s, "i64")) return .{ .kind = .{ .int_n = 64 },   .zig_name = "i64" };
+    if (std.mem.eql(u8, s, "u8"))  return .{ .kind = .{ .uint_n = 8 },   .zig_name = "u8" };
+    if (std.mem.eql(u8, s, "u16")) return .{ .kind = .{ .uint_n = 16 },  .zig_name = "u16" };
+    if (std.mem.eql(u8, s, "u32")) return .{ .kind = .{ .uint_n = 32 },  .zig_name = "u32" };
+    if (std.mem.eql(u8, s, "u64")) return .{ .kind = .{ .uint_n = 64 },  .zig_name = "u64" };
+    if (std.mem.eql(u8, s, "f16")) return .{ .kind = .{ .float_n = 16 }, .zig_name = "f16" };
+    if (std.mem.eql(u8, s, "f32")) return .{ .kind = .{ .float_n = 32 }, .zig_name = "f32" };
+    if (std.mem.eql(u8, s, "f64")) return .{ .kind = .{ .float_n = 64 }, .zig_name = "f64" };
+    return null;
+}
+
+fn parseSimdLanes(s: []const u8) ?u32 {
+    if (s.len == 0) return null;
+    var n: u32 = 0;
+    for (s) |c| {
+        if (!std.ascii.isDigit(c)) return null;
+        n = n * 10 + (c - '0');
+    }
+    return if (n == 0) null else n;
 }
 
 /// Map a Zebra generic container name to its Zig equivalent.

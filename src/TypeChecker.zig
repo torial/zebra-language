@@ -115,6 +115,11 @@ pub const Type = union(enum) {
     /// `CodeEditor` — embeddable code-editor widget (Phase A: backed by inputMultiline).
     code_editor,
 
+    // ── SIMD vectors ──────────────────────────────────────────────────────────
+    /// A SIMD vector type: `f32x8`, `i16x16`, `u8x32`, etc.
+    /// `elem` is the element scalar kind; `lanes` is the vector width.
+    simd: struct { elem: Builtins.ScalarKind, lanes: u32 },
+
     // ── Optional ──────────────────────────────────────────────────────────────
     /// `?T` — nilable wrapper around another type.
     optional: *const Type,
@@ -210,6 +215,25 @@ pub const Type = union(enum) {
                     if (ga.args.len != gb.args.len) break :blk false;
                     for (ga.args, gb.args) |ta, tb| if (!ta.eql(tb)) break :blk false;
                     break :blk true;
+                },
+                else => false,
+            },
+            .simd           => |sa| switch (b) {
+                .simd => |sb| blk: {
+                    if (sa.lanes != sb.lanes) break :blk false;
+                    break :blk switch (sa.elem) {
+                        .int     => sb.elem == .int,
+                        .uint    => sb.elem == .uint,
+                        .float   => sb.elem == .float,
+                        .bool    => sb.elem == .bool,
+                        .char    => sb.elem == .char,
+                        .string  => sb.elem == .string,
+                        .void_   => sb.elem == .void_,
+                        .unknown => sb.elem == .unknown,
+                        .int_n   => |wa| switch (sb.elem) { .int_n   => |wb| wa == wb, else => false },
+                        .uint_n  => |wa| switch (sb.elem) { .uint_n  => |wb| wa == wb, else => false },
+                        .float_n => |wa| switch (sb.elem) { .float_n => |wb| wa == wb, else => false },
+                    };
                 },
                 else => false,
             },
@@ -355,6 +379,7 @@ pub const Type = union(enum) {
             .timer_handle   => "TimerHandle",
             .progress_bar   => "ProgressBar",
             .code_editor    => "CodeEditor",
+            .simd           => "simd<N>",
             .optional       => "?T",
             .tuple          => "tuple",
             .cross_module   => |cm| cm.type_name,
@@ -2050,6 +2075,20 @@ const TypeChecker = struct {
                     return tc.symbolType(member_sym);
                 }
             }
+            // BUG-089: member not in class's own scope — search `adds Mixin` entries.
+            if (sym.decl == .class) {
+                for (sym.decl.class.adds) |*tr| {
+                    if (tr.* != .named) continue;
+                    const r_type = tc.resolve.types.get(&tr.named) orelse continue;
+                    if (r_type != .symbol) continue;
+                    const mixin_sym = r_type.symbol;
+                    if (mixin_sym.own_scope) |mscope| {
+                        if (mscope.lookupLocal(e.member)) |member_sym| {
+                            return tc.symbolType(member_sym);
+                        }
+                    }
+                }
+            }
         }
         // Cross-module instance field/method access: point.x / point.show()
         // where `point` is a `.cross_module` type (e.g. `crossmod_types_lib.Point`).
@@ -2316,6 +2355,9 @@ const TypeChecker = struct {
         // return type so that callers can type-check against it.
         switch (e.callee.*) {
             .ident => |*ident| {
+                // SIMD vector constructor: f32x8(1.0, ...) → .simd type.
+                if (Builtins.parseSimdType(ident.name)) |si|
+                    return Type{ .simd = .{ .elem = si.elem, .lanes = si.lanes } };
                 // CsvWriter() bare constructor call.
                 if (std.mem.eql(u8, ident.name, "CsvWriter")) return .csv_writer;
                 // CodeEditor() bare constructor call.
@@ -2431,6 +2473,29 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "clz") or
                         std.mem.eql(u8, mem.member, "ctz")) return .int;
                     return .float;
+                }
+                // SIMD static constructors: f32x8.splat(v), f32x8.load(s).
+                if (mem.object.* == .ident) {
+                    if (Builtins.parseSimdType(mem.object.ident.name)) |si| {
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        return Type{ .simd = .{ .elem = si.elem, .lanes = si.lanes } };
+                    }
+                }
+                // SIMD instance methods: sum()/dot()/max_element() → element type.
+                {
+                    const obj_t = tc.expr_types.get(mem.object) orelse .unknown;
+                    if (obj_t == .simd) {
+                        _ = try tc.inferExpr(mem.object);
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        const si = obj_t.simd;
+                        if (std.mem.eql(u8, mem.member, "sum") or
+                            std.mem.eql(u8, mem.member, "max_element") or
+                            std.mem.eql(u8, mem.member, "min_element"))
+                            return simdElemToType(si.elem);
+                        if (std.mem.eql(u8, mem.member, "dot") and e.args.len >= 1)
+                            return simdElemToType(si.elem);
+                        return Type{ .simd = .{ .elem = si.elem, .lanes = si.lanes } };
+                    }
                 }
                 // Shell.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Shell")) {
@@ -3052,6 +3117,13 @@ const TypeChecker = struct {
         const lt = try tc.inferExpr(e.left);
         const rt = try tc.inferExpr(e.right);
 
+        // SIMD vector arithmetic: both operands must be the same SIMD type.
+        if (lt == .simd or rt == .simd) {
+            if (lt == .simd and rt == .simd and !Type.eql(lt, rt))
+                try tc.emitError(e.span, "SIMD operands must have the same type", .{});
+            return if (lt == .simd) lt else rt;
+        }
+
         return switch (e.op) {
             // Comparisons and membership always produce bool.
             .eq, .ne, .lt, .le, .gt, .ge, .in_ => .bool,
@@ -3433,7 +3505,24 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
 
 // ── Builtin name → Type ───────────────────────────────────────────────────────
 
+fn simdElemToType(elem: Builtins.ScalarKind) Type {
+    return switch (elem) {
+        .int     => .int,
+        .uint    => .uint,
+        .float   => .float,
+        .bool    => .bool,
+        .char    => .char,
+        .string  => .string,
+        .void_   => .void_,
+        .unknown => .unknown,
+        .int_n   => |n| .{ .int_n   = n },
+        .uint_n  => |n| .{ .uint_n  = n },
+        .float_n => |n| .{ .float_n = n },
+    };
+}
+
 fn builtinType(n: []const u8) Type {
+    if (Builtins.parseSimdType(n)) |si| return .{ .simd = .{ .elem = si.elem, .lanes = si.lanes } };
     if (std.mem.eql(u8, n, "StringBuilder"))  return .string_builder;
     if (std.mem.eql(u8, n, "HttpRequest"))    return .http_request;
     if (std.mem.eql(u8, n, "HttpResponse"))   return .http_response;

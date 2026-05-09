@@ -848,6 +848,10 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtForIn, .rhs = &.{
         t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.eol), n(.Block), n(.ForElseOpt),
     } },
+    // for x in collection if condition [else Block]
+    .{ .lhs = .StmtForIn, .rhs = &.{
+        t(.kw_for), n(.ForVarList), t(.kw_in), n(.Expr), t(.kw_if), n(.Expr), t(.eol), n(.Block), n(.ForElseOpt),
+    } },
     .{ .lhs = .ForVarList, .rhs = &.{ t(.id) } },
     .{ .lhs = .ForVarList, .rhs = &.{ n(.ForVarList), t(.comma), t(.id) } },
     // ForElseOpt: optional else clause for for-in / for-num loops

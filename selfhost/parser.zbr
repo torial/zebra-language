@@ -26,6 +26,7 @@ union PNode
     class_: ^PClass
     struct_: ^PClass
     interface_: ^PClass
+    mixin_: ^PClass
     extend_: ^PExtend
     enum_: ^PEnum
     union_decl: ^PUnionDecl
@@ -135,13 +136,13 @@ struct PBranch
 struct PBranchOn
     var patterns: List(str)
     var binding: str
-    var guard_cond: List(PNode)
+    var filter_cond: List(PNode)
     var stmts: List(PNode)
     var struct_pat_node: List(PNode)
-    cue init(patterns: List(str), binding: str, guard_cond: List(PNode), stmts: List(PNode))
+    cue init(patterns: List(str), binding: str, filter_cond: List(PNode), stmts: List(PNode))
         .patterns = patterns
         .binding = binding
-        .guard_cond = guard_cond
+        .filter_cond = filter_cond
         .stmts = stmts
         .struct_pat_node = List(PNode)()
 
@@ -230,13 +231,15 @@ struct PClass
     var name: str
     var type_params: List(str)
     var ifaces: List(str)
+    var mixins: List(str)
     var members: List(PNode)
     var invs: List(PNode)
     var is_reflectable: bool
-    cue init(name: str, type_params: List(str), ifaces: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool)
+    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool)
         .name = name
         .type_params = type_params
         .ifaces = ifaces
+        .mixins = mixins
         .members = members
         .invs = invs
         .is_reflectable = is_reflectable
@@ -372,12 +375,14 @@ struct PPipeline
 struct PForIn
     var var_names: List(str)
     var iter: List(PNode)
+    var filter: List(PNode)
     var stmts: List(PNode)
     var else_stmts: List(PNode)
     var line: int
-    cue init(var_names: List(str), iter: List(PNode), stmts: List(PNode), else_stmts: List(PNode), line: int)
+    cue init(var_names: List(str), iter: List(PNode), filter: List(PNode), stmts: List(PNode), else_stmts: List(PNode), line: int)
         .var_names = var_names
         .iter = iter
+        .filter = filter
         .stmts = stmts
         .else_stmts = else_stmts
         .line = line
@@ -601,7 +606,7 @@ class Parser
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
         # Used to distinguish `on Pat, print "stmt"` from `on Pat1, Pat2`.
-        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|guard|defer|"
+        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|filter|defer|"
         var needle = "|" + text + "|"
         return needle in kws
 
@@ -950,6 +955,8 @@ class Parser
             return .parseStructDecl(pending_reflectable)
         else if .textIs("interface")
             return .parseInterfaceDecl()
+        else if .textIs("mixin")
+            return .parseMixinDecl()
         else if .textIs("extend")
             return .parseExtendDecl()
         else if .textIs("union")
@@ -1034,6 +1041,13 @@ class Parser
             while .textIs(",")
                 .advance()
                 ifaces.add(.eatId())
+        var mixins = List(str)()
+        if .textIs("adds")
+            .advance()
+            mixins.add(.eatId())
+            while .textIs(",")
+                .advance()
+                mixins.add(.eatId())
         .skipEol()
         var members = List(PNode)()
         var invs = List(PNode)()
@@ -1068,7 +1082,7 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 .advance()
-        return PNode.class_(PClass(name, type_params, ifaces, members, invs, is_reflectable))
+        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")
@@ -1110,7 +1124,7 @@ class Parser
                 .advance()
         var ifaces = List(str)()
         var type_params = List(str)()
-        return PNode.struct_(PClass(name, type_params, ifaces, members, invs, is_reflectable))
+        return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable))
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")
@@ -1134,7 +1148,24 @@ class Parser
             if .isDedent()
                 .advance()
         var type_params = List(str)()
-        return PNode.interface_(PClass(name, type_params, ifaces, members, List(PNode)(), false))
+        return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false))
+
+    def parseMixinDecl(): PNode throws
+        .expectText("mixin")
+        const name = .eatId()
+        .skipEol()
+        var members = List(PNode)()
+        if .isIndent()
+            .advance()
+            while not .isDedent() and not .isEof()
+                .skipEol()
+                if .isDedent()
+                    break
+                members.add(.parseMemberDecl(false))
+            if .isDedent()
+                .advance()
+        var empty_str_list = List(str)()
+        return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false))
 
     def parseExtendDecl(): PNode throws
         .expectText("extend")
@@ -1511,7 +1542,7 @@ class Parser
     def parseWhileStmt(): PNode throws
         const line = .peek().line
         .expectText("while")
-        # Bind-and-guard form: `while var id = InitExpr, CondExpr eol Block`.
+        # Bind-and-filter form: `while var id = InitExpr, CondExpr eol Block`.
         # Desugared here to `while true { var id = InitExpr; if not CondExpr: break; body }`
         # so the existing StmtWhile/StmtVar/StmtIf/StmtBreak codegen path carries it.
         if .textIs("var")
@@ -1520,15 +1551,15 @@ class Parser
             .expectText("=")
             const init_expr_pn = .parseExpr()
             .expectText(",")
-            const guard_expr_pn = .parseExpr()
+            const filter_expr_pn = .parseExpr()
             .skipEol()
             var body_stmts: List(PNode) = .parseBlock()
             var init_list = List(PNode)()
             init_list.add(init_expr_pn)
-            var guard_operand = List(PNode)()
-            guard_operand.add(guard_expr_pn)
+            var filter_operand = List(PNode)()
+            filter_operand.add(filter_expr_pn)
             var if_cond_list = List(PNode)()
-            if_cond_list.add(PNode.expr_unary(PUnary("not", guard_operand)))
+            if_cond_list.add(PNode.expr_unary(PUnary("not", filter_operand)))
             var break_list = List(PNode)()
             break_list.add(PNode.stmt_break())
             var empty_else = List(PNode)()
@@ -1628,7 +1659,11 @@ class Parser
             var stop_list = List(PNode)()
             stop_list.add(stop_expr)
             return PNode.stmt_for_num(PForNum(var_names.at(0), start_list, stop_list, step_list, stmts, else_stmts, line))
-        # Iterator form: for i in expr
+        # Iterator form: for i in expr [if filter]
+        var filter_list = List(PNode)()
+        if .textIs("if")
+            .advance()
+            filter_list.add(.parseExpr())
         .skipEol()
         const stmts = .parseBlock()
         var else_stmts = List(PNode)()
@@ -1638,7 +1673,7 @@ class Parser
             else_stmts = .parseBlock()
         var iter_list = List(PNode)()
         iter_list.add(start_expr)
-        return PNode.stmt_for_in(PForIn(var_names, iter_list, stmts, else_stmts, line))
+        return PNode.stmt_for_in(PForIn(var_names, iter_list, filter_list, stmts, else_stmts, line))
 
     # `var {x, y} = expr` (struct destructure) or `var (x, y) = expr` (tuple)
     def parseDestructStmt(): PNode throws
@@ -1796,11 +1831,11 @@ class Parser
                         if .textIs("as")
                             .advance()
                             binding = .eatId()
-                    var guard_cond = List(PNode)()
+                    var filter_cond = List(PNode)()
                     if not inline_comma
                         if .textIs("if")
                             .advance()
-                            guard_cond.add(.parseExpr())
+                            filter_cond.add(.parseExpr())
                     .skipEol()
                     var stmts = List(PNode)()
                     if .isIndent()
@@ -1808,7 +1843,7 @@ class Parser
                     else if not .isEol() and not .isDedent() and not .isEof()
                         # Inline single-line arm: `on Pattern  return value` or `on Pat, stmt`
                         stmts.add(.parseStmt())
-                    var arm = PBranchOn(patterns, binding, guard_cond, stmts)
+                    var arm = PBranchOn(patterns, binding, filter_cond, stmts)
                     arm.struct_pat_node = struct_pat_node
                     arms.add(arm)
                 else if .textIs("else")

@@ -317,6 +317,7 @@ var x = items.at(0)                  # index (bounds-checked)
 items.remove(0)                      # remove by index
 var has = items.any(def(x) = x > 2)  # true if any element matches predicate
 var ok  = items.all(def(x) = x > 0)  # true if every element matches predicate
+var f   = items.find(def(x) = x > 2) # first match or nil (returns T?)
 
 # HashMap
 var m = HashMap(str, int)()
@@ -461,6 +462,16 @@ for i in 0 to 10                     # 0..9
 for i in 0 to 10 step 2
     print i
 
+# for-in with inline guard (filter condition; skip non-matching elements)
+for item in items if item > 0
+    totals.add(item)
+
+# for-in guard also works on split, chars, and range iterators
+for p in text.split(",") if p != ""
+    parts.add(p)
+for i in 0.to(100) if i % 2 == 0
+    evens.add(i)
+
 # for-else (else runs when loop completes without break)
 for item in items
     if item == target
@@ -492,6 +503,8 @@ branch p
         print "elsewhere"
 ```
 
+- `for x in list if cond` — the inline guard skips non-matching elements via
+  `continue`; works on all iterator forms (list, split, chars, range, HashMap).
 - `for-else` is fully supported on list `.items` iteration; HashMap /
   string-split / chars iterators silently drop the `else` block (deferred).
 - `branch` struct patterns match by field value; the type name must be a
@@ -1433,3 +1446,68 @@ Reflect.fieldTypes(obj)              # []str — field type strings
 ```
 
 See §25 for `@reflectable` + `Json.parseStrict` (Tier 3).
+
+---
+
+## 32. SIMD vector types
+
+Zebra supports SIMD vector types using the `{elemType}x{lanes}` naming
+convention (Rust portable-simd style).  They compile directly to Zig
+`@Vector(N, T)` and are supported on x86-64 (SSE2/AVX2/AVX-512) and
+AArch64 (NEON) via Zig's automatic LLVM lowering.
+
+### Type names
+
+| Zebra type   | Zig type          | Typical width      |
+|--------------|-------------------|--------------------|
+| `f32x4`      | `@Vector(4, f32)` | 128-bit (SSE/NEON) |
+| `f32x8`      | `@Vector(8, f32)` | 256-bit (AVX2)     |
+| `f32x16`     | `@Vector(16, f32)`| 512-bit (AVX-512)  |
+| `f16x8`      | `@Vector(8, f16)` |                    |
+| `i32x4`      | `@Vector(4, i32)` | 128-bit            |
+| `i16x16`     | `@Vector(16, i16)`|                    |
+| `u8x32`      | `@Vector(32, u8)` | 256-bit            |
+| `i64x2`      | `@Vector(2, i64)` |                    |
+
+Element types: `f16`, `f32`, `f64`, `i8`, `i16`, `i32`, `i64`,
+`u8`, `u16`, `u32`, `u64`.  Any positive lane count is accepted.
+
+### Operations
+
+```zebra
+# Constructor — list each lane value
+var a: f32x8 = f32x8(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+
+# Splat — broadcast a scalar to all lanes
+var zero: f32x8 = f32x8.splat(0.0)
+
+# Load from a slice — slice must have at least N elements
+var data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+var v: f32x8 = f32x8.load(data)
+
+# Native arithmetic — element-wise, same type
+var b: f32x8 = a + zero
+var c: f32x8 = a * a
+var d: f32x8 = a - b
+var e: f32x8 = a / f32x8.splat(2.0)
+
+# Reduction — collapse to scalar
+var s:  float32 = a.sum()          # @reduce(.Add, a)
+var mx: float32 = a.max_element()  # @reduce(.Max, a)
+var mn: float32 = a.min_element()  # @reduce(.Min, a)
+
+# Dot product
+var dp: float32 = a.dot(b)         # @reduce(.Add, a * b)
+
+# Type annotations use the SIMD type name directly
+var iv: i32x4 = i32x4(10, 20, 30, 40)
+var isum: int32 = iv.sum()
+```
+
+### Notes
+
+- SIMD types use Zig/C short names (`f32`, `i16`) not Zebra long names
+  (`float32`, `int16`) as the element prefix.
+- Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise.
+- Comparison and logical operators on SIMD vectors are not yet supported.
+- Selfhost parity (for `selfhost/*.zbr` round-trip) is tracked as a future sprint.

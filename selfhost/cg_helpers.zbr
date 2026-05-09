@@ -766,6 +766,9 @@ def isReadOnlyMethod(name: str): bool
     # Sort methods: mutate internal slice data but the ArrayList handle is not reassigned
     if name == "sort" or name == "sortBy"
         return true
+    # SIMD reduction methods — read-only; receivers must not be marked `var`
+    if name == "sum" or name == "dot" or name == "max_element" or name == "min_element"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)

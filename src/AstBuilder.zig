@@ -1270,17 +1270,19 @@ const Builder = struct {
     }
 
     fn buildStmtForIn(b: Builder, node: TN) anyerror!Ast.StmtForIn {
-        // kw_for ForVarList kw_in Expr eol Block ForElseOpt
+        // 7-child: kw_for ForVarList kw_in Expr eol Block ForElseOpt
+        // 9-child: kw_for ForVarList kw_in Expr kw_if Expr eol Block ForElseOpt
         const kids = ch(node);
         var vars = std.ArrayList([]const u8){};
         try b.collectForVarList(kids[1], &vars);
+        const guarded = kids.len == 9;
         return .{
             .span  = spanOf(node, b.tokens),
             .vars  = try vars.toOwnedSlice(b.arena),
             .iter  = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
-            .where = null,
-            .body  = try b.buildBlock(kids[5]),
-            .else_ = try b.buildForElseOpt(kids[6]),
+            .where = if (guarded) try b.box(Ast.Expr, try b.buildExpr(kids[5])) else null,
+            .body  = try b.buildBlock(kids[if (guarded) 7 else 5]),
+            .else_ = try b.buildForElseOpt(kids[if (guarded) 8 else 6]),
         };
     }
 

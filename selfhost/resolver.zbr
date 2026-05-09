@@ -359,6 +359,26 @@ class Resolver
             return true
         if name == "Progress" or name == "Profile" or name == "Base64"
             return true
+        if isSimdName(name)
+            return true
+        return false
+
+    def isSimdName(name: str): bool
+        # SIMD vector type: {elemType}x{lanes}, e.g. f32x8, i16x16, u8x32
+        if not name.contains("x")
+            return false
+        var parts: List(str) = name.split("x")
+        if parts.count() != 2
+            return false
+        if parts.at(1) == ""
+            return false
+        var prefix = parts.at(0)
+        if prefix == "f16" or prefix == "f32" or prefix == "f64"
+            return true
+        if prefix == "i8" or prefix == "i16" or prefix == "i32" or prefix == "i64"
+            return true
+        if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
+            return true
         return false
 
 # -- Main ----------------------------------------------------------------------

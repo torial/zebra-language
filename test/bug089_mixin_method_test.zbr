@@ -1,0 +1,18 @@
+# BUG-089: mixin method return type not inferred — TC falls back to {any} for print.
+# Fix: inferMember now walks cls.adds mixin scopes when own_scope lookup fails.
+
+mixin Greeter
+    def hi(): str
+        return "hi"
+    def count(): int
+        return 42
+
+class Foo adds Greeter
+    cue init()
+        pass
+
+def main()
+    var f = Foo()
+    assert f.hi() == "hi", "mixin str method"
+    assert f.count() == 42, "mixin int method"
+    print "ok"
