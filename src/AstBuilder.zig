@@ -74,10 +74,11 @@ const Builder = struct {
     fn collectTopDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl)) !void {
         var pending_reflectable = false;
         var pending_profile = false;
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile);
+        var pending_once = false;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -85,20 +86,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -109,6 +110,8 @@ const Builder = struct {
                 pending_reflectable.* = true;
             } else if (std.mem.eql(u8, name, "profile")) {
                 pending_profile.* = true;
+            } else if (std.mem.eql(u8, name, "once")) {
+                pending_once.* = true;
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -132,6 +135,15 @@ const Builder = struct {
                 ),
             };
             pending_profile.* = false;
+        }
+        if (pending_once.*) {
+            applyOnce(&d) catch |err| switch (err) {
+                error.OnceOnNonMethod => std.debug.panic(
+                    "@once can only precede `def` declarations",
+                    .{},
+                ),
+            };
+            pending_once.* = false;
         }
         try out.append(b.arena, d);
     }
@@ -185,6 +197,13 @@ const Builder = struct {
         switch (d.*) {
             .method => |m| m.mods.profile = true,
             else    => return error.ProfileOnNonMethod,
+        }
+    }
+
+    fn applyOnce(d: *Ast.Decl) error{OnceOnNonMethod}!void {
+        switch (d.*) {
+            .method => |m| m.mods.once = true,
+            else    => return error.OnceOnNonMethod,
         }
     }
 
@@ -515,11 +534,12 @@ const Builder = struct {
     fn buildMemberDeclList(b: Builder, node: TN) anyerror![]const Ast.Decl {
         var out = std.ArrayList(Ast.Decl){};
         var pending_profile = false;
-        try b.collectMemberDecls(node, &out, &pending_profile);
+        var pending_once = false;
+        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -529,7 +549,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out, pending_profile);
+                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -547,6 +567,8 @@ const Builder = struct {
                         const name = if (at_text.len > 0 and at_text[0] == '@') at_text[1..] else at_text;
                         if (std.mem.eql(u8, name, "profile")) {
                             pending_profile.* = true;
+                        } else if (std.mem.eql(u8, name, "once")) {
+                            pending_once.* = true;
                         } else {
                             std.debug.print("warning: unknown member @-directive '@{s}'; ignored\n", .{name});
                         }
@@ -562,6 +584,15 @@ const Builder = struct {
                             };
                             pending_profile.* = false;
                         }
+                        if (pending_once.*) {
+                            applyOnce(&d) catch |err| switch (err) {
+                                error.OnceOnNonMethod => std.debug.print(
+                                    "warning: @once can only precede a method declaration; ignored\n",
+                                    .{},
+                                ),
+                            };
+                            pending_once.* = false;
+                        }
                         try out.append(b.arena, d);
                     },
                 }
@@ -576,7 +607,8 @@ const Builder = struct {
         const kids = ch(node);
         const start = out.items.len;
         var pending_profile = false;
-        try b.collectMemberDecls(kids[3], out, &pending_profile);
+        var pending_once = false;
+        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once);
         for (out.items[start..]) |*d| setShared(d);
     }
 

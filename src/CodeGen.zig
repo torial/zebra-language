@@ -3417,12 +3417,47 @@ const Generator = struct {
     fn genMethod(g: Generator, n: *Ast.DeclMethod) anyerror!void {
         var mg = g.asMethod();
 
-        try g.writeIndent();
-        try g.w.print("pub fn {s}(", .{n.name});
-
         // Instance methods inside a type get `self: *Owner`.
         // `shared` methods (type-level, not instance) omit self.
         const has_self = g.owner.len > 0 and !n.mods.static_;
+
+        // @once: cache-on-first-call pattern.
+        // Emits: (1) a nullable cache field, (2) a public wrapper that checks/fills the cache,
+        // (3) the private impl function that runs the original body (name = _zbr_once_X_impl).
+        var once_name_buf: [256]u8 = undefined;
+        const emit_name: []const u8 = if (n.mods.once) blk: {
+            if (!has_self or n.params.len != 0 or n.return_type == null)
+                std.debug.panic("@once requires a no-param instance method with a non-void return type", .{});
+            const impl_name = std.fmt.bufPrint(&once_name_buf, "_zbr_once_{s}_impl", .{n.name}) catch n.name;
+            // ── Cache field ──────────────────────────────────────────────────
+            try g.writeIndent();
+            try g.w.print("_once_{s}_val: ?", .{n.name});
+            try g.genType(n.return_type.?);
+            try g.w.writeAll(" = null,\n");
+            // ── Public wrapper ───────────────────────────────────────────────
+            try g.writeIndent();
+            const self_type = if (g.is_generic) "@This()" else g.owner;
+            try g.w.print("pub fn {s}(self: *{s}) ", .{ n.name, self_type });
+            try g.genType(n.return_type.?);
+            try g.w.writeAll(" {\n");
+            const wg = mg.indented();
+            try wg.writeIndent();
+            try wg.w.print("if (self._once_{s}_val) |_zbr_v| return _zbr_v;\n", .{n.name});
+            try wg.writeIndent();
+            try wg.w.print("const _zbr_r = self.{s}();\n", .{impl_name});
+            try wg.writeIndent();
+            try wg.w.print("self._once_{s}_val = _zbr_r;\n", .{n.name});
+            try wg.writeIndent();
+            try wg.w.writeAll("return _zbr_r;\n");
+            try g.writeIndent();
+            try g.w.writeAll("}\n\n");
+            break :blk impl_name;
+        } else n.name;
+
+        try g.writeIndent();
+        // @once impl is private (the wrapper above is the public API).
+        if (!n.mods.once) try g.w.writeAll("pub ");
+        try g.w.print("fn {s}(", .{emit_name});
 
         // Pre-check: does this method have any tail-recursive calls?
         // If so, we use the loop-transformation (TCO) path.
@@ -3621,6 +3656,13 @@ const Generator = struct {
         if (!g.is_struct_owner) {
             try bg.writeIndent();
             try bg.w.print("self._type_tag = _ttag_{s};\n", .{g.owner});
+            // @once cache fields are synthetic (not in AST), so they need explicit null init.
+            for (g.owner_members) |decl| {
+                const m = switch (decl) { .method => |mv| mv, else => continue };
+                if (!m.mods.once) continue;
+                try bg.writeIndent();
+                try bg.w.print("self._once_{s}_val = null;\n", .{m.name});
+            }
         }
         for (n.params) |p| {
             if (!refs.param_names.contains(p.name)) {

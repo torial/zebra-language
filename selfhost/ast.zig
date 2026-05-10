@@ -1853,24 +1853,27 @@ pub const Modifiers = struct {
     is_extern: bool,
     is_reflectable: bool,
     is_profile: bool,
-    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool) Modifiers {
+    is_once: bool,
+    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool) Modifiers {
         var _self: Modifiers = undefined;
-// zbr:selfhost/ast.zbr:67
-            _self.is_public = is_public;
 // zbr:selfhost/ast.zbr:68
-            _self.is_private = is_private;
+            _self.is_public = is_public;
 // zbr:selfhost/ast.zbr:69
-            _self.is_abstract = is_abstract;
+            _self.is_private = is_private;
 // zbr:selfhost/ast.zbr:70
-            _self.is_static = is_static;
+            _self.is_abstract = is_abstract;
 // zbr:selfhost/ast.zbr:71
-            _self.is_readonly = is_readonly;
+            _self.is_static = is_static;
 // zbr:selfhost/ast.zbr:72
-            _self.is_extern = is_extern;
+            _self.is_readonly = is_readonly;
 // zbr:selfhost/ast.zbr:73
-            _self.is_reflectable = is_reflectable;
+            _self.is_extern = is_extern;
 // zbr:selfhost/ast.zbr:74
+            _self.is_reflectable = is_reflectable;
+// zbr:selfhost/ast.zbr:75
             _self.is_profile = is_profile;
+// zbr:selfhost/ast.zbr:76
+            _self.is_once = is_once;
         return _self;
     }
 
@@ -1881,9 +1884,9 @@ pub const TypeParam = struct {
     constraint: ?[]const u8,
     pub fn init(name: []const u8, constraint: ?[]const u8) TypeParam {
         var _self: TypeParam = undefined;
-// zbr:selfhost/ast.zbr:83
+// zbr:selfhost/ast.zbr:85
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:84
+// zbr:selfhost/ast.zbr:86
             _self.constraint = constraint;
         return _self;
     }
@@ -1896,11 +1899,11 @@ pub const DeclUse = struct {
     exposed: std.ArrayList([]const u8),
     pub fn init(span: Span, path: []const u8, exposed: std.ArrayList([]const u8)) DeclUse {
         var _self: DeclUse = undefined;
-// zbr:selfhost/ast.zbr:94
-            _self.span = span;
-// zbr:selfhost/ast.zbr:95
-            _self.path = _intern(path);
 // zbr:selfhost/ast.zbr:96
+            _self.span = span;
+// zbr:selfhost/ast.zbr:97
+            _self.path = _intern(path);
+// zbr:selfhost/ast.zbr:98
             _self.exposed = exposed;
         return _self;
     }
@@ -1913,11 +1916,11 @@ pub const DeclNamespace = struct {
     decls: std.ArrayList(Decl),
     pub fn init(span: Span, name: []const u8, decls: std.ArrayList(Decl)) DeclNamespace {
         var _self: DeclNamespace = undefined;
-// zbr:selfhost/ast.zbr:106
-            _self.span = span;
-// zbr:selfhost/ast.zbr:107
-            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:108
+            _self.span = span;
+// zbr:selfhost/ast.zbr:109
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:110
             _self.decls = decls;
         return _self;
     }
@@ -1935,21 +1938,21 @@ pub const DeclClass = struct {
     invariants: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, type_params: std.ArrayList(TypeParam), ifaces: std.ArrayList(TypeRef), mixins: std.ArrayList(TypeRef), members: std.ArrayList(Decl), inv_exprs: std.ArrayList(Expr)) DeclClass {
         var _self: DeclClass = undefined;
-// zbr:selfhost/ast.zbr:123
-            _self.span = span;
-// zbr:selfhost/ast.zbr:124
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:125
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:126
-            _self.type_params = type_params;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:127
-            _self.ifaces = ifaces;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:128
-            _self.mixins = mixins;
+            _self.type_params = type_params;
 // zbr:selfhost/ast.zbr:129
-            _self.members = members;
+            _self.ifaces = ifaces;
 // zbr:selfhost/ast.zbr:130
+            _self.mixins = mixins;
+// zbr:selfhost/ast.zbr:131
+            _self.members = members;
+// zbr:selfhost/ast.zbr:132
             _self.invariants = inv_exprs;
         return _self;
     }
@@ -1964,15 +1967,15 @@ pub const DeclInterface = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, ifaces: std.ArrayList(TypeRef), members: std.ArrayList(Decl)) DeclInterface {
         var _self: DeclInterface = undefined;
-// zbr:selfhost/ast.zbr:142
-            _self.span = span;
-// zbr:selfhost/ast.zbr:143
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:144
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:145
-            _self.ifaces = ifaces;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:146
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:147
+            _self.ifaces = ifaces;
+// zbr:selfhost/ast.zbr:148
             _self.members = members;
         return _self;
     }
@@ -1988,17 +1991,17 @@ pub const DeclStruct = struct {
     invariants: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, ifaces: std.ArrayList(TypeRef), members: std.ArrayList(Decl), inv_exprs: std.ArrayList(Expr)) DeclStruct {
         var _self: DeclStruct = undefined;
-// zbr:selfhost/ast.zbr:159
-            _self.span = span;
-// zbr:selfhost/ast.zbr:160
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:161
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:162
-            _self.ifaces = ifaces;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:163
-            _self.members = members;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:164
+            _self.ifaces = ifaces;
+// zbr:selfhost/ast.zbr:165
+            _self.members = members;
+// zbr:selfhost/ast.zbr:166
             _self.invariants = inv_exprs;
         return _self;
     }
@@ -2012,13 +2015,13 @@ pub const DeclMixin = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, members: std.ArrayList(Decl)) DeclMixin {
         var _self: DeclMixin = undefined;
-// zbr:selfhost/ast.zbr:175
-            _self.span = span;
-// zbr:selfhost/ast.zbr:176
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:177
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:178
+            _self.mods = mods;
+// zbr:selfhost/ast.zbr:179
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:180
             _self.members = members;
         return _self;
     }
@@ -2031,11 +2034,11 @@ pub const EnumMember = struct {
     value: ?*Expr,
     pub fn init(span: Span, name: []const u8, value: ?*Expr) EnumMember {
         var _self: EnumMember = undefined;
-// zbr:selfhost/ast.zbr:188
-            _self.span = span;
-// zbr:selfhost/ast.zbr:189
-            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:190
+            _self.span = span;
+// zbr:selfhost/ast.zbr:191
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:192
             _self.value = value;
         return _self;
     }
@@ -2050,15 +2053,15 @@ pub const DeclEnum = struct {
     members: std.ArrayList(EnumMember),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, base: ?TypeRef, members: std.ArrayList(EnumMember)) DeclEnum {
         var _self: DeclEnum = undefined;
-// zbr:selfhost/ast.zbr:200
-            _self.span = span;
-// zbr:selfhost/ast.zbr:201
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:202
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:203
-            _self.base = base;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:204
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:205
+            _self.base = base;
+// zbr:selfhost/ast.zbr:206
             _self.members = members;
         return _self;
     }
@@ -2071,11 +2074,11 @@ pub const DeclExtend = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, target: TypeRef, members: std.ArrayList(Decl)) DeclExtend {
         var _self: DeclExtend = undefined;
-// zbr:selfhost/ast.zbr:214
-            _self.span = span;
-// zbr:selfhost/ast.zbr:215
-            _self.target = target;
 // zbr:selfhost/ast.zbr:216
+            _self.span = span;
+// zbr:selfhost/ast.zbr:217
+            _self.target = target;
+// zbr:selfhost/ast.zbr:218
             _self.members = members;
         return _self;
     }
@@ -2088,11 +2091,11 @@ pub const UnionVariant = struct {
     payload: ?TypeRef,
     pub fn init(span: Span, name: []const u8, payload: ?TypeRef) UnionVariant {
         var _self: UnionVariant = undefined;
-// zbr:selfhost/ast.zbr:226
-            _self.span = span;
-// zbr:selfhost/ast.zbr:227
-            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:228
+            _self.span = span;
+// zbr:selfhost/ast.zbr:229
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:230
             _self.payload = payload;
         return _self;
     }
@@ -2106,13 +2109,13 @@ pub const DeclUnion = struct {
     variants: std.ArrayList(UnionVariant),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, variants: std.ArrayList(UnionVariant)) DeclUnion {
         var _self: DeclUnion = undefined;
-// zbr:selfhost/ast.zbr:237
-            _self.span = span;
-// zbr:selfhost/ast.zbr:238
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:239
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:240
+            _self.mods = mods;
+// zbr:selfhost/ast.zbr:241
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:242
             _self.variants = variants;
         return _self;
     }
@@ -2126,13 +2129,13 @@ pub const DeclSig = struct {
     return_type: ?TypeRef,
     pub fn init(span: Span, name: []const u8, params: std.ArrayList(Param), return_type: ?TypeRef) DeclSig {
         var _self: DeclSig = undefined;
-// zbr:selfhost/ast.zbr:251
-            _self.span = span;
-// zbr:selfhost/ast.zbr:252
-            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:253
-            _self.params = params;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:254
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:255
+            _self.params = params;
+// zbr:selfhost/ast.zbr:256
             _self.return_type = return_type;
         return _self;
     }
@@ -2152,25 +2155,25 @@ pub const DeclMethod = struct {
     ensure_: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, params: std.ArrayList(Param), return_type: ?TypeRef, stmts: ?std.ArrayList(Stmt), is_test: bool, throws_: bool, require_: std.ArrayList(Expr), ensure_: std.ArrayList(Expr)) DeclMethod {
         var _self: DeclMethod = undefined;
-// zbr:selfhost/ast.zbr:271
-            _self.span = span;
-// zbr:selfhost/ast.zbr:272
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:273
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:274
-            _self.params = params;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:275
-            _self.return_type = return_type;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:276
-            _self.stmts = stmts;
+            _self.params = params;
 // zbr:selfhost/ast.zbr:277
-            _self.is_test = is_test;
+            _self.return_type = return_type;
 // zbr:selfhost/ast.zbr:278
-            _self.throws_ = throws_;
+            _self.stmts = stmts;
 // zbr:selfhost/ast.zbr:279
-            _self.require_ = require_;
+            _self.is_test = is_test;
 // zbr:selfhost/ast.zbr:280
+            _self.throws_ = throws_;
+// zbr:selfhost/ast.zbr:281
+            _self.require_ = require_;
+// zbr:selfhost/ast.zbr:282
             _self.ensure_ = ensure_;
         return _self;
     }
@@ -2186,17 +2189,17 @@ pub const DeclVar = struct {
     is_const: bool,
     pub fn init(span: Span, mods: Modifiers, name: []const u8, type_: ?TypeRef, init_expr: ?*Expr, is_const: bool) DeclVar {
         var _self: DeclVar = undefined;
-// zbr:selfhost/ast.zbr:293
-            _self.span = span;
-// zbr:selfhost/ast.zbr:294
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:295
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:296
-            _self.type_ = type_;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:297
-            _self.init_expr = init_expr;
+            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:298
+            _self.type_ = type_;
+// zbr:selfhost/ast.zbr:299
+            _self.init_expr = init_expr;
+// zbr:selfhost/ast.zbr:300
             _self.is_const = is_const;
         return _self;
     }
@@ -2212,17 +2215,17 @@ pub const DeclInit = struct {
     ensure_: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, params: std.ArrayList(Param), stmts: ?std.ArrayList(Stmt), require_: std.ArrayList(Expr), ensure_: std.ArrayList(Expr)) DeclInit {
         var _self: DeclInit = undefined;
-// zbr:selfhost/ast.zbr:311
-            _self.span = span;
-// zbr:selfhost/ast.zbr:312
-            _self.mods = mods;
 // zbr:selfhost/ast.zbr:313
-            _self.params = params;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:314
-            _self.stmts = stmts;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:315
-            _self.require_ = require_;
+            _self.params = params;
 // zbr:selfhost/ast.zbr:316
+            _self.stmts = stmts;
+// zbr:selfhost/ast.zbr:317
+            _self.require_ = require_;
+// zbr:selfhost/ast.zbr:318
             _self.ensure_ = ensure_;
         return _self;
     }
@@ -2242,15 +2245,15 @@ pub const Param = struct {
     default_: ?*Expr,
     pub fn init(span: Span, mode: ParamMode, name: []const u8, type_: ?TypeRef, default_: ?*Expr) Param {
         var _self: Param = undefined;
-// zbr:selfhost/ast.zbr:332
-            _self.span = span;
-// zbr:selfhost/ast.zbr:333
-            _self.mode = mode;
 // zbr:selfhost/ast.zbr:334
-            _self.name = _intern(name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:335
-            _self.type_ = type_;
+            _self.mode = mode;
 // zbr:selfhost/ast.zbr:336
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:337
+            _self.type_ = type_;
+// zbr:selfhost/ast.zbr:338
             _self.default_ = default_;
         return _self;
     }
@@ -2274,9 +2277,9 @@ pub const NamedTypeRef = struct {
     name: []const u8,
     pub fn init(span: Span, name: []const u8) NamedTypeRef {
         var _self: NamedTypeRef = undefined;
-// zbr:selfhost/ast.zbr:358
+// zbr:selfhost/ast.zbr:360
             _self.span = span;
-// zbr:selfhost/ast.zbr:359
+// zbr:selfhost/ast.zbr:361
             _self.name = _intern(name);
         return _self;
     }
@@ -2289,11 +2292,11 @@ pub const GenericTypeRef = struct {
     args: std.ArrayList(TypeRef),
     pub fn init(span: Span, name: []const u8, args: std.ArrayList(TypeRef)) GenericTypeRef {
         var _self: GenericTypeRef = undefined;
-// zbr:selfhost/ast.zbr:367
-            _self.span = span;
-// zbr:selfhost/ast.zbr:368
-            _self.name = _intern(name);
 // zbr:selfhost/ast.zbr:369
+            _self.span = span;
+// zbr:selfhost/ast.zbr:370
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:371
             _self.args = args;
         return _self;
     }
@@ -2305,9 +2308,9 @@ pub const TupleTypeRef = struct {
     elems: std.ArrayList(TypeRef),
     pub fn init(span: Span, elems: std.ArrayList(TypeRef)) TupleTypeRef {
         var _self: TupleTypeRef = undefined;
-// zbr:selfhost/ast.zbr:376
+// zbr:selfhost/ast.zbr:378
             _self.span = span;
-// zbr:selfhost/ast.zbr:377
+// zbr:selfhost/ast.zbr:379
             _self.elems = elems;
         return _self;
     }
@@ -2362,13 +2365,13 @@ pub const ElseIf = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: Expr, stmts: std.ArrayList(Stmt)) ElseIf {
         var _self: ElseIf = undefined;
-// zbr:selfhost/ast.zbr:430
-            _self.span = span;
-// zbr:selfhost/ast.zbr:431
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:432
-            _self.is_capture = null;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:433
+            _self.cond = cond;
+// zbr:selfhost/ast.zbr:434
+            _self.is_capture = null;
+// zbr:selfhost/ast.zbr:435
             _self.stmts = stmts;
         return _self;
     }
@@ -2384,17 +2387,17 @@ pub const StmtIf = struct {
     else_stmts: ?std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, then_stmts: std.ArrayList(Stmt), else_ifs: std.ArrayList(ElseIf), else_stmts: ?std.ArrayList(Stmt)) StmtIf {
         var _self: StmtIf = undefined;
-// zbr:selfhost/ast.zbr:444
-            _self.span = span;
-// zbr:selfhost/ast.zbr:445
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:446
-            _self.is_capture = null;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:447
-            _self.then_stmts = then_stmts;
+            _self.cond = cond;
 // zbr:selfhost/ast.zbr:448
-            _self.else_ifs = else_ifs;
+            _self.is_capture = null;
 // zbr:selfhost/ast.zbr:449
+            _self.then_stmts = then_stmts;
+// zbr:selfhost/ast.zbr:450
+            _self.else_ifs = else_ifs;
+// zbr:selfhost/ast.zbr:451
             _self.else_stmts = else_stmts;
         return _self;
     }
@@ -2407,11 +2410,11 @@ pub const StmtWhile = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, stmts: std.ArrayList(Stmt)) StmtWhile {
         var _self: StmtWhile = undefined;
-// zbr:selfhost/ast.zbr:457
-            _self.span = span;
-// zbr:selfhost/ast.zbr:458
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:459
+            _self.span = span;
+// zbr:selfhost/ast.zbr:460
+            _self.cond = cond;
+// zbr:selfhost/ast.zbr:461
             _self.stmts = stmts;
         return _self;
     }
@@ -2427,17 +2430,17 @@ pub const StmtForIn = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, vars: std.ArrayList([]const u8), iter: *Expr, filter: ?*Expr, stmts: std.ArrayList(Stmt), else_: ?std.ArrayList(Stmt)) StmtForIn {
         var _self: StmtForIn = undefined;
-// zbr:selfhost/ast.zbr:470
-            _self.span = span;
-// zbr:selfhost/ast.zbr:471
-            _self.vars = vars;
 // zbr:selfhost/ast.zbr:472
-            _self.iter = iter;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:473
-            _self.filter = filter;
+            _self.vars = vars;
 // zbr:selfhost/ast.zbr:474
-            _self.stmts = stmts;
+            _self.iter = iter;
 // zbr:selfhost/ast.zbr:475
+            _self.filter = filter;
+// zbr:selfhost/ast.zbr:476
+            _self.stmts = stmts;
+// zbr:selfhost/ast.zbr:477
             _self.else_ = else_;
         return _self;
     }
@@ -2454,19 +2457,19 @@ pub const StmtForNum = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, var_: []const u8, start: *Expr, stop_: *Expr, step: ?*Expr, stmts: std.ArrayList(Stmt), else_: ?std.ArrayList(Stmt)) StmtForNum {
         var _self: StmtForNum = undefined;
-// zbr:selfhost/ast.zbr:487
-            _self.span = span;
-// zbr:selfhost/ast.zbr:488
-            _self.var_ = _intern(var_);
 // zbr:selfhost/ast.zbr:489
-            _self.start = start;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:490
-            _self.stop_ = stop_;
+            _self.var_ = _intern(var_);
 // zbr:selfhost/ast.zbr:491
-            _self.step = step;
+            _self.start = start;
 // zbr:selfhost/ast.zbr:492
-            _self.stmts = stmts;
+            _self.stop_ = stop_;
 // zbr:selfhost/ast.zbr:493
+            _self.step = step;
+// zbr:selfhost/ast.zbr:494
+            _self.stmts = stmts;
+// zbr:selfhost/ast.zbr:495
             _self.else_ = else_;
         return _self;
     }
@@ -2478,9 +2481,9 @@ pub const StructFieldPat = struct {
     value: Expr,
     pub fn init(name: []const u8, value: Expr) StructFieldPat {
         var _self: StructFieldPat = undefined;
-// zbr:selfhost/ast.zbr:500
+// zbr:selfhost/ast.zbr:502
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:501
+// zbr:selfhost/ast.zbr:503
             _self.value = value;
         return _self;
     }
@@ -2492,9 +2495,9 @@ pub const StructPat = struct {
     fields: std.ArrayList(StructFieldPat),
     pub fn init(type_name: []const u8, fields: std.ArrayList(StructFieldPat)) StructPat {
         var _self: StructPat = undefined;
-// zbr:selfhost/ast.zbr:508
+// zbr:selfhost/ast.zbr:510
             _self.type_name = _intern(type_name);
-// zbr:selfhost/ast.zbr:509
+// zbr:selfhost/ast.zbr:511
             _self.fields = fields;
         return _self;
     }
@@ -2510,17 +2513,17 @@ pub const BranchOn = struct {
     struct_pat: ?StructPat,
     pub fn init(span: Span, values: std.ArrayList(Expr), stmts: std.ArrayList(Stmt), binding: ?[]const u8, guard_expr: std.ArrayList(Expr)) BranchOn {
         var _self: BranchOn = undefined;
-// zbr:selfhost/ast.zbr:520
-            _self.span = span;
-// zbr:selfhost/ast.zbr:521
-            _self.values = values;
 // zbr:selfhost/ast.zbr:522
-            _self.stmts = stmts;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:523
-            _self.binding = binding;
+            _self.values = values;
 // zbr:selfhost/ast.zbr:524
-            _self.guard_expr = guard_expr;
+            _self.stmts = stmts;
 // zbr:selfhost/ast.zbr:525
+            _self.binding = binding;
+// zbr:selfhost/ast.zbr:526
+            _self.guard_expr = guard_expr;
+// zbr:selfhost/ast.zbr:527
             _self.struct_pat = null;
         return _self;
     }
@@ -2534,13 +2537,13 @@ pub const StmtBranch = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, expr: *Expr, cases: std.ArrayList(BranchOn), else_: ?std.ArrayList(Stmt)) StmtBranch {
         var _self: StmtBranch = undefined;
-// zbr:selfhost/ast.zbr:534
-            _self.span = span;
-// zbr:selfhost/ast.zbr:535
-            _self.expr = expr;
 // zbr:selfhost/ast.zbr:536
-            _self.cases = cases;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:537
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:538
+            _self.cases = cases;
+// zbr:selfhost/ast.zbr:539
             _self.else_ = else_;
         return _self;
     }
@@ -2552,9 +2555,9 @@ pub const StmtReturn = struct {
     value: ?*Expr,
     pub fn init(span: Span, value: ?*Expr) StmtReturn {
         var _self: StmtReturn = undefined;
-// zbr:selfhost/ast.zbr:544
+// zbr:selfhost/ast.zbr:546
             _self.span = span;
-// zbr:selfhost/ast.zbr:545
+// zbr:selfhost/ast.zbr:547
             _self.value = value;
         return _self;
     }
@@ -2567,11 +2570,11 @@ pub const StmtAssert = struct {
     message: ?*Expr,
     pub fn init(span: Span, cond: *Expr, message: ?*Expr) StmtAssert {
         var _self: StmtAssert = undefined;
-// zbr:selfhost/ast.zbr:553
-            _self.span = span;
-// zbr:selfhost/ast.zbr:554
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:555
+            _self.span = span;
+// zbr:selfhost/ast.zbr:556
+            _self.cond = cond;
+// zbr:selfhost/ast.zbr:557
             _self.message = message;
         return _self;
     }
@@ -2585,13 +2588,13 @@ pub const StmtAssign = struct {
     value: *Expr,
     pub fn init(span: Span, target: *Expr, op: AssignOp, value: *Expr) StmtAssign {
         var _self: StmtAssign = undefined;
-// zbr:selfhost/ast.zbr:564
-            _self.span = span;
-// zbr:selfhost/ast.zbr:565
-            _self.target = target;
 // zbr:selfhost/ast.zbr:566
-            _self.op = op;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:567
+            _self.target = target;
+// zbr:selfhost/ast.zbr:568
+            _self.op = op;
+// zbr:selfhost/ast.zbr:569
             _self.value = value;
         return _self;
     }
@@ -2604,11 +2607,11 @@ pub const StmtDefer = struct {
     stmt: *Stmt,
     pub fn init(span: Span, is_err: bool, stmt: *Stmt) StmtDefer {
         var _self: StmtDefer = undefined;
-// zbr:selfhost/ast.zbr:575
-            _self.span = span;
-// zbr:selfhost/ast.zbr:576
-            _self.is_err = is_err;
 // zbr:selfhost/ast.zbr:577
+            _self.span = span;
+// zbr:selfhost/ast.zbr:578
+            _self.is_err = is_err;
+// zbr:selfhost/ast.zbr:579
             _self.stmt = stmt;
         return _self;
     }
@@ -2621,11 +2624,11 @@ pub const StmtWith = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, target: *Expr, stmts: std.ArrayList(Stmt)) StmtWith {
         var _self: StmtWith = undefined;
-// zbr:selfhost/ast.zbr:585
-            _self.span = span;
-// zbr:selfhost/ast.zbr:586
-            _self.target = target;
 // zbr:selfhost/ast.zbr:587
+            _self.span = span;
+// zbr:selfhost/ast.zbr:588
+            _self.target = target;
+// zbr:selfhost/ast.zbr:589
             _self.stmts = stmts;
         return _self;
     }
@@ -2638,11 +2641,11 @@ pub const StmtRaise = struct {
     details: ?*Expr,
     pub fn init(span: Span, message: ?*Expr, details: ?*Expr) StmtRaise {
         var _self: StmtRaise = undefined;
-// zbr:selfhost/ast.zbr:595
-            _self.span = span;
-// zbr:selfhost/ast.zbr:596
-            _self.message = message;
 // zbr:selfhost/ast.zbr:597
+            _self.span = span;
+// zbr:selfhost/ast.zbr:598
+            _self.message = message;
+// zbr:selfhost/ast.zbr:599
             _self.details = details;
         return _self;
     }
@@ -2656,13 +2659,13 @@ pub const CatchClause = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, binding: ?[]const u8, type_: ?TypeRef, stmts: std.ArrayList(Stmt)) CatchClause {
         var _self: CatchClause = undefined;
-// zbr:selfhost/ast.zbr:606
-            _self.span = span;
-// zbr:selfhost/ast.zbr:607
-            _self.binding = binding;
 // zbr:selfhost/ast.zbr:608
-            _self.type_ = type_;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:609
+            _self.binding = binding;
+// zbr:selfhost/ast.zbr:610
+            _self.type_ = type_;
+// zbr:selfhost/ast.zbr:611
             _self.stmts = stmts;
         return _self;
     }
@@ -2675,11 +2678,11 @@ pub const StmtTryCatch = struct {
     clauses: std.ArrayList(CatchClause),
     pub fn init(span: Span, stmts: std.ArrayList(Stmt), clauses: std.ArrayList(CatchClause)) StmtTryCatch {
         var _self: StmtTryCatch = undefined;
-// zbr:selfhost/ast.zbr:617
-            _self.span = span;
-// zbr:selfhost/ast.zbr:618
-            _self.stmts = stmts;
 // zbr:selfhost/ast.zbr:619
+            _self.span = span;
+// zbr:selfhost/ast.zbr:620
+            _self.stmts = stmts;
+// zbr:selfhost/ast.zbr:621
             _self.clauses = clauses;
         return _self;
     }
@@ -2692,11 +2695,11 @@ pub const StmtGuard = struct {
     else_stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, else_stmts: std.ArrayList(Stmt)) StmtGuard {
         var _self: StmtGuard = undefined;
-// zbr:selfhost/ast.zbr:627
-            _self.span = span;
-// zbr:selfhost/ast.zbr:628
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:629
+            _self.span = span;
+// zbr:selfhost/ast.zbr:630
+            _self.cond = cond;
+// zbr:selfhost/ast.zbr:631
             _self.else_stmts = else_stmts;
         return _self;
     }
@@ -2710,13 +2713,13 @@ pub const StmtDestruct = struct {
     is_struct: bool,
     pub fn init(span: Span, names: std.ArrayList([]const u8), init_expr: *Expr, is_struct: bool) StmtDestruct {
         var _self: StmtDestruct = undefined;
-// zbr:selfhost/ast.zbr:638
-            _self.span = span;
-// zbr:selfhost/ast.zbr:639
-            _self.names = names;
 // zbr:selfhost/ast.zbr:640
-            _self.init_expr = init_expr;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:641
+            _self.names = names;
+// zbr:selfhost/ast.zbr:642
+            _self.init_expr = init_expr;
+// zbr:selfhost/ast.zbr:643
             _self.is_struct = is_struct;
         return _self;
     }
@@ -2728,9 +2731,9 @@ pub const StmtArenaScope = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, stmts: std.ArrayList(Stmt)) StmtArenaScope {
         var _self: StmtArenaScope = undefined;
-// zbr:selfhost/ast.zbr:648
+// zbr:selfhost/ast.zbr:650
             _self.span = span;
-// zbr:selfhost/ast.zbr:649
+// zbr:selfhost/ast.zbr:651
             _self.stmts = stmts;
         return _self;
     }
@@ -2749,11 +2752,11 @@ pub const StmtContract = struct {
     exprs: std.ArrayList(Expr),
     pub fn init(span: Span, kind: ContractKind, exprs: std.ArrayList(Expr)) StmtContract {
         var _self: StmtContract = undefined;
-// zbr:selfhost/ast.zbr:662
-            _self.span = span;
-// zbr:selfhost/ast.zbr:663
-            _self.kind = kind;
 // zbr:selfhost/ast.zbr:664
+            _self.span = span;
+// zbr:selfhost/ast.zbr:665
+            _self.kind = kind;
+// zbr:selfhost/ast.zbr:666
             _self.exprs = exprs;
         return _self;
     }
@@ -2766,11 +2769,11 @@ pub const StmtPrint = struct {
     newline: bool,
     pub fn init(span: Span, args: std.ArrayList(Expr), newline: bool) StmtPrint {
         var _self: StmtPrint = undefined;
-// zbr:selfhost/ast.zbr:672
-            _self.span = span;
-// zbr:selfhost/ast.zbr:673
-            _self.args = args;
 // zbr:selfhost/ast.zbr:674
+            _self.span = span;
+// zbr:selfhost/ast.zbr:675
+            _self.args = args;
+// zbr:selfhost/ast.zbr:676
             _self.newline = newline;
         return _self;
     }
@@ -2825,11 +2828,11 @@ pub const ExprIntLit = struct {
     base: IntBase,
     pub fn init(span: Span, text: []const u8, base: IntBase) ExprIntLit {
         var _self: ExprIntLit = undefined;
-// zbr:selfhost/ast.zbr:730
-            _self.span = span;
-// zbr:selfhost/ast.zbr:731
-            _self.text = _intern(text);
 // zbr:selfhost/ast.zbr:732
+            _self.span = span;
+// zbr:selfhost/ast.zbr:733
+            _self.text = _intern(text);
+// zbr:selfhost/ast.zbr:734
             _self.base = base;
         return _self;
     }
@@ -2841,9 +2844,9 @@ pub const ExprFloatLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprFloatLit {
         var _self: ExprFloatLit = undefined;
-// zbr:selfhost/ast.zbr:741
+// zbr:selfhost/ast.zbr:743
             _self.span = span;
-// zbr:selfhost/ast.zbr:742
+// zbr:selfhost/ast.zbr:744
             _self.text = _intern(text);
         return _self;
     }
@@ -2855,9 +2858,9 @@ pub const ExprBoolLit = struct {
     value: bool,
     pub fn init(span: Span, value: bool) ExprBoolLit {
         var _self: ExprBoolLit = undefined;
-// zbr:selfhost/ast.zbr:751
+// zbr:selfhost/ast.zbr:753
             _self.span = span;
-// zbr:selfhost/ast.zbr:752
+// zbr:selfhost/ast.zbr:754
             _self.value = value;
         return _self;
     }
@@ -2869,9 +2872,9 @@ pub const ExprCharLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprCharLit {
         var _self: ExprCharLit = undefined;
-// zbr:selfhost/ast.zbr:761
+// zbr:selfhost/ast.zbr:763
             _self.span = span;
-// zbr:selfhost/ast.zbr:762
+// zbr:selfhost/ast.zbr:764
             _self.text = _intern(text);
         return _self;
     }
@@ -2891,11 +2894,11 @@ pub const ExprStringLit = struct {
     text: []const u8,
     pub fn init(span: Span, kind: StringKind, text: []const u8) ExprStringLit {
         var _self: ExprStringLit = undefined;
-// zbr:selfhost/ast.zbr:778
-            _self.span = span;
-// zbr:selfhost/ast.zbr:779
-            _self.kind = kind;
 // zbr:selfhost/ast.zbr:780
+            _self.span = span;
+// zbr:selfhost/ast.zbr:781
+            _self.kind = kind;
+// zbr:selfhost/ast.zbr:782
             _self.text = _intern(text);
         return _self;
     }
@@ -2913,9 +2916,9 @@ pub const ExprStringInterp = struct {
     parts: std.ArrayList(StringPart),
     pub fn init(span: Span, parts: std.ArrayList(StringPart)) ExprStringInterp {
         var _self: ExprStringInterp = undefined;
-// zbr:selfhost/ast.zbr:794
+// zbr:selfhost/ast.zbr:796
             _self.span = span;
-// zbr:selfhost/ast.zbr:795
+// zbr:selfhost/ast.zbr:797
             _self.parts = parts;
         return _self;
     }
@@ -2927,9 +2930,9 @@ pub const ExceptField = struct {
     value: Expr,
     pub fn init(name: []const u8, value: Expr) ExceptField {
         var _self: ExceptField = undefined;
-// zbr:selfhost/ast.zbr:804
+// zbr:selfhost/ast.zbr:806
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:805
+// zbr:selfhost/ast.zbr:807
             _self.value = value;
         return _self;
     }
@@ -2942,11 +2945,11 @@ pub const ExprExcept = struct {
     fields: std.ArrayList(ExceptField),
     pub fn init(span: Span, base: Expr, fields: std.ArrayList(ExceptField)) ExprExcept {
         var _self: ExprExcept = undefined;
-// zbr:selfhost/ast.zbr:813
-            _self.span = span;
-// zbr:selfhost/ast.zbr:814
-            _self.base = base;
 // zbr:selfhost/ast.zbr:815
+            _self.span = span;
+// zbr:selfhost/ast.zbr:816
+            _self.base = base;
+// zbr:selfhost/ast.zbr:817
             _self.fields = fields;
         return _self;
     }
@@ -2958,9 +2961,9 @@ pub const ExprIdent = struct {
     name: []const u8,
     pub fn init(span: Span, name: []const u8) ExprIdent {
         var _self: ExprIdent = undefined;
-// zbr:selfhost/ast.zbr:824
+// zbr:selfhost/ast.zbr:826
             _self.span = span;
-// zbr:selfhost/ast.zbr:825
+// zbr:selfhost/ast.zbr:827
             _self.name = _intern(name);
         return _self;
     }
@@ -2973,11 +2976,11 @@ pub const ExprMember = struct {
     member: []const u8,
     pub fn init(span: Span, object: *Expr, member: []const u8) ExprMember {
         var _self: ExprMember = undefined;
-// zbr:selfhost/ast.zbr:835
-            _self.span = span;
-// zbr:selfhost/ast.zbr:836
-            _self.object = object;
 // zbr:selfhost/ast.zbr:837
+            _self.span = span;
+// zbr:selfhost/ast.zbr:838
+            _self.object = object;
+// zbr:selfhost/ast.zbr:839
             _self.member = _intern(member);
         return _self;
     }
@@ -2990,11 +2993,11 @@ pub const Arg = struct {
     value: Expr,
     pub fn init(span: Span, name: ?[]const u8, value: Expr) Arg {
         var _self: Arg = undefined;
-// zbr:selfhost/ast.zbr:847
-            _self.span = span;
-// zbr:selfhost/ast.zbr:848
-            _self.name = name;
 // zbr:selfhost/ast.zbr:849
+            _self.span = span;
+// zbr:selfhost/ast.zbr:850
+            _self.name = name;
+// zbr:selfhost/ast.zbr:851
             _self.value = value;
         return _self;
     }
@@ -3007,11 +3010,11 @@ pub const ExprCall = struct {
     args: std.ArrayList(Arg),
     pub fn init(span: Span, callee: Expr, args: std.ArrayList(Arg)) ExprCall {
         var _self: ExprCall = undefined;
-// zbr:selfhost/ast.zbr:857
-            _self.span = span;
-// zbr:selfhost/ast.zbr:858
-            _self.callee = callee;
 // zbr:selfhost/ast.zbr:859
+            _self.span = span;
+// zbr:selfhost/ast.zbr:860
+            _self.callee = callee;
+// zbr:selfhost/ast.zbr:861
             _self.args = args;
         return _self;
     }
@@ -3024,11 +3027,11 @@ pub const ExprIndex = struct {
     index: *Expr,
     pub fn init(span: Span, object: *Expr, index: *Expr) ExprIndex {
         var _self: ExprIndex = undefined;
-// zbr:selfhost/ast.zbr:869
-            _self.span = span;
-// zbr:selfhost/ast.zbr:870
-            _self.object = object;
 // zbr:selfhost/ast.zbr:871
+            _self.span = span;
+// zbr:selfhost/ast.zbr:872
+            _self.object = object;
+// zbr:selfhost/ast.zbr:873
             _self.index = index;
         return _self;
     }
@@ -3042,13 +3045,13 @@ pub const ExprSlice = struct {
     stop_: ?*Expr,
     pub fn init(span: Span, object: *Expr, start: ?*Expr, stop_: ?*Expr) ExprSlice {
         var _self: ExprSlice = undefined;
-// zbr:selfhost/ast.zbr:882
-            _self.span = span;
-// zbr:selfhost/ast.zbr:883
-            _self.object = object;
 // zbr:selfhost/ast.zbr:884
-            _self.start = start;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:885
+            _self.object = object;
+// zbr:selfhost/ast.zbr:886
+            _self.start = start;
+// zbr:selfhost/ast.zbr:887
             _self.stop_ = stop_;
         return _self;
     }
@@ -3087,13 +3090,13 @@ pub const ExprBinary = struct {
     right: *Expr,
     pub fn init(span: Span, op: BinaryOp, left: *Expr, right: *Expr) ExprBinary {
         var _self: ExprBinary = undefined;
-// zbr:selfhost/ast.zbr:920
-            _self.span = span;
-// zbr:selfhost/ast.zbr:921
-            _self.op = op;
 // zbr:selfhost/ast.zbr:922
-            _self.left = left;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:923
+            _self.op = op;
+// zbr:selfhost/ast.zbr:924
+            _self.left = left;
+// zbr:selfhost/ast.zbr:925
             _self.right = right;
         return _self;
     }
@@ -3112,11 +3115,11 @@ pub const ExprUnary = struct {
     operand: *Expr,
     pub fn init(span: Span, op: UnaryOp, operand: *Expr) ExprUnary {
         var _self: ExprUnary = undefined;
-// zbr:selfhost/ast.zbr:938
-            _self.span = span;
-// zbr:selfhost/ast.zbr:939
-            _self.op = op;
 // zbr:selfhost/ast.zbr:940
+            _self.span = span;
+// zbr:selfhost/ast.zbr:941
+            _self.op = op;
+// zbr:selfhost/ast.zbr:942
             _self.operand = operand;
         return _self;
     }
@@ -3129,11 +3132,11 @@ pub const ExprOld = struct {
     operand: *Expr,
     pub fn init(span: Span, uid: i64, operand: *Expr) ExprOld {
         var _self: ExprOld = undefined;
-// zbr:selfhost/ast.zbr:950
-            _self.span = span;
-// zbr:selfhost/ast.zbr:951
-            _self.uid = uid;
 // zbr:selfhost/ast.zbr:952
+            _self.span = span;
+// zbr:selfhost/ast.zbr:953
+            _self.uid = uid;
+// zbr:selfhost/ast.zbr:954
             _self.operand = operand;
         return _self;
     }
@@ -3146,11 +3149,11 @@ pub const ExprCast = struct {
     target: TypeRef,
     pub fn init(span: Span, expr: *Expr, target: TypeRef) ExprCast {
         var _self: ExprCast = undefined;
-// zbr:selfhost/ast.zbr:962
-            _self.span = span;
-// zbr:selfhost/ast.zbr:963
-            _self.expr = expr;
 // zbr:selfhost/ast.zbr:964
+            _self.span = span;
+// zbr:selfhost/ast.zbr:965
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:966
             _self.target = target;
         return _self;
     }
@@ -3164,13 +3167,13 @@ pub const ExprTypeCheck = struct {
     variant_name: ?[]const u8,
     pub fn init(span: Span, expr: *Expr, type_name: []const u8) ExprTypeCheck {
         var _self: ExprTypeCheck = undefined;
-// zbr:selfhost/ast.zbr:976
-            _self.span = span;
-// zbr:selfhost/ast.zbr:977
-            _self.expr = expr;
 // zbr:selfhost/ast.zbr:978
-            _self.type_name = _intern(type_name);
+            _self.span = span;
 // zbr:selfhost/ast.zbr:979
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:980
+            _self.type_name = _intern(type_name);
+// zbr:selfhost/ast.zbr:981
             _self.variant_name = null;
         return _self;
     }
@@ -3183,11 +3186,11 @@ pub const ExprChainedCmp = struct {
     operands: std.ArrayList(Expr),
     pub fn init(span: Span, ops: std.ArrayList([]const u8), operands: std.ArrayList(Expr)) ExprChainedCmp {
         var _self: ExprChainedCmp = undefined;
-// zbr:selfhost/ast.zbr:989
-            _self.span = span;
-// zbr:selfhost/ast.zbr:990
-            _self.ops = ops;
 // zbr:selfhost/ast.zbr:991
+            _self.span = span;
+// zbr:selfhost/ast.zbr:992
+            _self.ops = ops;
+// zbr:selfhost/ast.zbr:993
             _self.operands = operands;
         return _self;
     }
@@ -3199,9 +3202,9 @@ pub const ExprToNilable = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprToNilable {
         var _self: ExprToNilable = undefined;
-// zbr:selfhost/ast.zbr:1000
+// zbr:selfhost/ast.zbr:1002
             _self.span = span;
-// zbr:selfhost/ast.zbr:1001
+// zbr:selfhost/ast.zbr:1003
             _self.expr = expr;
         return _self;
     }
@@ -3213,9 +3216,9 @@ pub const ExprToNonNil = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprToNonNil {
         var _self: ExprToNonNil = undefined;
-// zbr:selfhost/ast.zbr:1008
+// zbr:selfhost/ast.zbr:1010
             _self.span = span;
-// zbr:selfhost/ast.zbr:1009
+// zbr:selfhost/ast.zbr:1011
             _self.expr = expr;
         return _self;
     }
@@ -3227,9 +3230,9 @@ pub const ExprIsNil = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprIsNil {
         var _self: ExprIsNil = undefined;
-// zbr:selfhost/ast.zbr:1016
+// zbr:selfhost/ast.zbr:1018
             _self.span = span;
-// zbr:selfhost/ast.zbr:1017
+// zbr:selfhost/ast.zbr:1019
             _self.expr = expr;
         return _self;
     }
@@ -3242,11 +3245,11 @@ pub const ExprOrelse = struct {
     fallback: *Expr,
     pub fn init(span: Span, expr: *Expr, fallback: *Expr) ExprOrelse {
         var _self: ExprOrelse = undefined;
-// zbr:selfhost/ast.zbr:1027
-            _self.span = span;
-// zbr:selfhost/ast.zbr:1028
-            _self.expr = expr;
 // zbr:selfhost/ast.zbr:1029
+            _self.span = span;
+// zbr:selfhost/ast.zbr:1030
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:1031
             _self.fallback = fallback;
         return _self;
     }
@@ -3260,13 +3263,13 @@ pub const ExprCatch = struct {
     fallback: *Expr,
     pub fn init(span: Span, expr: *Expr, err_var: ?[]const u8, fallback: *Expr) ExprCatch {
         var _self: ExprCatch = undefined;
-// zbr:selfhost/ast.zbr:1038
-            _self.span = span;
-// zbr:selfhost/ast.zbr:1039
-            _self.expr = expr;
 // zbr:selfhost/ast.zbr:1040
-            _self.err_var = err_var;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:1041
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:1042
+            _self.err_var = err_var;
+// zbr:selfhost/ast.zbr:1043
             _self.fallback = fallback;
         return _self;
     }
@@ -3280,13 +3283,13 @@ pub const ExprIf = struct {
     else_expr: *Expr,
     pub fn init(span: Span, cond: *Expr, then_expr: *Expr, else_expr: *Expr) ExprIf {
         var _self: ExprIf = undefined;
-// zbr:selfhost/ast.zbr:1052
-            _self.span = span;
-// zbr:selfhost/ast.zbr:1053
-            _self.cond = cond;
 // zbr:selfhost/ast.zbr:1054
-            _self.then_expr = then_expr;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:1055
+            _self.cond = cond;
+// zbr:selfhost/ast.zbr:1056
+            _self.then_expr = then_expr;
+// zbr:selfhost/ast.zbr:1057
             _self.else_expr = else_expr;
         return _self;
     }
@@ -3306,15 +3309,15 @@ pub const ExprLambda = struct {
     captures: std.ArrayList(DeclVar),
     pub fn init(span: Span, params: std.ArrayList(Param), return_type: ?TypeRef, body_: LambdaBody, captures: std.ArrayList(DeclVar)) ExprLambda {
         var _self: ExprLambda = undefined;
-// zbr:selfhost/ast.zbr:1072
-            _self.span = span;
-// zbr:selfhost/ast.zbr:1073
-            _self.params = params;
 // zbr:selfhost/ast.zbr:1074
-            _self.return_type = return_type;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:1075
-            _self.body_ = body_;
+            _self.params = params;
 // zbr:selfhost/ast.zbr:1076
+            _self.return_type = return_type;
+// zbr:selfhost/ast.zbr:1077
+            _self.body_ = body_;
+// zbr:selfhost/ast.zbr:1078
             _self.captures = captures;
         return _self;
     }
@@ -3327,11 +3330,11 @@ pub const ExprListLit = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elem_type: ?TypeRef, elems: std.ArrayList(Expr)) ExprListLit {
         var _self: ExprListLit = undefined;
-// zbr:selfhost/ast.zbr:1086
-            _self.span = span;
-// zbr:selfhost/ast.zbr:1087
-            _self.elem_type = elem_type;
 // zbr:selfhost/ast.zbr:1088
+            _self.span = span;
+// zbr:selfhost/ast.zbr:1089
+            _self.elem_type = elem_type;
+// zbr:selfhost/ast.zbr:1090
             _self.elems = elems;
         return _self;
     }
@@ -3343,9 +3346,9 @@ pub const DictEntry = struct {
     value: *Expr,
     pub fn init(key: *Expr, value: *Expr) DictEntry {
         var _self: DictEntry = undefined;
-// zbr:selfhost/ast.zbr:1095
+// zbr:selfhost/ast.zbr:1097
             _self.key = key;
-// zbr:selfhost/ast.zbr:1096
+// zbr:selfhost/ast.zbr:1098
             _self.value = value;
         return _self;
     }
@@ -3357,9 +3360,9 @@ pub const ExprDictLit = struct {
     entries: std.ArrayList(DictEntry),
     pub fn init(span: Span, entries: std.ArrayList(DictEntry)) ExprDictLit {
         var _self: ExprDictLit = undefined;
-// zbr:selfhost/ast.zbr:1103
+// zbr:selfhost/ast.zbr:1105
             _self.span = span;
-// zbr:selfhost/ast.zbr:1104
+// zbr:selfhost/ast.zbr:1106
             _self.entries = entries;
         return _self;
     }
@@ -3371,9 +3374,9 @@ pub const ExprArrayLit = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elems: std.ArrayList(Expr)) ExprArrayLit {
         var _self: ExprArrayLit = undefined;
-// zbr:selfhost/ast.zbr:1111
+// zbr:selfhost/ast.zbr:1113
             _self.span = span;
-// zbr:selfhost/ast.zbr:1112
+// zbr:selfhost/ast.zbr:1114
             _self.elems = elems;
         return _self;
     }
@@ -3385,9 +3388,9 @@ pub const ExprZigLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprZigLit {
         var _self: ExprZigLit = undefined;
-// zbr:selfhost/ast.zbr:1121
+// zbr:selfhost/ast.zbr:1123
             _self.span = span;
-// zbr:selfhost/ast.zbr:1122
+// zbr:selfhost/ast.zbr:1124
             _self.text = _intern(text);
         return _self;
     }
@@ -3399,9 +3402,9 @@ pub const ExprTry = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprTry {
         var _self: ExprTry = undefined;
-// zbr:selfhost/ast.zbr:1129
+// zbr:selfhost/ast.zbr:1131
             _self.span = span;
-// zbr:selfhost/ast.zbr:1130
+// zbr:selfhost/ast.zbr:1132
             _self.expr = expr;
         return _self;
     }
@@ -3413,9 +3416,9 @@ pub const ExprTuple = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elems: std.ArrayList(Expr)) ExprTuple {
         var _self: ExprTuple = undefined;
-// zbr:selfhost/ast.zbr:1137
+// zbr:selfhost/ast.zbr:1139
             _self.span = span;
-// zbr:selfhost/ast.zbr:1138
+// zbr:selfhost/ast.zbr:1140
             _self.elems = elems;
         return _self;
     }

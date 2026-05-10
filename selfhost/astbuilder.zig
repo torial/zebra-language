@@ -1932,12 +1932,12 @@ pub fn zspan() Span {
 
 pub fn zmods() Modifiers {
 // zbr:selfhost/astbuilder.zbr:26
-    return Modifiers.init(false, false, false, false, false, false, false, false);
+    return Modifiers.init(false, false, false, false, false, false, false, false, false);
 }
 
 pub fn zstatic() Modifiers {
 // zbr:selfhost/astbuilder.zbr:29
-    return Modifiers.init(false, false, false, true, false, false, false, false);
+    return Modifiers.init(false, false, false, true, false, false, false, false, false);
 }
 
 pub fn stripStringQuotes(text: []const u8) []const u8 {
@@ -2291,7 +2291,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:224
         if (c.is_reflectable) {
 // zbr:selfhost/astbuilder.zbr:225
-            mods = Modifiers.init(false, false, false, false, false, false, true, false);
+            mods = Modifiers.init(false, false, false, false, false, false, true, false, false);
         }
 // zbr:selfhost/astbuilder.zbr:226
         return Decl{ .class_ = blk_box_3: { const _bv: std.meta.Child(@FieldType(Decl, "class_")) = DeclClass.init(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
@@ -2362,7 +2362,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:269
         if (s.is_reflectable) {
 // zbr:selfhost/astbuilder.zbr:270
-            mods = Modifiers.init(false, false, false, false, false, false, true, false);
+            mods = Modifiers.init(false, false, false, false, false, false, true, false, false);
         }
 // zbr:selfhost/astbuilder.zbr:271
         return Decl{ .struct_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(Decl, "struct_")) = DeclStruct.init(zspan(), mods, s.name, ifaces, members, inv_exprs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
@@ -2514,7 +2514,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:354
         const stmts_list: ?std.ArrayList(Stmt) = body_stmts;
 // zbr:selfhost/astbuilder.zbr:355
-        const mods = Modifiers.init(false, false, false, m.is_static, false, false, false, m.is_profile);
+        const mods = Modifiers.init(false, false, false, m.is_static, false, false, false, m.is_profile, m.is_once);
 // zbr:selfhost/astbuilder.zbr:356
         return Decl{ .method = blk_box_13: { const _bv: std.meta.Child(@FieldType(Decl, "method")) = DeclMethod.init(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
     }

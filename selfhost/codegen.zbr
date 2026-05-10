@@ -1987,6 +1987,14 @@ struct Generator
                             dig.w.emit(" = ")
                             dig.genExpr(fld.init_expr to!)
                             dig.w.emit(";\n")
+            # Initialize @once cache fields to null (not present in AST; emitted by genMethod).
+            for odecl in n.members
+                if odecl is Decl.method as omth
+                    if omth.mods.is_once
+                        dig.writeIndent()
+                        dig.w.emit("self._once_")
+                        dig.w.emit(omth.name)
+                        dig.w.emit("_val = null;\n")
             dig.writeIndent()
             dig.w.emit("return self;\n")
             ig.writeIndent()
@@ -2166,11 +2174,56 @@ struct Generator
     # ── genMethod ─────────────────────────────────────────────────────────────
 
     def genMethod(m: DeclMethod)
-        writeIndent()
-        w.emit("pub fn ")
-        w.emit(m.name)
-        w.emit("(")
         var has_self = owner != "" and not m.mods.is_static
+        # @once: emit cache field + public wrapper, then emit private impl function.
+        var fn_name: str = m.name
+        if m.mods.is_once
+            # Cache field
+            writeIndent()
+            w.emit("_once_")
+            w.emit(m.name)
+            w.emit("_val: ?")
+            if m.return_type != nil
+                genType(m.return_type to!)
+            w.emit(" = null,\n")
+            # Public wrapper
+            writeIndent()
+            w.emit("pub fn ")
+            w.emit(m.name)
+            w.emit("(self: *")
+            if is_generic
+                w.emit("@This()")
+            else
+                w.emit(owner)
+            w.emit(") ")
+            if m.return_type != nil
+                genType(m.return_type to!)
+            w.emit(" {\n")
+            var wg = indented()
+            wg.writeIndent()
+            wg.w.emit("if (self._once_")
+            wg.w.emit(m.name)
+            wg.w.emit("_val) |_zbr_v| return _zbr_v;\n")
+            wg.writeIndent()
+            wg.w.emit("const _zbr_r = self._zbr_once_")
+            wg.w.emit(m.name)
+            wg.w.emit("_impl();\n")
+            wg.writeIndent()
+            wg.w.emit("self._once_")
+            wg.w.emit(m.name)
+            wg.w.emit("_val = _zbr_r;\n")
+            wg.writeIndent()
+            wg.w.emit("return _zbr_r;\n")
+            writeIndent()
+            w.emit("}\n\n")
+            fn_name = "_zbr_once_" + m.name + "_impl"
+        writeIndent()
+        if m.mods.is_once
+            w.emit("fn ")
+        else
+            w.emit("pub fn ")
+        w.emit(fn_name)
+        w.emit("(")
         if has_self
             if is_generic
                 w.emit("self: *@This()")
@@ -2342,6 +2395,14 @@ struct Generator
             ig.w.emit("_self._type_tag = _zbr_hash(\"")
             ig.w.emit(owner)
             ig.w.emit("\");\n")
+            # Initialize @once cache fields to null (synthetic; not in owner_members).
+            for odecl in owner_members
+                if odecl is Decl.method as omth
+                    if omth.mods.is_once
+                        ig.writeIndent()
+                        ig.w.emit("_self._once_")
+                        ig.w.emit(omth.name)
+                        ig.w.emit("_val = null;\n")
         else
             # Struct init: local value
             ig.writeIndent()

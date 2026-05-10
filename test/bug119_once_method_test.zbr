@@ -1,0 +1,20 @@
+class Counter
+    var count: int = 0
+
+    @once
+    def expensive(): int
+        .count = .count + 1
+        return 42
+
+class Main
+    static def main()
+        var c = Counter()
+        var r1 = c.expensive()
+        var r2 = c.expensive()
+        var r3 = c.expensive()
+        assert r1 == 42
+        assert r2 == 42
+        assert r3 == 42
+        # body ran exactly once — count is 1
+        assert c.count == 1
+        print "BUG-119 @once: OK"

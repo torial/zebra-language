@@ -113,6 +113,10 @@ pub const Modifiers = packed struct {
     /// `@profile` annotation — wraps method body with `_profile_start`/`defer _profile_end`.
     /// Set by AstBuilder when a preceding `@profile` directive is consumed.
     profile: bool = false,
+    /// `@once` annotation — method body executes at most once; result is cached on the instance.
+    /// Requires: instance method, no parameters, non-void return type.
+    /// Set by AstBuilder when a preceding `@once` directive is consumed.
+    once: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────
