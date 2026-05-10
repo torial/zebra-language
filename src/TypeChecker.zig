@@ -1609,6 +1609,7 @@ const TypeChecker = struct {
             .defer_   => |s| try tc.checkStmt(s.body),
             .with        => |s| { _ = try tc.inferExpr(s.target); try tc.checkStmts(s.body); },
             .arena_scope => |s| try tc.checkStmts(s.body),
+            .copy_out    => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.value); },
             .var_except    => |s| { _ = try tc.inferExpr(s.base); for (s.fields) |f| _ = try tc.inferExpr(f.value); },
             .assign_except => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.base); for (s.fields) |f| _ = try tc.inferExpr(f.value); },
             .raise    => |s| {

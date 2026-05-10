@@ -154,6 +154,28 @@ class Counter
   table.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
 
+### Method modifiers (`@once`, `@profile`)
+
+Prefix a `def` declaration with an `@modifier` to alter its behaviour:
+
+```zebra
+class Config
+    @once
+    def load(): str        # body runs at most once; result is cached on the instance
+        return File.read("config.json")
+
+    @profile
+    def heavyWork()        # body is wrapped with Profile.start/end automatically
+        # ...
+```
+
+- **`@once`** — the first call executes the body and stores the result in a hidden
+  field (`_once_cache_<name>` + `_once_done_<name>`).  Subsequent calls return the
+  cached value without re-running the body.  Works for any non-void return type.
+  If the method returns `void`, the body is suppressed after the first call.
+- **`@profile`** — wraps the body with `Profile.start("ClassName.method")`
+  and `defer Profile.end(...)`.  Requires the `Profile` module (stdlib).
+
 > **Note (0.13 sweep):** `def name: T` (no parens at decl) is being removed
 > from the grammar — see BUG-112.  Always use `def name(): T`.  Callers
 > always write parens (`obj.name()`) regardless.
@@ -1155,6 +1177,34 @@ arena
 print ptr_into_block                  # dangling slice — undefined behaviour
 ```
 
+### `<-` arena copy-out operator
+
+The `<-` operator copies a value from the inner arena into the parent arena
+and assigns it to an outer variable — surviving the arena's deinit:
+
+```zebra
+var result: str = ""
+arena
+    var src = File.read("big_file.txt")
+    var summary = process(src)
+    result <- summary           # copies 'summary' into the parent arena
+# src + all temporaries freed here; 'result' is safe
+
+# Outside any arena: <- is a plain assignment (no copy needed)
+var x: str = ""
+x <- "hello"                    # equivalent to x = "hello"
+```
+
+- **`str`:** the value is duplicated into the parent allocator
+  (`_parent_alloc.dupe(u8, value)`), so it survives the sub-arena deinit.
+- **Primitives (`int`, `float`, `bool`):** plain assignment — no heap involved.
+- **Outside an `arena` block:** falls back to plain assignment (`<-` = `=`).
+- **Classes and `List`:** prototype scope only covers `str` + primitives.
+  Full deep-copy for heap-allocated types is deferred to 0.14.
+
+The `<-` idiom replaces the previous `"" + str_value` magic-concat escape;
+use `<-` in new code.
+
 ### Why individual `free` calls are absent
 
 Unlike Zig or C, Zebra never emits `defer allocator.free(x)` for local string
@@ -1288,6 +1338,7 @@ backend by implementing the fn-ptr slots and changing `_gui_active_backend`
 | `sys.getenv(name)`  | `str?`            | Environment variable or nil                  |
 | `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
+| `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
 
 ### `File` — file I/O (static)
 

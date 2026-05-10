@@ -326,6 +326,7 @@ const Printer = struct {
             .guard       => |_| { try p.w("(guard)", .{}); },
             .destruct    => |_| { try p.w("(destruct)", .{}); },
             .arena_scope => |_| { try p.w("(arena)", .{}); },
+            .copy_out    => |_| { try p.w("(copy-out)", .{}); },
             .pass     => try p.w("(pass)", .{}),
             .break_   => try p.w("(break)", .{}),
             .continue_=> try p.w("(continue)", .{}),

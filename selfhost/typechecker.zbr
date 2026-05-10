@@ -1523,6 +1523,9 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 ctx.bind(nm_s, ftype)
         on Stmt.arena_scope as sas
             walkStmts(sas.stmts, ctx)
+        on Stmt.copy_out as sco
+            walkExpr(sco.target, ctx)
+            walkExpr(sco.value, ctx)
         on Stmt.print_ as sp
             for a in sp.args
                 walkExpr(a, ctx)

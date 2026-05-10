@@ -54,6 +54,7 @@ union PNode
     stmt_expr: ^PNode
     stmt_print: ^PNode
     stmt_arena_scope: ^PArenaScope
+    stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
     stmt_guard: ^PGuard
     stmt_destruct: ^PDestruct
@@ -331,6 +332,15 @@ struct PArenaScope
     var line: int
     cue init(stmts: List(PNode), line: int)
         .stmts = stmts
+        .line = line
+
+struct PCopyOut
+    var target: List(PNode)
+    var value: List(PNode)
+    var line: int
+    cue init(target: List(PNode), value: List(PNode), line: int)
+        .target = target
+        .value = value
         .line = line
 
 struct PWith
@@ -1907,6 +1917,15 @@ class Parser
             op = "-="
         else if .textIs("*=")
             op = "*="
+        if .textIs("<-")
+            .advance()
+            const value_expr = .parseExpr()
+            .skipEol()
+            var tgt = List(PNode)()
+            tgt.add(target_expr)
+            var val = List(PNode)()
+            val.add(value_expr)
+            return PNode.stmt_copy_out(PCopyOut(tgt, val, line))
         if op != ""
             .advance()
             const value_expr = .parseExpr()

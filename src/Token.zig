@@ -132,6 +132,7 @@ pub const TokenKind = enum {
     minus,         // -
     minusminus,    // --
     arrow,         // ->
+    left_arrow,    // <- (arena copy-out)
     star,          // *
     starstar,      // **
     slash,         // /

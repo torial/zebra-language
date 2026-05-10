@@ -338,6 +338,7 @@ pub const Stmt = union(enum) {
     guard: *StmtGuard,            // guard cond else { block | stmt }
     destruct: *StmtDestruct,      // var (x, y) = expr
     arena_scope: *StmtArenaScope, // arena eol Block — scoped sub-arena
+    copy_out: *StmtCopyOut,      // lhs <- rhs — copy rhs out of the current arena
 };
 
 pub const StmtIf = struct {
@@ -470,6 +471,15 @@ pub const StmtWith = struct {
 pub const StmtArenaScope = struct {
     span: Span,
     body: []const Stmt,
+};
+
+/// `lhs <- rhs` — arena copy-out: duplicate rhs from the current sub-arena into the
+/// parent allocator and assign to lhs.  Outside any arena block this is a plain assign.
+/// Prototype scope: str and primitive types only; class/list/interface deferred to 0.14.
+pub const StmtCopyOut = struct {
+    span:   Span,
+    target: *Expr,  // left-hand side (assignment target)
+    value:  *Expr,  // right-hand side (value to copy out)
 };
 
 /// `guard cond else { block | stmt }` — early-exit: if cond is false, run else body.

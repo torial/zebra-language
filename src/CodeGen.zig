@@ -425,6 +425,7 @@ fn refsInStmt(stmt: Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerr
         .contract  => |s| { for (s.exprs) |e| try refsInExpr(e, r, o); },
         .with        => |s| { try refsInExpr(s.target, r, o); try refsInStmts(s.body, r, o); },
         .arena_scope => |s| try refsInStmts(s.body, r, o),
+        .copy_out    => |s| { try refsInExpr(s.target, r, o); try refsInExpr(s.value, r, o); },
         .var_except    => |s| { try refsInExpr(s.base, r, o); for (s.fields) |f| try refsInExpr(f.value, r, o); },
         .assign_except => |s| { try refsInExpr(s.target, r, o); try refsInExpr(s.base, r, o); for (s.fields) |f| try refsInExpr(f.value, r, o); },
         .raise    => |s| { if (s.message) |m| try refsInExpr(m, r, o); if (s.details) |d| try refsInExpr(d, r, o); },
@@ -487,6 +488,7 @@ fn bodyHasRaise(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckRe
             },
             .with        => |s| if (bodyHasRaise(s.body, tc_opt)) return true,
             .arena_scope => |s| if (bodyHasRaise(s.body, tc_opt)) return true,
+            .copy_out    => {},
             .defer_  => |s| return bodyHasRaise(&.{s.body}, tc_opt),
             .guard   => |s| { if (exprHasTry(s.cond, tc_opt)) return true; if (bodyHasRaise(s.else_body, tc_opt)) return true; },
             .try_catch => {}, // try/catch absorbs raises — don't propagate
@@ -532,6 +534,7 @@ fn bodyNeedsErrVar(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeChec
             },
             .with        => |s| if (bodyNeedsErrVar(s.body, tc_opt)) return true,
             .arena_scope => |s| if (bodyNeedsErrVar(s.body, tc_opt)) return true,
+            .copy_out    => {},
             .defer_  => |s| return bodyNeedsErrVar(&.{s.body}, tc_opt),
             .guard   => |s| { if (exprHasTry(s.cond, tc_opt)) return true; if (bodyNeedsErrVar(s.else_body, tc_opt)) return true; },
             .try_catch => {}, // inner try has its own err variable
@@ -888,6 +891,7 @@ fn seedEscapedFromReturns(stmts: []const Ast.Stmt, set: *std.StringHashMap(void)
             },
             .with        => |s| try seedEscapedFromReturns(s.body, set),
             .arena_scope => |s| try seedEscapedFromReturns(s.body, set),
+            .copy_out    => {},
             .try_catch => |s| {
                 try seedEscapedFromReturns(s.body, set);
                 for (s.clauses) |cl| try seedEscapedFromReturns(cl.body, set);
@@ -947,6 +951,7 @@ fn propagateEscapesOnce(stmts: []const Ast.Stmt, set: *std.StringHashMap(void)) 
             },
             .with        => |s| { if (try propagateEscapesOnce(s.body, set)) grew = true; },
             .arena_scope => |s| { if (try propagateEscapesOnce(s.body, set)) grew = true; },
+            .copy_out    => {},
             .try_catch => |s| {
                 if (try propagateEscapesOnce(s.body, set)) grew = true;
                 for (s.clauses) |cl| { if (try propagateEscapesOnce(cl.body, set)) grew = true; }
@@ -1031,6 +1036,11 @@ fn scanMutationsInto(
                 try scanMutationsInto(s.body, set, tc_opt);
             },
             .arena_scope => |s| try scanMutationsInto(s.body, set, tc_opt),
+            .copy_out    => |s| {
+                // The target is being mutated (assigned to).
+                if (s.target.* == .ident) try set.put(s.target.ident.name, {});
+                try scanMutationsInExpr(s.value, set, tc_opt);
+            },
             .try_catch => |s| {
                 try scanMutationsInto(s.body, set, tc_opt);
                 for (s.clauses) |cl| try scanMutationsInto(cl.body, set, tc_opt);
@@ -1258,6 +1268,7 @@ fn addAddrOfMutationsInStmts(
                 for (s.clauses) |cl| try addAddrOfMutationsInStmts(cl.body, set, alloc, tc_opt, resolve);
             },
             .arena_scope => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .copy_out    => |s| { try addAddrOfMutationsInExpr(s.target, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(s.value, set, alloc, tc_opt, resolve); },
             .with => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
             .guard => |s| try addAddrOfMutationsInStmts(s.else_body, set, alloc, tc_opt, resolve),
             .var_  => |n| { if (n.init) |e| try addAddrOfMutationsInExpr(e, set, alloc, tc_opt, resolve); },
@@ -1384,6 +1395,7 @@ fn nameUsedInStmt(name: []const u8, stmt: Ast.Stmt) bool {
         .guard       => |s| nameUsedInExpr(name, s.cond) or nameUsedInStmts(name, s.else_body),
         .destruct    => |s| nameUsedInExpr(name, s.init),
         .arena_scope => |s| nameUsedInStmts(name, s.body),
+        .copy_out    => |s| nameUsedInExpr(name, s.target) or nameUsedInExpr(name, s.value),
         else         => false,
     };
 }
@@ -3726,6 +3738,7 @@ const Generator = struct {
             .guard         => |s| s.span,
             .destruct      => |s| s.span,
             .arena_scope   => |s| s.span,
+            .copy_out      => |s| s.span,
             .pass, .break_, .continue_, .contract => null,
         };
     }
@@ -3867,6 +3880,7 @@ const Generator = struct {
             .contract  => {}, // contracts not emitted (runtime verification out of scope)
             .with        => |s| try g.genWith(s),
             .arena_scope => |s| try g.genArenaScope(s),
+            .copy_out    => |s| try g.genCopyOut(s),
             .var_except    => |s| try g.genVarExcept(s),
             .assign_except => |s| try g.genAssignExcept(s),
             .raise         => |s| try g.genRaise(s),
@@ -8850,6 +8864,37 @@ const Generator = struct {
         try ig.genStmts(s.body);
         try g.writeIndent();
         try g.w.writeAll("}\n");
+    }
+
+    /// `lhs <- rhs` — arena copy-out.
+    ///
+    /// Inside an arena block (arena_depth > 0), str values are duplicated into the
+    /// parent allocator (_parent_alloc_N) so they survive arena deinit.
+    /// Primitive types (int/float/bool/char) are value-copied — no heap involved.
+    /// Outside an arena block, `<-` degenerates to a plain assignment.
+    fn genCopyOut(g: Generator, s: *Ast.StmtCopyOut) anyerror!void {
+        const rhs_type = if (g.tc) |tc| (tc.expr_types.get(s.value) orelse .unknown) else .unknown;
+        const is_str = rhs_type == .string;
+        const depth  = g.arena_depth;
+
+        if (is_str and depth > 0) {
+            // Hoist rhs into a temp to avoid double-eval in the catch fallback.
+            const uid = g.nextUid();
+            try g.writeIndent();
+            try g.w.print("const _co_{x}: []const u8 = ", .{uid});
+            try g.genExpr(s.value);
+            try g.w.writeAll(";\n");
+            try g.writeIndent();
+            try g.genExpr(s.target);
+            try g.w.print(" = _parent_alloc_{d}.dupe(u8, _co_{x}) catch _co_{x};\n", .{ depth, uid, uid });
+        } else {
+            // Outside arena or primitive: plain assignment — no heap involved.
+            try g.writeIndent();
+            try g.genExpr(s.target);
+            try g.w.writeAll(" = ");
+            try g.genExpr(s.value);
+            try g.w.writeAll(";\n");
+        }
     }
 
     /// `var name [: T] = base except field=val ...`

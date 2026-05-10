@@ -197,7 +197,7 @@ See `wiki/pages/concepts/concept_zebra-simd-design.md` for the complete design.
 ### 21. Milestone 0.11 supporting cluster
 Items that land in the same window as SIMD or that unlock the 0.12/0.13 work:
 - **gzip compress** — blocked on Zig 0.16 (`std.compress.flate.Compress` is `@panic("TODO")` in Zig 0.15.2); unblock once Zig upgrades
-- **`once` method modifier** — body executes at most once; result cached on the instance
+- ✅ **`@once` method modifier** — body executes at most once; result cached on the instance; both backends; bootstrap 5/5 (2026-05-10)
 - ✅ **Chained comparisons** — `0 < x < 100` desugars to labeled-block and-chain; both backends; 54/54 smoke; bootstrap 5/5 (2026-05-06)
 - ✅ **`unless` / `until`** — parser-level desugar; both backends; 55/55 smoke; bootstrap 5/5 (2026-05-06)
 - **JSON auto-inference** — `Json.parse(T, str)` infers target struct without a separate `as T` annotation
@@ -244,19 +244,12 @@ three items below all touch the runtime memory model (or the `<-` token);
 they should land **together** so the API surface is settled before 1.0
 stability locks it.
 
-**a. `<-` arena copy-out operator** ★ design doc complete
-Receive-only operator for crossing the `arena {…}` block boundary:
-`outer_var <- inner_value` deep-copies the value into the outer arena,
-copying only what's actually allocated in the exiting sub-arena
-(provenance-aware).  Implementation split: comptime per-type traversal
-generation + runtime `_arena_owns()` provenance check.  Six open
-implementation questions surfaced; static elision for primitive types
-gives a "free when unneeded" property.  Replaces the current `"" + src`
-magic-concat idiom with first-class, grep-friendly syntax.
-See [[concept_zebra-arena-copyout]] for the full design + raw
-brainstorm conversation.  **Effort:** prototype = 1 session for parser
-+ str types; full deep-copy generator with cycles + interfaces = 3-5
-sessions.
+**a. `<-` arena copy-out operator** ✅ prototype complete (2026-05-10)
+Parser + both backends shipped.  Prototype scope: `str` (dupe into parent
+allocator) + primitives (plain assign) + outside-arena plain-assign fallback.
+Full deep-copy for `List`/classes with provenance tracking deferred to
+full 0.14 sprint.  See [[concept_zebra-arena-copyout]] for design doc.
+QUICKSTART §28 updated.
 
 **b. `Chan(T)` channels** — shares `<-` token with (a)
 `ch <- val` (send), `var v <- ch` (receive).  Backed by `std.Thread` +

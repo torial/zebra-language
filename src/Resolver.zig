@@ -435,6 +435,7 @@ const Resolver = struct {
             .defer_   => |s| try r.walkStmt(s.body, scope),
             .with        => |s| { try r.walkExpr(s.target, scope); try r.walkStmts(s.body, scope); },
             .arena_scope => |s| try r.walkStmts(s.body, scope),
+            .copy_out => |s| { try r.walkExpr(s.target, scope); try r.walkExpr(s.value, scope); },
             .var_except => |s| {
                 if (s.type_ref) |*tr| try r.resolveTypeRef(tr, scope);
                 try r.walkExpr(s.base, scope);
@@ -983,6 +984,10 @@ const Resolver = struct {
             },
             .arena_scope => |s| {
                 for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
+            },
+            .copy_out => |s| {
+                try r.checkCaptureBoundary(s.target, lambda_local);
+                try r.checkCaptureBoundary(s.value, lambda_local);
             },
             .var_except    => |s| {
                 try r.checkCaptureBoundary(s.base, lambda_local);

@@ -153,9 +153,9 @@ script above has a working Zebra equivalent checked into the repo.
 | `Dir.walk(path): List(str)` — recursive file tree | ✅ DONE 2026-05-05 | All file-glob scripts |
 | `re.replace(text, repl): str` — regex substitution on a compiled `Regex` | ✅ DONE (shipped with regex engine) | `branch_to_if_is`, `migrate_colon_syntax`, `book_fix_as_return` |
 | `sys.run()` robustness — capture stdout+stderr, exit code | pending | `bootstrap_check`, `corpus_snapshot`, REPL |
-| `sys.readLine(): str?` — stdin readline | pending | REPL |
+| `sys.readLine(): str?` — stdin readline | ✅ DONE 2026-05-10 | REPL |
 
-Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re.replace` both available). Only item 6 (`zebra-repl`) still needs `sys.run` / `sys.readLine`.
+Items 1–5 in the porting order below are now fully unblocked (`Dir.walk` + `re.replace` both available). Only item 6 (`zebra-repl`) still needs `sys.run` (readLine is now done).
 
 ### Porting order
 

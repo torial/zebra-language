@@ -419,6 +419,7 @@ union Stmt
     guard_: ^StmtGuard
     destruct: ^StmtDestruct
     arena_scope: ^StmtArenaScope
+    copy_out: ^StmtCopyOut
     print_: ^StmtPrint
     contract: ^StmtContract
 
@@ -649,6 +650,16 @@ struct StmtArenaScope
     cue init(span: Span, stmts: List(Stmt))
         .span = span
         .stmts = stmts
+
+struct StmtCopyOut
+    var span: Span
+    var target: Expr
+    var value: Expr
+
+    cue init(span: Span, target: Expr, value: Expr)
+        .span = span
+        .target = target
+        .value = value
 
 enum ContractKind
     precond

@@ -887,6 +887,7 @@ const Tokenizer = struct {
         if (c == '<' and c1 == '>') { self.pos += 2; try self.emit(.ne,                  "<>", ln, cl); return; }
         if (c == '<' and c1 == '=') { self.pos += 2; try self.emit(.le,                  "<=", ln, cl); return; }
         if (c == '<' and c1 == '<') { self.pos += 2; try self.emit(.double_lt,           "<<", ln, cl); return; }
+        if (c == '<' and c1 == '-') { self.pos += 2; try self.emit(.left_arrow,          "<-", ln, cl); return; }
         if (c == '>' and c1 == '=') { self.pos += 2; try self.emit(.ge,                  ">=", ln, cl); return; }
         if (c == '>' and c1 == '>') { self.pos += 2; try self.emit(.double_gt,           ">>", ln, cl); return; }
         if (c == '&' and c1 == '=') { self.pos += 2; try self.emit(.ampersand_equals,    "&=", ln, cl); return; }

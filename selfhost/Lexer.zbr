@@ -663,6 +663,10 @@ class Lexer
             pos = pos + 2
             emit(TokenKind.double_lt(), "<<", ln, cl)
             return
+        if c == c'<' and c1 == c'-'
+            pos = pos + 2
+            emit(TokenKind.left_arrow(), "<-", ln, cl)
+            return
         if c == c'>' and c1 == c'='
             pos = pos + 2
             emit(TokenKind.ge(), ">=", ln, cl)

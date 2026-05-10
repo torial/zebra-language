@@ -1140,6 +1140,7 @@ const Builder = struct {
             .StmtDefer    => .{ .defer_    = try b.box(Ast.StmtDefer,    try b.buildStmtDefer(inner)) },
             .StmtWith       => .{ .with        = try b.box(Ast.StmtWith,       try b.buildStmtWith(inner)) },
             .StmtArenaScope => .{ .arena_scope = try b.box(Ast.StmtArenaScope, try b.buildStmtArenaScope(inner)) },
+            .StmtCopyOut    => .{ .copy_out    = try b.box(Ast.StmtCopyOut,    try b.buildStmtCopyOut(inner)) },
             .StmtRaise    => .{ .raise     = try b.box(Ast.StmtRaise,    try b.buildStmtRaise(inner)) },
             // StmtTryCatch is no longer a grammar-level statement;
             // it is synthesized by buildMethodDecl when catch clauses are present.
@@ -1640,6 +1641,16 @@ const Builder = struct {
         return .{
             .span = spanOf(node, b.tokens),
             .body = try b.buildStmtList(block_kids[1]),
+        };
+    }
+
+    fn buildStmtCopyOut(b: Builder, node: TN) anyerror!Ast.StmtCopyOut {
+        // Expr left_arrow Expr eol
+        const kids = ch(node);
+        return .{
+            .span   = spanOf(node, b.tokens),
+            .target = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+            .value  = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
         };
     }
 
