@@ -1899,3 +1899,138 @@ now, ready to be tightened once all TC gaps are closed.
 Bootstrap:  5/5 PASS (byte-identical round-trip)
 Smoke:      44/44 PASS
 ```
+
+---
+
+## TC Phase 4: Interface Conformance in Zig TC (`src/TypeChecker.zig`) (2026-05-09)
+
+**Goal:** Mirror the Phase 3C interface-conformance check from `selfhost/typechecker.zbr`
+into `src/TypeChecker.zig` so the bootstrap compiler catches interface-type mismatches too.
+
+### Architecture
+
+**One insertion point:** `Type.isAssignable` in `src/TypeChecker.zig`.
+
+The Zig TC represents named types as `Type.named: *const Symbol` (rich pointer into the
+symbol table), giving direct access to the full AST declaration. No pre-built conformance
+table is needed — the check walks the `DeclClass.implements` slice at call time.
+
+**New logic** (inserted before the final `return eql(from, to)`):
+
+```zig
+if (from == .named and to == .named and to.named.kind == .interface) {
+    const implements: []const Ast.TypeRef = switch (from.named.decl) {
+        .class   => |c| c.implements,
+        .struct_ => |s| s.implements,
+        else     => &.{},
+    };
+    for (implements) |tr| {
+        if (tr == .named and std.mem.eql(u8, tr.named.name, to.named.name)) return true;
+    }
+}
+```
+
+**How it fires:** `checkVarDecl` already calls `Type.isAssignable(actual, declared)` at line
+1252. When `declared = Type.named(Printable_sym)` (an interface symbol) and `actual =
+Type.named(Dog_sym)` (a class), the new arm walks `Dog_sym.decl.class.implements` looking for
+a `.named` TypeRef whose name matches `"Printable"`.
+
+**Why no table?** The selfhost version needs a pre-built `class_interfaces: HashMap(str, str)`
+because Zebra can't dereference an AST pointer at check time (all types are name strings, not
+Symbol pointers). The Zig version has direct Symbol access, making the walk trivial and
+O(|implements|) — acceptable since `implements` slices are small (typically 0–3 entries).
+
+**Cross-module gap:** `Type.cross_module` named types are not `.named`, so a class defined in
+a different module whose interface is declared in another module will miss the check. This
+mirrors the selfhost limitation and is tracked in NEXT_STEPS.md.
+
+### Verification
+
+```
+zebra-bootstrap.exe --emit-zig test/tc_iface_match_test.zbr   → exit 0 (Zig emitted)
+zebra-bootstrap.exe --emit-zig test/tc_iface_mismatch_test.zbr → exit 1
+  test/tc_iface_mismatch_test.zbr:9:24: error: type mismatch: expected 'Printable', got 'Cat'
+```
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      84/84 PASS
+```
+
+---
+
+## TC Phase 5: i→i + Transitive Interface Conformance (2026-05-09)
+
+**Goal:** Extend interface conformance to support (a) interface→interface direct assignment
+(`var b: IBase = some_ifoo_val` where `IFoo implements IBase`) and (b) transitive chains
+(`Dog implements IFoo implements IBase` → Dog satisfies IBase).
+
+### Architecture
+
+**Problem with Phase 4's design:** `Type.isAssignable` was a static function on the `Type`
+union, so it couldn't access the `TypeChecker`'s symbol tables. Transitive conformance requires
+looking up intermediate interfaces by name — which needs a table the static function couldn't
+reach.
+
+**Stage 1 — Move `isAssignable` to `TypeChecker`:** Changed signature from
+`pub fn isAssignable(from: Type, to: Type) bool` (on `Type`) to
+`fn isAssignable(tc: TypeChecker, from: Type, to: Type) bool` (on `TypeChecker`).
+All 12 call sites updated from `Type.isAssignable(x, y)` to `tc.isAssignable(x, y)`.
+Two internal recursive calls updated similarly. `eql` reference updated to `Type.eql`.
+
+**Stage 2 — New `iface_decls` pre-pass:** Added `collectIfaceDecls` / `collectIfaceDeclsInDecls`
+(mirrors `collectUnionVariants` pattern) that walks the module AST before the TC pass, building
+a `name → *const Ast.DeclInterface` map. This enables `conformsToInterface` to look up
+intermediate interfaces by name during the transitive walk without needing SymbolTable access.
+
+**New fields on `TypeChecker`:**
+- `iface_decls: *const std.StringHashMap(*const Ast.DeclInterface)` — populated by `collectIfaceDecls`
+
+**New methods on `TypeChecker`:**
+- `isAssignable(tc, from, to)` — the moved function, now extended for i→i and transitive
+- `conformsToInterface(tc, implements, to_name, depth)` — depth-guarded transitive walk
+
+**Updated conformance block in `isAssignable`:**
+```zig
+if (from == .named and to == .named and to.named.kind == .interface) {
+    if (from.named == to.named) return true; // identity: same Symbol pointer
+    const implements: []const Ast.TypeRef = switch (from.named.decl) {
+        .class     => |c| c.implements,
+        .struct_   => |s| s.implements,
+        .interface => |i| i.implements,   // NEW: i→i support
+        else       => &.{},
+    };
+    return tc.conformsToInterface(implements, to.named.name, 16);
+}
+```
+
+**Selfhost changes (`selfhost/typechecker.zbr`):**
+- Added `Decl.interface_` arm to `populateModuleTypes`: populates `class_interfaces` with
+  the pipe-joined string of interfaces that each interface extends.
+- Replaced `classConformsTo` with a 2-param wrapper delegating to new `classConformsToDepth`
+  (3-param with depth guard). The depth-guarded helper adds identity check (`class_name == iface_name`)
+  and transitive recursion (after each direct hit fails, recurse into the intermediate interface).
+
+**Depth guard:** Max depth 16 in both backends. Prevents infinite recursion from interface
+cycles without requiring an allocator-backed visited set.
+
+**Identity guard:** `from.named == to.named` (Zig) / `class_name == iface_name` (selfhost)
+prevents a false-false result when `from` and `to` are the same interface (the walk would
+search `implements` for itself and fail without the guard).
+
+### Test fixtures
+
+4 new test files:
+- `test/tc_iface_i2i_match_test.zbr` — `IFoo implements IBase`, IFoo value → IBase var: PASS
+- `test/tc_iface_i2i_mismatch_test.zbr` — IFoo does not extend IBase: TC error
+- `test/tc_iface_transitive_match_test.zbr` — Dog → IFoo → IBase, Dog value → IBase var: PASS
+- `test/tc_iface_transitive_mismatch_test.zbr` — chain doesn't reach target: TC error
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (byte-identical round-trip)
+Smoke:      88/88 PASS
+```

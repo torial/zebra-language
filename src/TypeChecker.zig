@@ -287,45 +287,6 @@ pub const Type = union(enum) {
         };
     }
 
-    /// `from` can be assigned where `to` is expected.
-    /// `.context_dependent` and `.unknown` on either side bypass the check
-    /// (legitimate cases; no diagnostic to suppress here). `.unresolved`
-    /// also bypasses the local check, but the EXPECTATION SITE is
-    /// responsible for emitting the diagnostic before falling through —
-    /// see `expectType()` / call-arg / return checking.
-    /// All numeric types are assignment-compatible with each other at the
-    /// Zebra level — Zig enforces the actual range/precision constraints.
-    /// This reflects the "integer literals are untyped" principle.
-    pub fn isAssignable(from: Type, to: Type) bool {
-        if (from == .context_dependent or to == .context_dependent) return true;
-        if (from == .unknown or to == .unknown) return true;
-        if (from == .unresolved or to == .unresolved) return true;
-        // Any numeric → any numeric: defer to Zig.
-        if (from.isNumeric() and to.isNumeric()) return true;
-        // char (u21) is assignment-compatible with integer types — it IS a codepoint.
-        if (to == .char and (from.isNumeric() or from == .char)) return true;
-        if (from == .char and to.isNumeric()) return true;
-        if (from == .http_request  and to == .http_request)  return true;
-        if (from == .http_response and to == .http_response) return true;
-        if (from == .tcp_conn   and to == .tcp_conn)   return true;
-        if (from == .udp_socket and to == .udp_socket) return true;
-        if (from == .regex      and to == .regex)       return true;
-        if (from == .date_time     and to == .date_time)     return true;
-        if (from == .calendar_view and to == .calendar_view) return true;
-        if (from == .gui_context and to == .gui_context) return true;
-        // optional(T) is assignable to optional(T), and nil (.optional(.void_)) to any optional
-        if (from == .optional and to == .optional) return isAssignable(from.optional.*, to.optional.*);
-        if (from == .optional and from.optional.* == .void_) return to == .optional; // nil → ?T
-        // T is assignable to ?T (wrapping in optional)
-        if (to == .optional) return isAssignable(from, to.optional.*);
-        // Any fn_ref is assignable to any fn_ref (same-arity compatibility deferred to runtime)
-        if (from == .fn_ref and to == .fn_ref) return true;
-        // fn_ref is assignable to fn_sig (the sig provides the typed context; Zig enforces arity)
-        if (from == .fn_ref and to == .fn_sig) return true;
-        // fn_sig is assignable to fn_sig (e.g. passing a sig-typed local to a sig-typed param)
-        if (from == .fn_sig and to == .fn_sig) return true;
-        return eql(from, to);
-    }
 
     /// Any of the three "I don't know a concrete type" variants:
     /// `.context_dependent`, `.unknown` (opaque), or `.unresolved`.
@@ -990,6 +951,27 @@ fn collectExtMethodsInDecls(
     };
 }
 
+// ── Interface declaration scanning ───────────────────────────────────────────
+
+fn collectIfaceDecls(
+    module: Ast.Module,
+    out:    *std.StringHashMap(*const Ast.DeclInterface),
+) !void {
+    try collectIfaceDeclsInDecls(module.decls, out);
+}
+
+fn collectIfaceDeclsInDecls(
+    decls: []const Ast.Decl,
+    out:   *std.StringHashMap(*const Ast.DeclInterface),
+) !void {
+    for (decls) |decl| switch (decl) {
+        .interface => |i| try out.put(i.name, i),
+        .namespace => |n| try collectIfaceDeclsInDecls(n.decls, out),
+        .class     => |c| try collectIfaceDeclsInDecls(c.members, out),
+        else       => {},
+    };
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Run Pass 3 on `module` using the already-populated `resolve` result.
@@ -1017,6 +999,9 @@ pub fn typeCheckPass3(
     try collectUnionVariants(module, &union_variants, map_alloc);
     var ext_methods     = std.StringHashMap(*const Ast.DeclMethod).init(map_alloc);
     try collectExtMethods(module, &ext_methods, map_alloc);
+    var iface_decls     = std.StringHashMap(*const Ast.DeclInterface).init(map_alloc);
+    defer iface_decls.deinit();
+    try collectIfaceDecls(module, &iface_decls);
     var narrowed_types  = std.StringHashMap(Type).init(map_alloc);
     defer narrowed_types.deinit();
     var diags           = std.ArrayList(Diagnostic){};
@@ -1037,6 +1022,7 @@ pub fn typeCheckPass3(
         .imported_modules = imported_modules,
         .optional_unwraps = &optional_unwraps,
         .fn_ref_args      = &fn_ref_args,
+        .iface_decls      = &iface_decls,
     };
 
     try tc.checkModule(module);
@@ -1093,6 +1079,8 @@ const TypeChecker = struct {
     optional_unwraps: *std.AutoHashMap(*const Ast.Expr, void),
     /// Arg expressions that must be prefixed with `&` in Zig — fn_ref passed into fn_sig param.
     fn_ref_args: *std.AutoHashMap(*const Ast.Expr, void),
+    /// Interface name → DeclInterface* for transitive conformance walks.
+    iface_decls: *const std.StringHashMap(*const Ast.DeclInterface),
 
     fn withReturn(tc: TypeChecker, ret: Type) TypeChecker {
         var c = tc; c.return_type = ret; return c;
@@ -1102,6 +1090,66 @@ const TypeChecker = struct {
     }
     fn withExtSelf(tc: TypeChecker, self_type: Type) TypeChecker {
         var c = tc; c.ext_self_type = self_type; return c;
+    }
+
+    /// `from` can be assigned where `to` is expected.
+    /// Numeric types are mutually assignable (range/precision deferred to Zig).
+    /// Interface conformance supports direct, i→i, and transitive chains.
+    fn isAssignable(tc: TypeChecker, from: Type, to: Type) bool {
+        if (from == .context_dependent or to == .context_dependent) return true;
+        if (from == .unknown or to == .unknown) return true;
+        if (from == .unresolved or to == .unresolved) return true;
+        // Any numeric → any numeric: defer to Zig.
+        if (from.isNumeric() and to.isNumeric()) return true;
+        // char (u21) is assignment-compatible with integer types — it IS a codepoint.
+        if (to == .char and (from.isNumeric() or from == .char)) return true;
+        if (from == .char and to.isNumeric()) return true;
+        if (from == .http_request  and to == .http_request)  return true;
+        if (from == .http_response and to == .http_response) return true;
+        if (from == .tcp_conn   and to == .tcp_conn)   return true;
+        if (from == .udp_socket and to == .udp_socket) return true;
+        if (from == .regex      and to == .regex)       return true;
+        if (from == .date_time     and to == .date_time)     return true;
+        if (from == .calendar_view and to == .calendar_view) return true;
+        if (from == .gui_context and to == .gui_context) return true;
+        // optional(T) is assignable to optional(T), and nil (.optional(.void_)) to any optional
+        if (from == .optional and to == .optional) return tc.isAssignable(from.optional.*, to.optional.*);
+        if (from == .optional and from.optional.* == .void_) return to == .optional; // nil → ?T
+        // T is assignable to ?T (wrapping in optional)
+        if (to == .optional) return tc.isAssignable(from, to.optional.*);
+        // Any fn_ref is assignable to any fn_ref (same-arity compatibility deferred to runtime)
+        if (from == .fn_ref and to == .fn_ref) return true;
+        // fn_ref is assignable to fn_sig (the sig provides the typed context; Zig enforces arity)
+        if (from == .fn_ref and to == .fn_sig) return true;
+        // fn_sig is assignable to fn_sig (e.g. passing a sig-typed local to a sig-typed param)
+        if (from == .fn_sig and to == .fn_sig) return true;
+        // Interface conformance: class/struct/interface → interface (direct, i→i, transitive).
+        if (from == .named and to == .named and to.named.kind == .interface) {
+            if (from.named == to.named) return true; // identity: same Symbol pointer
+            const implements: []const Ast.TypeRef = switch (from.named.decl) {
+                .class      => |c| c.implements,
+                .struct_    => |s| s.implements,
+                .interface  => |i| i.implements,
+                else        => &.{},
+            };
+            return tc.conformsToInterface(implements, to.named.name, 16);
+        }
+        return Type.eql(from, to);
+    }
+
+    /// Walk `implements` list checking whether any entry (or its transitive interface
+    /// parents) matches `to_name`.  `depth` prevents infinite recursion from cycles.
+    fn conformsToInterface(tc: TypeChecker, implements: []const Ast.TypeRef, to_name: []const u8, depth: u8) bool {
+        if (depth == 0) return false;
+        for (implements) |tr| {
+            if (tr != .named) continue;
+            if (std.mem.eql(u8, tr.named.name, to_name)) return true;
+            // Transitive: look up the intermediate interface and recurse into its implements list.
+            if (tc.iface_decls.get(tr.named.name)) |iface| {
+                if (tc.conformsToInterface(iface.implements, to_name, depth - 1)) return true;
+            }
+        }
+        return false;
     }
 
     /// Map a Type to its Zebra type name for extension method lookup.
@@ -1204,7 +1252,7 @@ const TypeChecker = struct {
                 const dt = try inner.inferExpr(d);
                 if (p.type_) |*pt| {
                     const declared = tc.typeFromRef(pt);
-                    if (!Type.isAssignable(dt, declared))
+                    if (!tc.isAssignable(dt, declared))
                         try inner.emitMismatch(spanOf(d), dt, declared);
                 }
             }
@@ -1249,7 +1297,7 @@ const TypeChecker = struct {
                         .{ n.name, declared.name() });
                     return;
                 }
-                if (!Type.isAssignable(actual, declared))
+                if (!tc.isAssignable(actual, declared))
                     try tc.emitMismatch(spanOf(init_expr), actual, declared);
             }
         }
@@ -1641,7 +1689,7 @@ const TypeChecker = struct {
     fn checkReturn(tc: TypeChecker, s: *Ast.StmtReturn) anyerror!void {
         if (s.value) |v| {
             const actual = try tc.inferExpr(v);
-            if (!Type.isAssignable(actual, tc.return_type))
+            if (!tc.isAssignable(actual, tc.return_type))
                 try tc.emitMismatch(spanOf(v), actual, tc.return_type);
         } else {
             if (tc.return_type != .void_ and !tc.return_type.isAbstract())
@@ -1653,7 +1701,7 @@ const TypeChecker = struct {
         const lhs = try tc.inferExpr(s.target);
         const rhs = try tc.inferExpr(s.value);
         if (s.op == .assign) {
-            if (!Type.isAssignable(rhs, lhs))
+            if (!tc.isAssignable(rhs, lhs))
                 try tc.emitMismatch(spanOf(s.value), rhs, lhs);
         } else {
             // Compound ops (+= -= etc.) require numeric LHS.
@@ -1856,7 +1904,7 @@ const TypeChecker = struct {
                     const t = try tc.inferExpr(el);
                     if (t.isAbstract()) continue;
                     if (anchor) |a| {
-                        if (!Type.isAssignable(t, a) and !Type.isAssignable(a, t)) {
+                        if (!tc.isAssignable(t, a) and !tc.isAssignable(a, t)) {
                             try tc.emitError(spanOf(el),
                                 "list literal has heterogeneous element types: '{s}' is not compatible with '{s}'",
                                 .{ t.name(), a.name() });
@@ -1872,7 +1920,7 @@ const TypeChecker = struct {
                     const t = try tc.inferExpr(el);
                     if (t.isAbstract()) continue;
                     if (anchor) |a| {
-                        if (!Type.isAssignable(t, a) and !Type.isAssignable(a, t)) {
+                        if (!tc.isAssignable(t, a) and !tc.isAssignable(a, t)) {
                             try tc.emitError(spanOf(el),
                                 "array literal has heterogeneous element types: '{s}' is not compatible with '{s}'",
                                 .{ t.name(), a.name() });
@@ -1890,7 +1938,7 @@ const TypeChecker = struct {
                     const vt = try tc.inferExpr(en.value);
                     if (!kt.isAbstract()) {
                         if (key_anchor) |a| {
-                            if (!Type.isAssignable(kt, a) and !Type.isAssignable(a, kt)) {
+                            if (!tc.isAssignable(kt, a) and !tc.isAssignable(a, kt)) {
                                 try tc.emitError(spanOf(en.key),
                                     "dict literal has heterogeneous key types: '{s}' is not compatible with '{s}'",
                                     .{ kt.name(), a.name() });
@@ -1900,7 +1948,7 @@ const TypeChecker = struct {
                     }
                     if (!vt.isAbstract()) {
                         if (val_anchor) |a| {
-                            if (!Type.isAssignable(vt, a) and !Type.isAssignable(a, vt)) {
+                            if (!tc.isAssignable(vt, a) and !tc.isAssignable(a, vt)) {
                                 try tc.emitError(spanOf(en.value),
                                     "dict literal has heterogeneous value types: '{s}' is not compatible with '{s}'",
                                     .{ vt.name(), a.name() });
@@ -3206,7 +3254,7 @@ const TypeChecker = struct {
         // Unwrap: `opt orelse fallback` has the inner (non-optional) type.
         const inner = if (et == .optional) et.optional.* else et;
         // Fallback must be assignable to the inner type.
-        if (!inner.isAbstract() and !ft.isAbstract() and !Type.isAssignable(ft, inner))
+        if (!inner.isAbstract() and !ft.isAbstract() and !tc.isAssignable(ft, inner))
             try tc.emitMismatch(spanOf(e.fallback), ft, inner);
         // When the optional's inner type is unknown (e.g., generic type param),
         // use the fallback's type so print/assignment gets a concrete type hint.
@@ -3217,7 +3265,7 @@ const TypeChecker = struct {
         const et = try tc.inferExpr(e.expr);
         const ft = try tc.inferExpr(e.fallback);
         // The fallback should be assignable to the non-error form of expr's type.
-        if (!et.isAbstract() and !ft.isAbstract() and !Type.isAssignable(ft, et))
+        if (!et.isAbstract() and !ft.isAbstract() and !tc.isAssignable(ft, et))
             try tc.emitMismatch(spanOf(e.fallback), ft, et);
         return et;
     }
@@ -3227,7 +3275,7 @@ const TypeChecker = struct {
         const tt = try tc.inferExpr(e.then_expr);
         const et = try tc.inferExpr(e.else_expr);
         // Both branches should have the same type.
-        if (!tt.isAbstract() and !et.isAbstract() and !Type.isAssignable(et, tt))
+        if (!tt.isAbstract() and !et.isAbstract() and !tc.isAssignable(et, tt))
             try tc.emitMismatch(spanOf(e.else_expr), et, tt);
         return if (!tt.isAbstract()) tt else et;
     }

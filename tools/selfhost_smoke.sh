@@ -286,6 +286,14 @@ smoke_tc_fail test/tc_mismatch_call_test.zbr "type mismatch"
 smoke test/tc_iface_match_test.zbr
 # Negative: class not implementing interface must fail with "type mismatch".
 smoke_tc_fail test/tc_iface_mismatch_test.zbr "type mismatch"
+# i→i: interface assigned to a parent interface it extends.
+smoke test/tc_iface_i2i_match_test.zbr
+# i→i mismatch: interface assigned to unrelated interface must fail.
+smoke_tc_fail test/tc_iface_i2i_mismatch_test.zbr "type mismatch"
+# Transitive: class → IFoo → IBase, assigned to IBase.
+smoke test/tc_iface_transitive_match_test.zbr
+# Transitive mismatch: chain does not reach target interface.
+smoke_tc_fail test/tc_iface_transitive_mismatch_test.zbr "type mismatch"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

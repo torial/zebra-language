@@ -1,0 +1,16 @@
+interface IBase
+    def id(): int
+
+interface IFoo implements IBase
+    def extra(): str
+
+class FooImpl implements IFoo
+    def id(): int
+        return 1
+    def extra(): str
+        return "hi"
+
+def main()
+    var f: IFoo = FooImpl()
+    var b: IBase = f
+    print b.id()

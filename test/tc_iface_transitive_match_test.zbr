@@ -1,0 +1,16 @@
+interface IBase
+    def id(): int
+
+interface IFoo implements IBase
+    def extra(): str
+
+class Dog implements IFoo
+    def id(): int
+        return 42
+    def extra(): str
+        return "woof"
+
+def main()
+    var d: Dog = Dog()
+    var b: IBase = d
+    print b.id()

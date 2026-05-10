@@ -252,11 +252,20 @@ class ModuleTypes
         .class_interfaces.put(internString(class_name), internString(ifaces_pipe))
 
     def classConformsTo(class_name: str, iface_name: str): bool
+        return .classConformsToDepth(class_name, iface_name, 16)
+
+    def classConformsToDepth(class_name: str, iface_name: str, depth: int): bool
+        if depth <= 0
+            return false
+        if class_name == iface_name
+            return true
         if not .class_interfaces.contains(class_name)
             return false
         var ifaces_str: str = .class_interfaces.fetch(class_name)
         for iface in ifaces_str.split("|")
             if iface == iface_name
+                return true
+            if .classConformsToDepth(iface, iface_name, depth - 1)
                 return true
         return false
 
@@ -543,6 +552,20 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         si_i += 1
                     if si_pipe != ""
                         mt.addClassInterfaces(s.name, si_pipe)
+            on Decl.interface_ as iface
+                # Record which interfaces this interface extends for transitive conformance.
+                if iface.ifaces.count() > 0
+                    var ii_pipe: str = ""
+                    var ii_i: int = 0
+                    while ii_i < iface.ifaces.count()
+                        var ii_ref: TypeRef = iface.ifaces.at(ii_i)
+                        if ii_ref is TypeRef.named as ii_nr
+                            if ii_i > 0
+                                ii_pipe = ii_pipe + "|"
+                            ii_pipe = ii_pipe + ii_nr.name
+                        ii_i += 1
+                    if ii_pipe != ""
+                        mt.addClassInterfaces(iface.name, ii_pipe)
             on Decl.mixin_ as mx
                 # Register mixin under its own name so pass 2 can merge it.
                 var mct = ClassTypes(mx.name)
