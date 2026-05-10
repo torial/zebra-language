@@ -1,0 +1,10 @@
+interface Printable
+    def describe(): str
+
+class Cat
+    def meow(): str
+        return "Meow"
+
+def main()
+    var p: Printable = Cat()
+    print p.meow()

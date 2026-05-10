@@ -1,0 +1,10 @@
+interface Printable
+    def describe(): str
+
+class Dog implements Printable
+    def describe(): str
+        return "Woof"
+
+def main()
+    var p: Printable = Dog()
+    print p.describe()

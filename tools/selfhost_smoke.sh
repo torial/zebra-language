@@ -281,6 +281,12 @@ smoke test/tc_call_match_test.zbr
 # Negative: wrong primitive arg type must fail with "type mismatch".
 smoke_tc_fail test/tc_mismatch_call_test.zbr "type mismatch"
 
+# Phase 3C TC diagnostics: named-type / interface conformance checking.
+# Positive: class implementing interface assigned to interface-typed var must compile clean.
+smoke test/tc_iface_match_test.zbr
+# Negative: class not implementing interface must fail with "type mismatch".
+smoke_tc_fail test/tc_iface_mismatch_test.zbr "type mismatch"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

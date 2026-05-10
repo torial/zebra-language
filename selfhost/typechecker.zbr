@@ -212,6 +212,10 @@ class ModuleTypes
     # "is 'Foo' declared: a union in this module?" without enumerating
     # variant_payloads. Populated alongside variant_payloads.
     var union_names: HashMap(str, bool)
+    # Interface conformance table — key = class/struct name, value = "|"-joined
+    # interface names declared via `implements`. Populated from DeclClass.ifaces
+    # by populateModuleTypes (Phase 3C).
+    var class_interfaces: HashMap(str, str)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -221,6 +225,7 @@ class ModuleTypes
         ref_field_keys = List()
         opt_ref_field_keys = List()
         union_names = HashMap()
+        class_interfaces = HashMap()
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -242,6 +247,18 @@ class ModuleTypes
 
     def hasUnion(name: str): bool
         return .union_names.contains(name)
+
+    def addClassInterfaces(class_name: str, ifaces_pipe: str)
+        .class_interfaces.put(internString(class_name), internString(ifaces_pipe))
+
+    def classConformsTo(class_name: str, iface_name: str): bool
+        if not .class_interfaces.contains(class_name)
+            return false
+        var ifaces_str: str = .class_interfaces.fetch(class_name)
+        for iface in ifaces_str.split("|")
+            if iface == iface_name
+                return true
+        return false
 
     def addVariantPayload(union_name: str, variant_name: str, t: Type_)
         # Concatenation already produces a fresh owned str, so no additional
@@ -498,10 +515,34 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ct = ClassTypes(c.name)
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
+                if c.ifaces.count() > 0
+                    var ci_pipe: str = ""
+                    var ci_i: int = 0
+                    while ci_i < c.ifaces.count()
+                        var ci_ref: TypeRef = c.ifaces.at(ci_i)
+                        if ci_ref is TypeRef.named as ci_nr
+                            if ci_i > 0
+                                ci_pipe = ci_pipe + "|"
+                            ci_pipe = ci_pipe + ci_nr.name
+                        ci_i += 1
+                    if ci_pipe != ""
+                        mt.addClassInterfaces(c.name, ci_pipe)
             on Decl.struct_ as s
                 var ct2 = ClassTypes(s.name)
                 addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
+                if s.ifaces.count() > 0
+                    var si_pipe: str = ""
+                    var si_i: int = 0
+                    while si_i < s.ifaces.count()
+                        var si_ref: TypeRef = s.ifaces.at(si_i)
+                        if si_ref is TypeRef.named as si_nr
+                            if si_i > 0
+                                si_pipe = si_pipe + "|"
+                            si_pipe = si_pipe + si_nr.name
+                        si_i += 1
+                    if si_pipe != ""
+                        mt.addClassInterfaces(s.name, si_pipe)
             on Decl.mixin_ as mx
                 # Register mixin under its own name so pass 2 can merge it.
                 var mct = ClassTypes(mx.name)
@@ -715,6 +756,19 @@ class InferCtx
             if .module_types.hasClass(bare)
                 return true
             return .dep_types.hasClass(bare)
+        return false
+
+    # True if class_name is known to implement iface_name in this module or any dep.
+    def classConformsToAny(class_name: str, iface_name: str): bool
+        if .module_types.classConformsTo(class_name, iface_name)
+            return true
+        if .dep_types.classConformsTo(class_name, iface_name)
+            return true
+        var bare: str = stripModulePrefix(class_name)
+        if bare != class_name
+            if .module_types.classConformsTo(bare, iface_name)
+                return true
+            return .dep_types.classConformsTo(bare, iface_name)
         return false
 
 # Strip the leading "Module." from a qualified type name, leaving the
@@ -1493,6 +1547,12 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     var exp: Type_ = expected to!  # safe: nil checked above
     if inferred is Type_.context_dependent
         return exp
+    if exp is Type_.named as exp_class
+        if inferred is Type_.named as inf_class
+            if exp_class != inf_class
+                if not ctx.classConformsToAny(inf_class, exp_class)
+                    ctx.addErr(file, line, col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
+        return inferred
     if not isPrimitive(exp)
         return inferred
     if not isPrimitive(inferred)
@@ -1563,6 +1623,14 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
     var declared: Type_ = typeFromRef(dv.type_ to!)  # safe: nil returned above
+    if declared is Type_.named as dec_class
+        if dv.init_expr != nil
+            var cv_inferred: Type_ = inferExpr(dv.init_expr to!, ctx)
+            if cv_inferred is Type_.named as inf_class
+                if dec_class != inf_class
+                    if not ctx.classConformsToAny(inf_class, dec_class)
+                        ctx.addErr(file, dv.span.line, dv.span.col, "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
+        return
     if not isPrimitive(declared)
         return
     if dv.init_expr == nil
