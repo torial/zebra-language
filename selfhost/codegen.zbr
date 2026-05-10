@@ -8337,6 +8337,9 @@ struct Generator
                 w.emit("\"\"")
             w.emit(")")
             return
+        if mname == "readLine"
+            w.emit("_sys_readline()")
+            return
         if mname == "sleep"
             w.emit("std.Thread.sleep(@as(u64, @intCast(")
             if args.count() > 0

@@ -225,6 +225,17 @@ fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     };
     return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
 }
+fn _sys_readline() ?[]const u8 {
+    const stdin = std.fs.File.stdin();
+    var buf: [4096]u8 = undefined;
+    const n = stdin.read(&buf) catch return null;
+    if (n == 0) return null;
+    const line = buf[0..n];
+    const trimmed = if (line.len > 0 and line[line.len - 1] == '\n')
+        if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
+    else line;
+    return _allocator.dupe(u8, trimmed) catch return null;
+}
 const _DateTime = struct { epoch_ms: i64 };
 const _CalendarView = struct {
     year: i64, month: i64, day: i64, weekday: i64,

@@ -5009,6 +5009,11 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "readLine")) {
+            // sys.readLine() → ?[]const u8 (null on EOF/error)
+            try g.w.writeAll("_sys_readline()");
+            return true;
+        }
         if (std.mem.eql(u8, method, "run")) {
             // sys.run(argv as List(str)) → _SysRunResult
             try g.w.writeAll("_sys_run(");
