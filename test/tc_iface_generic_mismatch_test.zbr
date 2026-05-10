@@ -1,0 +1,13 @@
+interface Printable
+    def label(): str
+
+# Generic class that does NOT implement Printable — should fail TC.
+class Box(T)
+    var value: T
+
+    cue init(v: T)
+        value = v
+
+def main()
+    var b: Printable = Box(int)(42)
+    print b.label()

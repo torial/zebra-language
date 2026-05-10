@@ -294,6 +294,10 @@ smoke_tc_fail test/tc_iface_i2i_mismatch_test.zbr "type mismatch"
 smoke test/tc_iface_transitive_match_test.zbr
 # Transitive mismatch: chain does not reach target interface.
 smoke_tc_fail test/tc_iface_transitive_mismatch_test.zbr "type mismatch"
+# Generic class instance assigned to interface-typed var.
+smoke test/tc_iface_generic_match_test.zbr
+# Generic class that does not implement the interface must fail.
+smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

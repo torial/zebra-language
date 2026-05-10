@@ -1143,6 +1143,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 if ctx.dep_types.hasClass(mem.member)
                                     return Type_.named(internString(mem.member))
                     return Type_.unresolved
+                on Expr.call as gc
+                    # Generic constructor: Box(int)(args) — outer callee is Box(int) type-application.
+                    if gc.callee is Expr.ident as gid
+                        var gcname: str = gid.name
+                        if ctx.hasClassAny(gcname)
+                            return Type_.named(gcname)
+                    return Type_.unresolved
                 else
                     return Type_.unresolved
         on Expr.try_ as et

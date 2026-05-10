@@ -1134,6 +1134,10 @@ const TypeChecker = struct {
             };
             return tc.conformsToInterface(implements, to.named.name, 16);
         }
+        // Generic class instance (Box(int)) assigned to interface type (Printable).
+        if (from == .generic_named and to == .named and to.named.kind == .interface) {
+            return tc.symbolImplements(from.generic_named.sym, to.named.name, 16);
+        }
         return Type.eql(from, to);
     }
 

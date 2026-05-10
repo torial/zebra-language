@@ -1,0 +1,17 @@
+interface Printable
+    def label(): str
+
+# Generic class implementing a non-generic interface.
+# Assigning Box(int) instance to a Printable-typed variable should pass TC.
+class Box(T) implements Printable
+    var value: T
+
+    cue init(v: T)
+        value = v
+
+    def label(): str
+        return "Box"
+
+def main()
+    var b: Printable = Box(int)(42)
+    print b.label()
