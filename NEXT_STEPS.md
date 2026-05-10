@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-09 (TC Phase 5 — i→i + transitive interface conformance; bootstrap 5/5, smoke 88/88)
+**Last updated:** 2026-05-10 (TC Phase 5 follow-up — generic class → interface conformance; bootstrap 5/5, smoke 90/90)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -94,11 +94,7 @@ shipped 2026-04-27.
   i→i and transitive support.  Both backends now catch direct, i→i, and transitive violations.
   Still open:
   - **Enum types** — enum variants not tracked in ModuleTypes; false-positive risk without registry
-  - **Generic interface conformance** — e.g. `var c: Container(int) = Stack(int)()` where
-    `Stack implements Container`: the declared type resolves to `TypeRef.generic`, not
-    `TypeRef.named`, so the named-type check is bypassed in both backends.  Needs a test
-    fixture and either a `TypeRef.generic` arm in `checkVarDecl`/`checkExpr` or a generic-
-    instance tracking slot in `class_interfaces`.  **TODO: write a failing fixture.**
+  - ✅ **Generic interface conformance** — FIXED (TC Phase 5 follow-up, 2026-05-10): Zig TC adds `generic_named → named` arm in `isAssignable`; selfhost adds `on Expr.call as gc` arm in `inferExpr` so two-stage constructors (`Box(int)(42)`) resolve to a named type and trigger conformance checking.
   - ✅ **Interface → interface assignment** — FIXED (TC Phase 5, 2026-05-09): `IFoo implements
     IBase` branch now covered in both backends via `DeclRef.interface` arm + `Decl.interface_`
     arm in selfhost `populateModuleTypes`.

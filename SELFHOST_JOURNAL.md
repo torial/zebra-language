@@ -2032,5 +2032,40 @@ search `implements` for itself and fail without the guard).
 
 ```
 Bootstrap:  5/5 PASS (byte-identical round-trip)
-Smoke:      88/88 PASS
+Smoke:      88/88 PASS (90/90 after follow-up below)
+```
+
+## TC Phase 5 Follow-up: Generic Class → Interface Conformance (2026-05-10)
+
+Commit: f69da5f
+
+Two-part fix for `var b: Printable = Box(int)(42)` where `Box(T) implements Printable`.
+
+### Zig TC gap
+
+`isAssignable` had a `from == .named and to == .named` arm for interface conformance but no
+arm for `from == .generic_named` (the type emitted for a resolved generic instance like
+`Box(int)`). The fix adds:
+
+```zig
+if (from == .generic_named and to == .named and to.named.kind == .interface) {
+    return tc.symbolImplements(from.generic_named.sym, to.named.name, 16);
+}
+```
+
+### Selfhost gap
+
+Two-stage constructors `Box(int)(42)` appear in the AST as `Expr.call { callee: Expr.call {...} }`.
+`inferExpr`'s `branch c.callee` block had arms for `Expr.ident` and `Expr.member` only — the
+`Expr.call` callee fell to `else → Type_.unresolved`. Since `checkVarDecl` only applies the
+conformance check when the inferred type is `Type_.named`, `unresolved` silently bypassed it.
+
+Fix: add `on Expr.call as gc` arm that peeks at the inner callee. If it's an `Expr.ident`
+naming a known class, return `Type_.named(gcname)` so the conformance check fires.
+
+### Results
+
+```
+Bootstrap:  5/5 PASS
+Smoke:      90/90 PASS (added tc_iface_generic_match_test + tc_iface_generic_mismatch_test)
 ```
