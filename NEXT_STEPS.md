@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-08 (guarded for-in + `List.find(pred)` — both backends; bootstrap 5/5, smoke 75/75)
+**Last updated:** 2026-05-09 (Phase 3C TC — interface conformance table; named-type mismatch checking; bootstrap 5/5, smoke 84/84)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -88,8 +88,18 @@ shipped 2026-04-27.
   deferred — enum not tracked in ModuleTypes; would false-positive without full registry.
 
 **Remaining gaps:**
-- Named type checking (enum, struct, class) — needs enum tracking in ModuleTypes first
-- Unresolved type in type position — same prerequisite
+- Named type checking (enum, struct, class) — **partially resolved 2026-05-09 (Phase 3C)**:
+  `class_interfaces` table in `ModuleTypes` catches interface-conformance violations for
+  classes/structs declared with `implements`.  Still open:
+  - **Enum types** — enum variants not tracked in ModuleTypes; false-positive risk without registry
+  - **Generic interface conformance** — e.g. `var c: Container(int) = Stack(int)()` where
+    `Stack implements Container`: the declared type resolves to `TypeRef.generic`, not
+    `TypeRef.named`, so the Phase 3C named-type check is bypassed.  Needs a test fixture
+    and either a `TypeRef.generic` arm in `checkVarDecl`/`checkExpr` or a generic-instance
+    tracking slot in `class_interfaces`.  **TODO: write a failing fixture to characterize
+    the exact gap before attempting a fix.**
+  - **Class inheritance** — Zebra uses mixins, not inheritance, so this is N/A for now
+- Unresolved type in type position — same prerequisite as enum tracking
 - Multi-error fixture parity: selfhost still only catches resolver + TC primitive errors;
   bootstrap catches 5 error classes; delta closes further as BUG-099 progresses
 
