@@ -223,6 +223,8 @@ pub const DeclMethod = struct {
     body: ?[]const Stmt,
     /// `is test` — marks this as a unit test method.
     is_test: bool,
+    /// Explicit test tags from `@tag("foo", "bar")` preceding the method.
+    tags: []const []const u8 = &.{},
     /// `throws` annotation — method may propagate errors.
     throws: bool,
     /// Declared at the top level (outside any class/struct).  Callers must not

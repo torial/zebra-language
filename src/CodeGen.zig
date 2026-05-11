@@ -137,6 +137,7 @@ pub fn generate(
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
     strip_contracts:  bool,
     test_mode:        bool,
+    tag_filter:       ?[]const u8,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -184,6 +185,7 @@ pub fn generate(
         .box_counter_ptr  = &box_counter,
         .strip_contracts  = strip_contracts,
         .test_mode        = test_mode,
+        .tag_filter       = tag_filter,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -1604,6 +1606,8 @@ const Generator = struct {
     /// When true, generate a test-runner `pub fn main()` that discovers and calls
     /// all top-level `def test_*()` functions, catches failures, and reports results.
     test_mode: bool = false,
+    /// When non-null, only run tests whose effective tags include this value.
+    tag_filter: ?[]const u8 = null,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -8835,7 +8839,16 @@ const Generator = struct {
     }
 
     fn genTestMain(g: Generator, module: Ast.Module) anyerror!void {
-        // Collect top-level def test_*() names.
+        // Derive file stem for auto-tagging: "path/to/foo_test.zbr" → "foo_test".
+        const file_stem = blk: {
+            const base = std.fs.path.basename(module.file);
+            if (std.mem.lastIndexOfScalar(u8, base, '.')) |dot| {
+                break :blk base[0..dot];
+            }
+            break :blk base;
+        };
+
+        // Collect top-level def test_*() names, filtered by tag_filter if set.
         var test_names = std.ArrayListUnmanaged([]const u8){};
         defer test_names.deinit(g.alloc);
         for (module.decls) |decl| {
@@ -8843,6 +8856,16 @@ const Generator = struct {
             if (m.mods.static_) continue; // ignore class-level statics
             if (!std.mem.startsWith(u8, m.name, "test_")) continue;
             if (m.params.len != 0) continue; // only zero-param test functions
+            if (g.tag_filter) |filter| {
+                // Effective tags = file stem + explicit @tag values.
+                var matched = std.mem.eql(u8, file_stem, filter);
+                if (!matched) {
+                    for (m.tags) |tag| {
+                        if (std.mem.eql(u8, tag, filter)) { matched = true; break; }
+                    }
+                }
+                if (!matched) continue;
+            }
             try test_names.append(g.alloc, m.name);
         }
 
@@ -12085,7 +12108,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     var out = std.ArrayList(u8){};
     errdefer out.deinit(alloc);
 
-    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false);
+    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false, null);
     return out.toOwnedSlice(alloc);
 }
 

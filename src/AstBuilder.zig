@@ -75,10 +75,11 @@ const Builder = struct {
         var pending_reflectable = false;
         var pending_profile = false;
         var pending_once = false;
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once);
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_tags);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -86,20 +87,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_tags);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_tags);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_tags);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -112,12 +113,19 @@ const Builder = struct {
                 pending_profile.* = true;
             } else if (std.mem.eql(u8, name, "once")) {
                 pending_once.* = true;
+            } else if (std.mem.eql(u8, name, "tag")) {
+                // @tag("foo", "bar") — extract string literals from ArgList
+                if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
             return;
         }
         var d = try b.buildTopDecl(td);
+        if (pending_tags.items.len > 0) {
+            applyTags(&d, try b.arena.dupe([]const u8, pending_tags.items));
+            pending_tags.clearRetainingCapacity();
+        }
         if (pending_reflectable.*) {
             applyReflectable(&d) catch |err| switch (err) {
                 error.ReflectableOnNonClass => std.debug.panic(
@@ -204,6 +212,31 @@ const Builder = struct {
         switch (d.*) {
             .method => |m| m.mods.once = true,
             else    => return error.OnceOnNonMethod,
+        }
+    }
+
+    fn applyTags(d: *Ast.Decl, tags: []const []const u8) void {
+        switch (d.*) {
+            .method => |m| m.tags = tags,
+            else    => {},
+        }
+    }
+
+    fn extractAtTagStrings(b: Builder, args_node: TN, out: *std.ArrayListUnmanaged([]const u8)) !void {
+        const args = try b.buildArgListNode(args_node);
+        for (args) |arg| {
+            switch (arg.value.*) {
+                .string_lit => |s| {
+                    // s.text is raw source including surrounding quotes; strip them.
+                    const raw = s.text;
+                    const unquoted = if (raw.len >= 2 and raw[0] == '"')
+                        raw[1 .. raw.len - 1]
+                    else
+                        raw;
+                    try out.append(b.arena, unquoted);
+                },
+                else => {},
+            }
         }
     }
 
@@ -535,11 +568,12 @@ const Builder = struct {
         var out = std.ArrayList(Ast.Decl){};
         var pending_profile = false;
         var pending_once = false;
-        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once);
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_tags);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -549,7 +583,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once);
+                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_tags);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -569,12 +603,18 @@ const Builder = struct {
                             pending_profile.* = true;
                         } else if (std.mem.eql(u8, name, "once")) {
                             pending_once.* = true;
+                        } else if (std.mem.eql(u8, name, "tag")) {
+                            if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
                         } else {
                             std.debug.print("warning: unknown member @-directive '@{s}'; ignored\n", .{name});
                         }
                     },
                     else => {
                         var d = try b.buildMemberDecl(kids[1]);
+                        if (pending_tags.items.len > 0) {
+                            applyTags(&d, try b.arena.dupe([]const u8, pending_tags.items));
+                            pending_tags.clearRetainingCapacity();
+                        }
                         if (pending_profile.*) {
                             applyProfile(&d) catch |err| switch (err) {
                                 error.ProfileOnNonMethod => std.debug.print(
@@ -608,7 +648,8 @@ const Builder = struct {
         const start = out.items.len;
         var pending_profile = false;
         var pending_once = false;
-        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once);
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_tags);
         for (out.items[start..]) |*d| setShared(d);
     }
 
