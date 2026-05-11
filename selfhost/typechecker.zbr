@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -1467,6 +1467,16 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkExpr(sa.cond, ctx)
             if sa.message != nil
                 walkExpr(sa.message to!, ctx)  # safe: nil checked above
+        on Stmt.assert_eq_ as sac
+            walkExpr(sac.lhs, ctx)
+            walkExpr(sac.rhs, ctx)
+        on Stmt.assert_ne_ as sac
+            walkExpr(sac.lhs, ctx)
+            walkExpr(sac.rhs, ctx)
+        on Stmt.assert_true_ as sau
+            walkExpr(sau.expr, ctx)
+        on Stmt.assert_false_ as sau
+            walkExpr(sau.expr, ctx)
         on Stmt.pass_
             pass
         on Stmt.break_

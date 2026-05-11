@@ -64,6 +64,45 @@ fn _zebra_ne(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return !std.mem.eql(u8, a, b);
     return a != b;
 }
+fn _zbr_is_u8_like(comptime T: type) bool {
+    if (T == []const u8 or T == []u8) return true;
+    const ai = @typeInfo(T);
+    if (ai == .pointer) {
+        const ci = @typeInfo(ai.pointer.child);
+        if (ci == .array and ci.array.child == u8) return true;
+        if (ai.pointer.child == u8) return true;
+    }
+    return false;
+}
+fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
+    const is_str = comptime _zbr_is_u8_like(@TypeOf(a));
+    const ok = if (comptime is_str)
+        std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b))
+    else
+        a == b;
+    if (ok != expect_eq) {
+        if (comptime is_str) {
+            if (expect_eq) {
+                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_eq failed: \"{s}\" != \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_eq failed" };
+            } else {
+                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_ne failed: \"{s}\" == \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_ne failed" };
+            }
+        } else {
+            if (expect_eq) {
+                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_eq failed: {} != {}", .{a, b}) catch "assert_eq failed" };
+            } else {
+                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
+            }
+        }
+        return error.ZebraError;
+    }
+}
+fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
+    if (val != expect_true) {
+        _error_ctx = .{ .message = if (expect_true) "assert_true failed: got false" else "assert_false failed: got true" };
+        return error.ZebraError;
+    }
+}
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);

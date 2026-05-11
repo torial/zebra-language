@@ -40,7 +40,7 @@ Everything here must ship before 1.0 stability locks in.
 - [ ] Allocator context (Odin-style named implicit allocator)
 
 **New at 1.0:**
-- [ ] `Test` stdlib module + `zebra test` subcommand
+- [x] `Test` stdlib module + `zebra test` subcommand
 - [ ] Type aliases with constraints (`type Name = str where len > 0`)
 - [ ] WebSocket (`Ws.connect/send/recv/close`)
 - [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
@@ -201,7 +201,7 @@ the broader commitment is everything that landed from 0.1 onward.
 - 0.14 deliverables: full `<-` deep-copy, `Chan(T)`, allocator context
 
 **New at 1.0:**
-- `Test` stdlib module — `zebra test` subcommand; `def test_*` discovery; structured pass/fail output; see `STDLIB_ROADMAP.md` item 11
+- ~~`Test` stdlib module~~ **DONE**: `zebra test` subcommand, `assert_eq/ne/true/false` statements, `def test_*` discovery, structured pass/fail output; both backends
 - Type aliases with constraints (`type Name = str where len > 0`)
 - WebSocket (`Ws.connect/send/recv/close`)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`

@@ -77,6 +77,7 @@ pub fn main() void {
     var gui_backend: CodeGen.GuiBackend = .stub;
     var release: bool = false;
     var turbo: bool = false;
+    var test_mode: bool = false;
     var source_path: ?[]const u8 = null;
 
     var i: usize = 1;
@@ -85,6 +86,8 @@ pub fn main() void {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
             std.debug.print("zebra {s}\n", .{ZEBRA_VERSION});
             std.process.exit(0);
+        } else if (std.mem.eql(u8, arg, "test") and source_path == null) {
+            test_mode = true;
         } else if (std.mem.eql(u8, arg, "-c")) {
             mode = .compile_only;
         } else if (std.mem.eql(u8, arg, "--emit-zig")) {
@@ -127,6 +130,7 @@ pub fn main() void {
         std.debug.print(
             \\usage:
             \\  zebra <source-file>                        compile and run
+            \\  zebra test <source-file>                   run def test_*() functions
             \\  zebra -c <source-file>                     compile only
             \\  zebra --emit-zig <source-file>             print Zig source to stdout
             \\  zebra --lib <source-file>                  compile to static library + .h header
@@ -146,7 +150,7 @@ pub fn main() void {
     };
     defer alloc.free(src);
 
-    const exit_code = run(src, path, mode, gui_backend, release, turbo, alloc) catch |err| {
+    const exit_code = run(src, path, mode, gui_backend, release, turbo, test_mode, alloc) catch |err| {
         std.debug.print("internal compiler error: {}\n", .{err});
         std.process.exit(2);
     };
@@ -158,7 +162,7 @@ pub fn main() void {
 /// Run the full pipeline on `src`.  Returns 0 on success, 1 on user-visible
 /// errors, 2 on backend (Zig compiler) errors.
 /// Internal (OOM etc.) errors propagate as Zig errors.
-fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, alloc: std.mem.Allocator) !u8 {
+fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, test_mode: bool, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
     var tok_diag: Tokenizer.Diag = .{};
     const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
@@ -316,7 +320,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     if (mode == .emit_zig) {
         var buf = std.ArrayList(u8){};
         defer buf.deinit(alloc);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode);
         try std.fs.File.stdout().writeAll(buf.items);
         return 0;
     }
@@ -326,7 +330,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     const zig_path = try zigPath(path, alloc);
     defer alloc.free(zig_path);
 
-    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, alloc, &imported_modules);
+    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, alloc, &imported_modules);
 }
 
 // ── Partial class merging ─────────────────────────────────────────────────────
@@ -846,7 +850,7 @@ fn compileZbrToZig(
 
     var buf = std.ArrayList(u8){};
     defer buf.deinit(alloc);
-    _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts);
+    _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false);
 
     const f = try std.fs.cwd().createFile(zig, .{});
     defer f.close();
@@ -869,6 +873,7 @@ fn backend(
     emit_exports:     bool,
     release:          bool,
     strip_contracts:  bool,
+    test_mode:        bool,
     alloc:            std.mem.Allocator,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
 ) !u8 {
@@ -876,7 +881,7 @@ fn backend(
     const result = blk: {
         var buf = std.ArrayList(u8){};
         defer buf.deinit(alloc);
-        const r = try CodeGen.generate(module, resolve, tc, alloc, buf.writer(alloc).any(), gui_backend, native_uses, emit_exports, imported_modules, strip_contracts);
+        const r = try CodeGen.generate(module, resolve, tc, alloc, buf.writer(alloc).any(), gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode);
         const f = try std.fs.cwd().createFile(zig_path, .{});
         defer f.close();
         try f.writeAll(buf.items);

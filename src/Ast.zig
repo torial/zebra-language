@@ -319,7 +319,11 @@ pub const Stmt = union(enum) {
     for_num: *StmtForNum,
     branch: *StmtBranch,
     return_: *StmtReturn,
-    assert: *StmtAssert,
+    assert:       *StmtAssert,
+    assert_eq:    *StmtAssertCmp,
+    assert_ne:    *StmtAssertCmp,
+    assert_true:  *StmtAssertUnary,
+    assert_false: *StmtAssertUnary,
     print: *StmtPrint,
     pass: Span,
     break_: Span,
@@ -439,6 +443,17 @@ pub const StmtAssert = struct {
     span: Span,
     cond: *Expr,
     message: ?*Expr,
+};
+
+pub const StmtAssertCmp = struct {
+    span: Span,
+    lhs: *Expr,
+    rhs: *Expr,
+};
+
+pub const StmtAssertUnary = struct {
+    span: Span,
+    expr: *Expr,
 };
 
 pub const StmtPrint = struct {

@@ -406,6 +406,10 @@ union Stmt
     branch_: ^StmtBranch
     return_: ^StmtReturn
     assert_: ^StmtAssert
+    assert_eq_: ^StmtAssertCmp
+    assert_ne_: ^StmtAssertCmp
+    assert_true_: ^StmtAssertUnary
+    assert_false_: ^StmtAssertUnary
     pass_: Span
     break_: Span
     continue_: Span
@@ -556,6 +560,24 @@ struct StmtAssert
         .span = span
         .cond = cond
         .message = message
+
+struct StmtAssertCmp
+    var span: Span
+    var lhs: ^Expr
+    var rhs: ^Expr
+
+    cue init(span: Span, lhs: ^Expr, rhs: ^Expr)
+        .span = span
+        .lhs = lhs
+        .rhs = rhs
+
+struct StmtAssertUnary
+    var span: Span
+    var expr: ^Expr
+
+    cue init(span: Span, expr: ^Expr)
+        .span = span
+        .expr = expr
 
 struct StmtAssign
     var span: Span

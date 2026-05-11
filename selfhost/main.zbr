@@ -39,7 +39,7 @@
 use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use astbuilder exposing ASTBuilder
-use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateEntryPoint, generateDep, generateDepWith
+use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith
 use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
@@ -53,6 +53,7 @@ class MultiCompiler
     var c_sources: List(str)   # paths to .c deps discovered via `use`
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
+    var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -63,6 +64,7 @@ class MultiCompiler
         .c_sources = List(str)()
         .c_i_dirs = List(str)()
         .strip_contracts = false
+        .test_mode = false
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -136,7 +138,10 @@ class MultiCompiler
                         if vpath != zbr_path
                             all_deps.add(.moduleNameOf(vpath))
                         vi = vi + 1
-                    zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
+                    if test_mode
+                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
+                    else
+                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
                 else
                     zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
 
@@ -481,6 +486,14 @@ def main()
                 sys.errln("usage: zebra typecheck-merge <file.zbr>")
                 sys.exit(1)
 
+    # -- test subcommand ---------------------------------------------------
+    # `zebra test <file.zbr>` discovers def test_*() and runs them.
+
+    var run_test_mode: bool = false
+    if args.positional(0) as test_pos
+        if test_pos == "test"
+            run_test_mode = true
+
     # -- Source path -------------------------------------------------------
     # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
 
@@ -498,6 +511,7 @@ def main()
     if src_path == nil
         sys.errln("usage:")
         sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
+        sys.errln("  zebra test <source.zbr>                  run def test_*() functions")
         sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
@@ -532,6 +546,7 @@ def main()
         # Compile the root file and all its dependencies
         var mc = MultiCompiler(preamble_path, output_dir)
         mc.strip_contracts = turbo
+        mc.test_mode = run_test_mode
         mc.compileDep(path, true)?
 
         if mode_emit

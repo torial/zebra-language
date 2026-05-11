@@ -240,6 +240,10 @@ pub const TokenKind = enum {
 
     // Statements
     kw_assert,
+    kw_assert_eq,
+    kw_assert_ne,
+    kw_assert_true,
+    kw_assert_false,
     kw_branch,
     kw_on,
     kw_expect,
@@ -351,8 +355,12 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // "old" and "result" are context-sensitive: emitted as kw_old/kw_result only
     // inside ensure blocks by Tokenizer. They are NOT in the keyword map.
     .{ "implies",     .kw_implies },
-    .{ "assert",      .kw_assert },
-    .{ "branch",      .kw_branch },
+    .{ "assert",       .kw_assert },
+    .{ "assert_eq",    .kw_assert_eq },
+    .{ "assert_ne",    .kw_assert_ne },
+    .{ "assert_true",  .kw_assert_true },
+    .{ "assert_false", .kw_assert_false },
+    .{ "branch",       .kw_branch },
     .{ "on",          .kw_on },
     .{ "expect",      .kw_expect },
     .{ "if",          .kw_if },

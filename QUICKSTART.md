@@ -1562,3 +1562,65 @@ var isum: int32 = iv.sum()
 - Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise.
 - Comparison and logical operators on SIMD vectors are not yet supported.
 - Selfhost parity (for `selfhost/*.zbr` round-trip) is tracked as a future sprint.
+
+## 33. Test module — `zebra test`
+
+Zebra has a built-in test runner invoked with `zebra test <file.zbr>`.
+
+### Writing tests
+
+Any top-level zero-parameter function whose name starts with `test_` is
+automatically discovered and run:
+
+```zebra
+def test_addition()
+    assert_eq 1 + 1, 2
+    assert_ne 0, 1
+
+def test_strings()
+    assert_eq "hello", "hello"
+    assert_ne "foo", "bar"
+
+def test_booleans()
+    assert_true  5 > 3
+    assert_false 1 > 2
+    assert_true  not false
+```
+
+### Assert statements
+
+| Statement | Meaning |
+|-----------|---------|
+| `assert_eq <lhs>, <rhs>` | Fail unless `lhs == rhs` |
+| `assert_ne <lhs>, <rhs>` | Fail unless `lhs != rhs` |
+| `assert_true <expr>` | Fail unless `expr` is true |
+| `assert_false <expr>` | Fail unless `expr` is false |
+
+Each assert throws `error.ZebraError` on failure with a descriptive message.
+Test functions are automatically typed `anyerror!void` — no `throws` needed.
+
+### Running tests
+
+```bash
+zebra test path/to/test_file.zbr
+```
+
+Output:
+```
+PASS: test_addition
+PASS: test_strings
+PASS: test_booleans
+
+3 passed, 0 failed
+```
+
+Exit code is `0` on all-pass, `1` if any test failed. Each test runs
+independently; a failure in one test does not abort the others.
+
+### Notes
+
+- Test files should not define `def main()` — the test runner generates its
+  own entry point automatically.
+- `def main()` is silently suppressed when compiling in test mode.
+- Both the Zig backend (`--zig-backend`) and the selfhost pipeline support
+  `zebra test`.

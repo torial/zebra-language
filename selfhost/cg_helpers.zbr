@@ -242,6 +242,14 @@ def bodyHasRaise(stmts: List(Stmt)): bool
         branch s
             on Stmt.raise_
                 return true
+            on Stmt.assert_eq_
+                return true
+            on Stmt.assert_ne_
+                return true
+            on Stmt.assert_true_
+                return true
+            on Stmt.assert_false_
+                return true
             on Stmt.var_ as n
                 if n.init_expr != nil
                     if exprHasTry(n.init_expr to!)
@@ -880,6 +888,16 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 scanMutationsInto(g.else_stmts, out)
             on Stmt.assert_ as a
                 scanMutationsInExpr(a.cond, out)
+            on Stmt.assert_eq_ as a
+                scanMutationsInExpr(a.lhs, out)
+                scanMutationsInExpr(a.rhs, out)
+            on Stmt.assert_ne_ as a
+                scanMutationsInExpr(a.lhs, out)
+                scanMutationsInExpr(a.rhs, out)
+            on Stmt.assert_true_ as a
+                scanMutationsInExpr(a.expr, out)
+            on Stmt.assert_false_ as a
+                scanMutationsInExpr(a.expr, out)
             on Stmt.print_ as p
                 var pi = 0
                 while pi < p.args.count()

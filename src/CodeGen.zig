@@ -136,6 +136,7 @@ pub fn generate(
     emit_exports:     bool,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
     strip_contracts:  bool,
+    test_mode:        bool,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -182,6 +183,7 @@ pub fn generate(
         .imported_modules = imported_modules,
         .box_counter_ptr  = &box_counter,
         .strip_contracts  = strip_contracts,
+        .test_mode        = test_mode,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -418,7 +420,9 @@ fn refsInStmt(stmt: Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerr
             if (s.else_) |eb| try refsInStmts(eb, r, o);
         },
         .print     => |s| { for (s.args) |a|    try refsInExpr(a, r, o); },
-        .assert    => |s| { try refsInExpr(s.cond, r, o); if (s.message) |m| try refsInExpr(m, r, o); },
+        .assert       => |s| { try refsInExpr(s.cond, r, o); if (s.message) |m| try refsInExpr(m, r, o); },
+        .assert_eq, .assert_ne => |s| { try refsInExpr(s.lhs, r, o); try refsInExpr(s.rhs, r, o); },
+        .assert_true, .assert_false => |s| try refsInExpr(s.expr, r, o),
         .yield     => |s| try refsInExpr(s.value, r, o),
         .expr      => |e| try refsInExpr(e, r, o),
         .defer_    => |s| try refsInStmt(s.body, r, o),
@@ -460,7 +464,7 @@ fn detailsTypeName(expr: *const Ast.Expr) []const u8 {
 fn bodyHasRaise(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckResult) bool {
     for (stmts) |stmt| {
         switch (stmt) {
-            .raise   => return true,
+            .raise, .assert_eq, .assert_ne, .assert_true, .assert_false => return true,
             .var_    => |n| { if (n.init) |e| if (exprHasTry(e, tc_opt)) return true; },
             .assign  => |s| { if (exprHasTry(s.value, tc_opt)) return true; },
             .return_ => |s| { if (s.value) |v| if (exprHasTry(v, tc_opt)) return true; },
@@ -506,7 +510,7 @@ fn bodyHasRaise(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckRe
 fn bodyNeedsErrVar(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckResult) bool {
     for (stmts) |stmt| {
         switch (stmt) {
-            .raise   => return true,
+            .raise, .assert_eq, .assert_ne, .assert_true, .assert_false => return true,
             .var_    => |n| { if (n.init) |e| if (exprHasTry(e, tc_opt)) return true; },
             .assign  => |s| { if (exprHasTry(s.value, tc_opt)) return true; },
             .return_ => |s| { if (s.value) |v| if (exprHasTry(v, tc_opt)) return true; },
@@ -1047,7 +1051,9 @@ fn scanMutationsInto(
             },
             .guard    => |s| try scanMutationsInto(s.else_body, set, tc_opt),
             .destruct => |s| try scanMutationsInExpr(s.init, set, tc_opt),
-            .assert   => |s| try scanMutationsInExpr(s.cond, set, tc_opt),
+            .assert       => |s| try scanMutationsInExpr(s.cond, set, tc_opt),
+            .assert_eq, .assert_ne => |s| { try scanMutationsInExpr(s.lhs, set, tc_opt); try scanMutationsInExpr(s.rhs, set, tc_opt); },
+            .assert_true, .assert_false => |s| try scanMutationsInExpr(s.expr, set, tc_opt),
             else      => {},
         }
     }
@@ -1280,6 +1286,11 @@ fn addAddrOfMutationsInStmts(
             },
             .print => |s| { for (s.args) |a| try addAddrOfMutationsInExpr(a, set, alloc, tc_opt, resolve); },
             .assert => |s| try addAddrOfMutationsInExpr(s.cond, set, alloc, tc_opt, resolve),
+            .assert_eq, .assert_ne => |s| {
+                try addAddrOfMutationsInExpr(s.lhs, set, alloc, tc_opt, resolve);
+                try addAddrOfMutationsInExpr(s.rhs, set, alloc, tc_opt, resolve);
+            },
+            .assert_true, .assert_false => |s| try addAddrOfMutationsInExpr(s.expr, set, alloc, tc_opt, resolve),
             else   => {},
         }
     }
@@ -1590,6 +1601,9 @@ const Generator = struct {
     /// Implies ensure_armed_active.  genReturn rewrites `return EXPR;` to
     /// `_result = EXPR; _ensure_armed = true; return _result;`.
     ensure_uses_result: bool = false,
+    /// When true, generate a test-runner `pub fn main()` that discovers and calls
+    /// all top-level `def test_*()` functions, catches failures, and reports results.
+    test_mode: bool = false,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -2512,6 +2526,13 @@ const Generator = struct {
         try g.w.writeAll(build_options.stdlib_preamble_post_gui);
         for (module.decls) |decl| try g.genTopDecl(decl);
 
+        // Test runner: discover all top-level `def test_*()` and emit a main that
+        // calls each, catches failures, and prints a summary.
+        if (g.test_mode) {
+            try g.genTestMain(module);
+            return;
+        }
+
         // Emit a top-level `pub fn main()` thunk if any class has a
         // `shared def main`.  Zig's startup code looks for `root.main`.
         if (try findMainClass(module.decls, g.alloc, "")) |class_name| {
@@ -2581,7 +2602,12 @@ const Generator = struct {
             .mixin     => {},   // never emitted standalone; inlined at `adds` sites
             .enum_     => |n| try g.genEnum(n),
             .extend    => |n| try g.genExtend(n),
-            .method    => |n| try g.genMethod(n),
+            .method    => |n| {
+                // In test mode, skip top-level `def main()` — the test runner
+                // provides its own `pub fn main()`.
+                if (g.test_mode and !n.mods.static_ and std.mem.eql(u8, n.name, "main")) return;
+                try g.genMethod(n);
+            },
             .var_      => |n| try g.genTopVar(n),
             .init      => {},   // top-level constructor makes no sense
             .union_    => |n| try g.genUnion(n),
@@ -3727,6 +3753,8 @@ const Generator = struct {
             .branch        => |s| s.span,
             .print         => |s| s.span,
             .assert        => |s| s.span,
+            .assert_eq, .assert_ne => |s| s.span,
+            .assert_true, .assert_false => |s| s.span,
             .yield         => |s| s.span,
             .expr          => |e| exprSpan(e),
             .defer_        => |s| s.span,
@@ -3800,7 +3828,11 @@ const Generator = struct {
             .for_num   => |s| try g.genForNum(s),
             .branch    => |s| try g.genBranch(s),
             .print     => |s| try g.genPrint(s),
-            .assert    => |s| try g.genAssert(s),
+            .assert       => |s| try g.genAssert(s),
+            .assert_eq    => |s| try g.genAssertCmp(s, true),
+            .assert_ne    => |s| try g.genAssertCmp(s, false),
+            .assert_true  => |s| try g.genAssertUnary(s, true),
+            .assert_false => |s| try g.genAssertUnary(s, false),
             .yield     => |s| {
                 try g.writeIndent();
                 try g.w.writeAll("// yield ");
@@ -8802,6 +8834,64 @@ const Generator = struct {
         }
     }
 
+    fn genTestMain(g: Generator, module: Ast.Module) anyerror!void {
+        // Collect top-level def test_*() names.
+        var test_names = std.ArrayListUnmanaged([]const u8){};
+        defer test_names.deinit(g.alloc);
+        for (module.decls) |decl| {
+            const m = switch (decl) { .method => |m| m, else => continue };
+            if (m.mods.static_) continue; // ignore class-level statics
+            if (!std.mem.startsWith(u8, m.name, "test_")) continue;
+            if (m.params.len != 0) continue; // only zero-param test functions
+            try test_names.append(g.alloc, m.name);
+        }
+
+        try g.w.writeAll(
+            "pub fn main() void {\n" ++
+            "    _allocator = _arena.allocator();\n" ++
+            "    defer _arena.deinit();\n" ++
+            "    var _test_pass: usize = 0;\n" ++
+            "    var _test_fail: usize = 0;\n",
+        );
+        for (test_names.items) |name| {
+            try g.w.print(
+                "    if ({s}()) |_| {{\n" ++
+                "        _test_pass += 1;\n" ++
+                "        std.debug.print(\"PASS: {s}\\n\", .{{}});\n" ++
+                "    }} else |_terr| {{\n" ++
+                "        _test_fail += 1;\n" ++
+                "        if (_terr == error.ZebraError) {{\n" ++
+                "            std.debug.print(\"FAIL: {s}: {{s}}\\n\", .{{_zbr_error_msg()}});\n" ++
+                "        }} else {{\n" ++
+                "            std.debug.print(\"FAIL: {s}: {{}}\\n\", .{{_terr}});\n" ++
+                "        }}\n" ++
+                "    }}\n",
+                .{ name, name, name, name },
+            );
+        }
+        try g.w.writeAll(
+            "    std.debug.print(\"\\n{d} passed, {d} failed\\n\", .{_test_pass, _test_fail});\n" ++
+            "    if (_test_fail > 0) std.process.exit(1);\n" ++
+            "}\n",
+        );
+    }
+
+    fn genAssertCmp(g: Generator, s: *Ast.StmtAssertCmp, eq: bool) anyerror!void {
+        try g.writeIndent();
+        try g.w.writeAll("try _zebra_assert_cmp(");
+        try g.genExpr(s.lhs);
+        try g.w.writeAll(", ");
+        try g.genExpr(s.rhs);
+        try g.w.print(", {s});\n", .{if (eq) "true" else "false"});
+    }
+
+    fn genAssertUnary(g: Generator, s: *Ast.StmtAssertUnary, expect_true: bool) anyerror!void {
+        try g.writeIndent();
+        try g.w.writeAll("try _zebra_assert_bool(");
+        try g.genExpr(s.expr);
+        try g.w.print(", {s});\n", .{if (expect_true) "true" else "false"});
+    }
+
     fn genDefer(g: Generator, s: *Ast.StmtDefer) anyerror!void {
         try g.writeIndent();
         try g.w.writeAll(if (s.is_err) "errdefer " else "defer ");
@@ -11995,7 +12085,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     var out = std.ArrayList(u8){};
     errdefer out.deinit(alloc);
 
-    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false);
+    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false);
     return out.toOwnedSlice(alloc);
 }
 

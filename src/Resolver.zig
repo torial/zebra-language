@@ -422,6 +422,8 @@ const Resolver = struct {
                 try r.walkExpr(s.cond, scope);
                 if (s.message) |m| try r.walkExpr(m, scope);
             },
+            .assert_eq, .assert_ne => |s| { try r.walkExpr(s.lhs, scope); try r.walkExpr(s.rhs, scope); },
+            .assert_true, .assert_false => |s| try r.walkExpr(s.expr, scope),
             .print    => |s| { for (s.args) |a|   try r.walkExpr(a, scope); },
             .yield    => |s| try r.walkExpr(s.value, scope),
             .assign   => |s| {
@@ -838,6 +840,8 @@ const Resolver = struct {
                 try r.collectFreeVars(s.cond, local, out, seen);
                 if (s.message) |m| try r.collectFreeVars(m, local, out, seen);
             },
+            .assert_eq, .assert_ne => |s| { try r.collectFreeVars(s.lhs, local, out, seen); try r.collectFreeVars(s.rhs, local, out, seen); },
+            .assert_true, .assert_false => |s| try r.collectFreeVars(s.expr, local, out, seen),
             // raise / try_catch / guard have sub-expressions we skip for now;
             // they're unusual inside lambdas and can be revisited when needed.
             else => {},
@@ -976,6 +980,8 @@ const Resolver = struct {
                 try r.checkCaptureBoundary(s.cond, lambda_local);
                 if (s.message) |m| try r.checkCaptureBoundary(m, lambda_local);
             },
+            .assert_eq, .assert_ne => |s| { try r.checkCaptureBoundary(s.lhs, lambda_local); try r.checkCaptureBoundary(s.rhs, lambda_local); },
+            .assert_true, .assert_false => |s| try r.checkCaptureBoundary(s.expr, lambda_local),
             .yield   => |s| try r.checkCaptureBoundary(s.value, lambda_local),
             .defer_  => |s| try r.checkCaptureBoundaryStmt(s.body, lambda_local),
             .with    => |s| {

@@ -68,6 +68,28 @@ smoke_turbo() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Run `zebra test` and check all tests pass (exit 0, no FAIL lines in output).
+smoke_test() {
+    local zbr="$1"
+    local label
+    label="$(basename "$zbr" .zbr)_test"
+    if "$ZEBRA" test "$zbr" >/tmp/smoke-test-out 2>&1; then
+        if grep -qF "FAIL:" /tmp/smoke-test-out; then
+            echo "  FAIL: $label (some tests failed)" >&2
+            cat /tmp/smoke-test-out >&2
+            FAIL=$((FAIL + 1))
+        else
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        fi
+    else
+        echo "  FAIL: $label (exit non-zero)" >&2
+        grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " /tmp/smoke-test-out >&2 || true
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Run a fixture expected to FAIL TC with a specific diagnostic substring in stderr.
 smoke_tc_fail() {
     local zbr="$1"
@@ -298,6 +320,9 @@ smoke_tc_fail test/tc_iface_transitive_mismatch_test.zbr "type mismatch"
 smoke test/tc_iface_generic_match_test.zbr
 # Generic class that does not implement the interface must fail.
 smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
+
+# `zebra test` subcommand: assert_eq/ne/true/false + test runner.
+smoke_test test/test_module_test.zbr
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

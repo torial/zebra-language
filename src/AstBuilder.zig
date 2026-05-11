@@ -1104,6 +1104,24 @@ const Builder = struct {
                 .cond    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
                 .message = if (kids.len == 5) try b.box(Ast.Expr, try b.buildExpr(kids[3])) else null,
             }) },
+            .StmtAssertEq => .{ .assert_eq = try b.box(Ast.StmtAssertCmp, .{
+                .span = s,
+                .lhs  = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+                .rhs  = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
+            }) },
+            .StmtAssertNe => .{ .assert_ne = try b.box(Ast.StmtAssertCmp, .{
+                .span = s,
+                .lhs  = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+                .rhs  = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
+            }) },
+            .StmtAssertTrue => .{ .assert_true = try b.box(Ast.StmtAssertUnary, .{
+                .span = s,
+                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            }) },
+            .StmtAssertFalse => .{ .assert_false = try b.box(Ast.StmtAssertUnary, .{
+                .span = s,
+                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            }) },
             .StmtIf       => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtIf(inner)) },
             .StmtUnless   => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtUnless(inner)) },
             .StmtWhile    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtWhile(inner)) },

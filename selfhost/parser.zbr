@@ -49,6 +49,10 @@ union PNode
     stmt_var: ^PVar
     stmt_assign: ^PAssign
     stmt_assert: ^PAssert
+    stmt_assert_eq: ^PAssertCmp
+    stmt_assert_ne: ^PAssertCmp
+    stmt_assert_true: ^PAssertUnary
+    stmt_assert_false: ^PAssertUnary
     stmt_raise: ^PRaise
     stmt_try_catch: ^PTryCatch
     stmt_expr: ^PNode
@@ -458,6 +462,22 @@ struct PAssert
     cue init(cond: List(PNode), message: List(PNode), line: int)
         .cond = cond
         .message = message
+        .line = line
+
+struct PAssertCmp
+    var lhs: PNode
+    var rhs: PNode
+    var line: int
+    cue init(lhs: PNode, rhs: PNode, line: int)
+        .lhs = lhs
+        .rhs = rhs
+        .line = line
+
+struct PAssertUnary
+    var expr: PNode
+    var line: int
+    cue init(expr: PNode, line: int)
+        .expr = expr
         .line = line
 
 struct PRaise
@@ -1470,6 +1490,14 @@ class Parser
             return .parseVarStmt(true)
         else if .textIs("assert")
             return .parseAssertStmt()
+        else if .textIs("assert_eq")
+            return .parseAssertCmpStmt(true)
+        else if .textIs("assert_ne")
+            return .parseAssertCmpStmt(false)
+        else if .textIs("assert_true")
+            return .parseAssertUnaryStmt(true)
+        else if .textIs("assert_false")
+            return .parseAssertUnaryStmt(false)
         else if .textIs("raise")
             return .parseRaiseStmt()
 
@@ -1783,6 +1811,26 @@ class Parser
             msg_list.add(.parseExpr())
         .skipEol()
         return PNode.stmt_assert(PAssert(cond_list, msg_list, line))
+
+    def parseAssertCmpStmt(is_eq: bool): PNode throws
+        const line = .peek().line
+        .advance()
+        const lhs = .parseExpr()
+        .expectText(",")
+        const rhs = .parseExpr()
+        .skipEol()
+        if is_eq
+            return PNode.stmt_assert_eq(PAssertCmp(lhs, rhs, line))
+        return PNode.stmt_assert_ne(PAssertCmp(lhs, rhs, line))
+
+    def parseAssertUnaryStmt(is_true: bool): PNode throws
+        const line = .peek().line
+        .advance()
+        const expr = .parseExpr()
+        .skipEol()
+        if is_true
+            return PNode.stmt_assert_true(PAssertUnary(expr, line))
+        return PNode.stmt_assert_false(PAssertUnary(expr, line))
 
     def parseRaiseStmt(): PNode throws
         const line = .peek().line

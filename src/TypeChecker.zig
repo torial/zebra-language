@@ -1600,6 +1600,8 @@ const TypeChecker = struct {
                 try tc.checkBoolExpr(s.cond);
                 if (s.message) |m| _ = try tc.inferExpr(m);
             },
+            .assert_eq, .assert_ne => |s| { _ = try tc.inferExpr(s.lhs); _ = try tc.inferExpr(s.rhs); },
+            .assert_true, .assert_false => |s| _ = try tc.inferExpr(s.expr),
             .print    => |s| { for (s.args) |a| _ = try tc.inferExpr(a); },
             .yield    => |s| _ = try tc.inferExpr(s.value),
             .assign   => |s| try tc.checkAssign(s),

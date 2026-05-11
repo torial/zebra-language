@@ -136,6 +136,10 @@ union TokenKind
     kw_result
     kw_implies
     kw_assert
+    kw_assert_eq
+    kw_assert_ne
+    kw_assert_true
+    kw_assert_false
     kw_branch
     kw_on
     kw_expect
@@ -279,6 +283,14 @@ class Keywords
             return TokenKind.kw_implies()
         if word == "assert"
             return TokenKind.kw_assert()
+        if word == "assert_eq"
+            return TokenKind.kw_assert_eq()
+        if word == "assert_ne"
+            return TokenKind.kw_assert_ne()
+        if word == "assert_true"
+            return TokenKind.kw_assert_true()
+        if word == "assert_false"
+            return TokenKind.kw_assert_false()
         if word == "branch"
             return TokenKind.kw_branch()
         if word == "on"
