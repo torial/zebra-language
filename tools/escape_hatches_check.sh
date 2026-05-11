@@ -37,9 +37,7 @@ cd "$REPO"
 #          require an allocator and the result is meant to live forever
 #   - 9× Profile stdlib (HashMap + stack allocs that outlive arena rewinds;
 #         profile data must survive the scope that is being profiled)
-#   - 4× _zebra_assert_cmp (error messages for failed assertions must outlive
-#         the assert call's stack frame so the test runner can print them)
-EXPECTED_PREAMBLE=56
+EXPECTED_PREAMBLE=52
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)
