@@ -353,7 +353,7 @@ class ASTBuilder
                     body_stmts.add(s)
         var stmts_list: List(Stmt)? = body_stmts
         var mods = Modifiers(false, false, false, m.is_static, false, false, false, m.is_profile, m.is_once)
-        return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs))
+        return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
 

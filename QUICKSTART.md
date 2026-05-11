@@ -154,7 +154,7 @@ class Counter
   table.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
 
-### Method modifiers (`@once`, `@profile`)
+### Method modifiers (`@once`, `@profile`, `@tag`)
 
 Prefix a `def` declaration with an `@modifier` to alter its behaviour:
 
@@ -167,6 +167,10 @@ class Config
     @profile
     def heavyWork()        # body is wrapped with Profile.start/end automatically
         # ...
+
+    @tag("unit", "fast")
+    static def test_defaults()   # tagged for selective test runs
+        assert_eq .load(), "{}"
 ```
 
 - **`@once`** — the first call executes the body and stores the result in a hidden
@@ -175,6 +179,8 @@ class Config
   If the method returns `void`, the body is suppressed after the first call.
 - **`@profile`** — wraps the body with `Profile.start("ClassName.method")`
   and `defer Profile.end(...)`.  Requires the `Profile` module (stdlib).
+- **`@tag("label", ...)`** — attaches one or more string tags to a test method for
+  use with `zebra test --tag <label>`.  See §33 for full details.
 
 > **Note (0.13 sweep):** `def name: T` (no parens at decl) is being removed
 > from the grammar — see BUG-112.  Always use `def name(): T`.  Callers
@@ -1616,6 +1622,46 @@ PASS: test_booleans
 
 Exit code is `0` on all-pass, `1` if any test failed. Each test runs
 independently; a failure in one test does not abort the others.
+
+### Filtering tests with `@tag`
+
+Apply one or more string tags to a test function:
+
+```zebra
+@tag("unit", "math")
+def test_addition()
+    assert_eq 1 + 1, 2
+
+@tag("integration")
+def test_database()
+    assert_true db_ping()
+```
+
+Run only the tests whose tags include a given value:
+
+```bash
+zebra test --tag unit path/to/test_file.zbr
+```
+
+**Automatic tags** are applied without any annotation:
+
+| Auto-tag | Applies to |
+|----------|-----------|
+| File stem | All tests in the file (e.g. `foo_test` for `foo_test.zbr`) |
+| Class/struct name | `static def test_*()` methods inside that class/struct |
+
+So given a file `math_test.zbr` containing:
+
+```zebra
+class Arithmetic
+    @tag("unit")
+    static def test_add()
+        assert_eq 2 + 2, 4
+```
+
+Running `zebra test --tag math_test` runs every test in the file; running
+`--tag Arithmetic` runs only tests inside the `Arithmetic` class; running
+`--tag unit` runs only tests explicitly tagged `"unit"`.
 
 ### Notes
 

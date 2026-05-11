@@ -834,41 +834,85 @@ def generateEntryPoint(m: Module): str
     sb.append("}\n")
     return sb.build()
 
-def generateTestEntryPoint(m: Module): str
-    # Collect top-level def test_*() functions (zero params, not static).
-    var test_names: List(str) = List(str)()
+def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
+    # Collect test entries: (call expression, display label).
+    # Auto-tags: file_stem (all tests) + class name (class-contained static tests).
+    var test_calls: List(str) = List(str)()
+    var test_labels: List(str) = List(str)()
+
+    # Top-level def test_*() functions.
     for decl in m.decls
         if decl is Decl.method as mth
-            if mth.mods.is_static
-                pass
-            else if mth.name.startsWith("test_") and mth.params.len == 0
-                test_names.add(mth.name)
+            if not mth.mods.is_static and mth.name.startsWith("test_") and mth.params.len == 0
+                var included: bool = true
+                if tag_filter as filter
+                    var matched: bool = file_stem == filter
+                    if not matched
+                        for tag in mth.tags
+                            if tag == filter
+                                matched = true
+                    included = matched
+                if included
+                    test_calls.add(mth.name)
+                    test_labels.add(mth.name)
+
+    # Class/struct-contained static def test_*() methods.
+    for decl in m.decls
+        var class_name: str = ""
+        var members: List(Decl) = List(Decl)()
+        if decl is Decl.class_ as cls
+            class_name = cls.name
+            members = cls.members
+        else if decl is Decl.struct_ as st
+            class_name = st.name
+            members = st.members
+        if class_name != ""
+            for mdecl in members
+                if mdecl is Decl.method as mth
+                    if mth.mods.is_static and mth.name.startsWith("test_") and mth.params.len == 0
+                        var included: bool = true
+                        if tag_filter as filter
+                            var matched: bool = file_stem == filter or class_name == filter
+                            if not matched
+                                for tag in mth.tags
+                                    if tag == filter
+                                        matched = true
+                            included = matched
+                        if included
+                            var entry: str = class_name + "." + mth.name
+                            test_calls.add(entry)
+                            test_labels.add(entry)
+
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main() void {\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
-    for name in test_names
+    var ti: int = 0
+    while ti < test_calls.len
+        var call: str = test_calls.at(ti)
+        var label: str = test_labels.at(ti)
         sb.append("    if (")
-        sb.append(name)
+        sb.append(call)
         sb.append("()) |_| {\n")
         sb.append("        _test_pass += 1;\n")
         sb.append("        std.debug.print(\"PASS: ")
-        sb.append(name)
+        sb.append(label)
         sb.append("\\n\", .{});\n")
         sb.append("    } else |_terr| {\n")
         sb.append("        _test_fail += 1;\n")
         sb.append("        if (_terr == error.ZebraError) {\n")
         sb.append("            std.debug.print(\"FAIL: ")
-        sb.append(name)
+        sb.append(label)
         sb.append(": {s}\\n\", .{_zbr_error_msg()});\n")
         sb.append("        } else {\n")
         sb.append("            std.debug.print(\"FAIL: ")
-        sb.append(name)
+        sb.append(label)
         sb.append(": {}\\n\", .{_terr});\n")
         sb.append("        }\n")
         sb.append("    }\n")
+        ti = ti + 1
     sb.append("    std.debug.print(\"\\n{d} passed, {d} failed\\n\", .{_test_pass, _test_fail});\n")
     sb.append("    if (_test_fail > 0) std.process.exit(1);\n")
     sb.append("}\n")
@@ -949,10 +993,18 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
         sb.append(entry)
     return sb.build()
 
-def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?): str throws
+def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, tag_filter: str?): str throws
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
+    # Derive file stem for auto-tagging: "path/to/foo_test.zbr" -> "foo_test".
+    var file_stem: str = file
+    for seg in file.split("/")
+        file_stem = seg
+    if file_stem.endsWith(".zbr")
+        for ext in file_stem.split(".zbr")
+            file_stem = ext
+            break
     # Filter out top-level `def main()` — the test runner provides its own pub fn main().
     var filtered_decls: List(Decl) = List(Decl)()
     for d in m.decls
@@ -965,7 +1017,7 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
             filtered_decls.add(d)
     var m_no_main: Module = Module(m.file, filtered_decls)
     var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result)
-    var entry = generateTestEntryPoint(m)
+    var entry = generateTestEntryPoint(m, file_stem, tag_filter)
     var error_helper: str = ""
     if all_dep_modules.len > 0
         error_helper = generateErrorMsgHelperWith(all_dep_modules)

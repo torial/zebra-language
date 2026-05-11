@@ -54,6 +54,7 @@ class MultiCompiler
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
+    var tag_filter: str?       # --tag X: only run tests matching this tag
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -65,6 +66,7 @@ class MultiCompiler
         .c_i_dirs = List(str)()
         .strip_contracts = false
         .test_mode = false
+        .tag_filter = nil
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -139,7 +141,7 @@ class MultiCompiler
                             all_deps.add(.moduleNameOf(vpath))
                         vi = vi + 1
                     if test_mode
-                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
+                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, tag_filter)?
                     else
                         zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
                 else
@@ -494,6 +496,12 @@ def main()
         if test_pos == "test"
             run_test_mode = true
 
+    var run_tag_filter: str? = nil
+    if args.contains("--tag")
+        var tag_val: str = args.option("--tag", "")
+        if tag_val != ""
+            run_tag_filter = tag_val
+
     # -- Source path -------------------------------------------------------
     # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
 
@@ -512,6 +520,7 @@ def main()
         sys.errln("usage:")
         sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
         sys.errln("  zebra test <source.zbr>                  run def test_*() functions")
+        sys.errln("  zebra test --tag <tag> <source.zbr>      run only tests matching tag")
         sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
@@ -547,6 +556,7 @@ def main()
         var mc = MultiCompiler(preamble_path, output_dir)
         mc.strip_contracts = turbo
         mc.test_mode = run_test_mode
+        mc.tag_filter = run_tag_filter
         mc.compileDep(path, true)?
 
         if mode_emit

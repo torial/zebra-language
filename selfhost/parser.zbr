@@ -285,7 +285,8 @@ struct PMethod
     var stmts: List(PNode)
     var is_profile: bool
     var is_once: bool
-    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool)
+    var tags: List(str)
+    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str))
         .name = name
         .is_static = is_static
         .throws_ = throws_
@@ -294,6 +295,7 @@ struct PMethod
         .stmts = stmts
         .is_profile = is_profile
         .is_once = is_once
+        .tags = tags
 
 struct PInit
     var params: List(PParam)
@@ -956,11 +958,12 @@ class Parser
     # -- Top-level declarations ------------------------------------------------
 
     def parseTopDecl(): PNode throws
-        # `@directive` annotation — @reflectable, @profile, @once recognized.
+        # `@directive` annotation — @reflectable, @profile, @once, @tag recognized.
         # Consume the directive and apply it to the immediately-following decl.
         var pending_reflectable: bool = false
         var pending_profile: bool = false
         var pending_once: bool = false
+        var pending_tags: List(str) = List(str)()
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -968,14 +971,33 @@ class Parser
                 on TokenKind.at_id
                     const dtext = .peek().text
                     .advance()
-                    .skipEol()
                     if dtext == "@reflectable"
+                        .skipEol()
                         pending_reflectable = true
                     else if dtext == "@profile"
+                        .skipEol()
                         pending_profile = true
                     else if dtext == "@once"
+                        .skipEol()
                         pending_once = true
+                    else if dtext == "@tag"
+                        # Parse optional @tag("str", ...) argument list.
+                        if .textIs("(")
+                            .advance()
+                            while not .textIs(")")
+                                if .textIs(",")
+                                    .advance()
+                                else
+                                    const raw_tag: str = .peek().text
+                                    .advance()
+                                    var tag_val: str = raw_tag
+                                    if raw_tag.codePointCount() >= 2
+                                        tag_val = raw_tag.substring(1, raw_tag.codePointCount() - 1)
+                                    pending_tags.add(tag_val)
+                            .expectText(")")
+                        .skipEol()
                     else
+                        .skipEol()
                         sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
                     saw_directive = true
                 else
@@ -1002,9 +1024,9 @@ class Parser
             return .parseSigDecl()
         else if .textIs("static")
             .advance()
-            return .parseMethodDecl(true, pending_profile, pending_once)
+            return .parseMethodDecl(true, pending_profile, pending_once, pending_tags)
         else if .textIs("def")
-            return .parseMethodDecl(false, pending_profile, pending_once)
+            return .parseMethodDecl(false, pending_profile, pending_once, pending_tags)
         raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws
@@ -1287,18 +1309,36 @@ class Parser
     def parseMemberDecl(is_static: bool): PNode throws
         var pending_profile: bool = false
         var pending_once: bool = false
+        var pending_tags: List(str) = List(str)()
         while .peek().kind == TokenKind.at_id
             const dtext = .peek().text
             .advance()
-            .skipEol()
             if dtext == "@profile"
+                .skipEol()
                 pending_profile = true
             else if dtext == "@once"
+                .skipEol()
                 pending_once = true
+            else if dtext == "@tag"
+                if .textIs("(")
+                    .advance()
+                    while not .textIs(")")
+                        if .textIs(",")
+                            .advance()
+                        else
+                            const raw_tag: str = .peek().text
+                            .advance()
+                            var tag_val: str = raw_tag
+                            if raw_tag.codePointCount() >= 2
+                                tag_val = raw_tag.substring(1, raw_tag.codePointCount() - 1)
+                            pending_tags.add(tag_val)
+                    .expectText(")")
+                .skipEol()
             else
+                .skipEol()
                 sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
         if .textIs("def")
-            return .parseMethodDecl(is_static, pending_profile, pending_once)
+            return .parseMethodDecl(is_static, pending_profile, pending_once, pending_tags)
         else if .textIs("var")
             return .parseDeclField(false, is_static)
         else if .textIs("const")
@@ -1378,7 +1418,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_profile: bool, is_once: bool): PNode throws
+    def parseMethodDecl(is_static: bool, is_profile: bool, is_once: bool, tags: List(str)): PNode throws
         const line = .peek().line
         .expectText("def")
         var name = ""
@@ -1439,7 +1479,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts, is_profile, is_once))
+        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts, is_profile, is_once, tags))
 
     # -- Block and statements --------------------------------------------------
 

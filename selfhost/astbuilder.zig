@@ -83,15 +83,15 @@ fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
     if (ok != expect_eq) {
         if (comptime is_str) {
             if (expect_eq) {
-                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_eq failed: \"{s}\" != \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_eq failed" };
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: \"{s}\" != \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_eq failed" };
             } else {
-                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_ne failed: \"{s}\" == \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_ne failed" };
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: \"{s}\" == \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_ne failed" };
             }
         } else {
             if (expect_eq) {
-                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_eq failed: {} != {}", .{a, b}) catch "assert_eq failed" };
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: {} != {}", .{a, b}) catch "assert_eq failed" };
             } else {
-                _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
             }
         }
         return error.ZebraError;
@@ -2571,7 +2571,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:355
         const mods = Modifiers.init(false, false, false, m.is_static, false, false, false, m.is_profile, m.is_once);
 // zbr:selfhost/astbuilder.zbr:356
-        return Decl{ .method = blk_box_13: { const _bv: std.meta.Child(@FieldType(Decl, "method")) = DeclMethod.init(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
+        return Decl{ .method = blk_box_13: { const _bv: std.meta.Child(@FieldType(Decl, "method")) = DeclMethod.init(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
     }
 
     pub fn buildInit(self: *ASTBuilder, pinit: PInit) anyerror!Decl {
