@@ -8848,25 +8848,59 @@ const Generator = struct {
             break :blk base;
         };
 
-        // Collect top-level def test_*() names, filtered by tag_filter if set.
-        var test_names = std.ArrayListUnmanaged([]const u8){};
-        defer test_names.deinit(g.alloc);
+        // Collect test entries as (Zig call expression, display label) pairs.
+        // Auto-tags: file stem (all tests) + class/struct name (class-contained tests).
+        var test_calls  = std.ArrayListUnmanaged([]const u8){};
+        var test_labels = std.ArrayListUnmanaged([]const u8){};
+        defer test_calls.deinit(g.alloc);
+        defer test_labels.deinit(g.alloc);
+
+        // Top-level def test_*() functions.
         for (module.decls) |decl| {
             const m = switch (decl) { .method => |m| m, else => continue };
-            if (m.mods.static_) continue; // ignore class-level statics
+            if (m.mods.static_) continue;
             if (!std.mem.startsWith(u8, m.name, "test_")) continue;
-            if (m.params.len != 0) continue; // only zero-param test functions
+            if (m.params.len != 0) continue;
             if (g.tag_filter) |filter| {
-                // Effective tags = file stem + explicit @tag values.
                 var matched = std.mem.eql(u8, file_stem, filter);
-                if (!matched) {
-                    for (m.tags) |tag| {
-                        if (std.mem.eql(u8, tag, filter)) { matched = true; break; }
-                    }
-                }
+                if (!matched) for (m.tags) |tag| {
+                    if (std.mem.eql(u8, tag, filter)) { matched = true; break; }
+                };
                 if (!matched) continue;
             }
-            try test_names.append(g.alloc, m.name);
+            try test_calls.append(g.alloc, m.name);
+            try test_labels.append(g.alloc, m.name);
+        }
+
+        // Class/struct-contained static def test_*() methods.
+        for (module.decls) |decl| {
+            const container_name: []const u8 = switch (decl) {
+                .class   => |c| c.name,
+                .struct_ => |s| s.name,
+                else     => continue,
+            };
+            const members: []const Ast.Decl = switch (decl) {
+                .class   => |c| c.members,
+                .struct_ => |s| s.members,
+                else     => unreachable,
+            };
+            for (members) |mdecl| {
+                const m = switch (mdecl) { .method => |m| m, else => continue };
+                if (!m.mods.static_) continue;
+                if (!std.mem.startsWith(u8, m.name, "test_")) continue;
+                if (m.params.len != 0) continue;
+                if (g.tag_filter) |filter| {
+                    var matched = std.mem.eql(u8, file_stem, filter) or
+                                  std.mem.eql(u8, container_name, filter);
+                    if (!matched) for (m.tags) |tag| {
+                        if (std.mem.eql(u8, tag, filter)) { matched = true; break; }
+                    };
+                    if (!matched) continue;
+                }
+                const call_expr = try std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ container_name, m.name });
+                try test_calls.append(g.alloc, call_expr);
+                try test_labels.append(g.alloc, call_expr);
+            }
         }
 
         try g.w.writeAll(
@@ -8876,7 +8910,7 @@ const Generator = struct {
             "    var _test_pass: usize = 0;\n" ++
             "    var _test_fail: usize = 0;\n",
         );
-        for (test_names.items) |name| {
+        for (test_calls.items, test_labels.items) |call, label| {
             try g.w.print(
                 "    if ({s}()) |_| {{\n" ++
                 "        _test_pass += 1;\n" ++
@@ -8889,7 +8923,7 @@ const Generator = struct {
                 "            std.debug.print(\"FAIL: {s}: {{}}\\n\", .{{_terr}});\n" ++
                 "        }}\n" ++
                 "    }}\n",
-                .{ name, name, name, name },
+                .{ call, label, label, label },
             );
         }
         try g.w.writeAll(
