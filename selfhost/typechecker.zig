@@ -3209,7 +3209,7 @@ pub fn stringMethodReturn(name: []const u8) ?Type_ {
         return Type_.string_;
     }
 // zbr:selfhost/typechecker.zbr:839
-    if (std.mem.eql(u8, name, "count")) {
+    if ((std.mem.eql(u8, name, "count") or std.mem.eql(u8, name, "len"))) {
 // zbr:selfhost/typechecker.zbr:840
         return Type_.int_;
     }

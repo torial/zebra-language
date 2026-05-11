@@ -2061,9 +2061,9 @@ const TypeChecker = struct {
                 .{ idx, obj_type.tuple.len });
             return .unknown;
         }
-        // `len` property on strings and StringBuilder → usize (represented as .uint)
+        // `len` property on strings and StringBuilder → int (codegen wraps with @intCast)
         if (std.mem.eql(u8, e.member, "len") and
-            (obj_type == .string or obj_type == .string_builder)) return .uint;
+            (obj_type == .string or obj_type == .string_builder)) return .int;
         // Math constant access: Math.PI, Math.E, Math.TAU, Math.INF, Math.NAN
         if (e.object.* == .ident and std.mem.eql(u8, e.object.ident.name, "Math")) return .float;
         // HttpRequest field access.
@@ -3030,7 +3030,7 @@ const TypeChecker = struct {
         // StringBuilder methods
         if (obj_type == .string_builder) {
             if (std.mem.eql(u8, method, "build")) return .string;
-            if (std.mem.eql(u8, method, "len"))   return .uint;
+            if (std.mem.eql(u8, method, "len"))   return .int;
             return .void_;  // append, appendChar, clear all return void
         }
         // TcpConn methods

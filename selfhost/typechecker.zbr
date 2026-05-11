@@ -836,7 +836,7 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "tokenize" or name == "encodeBase64"
         return Type_.string_
-    if name == "count"
+    if name == "count" or name == "len"
         return Type_.int_
     if name == "indexOf" or name == "lastIndexOf"
         return Type_.optional(Type_.int_)

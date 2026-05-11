@@ -991,8 +991,8 @@ class Parser
                                     const raw_tag: str = .peek().text
                                     .advance()
                                     var tag_val: str = raw_tag
-                                    if raw_tag.codePointCount() >= 2
-                                        tag_val = raw_tag.substring(1, raw_tag.codePointCount() - 1)
+                                    if raw_tag.len >= 2
+                                        tag_val = raw_tag.substring(1, raw_tag.len - 1)
                                     pending_tags.add(tag_val)
                             .expectText(")")
                         .skipEol()
@@ -1329,8 +1329,8 @@ class Parser
                             const raw_tag: str = .peek().text
                             .advance()
                             var tag_val: str = raw_tag
-                            if raw_tag.codePointCount() >= 2
-                                tag_val = raw_tag.substring(1, raw_tag.codePointCount() - 1)
+                            if raw_tag.len >= 2
+                                tag_val = raw_tag.substring(1, raw_tag.len - 1)
                             pending_tags.add(tag_val)
                     .expectText(")")
                 .skipEol()

@@ -6743,9 +6743,10 @@ struct Generator
             w.emit(") catch @panic(\"OOM\")")
             return
         if mname == "len"
-            # sb.len() → sb.items.len (StringBuilder; strings use .len property not method)
+            # sb.len() → @as(i64, @intCast(sb.items.len))
+            w.emit("@as(i64, @intCast(")
             genExpr(m.object)
-            w.emit(".items.len")
+            w.emit(".items.len))")
             return
         if mname == "appendChar"
             # sb.appendChar(c) → sb.append(_allocator, @as(u8, @intCast(c))) catch @panic("OOM")

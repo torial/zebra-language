@@ -7723,9 +7723,10 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "len")) {
-            // sb.len() → sb.items.len
+            // sb.len() → @as(i64, @intCast(sb.items.len))
+            try g.w.writeAll("@as(i64, @intCast(");
             try g.genExpr(object);
-            try g.w.writeAll(".items.len");
+            try g.w.writeAll(".items.len))");
             return true;
         }
         return false;
