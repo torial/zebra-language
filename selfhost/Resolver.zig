@@ -267,6 +267,17 @@ fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     };
     return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
 }
+fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
+    var child = std.process.Child.init(argv.items, _allocator);
+    child.stdin_behavior  = .Inherit;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    const term = child.spawnAndWait() catch return -1;
+    return switch (term) {
+        .Exited => |code| @intCast(code),
+        else    => -1,
+    };
+}
 fn _sys_readline() ?[]const u8 {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
@@ -2434,51 +2445,66 @@ pub const Resolver = struct {
             return true;
         }
 // zbr:selfhost/Resolver.zbr:362
-        if (self.isSimdName(name)) {
+        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
 // zbr:selfhost/Resolver.zbr:363
             return true;
         }
 // zbr:selfhost/Resolver.zbr:364
+        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
+// zbr:selfhost/Resolver.zbr:365
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:366
+        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
+// zbr:selfhost/Resolver.zbr:367
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:368
+        if (self.isSimdName(name)) {
+// zbr:selfhost/Resolver.zbr:369
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:370
         return false;
     }
 
     pub fn isSimdName(self: *Resolver, name: []const u8) bool {
         _ = self;
-// zbr:selfhost/Resolver.zbr:368
-        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
-// zbr:selfhost/Resolver.zbr:369
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:370
-        const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
-// zbr:selfhost/Resolver.zbr:371
-        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
-// zbr:selfhost/Resolver.zbr:372
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:373
-        if (std.mem.eql(u8, parts.items[@intCast(1)], "")) {
 // zbr:selfhost/Resolver.zbr:374
+        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
+// zbr:selfhost/Resolver.zbr:375
             return false;
         }
-// zbr:selfhost/Resolver.zbr:375
-        const prefix = parts.items[@intCast(0)];
 // zbr:selfhost/Resolver.zbr:376
-        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
+        const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/Resolver.zbr:377
-            return true;
-        }
+        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
 // zbr:selfhost/Resolver.zbr:378
-        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+            return false;
+        }
 // zbr:selfhost/Resolver.zbr:379
-            return true;
-        }
+        if (std.mem.eql(u8, parts.items[@intCast(1)], "")) {
 // zbr:selfhost/Resolver.zbr:380
-        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+            return false;
+        }
 // zbr:selfhost/Resolver.zbr:381
+        const prefix = parts.items[@intCast(0)];
+// zbr:selfhost/Resolver.zbr:382
+        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
+// zbr:selfhost/Resolver.zbr:383
             return true;
         }
-// zbr:selfhost/Resolver.zbr:382
+// zbr:selfhost/Resolver.zbr:384
+        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+// zbr:selfhost/Resolver.zbr:385
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:386
+        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+// zbr:selfhost/Resolver.zbr:387
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:388
         return false;
     }
 

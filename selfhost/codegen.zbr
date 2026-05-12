@@ -5493,6 +5493,54 @@ struct Generator
         writeIndent()
         w.emit("}\n")
 
+    # ── allocKind ─────────────────────────────────────────────────────────────
+    # Returns a tag string for the source expr: "arena", "debug", "fixed_buffer",
+    # "stack_fallback", or "user".  Used to select getter and defer cleanup.
+
+    def allocKind(e: Expr): str
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                if id.name == "Arena"
+                    return "arena"
+                if id.name == "Debug"
+                    return "debug"
+                if id.name == "FixedBuffer"
+                    return "fixed_buffer"
+                if id.name == "StackFallback"
+                    return "stack_fallback"
+        return "user"
+
+    # ── genAllocatorSourceInit ────────────────────────────────────────────────
+
+    def genAllocatorSourceInit(e: Expr)
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                if id.name == "Arena"
+                    w.emit("std.heap.ArenaAllocator.init(_allocator)")
+                    return
+                if id.name == "Debug"
+                    w.emit("std.heap.DebugAllocator(.{}){}")
+                    return
+                # FixedBuffer is handled inline in genAllocate (backing buffer needs depth).
+                if id.name == "StackFallback"
+                    w.emit("std.heap.stackFallback(")
+                    if c.args.count() > 0
+                        genExpr(c.args.at(0).value)
+                    else
+                        w.emit("256")
+                    w.emit(", _allocator)")
+                    return
+                if id.name == "Page"
+                    w.emit("std.heap.page_allocator")
+                    return
+                if id.name == "Smp"
+                    w.emit("std.heap.smp_allocator")
+                    return
+                if id.name == "C"
+                    w.emit("std.heap.c_allocator")
+                    return
+        genExpr(e)
+
     # ── genAllocate ───────────────────────────────────────────────────────────
 
     def genAllocate(al: StmtAllocate)
@@ -5503,16 +5551,43 @@ struct Generator
         w.emit("{ // allocate\n")
         var ig = indented()
         if al.is_scoped
+            var kind = allocKind(al.source)
             var src_name = "_alloc_src_".concat(n.toString())
-            ig.writeIndent()
-            ig.w.emit("var ")
-            ig.w.emit(src_name)
-            ig.w.emit(" = ")
-            ig.genExpr(al.source)
-            ig.w.emit(";\n")
+            if kind == "fixed_buffer"
+                # FixedBuffer(N): emit backing buffer line, then init line.
+                # ig.genExpr() writes inline to the shared writer — no temp Writer needed.
+                var backing_name = "_fba_backing_".concat(n.toString())
+                ig.writeIndent()
+                ig.w.emit("var ")
+                ig.w.emit(backing_name)
+                ig.w.emit(": [")
+                if al.source is Expr.call as fbc
+                    if fbc.args.count() > 0
+                        ig.genExpr(fbc.args.at(0).value)
+                    else
+                        ig.w.emit("4096")
+                else
+                    ig.w.emit("4096")
+                ig.w.emit("]u8 = undefined;\n")
+                ig.line("var ".concat(src_name).concat(" = std.heap.FixedBufferAllocator.init(&").concat(backing_name).concat(");"))
+            else
+                ig.writeIndent()
+                ig.w.emit("var ")
+                ig.w.emit(src_name)
+                ig.w.emit(" = ")
+                ig.genAllocatorSourceInit(al.source)
+                ig.w.emit(";\n")
             ig.line("const ".concat(saved_name).concat(" = _allocator;"))
-            ig.line("_allocator = ".concat(src_name).concat(".allocator();"))
-            ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
+            var getter = ".allocator()"
+            if kind == "stack_fallback"
+                getter = ".get()"
+            ig.line("_allocator = ".concat(src_name).concat(getter).concat(";"))
+            if kind == "fixed_buffer" or kind == "stack_fallback"
+                ig.line("defer _allocator = ".concat(saved_name).concat(";"))
+            else if kind == "debug"
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; std.debug.assert(").concat(src_name).concat(".deinit() == .ok); }"))
+            else
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
         else
             ig.writeIndent()
             ig.w.emit("const ")
@@ -5520,7 +5595,7 @@ struct Generator
             ig.w.emit(" = _allocator;\n")
             ig.writeIndent()
             ig.w.emit("_allocator = ")
-            ig.genExpr(al.source)
+            ig.genAllocatorSourceInit(al.source)
             ig.w.emit(";\n")
             ig.line("defer _allocator = ".concat(saved_name).concat(";"))
         ig.genStmts(al.stmts)
@@ -8574,6 +8649,14 @@ struct Generator
             return
         if mname == "run"
             w.emit("_sys_run(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        if mname == "exec_inherit"
+            w.emit("_sys_exec_inherit(")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else

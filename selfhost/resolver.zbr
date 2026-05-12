@@ -359,6 +359,12 @@ class Resolver
             return true
         if name == "Progress" or name == "Profile" or name == "Base64"
             return true
+        if name == "Allocator" or name == "Arena"
+            return true
+        if name == "Debug" or name == "FixedBuffer" or name == "StackFallback"
+            return true
+        if name == "Page" or name == "Smp" or name == "C"
+            return true
         if isSimdName(name)
             return true
         return false

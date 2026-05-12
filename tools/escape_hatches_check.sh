@@ -43,7 +43,9 @@ EXPECTED_PREAMBLE=52
 #   - 1× docstring comment (AstBuilder.zig)
 #   - 4× CodeGen.zig (2× emitted Zig string literals for `_arena` and
 #         `_str_pool` initializers; 2× in surrounding comments)
-EXPECTED_SRC=5
+#   - 1× Builtins.zig comment (Page builtin documentation)
+#   - 1× CodeGen.zig emitted string literal for `Page()` allocate source
+EXPECTED_SRC=7
 
 # ── Count ─────────────────────────────────────────────────────────────────
 

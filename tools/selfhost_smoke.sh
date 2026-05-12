@@ -121,6 +121,7 @@ smoke test/branch_range_test.zbr
 
 # Language features
 smoke test/arena_scope_test.zbr
+smoke test/allocate_slice4_test.zbr
 smoke test/char_tostring_test.zbr
 smoke test/interp_tostring_test.zbr
 smoke test/string_format_test.zbr

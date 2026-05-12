@@ -26,6 +26,7 @@ const Binder      = @import("Binder.zig");
 const Resolver    = @import("Resolver.zig");
 const TypeChecker = @import("TypeChecker.zig");
 const CodeGen     = @import("CodeGen.zig");
+const Debugger    = @import("Debugger.zig");
 
 // ── Version ───────────────────────────────────────────────────────────────────
 //
@@ -60,6 +61,8 @@ const Mode = enum {
     lib_static,
     /// Compile to a shared library (.so / .dll) with C-export wrappers.
     lib_shared,
+    /// Compile with debug info, then start a DAP proxy (lldb-dap backend).
+    debug,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -89,6 +92,8 @@ pub fn main() void {
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "test") and source_path == null) {
             test_mode = true;
+        } else if (std.mem.eql(u8, arg, "debug") and source_path == null) {
+            mode = .debug;
         } else if (std.mem.eql(u8, arg, "-c")) {
             mode = .compile_only;
         } else if (std.mem.eql(u8, arg, "--emit-zig")) {
@@ -142,6 +147,7 @@ pub fn main() void {
             \\  zebra <source-file>                        compile and run
             \\  zebra test <source-file>                   run def test_*() functions
             \\  zebra test --tag <tag> <source-file>       run only tests matching tag
+            \\  zebra debug <source-file>                  compile + start DAP debug proxy (requires lldb-dap)
             \\  zebra -c <source-file>                     compile only
             \\  zebra --emit-zig <source-file>             print Zig source to stdout
             \\  zebra --lib <source-file>                  compile to static library + .h header
@@ -340,6 +346,17 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     // Derive output path: foo/bar.zbr → foo/bar.zig
     const zig_path = try zigPath(path, alloc);
     defer alloc.free(zig_path);
+
+    // Debug mode: emit .zig file then hand off to the DAP proxy.
+    if (mode == .debug) {
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(alloc);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, tag_filter);
+        const zf = try std.fs.cwd().createFile(zig_path, .{});
+        defer zf.close();
+        try zf.writeAll(buf.items);
+        return Debugger.runDebugSession(path, zig_path, c_sources.items, alloc);
+    }
 
     return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, tag_filter, alloc, &imported_modules);
 }
@@ -924,6 +941,7 @@ fn backend(
         .lib_static   => compileLib(false, zig_path, c_sources, release, alloc),
         .lib_shared   => compileLib(true,  zig_path, c_sources, release, alloc),
         .emit_zig     => unreachable, // handled before backend() is called
+        .debug        => unreachable, // handled before backend() is called
     };
 }
 
@@ -1365,4 +1383,5 @@ comptime {
     _ = @import("Resolver.zig");
     _ = @import("TypeChecker.zig");
     _ = @import("CodeGen.zig");
+    _ = @import("Debugger.zig");
 }

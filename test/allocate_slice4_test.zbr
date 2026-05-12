@@ -1,0 +1,41 @@
+# Tests for Slice 4 allocate wrappers:
+# Debug(), FixedBuffer(N), StackFallback(N), Page(), Smp(), C()
+
+def main()
+    # 1. Debug() — scoped, leak-checking; assert(.ok) on scope exit
+    allocate Debug()
+        var s: str = "debug block"
+        assert s == "debug block"
+    print "Debug: OK"
+
+    # 2. FixedBuffer(N) — scoped, fixed-size backing buffer
+    allocate FixedBuffer(256)
+        var msg: str = "fixed buf"
+        assert msg == "fixed buf"
+    print "FixedBuffer: OK"
+
+    # 3. StackFallback(N) — scoped, inline stack with fallback to parent
+    allocate StackFallback(128)
+        var t: str = "stack fallback"
+        assert t == "stack fallback"
+    print "StackFallback: OK"
+
+    # 4. Page() — borrow from std.heap.page_allocator
+    allocate Page()
+        var p: str = "page alloc"
+        assert p == "page alloc"
+    print "Page: OK"
+
+    # 5. Smp() — borrow from std.heap.smp_allocator
+    allocate Smp()
+        var q: str = "smp alloc"
+        assert q == "smp alloc"
+    print "Smp: OK"
+
+    # 6. C() — borrow from std.heap.c_allocator (libc)
+    allocate C()
+        var r: str = "c alloc"
+        assert r == "c alloc"
+    print "C: OK"
+
+    print "allocate Slice 4: all OK"

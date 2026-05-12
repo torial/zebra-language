@@ -5046,9 +5046,9 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "exit")) {
-            try g.w.writeAll("std.process.exit(");
+            try g.w.writeAll("std.process.exit(@intCast(@as(i64, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
-            try g.w.writeAll(")");
+            try g.w.writeAll(") & 0xFF))");
             return true;
         }
         if (std.mem.eql(u8, method, "err")) {
@@ -5077,6 +5077,14 @@ const Generator = struct {
         if (std.mem.eql(u8, method, "run")) {
             // sys.run(argv as List(str)) → _SysRunResult
             try g.w.writeAll("_sys_run(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "exec_inherit")) {
+            // sys.exec_inherit(argv: List(str)) → int
+            // Runs the process with inherited stdin/stdout/stderr; returns exit code.
+            try g.w.writeAll("_sys_exec_inherit(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
             try g.w.writeAll(")");
             return true;
@@ -9024,24 +9032,83 @@ const Generator = struct {
         try g.w.writeAll("}\n");
     }
 
+    const AllocSourceKind = enum { arena, debug, fixed_buffer, stack_fallback, user };
+
+    fn allocSourceKind(e: *const Ast.Expr) AllocSourceKind {
+        if (e.* != .call) return .user;
+        const c = e.call;
+        if (c.callee.* != .ident) return .user;
+        const n = c.callee.ident.name;
+        if (std.mem.eql(u8, n, "Arena"))         return .arena;
+        if (std.mem.eql(u8, n, "Debug"))         return .debug;
+        if (std.mem.eql(u8, n, "FixedBuffer"))   return .fixed_buffer;
+        if (std.mem.eql(u8, n, "StackFallback")) return .stack_fallback;
+        return .user;
+    }
+
+    /// Emit the Zig initializer for a named AllocatorSource wrapper.
+    /// Scoped wrappers (Arena/Debug/FixedBuffer/StackFallback) emit their init expression.
+    /// Borrow-mode singletons (Page/Smp/C) emit their std.heap.* value.
+    /// Falls back to plain `genExpr` for user-defined sources.
+    fn genAllocatorSourceInit(g: Generator, e: *const Ast.Expr) anyerror!void {
+        if (e.* == .call) {
+            const c = e.call;
+            if (c.callee.* == .ident) {
+                const name = c.callee.ident.name;
+                if (std.mem.eql(u8, name, "Arena")) {
+                    try g.w.writeAll("std.heap.ArenaAllocator.init(_allocator)");
+                    return;
+                }
+                if (std.mem.eql(u8, name, "Debug")) {
+                    try g.w.writeAll("std.heap.DebugAllocator(.{}){}");
+                    return;
+                }
+                // FixedBuffer is handled inline in genAllocate (needs a backing
+                // buffer var emitted before the source init, which requires depth).
+                if (std.mem.eql(u8, name, "StackFallback")) {
+                    try g.w.writeAll("std.heap.stackFallback(");
+                    if (c.args.len > 0) try g.genExpr(c.args[0].value) else try g.w.writeAll("256");
+                    try g.w.writeAll(", _allocator)");
+                    return;
+                }
+                if (std.mem.eql(u8, name, "Page")) {
+                    try g.w.writeAll("std.heap.page_allocator");
+                    return;
+                }
+                if (std.mem.eql(u8, name, "Smp")) {
+                    try g.w.writeAll("std.heap.smp_allocator");
+                    return;
+                }
+                if (std.mem.eql(u8, name, "C")) {
+                    try g.w.writeAll("std.heap.c_allocator");
+                    return;
+                }
+            }
+        }
+        try g.genExpr(e);
+    }
+
     /// `allocate <source> eol Block`
     ///
     /// Borrow mode (is_scoped = false):
     ///   { // allocate
     ///     const _parent_alloc_N = _allocator;
-    ///     _allocator = <source>;          // source already IS an Allocator
+    ///     _allocator = <source>;          // singleton or user Allocator value
     ///     defer _allocator = _parent_alloc_N;
     ///     <body>
     ///   }
     ///
-    /// Scoped mode (is_scoped = true, Slice 3+):
+    /// Scoped mode (is_scoped = true):
     ///   { // allocate
-    ///     var _alloc_src_N = <source>;    // AllocatorSource wrapper
+    ///     var _alloc_src_N = <init>;      // AllocatorSource wrapper
     ///     const _parent_alloc_N = _allocator;
-    ///     _allocator = _alloc_src_N.allocator();
-    ///     defer { _allocator = _parent_alloc_N; _alloc_src_N.deinit(); }
+    ///     _allocator = _alloc_src_N.<getter>();
+    ///     defer { _allocator = _parent_alloc_N; [_alloc_src_N.deinit();] }
     ///     <body>
     ///   }
+    ///   getter = .get() for StackFallback; .allocator() for all others
+    ///   deinit = assert(.ok) for Debug; plain .deinit() for Arena/user;
+    ///            omitted for FixedBuffer/StackFallback (stack frame handles cleanup)
     fn genAllocate(g: Generator, s: *Ast.StmtAllocate) anyerror!void {
         const depth = g.arena_depth + 1;
         try g.writeIndent();
@@ -9050,18 +9117,41 @@ const Generator = struct {
         ig.arena_depth = if (s.is_scoped) depth else g.arena_depth;
 
         if (s.is_scoped) {
-            // Scoped: wrap in AllocatorSource, call .allocator() and defer .deinit()
-            try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = ", .{depth});
-            try ig.genExpr(s.source);
-            try ig.w.writeAll(";\n");
+            const kind = allocSourceKind(s.source);
+            if (kind == .fixed_buffer) {
+                // `FixedBuffer(N)` — N is a comptime size; emit the backing buffer first
+                // so genAllocatorSourceInit can reference &_fba_backing_{depth}.
+                const fb_args = s.source.call.args;
+                try ig.writeIndent(); try ig.w.print("var _fba_backing_{d}: [", .{depth});
+                if (fb_args.len > 0) try ig.genExpr(fb_args[0].value) else try ig.w.writeAll("4096");
+                try ig.w.writeAll("]u8 = undefined;\n");
+                try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = std.heap.FixedBufferAllocator.init(&_fba_backing_{d});\n", .{ depth, depth });
+            } else {
+                try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = ", .{depth});
+                try ig.genAllocatorSourceInit(s.source);
+                try ig.w.writeAll(";\n");
+            }
             try ig.writeIndent(); try ig.w.print("const _parent_alloc_{d} = _allocator;\n", .{depth});
-            try ig.writeIndent(); try ig.w.print("_allocator = _alloc_src_{d}.allocator();\n", .{depth});
-            try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; _alloc_src_{d}.deinit(); }}\n", .{ depth, depth });
+            const getter: []const u8 = if (kind == .stack_fallback) ".get()" else ".allocator()";
+            try ig.writeIndent(); try ig.w.print("_allocator = _alloc_src_{d}{s};\n", .{ depth, getter });
+            switch (kind) {
+                .fixed_buffer, .stack_fallback => {
+                    // Stack-allocated source: no deinit needed; restore _allocator only.
+                    try ig.writeIndent(); try ig.w.print("defer _allocator = _parent_alloc_{d};\n", .{depth});
+                },
+                .debug => {
+                    // deinit() returns Check; assert .ok so leaks are caught in debug builds.
+                    try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; std.debug.assert(_alloc_src_{d}.deinit() == .ok); }}\n", .{ depth, depth });
+                },
+                .arena, .user => {
+                    try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; _alloc_src_{d}.deinit(); }}\n", .{ depth, depth });
+                },
+            }
         } else {
-            // Borrow: source is already an Allocator value
+            // Borrow: source is a plain Allocator (user expr or intercepted singleton)
             try ig.writeIndent(); try ig.w.print("const _parent_alloc_{d} = _allocator;\n", .{depth});
             try ig.writeIndent(); try ig.w.writeAll("_allocator = ");
-            try ig.genExpr(s.source);
+            try ig.genAllocatorSourceInit(s.source);
             try ig.w.writeAll(";\n");
             try ig.writeIndent(); try ig.w.print("defer _allocator = _parent_alloc_{d};\n", .{depth});
         }

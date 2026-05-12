@@ -115,6 +115,15 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Profile",       {} },
     // Stdlib Base64 encoding
     .{ "Base64",        {} },
+    // Allocator type and AllocatorSource constructors
+    .{ "Allocator",     {} },  // opaque std.mem.Allocator wrapper
+    .{ "Arena",         {} },  // scoped ArenaAllocator
+    .{ "Debug",         {} },  // scoped DebugAllocator (leak-checking)
+    .{ "FixedBuffer",   {} },  // scoped FixedBufferAllocator (slice-backed)
+    .{ "StackFallback", {} },  // scoped stackFallback (inline stack + fallback)
+    .{ "Page",          {} },  // borrow: std.heap.page_allocator singleton
+    .{ "Smp",           {} },  // borrow: std.heap.smp_allocator singleton
+    .{ "C",             {} },  // borrow: std.heap.c_allocator singleton
 });
 
 /// Generic container types that require explicit initialization as local variables.

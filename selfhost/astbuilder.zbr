@@ -152,6 +152,13 @@ def getObjectIdentName(e: Expr): str?
         else
             return nil
 
+def isScopedAllocatorExpr(e: Expr): bool
+    if e is Expr.call as c
+        if c.callee is Expr.ident as id
+            if id.name == "Arena" or id.name == "Debug" or id.name == "FixedBuffer" or id.name == "StackFallback"
+                return true
+    return false
+
 # ── ASTBuilder ────────────────────────────────────────────────────────────────
 
 class ASTBuilder
@@ -543,7 +550,8 @@ class ASTBuilder
             on PNode.stmt_allocate as pa
                 const source_expr = .buildExpr(pa.source.at(0))?
                 var stmts = .buildStmts(pa.stmts)?
-                return Stmt.allocate_(StmtAllocate(Span(pa.line, 0, pa.line, 0), source_expr, pa.is_scoped, stmts))
+                const is_scoped = isScopedAllocatorExpr(source_expr)
+                return Stmt.allocate_(StmtAllocate(Span(pa.line, 0, pa.line, 0), source_expr, is_scoped, stmts))
 
             on PNode.stmt_copy_out as pco
                 const target_expr = .buildExpr(pco.target.at(0))?

@@ -1708,12 +1708,25 @@ const Builder = struct {
         // kw_allocate Expr eol Block
         const kids       = ch(node);
         const block_kids = ch(kids[3]); // Block → indent StmtList dedent
+        const source = try b.box(Ast.Expr, try b.buildExpr(kids[1]));
         return .{
             .span      = spanOf(node, b.tokens),
-            .source    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
-            .is_scoped = false, // Slice 2: borrow mode only; Slice 3 sets true for named wrappers
+            .source    = source,
+            .is_scoped = isScopedAllocatorExpr(source),
             .body      = try b.buildStmtList(block_kids[1]),
         };
+    }
+
+    fn isScopedAllocatorExpr(e: *const Ast.Expr) bool {
+        if (e.* != .call) return false;
+        const c = e.call;
+        if (c.callee.* != .ident) return false;
+        const name = c.callee.ident.name;
+        // Scoped wrappers own their allocator; Page/Smp/C are borrow-mode singletons.
+        return std.mem.eql(u8, name, "Arena") or
+               std.mem.eql(u8, name, "Debug") or
+               std.mem.eql(u8, name, "FixedBuffer") or
+               std.mem.eql(u8, name, "StackFallback");
     }
 
     fn buildStmtCopyOut(b: Builder, node: TN) anyerror!Ast.StmtCopyOut {

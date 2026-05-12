@@ -2634,9 +2634,10 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "getenv"))   return .unknown; // ?str
                     if (std.mem.eql(u8, mem.member, "readLine")) return .unknown; // ?str
                     if (std.mem.eql(u8, mem.member, "args"))     return .unknown; // List(str)
-                    if (std.mem.eql(u8, mem.member, "run"))      return .sys_run_result;
-                    if (std.mem.eql(u8, mem.member, "cwd"))      return .string;
-                    if (std.mem.eql(u8, mem.member, "exit"))     return .void_;
+                    if (std.mem.eql(u8, mem.member, "run"))          return .sys_run_result;
+                    if (std.mem.eql(u8, mem.member, "exec_inherit")) return .int;
+                    if (std.mem.eql(u8, mem.member, "cwd"))          return .string;
+                    if (std.mem.eql(u8, mem.member, "exit"))         return .void_;
                     if (std.mem.eql(u8, mem.member, "err"))      return .void_;
                     if (std.mem.eql(u8, mem.member, "errln"))    return .void_;
                     return .void_;

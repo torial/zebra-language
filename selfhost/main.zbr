@@ -488,6 +488,25 @@ def main()
                 sys.errln("usage: zebra typecheck-merge <file.zbr>")
                 sys.exit(1)
 
+    # -- debug subcommand --------------------------------------------------
+    # `zebra debug <file.zbr>` — DAP proxy via bootstrap binary.
+    # The selfhost pipeline delegates to zebra-bootstrap.exe (the Zig-native
+    # compiler) which contains src/Debugger.zig, with inherited stdio so the
+    # DAP message stream flows through unchanged.
+
+    if args.positional(0) as debug_pos
+        if debug_pos == "debug"
+            if args.positional(1) as debug_file
+                var dbg_argv: List(str) = List(str)()
+                dbg_argv.add("zig-out/bin/zebra-bootstrap.exe")
+                dbg_argv.add("debug")
+                dbg_argv.add(debug_file)
+                var dbg_rc: int = sys.exec_inherit(dbg_argv)
+                sys.exit(dbg_rc)
+            else
+                sys.errln("usage: zebra debug <file.zbr>")
+                sys.exit(1)
+
     # -- test subcommand ---------------------------------------------------
     # `zebra test <file.zbr>` discovers def test_*() and runs them.
 
@@ -521,6 +540,7 @@ def main()
         sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
         sys.errln("  zebra test <source.zbr>                  run def test_*() functions")
         sys.errln("  zebra test --tag <tag> <source.zbr>      run only tests matching tag")
+        sys.errln("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)")
         sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
