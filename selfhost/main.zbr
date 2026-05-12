@@ -496,15 +496,33 @@ def main()
 
     if args.positional(0) as debug_pos
         if debug_pos == "debug"
-            if args.positional(1) as debug_file
+            # Find the .zbr file (skip --listen PORT if present)
+            var dbg_file: str? = nil
+            var dpi: int = 1
+            while dpi < 10
+                var dp = args.positional(dpi)
+                if dp == nil
+                    break
+                var dpv: str = dp to!
+                if dpv.endsWith(".zbr")
+                    dbg_file = dpv
+                    break
+                dpi = dpi + 1
+            if dbg_file as debug_file
                 var dbg_argv: List(str) = List(str)()
                 dbg_argv.add("zig-out/bin/zebra-bootstrap.exe")
                 dbg_argv.add("debug")
+                # Forward --listen PORT if present
+                if args.contains("--listen")
+                    var listen_val: str = args.option("--listen", "")
+                    if listen_val != ""
+                        dbg_argv.add("--listen")
+                        dbg_argv.add(listen_val)
                 dbg_argv.add(debug_file)
                 var dbg_rc: int = sys.exec_inherit(dbg_argv)
                 sys.exit(dbg_rc)
             else
-                sys.errln("usage: zebra debug <file.zbr>")
+                sys.errln("usage: zebra debug [--listen PORT] <file.zbr>")
                 sys.exit(1)
 
     # -- test subcommand ---------------------------------------------------
@@ -541,6 +559,7 @@ def main()
         sys.errln("  zebra test <source.zbr>                  run def test_*() functions")
         sys.errln("  zebra test --tag <tag> <source.zbr>      run only tests matching tag")
         sys.errln("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)")
+        sys.errln("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)")
         sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")

@@ -83,6 +83,7 @@ pub fn main() void {
     var test_mode: bool = false;
     var tag_filter: ?[]const u8 = null;
     var source_path: ?[]const u8 = null;
+    var listen_port: ?u16 = null;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -94,6 +95,16 @@ pub fn main() void {
             test_mode = true;
         } else if (std.mem.eql(u8, arg, "debug") and source_path == null) {
             mode = .debug;
+        } else if (std.mem.eql(u8, arg, "--listen")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("zebra: --listen requires a port number\n", .{});
+                std.process.exit(1);
+            }
+            listen_port = std.fmt.parseInt(u16, args[i], 10) catch {
+                std.debug.print("zebra: --listen: invalid port '{s}'\n", .{args[i]});
+                std.process.exit(1);
+            };
         } else if (std.mem.eql(u8, arg, "-c")) {
             mode = .compile_only;
         } else if (std.mem.eql(u8, arg, "--emit-zig")) {
@@ -148,6 +159,7 @@ pub fn main() void {
             \\  zebra test <source-file>                   run def test_*() functions
             \\  zebra test --tag <tag> <source-file>       run only tests matching tag
             \\  zebra debug <source-file>                  compile + start DAP debug proxy (requires lldb-dap)
+            \\  zebra debug --listen PORT <source-file>   compile + DAP proxy on TCP port (for custom IDE)
             \\  zebra -c <source-file>                     compile only
             \\  zebra --emit-zig <source-file>             print Zig source to stdout
             \\  zebra --lib <source-file>                  compile to static library + .h header
@@ -167,7 +179,7 @@ pub fn main() void {
     };
     defer alloc.free(src);
 
-    const exit_code = run(src, path, mode, gui_backend, release, turbo, test_mode, tag_filter, alloc) catch |err| {
+    const exit_code = run(src, path, mode, gui_backend, release, turbo, test_mode, tag_filter, listen_port, alloc) catch |err| {
         std.debug.print("internal compiler error: {}\n", .{err});
         std.process.exit(2);
     };
@@ -179,7 +191,7 @@ pub fn main() void {
 /// Run the full pipeline on `src`.  Returns 0 on success, 1 on user-visible
 /// errors, 2 on backend (Zig compiler) errors.
 /// Internal (OOM etc.) errors propagate as Zig errors.
-fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, test_mode: bool, tag_filter: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, test_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
     var tok_diag: Tokenizer.Diag = .{};
     const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
@@ -355,6 +367,9 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         const zf = try std.fs.cwd().createFile(zig_path, .{});
         defer zf.close();
         try zf.writeAll(buf.items);
+        if (listen_port) |port| {
+            return Debugger.runDebugSessionListen(path, zig_path, c_sources.items, port, alloc);
+        }
         return Debugger.runDebugSession(path, zig_path, c_sources.items, alloc);
     }
 

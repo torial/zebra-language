@@ -221,16 +221,49 @@ const DapTransport = struct {
     }
 };
 
+// ── TCP stream wrapper ────────────────────────────────────────────────────────
+
+// Wraps std.net.Stream to provide std.io.AnyReader / AnyWriter.
+// Must be stored at a stable address — do not move it after creating
+// readers/writers from it (the AnyReader/AnyWriter hold a pointer to self).
+const NetStreamWrapper = struct {
+    stream: std.net.Stream,
+
+    fn anyReader(self: *NetStreamWrapper) std.io.AnyReader {
+        return .{ .context = self, .readFn = readFn };
+    }
+
+    fn anyWriter(self: *NetStreamWrapper) std.io.AnyWriter {
+        return .{ .context = self, .writeFn = writeFn };
+    }
+
+    fn readFn(context: *const anyopaque, buffer: []u8) anyerror!usize {
+        const self: *const NetStreamWrapper = @alignCast(@ptrCast(context));
+        return self.stream.read(buffer);
+    }
+
+    fn writeFn(context: *const anyopaque, bytes: []const u8) anyerror!usize {
+        const self: *const NetStreamWrapper = @alignCast(@ptrCast(context));
+        return self.stream.write(bytes);
+    }
+};
+
 // ── Relay thread ──────────────────────────────────────────────────────────────
 
-// Each relay thread owns one DapTransport: it reads from xport.reader
-// (messages arriving on this channel) and writes to xport.writer
-// (the forwarding destination on the same channel).
+// Each relay thread reads from ctx.reader and writes to ctx.writer.
 //
-//   ide_xport  : reader=IDE stdin,     writer=lldb stdin   → ide_to_lldb thread
-//   lldb_xport : reader=lldb stdout,   writer=IDE stdout   → lldb_to_ide thread
+// Stdio mode (runDebugSession):
+//   ide_xport  : reader=IDE stdin,   writer=lldb stdin   → ctx_fwd: reader=writer=ide_xport
+//   lldb_xport : reader=lldb stdout, writer=IDE stdout   → ctx_rev: reader=writer=lldb_xport
+//
+// Listen mode (runDebugSessionListen):
+//   client_xport : reader=IDE TCP,  writer=IDE TCP
+//   lldb_xport   : reader=lldb TCP, writer=lldb TCP
+//   ctx_fwd: reader=client_xport, writer=lldb_xport   (IDE → lldb)
+//   ctx_rev: reader=lldb_xport,   writer=client_xport (lldb → IDE)
 const RelayCtx = struct {
-    xport:     *DapTransport,
+    reader:    *DapTransport,
+    writer:    *DapTransport,
     smap:      *const SourceMap,
     direction: Direction,
     alloc:     std.mem.Allocator,
@@ -246,7 +279,7 @@ fn relayThread(ctx: RelayCtx) void {
         _ = arena.reset(.retain_capacity);
         const a = arena.allocator();
 
-        const body = ctx.xport.readMessage(a) catch |err| {
+        const body = ctx.reader.readMessage(a) catch |err| {
             switch (err) {
                 error.EndOfStream,
                 error.BrokenPipe,
@@ -261,7 +294,7 @@ fn relayThread(ctx: RelayCtx) void {
         };
 
         const out = transform(ctx, body, a) catch body;
-        ctx.xport.writeMessage(out) catch return;
+        ctx.writer.writeMessage(out) catch return;
     }
 }
 
@@ -775,19 +808,191 @@ pub fn runDebugSession(
     );
 
     const ctx_fwd = RelayCtx{
-        .xport     = &ide_xport,
+        .reader    = &ide_xport,
+        .writer    = &ide_xport,
         .smap      = &smap,
         .direction = .ide_to_lldb,
         .alloc     = alloc,
     };
     const ctx_rev = RelayCtx{
-        .xport     = &lldb_xport,
+        .reader    = &lldb_xport,
+        .writer    = &lldb_xport,
         .smap      = &smap,
         .direction = .lldb_to_ide,
         .alloc     = alloc,
     };
 
     // 5. Relay threads + wait.
+    const t1 = try std.Thread.spawn(.{}, relayThread, .{ctx_fwd});
+    const t2 = try std.Thread.spawn(.{}, relayThread, .{ctx_rev});
+    t1.join();
+    t2.join();
+
+    const term = try lldb_child.wait();
+    return switch (term) {
+        .Exited  => |c| c,
+        .Signal  => |_| 1,
+        .Stopped => |_| 1,
+        .Unknown => |_| 1,
+    };
+}
+
+// ── Listen mode entry point ───────────────────────────────────────────────────
+
+/// Run a DAP TCP relay debug session.
+///
+/// Instead of piping stdio to lldb-dap, this function:
+///   - Spawns lldb-dap with `--connection listen://127.0.0.1:<internal>`.
+///   - Binds `ide_port` for the custom IDE to connect to.
+///   - Relays DAP messages between the IDE TCP stream and lldb-dap TCP stream
+///     with the same source remapping as `runDebugSession`.
+///
+/// Usage: zebra debug --listen PORT file.zbr
+pub fn runDebugSessionListen(
+    zbr_path:  []const u8,
+    zig_path:  []const u8,
+    c_sources: []const []u8,
+    ide_port:  u16,
+    alloc:     std.mem.Allocator,
+) !u8 {
+    // 1. Build source map.
+    const zig_src = std.fs.cwd().readFileAlloc(alloc, zig_path, 64 * 1024 * 1024) catch |err| {
+        std.debug.print("zebra debug: cannot read '{s}': {}\n", .{ zig_path, err });
+        return 1;
+    };
+    defer alloc.free(zig_src);
+
+    var smap = SourceMap.init(alloc);
+    defer smap.deinit();
+    try smap.loadFromZigSrc(zig_src);
+    std.debug.print("zebra debug: source map built ({d} zbr files)\n",
+        .{smap.zbr_to_zig.count()});
+
+    // 2. Compile to debug binary.
+    std.debug.print("zebra debug: compiling '{s}'...\n", .{zbr_path});
+    const cc = try compileDebug(zig_path, c_sources, alloc);
+    if (cc != 0) return cc;
+
+    // 3. Find lldb-dap.
+    const lldb_path = findLldbDap(alloc) orelse {
+        std.debug.print(
+            \\zebra debug: lldb-dap not found on PATH.
+            \\
+            \\Install LLDB:
+            \\  Windows : winget install LLVM.LLVM  (then add <LLVM>\bin to PATH)
+            \\  Ubuntu  : sudo apt install lldb
+            \\  macOS   : brew install llvm  OR  xcode-select --install
+            \\
+        , .{});
+        return 1;
+    };
+    defer alloc.free(lldb_path);
+    std.debug.print("zebra debug: using {s}\n", .{lldb_path});
+
+    // 4. Build child env (PATH + LLDB_DISABLE_PYTHON, same as stdio mode).
+    const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
+    var env_map = try std.process.getEnvMap(alloc);
+    defer env_map.deinit();
+    const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
+    const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
+    const sep_str: []const u8 = if (builtin.os.tag == .windows) ";" else ":";
+
+    const py_dir: ?[]u8 = findPythonDir(alloc);
+    defer if (py_dir) |d| alloc.free(d);
+
+    var extra_dirs = std.ArrayListUnmanaged([]const u8){};
+    defer extra_dirs.deinit(alloc);
+    try extra_dirs.append(alloc, lldb_dir);
+    if (py_dir) |d| try extra_dirs.append(alloc, d);
+
+    const extra = try std.mem.join(alloc, sep_str, extra_dirs.items);
+    defer alloc.free(extra);
+    const new_path = try std.fmt.allocPrint(alloc, "{s}{c}{s}", .{ extra, path_sep, old_path });
+    defer alloc.free(new_path);
+    try env_map.put("PATH", new_path);
+    if (builtin.os.tag == .windows and env_map.get("LLDB_DISABLE_PYTHON") == null) {
+        try env_map.put("LLDB_DISABLE_PYTHON", "1");
+    }
+
+    // 5. Pick an OS-assigned internal port for lldb-dap's TCP listener,
+    //    then release it (small race window — acceptable for a local tool).
+    const internal_port: u16 = blk: {
+        var probe = try (try std.net.Address.parseIp4("127.0.0.1", 0)).listen(.{});
+        defer probe.deinit();
+        break :blk probe.listen_address.getPort();
+    };
+
+    // 6. Bind the IDE-facing server so the IDE can connect immediately after
+    //    we print the "listening" message (connections queue in the kernel).
+    var ide_server = try (try std.net.Address.parseIp4("127.0.0.1", ide_port)).listen(.{ .reuse_address = true });
+    defer ide_server.deinit();
+    std.debug.print("zebra debug: listening for IDE on 127.0.0.1:{d}...\n", .{ide_port});
+
+    // 7. Spawn lldb-dap in listen mode.
+    const conn_str = try std.fmt.allocPrint(alloc, "listen://127.0.0.1:{d}", .{internal_port});
+    defer alloc.free(conn_str);
+    const lldb_argv = [_][]const u8{ lldb_path, "--connection", conn_str };
+    var lldb_child = std.process.Child.init(&lldb_argv, alloc);
+    lldb_child.stdin_behavior  = .Ignore;
+    lldb_child.stdout_behavior = .Ignore;
+    lldb_child.stderr_behavior = .Inherit;
+    lldb_child.env_map = &env_map;
+    try lldb_child.spawn();
+
+    // 8. Connect to lldb-dap (retry up to 3 s to allow startup time).
+    const lldb_addr = try std.net.Address.parseIp4("127.0.0.1", internal_port);
+    var lldb_stream: std.net.Stream = blk: {
+        var retries: u32 = 30;
+        while (retries > 0) : (retries -= 1) {
+            const s = std.net.tcpConnectToAddress(lldb_addr) catch |err| {
+                if (retries == 1) return err;
+                std.Thread.sleep(100 * std.time.ns_per_ms);
+                continue;
+            };
+            break :blk s;
+        }
+        unreachable;
+    };
+    defer lldb_stream.close();
+    std.debug.print("zebra debug: connected to lldb-dap on internal port {d}\n", .{internal_port});
+
+    // 9. Accept the IDE connection.
+    const client_conn = try ide_server.accept();
+    defer client_conn.stream.close();
+    std.debug.print("zebra debug: IDE connected\n", .{});
+
+    // 10. Create stream wrappers at stable addresses (pointers held by AnyReader/AnyWriter).
+    var client_wrapper: NetStreamWrapper = .{ .stream = client_conn.stream };
+    var lldb_wrapper:   NetStreamWrapper = .{ .stream = lldb_stream };
+
+    // 11. Cross-linked transports: each transport reads/writes one side.
+    //     ctx_fwd: read IDE  → write lldb  (ide→lldb direction)
+    //     ctx_rev: read lldb → write IDE   (lldb→ide direction)
+    var client_xport = DapTransport.init(
+        client_wrapper.anyReader(),
+        client_wrapper.anyWriter(),
+    );
+    var lldb_xport = DapTransport.init(
+        lldb_wrapper.anyReader(),
+        lldb_wrapper.anyWriter(),
+    );
+
+    const ctx_fwd = RelayCtx{
+        .reader    = &client_xport,
+        .writer    = &lldb_xport,
+        .smap      = &smap,
+        .direction = .ide_to_lldb,
+        .alloc     = alloc,
+    };
+    const ctx_rev = RelayCtx{
+        .reader    = &lldb_xport,
+        .writer    = &client_xport,
+        .smap      = &smap,
+        .direction = .lldb_to_ide,
+        .alloc     = alloc,
+    };
+
+    // 12. Relay threads + wait.
     const t1 = try std.Thread.spawn(.{}, relayThread, .{ctx_fwd});
     const t2 = try std.Thread.spawn(.{}, relayThread, .{ctx_rev});
     t1.join();
