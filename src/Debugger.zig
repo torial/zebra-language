@@ -223,9 +223,14 @@ const DapTransport = struct {
 
 // ── Relay thread ──────────────────────────────────────────────────────────────
 
+// Each relay thread owns one DapTransport: it reads from xport.reader
+// (messages arriving on this channel) and writes to xport.writer
+// (the forwarding destination on the same channel).
+//
+//   ide_xport  : reader=IDE stdin,     writer=lldb stdin   → ide_to_lldb thread
+//   lldb_xport : reader=lldb stdout,   writer=IDE stdout   → lldb_to_ide thread
 const RelayCtx = struct {
-    src:       *DapTransport,
-    dst:       *DapTransport,
+    xport:     *DapTransport,
     smap:      *const SourceMap,
     direction: Direction,
     alloc:     std.mem.Allocator,
@@ -241,7 +246,7 @@ fn relayThread(ctx: RelayCtx) void {
         _ = arena.reset(.retain_capacity);
         const a = arena.allocator();
 
-        const body = ctx.src.readMessage(a) catch |err| {
+        const body = ctx.xport.readMessage(a) catch |err| {
             switch (err) {
                 error.EndOfStream,
                 error.BrokenPipe,
@@ -256,7 +261,7 @@ fn relayThread(ctx: RelayCtx) void {
         };
 
         const out = transform(ctx, body, a) catch body;
-        ctx.dst.writeMessage(out) catch return;
+        ctx.xport.writeMessage(out) catch return;
     }
 }
 
@@ -582,6 +587,36 @@ fn findLldbDap(alloc: std.mem.Allocator) ?[]u8 {
     for (candidates) |name| {
         if (findOnPath(name, alloc)) |p| return p;
     }
+
+    // Fallback: check common install locations not always on PATH.
+    if (is_windows) {
+        const win_dirs = [_][]const u8{
+            "C:\\Program Files\\LLVM\\bin",
+            "C:\\Program Files (x86)\\LLVM\\bin",
+        };
+        for (win_dirs) |dir| {
+            for (candidates) |name| {
+                const full = std.fs.path.join(alloc, &.{ dir, name }) catch continue;
+                defer alloc.free(full);
+                std.fs.cwd().access(full, .{}) catch continue;
+                return alloc.dupe(u8, full) catch null;
+            }
+        }
+    } else {
+        const unix_dirs = [_][]const u8{
+            "/usr/bin",
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+        };
+        for (unix_dirs) |dir| {
+            for (candidates) |name| {
+                const full = std.fs.path.join(alloc, &.{ dir, name }) catch continue;
+                defer alloc.free(full);
+                std.fs.cwd().access(full, .{}) catch continue;
+                return alloc.dupe(u8, full) catch null;
+            }
+        }
+    }
     return null;
 }
 
@@ -596,6 +631,50 @@ fn findOnPath(name: []const u8, alloc: std.mem.Allocator) ?[]u8 {
         defer alloc.free(candidate);
         std.fs.cwd().access(candidate, .{}) catch continue;
         return alloc.dupe(u8, candidate) catch null;
+    }
+    return null;
+}
+
+/// Find the directory containing python311.dll for LLDB's scripting support.
+/// Returns an owned slice the caller must free, or null if not needed / not found.
+fn findPythonDir(alloc: std.mem.Allocator) ?[]u8 {
+    if (builtin.os.tag != .windows) return null;
+
+    // Already on PATH — no extra dir needed.
+    if (findOnPath("python311.dll", alloc)) |p| { alloc.free(p); return null; }
+
+    // Common per-user and system install locations from winget / python.org installer.
+    const local_app_data = std.process.getEnvVarOwned(alloc, "LOCALAPPDATA") catch null;
+    defer if (local_app_data) |d| alloc.free(d);
+
+    const program_files = std.process.getEnvVarOwned(alloc, "ProgramFiles") catch null;
+    defer if (program_files) |d| alloc.free(d);
+
+    var candidates = std.ArrayListUnmanaged([]u8){};
+    defer { for (candidates.items) |c| alloc.free(c); candidates.deinit(alloc); }
+
+    if (local_app_data) |lad| {
+        for ([_][]const u8{ "Python311", "Python3.11" }) |sub| {
+            const p = std.fs.path.join(alloc, &.{ lad, "Programs", "Python", sub }) catch continue;
+            candidates.append(alloc, p) catch { alloc.free(p); };
+        }
+    }
+    if (program_files) |pf| {
+        for ([_][]const u8{ "Python311", "Python3.11" }) |sub| {
+            const p = std.fs.path.join(alloc, &.{ pf, sub }) catch continue;
+            candidates.append(alloc, p) catch { alloc.free(p); };
+        }
+    }
+    for ([_][]const u8{ "C:\\Python311", "C:\\Python3.11" }) |dir| {
+        const p = alloc.dupe(u8, dir) catch continue;
+        candidates.append(alloc, p) catch { alloc.free(p); };
+    }
+
+    for (candidates.items) |dir| {
+        const dll = std.fs.path.join(alloc, &.{ dir, "python311.dll" }) catch continue;
+        defer alloc.free(dll);
+        std.fs.cwd().access(dll, .{}) catch continue;
+        return alloc.dupe(u8, dir) catch null;
     }
     return null;
 }
@@ -648,11 +727,42 @@ pub fn runDebugSession(
     std.debug.print("zebra debug: using {s}\n", .{lldb_path});
 
     // 4. Spawn lldb-dap.
+    // Build a PATH for the child that includes:
+    //   a) lldb-dap's own directory (so liblldb.dll is found)
+    //   b) Python 3.11 directory if installed but not on PATH (so python311.dll is found)
+    const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
+    var env_map = try std.process.getEnvMap(alloc);
+    defer env_map.deinit();
+    const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
+    const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
+
+    const py_dir: ?[]u8 = findPythonDir(alloc);
+    defer if (py_dir) |d| alloc.free(d);
+
+    var extra_dirs = std.ArrayListUnmanaged([]const u8){};
+    defer extra_dirs.deinit(alloc);
+    try extra_dirs.append(alloc, lldb_dir);
+    if (py_dir) |d| try extra_dirs.append(alloc, d);
+
+    const sep_str: []const u8 = if (builtin.os.tag == .windows) ";" else ":";
+    const extra = try std.mem.join(alloc, sep_str, extra_dirs.items);
+    defer alloc.free(extra);
+    const new_path = try std.fmt.allocPrint(alloc, "{s}{c}{s}", .{ extra, path_sep, old_path });
+    defer alloc.free(new_path);
+    try env_map.put("PATH", new_path);
+    // Disable Python scripting in LLDB — avoids a crash on Windows when the
+    // LLVM package's embedded Python ABI doesn't match the installed Python.
+    // None of the source-map remapping or DAP relay logic needs Python.
+    if (builtin.os.tag == .windows and env_map.get("LLDB_DISABLE_PYTHON") == null) {
+        try env_map.put("LLDB_DISABLE_PYTHON", "1");
+    }
+
     const lldb_argv = [_][]const u8{lldb_path};
     var lldb_child = std.process.Child.init(&lldb_argv, alloc);
     lldb_child.stdin_behavior  = .Pipe;
     lldb_child.stdout_behavior = .Pipe;
     lldb_child.stderr_behavior = .Inherit;
+    lldb_child.env_map = &env_map;
     try lldb_child.spawn();
 
     var ide_xport = DapTransport.init(
@@ -665,15 +775,13 @@ pub fn runDebugSession(
     );
 
     const ctx_fwd = RelayCtx{
-        .src       = &ide_xport,
-        .dst       = &lldb_xport,
+        .xport     = &ide_xport,
         .smap      = &smap,
         .direction = .ide_to_lldb,
         .alloc     = alloc,
     };
     const ctx_rev = RelayCtx{
-        .src       = &lldb_xport,
-        .dst       = &ide_xport,
+        .xport     = &lldb_xport,
         .smap      = &smap,
         .direction = .lldb_to_ide,
         .alloc     = alloc,
