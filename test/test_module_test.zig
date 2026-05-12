@@ -267,6 +267,17 @@ fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     };
     return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
 }
+fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
+    var child = std.process.Child.init(argv.items, _allocator);
+    child.stdin_behavior  = .Inherit;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    const term = child.spawnAndWait() catch return -1;
+    return switch (term) {
+        .Exited => |code| @intCast(code),
+        else    => -1,
+    };
+}
 fn _sys_readline() ?[]const u8 {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;

@@ -22,18 +22,22 @@ Open bugs live in `BUGS.md`.
 
 ---
 
-### BUG-117: selfhost — `List.join(sep)` codegen emits inverted arguments — FIXED 2026-05-05
-- **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
-- **Was:** `items.join(sep)` emitted `std.mem.join(_allocator, items, sep.items)` — separator and slices swapped, `.items` on separator.
-- **Fix:** `genMemberCall` `join` arm now emits separator first: `std.mem.join(_allocator, sep, items.items)`.
-- **Test:** `test/bug117_list_join_test.zbr` — joins `["alpha", "beta", "gamma"]` with `", "`.
+### BUG-117: `List.join(sep)` — inverted args in selfhost + TC return type gap in bootstrap — FIXED 2026-05-05 (selfhost) + 2026-05-12 (bootstrap)
+- **Status:** Fixed in both compilers. Bootstrap 5/5, smoke 92/92.
+- **Was (selfhost):** `items.join(sep)` emitted `std.mem.join(_allocator, items, sep.items)` — separator and slices swapped, `.items` on separator.
+- **Fix (selfhost, 2026-05-05):** `genMemberCall` `join` arm now emits separator first: `std.mem.join(_allocator, sep, items.items)`.
+- **Was (bootstrap):** `inferInstanceMethodReturn` didn't handle `join`, so `var x = list.join(sep)` inferred `x` as `.unknown`. Consequently, calling `.split()` on the join result used literal pass-through, emitting `x.split(...)` which doesn't exist on `[]const u8`.
+- **Fix (bootstrap, 2026-05-12):** Added `if (std.mem.eql(u8, method, "join")) return .string;` in `TypeChecker.inferInstanceMethodReturn` so join result is typed `.string`, enabling downstream `.split()` dispatch.
+- **Test:** `test/bug117_list_join_test.zbr` — joins `["alpha", "beta", "gamma"]` with `", "`, then splits newline-joined result.
 
 ---
 
-### BUG-116: selfhost — `char.isAlpha()` / `char.isDigit()` / `char.isWhitespace()` not dispatched — FIXED 2026-05-05
-- **Status:** Fixed. Bootstrap 5/5, smoke 52/52.
-- **Was:** Char methods fell through to pass-through path, emitting invalid `u21.isAlpha()` Zig.
-- **Fix:** Added char dispatch block before the string methods section in `genMemberCall`. Detects `Type_.char_` receiver via `inferExpr` and emits `std.ascii.isAlphabetic(@as(u8, @truncate(c)))` etc. Covers: `isAlpha`, `isDigit`, `isWhitespace`, `isUpper`, `isLower`, `toUpper`, `toLower`. Mirrors `genCharMethod` in `src/CodeGen.zig`.
+### BUG-116: `char.isAlpha()` / `char.isDigit()` / `char.isWhitespace()` + `StringBuilder.appendChar` not dispatched — FIXED 2026-05-05 (selfhost) + 2026-05-12 (bootstrap)
+- **Status:** Fixed in both compilers. Bootstrap 5/5, smoke 92/92.
+- **Was (selfhost):** Char methods fell through to pass-through path, emitting invalid `u21.isAlpha()` Zig.
+- **Fix (selfhost, 2026-05-05):** Added char dispatch block before the string methods section in `genMemberCall`. Detects `Type_.char_` receiver via `inferExpr` and emits `std.ascii.isAlphabetic(@as(u8, @truncate(c)))` etc. Covers: `isAlpha`, `isDigit`, `isWhitespace`, `isUpper`, `isLower`, `toUpper`, `toLower`. Mirrors `genCharMethod` in `src/CodeGen.zig`.
+- **Was (bootstrap):** `StringBuilder()` constructor call returned `.unknown` from `TypeChecker.inferCall` (no special case). So `var sb = StringBuilder()` had inferred type `.unknown`, and `sb.appendChar(...)` fell through to a literal method call — generating `sb.appendChar(...)` which doesn't exist on `std.ArrayList(u8)`. Additionally, the TC-inferred fallback switch in `genExprCall` was missing `.string_builder`.
+- **Fix (bootstrap, 2026-05-12):** Added `StringBuilder()` special case in `TypeChecker.inferCall` (mirrors `CsvWriter`, `CodeEditor`). Added `.string_builder` arm to TC-inferred fallback switch in `src/CodeGen.zig` (line ~10971).
 - **Test:** `test/bug116_char_methods_test.zbr` — counts alpha/digit/space chars, tests isUpper/isLower, verifies toUpper via StringBuilder.
 
 ---

@@ -4337,6 +4337,7 @@ const Generator = struct {
                     .{ "clear", {} }, .{ "contains", {} }, .{ "count", {} },
                     .{ "sort", {} }, .{ "sortBy", {} },
                     .{ "any", {} }, .{ "all", {} }, .{ "find", {} },
+                    .{ "join", {} },
                 });
                 if (list_methods.get(method) != null) {
                     return g.genListMethod(object, false, method, args);
@@ -6567,6 +6568,16 @@ const Generator = struct {
             try g.w.writeAll(", ");
             try g.genExpr(obj);
             try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "join")) {
+            // list.join(sep) → std.mem.join(_allocator, sep, list.items)
+            // Requires List(str); sep is a string literal or variable.
+            try g.w.writeAll("(std.mem.join(_allocator, ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items) catch @panic(\"OOM\"))");
             return true;
         }
         if (std.mem.eql(u8, method, "all")) {
@@ -10957,6 +10968,7 @@ const Generator = struct {
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
                     .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
                     .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
+                    .string_builder => if (try g.genStringBuilderMethod(mem.object, mem.member, e.args)) return,
                     .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     else           => {},
                 }

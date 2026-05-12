@@ -2424,6 +2424,8 @@ const TypeChecker = struct {
                 if (std.mem.eql(u8, ident.name, "CsvWriter")) return .csv_writer;
                 // CodeEditor() bare constructor call.
                 if (std.mem.eql(u8, ident.name, "CodeEditor")) return .code_editor;
+                // StringBuilder() bare constructor call.
+                if (std.mem.eql(u8, ident.name, "StringBuilder")) return .string_builder;
                 if (tc.resolve.exprs.get(ident)) |sym| {
                     _ = try tc.inferExpr(e.callee);
                     if (sym.kind == .method) {
@@ -3161,6 +3163,8 @@ const TypeChecker = struct {
         // unwrap/unwrapOr/okValue/errValue return .unknown (inner type not tracked)
         // toString() on any type → string
         if (std.mem.eql(u8, method, "toString")) return .string;
+        // List.join(sep) → string
+        if (std.mem.eql(u8, method, "join")) return .string;
         // List / HashMap methods
         const count_methods = std.StaticStringMap(void).initComptime(&.{
             .{ "count", {} },
