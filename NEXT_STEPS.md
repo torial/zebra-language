@@ -26,7 +26,7 @@ Everything here must ship before 1.0 stability locks in.
 - [ ] BUG-014 regex per-quantifier lazy/greedy
 - [ ] JSON auto-inference (`Json.parse(T, str)` without `as T`)
 - [ ] gzip compress — **Zig 0.16 now released; unblocked but migration work TBD**
-- [ ] Debugger / DAP
+- [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
 - [ ] Build system in Zebra
 
 **0.13 remaining:**
@@ -148,7 +148,13 @@ in method A + bad expression in method B" cheaply.
   headaches.  Revisit once the Zig upgrade is done.
 - **JSON auto-inference** — `Json.parse(T, str)` without a separate `as T` annotation.
 - **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering.
-- **Debugger / DAP** — not started.
+- **Debugger / DAP** — `zebra debug <file.zbr>` subcommand implemented (commit 18bccac).
+  Full DAP proxy in `src/Debugger.zig`: bidirectional `zbr↔zig` source-map (reads
+  `// zbr:file:line` markers), Content-Length framed JSON transport, two-relay-thread
+  proxy that remaps `setBreakpoints` and `stackTrace` messages between IDE and lldb-dap.
+  Graceful error if lldb-dap not on PATH. Selfhost delegates to `zebra-bootstrap.exe`
+  via `sys.exec_inherit`. **Next:** wire into the custom IDE (IDE/ZebraIDE.zbr); install
+  LLDB on Windows to test end-to-end.
 - **Build system in Zebra** — not started.
 
 ---
