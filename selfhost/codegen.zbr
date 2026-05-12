@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtArenaScope, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -1173,6 +1173,8 @@ def stmtLine(s: Stmt): int
             return ww.span.line
         on Stmt.arena_scope as a
             return a.span.line
+        on Stmt.allocate_ as al
+            return al.span.line
         on Stmt.copy_out as co
             return co.span.line
         on Stmt.guard_ as g
@@ -1572,6 +1574,9 @@ struct Generator
                 if n.name == "StringBuilder"
                     w.emit("std.ArrayList(u8)")
                     return
+                if n.name == "Allocator"
+                    w.emit("std.mem.Allocator")
+                    return
                 if "." in n.name
                     # Dotted cross-module type: Module.ClassName
                     # If ClassName is a class, emit *Module.ClassName
@@ -1765,6 +1770,8 @@ struct Generator
             return "f64"
         if name == "float128"
             return "f128"
+        if name == "Allocator"
+            return "std.mem.Allocator"
         return name
 
     def isStringTypeRef(tr: TypeRef): bool
@@ -2904,6 +2911,8 @@ struct Generator
                         addAddrOfMutationsInStmts(cl.stmts, out)
                 on Stmt.arena_scope as a2
                     addAddrOfMutationsInStmts(a2.stmts, out)
+                on Stmt.allocate_ as al2
+                    addAddrOfMutationsInStmts(al2.stmts, out)
                 on Stmt.copy_out as co2
                     addAddrOfMutationsInExpr(co2.target, out)
                     addAddrOfMutationsInExpr(co2.value, out)
@@ -3101,6 +3110,8 @@ struct Generator
                 genWith(ww)
             on Stmt.arena_scope as a
                 genArenaScope(a)
+            on Stmt.allocate_ as al
+                genAllocate(al)
             on Stmt.copy_out as co
                 genCopyOut(co)
             on Stmt.guard_ as g
@@ -5479,6 +5490,40 @@ struct Generator
         ig.line("_allocator = ".concat(aname).concat(".allocator();"))
         ig.genStmts(a.stmts)
         ig.line("_allocator = ".concat(saved_name).concat(";"))
+        writeIndent()
+        w.emit("}\n")
+
+    # ── genAllocate ───────────────────────────────────────────────────────────
+
+    def genAllocate(al: StmtAllocate)
+        var n = arena_counter
+        arena_counter = arena_counter + 1
+        var saved_name = "_saved_alloc_".concat(n.toString())
+        writeIndent()
+        w.emit("{ // allocate\n")
+        var ig = indented()
+        if al.is_scoped
+            var src_name = "_alloc_src_".concat(n.toString())
+            ig.writeIndent()
+            ig.w.emit("var ")
+            ig.w.emit(src_name)
+            ig.w.emit(" = ")
+            ig.genExpr(al.source)
+            ig.w.emit(";\n")
+            ig.line("const ".concat(saved_name).concat(" = _allocator;"))
+            ig.line("_allocator = ".concat(src_name).concat(".allocator();"))
+            ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
+        else
+            ig.writeIndent()
+            ig.w.emit("const ")
+            ig.w.emit(saved_name)
+            ig.w.emit(" = _allocator;\n")
+            ig.writeIndent()
+            ig.w.emit("_allocator = ")
+            ig.genExpr(al.source)
+            ig.w.emit(";\n")
+            ig.line("defer _allocator = ".concat(saved_name).concat(";"))
+        ig.genStmts(al.stmts)
         writeIndent()
         w.emit("}\n")
 

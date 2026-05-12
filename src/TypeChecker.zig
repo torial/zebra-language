@@ -114,6 +114,10 @@ pub const Type = union(enum) {
     progress_bar,
     /// `CodeEditor` — embeddable code-editor widget (Phase A: backed by inputMultiline).
     code_editor,
+    /// `Allocator` — opaque handle wrapping `std.mem.Allocator`.
+    /// Cannot be constructed directly; obtained via `.allocator()` on an `AllocatorSource`.
+    /// Enables storing and passing allocators as first-class values.
+    allocator_ctx,
 
     // ── SIMD vectors ──────────────────────────────────────────────────────────
     /// A SIMD vector type: `f32x8`, `i16x16`, `u8x32`, etc.
@@ -260,6 +264,7 @@ pub const Type = union(enum) {
             .timer_handle   => b == .timer_handle,
             .progress_bar   => b == .progress_bar,
             .code_editor    => b == .code_editor,
+            .allocator_ctx  => b == .allocator_ctx,
             .json_array     => b == .json_array,
             .tuple => |ea| switch (b) {
                 .tuple => |eb| blk: {
@@ -340,6 +345,7 @@ pub const Type = union(enum) {
             .timer_handle   => "TimerHandle",
             .progress_bar   => "ProgressBar",
             .code_editor    => "CodeEditor",
+            .allocator_ctx  => "Allocator",
             .simd           => "simd<N>",
             .optional       => "?T",
             .tuple          => "tuple",
@@ -1611,6 +1617,7 @@ const TypeChecker = struct {
             .defer_   => |s| try tc.checkStmt(s.body),
             .with        => |s| { _ = try tc.inferExpr(s.target); try tc.checkStmts(s.body); },
             .arena_scope => |s| try tc.checkStmts(s.body),
+            .allocate_   =>|s| { _ = try tc.inferExpr(s.source); try tc.checkStmts(s.body); },
             .copy_out    => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.value); },
             .var_except    => |s| { _ = try tc.inferExpr(s.base); for (s.fields) |f| _ = try tc.inferExpr(f.value); },
             .assign_except => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.base); for (s.fields) |f| _ = try tc.inferExpr(f.value); },
@@ -3579,6 +3586,7 @@ fn simdElemToType(elem: Builtins.ScalarKind) Type {
 
 fn builtinType(n: []const u8) Type {
     if (Builtins.parseSimdType(n)) |si| return .{ .simd = .{ .elem = si.elem, .lanes = si.lanes } };
+    if (std.mem.eql(u8, n, "Allocator"))      return .allocator_ctx;
     if (std.mem.eql(u8, n, "StringBuilder"))  return .string_builder;
     if (std.mem.eql(u8, n, "HttpRequest"))    return .http_request;
     if (std.mem.eql(u8, n, "HttpResponse"))   return .http_response;

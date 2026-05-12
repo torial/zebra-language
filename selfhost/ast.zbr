@@ -425,6 +425,7 @@ union Stmt
     guard_: ^StmtGuard
     destruct: ^StmtDestruct
     arena_scope: ^StmtArenaScope
+    allocate_: ^StmtAllocate
     copy_out: ^StmtCopyOut
     print_: ^StmtPrint
     contract: ^StmtContract
@@ -673,6 +674,18 @@ struct StmtArenaScope
 
     cue init(span: Span, stmts: List(Stmt))
         .span = span
+        .stmts = stmts
+
+struct StmtAllocate
+    var span: Span
+    var source: Expr
+    var is_scoped: bool
+    var stmts: List(Stmt)
+
+    cue init(span: Span, source: Expr, is_scoped: bool, stmts: List(Stmt))
+        .span = span
+        .source = source
+        .is_scoped = is_scoped
         .stmts = stmts
 
 struct StmtCopyOut

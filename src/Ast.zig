@@ -343,8 +343,9 @@ pub const Stmt = union(enum) {
     try_catch: *StmtTryCatch,     // try eol Block CatchClauseList
     guard: *StmtGuard,            // guard cond else { block | stmt }
     destruct: *StmtDestruct,      // var (x, y) = expr
-    arena_scope: *StmtArenaScope, // arena eol Block — scoped sub-arena
-    copy_out: *StmtCopyOut,      // lhs <- rhs — copy rhs out of the current arena
+    arena_scope: *StmtArenaScope,   // arena eol Block — scoped sub-arena
+    allocate_: *StmtAllocate,       // allocate <expr> eol Block — redirect _allocator
+    copy_out: *StmtCopyOut,         // lhs <- rhs — copy rhs out of the current arena
 };
 
 pub const StmtIf = struct {
@@ -488,6 +489,17 @@ pub const StmtWith = struct {
 pub const StmtArenaScope = struct {
     span: Span,
     body: []const Stmt,
+};
+
+/// `allocate <source> eol Block` — redirect the implicit `_allocator` to the
+/// value produced by `source` for the duration of `body`, then restore.
+/// `is_scoped = true` means the source owns its allocator (calls `.deinit()` on exit).
+/// `is_scoped = false` (borrow mode): only saves/restores `_allocator`; no cleanup.
+pub const StmtAllocate = struct {
+    span:      Span,
+    source:    *Expr,   // the AllocatorSource (or plain Allocator in borrow mode)
+    is_scoped: bool,    // true → calls source.deinit() on exit; false → borrow only
+    body:      []const Stmt,
 };
 
 /// `lhs <- rhs` — arena copy-out: duplicate rhs from the current sub-arena into the

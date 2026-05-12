@@ -1199,6 +1199,7 @@ const Builder = struct {
             .StmtDefer    => .{ .defer_    = try b.box(Ast.StmtDefer,    try b.buildStmtDefer(inner)) },
             .StmtWith       => .{ .with        = try b.box(Ast.StmtWith,       try b.buildStmtWith(inner)) },
             .StmtArenaScope => .{ .arena_scope = try b.box(Ast.StmtArenaScope, try b.buildStmtArenaScope(inner)) },
+            .StmtAllocate   => .{ .allocate_   = try b.box(Ast.StmtAllocate,   try b.buildStmtAllocate(inner)) },
             .StmtCopyOut    => .{ .copy_out    = try b.box(Ast.StmtCopyOut,    try b.buildStmtCopyOut(inner)) },
             .StmtRaise    => .{ .raise     = try b.box(Ast.StmtRaise,    try b.buildStmtRaise(inner)) },
             // StmtTryCatch is no longer a grammar-level statement;
@@ -1700,6 +1701,18 @@ const Builder = struct {
         return .{
             .span = spanOf(node, b.tokens),
             .body = try b.buildStmtList(block_kids[1]),
+        };
+    }
+
+    fn buildStmtAllocate(b: Builder, node: TN) anyerror!Ast.StmtAllocate {
+        // kw_allocate Expr eol Block
+        const kids       = ch(node);
+        const block_kids = ch(kids[3]); // Block → indent StmtList dedent
+        return .{
+            .span      = spanOf(node, b.tokens),
+            .source    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            .is_scoped = false, // Slice 2: borrow mode only; Slice 3 sets true for named wrappers
+            .body      = try b.buildStmtList(block_kids[1]),
         };
     }
 

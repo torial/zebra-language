@@ -58,6 +58,7 @@ union PNode
     stmt_expr: ^PNode
     stmt_print: ^PNode
     stmt_arena_scope: ^PArenaScope
+    stmt_allocate: ^PAllocate
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
     stmt_guard: ^PGuard
@@ -338,6 +339,17 @@ struct PArenaScope
     var line: int
     cue init(stmts: List(PNode), line: int)
         .stmts = stmts
+        .line = line
+
+struct PAllocate
+    var source: List(PNode)
+    var stmts: List(PNode)
+    var is_scoped: bool
+    var line: int
+    cue init(source: List(PNode), stmts: List(PNode), is_scoped: bool, line: int)
+        .source = source
+        .stmts = stmts
+        .is_scoped = is_scoped
         .line = line
 
 struct PCopyOut
@@ -640,7 +652,7 @@ class Parser
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
         # Used to distinguish `on Pat, print "stmt"` from `on Pat1, Pat2`.
-        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|filter|defer|"
+        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|allocate|filter|defer|"
         var needle = "|" + text + "|"
         return needle in kws
 
@@ -1545,6 +1557,8 @@ class Parser
             return .parseBranchStmt()
         else if .textIs("arena")
             return .parseArenaScopeStmt()
+        else if .textIs("allocate")
+            return .parseAllocateStmt()
         else if .textIs("with")
             return .parseWithStmt()
         else if .textIs("guard")
@@ -1686,6 +1700,16 @@ class Parser
         .skipEol()
         const stmts = .parseBlock()
         return PNode.stmt_arena_scope(PArenaScope(stmts, line))
+
+    def parseAllocateStmt(): PNode throws
+        const line = .peek().line
+        .expectText("allocate")
+        const source_expr = .parseExpr()
+        .skipEol()
+        const stmts = .parseBlock()
+        var source_list = List(PNode)()
+        source_list.add(source_expr)
+        return PNode.stmt_allocate(PAllocate(source_list, stmts, false, line))
 
     def parseWithStmt(): PNode throws
         const line = .peek().line

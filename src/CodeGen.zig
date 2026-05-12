@@ -431,6 +431,7 @@ fn refsInStmt(stmt: Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerr
         .contract  => |s| { for (s.exprs) |e| try refsInExpr(e, r, o); },
         .with        => |s| { try refsInExpr(s.target, r, o); try refsInStmts(s.body, r, o); },
         .arena_scope => |s| try refsInStmts(s.body, r, o),
+        .allocate_   => |s| { try refsInExpr(s.source, r, o); try refsInStmts(s.body, r, o); },
         .copy_out    => |s| { try refsInExpr(s.target, r, o); try refsInExpr(s.value, r, o); },
         .var_except    => |s| { try refsInExpr(s.base, r, o); for (s.fields) |f| try refsInExpr(f.value, r, o); },
         .assign_except => |s| { try refsInExpr(s.target, r, o); try refsInExpr(s.base, r, o); for (s.fields) |f| try refsInExpr(f.value, r, o); },
@@ -494,6 +495,7 @@ fn bodyHasRaise(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckRe
             },
             .with        => |s| if (bodyHasRaise(s.body, tc_opt)) return true,
             .arena_scope => |s| if (bodyHasRaise(s.body, tc_opt)) return true,
+            .allocate_   => |s| if (bodyHasRaise(s.body, tc_opt)) return true,
             .copy_out    => {},
             .defer_  => |s| return bodyHasRaise(&.{s.body}, tc_opt),
             .guard   => |s| { if (exprHasTry(s.cond, tc_opt)) return true; if (bodyHasRaise(s.else_body, tc_opt)) return true; },
@@ -540,6 +542,7 @@ fn bodyNeedsErrVar(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeChec
             },
             .with        => |s| if (bodyNeedsErrVar(s.body, tc_opt)) return true,
             .arena_scope => |s| if (bodyNeedsErrVar(s.body, tc_opt)) return true,
+            .allocate_   => |s| if (bodyNeedsErrVar(s.body, tc_opt)) return true,
             .copy_out    => {},
             .defer_  => |s| return bodyNeedsErrVar(&.{s.body}, tc_opt),
             .guard   => |s| { if (exprHasTry(s.cond, tc_opt)) return true; if (bodyNeedsErrVar(s.else_body, tc_opt)) return true; },
@@ -897,6 +900,7 @@ fn seedEscapedFromReturns(stmts: []const Ast.Stmt, set: *std.StringHashMap(void)
             },
             .with        => |s| try seedEscapedFromReturns(s.body, set),
             .arena_scope => |s| try seedEscapedFromReturns(s.body, set),
+            .allocate_   => |s| try seedEscapedFromReturns(s.body, set),
             .copy_out    => {},
             .try_catch => |s| {
                 try seedEscapedFromReturns(s.body, set);
@@ -957,6 +961,7 @@ fn propagateEscapesOnce(stmts: []const Ast.Stmt, set: *std.StringHashMap(void)) 
             },
             .with        => |s| { if (try propagateEscapesOnce(s.body, set)) grew = true; },
             .arena_scope => |s| { if (try propagateEscapesOnce(s.body, set)) grew = true; },
+            .allocate_   => |s| { if (try propagateEscapesOnce(s.body, set)) grew = true; },
             .copy_out    => {},
             .try_catch => |s| {
                 if (try propagateEscapesOnce(s.body, set)) grew = true;
@@ -1042,6 +1047,7 @@ fn scanMutationsInto(
                 try scanMutationsInto(s.body, set, tc_opt);
             },
             .arena_scope => |s| try scanMutationsInto(s.body, set, tc_opt),
+            .allocate_   => |s| try scanMutationsInto(s.body, set, tc_opt),
             .copy_out    => |s| {
                 // The target is being mutated (assigned to).
                 if (s.target.* == .ident) try set.put(s.target.ident.name, {});
@@ -1276,6 +1282,7 @@ fn addAddrOfMutationsInStmts(
                 for (s.clauses) |cl| try addAddrOfMutationsInStmts(cl.body, set, alloc, tc_opt, resolve);
             },
             .arena_scope => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
+            .allocate_   => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
             .copy_out    => |s| { try addAddrOfMutationsInExpr(s.target, set, alloc, tc_opt, resolve); try addAddrOfMutationsInExpr(s.value, set, alloc, tc_opt, resolve); },
             .with => |s| try addAddrOfMutationsInStmts(s.body, set, alloc, tc_opt, resolve),
             .guard => |s| try addAddrOfMutationsInStmts(s.else_body, set, alloc, tc_opt, resolve),
@@ -1408,6 +1415,7 @@ fn nameUsedInStmt(name: []const u8, stmt: Ast.Stmt) bool {
         .guard       => |s| nameUsedInExpr(name, s.cond) or nameUsedInStmts(name, s.else_body),
         .destruct    => |s| nameUsedInExpr(name, s.init),
         .arena_scope => |s| nameUsedInStmts(name, s.body),
+        .allocate_   => |s| nameUsedInExpr(name, s.source) or nameUsedInStmts(name, s.body),
         .copy_out    => |s| nameUsedInExpr(name, s.target) or nameUsedInExpr(name, s.value),
         else         => false,
     };
@@ -3770,6 +3778,7 @@ const Generator = struct {
             .guard         => |s| s.span,
             .destruct      => |s| s.span,
             .arena_scope   => |s| s.span,
+            .allocate_     => |s| s.span,
             .copy_out      => |s| s.span,
             .pass, .break_, .continue_, .contract => null,
         };
@@ -3916,6 +3925,7 @@ const Generator = struct {
             .contract  => {}, // contracts not emitted (runtime verification out of scope)
             .with        => |s| try g.genWith(s),
             .arena_scope => |s| try g.genArenaScope(s),
+            .allocate_   => |s| try g.genAllocate(s),
             .copy_out    => |s| try g.genCopyOut(s),
             .var_except    => |s| try g.genVarExcept(s),
             .assign_except => |s| try g.genAssignExcept(s),
@@ -9014,6 +9024,53 @@ const Generator = struct {
         try g.w.writeAll("}\n");
     }
 
+    /// `allocate <source> eol Block`
+    ///
+    /// Borrow mode (is_scoped = false):
+    ///   { // allocate
+    ///     const _parent_alloc_N = _allocator;
+    ///     _allocator = <source>;          // source already IS an Allocator
+    ///     defer _allocator = _parent_alloc_N;
+    ///     <body>
+    ///   }
+    ///
+    /// Scoped mode (is_scoped = true, Slice 3+):
+    ///   { // allocate
+    ///     var _alloc_src_N = <source>;    // AllocatorSource wrapper
+    ///     const _parent_alloc_N = _allocator;
+    ///     _allocator = _alloc_src_N.allocator();
+    ///     defer { _allocator = _parent_alloc_N; _alloc_src_N.deinit(); }
+    ///     <body>
+    ///   }
+    fn genAllocate(g: Generator, s: *Ast.StmtAllocate) anyerror!void {
+        const depth = g.arena_depth + 1;
+        try g.writeIndent();
+        try g.w.writeAll("{ // allocate\n");
+        var ig = g.indented();
+        ig.arena_depth = if (s.is_scoped) depth else g.arena_depth;
+
+        if (s.is_scoped) {
+            // Scoped: wrap in AllocatorSource, call .allocator() and defer .deinit()
+            try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = ", .{depth});
+            try ig.genExpr(s.source);
+            try ig.w.writeAll(";\n");
+            try ig.writeIndent(); try ig.w.print("const _parent_alloc_{d} = _allocator;\n", .{depth});
+            try ig.writeIndent(); try ig.w.print("_allocator = _alloc_src_{d}.allocator();\n", .{depth});
+            try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; _alloc_src_{d}.deinit(); }}\n", .{ depth, depth });
+        } else {
+            // Borrow: source is already an Allocator value
+            try ig.writeIndent(); try ig.w.print("const _parent_alloc_{d} = _allocator;\n", .{depth});
+            try ig.writeIndent(); try ig.w.writeAll("_allocator = ");
+            try ig.genExpr(s.source);
+            try ig.w.writeAll(";\n");
+            try ig.writeIndent(); try ig.w.print("defer _allocator = _parent_alloc_{d};\n", .{depth});
+        }
+
+        try ig.genStmts(s.body);
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
     /// `lhs <- rhs` — arena copy-out.
     ///
     /// Inside an arena block (arena_depth > 0), str values are duplicated into the
@@ -11873,6 +11930,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .timer_handle,
         .progress_bar,
         .code_editor,
+        .allocator_ctx,
         .simd,
         .optional,
         .tuple,
@@ -12021,6 +12079,7 @@ fn zigTypeNameOf(t: TypeChecker.Type) []const u8 {
         .char           => "u21",
         .string         => "[]const u8",
         .void_          => "void",
+        .allocator_ctx  => "std.mem.Allocator",
         .int_n   => |b| switch (b) { 8 => "i8", 16 => "i16", 32 => "i32", 64 => "i64", 128 => "i128", else => "i64" },
         .uint_n  => |b| switch (b) { 8 => "u8", 16 => "u16", 32 => "u32", 64 => "u64", 128 => "u128", else => "u64" },
         .float_n => |b| switch (b) { 16 => "f16", 32 => "f32", 64 => "f64", 128 => "f128", else => "f64" },

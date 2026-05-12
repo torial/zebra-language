@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp
 
 def zspan(): Span
@@ -539,6 +539,11 @@ class ASTBuilder
             on PNode.stmt_arena_scope as pas
                 var stmts = .buildStmts(pas.stmts)?
                 return Stmt.arena_scope(StmtArenaScope(Span(pas.line, 0, pas.line, 0), stmts))
+
+            on PNode.stmt_allocate as pa
+                const source_expr = .buildExpr(pa.source.at(0))?
+                var stmts = .buildStmts(pa.stmts)?
+                return Stmt.allocate_(StmtAllocate(Span(pa.line, 0, pa.line, 0), source_expr, pa.is_scoped, stmts))
 
             on PNode.stmt_copy_out as pco
                 const target_expr = .buildExpr(pco.target.at(0))?

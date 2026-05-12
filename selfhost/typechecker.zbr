@@ -89,6 +89,7 @@ union Type_
     string_builder
     regex
     str_set
+    allocator_ctx
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -353,6 +354,8 @@ def typeFromName(n: str): Type_
         return Type_.regex
     if n == "StrSet"
         return Type_.str_set
+    if n == "Allocator"
+        return Type_.allocator_ctx
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)
@@ -1533,6 +1536,9 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 ctx.bind(nm_s, ftype)
         on Stmt.arena_scope as sas
             walkStmts(sas.stmts, ctx)
+        on Stmt.allocate_ as sal
+            walkExpr(sal.source, ctx)
+            walkStmts(sal.stmts, ctx)
         on Stmt.copy_out as sco
             walkExpr(sco.target, ctx)
             walkExpr(sco.value, ctx)
@@ -1740,6 +1746,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sg.else_stmts, file, ctx)
             on Stmt.arena_scope as sas
                 checkStmts(sas.stmts, file, ctx)
+            on Stmt.allocate_ as sal
+                checkStmts(sal.stmts, file, ctx)
             else
                 pass
 

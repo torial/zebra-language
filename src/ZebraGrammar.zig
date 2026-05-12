@@ -186,6 +186,9 @@ pub const NT = enum {
     // ── scoped arena allocation block ─────────────────────────────────────
     StmtArenaScope,   // arena eol Block
 
+    // ── general allocator-context block ───────────────────────────────────
+    StmtAllocate,     // allocate Expr eol Block
+
     // ── arena copy-out operator ────────────────────────────────────────────
     StmtCopyOut,      // Expr <- Expr eol
 
@@ -816,6 +819,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDefer) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWith) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtArenaScope) } },
+    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAllocate) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtCopyOut) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtRaise) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtGuard) } },
@@ -961,7 +965,8 @@ const stmt_rules: []const Rule = &.{
 
     // with obj eol Block — contextual self
     .{ .lhs = .StmtWith,       .rhs = &.{ t(.kw_with),  n(.Expr), t(.eol), n(.Block) } },
-    .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),   t(.eol), n(.Block) } },
+    .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),    t(.eol), n(.Block) } },
+    .{ .lhs = .StmtAllocate,   .rhs = &.{ t(.kw_allocate), n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtCopyOut,   .rhs = &.{ n(.Expr), t(.left_arrow), n(.Expr), t(.eol) } },
     .{ .lhs = .StmtRequire,   .rhs = &.{ t(.kw_require), t(.eol), n(.Block) } },
     .{ .lhs = .StmtEnsure,    .rhs = &.{ t(.kw_ensure),  t(.eol), n(.Block) } },

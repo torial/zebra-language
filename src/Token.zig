@@ -298,6 +298,7 @@ pub const TokenKind = enum {
 
     // Scoped arena allocation
     kw_arena,     // arena block — creates a sub-arena that frees all allocations on exit
+    kw_allocate,  // allocate <expr> block — redirect _allocator for the duration of the block
 
     // Guard statements
     kw_guard,     // guard cond else stmt/block — early-exit pattern
@@ -404,7 +405,8 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "throws",      .kw_throws },
     .{ "try",         .kw_try    },
     .{ "where",       .kw_where  },
-    .{ "arena",       .kw_arena  },
+    .{ "arena",       .kw_arena     },
+    .{ "allocate",    .kw_allocate  },
 });
 
 // ── Token (source-annotated) ──────────────────────────────────────────────────
