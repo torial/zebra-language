@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-13 (add §17 1.5 WASM target + web frontend SDK; expand §22 2.0 WASM track)
+**Last updated:** 2026-05-13 (tuple/multi-return + ImGui LowLevel field design)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -24,6 +24,7 @@ Everything here must ship before 1.0 stability locks in.
 - [x] REPL — `zebra repl` subcommand; accumulate-and-rerun model; sentinel output isolation; :help/:clear/:history/:load/:save; selfhost delegates to bootstrap (2026-05-13)
 - [ ] Real ImGui backend completion (`LowLevel` sub-API + any remaining rendering gaps)
 - [x] JSON auto-inference — `Json.parse(T, src)` typed overload routes to `parseStrict` machinery; `@reflectable` required; both backends; bootstrap 5/5 (2026-05-13)
+- [x] Tuple/multi-return — `(T1, T2)` type, `(a, b)` literal, `var (x, y) = f()` destructure, `.0`/`.1` index; TC element-type registration; 93/93 smoke; bootstrap 5/5 (2026-05-13)
 - [ ] gzip compress — **blocked on Zig 0.16 upgrade** (see below)
 - [ ] Zig 0.16 upgrade — unblocks gzip; compile-performance improvements help REPL latency
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)

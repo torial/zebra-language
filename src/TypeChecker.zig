@@ -1668,6 +1668,15 @@ const TypeChecker = struct {
                                 try tc.emitError(s.span,
                                     "destructuring expects {} names but tuple has {} elements",
                                     .{ s.names.len, init_type.tuple.len });
+                            // Register each binding's type so that subsequent
+                            // statements (e.g. `print s`) get the right format specifier.
+                            for (s.names, 0..) |bname, i| {
+                                if (i < init_type.tuple.len) {
+                                    const etype = init_type.tuple[i];
+                                    if (!etype.isAbstract())
+                                        try tc.loop_var_types.put(bname, etype);
+                                }
+                            }
                         } else if (!init_type.isAbstract()) {
                             try tc.emitError(s.span,
                                 "destructuring requires a tuple, got '{s}'", .{init_type.name()});

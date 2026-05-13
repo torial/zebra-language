@@ -1111,9 +1111,9 @@ are deferred.
     is silently dropped (deferred work).  Only list `.items` iteration is fully
     supported.
 
-12. **`arena` block — strings/slices allocated inside do NOT survive the block:**
+12. **`allocate` block — strings/slices allocated inside a scoped block do NOT survive it:**
     ```zebra
-    arena
+    allocate Arena()
         var src = File.read("data.txt")
         var words = src.split(" ")
         process(words)
@@ -1123,100 +1123,132 @@ are deferred.
     (string concat, List addition, etc. all allocate into the outer arena):
     ```zebra
     var summary = ""
-    arena
+    allocate Arena()
         var src = File.read("data.txt")
         summary = summarise(src)     # copies result into outer arena
     print summary                    # safe
     ```
+    `arena` still works as legacy sugar for `allocate Arena()`.  New code
+    should prefer the explicit form.
 
 13. **CRLF line endings crash the tokenizer.**  `.zbr` files must use LF only.
     A `\r` produces `unexpected '\r' (CRLF line endings — convert to LF)`.
 
 ---
 
-## 28. Memory model and the `arena` block
+## 28. Memory model and `allocate` blocks
 
 Zebra uses a single program-wide `ArenaAllocator`.  All allocations (strings,
 lists, class instances) live until program exit.  You never free individual
 values; the arena cleans up everything at once.  This makes memory management
 invisible for typical programs.
 
-### When you need bounded-scope memory: `arena`
+### When you need bounded-scope memory: `allocate`
 
-The `arena` keyword creates a scoped sub-arena.  On exit the sub-arena is
-destroyed — everything allocated inside it is freed, and `_allocator` reverts
-to the parent arena.
+The `allocate <expr>` block redirects `_allocator` to any `AllocatorSource`-
+compatible value for the duration of a lexical scope.  On exit the allocator
+is cleaned up (if scoped) and `_allocator` reverts to the parent.
 
 ```zebra
-arena
+allocate Arena()
     var src = File.read("big_file.txt")
     var parsed = parse(src)
     result = extract_summary(parsed)  # copies into parent arena
 # big_file.txt buffer + all parse temporaries freed here
 ```
 
+**Named allocator wrappers** (all implement `AllocatorSource`):
+
+| Name | Zig backing | Scoped? | Notes |
+|------|-------------|---------|-------|
+| `Arena()` | `std.heap.ArenaAllocator` | ✓ | general sub-arena; most common choice |
+| `Debug()` | `std.heap.DebugAllocator` | ✓ | leak detection; `GeneralPurposeAllocator` alias |
+| `Page()` | `std.heap.page_allocator` | ✗ | singleton; no cleanup needed |
+| `Smp()` | `std.heap.smp_allocator` | ✗ | thread-safe singleton; no cleanup |
+| `C()` | `std.heap.c_allocator` | ✗ | libc malloc/free; no cleanup |
+| `FixedBuffer(buf)` | `std.heap.FixedBufferAllocator` | ✓ | `buf` is a `[]byte` |
+| `ThreadSafe(inner)` | `std.heap.ThreadSafeAllocator` | ✓ | wraps another `AllocatorSource` |
+| `Pool(T)()` | `std.heap.MemoryPool(T)` | ✓ | single-type pool |
+| `StackFallback(N)()` | `std.heap.stackFallback(N, _allocator)` | ✓ | stack-first, spills to parent |
+
+You can also pass any class that implements `AllocatorSource` (`def allocator(): Allocator` + `def deinit()`).
+
 Typical uses:
-- **Large file processing in a loop** — read, process, discard each file's
-  memory before reading the next.
-- **Compute-intensive stdlib use** — regex matches, heavy string transforms —
-  where intermediate allocations would otherwise accumulate.
+- **Large file processing in a loop** — `allocate Arena()` each iteration to discard
+  temporaries before reading the next file.
+- **Leak detection during development** — swap in `allocate Debug()` to catch
+  unmatched allocations.
+- **Stack-local scratch** — `allocate StackFallback(4096)()` avoids heap for small work.
 - **Any batch operation** where you want to bound peak memory usage.
 
-### What does NOT survive an `arena` block
+### What does NOT survive a scoped `allocate` block
 
-Any `str`, `List`, or class instance allocated inside the block is freed when
+Any `str`, `List`, or class instance allocated inside a scoped block is freed when
 the block exits.  If you store a reference to it in an outer variable, that
 reference becomes dangling.
 
 ```zebra
 # Safe pattern:
 var name = ""
-arena
+allocate Arena()
     var src = File.read("config.txt")
     name = parse_name(src)            # _str_concat call copies into outer arena
 
 # Unsafe — DO NOT DO THIS:
 var ptr_into_block: str
-arena
+allocate Arena()
     var src = File.read("config.txt")
-    ptr_into_block = src              # WRONG: src freed when arena exits
+    ptr_into_block = src              # WRONG: src freed when block exits
 print ptr_into_block                  # dangling slice — undefined behaviour
 ```
 
-### `<-` arena copy-out operator
+Non-scoped wrappers (`Page()`, `Smp()`, `C()`) do not free on exit, so values
+allocated inside survive naturally; `<-` degenerates to plain assignment for these.
 
-The `<-` operator copies a value from the inner arena into the parent arena
-and assigns it to an outer variable — surviving the arena's deinit:
+### `<-` copy-out operator
+
+The `<-` operator copies a value from the inner allocator into the parent arena
+and assigns it to an outer variable — surviving the block's deinit:
 
 ```zebra
 var result: str = ""
-arena
+allocate Arena()
     var src = File.read("big_file.txt")
     var summary = process(src)
     result <- summary           # copies 'summary' into the parent arena
 # src + all temporaries freed here; 'result' is safe
 
-# Outside any arena: <- is a plain assignment (no copy needed)
+# Outside any allocate block: <- is a plain assignment (no copy needed)
 var x: str = ""
 x <- "hello"                    # equivalent to x = "hello"
 ```
 
-- **`str`:** the value is duplicated into the parent allocator
-  (`_parent_alloc.dupe(u8, value)`), so it survives the sub-arena deinit.
+- **`str`:** duplicated into the parent allocator so it survives the block's deinit.
 - **Primitives (`int`, `float`, `bool`):** plain assignment — no heap involved.
-- **Outside an `arena` block:** falls back to plain assignment (`<-` = `=`).
-- **Classes and `List`:** prototype scope only covers `str` + primitives.
-  Full deep-copy for heap-allocated types is deferred to 0.14.
+- **Outside a scoped block (or with a non-scoped wrapper):** plain assignment.
+- **Classes and `List`:** `str` + primitives only for now; full deep-copy deferred to 0.14.
 
-The `<-` idiom replaces the previous `"" + str_value` magic-concat escape;
-use `<-` in new code.
+### `arena` — legacy sugar
+
+`arena` is still accepted and equivalent to `allocate Arena()`.  Existing code
+continues to work.  New code should prefer `allocate Arena()` for consistency
+with the other named wrappers.
+
+```zebra
+# These are equivalent:
+arena
+    process(data)
+
+allocate Arena()
+    process(data)
+```
 
 ### Why individual `free` calls are absent
 
 Unlike Zig or C, Zebra never emits `defer allocator.free(x)` for local string
 variables.  With `ArenaAllocator`, individual frees are either a no-op (middle
 of the arena) or dangerous (last allocation — Zig 0.15 rewinds the bump
-pointer, corrupting any sub-slice still in use).  The `arena` block is the
+pointer, corrupting any sub-slice still in use).  `allocate Arena()` is the
 correct, safe mechanism for bounded reclaim.
 
 ---
@@ -1670,3 +1702,39 @@ Running `zebra test --tag math_test` runs every test in the file; running
 - `def main()` is silently suppressed when compiling in test mode.
 - Both the Zig backend (`--zig-backend`) and the selfhost pipeline support
   `zebra test`.
+
+## 34. Tuple / multi-return
+
+Functions can return multiple values via a tuple return type.
+
+```zebra
+def minmax(a: int, b: int): (int, int)
+    if a < b
+        return (a, b)
+    return (b, a)
+
+def main()
+    # Positional destructure
+    var (lo, hi) = minmax(7, 3)
+    print lo   # 3
+    print hi   # 7
+
+    # Hold as a tuple value, then index
+    var t = minmax(1, 9)
+    print t.0  # 1
+    print t.1  # 9
+```
+
+### Rules
+
+- Tuple return type: `(T1, T2, …)` with two or more elements.
+- Tuple literal: `(expr1, expr2, …)` — same syntax as grouped-expression but with a comma.
+- Positional destructure: `var (x, y) = f()` — binds each name to the matching element.
+- Index access: `t.0`, `t.1` — integer literal after `.`, zero-based.
+- Mixed types are supported: `(str, int)`, `(float, bool)`, etc.
+
+### Zig mapping
+
+`(T1, T2)` maps to `struct { T1, T2 }` (Zig anonymous tuple struct).
+`(a, b)` maps to `.{ a, b }`.
+`t.0` maps to `t.@"0"`.

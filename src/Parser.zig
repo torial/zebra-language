@@ -531,6 +531,28 @@ test "parse: old expression in ensure clause" {
     try expectAccepts("class Foo\n\tdef push(x: int)\n\t\tensure\n\t\t\tcount == old count + 1\n");
 }
 
+// ── Acceptance: tuple types and destructuring ─────────────────────────────────
+
+test "parse: tuple return type (int, int)" {
+    // ReturnAnnotOpt → colon TypeRef  where TypeRef → lparen TypeRef comma TypeRefListNE rparen
+    try expectAccepts("def foo(a: int, b: int): (int, int)\n\treturn (a, b)\n");
+}
+
+test "parse: tuple destructure var (x, y) = expr" {
+    // StmtDestruct → kw_var lparen IdListNE rparen assign Expr eol
+    try expectAccepts("def main()\n\tvar (x, y) = foo()\n");
+}
+
+test "parse: tuple literal (a, b) in expression" {
+    // Atom → lparen Expr comma ExprListNE rparen
+    try expectAccepts("def foo(): (int, int)\n\treturn (1, 2)\n");
+}
+
+test "parse: tuple index access .0 .1" {
+    // Expr9 → Expr9 dot integer_lit
+    try expectAccepts("def main()\n\tvar t = foo()\n\tvar x = t.0\n\tvar y = t.1\n");
+}
+
 // ── Rejection cases ────────────────────────────────────────────────────────────
 
 test "parse: error position is past the valid prefix" {

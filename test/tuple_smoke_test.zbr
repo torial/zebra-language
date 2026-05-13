@@ -1,0 +1,41 @@
+def minmax(a: int, b: int): (int, int)
+    if a < b
+        return (a, b)
+    return (b, a)
+
+def add_pair(x: int, y: int): (int, int)
+    return (x + y, x - y)
+
+def stringify_pair(n: int, m: int): (str, str)
+    return (n.toString(), m.toString())
+
+def mixed(n: int, s: str): (str, int)
+    return (s + "!", n * 2)
+
+def main()
+    # Basic destructure
+    var (lo, hi) = minmax(7, 3)
+    print lo
+    print hi
+
+    # Param computation in tuple
+    var (sum, diff) = add_pair(10, 4)
+    print sum
+    print diff
+
+    # Tuple indexing
+    var t = minmax(1, 9)
+    print t.0
+    print t.1
+
+    # String methods in tuple return
+    var (ns, ms) = stringify_pair(42, 99)
+    print ns
+    print ms
+
+    # Mixed types
+    var (greeting, doubled) = mixed(5, "hello")
+    print greeting
+    print doubled
+
+    print "done"

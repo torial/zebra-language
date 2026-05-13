@@ -257,6 +257,9 @@ smoke test/bug096_list_class_ctor_test.zbr
 # BUG-093: s.len emits @as(i64,@intCast()) — matches QUICKSTART int contract.
 smoke test/bug093_strlen_test.zbr
 
+# Tuple/multi-return: (int,int) return type + var (x,y) = f() destructure + .0/.1 index.
+smoke test/tuple_smoke_test.zbr
+
 # Guarded for-in (`for x in list if cond`) and List.find(pred).
 smoke test/for_in_guard_test.zbr
 
