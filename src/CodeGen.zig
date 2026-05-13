@@ -5090,6 +5090,13 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "spawn")) {
+            // sys.spawn(argv: List(str)) → *_SysProcess (non-blocking)
+            try g.w.writeAll("_sys_spawn(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "sleep")) {
             // sys.sleep(ms: int) — sleep for the given number of milliseconds
             try g.w.writeAll("std.Thread.sleep(@as(u64, @intCast(");
@@ -5108,6 +5115,25 @@ const Generator = struct {
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(", ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    // ── SysProcess instance methods ───────────────────────────────────────────
+
+    fn genSysProcessMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, _args: []const Ast.Arg) anyerror!bool {
+        _ = _args;
+        if (std.mem.eql(u8, method, "kill")) {
+            try g.w.writeAll("_sys_process_kill(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "isRunning")) {
+            try g.w.writeAll("_sys_process_is_running(");
+            try g.genExpr(obj);
             try g.w.writeAll(")");
             return true;
         }
@@ -5253,6 +5279,23 @@ const Generator = struct {
 
     fn genJsonCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "parse")) {
+            // Json.parse(T, src) — overload: first arg is a class ident → route to strict parser.
+            if (args.len >= 2 and args[0].value.* == .ident) {
+                const sym = g.resolve.exprs.get(&args[0].value.ident);
+                if (sym != null and sym.?.kind == .class) {
+                    const class_name = args[0].value.ident.name;
+                    if (!sym.?.decl.class.mods.reflectable) {
+                        std.debug.panic(
+                            "Json.parse({s}, …) requires '@reflectable class {s}'",
+                            .{ class_name, class_name },
+                        );
+                    }
+                    try g.w.print("_json_parse_strict_{s}(", .{class_name});
+                    try g.genExpr(args[1].value);
+                    try g.w.writeAll(")");
+                    return true;
+                }
+            }
             try g.w.writeAll("_json_parse(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"{}\"");
             try g.w.writeAll(")");
@@ -10969,6 +11012,7 @@ const Generator = struct {
                     .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
                     .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
                     .string_builder => if (try g.genStringBuilderMethod(mem.object, mem.member, e.args)) return,
+                    .sys_process    => if (try g.genSysProcessMethod(mem.object, mem.member, e.args)) return,
                     .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
                     else           => {},
                 }
@@ -11692,6 +11736,11 @@ const Generator = struct {
                     try g.w.writeAll("*_CodeEditor");
                     return;
                 }
+                // SysProcess is a heap-allocated struct; emit as pointer.
+                if (std.mem.eql(u8, n.name, "SysProcess")) {
+                    try g.w.writeAll("*_SysProcess");
+                    return;
+                }
                 // Cross-module qualified type: "moduleAlias.TypeName".
                 // If the referenced type is a class in the imported module, emit
                 // `*moduleAlias.TypeName` (pointer) rather than a value type.
@@ -12020,6 +12069,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .file,
         .str_slice,
         .sys_run_result,
+        .sys_process,
         .json_value,
         .json_array,
         .date_time,

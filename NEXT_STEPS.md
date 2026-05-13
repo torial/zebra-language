@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-11 (cleanup pass — collapse completed items, add 1.0 gap checklist)
+**Last updated:** 2026-05-13 (add §17 1.5 WASM target + web frontend SDK; expand §22 2.0 WASM track)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -21,11 +21,11 @@ Authoritative priority queue for the project. Update this file rather than regen
 Everything here must ship before 1.0 stability locks in.
 
 **0.11 remaining:**
-- [ ] REPL
+- [x] REPL — `zebra repl` subcommand; accumulate-and-rerun model; sentinel output isolation; :help/:clear/:history/:load/:save; selfhost delegates to bootstrap (2026-05-13)
 - [ ] Real ImGui backend completion (`LowLevel` sub-API + any remaining rendering gaps)
-- [ ] BUG-014 regex per-quantifier lazy/greedy
-- [ ] JSON auto-inference (`Json.parse(T, str)` without `as T`)
-- [ ] gzip compress — **Zig 0.16 now released; unblocked but migration work TBD**
+- [x] JSON auto-inference — `Json.parse(T, src)` typed overload routes to `parseStrict` machinery; `@reflectable` required; both backends; bootstrap 5/5 (2026-05-13)
+- [ ] gzip compress — **blocked on Zig 0.16 upgrade** (see below)
+- [ ] Zig 0.16 upgrade — unblocks gzip; compile-performance improvements help REPL latency
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
 - [ ] Build system in Zebra
 
@@ -35,9 +35,9 @@ Everything here must ship before 1.0 stability locks in.
 - [ ] Book docs for `sig`, raw strings, `"""`
 
 **0.14 remaining (entire milestone — priority cluster):**
-- [ ] `<-` arena copy-out: full deep-copy for `List` / classes (prototype done for str+primitives)
+- [ ] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks (str+primitives done)
+- [ ] `allocate` Slices 5–6: `is_scoped` copy-out flag + `arena` deprecation sweep
 - [ ] `Chan(T)` channels (`ch <- val` / `var v <- ch`)
-- [ ] Allocator context (Odin-style named implicit allocator)
 
 **New at 1.0:**
 - [x] `Test` stdlib module + `zebra test` subcommand
@@ -58,7 +58,7 @@ Defer unless a concrete failing case is found.
 **BUG-014** — Regex lazy match is global, not per-quantifier
 `<.*?>STUFF.*>` misbehaves; `lazy_match` is a whole-regex flag.
 Architectural fix: priority-first NFA simulation or backtracking engine.
-File: `src/CodeGen.zig` NFA preamble. Effort: L. Blocks §7 below.
+File: `src/CodeGen.zig` NFA preamble. Effort: L. **Deferred post-1.0** — workaround is to split the pattern or restructure; no concrete urgent case.
 
 **Phase 13 cluster (style-guide–driven sweep targets, BUG-115)** —
 queued for the 0.13 syntax-cleanup window. See §12 below.
@@ -153,8 +153,13 @@ in method A + bad expression in method B" cheaply.
   `// zbr:file:line` markers), Content-Length framed JSON transport, two-relay-thread
   proxy that remaps `setBreakpoints` and `stackTrace` messages between IDE and lldb-dap.
   Graceful error if lldb-dap not on PATH. Selfhost delegates to `zebra-bootstrap.exe`
-  via `sys.exec_inherit`. **Next:** wire into the custom IDE (IDE/ZebraIDE.zbr); install
-  LLDB on Windows to test end-to-end.
+  via `sys.exec_inherit`. IDE setup documented in `docs/DEBUGGING.md`.
+  **Next:** Debug button in ZebraIDE (IDE/ZebraIDE.zbr — implement DAP client using
+  `zebra debug --listen PORT`); install LLDB on Windows to test end-to-end.
+- **`--module-path DIR`** — implemented (2026-05-12). Adds DIR to the module search
+  path; `use Foo` resolves against source-file directory first, then each `--module-path`
+  in order. Multiple flags allowed; also `--module-path=DIR` form. Threads recursively
+  through `compileZbrToZig`.
 - **Build system in Zebra** — not started.
 
 ---
@@ -165,28 +170,36 @@ in method A + bad expression in method B" cheaply.
 
 Foundational memory + concurrency primitives.  Cluster motivation: these items shape the
 runtime memory model and the `<-` token — they need to land **together** so the API
-surface is settled before 1.0 stability locks it.  If `Chan(T)`'s API or allocator
-context syntax is wrong, there's no fixing it post-1.0.
+surface is settled before 1.0 stability locks it.
 
-**a. `<-` arena copy-out operator — prototype done, full deep-copy pending**
+**a. `allocate` block — Slices 1–4 shipped, Slices 5–6 remaining**
+Slices 1–4 complete (2026-05-12): `Allocator` as a primitive Zebra type; `allocate <expr>`
+block syntax; `Arena()`, `Debug()`, `Page()`, `Smp()`, `C()`, `FixedBuffer(buf)`,
+`ThreadSafe(inner)`, `Pool(T)()`, `StackFallback(N)()` named wrappers; both backends.
+`arena` still coexists as legacy sugar for `allocate Arena()`.
+
+Remaining:
+- **Slice 5** — copy-out reconciliation: `StmtAllocate.is_scoped` flag wired into `<-`
+  codegen; `allocate_depth` replaces `arena_depth`; non-scoped wrappers short-circuit
+  to plain assignment.  See `docs/allocate_design.md`.
+- **Slice 6** — `arena` → `allocate Arena()` unification: deprecation sweep + `--warn-deprecated`
+  flag; remove `kw_arena` / `StmtArenaScope` once all sites migrated.
+
+**b. `<-` copy-out operator — prototype done, full deep-copy pending**
 Parser + both backends shipped for `str` + primitives (2026-05-10).
 Full deep-copy for `List` / classes with provenance tracking is the remaining work.
 Implementation split: comptime per-type traversal generation + runtime `_arena_owns()`
-provenance check.  See [[concept_zebra-arena-copyout]] for design doc.
+provenance check.  Blocked on Slice 5 above (needs `is_scoped` flag in codegen first).
+See [[concept_zebra-arena-copyout]] for design doc.
 
-**b. `Chan(T)` channels**
+**c. `Chan(T)` channels**
 `ch <- val` (send), `var v <- ch` (receive).  Backed by `std.Thread` +
 mutex/condvar queue.  `Chan(T)(capacity: n)` construction.  Parser support for
-`<-` is already in place — disambiguation between channel-receive and arena-copy
-is type-driven (RHS `Chan(T)` → channel; else → arena copy).
+`<-` is already in place — disambiguation between channel-receive and copy-out
+is type-driven (RHS `Chan(T)` → channel; else → copy-out).
 **Effort:** unknown; channel runtime is real work; language-side parser piece is small.
 
-**c. Allocator context** — Odin-style named implicit allocator
-Lets user code say "this block uses allocator X" without manual threading.  Required
-for compiler-scale programs that want pool / region allocators alongside the default
-arena.  **Effort:** medium; touches every alloc-emitting codegen site + `_initAllocator`.
-
-**Sequencing:** (a) full deep-copy → (b) → (c).  (c) is independent and can move earlier.
+**Sequencing:** (a) Slice 5 → (b) full deep-copy → (c).  Slice 6 is independent and can run after (c).
 
 ### 15. 1.0 — Language stability + CHANGELOG (cumulative commitment)
 
@@ -229,6 +242,41 @@ Self-hosted Zebra + ImGui editor: syntax highlighting (pthom `ImGuiColorTextEdit
 inline diagnostics (source-mapping already done), REPL pane, plugin loading.
 See: `wiki/pages/concepts/concept_zebra-imgui-backend.md`, `concept_zebra-pthom-editor.md`
 
+### 17. 1.5 — WASM Compilation Target + Web Frontend SDK
+
+Compile Zebra to WebAssembly — both freestanding (AlpineJS / HTMX browser integration)
+and WASI (server-side Wasm runtimes).  Full design doc at
+`wiki/pages/concepts/concept_zebra-wasm-frontend.md`.
+
+**Core deliverables:**
+- `--target wasm32-freestanding` and `--target wasm32-wasi` compiler flags
+- `std.heap.wasm_allocator` as default allocator in WASM targets (replaces GPA; uses
+  `@wasmMemoryGrow` — already in Zig 0.13+, zero extra deps)
+- `export def` → Zig `export fn` codegen; `-rdynamic` flag threads through to `zig build`
+- `__zebra_alloc(len: i32): i32` exported memory helper for JS-side string allocation
+- `print()` remapped to imported `__zebra_print(ptr: u32, len: u32)` in WASM mode
+- String boundary convention: pointer + length pairs; generated shim uses
+  `TextDecoder`/`TextEncoder` for marshalling
+- Generated JS shim (`module.js`) wires imports, exposes named exports, manages memory
+- Module target blacklist: each build target declares unavailable stdlib modules
+  (e.g. `wasm_freestanding` blacklists `File`, `Http`, `Tcp`, `Udp`, `Net`, `Gui`,
+  `sys.exec_*`, `sys.getenv`; WASI relaxes the `Http`/`Tcp` portion)
+- AlpineJS integration: `zebra build --target wasm32 --alpine` emits an Alpine-ready shim
+  so exports are usable directly as `x-data` object properties
+- No-`throws` restriction at WASM export boundary (compile-time error, not runtime trap)
+
+**Key design decisions to settle before implementation:**
+1. `throws` at WASM boundary: compile-time restriction (recommended) vs return-code
+   convention vs trap — affects whether exported functions can call stdlib I/O
+2. Class/struct passing across boundary: restrict to primitives + strings at 1.5, or add
+   serialization protocol now
+3. `print()` buffering: flush on newline vs flush on export-function return
+
+**Effort:** ~2–3 weeks.  Shares `@freestanding` mode + module blacklist infrastructure
+with the §22 kernel track — implement those two foundations once, both milestones benefit.
+
+See: `wiki/pages/concepts/concept_zebra-wasm-frontend.md`
+
 ### 22. 2.0 — Kernel track (Zebra for OS-writing)
 2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no
 runtime underneath.  Motivated by the expressiveness multiplier observation
@@ -256,6 +304,17 @@ Contracts, generics, interface vtables, `^T`, throws, nil tracking all survive.
 
 See: `wiki/pages/concepts/concept_zebra-os-additions.md`
 Sister page: `concept_zebra-systems-additions.md` (browser-class additions; subset of this).
+
+**WASM track (builds on §17 1.5 foundations):**
+The `@freestanding` mode and module blacklist built for the kernel track are shared with
+WASM targets.  2.0 adds beyond 1.5:
+- Multi-file WASM modules (1.5 is single-file only)
+- Source maps for WASM output (`--sourcemap` flag; maps WASM binary offsets to `.zbr` lines)
+- `wasm-opt` integration as an optional Binaryen post-pass (size + speed)
+- Class/struct passing across WASM boundary via serialization protocol (deferred from 1.5)
+- HTMX pattern library: `zebra build --target wasm32 --htmx` emits server-validation shim
+
+See: `wiki/pages/concepts/concept_zebra-wasm-frontend.md` §2.0 section
 
 ### 16. Intertextual support (post-1.0)
 LXX/MT divergence tool; provenance typing; multilingual manuscript analysis.

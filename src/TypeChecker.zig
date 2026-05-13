@@ -90,6 +90,8 @@ pub const Type = union(enum) {
     str_slice,
     /// `SysRunResult` — result of `sys.run(argv)` with exit_code/stdout/stderr fields.
     sys_run_result,
+    /// `SysProcess` — live subprocess handle returned by `sys.spawn()`.
+    sys_process,
     /// `JsonValue` — a parsed JSON value (wraps `std.json.Value`).
     json_value,
     /// `[]JsonValue` — JSON array slice returned by `getList`.
@@ -253,6 +255,7 @@ pub const Type = union(enum) {
             .file           => b == .file,
             .str_slice      => b == .str_slice,
             .sys_run_result => b == .sys_run_result,
+            .sys_process    => b == .sys_process,
             .json_value     => b == .json_value,
             .date_time      => b == .date_time,
             .calendar_view  => b == .calendar_view,
@@ -333,6 +336,7 @@ pub const Type = union(enum) {
             .file           => "File",
             .str_slice      => "[]str",
             .sys_run_result => "SysRunResult",
+            .sys_process    => "SysProcess",
             .json_value     => "JsonValue",
             .json_array     => "[]JsonValue",
             .date_time      => "DateTime",
@@ -2109,6 +2113,13 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, e.member, "stdout"))    return .string;
             if (std.mem.eql(u8, e.member, "stderr"))    return .string;
         }
+        // SysProcess field/method access.
+        if (obj_type == .sys_process) {
+            if (std.mem.eql(u8, e.member, "pid"))        return .int;
+            if (std.mem.eql(u8, e.member, "alive"))      return .bool;
+            if (std.mem.eql(u8, e.member, "kill"))       return .void_;
+            if (std.mem.eql(u8, e.member, "isRunning"))  return .bool;
+        }
         // UriResult field access.
         if (obj_type == .uri_result) {
             if (std.mem.eql(u8, e.member, "scheme") or
@@ -2638,6 +2649,7 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "args"))     return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "run"))          return .sys_run_result;
                     if (std.mem.eql(u8, mem.member, "exec_inherit")) return .int;
+                    if (std.mem.eql(u8, mem.member, "spawn"))        return .sys_process;
                     if (std.mem.eql(u8, mem.member, "cwd"))          return .string;
                     if (std.mem.eql(u8, mem.member, "exit"))         return .void_;
                     if (std.mem.eql(u8, mem.member, "err"))      return .void_;
@@ -2806,17 +2818,22 @@ const TypeChecker = struct {
                     // type-as-value.  Inferring it would treat it as a value reference;
                     // skip it and infer remaining args normally.
                     const is_strict = std.mem.eql(u8, mem.member, "parseStrict");
-                    const skip_first = is_strict and e.args.len >= 1 and e.args[0].value.* == .ident;
+                    // Json.parse(T, src) overload: first arg is a class ident → same path as parseStrict.
+                    const is_typed_parse = std.mem.eql(u8, mem.member, "parse") and
+                        e.args.len >= 2 and e.args[0].value.* == .ident and
+                        (tc.resolve.exprs.get(&e.args[0].value.ident) != null and
+                         tc.resolve.exprs.get(&e.args[0].value.ident).?.kind == .class);
+                    const skip_first = (is_strict or is_typed_parse) and e.args.len >= 1 and e.args[0].value.* == .ident;
                     for (e.args, 0..) |a, i| {
                         if (skip_first and i == 0) continue;
                         _ = try tc.inferExpr(a.value);
                     }
-                    if (std.mem.eql(u8, mem.member, "parse")) {
+                    if (std.mem.eql(u8, mem.member, "parse") and !is_typed_parse) {
                         const boxed = tc.map_alloc.create(Type) catch return .json_value;
                         boxed.* = .json_value;
                         return .{ .optional = boxed };
                     }
-                    if (is_strict) {
+                    if (is_strict or is_typed_parse) {
                         if (e.args.len >= 1 and e.args[0].value.* == .ident) {
                             if (tc.resolve.exprs.get(&e.args[0].value.ident)) |sym| {
                                 if (sym.kind == .class) {
@@ -3602,6 +3619,7 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "Shell"))         return .shell;
     if (std.mem.eql(u8, n, "File"))          return .file;
     if (std.mem.eql(u8, n, "SysRunResult")) return .sys_run_result;
+    if (std.mem.eql(u8, n, "SysProcess"))   return .sys_process;
     if (std.mem.eql(u8, n, "JsonValue"))   return .json_value;
     if (std.mem.eql(u8, n, "DateTime"))    return .date_time;
     if (std.mem.eql(u8, n, "CalendarView")) return .calendar_view;

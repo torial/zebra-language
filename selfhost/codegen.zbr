@@ -1574,6 +1574,9 @@ struct Generator
                 if n.name == "StringBuilder"
                     w.emit("std.ArrayList(u8)")
                     return
+                if n.name == "SysProcess"
+                    w.emit("*_SysProcess")
+                    return
                 if n.name == "Allocator"
                     w.emit("std.mem.Allocator")
                     return
@@ -6852,6 +6855,17 @@ struct Generator
                             w.emit("\"\"")
                         w.emit(")")
                         return
+                on Type_.sys_process
+                    if mname == "kill"
+                        w.emit("_sys_process_kill(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "isRunning"
+                        w.emit("_sys_process_is_running(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                 else
                     pass
         # StringBuilder
@@ -8663,6 +8677,14 @@ struct Generator
                 w.emit("undefined")
             w.emit(")")
             return
+        if mname == "spawn"
+            w.emit("_sys_spawn(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
         if mname == "args"
             w.emit("(blk_sa: {\n")
             writeIndent()
@@ -8728,6 +8750,33 @@ struct Generator
     # ── genJsonCall ──────────────────────────────────────────────────────────
     def genJsonCall(mname: str, args: List(Arg))
         if mname == "parse"
+            # Json.parse(T, src) overload — first arg is a class ident → strict parser.
+            if args.count() >= 2
+                var first_arg = args.at(0).value
+                if first_arg is Expr.ident as id_ref
+                    var class_name2: str = id_ref.name
+                    var found2: bool = false
+                    var refl2: bool = false
+                    for d2 in module_decls
+                        if d2 is Decl.class_ as cls2
+                            if cls2.name == class_name2
+                                found2 = true
+                                if cls2.mods.is_reflectable
+                                    refl2 = true
+                    if found2
+                        if not refl2
+                            w.emit("@compileError(\"Json.parse(")
+                            w.emit(class_name2)
+                            w.emit(", …) requires '@reflectable class ")
+                            w.emit(class_name2)
+                            w.emit("'\")")
+                            return
+                        w.emit("_json_parse_strict_")
+                        w.emit(class_name2)
+                        w.emit("(")
+                        genExpr(args.at(1).value)
+                        w.emit(")")
+                        return
             w.emit("_json_parse(")
             if args.count() > 0
                 genExpr(args.at(0).value)
