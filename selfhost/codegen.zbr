@@ -24,7 +24,7 @@
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
-use typechecker exposing ModuleTypes, buildModuleTypes, Type_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
+use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -47,6 +47,7 @@ def getMemberFieldName(e: Expr): str?
 
 def makeDottedKey(a: str, b: str): str
     return a + "." + b
+
 
 def extractAfterDot(s: str): str
     # Return the part after the last '.' in a dotted name
@@ -1269,6 +1270,9 @@ struct Generator
     var str_params           : StrSet   # param names with type str
     var list_locals          : StrSet   # local/param names with type List(*)
     var list_str_locals      : StrSet   # list_locals whose element type is str
+    var list_ref_locals      : HashMap(str, str)  # list var name → inner struct type name for List(^T)
+    var list_tuple_locals    : StrSet   # list_locals whose element type is a tuple (T1,T2,...)
+    var list_tuple_str_pos   : StrSet   # "varname:N" where tuple position N is a string type
     var strset_locals        : StrSet   # local/param names with type StrSet
     var hashmap_locals       : StrSet   # local/param names with type HashMap(K,V)
     var hashmap_str_key_locals: StrSet  # hashmap_locals whose key type is str/String
@@ -1302,6 +1306,9 @@ struct Generator
     var caller_ptr_params    : StrSet
     # Phase 1 TcResult plumbing — populated from TC artifact; consumed in Phase 3.
     var tc_result            : TcResult?
+    # Return type of the current method; nil outside a method or for void methods.
+    # Set by genMethod so genReturn can emit a type-hinted zero-arg generic ctor.
+    var method_return_type   : TypeRef?
 
     invariant
         indent >= 0
@@ -1343,6 +1350,9 @@ struct Generator
         .str_params            = StrSet()
         .list_locals           = StrSet()
         .list_str_locals       = StrSet()
+        .list_ref_locals       = HashMap()
+        .list_tuple_locals     = StrSet()
+        .list_tuple_str_pos    = StrSet()
         .strset_locals         = StrSet()
         .hashmap_locals        = StrSet()
         .hashmap_str_key_locals = StrSet()
@@ -1369,6 +1379,7 @@ struct Generator
         .ensure_uses_result    = false
         .caller_ptr_params     = StrSet()
         .tc_result             = nil
+        .method_return_type    = nil
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1385,6 +1396,11 @@ struct Generator
     def withTcResult(tcr: TcResult): Generator
         var g = this except
             tc_result = tcr
+        return g
+
+    def withMethodReturnType(tr: TypeRef): Generator
+        var g = this except
+            method_return_type = tr
         return g
 
     def asMethod(): Generator
@@ -1525,12 +1541,20 @@ struct Generator
             opt_ptr_field_bindings = StrSet()
             list_locals            = StrSet()
             list_str_locals        = StrSet()
+            list_ref_locals        = HashMap()
+            list_tuple_locals      = StrSet()
+            list_tuple_str_pos     = StrSet()
             strset_locals          = StrSet()
             hashmap_locals         = StrSet()
             hashmap_str_key_locals = StrSet()
             hashmap_str_val_locals = StrSet()
             caller_ptr_params = StrSet()
         return g
+
+    # Register a local/param variable as holding List(^StructName).
+    # Uses this.field.put() so the bootstrap codegen adds error handling.
+    def addListRefLocal(vname: str, tname: str)
+        .list_ref_locals.put(vname, tname)
 
     # ── Output helpers ────────────────────────────────────────────────────────
 
@@ -1576,6 +1600,12 @@ struct Generator
                     return
                 if n.name == "SysProcess"
                     w.emit("*_SysProcess")
+                    return
+                if n.name == "Build"
+                    w.emit("*_Build")
+                    return
+                if n.name == "BuildTarget"
+                    w.emit("*_BuildTarget")
                     return
                 if n.name == "Allocator"
                     w.emit("std.mem.Allocator")
@@ -2444,6 +2474,8 @@ struct Generator
                     ctx17c.bind(pp.name, Type_.unknown_)
             walkStmts(mstmts, ctx17c)
             bg = bg.withInferCtx(ctx17c)
+            if m.return_type != nil
+                bg = bg.withMethodReturnType(m.return_type to!)
             # BUG-097: record which params are emitted as *ArrayList so arg-emit
             # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
             for pptr in m.params
@@ -2460,6 +2492,18 @@ struct Generator
                                     if gt.args.at(0) is TypeRef.named as pnt
                                         if pnt.name == "str" or pnt.name == "String"
                                             bg.list_str_locals.add(p2.name)
+                                    if gt.args.at(0) is TypeRef.ref_to as p_rto
+                                        if p_rto is TypeRef.named as p_rtn
+                                            if not bg.class_names.contains_(p_rtn.name)
+                                                bg.addListRefLocal(p2.name, p_rtn.name)
+                                    if gt.args.at(0) is TypeRef.tuple as pttr
+                                        bg.list_tuple_locals.add(p2.name)
+                                        var ptpos = 0
+                                        for ptelem in pttr.elems
+                                            if ptelem is TypeRef.named as pten
+                                                if pten.name == "str" or pten.name == "String"
+                                                    bg.list_tuple_str_pos.add(p2.name + ":" + ptpos.toString())
+                                            ptpos = ptpos + 1
                             if gt.name == "HashMap"
                                 bg.hashmap_locals.add(p2.name)
                                 if gt.args.count() > 0
@@ -3213,6 +3257,18 @@ struct Generator
                             if gtn.args.at(0) is TypeRef.named as en
                                 if en.name == "str" or en.name == "String"
                                     list_str_locals.add(n.name)
+                            if gtn.args.at(0) is TypeRef.ref_to as rto
+                                if rto is TypeRef.named as rtn
+                                    if not class_names.contains_(rtn.name)
+                                        list_ref_locals.put(n.name, rtn.name)
+                            if gtn.args.at(0) is TypeRef.tuple as ttr
+                                list_tuple_locals.add(n.name)
+                                var tpos = 0
+                                for telem in ttr.elems
+                                    if telem is TypeRef.named as ten
+                                        if ten.name == "str" or ten.name == "String"
+                                            list_tuple_str_pos.add(n.name + ":" + tpos.toString())
+                                    tpos = tpos + 1
                     if gtn.name == "HashMap"
                         hashmap_locals.add(n.name)
                         if gtn.args.count() > 0
@@ -3254,6 +3310,34 @@ struct Generator
                     var vname = hma.at(1)
                     if vname == "str" or vname == "String"
                         hashmap_str_val_locals.add(n.name)
+        # Detect List/HashMap from function-call init: `var x = fn()` where fn()
+        # has a declared return type. Needed when there is no type annotation and
+        # the call is not a raw List()/HashMap() ctor (covered by cases above).
+        if n.init_expr != nil and n.type_ == nil
+            if n.init_expr to! is Expr.call as call_ic
+                if call_ic.callee is Expr.ident as call_id
+                    var fn_ret = lookupTopLevelFnReturnTypeRef(call_id.name)
+                    if fn_ret != nil
+                        branch fn_ret to!
+                            on TypeRef.generic as fn_gtr
+                                if fn_gtr.name == "List"
+                                    list_locals.add(n.name)
+                                    if fn_gtr.args.count() > 0
+                                        if fn_gtr.args.at(0) is TypeRef.named as fn_eln
+                                            if fn_eln.name == "str" or fn_eln.name == "String"
+                                                list_str_locals.add(n.name)
+                                if fn_gtr.name == "HashMap"
+                                    hashmap_locals.add(n.name)
+                                    if fn_gtr.args.count() > 0
+                                        if fn_gtr.args.at(0) is TypeRef.named as fn_hkn
+                                            if fn_hkn.name == "str" or fn_hkn.name == "String"
+                                                hashmap_str_key_locals.add(n.name)
+                                    if fn_gtr.args.count() > 1
+                                        if fn_gtr.args.at(1) is TypeRef.named as fn_hvn
+                                            if fn_hvn.name == "str" or fn_hvn.name == "String"
+                                                hashmap_str_val_locals.add(n.name)
+                            else
+                                pass
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
             if .isStringBoth(n.init_expr to!, "var_decl")
@@ -3550,6 +3634,16 @@ struct Generator
                     w.emit("*" + id.name)
                     return
                 w.emit(zigPrimitive(id.name))
+            on Expr.tuple_lit as tl
+                # Tuple type annotation in expression position: `(int, str)` → `struct { i64, []const u8 }`
+                w.emit("struct { ")
+                var fi = true
+                for elem in tl.elems
+                    if not fi
+                        w.emit(", ")
+                    fi = false
+                    genTypeFromExpr(elem)
+                w.emit(" }")
             on Expr.call as c
                 branch c.callee
                     on Expr.ident as id
@@ -3659,7 +3753,7 @@ struct Generator
         if target is Expr.index as ix
             var nm = getMemberFieldName(ix.object)
             if nm != nil
-                if hashmap_locals.contains_(nm to!) or fieldIsHashMap(.module_types, .dep_types, nm to!)
+                if localIsHashMap(nm to!) or fieldIsHashMap(.module_types, .dep_types, nm to!)
                     genExpr(ix.object)
                     w.emit(".put(")
                     genExpr(ix.index)
@@ -3692,6 +3786,71 @@ struct Generator
                 return gtr.name == "List"
         return false
 
+    def localIsHashMap(name: str): bool
+        if .infer_ctx != nil
+            var lhm_c = .infer_ctx to!
+            if lhm_c.hasLocal(name)
+                return lhm_c.localType(name) is Type_.hashmap_
+        return hashmap_locals.contains_(name)
+
+    def localIsList(name: str): bool
+        if .infer_ctx != nil
+            var ll_c = .infer_ctx to!
+            if ll_c.hasLocal(name)
+                return ll_c.localType(name) is Type_.list_
+        return list_locals.contains_(name)
+
+    def localIsListStr(name: str): bool
+        if .infer_ctx != nil
+            var lls_c = .infer_ctx to!
+            if lls_c.hasLocal(name)
+                var lls_t: Type_ = lls_c.localType(name)
+                if lls_t is Type_.list_ as lls_elem
+                    return lls_elem is Type_.string_
+        return list_str_locals.contains_(name)
+
+    def localIsHashMapStrKey(name: str): bool
+        if .infer_ctx != nil
+            var lhsk_c = .infer_ctx to!
+            if lhsk_c.hasLocal(name)
+                var lhsk_t: Type_ = lhsk_c.localType(name)
+                if lhsk_t is Type_.hashmap_ as lhsk_hm
+                    return lhsk_hm.key_t is Type_.string_
+        return hashmap_str_key_locals.contains_(name)
+
+    def localIsHashMapStrVal(name: str): bool
+        if .infer_ctx != nil
+            var lhsv_c = .infer_ctx to!
+            if lhsv_c.hasLocal(name)
+                var lhsv_t: Type_ = lhsv_c.localType(name)
+                if lhsv_t is Type_.hashmap_ as lhsv_hm
+                    return lhsv_hm.val_t is Type_.string_
+        return hashmap_str_val_locals.contains_(name)
+
+    def localIsListRef(name: str): bool
+        if .infer_ctx != nil
+            var llr_c = .infer_ctx to!
+            if llr_c.hasLocal(name)
+                var llr_t: Type_ = llr_c.localType(name)
+                if llr_t is Type_.list_ as llr_elem
+                    branch llr_elem
+                        on Type_.ref_to
+                            return true
+                        else
+                            return false
+        return list_ref_locals.contains(name)
+
+    def localListRefType(name: str): str
+        if .infer_ctx != nil
+            var llrt_c = .infer_ctx to!
+            if llrt_c.hasLocal(name)
+                var llrt_t: Type_ = llrt_c.localType(name)
+                if llrt_t is Type_.list_ as llrt_elem
+                    if llrt_elem is Type_.ref_to as llrt_inner
+                        if llrt_inner is Type_.named as llrt_tname
+                            return llrt_tname
+        return list_ref_locals.fetch(name)
+
     def isOwnerMethod(name: str): bool
         for d in owner_members
             if d is Decl.method as dm
@@ -3722,6 +3881,28 @@ struct Generator
             if d is Decl.var_ as fld
                 if fld.name == field_name
                     return fld.type_
+        return nil
+
+    # Look up a struct field's TypeRef by struct name and field name using module_decls.
+    # Used in struct literals (Pattern 1a) where owner_members is the enclosing struct, not the target.
+    def lookupStructFieldType(struct_name: str, field_name: str): TypeRef?
+        for decl in module_decls
+            if decl is Decl.struct_ as s
+                if s.name == struct_name
+                    for mem in s.members
+                        if mem is Decl.var_ as fld
+                            if fld.name == field_name
+                                return fld.type_
+        return nil
+
+    # Look up the return TypeRef of a top-level function by name.
+    # Used when `var x = fn()` has no type annotation — the function's declared
+    # return type lets us classify x into list_locals / hashmap_locals properly.
+    def lookupTopLevelFnReturnTypeRef(fn_name: str): TypeRef?
+        for decl in module_decls
+            if decl is Decl.method as m
+                if m.name == fn_name
+                    return m.return_type
         return nil
 
     def genCallWithTypeHint(e: Expr, hint: TypeRef)
@@ -3775,7 +3956,10 @@ struct Generator
         if ensure_armed_active and ensure_uses_result and r.value != nil
             writeIndent()
             w.emit("{ _result = ")
-            genExpr(r.value to!)
+            if method_return_type != nil
+                genCallWithTypeHint(r.value to!, method_return_type to!)
+            else
+                genExpr(r.value to!)
             w.emit("; _ensure_armed = true; return _result; }\n")
             return
         # Plain ensure-armed path (no result capture): arm before existing return logic.
@@ -3796,7 +3980,10 @@ struct Generator
         writeIndent()
         if r.value != nil
             w.emit("return ")
-            genExpr(r.value to!)
+            if method_return_type != nil
+                genCallWithTypeHint(r.value to!, method_return_type to!)
+            else
+                genExpr(r.value to!)
             w.emit(";\n")
         else
             w.emit("return;\n")
@@ -3987,6 +4174,15 @@ struct Generator
         var ig = indented()
         # Nested loops must not inherit the enclosing for-else label — their breaks are plain.
         ig.for_else_label = nil
+        # for a, b in list_of_pairs — tuple List destructuring takes priority over HashMap dispatch.
+        if fi.vars.count() >= 2
+            var is_tuple_list = false
+            if fi.iter is Expr.ident as iter_id
+                if list_tuple_locals.contains_(iter_id.name)
+                    is_tuple_list = true
+            if is_tuple_list
+                genForInTupleList(fi)
+                return
         if fi.vars.count() == 2
             # HashMap two-var iterator: `for k, v in map`
             var kname = fi.vars.at(0)
@@ -4016,11 +4212,19 @@ struct Generator
             if not nameUsedInStmts(kname, fi.stmts)
                 bg.writeIndent()
                 bg.w.emit("_ = " + kname + ";\n")
+            # Mark key as string when iterating HashMap(str, V) — needed for print format.
+            if fi.iter is Expr.ident as hm_iter_id
+                if bg.localIsHashMapStrKey(hm_iter_id.name)
+                    bg.str_params.add(kname)
             bg.writeIndent()
             bg.w.emit("const " + vname + " = _ent_" + kname + ".value_ptr.*;\n")
             if not nameUsedInStmts(vname, fi.stmts)
                 bg.writeIndent()
                 bg.w.emit("_ = " + vname + ";\n")
+            # Mark value as string when iterating HashMap(K, str).
+            if fi.iter is Expr.ident as hm_iter_id2
+                if bg.localIsHashMapStrVal(hm_iter_id2.name)
+                    bg.str_params.add(vname)
             bg.emitForGuard(fi)
             bg.genStmts(fi.stmts)
             wg.writeIndent()
@@ -4218,7 +4422,7 @@ struct Generator
                         for_loop_deref.add(makeDottedKey(vname, "value"))
                 # If iterating a List(str), mark the loop variable: a string
                 if fi.iter is Expr.ident as iter_id
-                    if list_str_locals.contains_(iter_id.name)
+                    if localIsListStr(iter_id.name)
                         str_params.add(vname)
                 # Mark this variable: a for-loop var to suppress stale branch deref
                 for_loop_vars.add(vname)
@@ -4231,6 +4435,39 @@ struct Generator
                     ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
+
+    # Emit `for a, b in list_of_pairs` — tuple List destructuring.
+    # Generates: for (iter.items) |_zbr_tup| { const a = _zbr_tup.@"0"; ... }
+    def genForInTupleList(fi: StmtForIn)
+        var ig = indented()
+        ig.for_else_label = nil
+        # Propagate string position info into the body generator's str_params.
+        var iter_name: str = ""
+        if fi.iter is Expr.ident as iter_id
+            iter_name = iter_id.name
+        writeIndent()
+        w.emit("for (")
+        genExpr(fi.iter)
+        w.emit(".items) |_zbr_tup| {\n")
+        var i = 0
+        for vname in fi.vars
+            ig.writeIndent()
+            ig.w.emit("const " + vname + " = _zbr_tup.@\"" + i.toString() + "\";\n")
+            if not nameUsedInStmts(vname, fi.stmts)
+                ig.writeIndent()
+                ig.w.emit("_ = " + vname + ";\n")
+            # Mark string loop vars so print/interp uses {s} format specifier.
+            if iter_name != "" and list_tuple_str_pos.contains_(iter_name + ":" + i.toString())
+                ig.str_params.add(vname)
+            i = i + 1
+        ig.emitForGuard(fi)
+        ig.genStmts(fi.stmts)
+        if fi.else_ != nil
+            writeIndent()
+            w.emit("} else {\n")
+            ig.genStmts(fi.else_ to!)
+        writeIndent()
+        w.emit("}\n")
 
     # Emit `if (!(cond)) continue;` guard at the top of a for-in loop body.
     # `self` is the body-level generator (ig or bg) so indentation is correct.
@@ -5763,8 +6000,8 @@ struct Generator
                     var is_hm_obj = false
                     if fname != nil
                         var fn2 = fname to!
-                        is_list_obj = isListField(fn2) or list_locals.contains_(fn2) or isKnownListField(fn2)
-                        is_hm_obj = hashmap_locals.contains_(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
+                        is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2)
+                        is_hm_obj = localIsHashMap(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
@@ -5839,7 +6076,7 @@ struct Generator
                 var is_hm_idx = false
                 if idx_obj_nm != nil
                     var idx_nm = idx_obj_nm to!
-                    is_hm_idx = hashmap_locals.contains_(idx_nm) or fieldIsHashMap(.module_types, .dep_types, idx_nm)
+                    is_hm_idx = localIsHashMap(idx_nm) or fieldIsHashMap(.module_types, .dep_types, idx_nm)
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
@@ -6075,7 +6312,11 @@ struct Generator
                     w.emit("_except_tmp.")
                     w.emit(ef.name)
                     w.emit(" = ")
-                    genExpr(ef.value)
+                    var ef_ftype = lookupFieldType(ef.name)
+                    if ef_ftype != nil
+                        genCallWithTypeHint(ef.value, ef_ftype to!)
+                    else
+                        genExpr(ef.value)
                     w.emit("; ")
                 w.emit("break :blk _except_tmp; }")
 
@@ -6181,7 +6422,7 @@ struct Generator
                 on Expr.list_lit
                     in_use_zebra_in = true
                 on Expr.ident as in_id
-                    if list_locals.contains_(in_id.name) or hashmap_locals.contains_(in_id.name)
+                    if localIsList(in_id.name) or localIsHashMap(in_id.name)
                         in_use_zebra_in = true
                     else if .infer_ctx != nil
                         var rt: Type_ = inferExpr(b.right, .infer_ctx to!)
@@ -6305,7 +6546,7 @@ struct Generator
                     # .at(i) on a List(str) local returns a string
                     if cm.member == "at"
                         if cm.object is Expr.ident as lid
-                            if list_str_locals.contains_(lid.name)
+                            if localIsListStr(lid.name)
                                 return true
             on Expr.to_non_nil as tnn
                 # x to! where x is a string? → still a string
@@ -6660,10 +6901,9 @@ struct Generator
         # Bare stdlib ctor: HashMap() or StrSet() without type params
         if c.callee is Expr.ident as id
             if id.name == "HashMap" and c.args.count() == 0
-                # Bare HashMap() — needs type_hint from context (not available here)
-                # Fall back to a reasonable default. If used in an assignment to a
-                # typed field, the Zig backend would have the type from the field decl.
-                w.emit("std.StringHashMap(i64).init(_allocator)")
+                # No LHS type context — emit anytype so the Zig error points at the
+                # missing annotation rather than producing a misleading type mismatch.
+                w.emit("std.StringHashMap(anytype).init(_allocator)")
                 return
             if id.name == "StrSet" and c.args.count() == 0
                 w.emit("StrSet.init()")
@@ -6721,7 +6961,12 @@ struct Generator
                         w.emit(" _bp; }")
                         box_idx = box_idx + 1
                     else
-                        genExpr(a.value)
+                        # Use param type hint for zero-arg generic ctors (HashMap(), List(), etc.)
+                        var ctor_pt = lookupCtorParamType(id.name, a.name, arg_idx)
+                        if ctor_pt != nil
+                            genCallWithTypeHint(a.value, ctor_pt to!)
+                        else
+                            genExpr(a.value)
                     arg_idx = arg_idx + 1
                 w.emit(")")
                 return
@@ -6738,9 +6983,16 @@ struct Generator
                     first_sf = false
                     if a.name != nil
                         w.emit(".")
-                        w.emit(a.name to!)
+                        var sf_name = a.name to!
+                        w.emit(sf_name)
                         w.emit(" = ")
-                    genExpr(a.value)
+                        var sf_type = lookupStructFieldType(id.name, sf_name)
+                        if sf_type != nil
+                            genCallWithTypeHint(a.value, sf_type to!)
+                        else
+                            genExpr(a.value)
+                    else
+                        genExpr(a.value)
                 if not first_sf
                     w.emit(" ")
                 w.emit("}")
@@ -6866,6 +7118,12 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                on Type_.build_ctx
+                    genBuildInstanceCall(m.object, mname, args)
+                    return
+                on Type_.build_target
+                    genBuildTargetInstanceCall(m.object, mname, args)
+                    return
                 else
                     pass
         # StringBuilder
@@ -6925,20 +7183,37 @@ struct Generator
                     is_class_inst = nc.len > 0
             if not is_strset and not is_class_ref and not is_class_inst
                 var add_item_is_str = false
+                var add_item_is_ref = false
+                var add_item_ref_type = ""
                 if add_obj_name != nil
                     var add_nm2 = add_obj_name to!
-                    if list_str_locals.contains_(add_nm2)
+                    if localIsListStr(add_nm2)
                         add_item_is_str = true
+                    else if localIsListRef(add_nm2)
+                        add_item_is_ref = true
+                        add_item_ref_type = localListRefType(add_nm2)
                     else
                         var aftype = lookupFieldType(add_nm2)
                         if aftype != nil
                             if aftype to! is TypeRef.generic as agtr
                                 if agtr.name == "List" and agtr.args.count() > 0
                                     add_item_is_str = isStringTypeRef(agtr.args.at(0))
+                                    if not add_item_is_str and not add_item_is_ref
+                                        if agtr.args.at(0) is TypeRef.ref_to as ref_inner
+                                            if ref_inner is TypeRef.named as ref_nm
+                                                if not class_names.contains_(ref_nm.name)
+                                                    add_item_is_ref = true
+                                                    add_item_ref_type = ref_nm.name
                 genExpr(m.object)
                 w.emit(".append(_allocator, ")
                 if args.count() > 0
-                    if add_item_is_str
+                    if add_item_is_ref
+                        var ref_uid = w.nextUid()
+                        var ref_lbl = "_box_" + ref_uid.toString()
+                        w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + add_item_ref_type + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
+                        genExpr(args.at(0).value)
+                        w.emit("; break :" + ref_lbl + " _bp_" + ref_uid.toString() + "; }")
+                    else if add_item_is_str
                         w.emit("_intern(")
                         genExpr(args.at(0).value)
                         w.emit(")")
@@ -6953,7 +7228,7 @@ struct Generator
             if cnt_obj_name != nil
                 var cnt_nm = cnt_obj_name to!
                 is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(.module_types, .dep_types, cnt_nm)
-                is_hashmap_cnt = hashmap_locals.contains_(cnt_nm) or fieldIsHashMap(.module_types, .dep_types, cnt_nm)
+                is_hashmap_cnt = localIsHashMap(cnt_nm) or fieldIsHashMap(.module_types, .dep_types, cnt_nm)
             if is_strset_cnt or is_hashmap_cnt
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
@@ -6998,7 +7273,7 @@ struct Generator
             var is_hashmap_rem = false
             if rem_obj_name != nil
                 var rem_nm = rem_obj_name to!
-                is_hashmap_rem = hashmap_locals.contains_(rem_nm) or fieldIsHashMap(.module_types, .dep_types, rem_nm)
+                is_hashmap_rem = localIsHashMap(rem_nm) or fieldIsHashMap(.module_types, .dep_types, rem_nm)
             if is_hashmap_rem
                 w.emit("_ = ")
                 genExpr(m.object)
@@ -7019,7 +7294,7 @@ struct Generator
             var is_list_like = true
             if clr_obj_name != nil
                 var clr_nm = clr_obj_name to!
-                if list_locals.contains_(clr_nm)
+                if localIsList(clr_nm)
                     is_list_like = true
                 else if .infer_ctx != nil
                     var clr_t = inferExpr(m.object, .infer_ctx to!)
@@ -7108,9 +7383,9 @@ struct Generator
             var set_recv = getMemberFieldName(m.object)
             if set_recv != nil
                 var sname = set_recv to!
-                if hashmap_locals.contains_(sname) or fieldIsHashMap(.module_types, .dep_types, sname)
-                    var key_is_str = hashmap_str_key_locals.contains_(sname)
-                    var val_is_str = hashmap_str_val_locals.contains_(sname)
+                if localIsHashMap(sname) or fieldIsHashMap(.module_types, .dep_types, sname)
+                    var key_is_str = localIsHashMapStrKey(sname)
+                    var val_is_str = localIsHashMapStrVal(sname)
                     if not key_is_str or not val_is_str
                         var ftype = lookupFieldType(sname)
                         if ftype != nil
@@ -7167,8 +7442,8 @@ struct Generator
             var put_val_is_str = false
             if put_recv != nil
                 var pname = put_recv to!
-                put_key_is_str = hashmap_str_key_locals.contains_(pname)
-                put_val_is_str = hashmap_str_val_locals.contains_(pname)
+                put_key_is_str = localIsHashMapStrKey(pname)
+                put_val_is_str = localIsHashMapStrVal(pname)
                 if not put_key_is_str or not put_val_is_str
                     var pftype = lookupFieldType(pname)
                     if pftype != nil
@@ -7443,6 +7718,9 @@ struct Generator
                 return
             if id.name == "Reflect"
                 genReflectCall(mname, args)
+                return
+            if id.name == "Build"
+                genBuildStaticCall(mname, args)
                 return
         # SIMD instance methods: sum/dot/max_element/min_element
         # Safe dispatch by name — none of these clash with string/list/stdlib methods.
@@ -8281,6 +8559,39 @@ struct Generator
                                 var ns_key: str = cname + "." + ndm.name
                                 if ns_key == key
                                     return ndm.params
+            if decl is Decl.struct_ as s
+                var sname: str = s.name
+                for mem in s.members
+                    if mem is Decl.method as dm
+                        var full_key2: str = sname + "." + dm.name
+                        if full_key2 == key
+                            return dm.params
+                    if mem is Decl.init as di2
+                        var init_key2: str = sname + ".init"
+                        if init_key2 == key
+                            return di2.params
+        return nil
+
+    # Given a ctor name and an arg (possibly named), return the matching param's TypeRef.
+    # Delegates to lookupParamType which takes List(Param) as a proper parameter
+    # so that the for-loop rewrite to .items works correctly in the bootstrap.
+    def lookupCtorParamType(ctor_name: str, arg_name: str?, arg_idx: int): TypeRef?
+        var ps_raw = lookupFnParams(ctor_name + ".init")
+        if ps_raw == nil
+            return nil
+        return lookupParamType(ps_raw to!, arg_name, arg_idx)
+
+    # Worker for lookupCtorParamType — `ps` must be a proper List(Param) parameter
+    # so that `for p in ps` rewrites to `for (ps.items) |p|` in the bootstrap compiler.
+    def lookupParamType(ps: List(Param), arg_name: str?, arg_idx: int): TypeRef?
+        if arg_name != nil
+            for p in ps
+                var pn: str = p.name
+                if pn == arg_name to!
+                    return p.type_
+            return nil
+        if arg_idx < ps.count()
+            return ps.at(arg_idx).type_
         return nil
 
     # BUG-091: parallel to lookupFnParams — return the body so call-site emit
@@ -8308,6 +8619,17 @@ struct Generator
                                 var ns_key: str = cname + "." + ndm.name
                                 if ns_key == key
                                     return ndm.stmts
+            if decl is Decl.struct_ as s
+                var sname: str = s.name
+                for mem in s.members
+                    if mem is Decl.method as dm
+                        var full_key2: str = sname + "." + dm.name
+                        if full_key2 == key
+                            return dm.stmts
+                    if mem is Decl.init as di2
+                        var init_key2: str = sname + ".init"
+                        if init_key2 == key
+                            return di2.stmts
         return nil
 
     def genArgListFull(args: List(Arg), params: List(Param)?, body: List(Stmt)?)
@@ -8350,7 +8672,10 @@ struct Generator
                                 genExpr(a.value)
                                 w.emit(".*")            # Case 2: ptr→value, deref
                             else
-                                genExpr(a.value)
+                                if p.type_ != nil
+                                    genCallWithTypeHint(a.value, p.type_ to!)
+                                else
+                                    genExpr(a.value)
                         found = true
                         break
                 ai += 1
@@ -8370,7 +8695,10 @@ struct Generator
                                 genExpr(pa.value)
                                 w.emit(".*")            # Case 2: ptr→value, deref
                             else
-                                genExpr(pa.value)
+                                if p.type_ != nil
+                                    genCallWithTypeHint(pa.value, p.type_ to!)
+                                else
+                                    genExpr(pa.value)
                         found = true
                         break
             if not found
@@ -8746,6 +9074,106 @@ struct Generator
         w.emit("@compileError(\"selfhost: unknown Arg.")
         w.emit(mname)
         w.emit("\")")
+
+    # ── Build static call: Build.new() ────────────────────────────────────────
+    def genBuildStaticCall(mname: str, args: List(Arg))
+        if mname == "new"
+            w.emit("_build_new(_allocator)")
+            return
+        w.emit("@compileError(\"selfhost: unknown Build.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── Build instance call: b.exe/lib/test_/run/dependency/target ────────────
+    def genBuildInstanceCall(obj: Expr, mname: str, args: List(Arg))
+        if mname == "exe" or mname == "lib" or mname == "test_"
+            w.emit("_build_add(")
+            genExpr(obj)
+            w.emit(", _Build_Kind.")
+            w.emit(mname)
+            w.emit(", ")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "target"
+            w.emit("_build_target_by_name(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "run"
+            w.emit("_build_run(")
+            genExpr(obj)
+            w.emit(")")
+            return
+        if mname == "dependency"
+            w.emit("_build_dep_stub(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Build instance method ")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── BuildTarget instance call: t.linkLib/platform/option ─────────────────
+    def genBuildTargetInstanceCall(obj: Expr, mname: str, args: List(Arg))
+        if mname == "linkLib"
+            w.emit("_build_target_link_lib(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        if mname == "platform"
+            w.emit("_build_target_platform(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "option"
+            w.emit("_build_target_option(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        # BuildTarget methods chain — any unknown method returns self
+        genExpr(obj)
 
     # ── genJsonCall ──────────────────────────────────────────────────────────
     def genJsonCall(mname: str, args: List(Arg))

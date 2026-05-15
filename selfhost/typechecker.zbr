@@ -43,6 +43,17 @@ struct CrossModuleType
         .module = internString(module)
         .type_name = internString(type_name)
 
+# Payload for Type_.hashmap_ — carries key and value types.
+# Uses a class (reference semantics) so the union variant stores a pointer,
+# breaking the recursive type cycle that would occur with a struct.
+class HashMapType_
+    var key_t: Type_
+    var val_t: Type_
+
+    cue init(key_t: Type_, val_t: Type_)
+        .key_t = key_t
+        .val_t = val_t
+
 # ── Type representation ──────────────────────────────────────────────────────
 # Skeleton variant set for Phase 16a. Phases 17–19 add:
 #   generic_named, tuple, fn_ref, fn_sig, http_request, http_response,
@@ -90,6 +101,13 @@ union Type_
     regex
     str_set
     allocator_ctx
+    sys_process
+    build_ctx
+    build_target
+    # Generic collections with element/key/value type info.
+    # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
+    list_: ^Type_
+    hashmap_: HashMapType_
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -217,6 +235,9 @@ class ModuleTypes
     # interface names declared via `implements`. Populated from DeclClass.ifaces
     # by populateModuleTypes (Phase 3C).
     var class_interfaces: HashMap(str, str)
+    # "ClassName.memberName" keys for fields/methods marked private/protected.
+    # Enforced in inferExpr Expr.member: access from outside the owning class is an error.
+    var private_member_keys: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -227,6 +248,7 @@ class ModuleTypes
         opt_ref_field_keys = List()
         union_names = HashMap()
         class_interfaces = HashMap()
+        private_member_keys = HashMap()
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -242,6 +264,12 @@ class ModuleTypes
 
     def hasHashMapField(field_name: str): bool
         return .hashmap_field_names.contains(field_name)
+
+    def addPrivateMemberKey(class_name: str, member_name: str)
+        .private_member_keys.put(internString(class_name + "." + member_name), true)
+
+    def isPrivateMember(class_name: str, member_name: str): bool
+        return .private_member_keys.contains(class_name + "." + member_name)
 
     def addUnion(name: str)
         .union_names.put(internString(name), true)
@@ -402,17 +430,11 @@ def typeFromRef(tr: TypeRef): Type_
         on TypeRef.void_
             return Type_.void_
         on TypeRef.generic as g
-            # Recognise List(str) / List(String) as str_slice for inference.
             var gname: str = g.name
             if gname == "List" and g.args.count() == 1
-                var arg_t: Type_ = typeFromRef(g.args.at(0))
-                if arg_t is Type_.string_
-                    return Type_.str_slice
-            # HashMap(K, str) — value type is string; reuse str_slice as sentinel.
+                return Type_.list_(typeFromRef(g.args.at(0)))
             if gname == "HashMap" and g.args.count() == 2
-                var val_t: Type_ = typeFromRef(g.args.at(1))
-                if val_t is Type_.string_
-                    return Type_.str_slice
+                return Type_.hashmap_(HashMapType_(typeFromRef(g.args.at(0)), typeFromRef(g.args.at(1))))
             return Type_.unknown_
         else
             # error_union, stream, same_, tuple — Phase 17 handles these.
@@ -454,6 +476,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
     for member in members
         branch member
             on Decl.var_ as v
+                if v.mods.is_private
+                    mt.addPrivateMemberKey(ct.name, v.name)
                 if v.type_ != nil
                     var ft: Type_ = typeFromRef(v.type_ to!)  # safe: nil checked above
                     ct.setField(v.name, ft)
@@ -472,6 +496,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 else
                     ct.setField(v.name, Type_.unknown_)
             on Decl.method as m
+                if m.mods.is_private
+                    mt.addPrivateMemberKey(ct.name, m.name)
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type to!))  # safe: nil checked above
                 else
@@ -657,6 +683,7 @@ class InferCtx
     # primitive-annotated decls — alarm bell for TC gaps.  Off by default
     # so normal compilation is unaffected; enabled by typecheck-merge.
     var strict: bool
+    var file: str  # source file path for error reporting in inferExpr
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -666,6 +693,10 @@ class InferCtx
         .current_return_type = nil
         errors = List(Diagnostic)()
         .strict = false
+        .file = ""
+
+    def withFile(f: str)
+        .file = f
 
     def withReturnType(rt: Type_?)
         .current_return_type = rt
@@ -890,6 +921,10 @@ def typeTag(t: Type_): str
             return "crossmod"
         on Type_.str_slice
             return "slice"
+        on Type_.list_ as le
+            return "list(" + typeTag(le) + ")"
+        on Type_.hashmap_ as hm
+            return "hmap(" + typeTag(hm.key_t) + "," + typeTag(hm.val_t) + ")"
         on Type_.string_builder
             return "sbld"
         on Type_.regex
@@ -1021,6 +1056,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             if obj_t is Type_.named as tn
                 var ft: Type_? = ctx.fieldTypeAny(tn, m.member)
                 if ft as ft_v
+                    if ctx.module_types.isPrivateMember(tn, m.member)
+                        if ctx.current_class != tn
+                            ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
                     return ft_v
             # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
             # registered nowhere in user code but widely used as `r.stdout`
@@ -1067,6 +1105,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         var bname: str = bid.name
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
+                        if bname == "sys" and mem.member == "spawn"
+                            return Type_.sys_process
+                        if bname == "Build" and mem.member == "new"
+                            return Type_.build_ctx
                     # ── Json static-method TC inference (intentionally absent) ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
@@ -1127,12 +1169,41 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if sbmname == "len"
                                 return Type_.int_
-                        on Type_.str_slice
-                            var slmname: str = mem.member
-                            if slmname == "at" or slmname == "join" or slmname == "fetch"
-                                return Type_.string_
-                            if slmname == "count" or slmname == "len"
+                        on Type_.sys_process
+                            var pmname: str = mem.member
+                            if pmname == "pid"
                                 return Type_.int_
+                            if pmname == "alive"
+                                return Type_.bool_
+                            if pmname == "isRunning"
+                                return Type_.bool_
+                            if pmname == "kill"
+                                return Type_.void_
+                        on Type_.build_ctx
+                            var bcmname: str = mem.member
+                            if bcmname == "exe" or bcmname == "lib" or bcmname == "test_" or bcmname == "target"
+                                return Type_.build_target
+                            return Type_.void_  # run(), dependency()
+                        on Type_.build_target
+                            return Type_.build_target  # linkLib, platform, option chain back to self
+                        on Type_.list_ as list_elem
+                            var lmname: str = mem.member
+                            if lmname == "at" or lmname == "fetch"
+                                return list_elem
+                            if lmname == "join"
+                                return Type_.string_
+                            if lmname == "count" or lmname == "len"
+                                return Type_.int_
+                            if lmname == "any" or lmname == "all"
+                                return Type_.bool_
+                        on Type_.hashmap_ as hmt
+                            var hmname: str = mem.member
+                            if hmname == "fetch"
+                                return hmt.val_t
+                            if hmname == "count"
+                                return Type_.int_
+                            if hmname == "contains"
+                                return Type_.bool_
                         else
                             pass
                     # Cross-module constructor: ModuleName.ClassName(args).
@@ -1245,8 +1316,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             branch idx_recv
                 on Type_.string_
                     return Type_.char_
-                on Type_.str_slice
-                    return Type_.string_
+                on Type_.list_ as list_elem
+                    return list_elem
                 else
                     return Type_.unresolved
         on Expr.slice as esl
@@ -1255,8 +1326,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             branch sl_recv
                 on Type_.string_
                     return Type_.string_
-                on Type_.str_slice
-                    return Type_.str_slice
+                on Type_.list_ as _
+                    return sl_recv
                 else
                     return Type_.unresolved
         on Expr.chained_cmp as cc
@@ -1421,8 +1492,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                             if obj_t is Type_.named as class_name
                                 var ft: Type_? = ctx.fieldTypeAny(class_name, iter_mem.member)
                                 if ft as ft_val
-                                    if ft_val is Type_.str_slice
-                                        loop_var_t = Type_.string_
+                                    if ft_val is Type_.list_ as list_elem_t
+                                        loop_var_t = list_elem_t
             for v in fi.vars
                 ctx.bind(v, loop_var_t)
             walkStmts(fi.stmts, ctx)
@@ -1766,6 +1837,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkStmts(dm_stmts, file, ctx)
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
                 scope_ctx.withDepTypes(ctx.dep_types)
+                scope_ctx.withFile(file)
                 if dm.return_type != nil
                     scope_ctx.withReturnType(typeFromRef(dm.return_type to!))
                 for pp in dm.params
@@ -1774,6 +1846,8 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                         ppt = typeFromRef(pp.type_ to!)
                     scope_ctx.bind(pp.name, ppt)
                 walkStmts(dm_stmts, scope_ctx)
+                for scp_err in scope_ctx.errors
+                    ctx.errors.add(scp_err)
                 tc_result.store(ctx.current_class, dm.name, scope_ctx)
                 ctx.current_class = saved_class
         on Decl.class_ as dc
@@ -1788,6 +1862,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             pass
 
 def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
+    ctx.withFile(file)
     var tc_result: TcResult = TcResult()
     for decl in m.decls
         checkDecl(decl, file, ctx, tc_result)
