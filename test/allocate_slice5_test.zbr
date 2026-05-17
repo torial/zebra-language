@@ -1,0 +1,45 @@
+# allocate_slice5_test.zbr
+#
+# Guards that copy-out (<-) inside scoped allocate blocks correctly dupes strings
+# to the parent allocator so they survive the scope's deinit.  Non-scoped allocate
+# blocks (Page, Smp) must degenerate to plain assignment.
+
+def main()
+    # 1. allocate Arena() — scoped; <- must dupe string to parent allocator
+    var r1: str = ""
+    allocate Arena()
+        var tmp1 = "hello from arena"
+        r1 <- tmp1
+    assert r1 == "hello from arena", "allocate Arena() copy-out"
+
+    # 2. allocate Debug() — scoped; <- must dupe string to parent allocator
+    var r2: str = ""
+    allocate Debug()
+        var tmp2 = "hello from debug"
+        r2 <- tmp2
+    assert r2 == "hello from debug", "allocate Debug() copy-out"
+
+    # 3. allocate FixedBuffer(256) — scoped; <- must dupe string to parent allocator
+    var r3: str = ""
+    allocate FixedBuffer(256)
+        var tmp3 = "hello from fixed"
+        r3 <- tmp3
+    assert r3 == "hello from fixed", "allocate FixedBuffer() copy-out"
+
+    # 4. allocate Page() — non-scoped; <- is plain assignment (allocator outlives scope)
+    var r4: str = ""
+    allocate Page()
+        r4 <- "hello from page"
+    assert r4 == "hello from page", "allocate Page() plain-assign copy-out"
+
+    # 5. Nested scoped: inner string escapes outer allocate block
+    var r5: str = ""
+    allocate Arena()
+        var inner: str = ""
+        allocate Arena()
+            var tmp5 = "nested inner"
+            inner <- tmp5
+        r5 <- inner
+    assert r5 == "nested inner", "nested allocate Arena() copy-out"
+
+    print "allocate Slice 5: all OK"

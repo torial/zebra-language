@@ -1291,7 +1291,7 @@ struct Generator
     # genInit via walkStmts pre-walk before emit. nil at module scope.
     var infer_ctx            : InferCtx?
     var arena_counter        : int      # counter for unique arena scope var names
-    var arena_depth          : int      # nesting depth of arena scopes (0 = not inside any)
+    var allocate_depth          : int      # nesting depth of scoped allocate blocks (0 = not inside any)
     var throws_methods       : StrSet   # "ClassName.methodName" entries for throws methods
     var module_decls         : List(Decl)   # module-level decls for named/default param lookup
     var in_ensure_emit       : bool     # true while generating the ensure defer block
@@ -1365,7 +1365,7 @@ struct Generator
         .dep_types             = dep_types
         .infer_ctx             = nil
         .arena_counter         = 0
-        .arena_depth           = 0
+        .allocate_depth           = 0
         .throws_methods        = StrSet()
         .module_decls          = module_decls
         .in_ensure_emit        = false
@@ -5761,7 +5761,7 @@ struct Generator
         writeIndent()
         w.emit("{\n")
         var ig = indented()
-        ig.arena_depth = arena_depth + 1
+        ig.allocate_depth = allocate_depth + 1
         ig.line("var ".concat(aname).concat(" = std.heap.ArenaAllocator.init(_allocator);"))
         ig.line("defer ".concat(aname).concat(".deinit();"))
         ig.line("const ".concat(saved_name).concat(" = _allocator;"))
@@ -5876,6 +5876,8 @@ struct Generator
             ig.genAllocatorSourceInit(al.source)
             ig.w.emit(";\n")
             ig.line("defer _allocator = ".concat(saved_name).concat(";"))
+        if al.is_scoped
+            ig.allocate_depth = allocate_depth + 1
         ig.genStmts(al.stmts)
         writeIndent()
         w.emit("}\n")
@@ -5906,7 +5908,7 @@ struct Generator
         # Inside an arena block and value is a str: dupe to the parent allocator.
         # Otherwise: plain assignment (primitives copy by value; outside arena no-op).
         var is_str = .isStringBoth(co.value, "copy_out")
-        if arena_depth > 0 and is_str
+        if allocate_depth > 0 and is_str
             var uid = w.nextUid()
             var uid_str = uid.toString()
             writeIndent()
