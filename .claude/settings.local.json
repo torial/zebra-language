@@ -6,7 +6,14 @@
       "Bash(git add *)",
       "PowerShell(zig build *)",
       "Bash(grep -E --line-buffered \"error:|Build Summary|steps succeeded|warning:|^$\")",
-      "Bash(break)"
+      "Bash(break)",
+      "PowerShell($sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); bash tools/escape_hatches_check.sh; $sw.Stop\\(\\); \"Shell: $\\($sw.ElapsedMilliseconds\\)ms\")",
+      "PowerShell(zig run *)",
+      "Bash(grep -E --line-buffered \"error:|warning:|^$|Build Summary|Steps:|Compile\")",
+      "Bash([ -s \"$outfile\" ])",
+      "Read(//c/Users/Sean/AppData/Local/Temp/claude/C--Projects-zebra-language/b98a4617-7afa-4003-9659-ee6796586ec9/tasks/**)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -E --line-buffered \"error:|warning:|Build Summary|steps succeeded|FAILED|^\\\\s*$\")"
     ]
   }
 }

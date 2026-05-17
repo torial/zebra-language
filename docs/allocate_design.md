@@ -1,6 +1,6 @@
 # `allocate` block — design document
 
-**Status:** in-progress design (2026-05-11)  
+**Status:** Slices 1–4 complete (2026-05-12); Slices 5–6 pending  
 **Milestone:** 0.14
 
 ---
@@ -112,11 +112,11 @@ conservative default — the user manages lifetime).
 
 ## Implementation slices
 
-1. **Slice 1** — `Allocator` as a primitive Zebra type (TC + codegen, both backends)
-2. **Slice 2** — `allocate <expr>` borrow mode (no named types, no scoped deinit)
-3. **Slice 3** — `Arena` stdlib wrapper; confirm `AllocatorSource` interface path
-4. **Slice 4** — remaining named wrappers (Page, Smp, Debug, FixedBuffer, ThreadSafe, Pool, StackFallback)
-5. **Slice 5** — copy-out reconciliation (`is_scoped` flag, `allocate_depth` replaces `arena_depth`)
+1. ~~**Slice 1** — `Allocator` as a primitive Zebra type (TC + codegen, both backends)~~ **DONE** (commit c90040c)
+2. ~~**Slice 2** — `allocate <expr>` borrow mode (no named types, no scoped deinit)~~ **DONE** (commit c90040c)
+3. ~~**Slice 3** — `Arena` stdlib wrapper; confirm `AllocatorSource` interface path~~ **DONE** (commit 18bccac)
+4. ~~**Slice 4** — remaining named wrappers (Page, Smp, Debug, FixedBuffer, ThreadSafe, Pool, StackFallback)~~ **DONE** (commit 18bccac)
+5. ~~**Slice 5** — copy-out reconciliation (`is_scoped` flag, `allocate_depth` replaces `arena_depth`)~~ **DONE** (commit 18c58ac)
 6. **Slice 6** — `arena` → `allocate Arena()` unification + deprecation sweep
 
-Slices 1–3 are the MVP.  Slices 4–6 complete the milestone.
+Slice 6 is the remaining work.  Slice 5 unblocked the full `<-` deep-copy (§23b).

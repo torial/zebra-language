@@ -11,45 +11,39 @@ each entry notes the module, the hack, and what the clean fix would be.
 ### 1. Shadow-set type tracking system
 
 **Files:** `selfhost/codegen.zbr` — `Generator` struct  
-**Status:** Stages 1–3 complete (2026-05-15); Stage 4 blocked on `inferExpr` gap
+**Status:** Stages 1–4 complete (2026-05-15); 3 sets remain pending
 
-**What:** The `Generator` struct carries 9 parallel `StrSet`/`HashMap` fields that
-track the "flavour" of collection locals by variable name:
-- `list_locals` — variables holding any `List(T)`
-- `hashmap_locals` — variables holding any `HashMap(K,V)`
-- `hashmap_str_key_locals` — variables whose HashMap key type is `str`/`String`
-- `hashmap_str_val_locals` — variables whose HashMap value type is `str`/`String`
-- `list_str_locals` — variables holding `List(str)` / `List(String)`
-- `strset_locals` — variables holding `StrSet`
-- `list_ref_locals` — variables holding `List(^T)` (maps name → inner type name)
-- `list_tuple_locals` — variables holding tuple-element lists
-- `list_tuple_str_pos` — encodes which tuple positions hold string values (`"varname:N"`)
+**What:** The `Generator` struct originally carried 9 parallel `StrSet`/`HashMap` fields.
+Six have been deleted; 3 remain pending a different approach:
+- ~~`list_locals`~~ — deleted
+- ~~`hashmap_locals`~~ — deleted
+- ~~`hashmap_str_key_locals`~~ — deleted
+- ~~`hashmap_str_val_locals`~~ — deleted
+- ~~`list_str_locals`~~ — deleted
+- ~~`list_ref_locals`~~ — deleted
+- `strset_locals` — still active (no InferCtx equivalent for StrSet)
+- `list_tuple_locals` — still active (tuple element dispatch)
+- `list_tuple_str_pos` — still active (string-position encoding)
 
 **Stage 1 (done 2026-05-14):** `Type_` now carries `list_: ^Type_` and
 `hashmap_: HashMapType_`, and `typeFromRef` returns them for annotated types.
 
 **Stages 2–3 (done 2026-05-15):** Added 7 helper methods to `Generator`
 (`localIsHashMap`, `localIsList`, `localIsListStr`, `localIsHashMapStrKey`,
-`localIsHashMapStrVal`, `localIsListRef`, `localListRefType`). Each prefers
-`ctx.localType(name)` from `InferCtx`, falls back to the shadow set when
-InferCtx returns `unknown_`. All 15 dispatch sites replaced with helpers.
+`localIsHashMapStrVal`, `localIsListRef`, `localListRefType`). All 15 dispatch
+sites replaced with helpers.
 
-**Stage 4 (blocked):** Shadow-set fields cannot be deleted yet because `inferExpr`
-returns `unknown_` for two patterns that shadow sets cover via heuristics:
-- Unannotated `HashMap(K,V)()` constructor: `var m = HashMap(str,str)()` 
-  — InferCtx calls `inferExpr` on the init expr and gets `unknown_`
-- List literal without annotation: `var xs = ["a","b"]`
-  — InferCtx gets `unknown_` for list literals
+**Stage 4 (done 2026-05-15):** Extended `inferExpr` to handle the two previously-missing
+patterns, then deleted the 6 shadow-set fields and `lookupTopLevelFnReturnTypeRef`:
+1. `Expr.call as gc` extended: handles `HashMap(K,V)()` → `Type_.hashmap_(...)` and `List(T)()` → `Type_.list_(...)` when type args are bare idents
+2. New `on Expr.list_lit as ll` arm: uses `elem_type` annotation if present; else infers from first element; fallback `Type_.list_(Type_.unknown_)` for empty lists
+3. Helper fallbacks removed: `return false`/`return ""` instead of shadow-set reads
+4. Field declarations deleted: 6 fields gone from Generator struct + cue init + indented()
+5. Population code deleted: genLocalVar and genMethod param-tracking blocks for the 6 fields
+6. `lookupTopLevelFnReturnTypeRef` deleted: InferCtx covers same-module function return types via `methodReturnAny("", fn_name)`
 
-**Root fix for Stage 4:** Extend `inferExpr` to handle:
-1. `Expr.call(Expr.call(Expr.ident("HashMap"), typeArgs), [])` → `Type_.hashmap_(...)`
-2. `Expr.call(Expr.call(Expr.ident("List"), typeArgs), [])` → `Type_.list_(...)`
-3. `Expr.list_lit` → `Type_.list_(inferExpr(elem[0]))` (with empty-list fallback)
-After those gaps close, delete the 6 shadow-set fields from `Generator` and
-remove the fallback lines from the 7 helpers.
-
-**Blocked sets (not migrated):** `strset_locals`, `list_tuple_locals`,
-`list_tuple_str_pos` — need deeper InferCtx work or a different approach.
+**Remaining (not migrated):** `strset_locals`, `list_tuple_locals`, `list_tuple_str_pos`
+— need deeper InferCtx work or a different approach.
 
 ---
 
@@ -184,9 +178,9 @@ mismatch immediately.
 
 | # | Hack | Location | Superseded by | Status |
 |---|------|----------|---------------|--------|
-| 1 | Shadow-set system (9 fields) | codegen.zbr Generator | `inferExpr` dispatch (Stages 2–4) | Stages 1–3 done; Stage 4 blocked |
+| 1 | Shadow-set system (9 fields → 3) | codegen.zbr Generator | `inferExpr` dispatch (Stages 1–4) | **Complete** (6 deleted; 3 pending) |
 | 2 | `str_slice` overloading | typechecker.zbr Type_ | `list_` / `hashmap_` variants | inferExpr arms removed; variant kept |
 | 3 | `list_tuple_str_pos` encoding | codegen.zbr | `list_` element type | Active |
-| 4 | `lookupTopLevelFnReturnTypeRef` | codegen.zbr | `inferExpr` on call return | Active |
+| 4 | `lookupTopLevelFnReturnTypeRef` | codegen.zbr | `inferExpr` on call return | **Deleted** |
 | 5 | `context_dependent`/`unresolved` blur | typechecker.zbr | TC gap audit | Active (BUG-099) |
 | 6 | `isHashMapTypeRef` + `hashmap_field_names` | typechecker.zbr | `inferExpr` dispatch | Active |

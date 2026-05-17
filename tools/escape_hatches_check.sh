@@ -37,7 +37,9 @@ cd "$REPO"
 #          require an allocator and the result is meant to live forever
 #   - 9× Profile stdlib (HashMap + stack allocs that outlive arena rewinds;
 #         profile data must survive the scope that is being profiled)
-EXPECTED_PREAMBLE=52
+#   - 2× _Chan(T) channel runtime (_alloc const + _chan_create; channel
+#         buffers are shared across threads and must outlive arena rewinds)
+EXPECTED_PREAMBLE=54
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)

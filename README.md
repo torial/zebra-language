@@ -27,6 +27,7 @@ zig build run -- hello.zbr
 - **[SELFHOST_JOURNAL.md](SELFHOST_JOURNAL.md)** — phase-by-phase port notes.
 - **[BUGS.md](BUGS.md)** — active bug tracker.
 - **[STDLIB_ROADMAP.md](STDLIB_ROADMAP.md)** — standard library plan.
+- **[docs/DEBUGGING.md](docs/DEBUGGING.md)** — debugger setup (VS Code, ZebraIDE, lldb-dap).
 - **[IDE/README.md](IDE/README.md)** — self-hosted IDE experiments.
 - **[HERITAGE.md](HERITAGE.md)** — how this repo relates to the archived
   `cobra-language` repo it was split from.

@@ -1,0 +1,9 @@
+interface IGreeter
+    def greet(name: str): str
+
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name + "!"
+
+export def plugin_create(): ^IGreeter
+    return HelloGreeter()

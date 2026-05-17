@@ -75,7 +75,7 @@ SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
 
 # typechecker is part of the selfhost dep graph as of Phase 16c. It is
 # included here so the round-trip fixed-point check covers it.
-FILES=(Token Lexer ast parser resolver astbuilder cg_helpers typechecker codegen main)
+FILES=(Token Lexer ast parser resolver astbuilder cg_helpers typechecker codegen checker main)
 
 if [[ ! -x "$ZEBRA" ]]; then
     echo "bootstrap_check: $ZEBRA missing. Run 'zig build' first." >&2

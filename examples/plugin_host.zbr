@@ -1,0 +1,10 @@
+interface IGreeter
+    def greet(name: str): str
+
+def main() throws
+    var lib = DynLib.open("hello_plugin")
+    var greeter: ^IGreeter? = lib.lookup(IGreeter, "plugin_create")
+    if greeter as g
+        var msg: str = g.greet("World")
+        print msg
+    lib.close()
