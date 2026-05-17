@@ -1,0 +1,47 @@
+class BankAccount
+    private var balance: int
+    public var owner: str
+
+    cue init(balance: int, owner: str)
+        .balance = balance
+        .owner = owner
+
+    def deposit(n: int)
+        .balance = .balance + n
+
+    def getBalance(): int
+        return .balance
+
+    def transfer(other: BankAccount, n: int)
+        .balance = .balance - n
+        other.balance = other.balance + n
+
+class Counter
+    private var count: int
+
+    cue init()
+        .count = 0
+
+    def inc()
+        .count = .count + 1
+
+    def value(): int
+        return .count
+
+def main()
+    var acc = BankAccount(balance: 100, owner: "Alice")
+    acc.deposit(50)
+    print acc.getBalance()
+    print acc.owner
+
+    var a = BankAccount(balance: 200, owner: "Bob")
+    var b = BankAccount(balance: 0, owner: "Carol")
+    a.transfer(b, 75)
+    print a.getBalance()
+    print b.getBalance()
+
+    var c = Counter()
+    c.inc()
+    c.inc()
+    c.inc()
+    print c.value()

@@ -1,0 +1,16 @@
+interface IParser
+    def parse(input: str): int throws
+
+class SafeParser implements IParser
+    def parse(input: str): int throws
+        if input == ""
+            raise "empty input"
+        return input.len
+
+def main()
+    var p: IParser = SafeParser()
+    var r1: int = p.parse("hello") catch -1
+    assert r1 == 5, "expected 5"
+    var r2: int = p.parse("") catch -1
+    assert r2 == -1, "expected -1 from throw path"
+    print "dynlib_iface_throws: OK"

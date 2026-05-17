@@ -1,0 +1,14 @@
+use crossmod_hatopt_lib
+
+def sumChain(c: crossmod_hatopt_lib.Chain): int
+    var total: int = c.value
+    if c.next as nxt
+        total = total + sumChain(nxt)
+    return total
+
+def main()
+    var c3: crossmod_hatopt_lib.Chain = crossmod_hatopt_lib.Chain(30, nil)
+    var c2: crossmod_hatopt_lib.Chain = crossmod_hatopt_lib.Chain(20, c3)
+    var c1: crossmod_hatopt_lib.Chain = crossmod_hatopt_lib.Chain(10, c2)
+    assert sumChain(c1) == 60
+    print("crossmod_hatopt: OK")

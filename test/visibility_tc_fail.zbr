@@ -1,0 +1,10 @@
+# visibility_tc_fail.zbr — expects TC error: private field accessed from outside its class.
+class Vault
+    private var secret: int
+
+    cue init(secret: int)
+        .secret = secret
+
+def main()
+    var v = Vault(secret: 42)
+    print v.secret

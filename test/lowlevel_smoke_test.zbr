@@ -1,0 +1,31 @@
+def main()
+    Gui.run("LowLevel Smoke", 800, 600, def(g)
+        # Layout helpers (void, exercise the dispatch path)
+        g.lowLevel.beginGroup()
+        g.text("inside group")
+        g.lowLevel.endGroup()
+        g.lowLevel.sameLine()
+        g.text("after sameLine")
+
+        # DrawList calls — colors as RGBA u32 values passed as int
+        g.lowLevel.addLine(0.0, 0.0, 100.0, 100.0, 4278190335, 1.0)
+        g.lowLevel.addRect(10.0, 10.0, 90.0, 90.0, 16711935, 1.0)
+        g.lowLevel.addRectFilled(20.0, 20.0, 80.0, 80.0, 65535)
+        g.lowLevel.addCircle(50.0, 50.0, 30.0, 4278255615, 1.0)
+        g.lowLevel.addCircleFilled(50.0, 50.0, 15.0, 4294902015)
+        g.lowLevel.addText(5.0, 5.0, 4294967295, "hi")
+
+        # Query methods — tuple returns
+        var (wx, wy) = g.lowLevel.getWindowPos()
+        var (ww, wh) = g.lowLevel.getWindowSize()
+        var (cx, cy) = g.lowLevel.getCursorPos()
+        var (mx, my) = g.lowLevel.getMousePos()
+        g.text("win pos: ${wx} ${wy}")
+        g.text("win size: ${ww} ${wh}")
+        g.text("cursor: ${cx} ${cy}")
+        g.text("mouse: ${mx} ${my}")
+
+        # Tuple index access form
+        var pos = g.lowLevel.getWindowPos()
+        g.text("pos.0=${pos.0} pos.1=${pos.1}")
+    )

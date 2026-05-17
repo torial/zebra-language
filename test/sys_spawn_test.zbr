@@ -1,0 +1,32 @@
+# sys.spawn() — non-blocking subprocess handle with .kill() / .isRunning() / .pid
+
+def main()
+    # spawn a quick command and confirm the pid is positive
+    var argv: List(str) = List()
+    argv.add("zig")
+    argv.add("version")
+    var proc = sys.spawn(argv)
+
+    # pid is -1 on Windows (GetProcessId not bound in Zig 0.15); positive on POSIX
+    assert proc.pid >= -1, "expected pid >= -1, got " + proc.pid.toString()
+
+    # give the process up to 2 seconds to finish
+    var waited = 0
+    while proc.isRunning()
+        sys.sleep(100)
+        waited = waited + 1
+        if waited >= 20
+            break
+
+    # process should have exited on its own
+    assert not proc.isRunning(), "expected process to have exited"
+
+    # spawn another, then kill it immediately
+    var argv2: List(str) = List()
+    argv2.add("zig")
+    argv2.add("version")
+    var proc2 = sys.spawn(argv2)
+    proc2.kill()
+    assert not proc2.isRunning(), "expected killed process to not be running"
+
+    print "sys_spawn_test: ok"

@@ -1,0 +1,15 @@
+def main()
+    # Verify Build.new() creates a context, b.exe() returns a target,
+    # and fluent chaining compiles.  We do NOT call b.run() in the smoke
+    # test — that would invoke the Zig compiler as a side effect.
+    var b = Build.new()
+    var app = b.exe("smoke_app", "test/toplevel_main_test.zbr")
+    app.platform("x86_64-linux")
+    app.option("optimize", "Debug")
+    # dependency() is a post-1.0 stub — must compile clean.
+    b.dependency("some-pkg", "0.1.0")
+    # lib and linkLib: architecture exercised even though lib is not yet executed.
+    var lib = b.lib("smoke_lib", "test/arena_scope_test.zbr")
+    var exe2 = b.exe("smoke_exe2", "test/toplevel_main_test.zbr")
+    exe2.linkLib(lib)
+    print "build api: ok"

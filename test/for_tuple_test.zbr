@@ -1,0 +1,27 @@
+def main()
+    # Basic 2-var tuple destructuring
+    var pairs: List((int, str)) = List((int, str))()
+    pairs.add((1, "one"))
+    pairs.add((2, "two"))
+    pairs.add((3, "three"))
+    for n, s in pairs
+        print "${n}:${s}"
+
+    # where clause filter
+    for n, s in pairs if n > 1
+        print "big ${n}"
+
+    # Three-element tuple
+    var triples: List((int, str, bool)) = List((int, str, bool))()
+    triples.add((10, "ten", true))
+    triples.add((20, "twenty", false))
+    for n, s, b in triples
+        print "${n} ${s} ${b}"
+
+    # HashMap 2-var regression — must still work
+    var scores: HashMap(str, int) = HashMap(str, int)()
+    scores.put("a", 1)
+    for k, v in scores
+        print "${k}=${v}"
+
+    print "done"

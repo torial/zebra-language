@@ -1,0 +1,51 @@
+# Chan(T) smoke tests — buffered channel API
+
+def main()
+    # ── Buffered channel: basic send + recv ──────────────────────────────────
+    var ch: Chan(int) = Chan(int)(3)
+    ch.send(10)
+    ch.send(20)
+    ch.send(30)
+
+    var a: int? = ch.recv()
+    var b: int? = ch.recv()
+    var c: int? = ch.recv()
+
+    assert a == 10
+    assert b == 20
+    assert c == 30
+
+    # ── Close + drain ─────────────────────────────────────────────────────────
+    var ch2: Chan(str) = Chan(str)(2)
+    ch2.send("hello")
+    ch2.send("world")
+    ch2.close()
+
+    var s1: str? = ch2.recv()
+    var s2: str? = ch2.recv()
+    var s3: str? = ch2.recv()  # closed + empty → nil
+
+    if s1 as sv1
+        assert sv1 == "hello"
+    else
+        assert false
+    if s2 as sv2
+        assert sv2 == "world"
+    else
+        assert false
+    assert s3 == nil
+
+    # ── <- operator sugar ─────────────────────────────────────────────────────
+    var ch3: Chan(int) = Chan(int)(2)
+    ch3 <- 42
+    ch3 <- 99
+
+    var x: int? = nil
+    x <- ch3
+    var y: int? = nil
+    y <- ch3
+
+    assert x == 42
+    assert y == 99
+
+    print("chan: OK")

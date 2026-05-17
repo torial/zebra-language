@@ -1,0 +1,25 @@
+interface IGreeter
+    def greet(name: str): str
+
+interface ICounter
+    def count(): int
+
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name + "!"
+
+class StepCounter implements ICounter
+    var n: int
+    cue init()
+        .n = 0
+    def count(): int
+        .n = .n + 1
+        return .n
+
+def main()
+    var g: IGreeter = HelloGreeter()
+    print g.greet("World")
+    var c: ICounter = StepCounter()
+    print c.count()
+    print c.count()
+    print "iface_print: OK"

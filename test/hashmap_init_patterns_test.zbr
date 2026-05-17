@@ -1,0 +1,72 @@
+
+# Test: zero-arg generic constructors in typed contexts
+# Covers:
+#   Pattern 1a: struct literal (no cue init)
+#   Pattern 1b: explicit cue init args (named and positional)
+# Verifies that HashMap()/List() args get typed as HashMap(str,str)/List(str)
+# not the fallback anytype.
+
+struct Config
+    var cache: HashMap(str, str)
+    var tags: List(str)
+
+struct Config2
+    var cache: HashMap(str, str)
+    var tags: List(str)
+    cue init(cache: HashMap(str, str), tags: List(str))
+        this.cache = cache
+        this.tags = tags
+
+# Pattern 1c: return-type-hinted — bare return HashMap()/List()
+def getEmptyMap(): HashMap(str, str)
+    return HashMap()
+
+def getEmptyList(): List(str)
+    return List()
+
+# Pattern 1a: struct literal (no cue init) — zero-arg generic ctors in named args
+def makeConfig1a(): Config
+    return Config(cache: HashMap(), tags: List())
+
+# Pattern 1b: explicit cue init — named args
+def makeConfig1b(): Config2
+    return Config2(cache: HashMap(), tags: List())
+
+# Pattern 1b positional: positional args
+def makeConfig1bPos(): Config2
+    return Config2(HashMap(), List())
+
+def main()
+    # Pattern 1a: verify empty map and list are usable
+    var c1 = makeConfig1a()
+    assert c1.cache.count() == 0
+    assert c1.tags.count() == 0
+
+    # Pattern 1b named: verify empty map/list usable
+    var c2 = makeConfig1b()
+    assert c2.cache.count() == 0
+    assert c2.tags.count() == 0
+
+    # Pattern 1b positional: verify empty map/list usable
+    var c3 = makeConfig1bPos()
+    assert c3.cache.count() == 0
+
+    # Mutate through a direct local variable to prove the types are correct
+    var m: HashMap(str, str) = HashMap()
+    m.put("hello", "world")
+    assert m.contains("hello")
+    var lst: List(str) = List()
+    lst.add("abc")
+    assert lst.count() == 1
+
+    # Pattern 1c: return-type-hinted bare HashMap()/List()
+    var rm = getEmptyMap()
+    assert rm.count() == 0
+    rm.put("k", "v")
+    assert rm.count() == 1
+    var rl = getEmptyList()
+    assert rl.count() == 0
+    rl.add("x")
+    assert rl.count() == 1
+
+    print("hashmap_init_patterns: all OK")

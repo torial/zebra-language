@@ -1,0 +1,27 @@
+# list_ref_autobox_test.zbr
+# Tests List(^T).add(val) auto-boxing for struct (value) types.
+# Struct values must be heap-boxed when stored in List(^T).
+# Also validates for-loop field access via Zig pointer auto-deref.
+# Note: List(^T)() can't appear in expression position; use [] initializer.
+
+struct Rect
+    var w: int
+    var h: int
+
+def main()
+    var rects: List(^Rect) = []
+    var r1 = Rect(w: 3, h: 4)
+    var r2 = Rect(w: 5, h: 6)
+    rects.add(r1)
+    rects.add(r2)
+    assert rects.count() == 2
+    # Field access in loop — Zig auto-deref handles *Rect.field
+    for r in rects
+        assert r.w > 0
+        assert r.h > 0
+    # Access via at() — returns *Rect; .w auto-derefs in Zig
+    assert rects.at(0).w == 3
+    assert rects.at(0).h == 4
+    assert rects.at(1).w == 5
+    assert rects.at(1).h == 6
+    print "list_ref_autobox_test OK"

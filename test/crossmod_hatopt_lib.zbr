@@ -1,0 +1,6 @@
+class Chain
+    var value: int
+    var next: ^Chain?
+    cue init(value: int, next: ^Chain?)
+        .value = value
+        .next = next

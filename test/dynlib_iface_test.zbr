@@ -1,0 +1,11 @@
+interface IGreeter
+    def greet(name: str): str
+
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name + "!"
+
+def main()
+    var g: IGreeter = HelloGreeter()
+    var msg: str = g.greet("World")
+    print msg

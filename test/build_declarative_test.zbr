@@ -1,0 +1,11 @@
+def main()
+    var b = Build.new()
+    var app = b.exe("smoke_app", "test/toplevel_main_test.zbr")
+    app.platform("x86_64-linux")
+    app.option("optimize", "Debug")
+    b.dependency("some-pkg", "0.1.0")
+    var lib = b.lib("smoke_lib", "test/arena_scope_test.zbr")
+    var exe2 = b.exe("smoke_exe2", "test/toplevel_main_test.zbr")
+    exe2.linkLib(lib)
+    # Intentionally NO b.run() -- declarative mode
+    print "build declarative: ok"
