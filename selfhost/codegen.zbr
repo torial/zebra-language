@@ -7208,6 +7208,559 @@ struct Generator
                 on Type_.build_target
                     genBuildTargetInstanceCall(m.object, mname, args)
                     return
+                on Type_.string_builder
+                    if mname == "append"
+                        genExpr(m.object)
+                        w.emit(".appendSlice(_allocator, ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(") catch @panic(\"OOM\")")
+                        return
+                    if mname == "appendChar"
+                        genExpr(m.object)
+                        w.emit(".append(_allocator, @as(u8, @intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("0")
+                        w.emit("))) catch @panic(\"OOM\")")
+                        return
+                    if mname == "build"
+                        if current_method_throws
+                            w.emit("(try ")
+                            genExpr(m.object)
+                            w.emit(".toOwnedSlice(_allocator))")
+                        else
+                            w.emit("(")
+                            genExpr(m.object)
+                            w.emit(".toOwnedSlice(_allocator) catch \"\")")
+                        return
+                    if mname == "len"
+                        w.emit("@as(i64, @intCast(")
+                        genExpr(m.object)
+                        w.emit(".items.len))")
+                        return
+                    if mname == "clear"
+                        genExpr(m.object)
+                        w.emit(".clearRetainingCapacity()")
+                        return
+                on Type_.hashmap_ as hmt
+                    var hm_key_is_str = hmt.key_t is Type_.string_
+                    var hm_val_is_str = hmt.val_t is Type_.string_
+                    if mname == "set" or mname == "put"
+                        genExpr(m.object)
+                        w.emit(".put(")
+                        var ai = 0
+                        var fi = true
+                        for a in args
+                            if not fi
+                                w.emit(", ")
+                            fi = false
+                            if (ai == 0 and hm_key_is_str) or (ai == 1 and hm_val_is_str)
+                                w.emit("_intern(")
+                                genExpr(a.value)
+                                w.emit(")")
+                            else
+                                genExpr(a.value)
+                            ai += 1
+                        w.emit(") catch @panic(\"OOM\")")
+                        return
+                    if mname == "get"
+                        genExpr(m.object)
+                        w.emit(".get(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "contains"
+                        genExpr(m.object)
+                        w.emit(".contains(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "fetch"
+                        w.emit("(")
+                        genExpr(m.object)
+                        w.emit(".get(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(") orelse undefined)")
+                        return
+                    if mname == "remove"
+                        w.emit("_ = ")
+                        genExpr(m.object)
+                        w.emit(".remove(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "count"
+                        w.emit("@as(i64, @intCast(")
+                        genExpr(m.object)
+                        w.emit(".count()))")
+                        return
+                    if mname == "entries"
+                        genExpr(m.object)
+                        return
+                    if mname == "keys"
+                        w.emit("(blk_hk: { var _hk = std.ArrayList(@TypeOf(")
+                        genExpr(m.object)
+                        w.emit(".keys()[0])){}; for (")
+                        genExpr(m.object)
+                        w.emit(".keys()) |_k| _hk.append(_allocator, _k) catch unreachable; break :blk_hk _hk; })")
+                        return
+                    if mname == "values"
+                        w.emit("(blk_hv: { var _hv = std.ArrayList(@TypeOf(")
+                        genExpr(m.object)
+                        w.emit(".values()[0])){}; for (")
+                        genExpr(m.object)
+                        w.emit(".values()) |_v| _hv.append(_allocator, _v) catch unreachable; break :blk_hv _hv; })")
+                        return
+                on Type_.list_ as list_elem_t
+                    var item_is_str = list_elem_t is Type_.string_
+                    var item_is_ref = false
+                    var item_ref_type = ""
+                    branch list_elem_t
+                        on Type_.ref_to as inner_ref_t
+                            if inner_ref_t is Type_.named as inner_named
+                                if not class_names.contains_(inner_named)
+                                    item_is_ref = true
+                                    item_ref_type = inner_named
+                        else
+                            pass
+                    if mname == "add"
+                        genExpr(m.object)
+                        w.emit(".append(_allocator, ")
+                        if args.count() > 0
+                            if item_is_ref
+                                var ref_uid = w.nextUid()
+                                var ref_lbl = "_box_" + ref_uid.toString()
+                                w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + item_ref_type + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
+                                genExpr(args.at(0).value)
+                                w.emit("; break :" + ref_lbl + " _bp_" + ref_uid.toString() + "; }")
+                            else if item_is_str
+                                w.emit("_intern(")
+                                genExpr(args.at(0).value)
+                                w.emit(")")
+                            else
+                                genExpr(args.at(0).value)
+                        w.emit(") catch @panic(\"OOM\")")
+                        return
+                    if mname == "count"
+                        w.emit("@as(i64, @intCast(")
+                        genExpr(m.object)
+                        w.emit(".items.len))")
+                        return
+                    if mname == "at"
+                        genExpr(m.object)
+                        w.emit(".items[@intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")]")
+                        return
+                    if mname == "remove"
+                        w.emit("_ = ")
+                        genExpr(m.object)
+                        w.emit(".orderedRemove(@intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit("))")
+                        return
+                    if mname == "clear"
+                        genExpr(m.object)
+                        w.emit(".clearRetainingCapacity()")
+                        return
+                    if mname == "sort"
+                        w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
+                        genExpr(m.object)
+                        w.emit(".items)), ")
+                        genExpr(m.object)
+                        w.emit(".items)")
+                        return
+                    if mname == "sortBy"
+                        if args.count() > 0
+                            w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(".items)")
+                        return
+                    if mname == "any"
+                        if args.count() > 0
+                            w.emit("_zebra_list_any(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
+                    if mname == "all"
+                        if args.count() > 0
+                            w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
+                    if mname == "find"
+                        if args.count() > 0
+                            w.emit("_zebra_list_find(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
+                    if mname == "join"
+                        w.emit("(std.mem.join(_allocator, ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(", ")
+                        genExpr(m.object)
+                        w.emit(".items) catch @panic(\"OOM\"))")
+                        return
+                    if mname == "contains"
+                        w.emit("_zebra_in(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(", ")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                on Type_.string_
+                    if mname == "concat"
+                        w.emit("(std.mem.concat(_allocator, u8, &.{ ")
+                        genExpr(m.object)
+                        for a in args
+                            w.emit(", ")
+                            genExpr(a.value)
+                        w.emit(" }) catch unreachable)")
+                        return
+                    if mname == "startsWith"
+                        w.emit("std.mem.startsWith(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "endsWith"
+                        w.emit("std.mem.endsWith(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "indexOf"
+                        w.emit("blk: { const _idx = std.mem.indexOf(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        w.emit("); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }")
+                        return
+                    if mname == "split"
+                        w.emit("std.mem.splitSequence(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\" \"")
+                        w.emit(")")
+                        return
+                    if mname == "codePointCount"
+                        w.emit("@as(i64, @intCast(std.unicode.utf8CountCodepoints(")
+                        genExpr(m.object)
+                        w.emit(") catch 0))")
+                        return
+                    if mname == "trim"
+                        w.emit("std.mem.trim(u8, ")
+                        genExpr(m.object)
+                        w.emit(", \" \\t\\n\\r\")")
+                        return
+                    if mname == "upper"
+                        w.emit("(std.ascii.allocUpperString(_allocator, ")
+                        genExpr(m.object)
+                        w.emit(") catch unreachable)")
+                        return
+                    if mname == "lower"
+                        w.emit("(std.ascii.allocLowerString(_allocator, ")
+                        genExpr(m.object)
+                        w.emit(") catch unreachable)")
+                        return
+                    if mname == "toString"
+                        w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
+                        genExpr(m.object)
+                        w.emit("}) catch unreachable)")
+                        return
+                    if mname == "toFloat"
+                        w.emit("(std.fmt.parseFloat(f64, ")
+                        genExpr(m.object)
+                        w.emit(") catch 0.0)")
+                        return
+                    if mname == "toInt"
+                        w.emit("(std.fmt.parseInt(i64, ")
+                        genExpr(m.object)
+                        w.emit(", 10) catch 0)")
+                        return
+                    if mname == "count" and args.count() > 0
+                        w.emit("@as(i64, @intCast(std.mem.count(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        genExpr(args.at(0).value)
+                        w.emit(")))")
+                        return
+                    if mname == "contains" and args.count() > 0
+                        w.emit("(std.mem.indexOf(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        genExpr(args.at(0).value)
+                        w.emit(") != null)")
+                        return
+                    if mname == "replace" or mname == "replaceAll"
+                        w.emit("(std.mem.replaceOwned(u8, _allocator, ")
+                        genExpr(m.object)
+                        for a in args
+                            w.emit(", ")
+                            genExpr(a.value)
+                        w.emit(") catch unreachable)")
+                        return
+                    if mname == "repeat" and args.count() > 0
+                        w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8){}; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+                        genExpr(args.at(0).value)
+                        w.emit(") : (_ri += 1) _rep.append(_allocator, ")
+                        genExpr(m.object)
+                        w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })")
+                        return
+                    if mname == "trimLeft"
+                        w.emit("std.mem.trimLeft(u8, ")
+                        genExpr(m.object)
+                        w.emit(", &std.ascii.whitespace)")
+                        return
+                    if mname == "trimRight"
+                        w.emit("std.mem.trimRight(u8, ")
+                        genExpr(m.object)
+                        w.emit(", &std.ascii.whitespace)")
+                        return
+                    if mname == "padLeft"
+                        w.emit("_pad_left(")
+                        genExpr(m.object)
+                        w.emit(", @as(usize, @intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("0")
+                        w.emit(")), ")
+                        if args.count() > 1
+                            genExpr(args.at(1).value)
+                        else
+                            w.emit("' '")
+                        w.emit(", _allocator)")
+                        return
+                    if mname == "padRight"
+                        w.emit("_pad_right(")
+                        genExpr(m.object)
+                        w.emit(", @as(usize, @intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("0")
+                        w.emit(")), ")
+                        if args.count() > 1
+                            genExpr(args.at(1).value)
+                        else
+                            w.emit("' '")
+                        w.emit(", _allocator)")
+                        return
+                    if mname == "center"
+                        w.emit("_pad_center(")
+                        genExpr(m.object)
+                        w.emit(", @as(usize, @intCast(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("0")
+                        w.emit(")), ")
+                        if args.count() > 1
+                            genExpr(args.at(1).value)
+                        else
+                            w.emit("' '")
+                        w.emit(", _allocator)")
+                        return
+                    if mname == "isEmpty"
+                        w.emit("(")
+                        genExpr(m.object)
+                        w.emit(".len == 0)")
+                        return
+                    if mname == "lines"
+                        w.emit("std.mem.splitScalar(u8, ")
+                        genExpr(m.object)
+                        w.emit(", '\\n')")
+                        return
+                    if mname == "reverse"
+                        w.emit("(blk_rev: { const _rbuf = _allocator.alloc(u8, ")
+                        genExpr(m.object)
+                        w.emit(".len) catch @panic(\"OOM\"); @memcpy(_rbuf, ")
+                        genExpr(m.object)
+                        w.emit("); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })")
+                        return
+                    if mname == "charAt" and args.count() > 0
+                        genExpr(m.object)
+                        w.emit("[@intCast(")
+                        genExpr(args.at(0).value)
+                        w.emit(")]")
+                        return
+                    if mname == "substring" and args.count() >= 2
+                        genExpr(m.object)
+                        w.emit("[@intCast(")
+                        genExpr(args.at(0).value)
+                        w.emit(")..@intCast(")
+                        genExpr(args.at(1).value)
+                        w.emit(")]")
+                        return
+                    if mname == "lastIndexOf" and args.count() > 0
+                        w.emit("(if (std.mem.lastIndexOf(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        genExpr(args.at(0).value)
+                        w.emit(")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1))")
+                        return
+                    if mname == "eqlIgnoreCase" and args.count() > 0
+                        w.emit("std.ascii.eqlIgnoreCase(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "isAlphanumeric"
+                        w.emit("(blk_ian: { const _ian_s = ")
+                        genExpr(m.object)
+                        w.emit("; if (_ian_s.len == 0) break :blk_ian false; for (_ian_s) |_ian_c| { if (!std.ascii.isAlphanumeric(_ian_c)) break :blk_ian false; } break :blk_ian true; })")
+                        return
+                    if mname == "isPrintable"
+                        w.emit("(blk_ipr: { const _ipr_s = ")
+                        genExpr(m.object)
+                        w.emit("; if (_ipr_s.len == 0) break :blk_ipr false; for (_ipr_s) |_ipr_c| { if (!std.ascii.isPrint(_ipr_c)) break :blk_ipr false; } break :blk_ipr true; })")
+                        return
+                    if mname == "startsWithIgnoreCase" and args.count() > 0
+                        w.emit("(blk_swic: { const _swic_s = ")
+                        genExpr(m.object)
+                        w.emit("; const _swic_p = ")
+                        genExpr(args.at(0).value)
+                        w.emit("; break :blk_swic _swic_s.len >= _swic_p.len and std.ascii.eqlIgnoreCase(_swic_s[0.._swic_p.len], _swic_p); })")
+                        return
+                    if mname == "endsWithIgnoreCase" and args.count() > 0
+                        w.emit("(blk_ewic: { const _ewic_s = ")
+                        genExpr(m.object)
+                        w.emit("; const _ewic_p = ")
+                        genExpr(args.at(0).value)
+                        w.emit("; break :blk_ewic _ewic_s.len >= _ewic_p.len and std.ascii.eqlIgnoreCase(_ewic_s[_ewic_s.len - _ewic_p.len..], _ewic_p); })")
+                        return
+                    if mname == "containsIgnoreCase" and args.count() > 0
+                        w.emit("(blk_cic: { const _cic_s = ")
+                        genExpr(m.object)
+                        w.emit("; const _cic_p = ")
+                        genExpr(args.at(0).value)
+                        w.emit("; var _cic_i: usize = 0; while (_cic_i + _cic_p.len <= _cic_s.len) : (_cic_i += 1) { if (std.ascii.eqlIgnoreCase(_cic_s[_cic_i.._cic_i + _cic_p.len], _cic_p)) break :blk_cic true; } break :blk_cic false; })")
+                        return
+                    if mname == "indexOfIgnoreCase" and args.count() > 0
+                        w.emit("(blk_ioic: { const _ioic_s = ")
+                        genExpr(m.object)
+                        w.emit("; const _ioic_p = ")
+                        genExpr(args.at(0).value)
+                        w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
+                        return
+                    if mname == "indexOfFrom" and args.count() >= 2
+                        w.emit("(if (std.mem.indexOfPos(u8, ")
+                        genExpr(m.object)
+                        w.emit(", @intCast(")
+                        genExpr(args.at(1).value)
+                        w.emit("), ")
+                        genExpr(args.at(0).value)
+                        w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
+                        return
+                    if mname == "toIntBase" and args.count() > 0
+                        w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")
+                        genExpr(args.at(0).value)
+                        w.emit("); break :blk_tib @as(i64, std.fmt.parseInt(i64, ")
+                        genExpr(m.object)
+                        w.emit(", _tib_base) catch 0); })")
+                        return
+                    if mname == "tokenize" and args.count() > 0
+                        w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        genExpr(args.at(0).value)
+                        w.emit("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+                        return
+                    if mname == "encodeBase64"
+                        w.emit("_base64_encode(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "decodeBase64"
+                        w.emit("_base64_decode_str(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "isAlpha"
+                        w.emit("(blk_ia: { if (")
+                        genExpr(m.object)
+                        w.emit(".len == 0) break :blk_ia false; for (")
+                        genExpr(m.object)
+                        w.emit(") |_ac| { if (!std.ascii.isAlphabetic(_ac)) break :blk_ia false; } break :blk_ia true; })")
+                        return
+                    if mname == "isNumeric"
+                        w.emit("(blk_in: { if (")
+                        genExpr(m.object)
+                        w.emit(".len == 0) break :blk_in false; for (")
+                        genExpr(m.object)
+                        w.emit(") |_nc| { if (!std.ascii.isDigit(_nc)) break :blk_in false; } break :blk_in true; })")
+                        return
+                    if mname == "isValidUtf8"
+                        w.emit("std.unicode.utf8ValidateSlice(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "toHex"
+                        w.emit("(blk_hex: { const _hx_s = ")
+                        genExpr(m.object)
+                        w.emit("; const _hx_buf = _allocator.alloc(u8, _hx_s.len * 2) catch @panic(\"OOM\"); ")
+                        w.emit("for (_hx_s, 0..) |_hx_b, _hx_i| { _ = std.fmt.bufPrint(_hx_buf[_hx_i * 2 .. _hx_i * 2 + 2], \"{x:0>2}\", .{_hx_b}) catch unreachable; } ")
+                        w.emit("break :blk_hex _hx_buf; })")
+                        return
+                    if mname == "fromHex"
+                        w.emit("(blk_fhx: { if (")
+                        genExpr(m.object)
+                        w.emit(".len % 2 != 0) break :blk_fhx @as(?[]const u8, null); ")
+                        w.emit("const _hbuf = _allocator.alloc(u8, ")
+                        genExpr(m.object)
+                        w.emit(".len / 2) catch @panic(\"OOM\"); ")
+                        w.emit("std.fmt.hexToBytes(_hbuf, ")
+                        genExpr(m.object)
+                        w.emit(") catch { _allocator.free(_hbuf); break :blk_fhx @as(?[]const u8, null); }; ")
+                        w.emit("break :blk_fhx @as(?[]const u8, _hbuf); })")
+                        return
+                    if mname == "format"
+                        w.emit("(std.fmt.allocPrint(_allocator, ")
+                        genExpr(m.object)
+                        for a in args
+                            w.emit(", .{ ")
+                            genExpr(a.value)
+                            w.emit(" }")
+                        w.emit(") catch unreachable)")
+                        return
                 else
                     pass
         # Chan(T) — dispatch send/recv/close via chan_locals tracking
