@@ -894,6 +894,7 @@ const Tokenizer = struct {
         if (c == '|' and c1 == '=') { self.pos += 2; try self.emit(.vertical_bar_equals, "|=", ln, cl); return; }
         if (c == '^' and c1 == '=') { self.pos += 2; try self.emit(.caret_equals,        "^=", ln, cl); return; }
         if (c == '?' and c1 == '=') { self.pos += 2; try self.emit(.question_equals,     "?=", ln, cl); return; }
+        if (c == '?' and c1 == '.') { self.pos += 2; try self.emit(.question_dot,        "?.", ln, cl); return; }
         if (c == '!' and c1 == '=') { self.pos += 2; try self.emit(.bang_equals,         "!=", ln, cl); return; }
         if (c == '.' and c1 == '.') { self.pos += 2; try self.emit(.dotdot,              "..", ln, cl); return; }
 

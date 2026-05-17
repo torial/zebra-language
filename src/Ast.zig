@@ -117,6 +117,8 @@ pub const Modifiers = packed struct {
     /// Requires: instance method, no parameters, non-void return type.
     /// Set by AstBuilder when a preceding `@once` directive is consumed.
     once: bool = false,
+    /// `export def` — emits `pub export fn`; marks the symbol as exported from a shared library.
+    export_: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────
@@ -653,6 +655,7 @@ pub const Expr = union(enum) {
     tuple_lit: *ExprTuple,  // (a, b, c) — tuple literal
     type_check: *ExprTypeCheck, // expr is TypeName — runtime type-ID check
     chained_cmp: *ExprChainedCmp, // a < b < c — chained comparison (desugared to and-chain at codegen)
+    opt_chain: *ExprOptChain, // expr?.member / expr?.method(args) — nil-propagating access
 };
 
 // ── Literal expressions ───────────────────────────────────────────────────────
@@ -952,6 +955,13 @@ pub const ExprChainedCmp = struct {
     span:     Span,
     ops:      []const BinaryOp,
     operands: []const *Expr, // length = ops.len + 1
+};
+
+pub const ExprOptChain = struct {
+    span:   Span,
+    base:   *Expr,
+    member: []const u8,
+    args:   ?[]const Arg, // null → member access; non-null (possibly empty) → method call
 };
 
 // ── Arena helpers ─────────────────────────────────────────────────────────────

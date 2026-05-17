@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-13 (tuple/multi-return + ImGui LowLevel field design)
+**Last updated:** 2026-05-16 (ergonomics sprint: --warn-non-exhaustive, genMemberCall user-method bypass, cross-module ^T? binding fix, optional chaining ?.)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -22,17 +22,17 @@ Everything here must ship before 1.0 stability locks in.
 
 **0.11 remaining:**
 - [x] REPL — `zebra repl` subcommand; accumulate-and-rerun model; sentinel output isolation; :help/:clear/:history/:load/:save; selfhost delegates to bootstrap (2026-05-13)
-- [ ] Real ImGui backend completion (`LowLevel` sub-API + any remaining rendering gaps)
+- [x] Real ImGui backend completion (`LowLevel` sub-API) — `g.lowLevel.addLine/addRect/addRectFilled/addCircle/addCircleFilled/addText` (DrawList), `getWindowPos/Size/getCursorPos/getMousePos` → `(float,float)` tuple, `beginGroup/endGroup/sameLine`; stub + ImGui backends; 94/94 smoke (2026-05-13)
 - [x] JSON auto-inference — `Json.parse(T, src)` typed overload routes to `parseStrict` machinery; `@reflectable` required; both backends; bootstrap 5/5 (2026-05-13)
 - [x] Tuple/multi-return — `(T1, T2)` type, `(a, b)` literal, `var (x, y) = f()` destructure, `.0`/`.1` index; TC element-type registration; 93/93 smoke; bootstrap 5/5 (2026-05-13)
 - [ ] gzip compress — **blocked on Zig 0.16 upgrade** (see below)
 - [ ] Zig 0.16 upgrade — unblocks gzip; compile-performance improvements help REPL latency
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
-- [ ] Build system in Zebra
+- [x] Build system in Zebra — `zebra build` + `Build` stdlib module; selfhost TC/codegen parity; --build-file/--list-targets/b.target(); 96/96 smoke, bootstrap 5/5 (2026-05-14)
 
 **0.13 remaining:**
-- [ ] BUG-115 — visibility keywords decision + sweep (or formally drop `_` convention)
-- [ ] `^T` auto-boxing edge case fixes
+- [x] BUG-115 — visibility keywords enforcement: `private`/`public`/`internal`/`protected` parsed + enforced; TC error outside owning class; cross-module `internal` excluded from interface table; selfhost parity; 99/99 smoke, bootstrap 5/5 (2026-05-14)
+- [x] `^T` auto-boxing edge case fixes: `List(^T).add(val)` heaps-boxes struct values in both compilers; `for item in List(^T)` via Zig auto-deref; method-chain fixed (BUG-027/079); 100/100 smoke, bootstrap 5/5 (2026-05-14)
 - [ ] Book docs for `sig`, raw strings, `"""`
 
 **0.14 remaining (entire milestone — priority cluster):**
@@ -45,7 +45,7 @@ Everything here must ship before 1.0 stability locks in.
 - [ ] Type aliases with constraints (`type Name = str where len > 0`)
 - [ ] WebSocket (`Ws.connect/send/recv/close`)
 - [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
-- [ ] General for-loop destructuring (`for a, b in list_of_pairs`)
+- [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
 - [ ] CHANGELOG covering the full 0.1 → 1.0 surface
 
 ---
@@ -68,6 +68,50 @@ queued for the 0.13 syntax-cleanup window. See §12 below.
 
 ## Medium Term (Milestone Features)
 
+### 24. Compiler ergonomics + self-hosting quality (active sprint 2026-05-16)
+
+Five pain points surfaced during Gap-3 / tuple / DynLib work. Prioritised in this order:
+
+**a. Exhaustive union-match warning** *(complete 2026-05-16)*
+`--warn-non-exhaustive` flag in both compilers: when a `branch` on a same-module union
+has an `else` arm but doesn't name all variants, emits a warning per uncovered variant.
+108 existing `else` arms made always-on impractical; flag enables opt-in at development
+time when adding new union variants.  Bootstrap (`typeCheckPass3Ex`) + selfhost
+(`InferCtx.warn_non_exhaustive` + `checkStmts Stmt.branch_` arm + `warningMessages()`).
+Bootstrap 5/5, 104/104 smoke.
+
+**b. Cross-module `^T?` branch bindings not tracked** *(complete 2026-05-16)*
+Bootstrap TC: `inferMember` for cross-module types now wraps in `optional` when the field
+is in `optional_ref_fields` (i.e., declared as `^T?`).  Previously, `instance_field_types`
+returned a bare `cross_module` type stripping the optional wrapper, so `if x as n` on such
+fields reported "requires optional type, got 'T'".
+Selfhost TC: option B in `walkStmt` `if x as n` now strips `Type_.ref_to` before checking
+`Type_.optional`, so same-file `^T?` fields also work.
+Test: `test/crossmod_hatopt_test.zbr` — linked list with cross-module `^Chain?` field.
+Bootstrap 5/5, 105/105 smoke.
+
+**c. Optional chaining `?.` operator** *(complete 2026-05-16)*
+`foo?.bar` and `foo?.method(args)` — nil base propagates nil; non-nil accesses member/calls
+method.  New `question_dot` token; grammar productions; `ExprOptChain` AST node; Resolver +
+TC + CodeGen in both compilers.  Selfhost resolver, `nameUsedInExpr` in `cg_helpers.zbr`
+patched to handle `opt_chain` (missing cases caused spurious `_ = param;` + pointless-discard
+Zig error).  Bootstrap 5/5, 106/106 smoke.
+
+**d. `genMemberCall` user-method bypass pattern keeps recurring** *(complete 2026-05-16)*
+Added a general user-method early-exit in `genMemberCall` (selfhost/codegen.zbr): before
+all heuristic branches, if the receiver is a `Type_.named` user class with a declared
+method `mname`, emit `receiver.mname(args)` directly (with `try` prefix when the method
+is in `throws_methods` and the call context is throws).  Stdlib primitives (List,
+StringBuilder, etc.) are not in `ModuleTypes`, so they fall through to existing heuristics.
+Makes the per-method `count`/`at` bypasses redundant (kept for now as documentation).
+Bootstrap 5/5, 104/104 smoke.
+
+**e. Stdlib method registration in 4 places** *(architectural; defer)*
+Every new stdlib method touches `src/CodeGen.zig`, `selfhost/codegen.zbr`,
+`selfhost/typechecker.zbr` (inferExpr allowlist), and sometimes `cg_helpers.zbr`.
+Long-term fix: a single method-descriptor table driving both TC inference and codegen
+dispatch.  **Defer post-1.0** — the 4-place pattern is painful but mechanical.
+
 ### 6. REPL (Milestone 0.11)
 Two-phase approach: warm-up pre-compiled preamble once → per-input incremental compile.
 "Accumulate and rerun" state model (all previous cells stay in scope).
@@ -84,9 +128,11 @@ Scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window, TF-ID
 cosine similarity via `f32x8` dot-product.  See `concept_zebra-simd-design.md`
 for the fuzzy-match and text-analytics use-case table.
 
-### 10. Plugin system — DynLib demo
-Round-trip: a toy "Hello" plugin DLL loaded by a host program via `std.DynLib`.
-`interface` codegen is done — this is now unblocked.
+### 10. Plugin system — DynLib demo ✓ (2026-05-16)
+Interface vtable construction, shim functions, DynLib stdlib, and demo files are complete.
+`examples/hello_plugin.zbr` + `examples/plugin_host.zbr` show the factory-function pattern.
+`test/dynlib_iface_test.zbr` covers vtable dispatch without DLL loading (both backends pass).
+Full DLL round-trip (build plugin → load from host) requires platform build steps — not in CI.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
 ### 12. Syntax and ergonomics cleanup (Milestone 0.13)
@@ -100,7 +146,7 @@ See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
 **Open docs:**
 - Book documentation for `sig`, raw strings, `"""`
-- `^T` auto-boxing edge case fixes (W11 in `concept_zebra-language-warts.md`)
+- `^T` auto-boxing ✅ — done 2026-05-14 (see 0.13 remaining above)
 
 **Done (reference):**
 - BUG-111 ✅ — compound assign already works (closed not-a-bug 2026-05-05)
@@ -161,7 +207,10 @@ in method A + bad expression in method B" cheaply.
   path; `use Foo` resolves against source-file directory first, then each `--module-path`
   in order. Multiple flags allowed; also `--module-path=DIR` form. Threads recursively
   through `compileZbrToZig`.
-- **Build system in Zebra** — not started.
+- **Build system in Zebra** — `zebra build` subcommand + `Build` stdlib module (2026-05-13).
+  `Build.new()` / `b.exe(name, entry)` / `b.lib(name, entry)` / `b.run()` /
+  `target.platform(str)` / `target.option(k,v)` / `target.linkLib(other)` /
+  `b.dependency(name, ver)` stub.  Bootstrap compiler only; selfhost TC/codegen parity pending.
 
 ---
 
@@ -225,7 +274,7 @@ the broader commitment is everything that landed from 0.1 onward.
 - Type aliases with constraints (`type Name = str where len > 0`)
 - WebSocket (`Ws.connect/send/recv/close`)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
-- General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking; currently only HashMap iteration has this
+- [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
 - CHANGELOG covering the full 0.1 → 1.0 surface
 
 ---

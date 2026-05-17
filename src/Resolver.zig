@@ -612,6 +612,7 @@ const Resolver = struct {
             .tuple_lit     => |e| { for (e.elems) |el| try r.walkExpr(el, scope); },
             .type_check    => |e| try r.walkExpr(e.expr, scope),
             .chained_cmp   => |cc| { for (cc.operands) |op| try r.walkExpr(op, scope); },
+            .opt_chain     => |e| { try r.walkExpr(e.base, scope); if (e.args) |args| for (args) |a| try r.walkExpr(a.value, scope); },
             .string_interp => |e| {
                 for (e.parts) |p| switch (p) {
                     .expr    => |ex| try r.walkExpr(ex, scope),
@@ -775,6 +776,7 @@ const Resolver = struct {
             .tuple_lit     => |e| { for (e.elems) |el| try r.collectFreeVars(el, local, out, seen); },
             .type_check    => |e| try r.collectFreeVars(e.expr, local, out, seen),
             .chained_cmp   => |cc| { for (cc.operands) |op| try r.collectFreeVars(op, local, out, seen); },
+            .opt_chain     => |e| { try r.collectFreeVars(e.base, local, out, seen); if (e.args) |args| for (args) |a| try r.collectFreeVars(a.value, local, out, seen); },
             // Atomics: nothing to collect.
             .int_lit, .float_lit, .bool_lit, .char_lit,
             .string_lit, .zig_lit, .nil, .this, .result_,
@@ -918,6 +920,7 @@ const Resolver = struct {
             .tuple_lit     => |e| { for (e.elems) |el| try r.checkCaptureBoundary(el, lambda_local); },
             .type_check    => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
             .chained_cmp   => |cc| { for (cc.operands) |op| try r.checkCaptureBoundary(op, lambda_local); },
+            .opt_chain     => |e| { try r.checkCaptureBoundary(e.base, lambda_local); if (e.args) |args| for (args) |a| try r.checkCaptureBoundary(a.value, lambda_local); },
             // Atomics: nothing to check.
             .int_lit, .float_lit, .bool_lit, .char_lit,
             .string_lit, .zig_lit, .nil, .this, .result_,

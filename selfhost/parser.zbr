@@ -101,6 +101,7 @@ union PNode
     expr_array_lit: ^PArrayLit
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
     expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
+    expr_opt_chain: ^POptChain         # expr?.member / expr?.method(args)
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -269,17 +270,23 @@ struct PField
     var type_name: str
     var is_const: bool
     var is_static: bool
+    var is_private: bool
+    var is_public: bool
     var init_expr: List(PNode)
-    cue init(name: str, type_name: str, is_const: bool, is_static: bool, init_expr: List(PNode))
+    cue init(name: str, type_name: str, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: List(PNode))
         .name = name
         .type_name = type_name
         .is_const = is_const
         .is_static = is_static
+        .is_private = is_private
+        .is_public = is_public
         .init_expr = init_expr
 
 struct PMethod
     var name: str
     var is_static: bool
+    var is_private: bool
+    var is_public: bool
     var throws_: bool
     var params: List(PParam)
     var return_type: str
@@ -287,9 +294,12 @@ struct PMethod
     var is_profile: bool
     var is_once: bool
     var tags: List(str)
-    cue init(name: str, is_static: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str))
+    var is_export: bool
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool)
         .name = name
         .is_static = is_static
+        .is_private = is_private
+        .is_public = is_public
         .throws_ = throws_
         .params = params
         .return_type = return_type
@@ -297,6 +307,7 @@ struct PMethod
         .is_profile = is_profile
         .is_once = is_once
         .tags = tags
+        .is_export = is_export
 
 struct PInit
     var params: List(PParam)
@@ -571,6 +582,17 @@ struct PChainedCmp
     cue init(ops: List(str), operands: List(PNode))
         .ops = ops
         .operands = operands
+
+struct POptChain
+    var base: List(PNode)    # single element: the optional expression
+    var member: str          # member or method name
+    var has_args: bool       # true = method call
+    var args: List(PNode)    # call args (PNode or PNode.expr_named_arg)
+    cue init(base: List(PNode), member: str, has_args: bool, args: List(PNode))
+        .base = base
+        .member = member
+        .has_args = has_args
+        .args = args
 
 struct PExprId
     var name: str
@@ -1036,9 +1058,12 @@ class Parser
             return .parseSigDecl()
         else if .textIs("static")
             .advance()
-            return .parseMethodDecl(true, pending_profile, pending_once, pending_tags)
+            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false)
+        else if .textIs("export")
+            .advance()
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true)
         else if .textIs("def")
-            return .parseMethodDecl(false, pending_profile, pending_once, pending_tags)
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false)
         raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws
@@ -1319,6 +1344,14 @@ class Parser
     # -- Member declarations ---------------------------------------------------
 
     def parseMemberDecl(is_static: bool): PNode throws
+        var pending_private: bool = false
+        var pending_public: bool = false
+        if .textIs("private") or .textIs("public") or .textIs("internal") or .textIs("protected")
+            if .textIs("private") or .textIs("protected") or .textIs("internal")
+                pending_private = true
+            else
+                pending_public = true
+            .advance()
         var pending_profile: bool = false
         var pending_once: bool = false
         var pending_tags: List(str) = List(str)()
@@ -1350,11 +1383,11 @@ class Parser
                 .skipEol()
                 sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
         if .textIs("def")
-            return .parseMethodDecl(is_static, pending_profile, pending_once, pending_tags)
+            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false)
         else if .textIs("var")
-            return .parseDeclField(false, is_static)
+            return .parseDeclField(false, is_static, pending_private, pending_public)
         else if .textIs("const")
-            return .parseDeclField(true, is_static)
+            return .parseDeclField(true, is_static, pending_private, pending_public)
         else if .textIs("cue")
             return .parseDeclInit()
         else if .textIs("invariant")
@@ -1377,7 +1410,7 @@ class Parser
                 .advance()
         return PNode.invariant_decl(expr_nodes)
 
-    def parseDeclField(is_const: bool, is_static: bool): PNode throws
+    def parseDeclField(is_const: bool, is_static: bool, is_private: bool, is_public: bool): PNode throws
         if is_const
             .expectText("const")
         else
@@ -1395,7 +1428,7 @@ class Parser
             .advance()
             init_expr.add(.parseExpr())
         .skipEol()
-        return PNode.field_(PField(name, type_name, is_const, is_static, init_expr))
+        return PNode.field_(PField(name, type_name, is_const, is_static, is_private, is_public, init_expr))
 
     def parseDeclInit(): PNode throws
         .expectText("cue")
@@ -1430,7 +1463,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_profile: bool, is_once: bool, tags: List(str)): PNode throws
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool): PNode throws
         const line = .peek().line
         .expectText("def")
         var name = ""
@@ -1491,7 +1524,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, throws_, params, return_type, stmts, is_profile, is_once, tags))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export))
 
     # -- Block and statements --------------------------------------------------
 
@@ -2303,6 +2336,24 @@ class Parser
                     var base = List(PNode)()
                     base.add(expr)
                     expr = PNode.expr_member(PMember(base, field))
+            else if .textIs("?.")
+                # Optional chain: expr?.member or expr?.method(args)
+                .advance()  # consume "?."
+                if .isOpenCall()
+                    # expr?.method(args) — method call
+                    const mname = .peek().text
+                    .advance()
+                    const cargs = .parseCallArgs()
+                    var base_list = List(PNode)()
+                    base_list.add(expr)
+                    expr = PNode.expr_opt_chain(POptChain(base_list, mname, true, cargs))
+                else
+                    # expr?.field — member access
+                    const field = .eatId()
+                    var base_list = List(PNode)()
+                    base_list.add(expr)
+                    var empty_args = List(PNode)()
+                    expr = PNode.expr_opt_chain(POptChain(base_list, field, false, empty_args))
             else if .textIs("?")
                 .advance()
                 expr = PNode.expr_try(expr)

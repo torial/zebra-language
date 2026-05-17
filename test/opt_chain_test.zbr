@@ -1,0 +1,37 @@
+struct Config
+    var port: int
+    cue init(port: int)
+        .port = port
+    def doubled(): int
+        return .port * 2
+
+def getPort(c: Config?): int?
+    return c?.port
+
+def main()
+    var cfg: Config? = Config(8080)
+    var none: Config? = nil
+
+    # Member access — non-nil base
+    if cfg?.port as p
+        assert p == 8080
+
+    # Member access — nil base propagates nil (test by asserting the block is not entered)
+    var nil_port: int? = none?.port
+    assert nil_port == nil
+
+    # Method call — non-nil base
+    if cfg?.doubled() as d
+        assert d == 16160
+
+    # Method call — nil base propagates nil
+    var nil_doubled: int? = none?.doubled()
+    assert nil_doubled == nil
+
+    # Via function
+    if getPort(cfg) as v
+        assert v == 8080
+    var nil_r: int? = getPort(none)
+    assert nil_r == nil
+
+    print("opt_chain: OK")

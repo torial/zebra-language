@@ -20,6 +20,7 @@ if [[ ! -x "$ZEBRA" ]]; then
     echo "selfhost_smoke: $ZEBRA missing. Run 'zig build' first." >&2
     exit 1
 fi
+BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap.exe"
 
 TMPDIR_OUT="/tmp/selfhost-smoke"
 rm -rf "$TMPDIR_OUT"
@@ -130,6 +131,7 @@ smoke test/string_format_test.zbr
 smoke test/crossmod_arith_test.zbr
 smoke test/crossmod_types_test.zbr
 smoke test/crossmod_struct_pat_test.zbr
+smoke test/crossmod_hatopt_test.zbr
 
 # Struct + union features
 smoke test/ctor_arg_ref_test.zbr
@@ -235,6 +237,9 @@ smoke test/bug088_try_return_test.zbr
 # @profile method attribute: wraps body with _profile_start/defer _profile_end.
 smoke test/profile_attr_test.zbr
 
+# g.lowLevel sub-API: DrawList drawing + position queries + layout helpers.
+smoke test/lowlevel_smoke_test.zbr
+
 # BUG-116: char method dispatch (isAlpha/isDigit/isWhitespace/isUpper/isLower/toUpper/toLower).
 smoke test/bug116_char_methods_test.zbr
 # BUG-117: List.join(sep) — swap inverted args to std.mem.join (separator first, list.items second).
@@ -259,6 +264,9 @@ smoke test/bug093_strlen_test.zbr
 
 # Tuple/multi-return: (int,int) return type + var (x,y) = f() destructure + .0/.1 index.
 smoke test/tuple_smoke_test.zbr
+
+# For-loop tuple destructuring: `for a, b in List((T1, T2))` + where clause + HashMap regression.
+smoke test/for_tuple_test.zbr
 
 # Guarded for-in (`for x in list if cond`) and List.find(pred).
 smoke test/for_in_guard_test.zbr
@@ -327,6 +335,80 @@ smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 
 # `zebra test` subcommand: assert_eq/ne/true/false + test runner.
 smoke_test test/test_module_test.zbr
+
+# Run a fixture via the bootstrap compiler (not selfhost) and check its stdout
+# contains the expected substring.  Used for runtime API smoke tests where
+# the selfhost TC/codegen parity for that feature is not yet ported.
+smoke_run() {
+    local zbr="$1"
+    local expected="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_run"
+    local got
+    if got=$("$ZEBRA" "$zbr" 2>&1); then
+        if echo "$got" | grep -qF "$expected"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (expected '$expected' in output)" >&2
+            echo "    got: $got" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit)" >&2
+        echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+smoke_run_bootstrap() {
+    local zbr="$1"
+    local expected="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_run"
+    local got
+    if got=$("$BOOTSTRAP" "$zbr" 2>&1); then
+        if echo "$got" | grep -qF "$expected"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (expected '$expected' in output)" >&2
+            echo "    got: $got" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit)" >&2
+        cat /tmp/smoke-err >&2 || true
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# Build stdlib module: Build.new / b.exe / b.lib / target.linkLib / platform / option / dependency.
+# Uses bootstrap compiler — selfhost TC/codegen parity for Build is pending.
+smoke_run_bootstrap test/build_smoke_test.zbr "build api: ok"
+# Declarative style: same API surface but no b.run() call (auto-run injected by `zebra build`).
+smoke_run_bootstrap test/build_declarative_test.zbr "build declarative: ok"
+
+# List(^T).add(val) auto-boxing: struct values heap-boxed when stored in List(^T).
+smoke test/list_ref_autobox_test.zbr
+
+# Visibility: private/public/internal/protected modifier enforcement.
+# Positive: private field read/written inside same class compiles and runs.
+smoke test/visibility_test.zbr
+# Negative: private field accessed from outside owning class must fail TC.
+smoke_tc_fail test/visibility_tc_fail.zbr "is private"
+
+# Interface vtable construction: class implementing interface coerced to interface var.
+# Full run (not just emit) to verify vtable dispatch produces correct output.
+smoke_run test/dynlib_iface_test.zbr "Hello, World!"
+# Throws interface: vtable shim must propagate anyerror! and `try` correctly.
+smoke_run test/dynlib_iface_throws_test.zbr "dynlib_iface_throws: OK"
+# Interface method return-type inference: print format spec + vtable dispatch for same-module interfaces.
+smoke_run test/iface_print_test.zbr "iface_print: OK"
+# Tuple type inference: element types inferred from tuple_lit + member access (.0/.1); destructuring binds correct types.
+smoke_run test/tuple_smoke_test.zbr "done"
+# Optional chaining: expr?.member and expr?.method(args) — nil base propagates nil; non-nil accesses member/calls method.
+smoke_run test/opt_chain_test.zbr "opt_chain: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

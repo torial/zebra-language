@@ -54,6 +54,20 @@ class HashMapType_
         .key_t = key_t
         .val_t = val_t
 
+class TupleType_
+    var elems: List(Type_)
+
+    cue init(elems: List(Type_))
+        .elems = elems
+
+    def at(idx: int): Type_?
+        if idx < 0 or idx >= .elems.count()
+            return nil
+        return .elems.at(idx)
+
+    def count(): int
+        return .elems.count()
+
 # ── Type representation ──────────────────────────────────────────────────────
 # Skeleton variant set for Phase 16a. Phases 17–19 add:
 #   generic_named, tuple, fn_ref, fn_sig, http_request, http_response,
@@ -108,6 +122,8 @@ union Type_
     # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
     list_: ^Type_
     hashmap_: HashMapType_
+    # Tuple type — ordered sequence of heterogeneous element types.
+    tuple_: TupleType_
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -231,6 +247,9 @@ class ModuleTypes
     # "is 'Foo' declared: a union in this module?" without enumerating
     # variant_payloads. Populated alongside variant_payloads.
     var union_names: HashMap(str, bool)
+    # All variant payload keys ("UnionName.variantName") in insertion order.
+    # Used by variantNamesForUnion to enumerate all variants for a given union.
+    var all_variant_keys: List(str)
     # Interface conformance table — key = class/struct name, value = "|"-joined
     # interface names declared via `implements`. Populated from DeclClass.ifaces
     # by populateModuleTypes (Phase 3C).
@@ -247,6 +266,7 @@ class ModuleTypes
         ref_field_keys = List()
         opt_ref_field_keys = List()
         union_names = HashMap()
+        all_variant_keys = List()
         class_interfaces = HashMap()
         private_member_keys = HashMap()
 
@@ -303,6 +323,7 @@ class ModuleTypes
         # internString is needed on the composed key.
         var key: str = union_name + "." + variant_name
         .variant_payloads.put(key, t)
+        .all_variant_keys.add(key)
         branch t
             on Type_.ref_to
                 .boxed_variant_keys.add(key)
@@ -314,6 +335,20 @@ class ModuleTypes
         if .variant_payloads.contains(key)
             return .variant_payloads.fetch(key)
         return nil
+
+    def variantNamesForUnion(union_name: str): List(str)
+        var result: List(str) = List(str)()
+        var prefix: str = union_name + "."
+        var i: int = 0
+        while i < all_variant_keys.count()
+            var k: str = all_variant_keys.at(i)
+            if k.startsWith(prefix)
+                # Key is "UnionName.variantName"; split on "." gives [union, variant].
+                var parts: List(str) = k.split(".")
+                if parts.count() >= 2
+                    result.add(parts.at(1))
+            i = i + 1
+        return result
 
     def hasClass(class_name: str): bool
         return .classes.contains(class_name)
@@ -436,8 +471,13 @@ def typeFromRef(tr: TypeRef): Type_
             if gname == "HashMap" and g.args.count() == 2
                 return Type_.hashmap_(HashMapType_(typeFromRef(g.args.at(0)), typeFromRef(g.args.at(1))))
             return Type_.unknown_
+        on TypeRef.tuple as tt
+            var ttelems: List(Type_) = List()
+            for ttr in tt.elems
+                ttelems.add(typeFromRef(ttr))
+            return Type_.tuple_(TupleType_(ttelems))
         else
-            # error_union, stream, same_, tuple — Phase 17 handles these.
+            # error_union, stream, same_ — handled as unknown.
             return Type_.unknown_
 
 # ── ModuleTypes builder ──────────────────────────────────────────────────────
@@ -595,6 +635,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         ii_i += 1
                     if ii_pipe != ""
                         mt.addClassInterfaces(iface.name, ii_pipe)
+                # Register interface method signatures so methodReturnAny resolves
+                # calls through interface-typed variables (fixes print format inference).
+                var ict = ClassTypes(iface.name)
+                addClassMembers(mt, ict, iface.members)
+                mt.addClass(ict)
             on Decl.mixin_ as mx
                 # Register mixin under its own name so pass 2 can merge it.
                 var mct = ClassTypes(mx.name)
@@ -679,10 +724,14 @@ class InferCtx
     var scope: HashMap(str, Type_)
     var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
     var errors: List(Diagnostic)
+    var warnings: List(Diagnostic)
     # When true, checkVarDecl also flags `unresolved` inferred types for
     # primitive-annotated decls — alarm bell for TC gaps.  Off by default
     # so normal compilation is unaffected; enabled by typecheck-merge.
     var strict: bool
+    # When true, checkStmts emits a warning for branch...else arms that do not
+    # explicitly name every variant of a same-module union type.
+    var warn_non_exhaustive: bool
     var file: str  # source file path for error reporting in inferExpr
 
     cue init(module_types: ModuleTypes, current_class: str)
@@ -692,7 +741,9 @@ class InferCtx
         scope = HashMap()
         .current_return_type = nil
         errors = List(Diagnostic)()
+        warnings = List(Diagnostic)()
         .strict = false
+        .warn_non_exhaustive = false
         .file = ""
 
     def withFile(f: str)
@@ -711,6 +762,9 @@ class InferCtx
     def enableStrict()
         .strict = true
 
+    def enableWarnNonExhaustive()
+        .warn_non_exhaustive = true
+
     def addErr(file: str, line: int, col: int, message: str)
         errors.add(Diagnostic(file, line, col, message))
 
@@ -723,6 +777,21 @@ class InferCtx
         while i < errors.len
             var d: Diagnostic = errors.at(i)
             sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": error: " + d.message + "\n")
+            i = i + 1
+        return sb.build()
+
+    def addWarn(file: str, line: int, col: int, message: str)
+        warnings.add(Diagnostic(file, line, col, message))
+
+    def hasWarnings(): bool
+        return warnings.len > 0
+
+    def warningMessages(): str
+        var sb: StringBuilder = StringBuilder()
+        var i: int = 0
+        while i < warnings.len
+            var d: Diagnostic = warnings.at(i)
+            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": warning: " + d.message + "\n")
             i = i + 1
         return sb.build()
 
@@ -925,6 +994,8 @@ def typeTag(t: Type_): str
             return "list(" + typeTag(le) + ")"
         on Type_.hashmap_ as hm
             return "hmap(" + typeTag(hm.key_t) + "," + typeTag(hm.val_t) + ")"
+        on Type_.tuple_ as _
+            return "tpl"
         on Type_.string_builder
             return "sbld"
         on Type_.regex
@@ -1060,6 +1131,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if ctx.current_class != tn
                             ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
                     return ft_v
+            # Tuple element access: t.0, t.1, t.2, t.3
+            if obj_t is Type_.tuple_ as tupt
+                var tidx: int = -1
+                if m.member == "0"
+                    tidx = 0
+                if m.member == "1"
+                    tidx = 1
+                if m.member == "2"
+                    tidx = 2
+                if m.member == "3"
+                    tidx = 3
+                if tidx >= 0
+                    var te: Type_? = tupt.at(tidx)
+                    if te as te_v
+                        return te_v
             # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
             # registered nowhere in user code but widely used as `r.stdout`
             # etc. Recognise by field name when the object type is unknown,
@@ -1196,14 +1282,24 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.int_
                             if lmname == "any" or lmname == "all"
                                 return Type_.bool_
+                            if lmname == "find"
+                                return Type_.optional(list_elem)
+                            if lmname == "contains"
+                                return Type_.bool_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
                             if hmname == "fetch"
                                 return hmt.val_t
+                            if hmname == "get"
+                                return Type_.optional(hmt.val_t)
                             if hmname == "count"
                                 return Type_.int_
                             if hmname == "contains"
                                 return Type_.bool_
+                            if hmname == "keys"
+                                return Type_.list_(hmt.key_t)
+                            if hmname == "values"
+                                return Type_.list_(hmt.val_t)
                         else
                             pass
                     # Cross-module constructor: ModuleName.ClassName(args).
@@ -1219,10 +1315,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.unresolved
                 on Expr.call as gc
                     # Generic constructor: Box(int)(args) — outer callee is Box(int) type-application.
+                    # Also handles HashMap(K,V)() and List(T)() zero-arg ctors.
                     if gc.callee is Expr.ident as gid
                         var gcname: str = gid.name
                         if ctx.hasClassAny(gcname)
                             return Type_.named(gcname)
+                        if gcname == "HashMap" and gc.args.count() == 2
+                            if gc.args.at(0).value is Expr.ident as kn
+                                if gc.args.at(1).value is Expr.ident as vn
+                                    return Type_.hashmap_(HashMapType_(typeFromName(kn.name), typeFromName(vn.name)))
+                        if gcname == "List" and gc.args.count() == 1
+                            if gc.args.at(0).value is Expr.ident as tn
+                                return Type_.list_(typeFromName(tn.name))
                     return Type_.unresolved
                 else
                     return Type_.unresolved
@@ -1334,6 +1438,46 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             for op in cc.operands
                 walkExpr(op, ctx)
             return Type_.bool_
+        on Expr.opt_chain as oc
+            # Infer args so their types are recorded.
+            if oc.has_args
+                for a in oc.args
+                    inferExpr(a.value, ctx)
+            # Infer base, strip ref_to and optional to get inner type.
+            var base_t: Type_ = inferExpr(oc.base, ctx)
+            if base_t is Type_.ref_to as rt
+                base_t = rt
+            var inner_t: Type_ = base_t
+            if base_t is Type_.optional as ot
+                inner_t = ot
+            # Look up member/method return type on inner_t.
+            var mem_t: Type_ = Type_.unknown_
+            if inner_t is Type_.named as tn
+                if oc.has_args
+                    var mr: Type_? = ctx.methodReturnAny(tn, oc.member)
+                    if mr as mr_v
+                        mem_t = mr_v
+                else
+                    var ft: Type_? = ctx.fieldTypeAny(tn, oc.member)
+                    if ft as ft_v
+                        mem_t = ft_v
+            # Flatten: strip one optional from mem_t, then wrap in optional.
+            var flat_t: Type_ = mem_t
+            if mem_t is Type_.optional as mt
+                flat_t = mt
+            return Type_.optional(flat_t)
+        on Expr.list_lit as ll
+            if ll.elem_type != nil
+                return Type_.list_(typeFromRef(ll.elem_type to!))
+            if ll.elems.count() > 0
+                var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
+                return Type_.list_(elem_t)
+            return Type_.list_(Type_.unknown_)
+        on Expr.tuple_lit as tl
+            var telems: List(Type_) = List()
+            for telem in tl.elems
+                telems.add(inferExpr(telem, ctx))
+            return Type_.tuple_(TupleType_(telems))
         else
             return Type_.unresolved
 
@@ -1438,7 +1582,10 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                             cap_t = inner
                 else
                     # Option B: `if x as n` -- condition is T?, bind inner T.
+                    # Also handle ^T? (ref_to wrapping optional) for cross-module fields.
                     var cond_t: Type_ = inferExpr(si.cond, ctx)
+                    if cond_t is Type_.ref_to as rt
+                        cond_t = rt
                     if cond_t is Type_.optional as inner
                         cap_t = inner
                 ctx.bind(cap_name, cap_t)
@@ -1461,6 +1608,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                                 ei_cap_t = ei_inner
                     else
                         var ei_cond_t: Type_ = inferExpr(ei.cond, ctx)
+                        if ei_cond_t is Type_.ref_to as ei_rt
+                            ei_cond_t = ei_rt
                         if ei_cond_t is Type_.optional as ei_inner
                             ei_cap_t = ei_inner
                     ctx.bind(ei_cap_name, ei_cap_t)
@@ -1594,17 +1743,29 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             var destruct_recv_t: Type_ = inferExpr(sds.init_expr, ctx)
             if destruct_recv_t is Type_.ref_to as dr
                 destruct_recv_t = dr
-            var destruct_class: str = ""
-            if destruct_recv_t is Type_.named as dtn
-                destruct_class = dtn
-            for nm in sds.names
-                var nm_s: str = nm
-                var ftype: Type_ = Type_.unknown_
-                if destruct_class != ""
-                    var ft: Type_? = ctx.fieldTypeAny(destruct_class, nm_s)
-                    if ft as ft2
-                        ftype = ft2
-                ctx.bind(nm_s, ftype)
+            # Tuple destructuring: var (a, b) = tuple_expr
+            if destruct_recv_t is Type_.tuple_ as tupt
+                var tdi: int = 0
+                for nm in sds.names
+                    var tde: Type_? = tupt.at(tdi)
+                    if tde as tde_v
+                        ctx.bind(nm, tde_v)
+                    else
+                        ctx.bind(nm, Type_.unknown_)
+                    tdi = tdi + 1
+            else
+                # Struct destructuring: var {x, y} = struct_expr
+                var destruct_class: str = ""
+                if destruct_recv_t is Type_.named as dtn
+                    destruct_class = dtn
+                for nm in sds.names
+                    var nm_s: str = nm
+                    var ftype: Type_ = Type_.unknown_
+                    if destruct_class != ""
+                        var ft: Type_? = ctx.fieldTypeAny(destruct_class, nm_s)
+                        if ft as ft2
+                            ftype = ft2
+                    ctx.bind(nm_s, ftype)
         on Stmt.arena_scope as sas
             walkStmts(sas.stmts, ctx)
         on Stmt.allocate_ as sal
@@ -1819,6 +1980,33 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sas.stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
+            on Stmt.branch_ as sb
+                for c in sb.cases
+                    checkStmts(c.stmts, file, ctx)
+                if sb.else_ as sb_else
+                    checkStmts(sb_else, file, ctx)
+                if ctx.warn_non_exhaustive
+                    var subj_t: Type_ = inferExpr(sb.expr, ctx)
+                    var uname: str = ""
+                    if subj_t is Type_.named as tn
+                        uname = tn
+                    if uname != "" and ctx.module_types.hasUnion(uname)
+                        var variants: List(str) = ctx.module_types.variantNamesForUnion(uname)
+                        if variants.count() > 0
+                            var covered: List(str) = List(str)()
+                            for c in sb.cases
+                                if c.values.count() == 1
+                                    var v: Expr = c.values.at(0)
+                                    if v is Expr.member as vm
+                                        covered.add(vm.member)
+                            if sb.else_ != nil
+                                for vname in variants
+                                    var found: bool = false
+                                    for cv in covered
+                                        if cv == vname
+                                            found = true
+                                    if not found
+                                        ctx.addWarn(file, sb.span.line, 0, "branch on '" + uname + "' has 'else' but does not explicitly handle variant '" + vname + "'")
             else
                 pass
 

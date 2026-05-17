@@ -278,6 +278,43 @@ fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
         else    => -1,
     };
 }
+const _SysProcess = struct {
+    child: std.process.Child,
+    alive: bool,
+    pid: i64,
+};
+fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
+    const p = _allocator.create(_SysProcess) catch @panic("OOM");
+    p.* = .{ .child = std.process.Child.init(argv.items, _allocator), .alive = false, .pid = -1 };
+    p.child.stdin_behavior  = .Ignore;
+    p.child.stdout_behavior = .Ignore;
+    p.child.stderr_behavior = .Inherit;
+    p.child.spawn() catch return p;
+    p.alive = true;
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig 0.15 std so we leave -1.
+    if (comptime builtin.os.tag != .windows) {
+        p.pid = @intCast(p.child.id);
+    }
+    return p;
+}
+fn _sys_process_kill(p: *_SysProcess) void {
+    if (!p.alive) return;
+    _ = p.child.kill() catch {};
+    p.alive = false;
+}
+fn _sys_process_is_running(p: *_SysProcess) bool {
+    if (!p.alive) return false;
+    if (comptime builtin.os.tag == .windows) {
+        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
+        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
+        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
+        return true;
+    } else {
+        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        if (r.pid != 0) { p.alive = false; return false; }
+        return true;
+    }
+}
 fn _sys_readline() ?[]const u8 {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
@@ -288,6 +325,181 @@ fn _sys_readline() ?[]const u8 {
         if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
     else line;
     return _allocator.dupe(u8, trimmed) catch return null;
+}
+// ── DynLib — platform plugin loader ───────────────────────────────────────────
+const _DynLib = struct {
+    lib: std.DynLib,
+};
+fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
+    const dl = _allocator.create(_DynLib) catch @panic("OOM");
+    errdefer _allocator.destroy(dl);
+    dl.lib = try std.DynLib.open(path);
+    return dl;
+}
+fn _dynlib_close(dl: *_DynLib) void {
+    dl.lib.close();
+}
+// ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
+fn _Chan(comptime T: type) type {
+    return struct {
+        mutex:     std.Thread.Mutex = .{},
+        not_empty: std.Thread.Condition = .{},
+        not_full:  std.Thread.Condition = .{},
+        buf:       std.ArrayList(T),
+        capacity:  usize,
+        closed:    bool = false,
+
+        const Self = @This();
+        // Zig 0.15: std.ArrayList is unmanaged — allocator passed per operation.
+        const _alloc = std.heap.page_allocator;
+
+        pub fn init(cap: usize) Self {
+            return .{ .buf = .{}, .capacity = cap };
+        }
+
+        pub fn send(self: *Self, val: T) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            if (self.closed) @panic("send on closed channel");
+            const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
+            while (self.buf.items.len >= eff_cap and !self.closed)
+                self.not_full.wait(&self.mutex);
+            if (self.closed) return;
+            self.buf.append(_alloc, val) catch @panic("OOM");
+            self.not_empty.signal();
+            // Rendezvous (cap=0): sender blocks until receiver drains the slot.
+            if (self.capacity == 0) {
+                while (self.buf.items.len > 0 and !self.closed)
+                    self.not_full.wait(&self.mutex);
+            }
+        }
+
+        pub fn recv(self: *Self) ?T {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            while (self.buf.items.len == 0 and !self.closed)
+                self.not_empty.wait(&self.mutex);
+            if (self.buf.items.len == 0) return null;
+            const val = self.buf.orderedRemove(0);
+            self.not_full.signal();
+            return val;
+        }
+
+        pub fn close(self: *Self) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            self.closed = true;
+            self.not_empty.broadcast();
+            self.not_full.broadcast();
+        }
+    };
+}
+fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
+    const ch = std.heap.page_allocator.create(_Chan(T)) catch @panic("OOM");
+    ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
+    return ch;
+}
+
+// ── Build system ──────────────────────────────────────────────────────────────
+const _Build_Kind = enum { exe, lib, test_ };
+const _BuildTarget = struct {
+    kind:     _Build_Kind,
+    name:     []const u8,
+    entry:    []const u8,
+    platform: ?[]const u8 = null,
+    linked:   ?*_BuildTarget = null,
+};
+const _Build = struct { targets: std.ArrayList(*_BuildTarget) };
+var _global_build: ?*_Build = null;
+var _build_ran: bool = false;
+var _list_targets_mode: bool = false;
+fn _build_new(alloc: std.mem.Allocator) *_Build {
+    const b = alloc.create(_Build) catch @panic("OOM");
+    b.* = .{ .targets = .{} };
+    _global_build = b;
+    return b;
+}
+fn _build_add(b: *_Build, kind: _Build_Kind, name: []const u8, entry: []const u8) *_BuildTarget {
+    const t = _allocator.create(_BuildTarget) catch @panic("OOM");
+    t.* = .{ .kind = kind, .name = name, .entry = entry };
+    b.targets.append(_allocator, t) catch @panic("OOM");
+    return t;
+}
+fn _build_target_link_lib(t: *_BuildTarget, dep: *_BuildTarget) *_BuildTarget {
+    t.linked = dep; return t;
+}
+fn _build_target_platform(t: *_BuildTarget, p: []const u8) *_BuildTarget {
+    t.platform = p; return t;
+}
+fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_BuildTarget {
+    _ = _k; _ = _v; return t;
+}
+fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
+fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
+    for (b.targets.items) |t| {
+        if (std.mem.eql(u8, t.name, name)) return t;
+    }
+    std.debug.print("build: no target named '{s}'\n", .{name});
+    std.process.exit(1);
+}
+fn _build_list_targets(b: *_Build) void {
+    const _out = std.fs.File.stdout().deprecatedWriter();
+    _out.writeAll("{\"targets\":[") catch {};
+    for (b.targets.items, 0..) |t, i| {
+        if (i > 0) _out.writeAll(",") catch {};
+        const kind_str: []const u8 = switch (t.kind) {
+            .exe   => "exe",
+            .lib   => "lib",
+            .test_ => "test",
+        };
+        _out.print("{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch {};
+    }
+    _out.writeAll("]}\n") catch {};
+}
+fn _build_auto_run() void {
+    if (!_build_ran) {
+        if (_global_build) |b| _build_run(b);
+    }
+}
+fn _build_run(b: *_Build) void {
+    _build_ran = true;
+    if (_list_targets_mode) { _build_list_targets(b); return; }
+    const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
+    defer _allocator.free(self_exe);
+    std.fs.cwd().makePath(".zig-cache/zbr") catch {};
+    std.fs.cwd().makePath("zig-out/bin")    catch {};
+    for (b.targets.items) |t| {
+        switch (t.kind) {
+            .exe => {
+                const stem     = std.fs.path.stem(t.entry);
+                const zig_file  = std.fmt.allocPrint(_allocator, ".zig-cache/zbr/{s}.zig", .{stem})     catch @panic("OOM");
+                const out_path  = std.fmt.allocPrint(_allocator, "zig-out/bin/{s}",         .{t.name})   catch @panic("OOM");
+                const emit_flag = std.fmt.allocPrint(_allocator, "-femit-bin={s}",           .{out_path}) catch @panic("OOM");
+                defer _allocator.free(zig_file);
+                defer _allocator.free(out_path);
+                defer _allocator.free(emit_flag);
+                std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
+                {
+                    const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
+                    var ch = std.process.Child.init(&argv, _allocator);
+                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Ignore;
+                    const term = ch.spawnAndWait() catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
+                {
+                    const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
+                    var ch = std.process.Child.init(&argv, _allocator);
+                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Inherit;
+                    const term = ch.spawnAndWait() catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
+            },
+            .lib   => std.debug.print("build: lib targets not yet implemented ({s})\n",  .{t.name}),
+            .test_ => std.debug.print("build: test targets not yet implemented ({s})\n", .{t.name}),
+        }
+    }
 }
 const _DateTime = struct { epoch_ms: i64 };
 const _CalendarView = struct {
@@ -1189,6 +1401,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
+const _GuiVec2 = struct { f64, f64 };
 const _GuiBackend = struct {
     initFn:        *const fn (title: []const u8, width: i64, height: i64) anyerror!void,
     deinitFn:      *const fn () void,
@@ -1225,11 +1438,52 @@ const _GuiBackend = struct {
     setColorsDarkFn:    *const fn () void,
     setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
     setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
-    scaleAllSizesFn:    *const fn (scale: f32) void,
-    getDpiFn:           *const fn () f32,
+    scaleAllSizesFn:      *const fn (scale: f32) void,
+    getDpiFn:             *const fn () f32,
+    ll_addLineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFilledFn:   *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void,
+    ll_addCircleFn:       *const fn (cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void,
+    ll_addCircleFilledFn: *const fn (cx: f64, cy: f64, r: f64, col: i64) void,
+    ll_addTextFn:         *const fn (x: f64, y: f64, col: i64, text: []const u8) void,
+    ll_getWindowPosFn:    *const fn () _GuiVec2,
+    ll_getWindowSizeFn:   *const fn () _GuiVec2,
+    ll_getCursorPosFn:    *const fn () _GuiVec2,
+    ll_getMousePosFn:     *const fn () _GuiVec2,
+    ll_beginGroupFn:      *const fn () void,
+    ll_endGroupFn:        *const fn () void,
+};
+const _LowLevel = struct {
+    _b: *const _GuiBackend,
+    pub fn addLine(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addLineFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRect(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addRectFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRectFilled(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void {
+        ll._b.ll_addRectFilledFn(x1, y1, x2, y2, col);
+    }
+    pub fn addCircle(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addCircleFn(cx, cy, r, col, thickness);
+    }
+    pub fn addCircleFilled(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64) void {
+        ll._b.ll_addCircleFilledFn(cx, cy, r, col);
+    }
+    pub fn addText(ll: _LowLevel, x: f64, y: f64, col: i64, text: []const u8) void {
+        ll._b.ll_addTextFn(x, y, col, text);
+    }
+    pub fn getWindowPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowPosFn(); }
+    pub fn getWindowSize(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowSizeFn(); }
+    pub fn getCursorPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getCursorPosFn(); }
+    pub fn getMousePos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getMousePosFn(); }
+    pub fn beginGroup(ll: _LowLevel) void { ll._b.ll_beginGroupFn(); }
+    pub fn endGroup(ll: _LowLevel) void { ll._b.ll_endGroupFn(); }
+    pub fn sameLine(ll: _LowLevel) void { ll._b.sameLineFn(); }
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
+    lowLevel: _LowLevel,
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1290,7 +1544,7 @@ const GuiContext = struct {
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
-    const _g = GuiContext{ ._b = &_gui_active_backend };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
     if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
         while (_gui_active_backend.newFrameFn()) {
             frame(_g);
@@ -1388,6 +1642,18 @@ fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = valu
 fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
 fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
 fn _stub_get_dpi() f32 { return 1.0; }
+fn _stub_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+fn _stub_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+fn _stub_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+fn _stub_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+fn _stub_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_window_size() _GuiVec2 { return .{ 800, 600 }; }
+fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_begin_group() void {}
+fn _stub_ll_end_group() void {}
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -1424,8 +1690,20 @@ const _gui_stub_backend = _GuiBackend{
     .setColorsDarkFn    = _stub_set_colors_dark,
     .setStyleFloatFn    = _stub_set_style_float,
     .setVec2Fn          = _stub_set_vec2,
-    .scaleAllSizesFn    = _stub_scale_all_sizes,
-    .getDpiFn           = _stub_get_dpi,
+    .scaleAllSizesFn      = _stub_scale_all_sizes,
+    .getDpiFn             = _stub_get_dpi,
+    .ll_addLineFn         = _stub_ll_add_line,
+    .ll_addRectFn         = _stub_ll_add_rect,
+    .ll_addRectFilledFn   = _stub_ll_add_rect_filled,
+    .ll_addCircleFn       = _stub_ll_add_circle,
+    .ll_addCircleFilledFn = _stub_ll_add_circle_filled,
+    .ll_addTextFn         = _stub_ll_add_text,
+    .ll_getWindowPosFn    = _stub_ll_get_window_pos,
+    .ll_getWindowSizeFn   = _stub_ll_get_window_size,
+    .ll_getCursorPosFn    = _stub_ll_get_cursor_pos,
+    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
+    .ll_beginGroupFn      = _stub_ll_begin_group,
+    .ll_endGroupFn        = _stub_ll_end_group,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -1922,6 +2200,7 @@ pub const TokenKind = union(enum) {
     caret,
     tilde,
     question,
+    question_dot,
     bang,
     double_lt,
     double_gt,
@@ -1973,6 +2252,7 @@ pub const TokenKind = union(enum) {
     kw_invariant,
     kw_where,
     kw_abstract,
+    kw_export,
     kw_extern,
     kw_internal,
     kw_public,
@@ -2050,13 +2330,13 @@ pub const Token = struct {
     pub fn init(k: TokenKind, t: []const u8, ln: i64, cl: i64) *Token {
         const _self = _allocator.create(Token) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Token");
-// zbr:selfhost/Token.zbr:195
-            _self.kind = k;
-// zbr:selfhost/Token.zbr:196
-            _self.text = _intern(t);
 // zbr:selfhost/Token.zbr:197
-            _self.line = ln;
+            _self.kind = k;
 // zbr:selfhost/Token.zbr:198
+            _self.text = _intern(t);
+// zbr:selfhost/Token.zbr:199
+            _self.line = ln;
+// zbr:selfhost/Token.zbr:200
             _self.col = cl;
         return _self;
     }
@@ -2070,452 +2350,457 @@ const _reflect_Token_field_types: []const []const u8 = &.{"TokenKind", "str", "i
 pub const Keywords = struct {
     _type_tag: u64 = _ttag_Keywords,
     pub fn lookup(word: []const u8) ?TokenKind {
-// zbr:selfhost/Token.zbr:202
+// zbr:selfhost/Token.zbr:204
         if (std.mem.eql(u8, word, "use")) {
-// zbr:selfhost/Token.zbr:203
+// zbr:selfhost/Token.zbr:205
             return TokenKind{ .kw_use = {} };
         }
-// zbr:selfhost/Token.zbr:204
+// zbr:selfhost/Token.zbr:206
         if (std.mem.eql(u8, word, "exposing")) {
-// zbr:selfhost/Token.zbr:205
+// zbr:selfhost/Token.zbr:207
             return TokenKind{ .kw_exposing = {} };
         }
-// zbr:selfhost/Token.zbr:206
+// zbr:selfhost/Token.zbr:208
         if (std.mem.eql(u8, word, "namespace")) {
-// zbr:selfhost/Token.zbr:207
+// zbr:selfhost/Token.zbr:209
             return TokenKind{ .kw_namespace = {} };
         }
-// zbr:selfhost/Token.zbr:208
+// zbr:selfhost/Token.zbr:210
         if (std.mem.eql(u8, word, "class")) {
-// zbr:selfhost/Token.zbr:209
+// zbr:selfhost/Token.zbr:211
             return TokenKind{ .kw_class = {} };
         }
-// zbr:selfhost/Token.zbr:210
+// zbr:selfhost/Token.zbr:212
         if (std.mem.eql(u8, word, "interface")) {
-// zbr:selfhost/Token.zbr:211
+// zbr:selfhost/Token.zbr:213
             return TokenKind{ .kw_interface = {} };
         }
-// zbr:selfhost/Token.zbr:212
+// zbr:selfhost/Token.zbr:214
         if (std.mem.eql(u8, word, "mixin")) {
-// zbr:selfhost/Token.zbr:213
+// zbr:selfhost/Token.zbr:215
             return TokenKind{ .kw_mixin = {} };
         }
-// zbr:selfhost/Token.zbr:214
+// zbr:selfhost/Token.zbr:216
         if (std.mem.eql(u8, word, "struct")) {
-// zbr:selfhost/Token.zbr:215
+// zbr:selfhost/Token.zbr:217
             return TokenKind{ .kw_struct = {} };
         }
-// zbr:selfhost/Token.zbr:216
+// zbr:selfhost/Token.zbr:218
         if (std.mem.eql(u8, word, "enum")) {
-// zbr:selfhost/Token.zbr:217
+// zbr:selfhost/Token.zbr:219
             return TokenKind{ .kw_enum = {} };
         }
-// zbr:selfhost/Token.zbr:218
+// zbr:selfhost/Token.zbr:220
         if (std.mem.eql(u8, word, "extend")) {
-// zbr:selfhost/Token.zbr:219
+// zbr:selfhost/Token.zbr:221
             return TokenKind{ .kw_extend = {} };
         }
-// zbr:selfhost/Token.zbr:220
+// zbr:selfhost/Token.zbr:222
         if (std.mem.eql(u8, word, "def")) {
-// zbr:selfhost/Token.zbr:221
+// zbr:selfhost/Token.zbr:223
             return TokenKind{ .kw_def = {} };
         }
-// zbr:selfhost/Token.zbr:222
+// zbr:selfhost/Token.zbr:224
         if (std.mem.eql(u8, word, "sig")) {
-// zbr:selfhost/Token.zbr:223
+// zbr:selfhost/Token.zbr:225
             return TokenKind{ .kw_sig = {} };
         }
-// zbr:selfhost/Token.zbr:224
+// zbr:selfhost/Token.zbr:226
         if (std.mem.eql(u8, word, "var")) {
-// zbr:selfhost/Token.zbr:225
+// zbr:selfhost/Token.zbr:227
             return TokenKind{ .kw_var = {} };
         }
-// zbr:selfhost/Token.zbr:226
+// zbr:selfhost/Token.zbr:228
         if (std.mem.eql(u8, word, "const")) {
-// zbr:selfhost/Token.zbr:227
+// zbr:selfhost/Token.zbr:229
             return TokenKind{ .kw_const = {} };
         }
-// zbr:selfhost/Token.zbr:228
+// zbr:selfhost/Token.zbr:230
         if (std.mem.eql(u8, word, "cue")) {
-// zbr:selfhost/Token.zbr:229
+// zbr:selfhost/Token.zbr:231
             return TokenKind{ .kw_cue = {} };
         }
-// zbr:selfhost/Token.zbr:230
+// zbr:selfhost/Token.zbr:232
         if (std.mem.eql(u8, word, "test")) {
-// zbr:selfhost/Token.zbr:231
+// zbr:selfhost/Token.zbr:233
             return TokenKind{ .kw_test = {} };
         }
-// zbr:selfhost/Token.zbr:232
+// zbr:selfhost/Token.zbr:234
         if (std.mem.eql(u8, word, "implements")) {
-// zbr:selfhost/Token.zbr:233
+// zbr:selfhost/Token.zbr:235
             return TokenKind{ .kw_implements = {} };
         }
-// zbr:selfhost/Token.zbr:234
+// zbr:selfhost/Token.zbr:236
         if (std.mem.eql(u8, word, "adds")) {
-// zbr:selfhost/Token.zbr:235
+// zbr:selfhost/Token.zbr:237
             return TokenKind{ .kw_adds = {} };
         }
-// zbr:selfhost/Token.zbr:236
+// zbr:selfhost/Token.zbr:238
         if (std.mem.eql(u8, word, "is")) {
-// zbr:selfhost/Token.zbr:237
+// zbr:selfhost/Token.zbr:239
             return TokenKind{ .kw_is = {} };
         }
-// zbr:selfhost/Token.zbr:238
+// zbr:selfhost/Token.zbr:240
         if (std.mem.eql(u8, word, "as")) {
-// zbr:selfhost/Token.zbr:239
+// zbr:selfhost/Token.zbr:241
             return TokenKind{ .kw_as = {} };
         }
-// zbr:selfhost/Token.zbr:240
+// zbr:selfhost/Token.zbr:242
         if (std.mem.eql(u8, word, "from")) {
-// zbr:selfhost/Token.zbr:241
+// zbr:selfhost/Token.zbr:243
             return TokenKind{ .kw_from = {} };
         }
-// zbr:selfhost/Token.zbr:242
+// zbr:selfhost/Token.zbr:244
         if (std.mem.eql(u8, word, "has")) {
-// zbr:selfhost/Token.zbr:243
+// zbr:selfhost/Token.zbr:245
             return TokenKind{ .kw_has = {} };
         }
-// zbr:selfhost/Token.zbr:244
+// zbr:selfhost/Token.zbr:246
         if (std.mem.eql(u8, word, "static")) {
-// zbr:selfhost/Token.zbr:245
+// zbr:selfhost/Token.zbr:247
             return TokenKind{ .kw_static = {} };
         }
-// zbr:selfhost/Token.zbr:246
+// zbr:selfhost/Token.zbr:248
         if (std.mem.eql(u8, word, "invariant")) {
-// zbr:selfhost/Token.zbr:247
+// zbr:selfhost/Token.zbr:249
             return TokenKind{ .kw_invariant = {} };
         }
-// zbr:selfhost/Token.zbr:248
+// zbr:selfhost/Token.zbr:250
         if (std.mem.eql(u8, word, "where")) {
-// zbr:selfhost/Token.zbr:249
+// zbr:selfhost/Token.zbr:251
             return TokenKind{ .kw_where = {} };
         }
-// zbr:selfhost/Token.zbr:250
+// zbr:selfhost/Token.zbr:252
         if (std.mem.eql(u8, word, "abstract")) {
-// zbr:selfhost/Token.zbr:251
+// zbr:selfhost/Token.zbr:253
             return TokenKind{ .kw_abstract = {} };
         }
-// zbr:selfhost/Token.zbr:252
-        if (std.mem.eql(u8, word, "extern")) {
-// zbr:selfhost/Token.zbr:253
-            return TokenKind{ .kw_extern = {} };
-        }
 // zbr:selfhost/Token.zbr:254
-        if (std.mem.eql(u8, word, "internal")) {
+        if (std.mem.eql(u8, word, "export")) {
 // zbr:selfhost/Token.zbr:255
-            return TokenKind{ .kw_internal = {} };
+            return TokenKind{ .kw_export = {} };
         }
 // zbr:selfhost/Token.zbr:256
-        if (std.mem.eql(u8, word, "public")) {
+        if (std.mem.eql(u8, word, "extern")) {
 // zbr:selfhost/Token.zbr:257
-            return TokenKind{ .kw_public = {} };
+            return TokenKind{ .kw_extern = {} };
         }
 // zbr:selfhost/Token.zbr:258
-        if (std.mem.eql(u8, word, "private")) {
+        if (std.mem.eql(u8, word, "internal")) {
 // zbr:selfhost/Token.zbr:259
-            return TokenKind{ .kw_private = {} };
+            return TokenKind{ .kw_internal = {} };
         }
 // zbr:selfhost/Token.zbr:260
-        if (std.mem.eql(u8, word, "protected")) {
+        if (std.mem.eql(u8, word, "public")) {
 // zbr:selfhost/Token.zbr:261
-            return TokenKind{ .kw_protected = {} };
+            return TokenKind{ .kw_public = {} };
         }
 // zbr:selfhost/Token.zbr:262
-        if (std.mem.eql(u8, word, "readonly")) {
+        if (std.mem.eql(u8, word, "private")) {
 // zbr:selfhost/Token.zbr:263
-            return TokenKind{ .kw_readonly = {} };
+            return TokenKind{ .kw_private = {} };
         }
 // zbr:selfhost/Token.zbr:264
-        if (std.mem.eql(u8, word, "bool")) {
+        if (std.mem.eql(u8, word, "protected")) {
 // zbr:selfhost/Token.zbr:265
-            return TokenKind{ .kw_bool = {} };
+            return TokenKind{ .kw_protected = {} };
         }
 // zbr:selfhost/Token.zbr:266
-        if (std.mem.eql(u8, word, "char")) {
+        if (std.mem.eql(u8, word, "readonly")) {
 // zbr:selfhost/Token.zbr:267
-            return TokenKind{ .kw_char = {} };
+            return TokenKind{ .kw_readonly = {} };
         }
 // zbr:selfhost/Token.zbr:268
-        if (std.mem.eql(u8, word, "int")) {
+        if (std.mem.eql(u8, word, "bool")) {
 // zbr:selfhost/Token.zbr:269
-            return TokenKind{ .kw_int = {} };
+            return TokenKind{ .kw_bool = {} };
         }
 // zbr:selfhost/Token.zbr:270
-        if (std.mem.eql(u8, word, "uint")) {
+        if (std.mem.eql(u8, word, "char")) {
 // zbr:selfhost/Token.zbr:271
-            return TokenKind{ .kw_uint = {} };
+            return TokenKind{ .kw_char = {} };
         }
 // zbr:selfhost/Token.zbr:272
-        if (std.mem.eql(u8, word, "float")) {
+        if (std.mem.eql(u8, word, "int")) {
 // zbr:selfhost/Token.zbr:273
-            return TokenKind{ .kw_float = {} };
+            return TokenKind{ .kw_int = {} };
         }
 // zbr:selfhost/Token.zbr:274
-        if (std.mem.eql(u8, word, "same")) {
+        if (std.mem.eql(u8, word, "uint")) {
 // zbr:selfhost/Token.zbr:275
-            return TokenKind{ .kw_same = {} };
+            return TokenKind{ .kw_uint = {} };
         }
 // zbr:selfhost/Token.zbr:276
-        if (std.mem.eql(u8, word, "require")) {
+        if (std.mem.eql(u8, word, "float")) {
 // zbr:selfhost/Token.zbr:277
-            return TokenKind{ .kw_require = {} };
+            return TokenKind{ .kw_float = {} };
         }
 // zbr:selfhost/Token.zbr:278
-        if (std.mem.eql(u8, word, "ensure")) {
+        if (std.mem.eql(u8, word, "same")) {
 // zbr:selfhost/Token.zbr:279
-            return TokenKind{ .kw_ensure = {} };
+            return TokenKind{ .kw_same = {} };
+        }
+// zbr:selfhost/Token.zbr:280
+        if (std.mem.eql(u8, word, "require")) {
+// zbr:selfhost/Token.zbr:281
+            return TokenKind{ .kw_require = {} };
         }
 // zbr:selfhost/Token.zbr:282
-        if (std.mem.eql(u8, word, "implies")) {
+        if (std.mem.eql(u8, word, "ensure")) {
 // zbr:selfhost/Token.zbr:283
-            return TokenKind{ .kw_implies = {} };
-        }
-// zbr:selfhost/Token.zbr:284
-        if (std.mem.eql(u8, word, "assert")) {
-// zbr:selfhost/Token.zbr:285
-            return TokenKind{ .kw_assert = {} };
+            return TokenKind{ .kw_ensure = {} };
         }
 // zbr:selfhost/Token.zbr:286
-        if (std.mem.eql(u8, word, "assert_eq")) {
+        if (std.mem.eql(u8, word, "implies")) {
 // zbr:selfhost/Token.zbr:287
-            return TokenKind{ .kw_assert_eq = {} };
+            return TokenKind{ .kw_implies = {} };
         }
 // zbr:selfhost/Token.zbr:288
-        if (std.mem.eql(u8, word, "assert_ne")) {
+        if (std.mem.eql(u8, word, "assert")) {
 // zbr:selfhost/Token.zbr:289
-            return TokenKind{ .kw_assert_ne = {} };
+            return TokenKind{ .kw_assert = {} };
         }
 // zbr:selfhost/Token.zbr:290
-        if (std.mem.eql(u8, word, "assert_true")) {
+        if (std.mem.eql(u8, word, "assert_eq")) {
 // zbr:selfhost/Token.zbr:291
-            return TokenKind{ .kw_assert_true = {} };
+            return TokenKind{ .kw_assert_eq = {} };
         }
 // zbr:selfhost/Token.zbr:292
-        if (std.mem.eql(u8, word, "assert_false")) {
+        if (std.mem.eql(u8, word, "assert_ne")) {
 // zbr:selfhost/Token.zbr:293
-            return TokenKind{ .kw_assert_false = {} };
+            return TokenKind{ .kw_assert_ne = {} };
         }
 // zbr:selfhost/Token.zbr:294
-        if (std.mem.eql(u8, word, "branch")) {
+        if (std.mem.eql(u8, word, "assert_true")) {
 // zbr:selfhost/Token.zbr:295
-            return TokenKind{ .kw_branch = {} };
+            return TokenKind{ .kw_assert_true = {} };
         }
 // zbr:selfhost/Token.zbr:296
-        if (std.mem.eql(u8, word, "on")) {
+        if (std.mem.eql(u8, word, "assert_false")) {
 // zbr:selfhost/Token.zbr:297
-            return TokenKind{ .kw_on = {} };
+            return TokenKind{ .kw_assert_false = {} };
         }
 // zbr:selfhost/Token.zbr:298
-        if (std.mem.eql(u8, word, "expect")) {
+        if (std.mem.eql(u8, word, "branch")) {
 // zbr:selfhost/Token.zbr:299
-            return TokenKind{ .kw_expect = {} };
+            return TokenKind{ .kw_branch = {} };
         }
 // zbr:selfhost/Token.zbr:300
-        if (std.mem.eql(u8, word, "if")) {
+        if (std.mem.eql(u8, word, "on")) {
 // zbr:selfhost/Token.zbr:301
-            return TokenKind{ .kw_if = {} };
+            return TokenKind{ .kw_on = {} };
         }
 // zbr:selfhost/Token.zbr:302
-        if (std.mem.eql(u8, word, "else")) {
+        if (std.mem.eql(u8, word, "expect")) {
 // zbr:selfhost/Token.zbr:303
-            return TokenKind{ .kw_else = {} };
+            return TokenKind{ .kw_expect = {} };
         }
 // zbr:selfhost/Token.zbr:304
-        if (std.mem.eql(u8, word, "lock")) {
+        if (std.mem.eql(u8, word, "if")) {
 // zbr:selfhost/Token.zbr:305
-            return TokenKind{ .kw_lock = {} };
+            return TokenKind{ .kw_if = {} };
         }
 // zbr:selfhost/Token.zbr:306
-        if (std.mem.eql(u8, word, "while")) {
+        if (std.mem.eql(u8, word, "else")) {
 // zbr:selfhost/Token.zbr:307
-            return TokenKind{ .kw_while = {} };
+            return TokenKind{ .kw_else = {} };
         }
 // zbr:selfhost/Token.zbr:308
-        if (std.mem.eql(u8, word, "unless")) {
+        if (std.mem.eql(u8, word, "lock")) {
 // zbr:selfhost/Token.zbr:309
-            return TokenKind{ .kw_unless = {} };
+            return TokenKind{ .kw_lock = {} };
         }
 // zbr:selfhost/Token.zbr:310
-        if (std.mem.eql(u8, word, "until")) {
+        if (std.mem.eql(u8, word, "while")) {
 // zbr:selfhost/Token.zbr:311
-            return TokenKind{ .kw_until = {} };
+            return TokenKind{ .kw_while = {} };
         }
 // zbr:selfhost/Token.zbr:312
-        if (std.mem.eql(u8, word, "for")) {
+        if (std.mem.eql(u8, word, "unless")) {
 // zbr:selfhost/Token.zbr:313
-            return TokenKind{ .kw_for = {} };
+            return TokenKind{ .kw_unless = {} };
         }
 // zbr:selfhost/Token.zbr:314
-        if (std.mem.eql(u8, word, "break")) {
+        if (std.mem.eql(u8, word, "until")) {
 // zbr:selfhost/Token.zbr:315
-            return TokenKind{ .kw_break = {} };
+            return TokenKind{ .kw_until = {} };
         }
 // zbr:selfhost/Token.zbr:316
-        if (std.mem.eql(u8, word, "continue")) {
+        if (std.mem.eql(u8, word, "for")) {
 // zbr:selfhost/Token.zbr:317
-            return TokenKind{ .kw_continue = {} };
+            return TokenKind{ .kw_for = {} };
         }
 // zbr:selfhost/Token.zbr:318
-        if (std.mem.eql(u8, word, "pass")) {
+        if (std.mem.eql(u8, word, "break")) {
 // zbr:selfhost/Token.zbr:319
-            return TokenKind{ .kw_pass = {} };
+            return TokenKind{ .kw_break = {} };
         }
 // zbr:selfhost/Token.zbr:320
-        if (std.mem.eql(u8, word, "print")) {
+        if (std.mem.eql(u8, word, "continue")) {
 // zbr:selfhost/Token.zbr:321
-            return TokenKind{ .kw_print = {} };
+            return TokenKind{ .kw_continue = {} };
         }
 // zbr:selfhost/Token.zbr:322
-        if (std.mem.eql(u8, word, "stop")) {
+        if (std.mem.eql(u8, word, "pass")) {
 // zbr:selfhost/Token.zbr:323
-            return TokenKind{ .kw_stop = {} };
+            return TokenKind{ .kw_pass = {} };
         }
 // zbr:selfhost/Token.zbr:324
-        if (std.mem.eql(u8, word, "trace")) {
+        if (std.mem.eql(u8, word, "print")) {
 // zbr:selfhost/Token.zbr:325
-            return TokenKind{ .kw_trace = {} };
+            return TokenKind{ .kw_print = {} };
         }
 // zbr:selfhost/Token.zbr:326
-        if (std.mem.eql(u8, word, "return")) {
+        if (std.mem.eql(u8, word, "stop")) {
 // zbr:selfhost/Token.zbr:327
-            return TokenKind{ .kw_return = {} };
+            return TokenKind{ .kw_stop = {} };
         }
 // zbr:selfhost/Token.zbr:328
-        if (std.mem.eql(u8, word, "yield")) {
+        if (std.mem.eql(u8, word, "trace")) {
 // zbr:selfhost/Token.zbr:329
-            return TokenKind{ .kw_yield = {} };
+            return TokenKind{ .kw_trace = {} };
         }
 // zbr:selfhost/Token.zbr:330
-        if (std.mem.eql(u8, word, "defer")) {
+        if (std.mem.eql(u8, word, "return")) {
 // zbr:selfhost/Token.zbr:331
-            return TokenKind{ .kw_defer = {} };
+            return TokenKind{ .kw_return = {} };
         }
 // zbr:selfhost/Token.zbr:332
-        if (std.mem.eql(u8, word, "errdefer")) {
+        if (std.mem.eql(u8, word, "yield")) {
 // zbr:selfhost/Token.zbr:333
-            return TokenKind{ .kw_errdefer = {} };
+            return TokenKind{ .kw_yield = {} };
         }
 // zbr:selfhost/Token.zbr:334
-        if (std.mem.eql(u8, word, "this")) {
+        if (std.mem.eql(u8, word, "defer")) {
 // zbr:selfhost/Token.zbr:335
-            return TokenKind{ .kw_this = {} };
+            return TokenKind{ .kw_defer = {} };
         }
 // zbr:selfhost/Token.zbr:336
-        if (std.mem.eql(u8, word, "to")) {
+        if (std.mem.eql(u8, word, "errdefer")) {
 // zbr:selfhost/Token.zbr:337
-            return TokenKind{ .kw_to = {} };
+            return TokenKind{ .kw_errdefer = {} };
         }
 // zbr:selfhost/Token.zbr:338
-        if (std.mem.eql(u8, word, "and")) {
+        if (std.mem.eql(u8, word, "this")) {
 // zbr:selfhost/Token.zbr:339
-            return TokenKind{ .kw_and = {} };
+            return TokenKind{ .kw_this = {} };
         }
 // zbr:selfhost/Token.zbr:340
-        if (std.mem.eql(u8, word, "or")) {
+        if (std.mem.eql(u8, word, "to")) {
 // zbr:selfhost/Token.zbr:341
-            return TokenKind{ .kw_or = {} };
+            return TokenKind{ .kw_to = {} };
         }
 // zbr:selfhost/Token.zbr:342
-        if (std.mem.eql(u8, word, "not")) {
+        if (std.mem.eql(u8, word, "and")) {
 // zbr:selfhost/Token.zbr:343
-            return TokenKind{ .kw_not = {} };
+            return TokenKind{ .kw_and = {} };
         }
 // zbr:selfhost/Token.zbr:344
-        if (std.mem.eql(u8, word, "in")) {
+        if (std.mem.eql(u8, word, "or")) {
 // zbr:selfhost/Token.zbr:345
-            return TokenKind{ .kw_in = {} };
+            return TokenKind{ .kw_or = {} };
         }
 // zbr:selfhost/Token.zbr:346
-        if (std.mem.eql(u8, word, "orelse")) {
+        if (std.mem.eql(u8, word, "not")) {
 // zbr:selfhost/Token.zbr:347
-            return TokenKind{ .kw_orelse = {} };
+            return TokenKind{ .kw_not = {} };
         }
 // zbr:selfhost/Token.zbr:348
-        if (std.mem.eql(u8, word, "catch")) {
+        if (std.mem.eql(u8, word, "in")) {
 // zbr:selfhost/Token.zbr:349
-            return TokenKind{ .kw_catch = {} };
+            return TokenKind{ .kw_in = {} };
         }
 // zbr:selfhost/Token.zbr:350
-        if (std.mem.eql(u8, word, "true")) {
+        if (std.mem.eql(u8, word, "orelse")) {
 // zbr:selfhost/Token.zbr:351
-            return TokenKind{ .kw_true = {} };
+            return TokenKind{ .kw_orelse = {} };
         }
 // zbr:selfhost/Token.zbr:352
-        if (std.mem.eql(u8, word, "false")) {
+        if (std.mem.eql(u8, word, "catch")) {
 // zbr:selfhost/Token.zbr:353
-            return TokenKind{ .kw_false = {} };
+            return TokenKind{ .kw_catch = {} };
         }
 // zbr:selfhost/Token.zbr:354
-        if (std.mem.eql(u8, word, "nil")) {
+        if (std.mem.eql(u8, word, "true")) {
 // zbr:selfhost/Token.zbr:355
-            return TokenKind{ .kw_nil = {} };
+            return TokenKind{ .kw_true = {} };
         }
 // zbr:selfhost/Token.zbr:356
-        if (std.mem.eql(u8, word, "vari")) {
+        if (std.mem.eql(u8, word, "false")) {
 // zbr:selfhost/Token.zbr:357
-            return TokenKind{ .kw_vari = {} };
+            return TokenKind{ .kw_false = {} };
         }
 // zbr:selfhost/Token.zbr:358
-        if (std.mem.eql(u8, word, "aspect")) {
+        if (std.mem.eql(u8, word, "nil")) {
 // zbr:selfhost/Token.zbr:359
-            return TokenKind{ .kw_aspect = {} };
+            return TokenKind{ .kw_nil = {} };
         }
 // zbr:selfhost/Token.zbr:360
-        if (std.mem.eql(u8, word, "weaves")) {
+        if (std.mem.eql(u8, word, "vari")) {
 // zbr:selfhost/Token.zbr:361
-            return TokenKind{ .kw_weaves = {} };
+            return TokenKind{ .kw_vari = {} };
         }
 // zbr:selfhost/Token.zbr:362
-        if (std.mem.eql(u8, word, "error")) {
+        if (std.mem.eql(u8, word, "aspect")) {
 // zbr:selfhost/Token.zbr:363
-            return TokenKind{ .kw_error = {} };
+            return TokenKind{ .kw_aspect = {} };
         }
 // zbr:selfhost/Token.zbr:364
-        if (std.mem.eql(u8, word, "raise")) {
+        if (std.mem.eql(u8, word, "weaves")) {
 // zbr:selfhost/Token.zbr:365
-            return TokenKind{ .kw_raise = {} };
+            return TokenKind{ .kw_weaves = {} };
         }
 // zbr:selfhost/Token.zbr:366
-        if (std.mem.eql(u8, word, "throws")) {
+        if (std.mem.eql(u8, word, "error")) {
 // zbr:selfhost/Token.zbr:367
-            return TokenKind{ .kw_throws = {} };
+            return TokenKind{ .kw_error = {} };
         }
 // zbr:selfhost/Token.zbr:368
-        if (std.mem.eql(u8, word, "try")) {
+        if (std.mem.eql(u8, word, "raise")) {
 // zbr:selfhost/Token.zbr:369
-            return TokenKind{ .kw_try = {} };
+            return TokenKind{ .kw_raise = {} };
         }
 // zbr:selfhost/Token.zbr:370
-        if (std.mem.eql(u8, word, "capture")) {
+        if (std.mem.eql(u8, word, "throws")) {
 // zbr:selfhost/Token.zbr:371
-            return TokenKind{ .kw_capture = {} };
+            return TokenKind{ .kw_throws = {} };
         }
 // zbr:selfhost/Token.zbr:372
-        if (std.mem.eql(u8, word, "with")) {
+        if (std.mem.eql(u8, word, "try")) {
 // zbr:selfhost/Token.zbr:373
-            return TokenKind{ .kw_with = {} };
+            return TokenKind{ .kw_try = {} };
         }
 // zbr:selfhost/Token.zbr:374
-        if (std.mem.eql(u8, word, "except")) {
+        if (std.mem.eql(u8, word, "capture")) {
 // zbr:selfhost/Token.zbr:375
-            return TokenKind{ .kw_except = {} };
+            return TokenKind{ .kw_capture = {} };
         }
 // zbr:selfhost/Token.zbr:376
-        if (std.mem.eql(u8, word, "union")) {
+        if (std.mem.eql(u8, word, "with")) {
 // zbr:selfhost/Token.zbr:377
-            return TokenKind{ .kw_union = {} };
+            return TokenKind{ .kw_with = {} };
         }
 // zbr:selfhost/Token.zbr:378
-        if (std.mem.eql(u8, word, "arena")) {
+        if (std.mem.eql(u8, word, "except")) {
 // zbr:selfhost/Token.zbr:379
-            return TokenKind{ .kw_arena = {} };
+            return TokenKind{ .kw_except = {} };
         }
 // zbr:selfhost/Token.zbr:380
-        if (std.mem.eql(u8, word, "guard")) {
+        if (std.mem.eql(u8, word, "union")) {
 // zbr:selfhost/Token.zbr:381
-            return TokenKind{ .kw_guard = {} };
+            return TokenKind{ .kw_union = {} };
         }
 // zbr:selfhost/Token.zbr:382
+        if (std.mem.eql(u8, word, "arena")) {
+// zbr:selfhost/Token.zbr:383
+            return TokenKind{ .kw_arena = {} };
+        }
+// zbr:selfhost/Token.zbr:384
+        if (std.mem.eql(u8, word, "guard")) {
+// zbr:selfhost/Token.zbr:385
+            return TokenKind{ .kw_guard = {} };
+        }
+// zbr:selfhost/Token.zbr:386
         return null;
     }
 

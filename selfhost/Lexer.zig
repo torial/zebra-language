@@ -278,6 +278,43 @@ fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
         else    => -1,
     };
 }
+const _SysProcess = struct {
+    child: std.process.Child,
+    alive: bool,
+    pid: i64,
+};
+fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
+    const p = _allocator.create(_SysProcess) catch @panic("OOM");
+    p.* = .{ .child = std.process.Child.init(argv.items, _allocator), .alive = false, .pid = -1 };
+    p.child.stdin_behavior  = .Ignore;
+    p.child.stdout_behavior = .Ignore;
+    p.child.stderr_behavior = .Inherit;
+    p.child.spawn() catch return p;
+    p.alive = true;
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig 0.15 std so we leave -1.
+    if (comptime builtin.os.tag != .windows) {
+        p.pid = @intCast(p.child.id);
+    }
+    return p;
+}
+fn _sys_process_kill(p: *_SysProcess) void {
+    if (!p.alive) return;
+    _ = p.child.kill() catch {};
+    p.alive = false;
+}
+fn _sys_process_is_running(p: *_SysProcess) bool {
+    if (!p.alive) return false;
+    if (comptime builtin.os.tag == .windows) {
+        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
+        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
+        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
+        return true;
+    } else {
+        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        if (r.pid != 0) { p.alive = false; return false; }
+        return true;
+    }
+}
 fn _sys_readline() ?[]const u8 {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
@@ -288,6 +325,181 @@ fn _sys_readline() ?[]const u8 {
         if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
     else line;
     return _allocator.dupe(u8, trimmed) catch return null;
+}
+// ── DynLib — platform plugin loader ───────────────────────────────────────────
+const _DynLib = struct {
+    lib: std.DynLib,
+};
+fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
+    const dl = _allocator.create(_DynLib) catch @panic("OOM");
+    errdefer _allocator.destroy(dl);
+    dl.lib = try std.DynLib.open(path);
+    return dl;
+}
+fn _dynlib_close(dl: *_DynLib) void {
+    dl.lib.close();
+}
+// ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
+fn _Chan(comptime T: type) type {
+    return struct {
+        mutex:     std.Thread.Mutex = .{},
+        not_empty: std.Thread.Condition = .{},
+        not_full:  std.Thread.Condition = .{},
+        buf:       std.ArrayList(T),
+        capacity:  usize,
+        closed:    bool = false,
+
+        const Self = @This();
+        // Zig 0.15: std.ArrayList is unmanaged — allocator passed per operation.
+        const _alloc = std.heap.page_allocator;
+
+        pub fn init(cap: usize) Self {
+            return .{ .buf = .{}, .capacity = cap };
+        }
+
+        pub fn send(self: *Self, val: T) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            if (self.closed) @panic("send on closed channel");
+            const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
+            while (self.buf.items.len >= eff_cap and !self.closed)
+                self.not_full.wait(&self.mutex);
+            if (self.closed) return;
+            self.buf.append(_alloc, val) catch @panic("OOM");
+            self.not_empty.signal();
+            // Rendezvous (cap=0): sender blocks until receiver drains the slot.
+            if (self.capacity == 0) {
+                while (self.buf.items.len > 0 and !self.closed)
+                    self.not_full.wait(&self.mutex);
+            }
+        }
+
+        pub fn recv(self: *Self) ?T {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            while (self.buf.items.len == 0 and !self.closed)
+                self.not_empty.wait(&self.mutex);
+            if (self.buf.items.len == 0) return null;
+            const val = self.buf.orderedRemove(0);
+            self.not_full.signal();
+            return val;
+        }
+
+        pub fn close(self: *Self) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            self.closed = true;
+            self.not_empty.broadcast();
+            self.not_full.broadcast();
+        }
+    };
+}
+fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
+    const ch = std.heap.page_allocator.create(_Chan(T)) catch @panic("OOM");
+    ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
+    return ch;
+}
+
+// ── Build system ──────────────────────────────────────────────────────────────
+const _Build_Kind = enum { exe, lib, test_ };
+const _BuildTarget = struct {
+    kind:     _Build_Kind,
+    name:     []const u8,
+    entry:    []const u8,
+    platform: ?[]const u8 = null,
+    linked:   ?*_BuildTarget = null,
+};
+const _Build = struct { targets: std.ArrayList(*_BuildTarget) };
+var _global_build: ?*_Build = null;
+var _build_ran: bool = false;
+var _list_targets_mode: bool = false;
+fn _build_new(alloc: std.mem.Allocator) *_Build {
+    const b = alloc.create(_Build) catch @panic("OOM");
+    b.* = .{ .targets = .{} };
+    _global_build = b;
+    return b;
+}
+fn _build_add(b: *_Build, kind: _Build_Kind, name: []const u8, entry: []const u8) *_BuildTarget {
+    const t = _allocator.create(_BuildTarget) catch @panic("OOM");
+    t.* = .{ .kind = kind, .name = name, .entry = entry };
+    b.targets.append(_allocator, t) catch @panic("OOM");
+    return t;
+}
+fn _build_target_link_lib(t: *_BuildTarget, dep: *_BuildTarget) *_BuildTarget {
+    t.linked = dep; return t;
+}
+fn _build_target_platform(t: *_BuildTarget, p: []const u8) *_BuildTarget {
+    t.platform = p; return t;
+}
+fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_BuildTarget {
+    _ = _k; _ = _v; return t;
+}
+fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
+fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
+    for (b.targets.items) |t| {
+        if (std.mem.eql(u8, t.name, name)) return t;
+    }
+    std.debug.print("build: no target named '{s}'\n", .{name});
+    std.process.exit(1);
+}
+fn _build_list_targets(b: *_Build) void {
+    const _out = std.fs.File.stdout().deprecatedWriter();
+    _out.writeAll("{\"targets\":[") catch {};
+    for (b.targets.items, 0..) |t, i| {
+        if (i > 0) _out.writeAll(",") catch {};
+        const kind_str: []const u8 = switch (t.kind) {
+            .exe   => "exe",
+            .lib   => "lib",
+            .test_ => "test",
+        };
+        _out.print("{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch {};
+    }
+    _out.writeAll("]}\n") catch {};
+}
+fn _build_auto_run() void {
+    if (!_build_ran) {
+        if (_global_build) |b| _build_run(b);
+    }
+}
+fn _build_run(b: *_Build) void {
+    _build_ran = true;
+    if (_list_targets_mode) { _build_list_targets(b); return; }
+    const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
+    defer _allocator.free(self_exe);
+    std.fs.cwd().makePath(".zig-cache/zbr") catch {};
+    std.fs.cwd().makePath("zig-out/bin")    catch {};
+    for (b.targets.items) |t| {
+        switch (t.kind) {
+            .exe => {
+                const stem     = std.fs.path.stem(t.entry);
+                const zig_file  = std.fmt.allocPrint(_allocator, ".zig-cache/zbr/{s}.zig", .{stem})     catch @panic("OOM");
+                const out_path  = std.fmt.allocPrint(_allocator, "zig-out/bin/{s}",         .{t.name})   catch @panic("OOM");
+                const emit_flag = std.fmt.allocPrint(_allocator, "-femit-bin={s}",           .{out_path}) catch @panic("OOM");
+                defer _allocator.free(zig_file);
+                defer _allocator.free(out_path);
+                defer _allocator.free(emit_flag);
+                std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
+                {
+                    const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
+                    var ch = std.process.Child.init(&argv, _allocator);
+                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Ignore;
+                    const term = ch.spawnAndWait() catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
+                {
+                    const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
+                    var ch = std.process.Child.init(&argv, _allocator);
+                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Inherit;
+                    const term = ch.spawnAndWait() catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
+            },
+            .lib   => std.debug.print("build: lib targets not yet implemented ({s})\n",  .{t.name}),
+            .test_ => std.debug.print("build: test targets not yet implemented ({s})\n", .{t.name}),
+        }
+    }
 }
 const _DateTime = struct { epoch_ms: i64 };
 const _CalendarView = struct {
@@ -1189,6 +1401,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
+const _GuiVec2 = struct { f64, f64 };
 const _GuiBackend = struct {
     initFn:        *const fn (title: []const u8, width: i64, height: i64) anyerror!void,
     deinitFn:      *const fn () void,
@@ -1225,11 +1438,52 @@ const _GuiBackend = struct {
     setColorsDarkFn:    *const fn () void,
     setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
     setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
-    scaleAllSizesFn:    *const fn (scale: f32) void,
-    getDpiFn:           *const fn () f32,
+    scaleAllSizesFn:      *const fn (scale: f32) void,
+    getDpiFn:             *const fn () f32,
+    ll_addLineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFilledFn:   *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void,
+    ll_addCircleFn:       *const fn (cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void,
+    ll_addCircleFilledFn: *const fn (cx: f64, cy: f64, r: f64, col: i64) void,
+    ll_addTextFn:         *const fn (x: f64, y: f64, col: i64, text: []const u8) void,
+    ll_getWindowPosFn:    *const fn () _GuiVec2,
+    ll_getWindowSizeFn:   *const fn () _GuiVec2,
+    ll_getCursorPosFn:    *const fn () _GuiVec2,
+    ll_getMousePosFn:     *const fn () _GuiVec2,
+    ll_beginGroupFn:      *const fn () void,
+    ll_endGroupFn:        *const fn () void,
+};
+const _LowLevel = struct {
+    _b: *const _GuiBackend,
+    pub fn addLine(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addLineFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRect(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addRectFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRectFilled(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void {
+        ll._b.ll_addRectFilledFn(x1, y1, x2, y2, col);
+    }
+    pub fn addCircle(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addCircleFn(cx, cy, r, col, thickness);
+    }
+    pub fn addCircleFilled(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64) void {
+        ll._b.ll_addCircleFilledFn(cx, cy, r, col);
+    }
+    pub fn addText(ll: _LowLevel, x: f64, y: f64, col: i64, text: []const u8) void {
+        ll._b.ll_addTextFn(x, y, col, text);
+    }
+    pub fn getWindowPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowPosFn(); }
+    pub fn getWindowSize(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowSizeFn(); }
+    pub fn getCursorPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getCursorPosFn(); }
+    pub fn getMousePos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getMousePosFn(); }
+    pub fn beginGroup(ll: _LowLevel) void { ll._b.ll_beginGroupFn(); }
+    pub fn endGroup(ll: _LowLevel) void { ll._b.ll_endGroupFn(); }
+    pub fn sameLine(ll: _LowLevel) void { ll._b.sameLineFn(); }
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
+    lowLevel: _LowLevel,
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1290,7 +1544,7 @@ const GuiContext = struct {
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
-    const _g = GuiContext{ ._b = &_gui_active_backend };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
     if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
         while (_gui_active_backend.newFrameFn()) {
             frame(_g);
@@ -1388,6 +1642,18 @@ fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = valu
 fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
 fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
 fn _stub_get_dpi() f32 { return 1.0; }
+fn _stub_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+fn _stub_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+fn _stub_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+fn _stub_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+fn _stub_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_window_size() _GuiVec2 { return .{ 800, 600 }; }
+fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_begin_group() void {}
+fn _stub_ll_end_group() void {}
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -1424,8 +1690,20 @@ const _gui_stub_backend = _GuiBackend{
     .setColorsDarkFn    = _stub_set_colors_dark,
     .setStyleFloatFn    = _stub_set_style_float,
     .setVec2Fn          = _stub_set_vec2,
-    .scaleAllSizesFn    = _stub_scale_all_sizes,
-    .getDpiFn           = _stub_get_dpi,
+    .scaleAllSizesFn      = _stub_scale_all_sizes,
+    .getDpiFn             = _stub_get_dpi,
+    .ll_addLineFn         = _stub_ll_add_line,
+    .ll_addRectFn         = _stub_ll_add_rect,
+    .ll_addRectFilledFn   = _stub_ll_add_rect_filled,
+    .ll_addCircleFn       = _stub_ll_add_circle,
+    .ll_addCircleFilledFn = _stub_ll_add_circle_filled,
+    .ll_addTextFn         = _stub_ll_add_text,
+    .ll_getWindowPosFn    = _stub_ll_get_window_pos,
+    .ll_getWindowSizeFn   = _stub_ll_get_window_size,
+    .ll_getCursorPosFn    = _stub_ll_get_cursor_pos,
+    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
+    .ll_beginGroupFn      = _stub_ll_begin_group,
+    .ll_endGroupFn        = _stub_ll_end_group,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -3037,148 +3315,156 @@ pub const Lexer = struct {
             return;
         }
 // zbr:selfhost/Lexer.zbr:694
-        if (((c == '!') and (c1 == '='))) {
+        if (((c == '?') and (c1 == '.'))) {
 // zbr:selfhost/Lexer.zbr:695
             self.pos = (self.pos + 2);
-            self.emit(TokenKind{ .bang_equals = {} }, "!=", ln, cl);
+            self.emit(TokenKind{ .question_dot = {} }, "?.", ln, cl);
 // zbr:selfhost/Lexer.zbr:697
             return;
         }
 // zbr:selfhost/Lexer.zbr:698
-        if (((c == '.') and (c1 == '.'))) {
+        if (((c == '!') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:699
             self.pos = (self.pos + 2);
-            self.emit(TokenKind{ .dotdot = {} }, "..", ln, cl);
+            self.emit(TokenKind{ .bang_equals = {} }, "!=", ln, cl);
 // zbr:selfhost/Lexer.zbr:701
             return;
         }
-// zbr:selfhost/Lexer.zbr:704
-        self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:702
+        if (((c == '.') and (c1 == '.'))) {
+// zbr:selfhost/Lexer.zbr:703
+            self.pos = (self.pos + 2);
+            self.emit(TokenKind{ .dotdot = {} }, "..", ln, cl);
 // zbr:selfhost/Lexer.zbr:705
-        if ((c == '+')) {
-            self.emit(TokenKind{ .plus = {} }, "+", ln, cl);
-// zbr:selfhost/Lexer.zbr:707
             return;
         }
 // zbr:selfhost/Lexer.zbr:708
+        self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:709
+        if ((c == '+')) {
+            self.emit(TokenKind{ .plus = {} }, "+", ln, cl);
+// zbr:selfhost/Lexer.zbr:711
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:712
         if ((c == '-')) {
             self.emit(TokenKind{ .minus = {} }, "-", ln, cl);
-// zbr:selfhost/Lexer.zbr:710
+// zbr:selfhost/Lexer.zbr:714
             return;
         }
-// zbr:selfhost/Lexer.zbr:711
+// zbr:selfhost/Lexer.zbr:715
         if ((c == '*')) {
             self.emit(TokenKind{ .star = {} }, "*", ln, cl);
-// zbr:selfhost/Lexer.zbr:713
+// zbr:selfhost/Lexer.zbr:717
             return;
         }
-// zbr:selfhost/Lexer.zbr:714
+// zbr:selfhost/Lexer.zbr:718
         if ((c == '/')) {
             self.emit(TokenKind{ .slash = {} }, "/", ln, cl);
-// zbr:selfhost/Lexer.zbr:716
+// zbr:selfhost/Lexer.zbr:720
             return;
         }
-// zbr:selfhost/Lexer.zbr:717
+// zbr:selfhost/Lexer.zbr:721
         if ((c == '%')) {
             self.emit(TokenKind{ .percent = {} }, "%", ln, cl);
-// zbr:selfhost/Lexer.zbr:719
+// zbr:selfhost/Lexer.zbr:723
             return;
         }
-// zbr:selfhost/Lexer.zbr:720
+// zbr:selfhost/Lexer.zbr:724
         if ((c == '=')) {
-// zbr:selfhost/Lexer.zbr:721
+// zbr:selfhost/Lexer.zbr:725
             if (self.afterLambdaParams) {
-// zbr:selfhost/Lexer.zbr:722
+// zbr:selfhost/Lexer.zbr:726
                 self.afterLambdaParams = false;
             }
             self.emit(TokenKind{ .assign = {} }, "=", ln, cl);
-// zbr:selfhost/Lexer.zbr:724
+// zbr:selfhost/Lexer.zbr:728
             return;
         }
-// zbr:selfhost/Lexer.zbr:725
+// zbr:selfhost/Lexer.zbr:729
         if ((c == '<')) {
             self.emit(TokenKind{ .lt = {} }, "<", ln, cl);
-// zbr:selfhost/Lexer.zbr:727
+// zbr:selfhost/Lexer.zbr:731
             return;
         }
-// zbr:selfhost/Lexer.zbr:728
+// zbr:selfhost/Lexer.zbr:732
         if ((c == '>')) {
             self.emit(TokenKind{ .gt = {} }, ">", ln, cl);
-// zbr:selfhost/Lexer.zbr:730
+// zbr:selfhost/Lexer.zbr:734
             return;
         }
-// zbr:selfhost/Lexer.zbr:731
+// zbr:selfhost/Lexer.zbr:735
         if ((c == '&')) {
             self.emit(TokenKind{ .ampersand = {} }, "&", ln, cl);
-// zbr:selfhost/Lexer.zbr:733
+// zbr:selfhost/Lexer.zbr:737
             return;
         }
-// zbr:selfhost/Lexer.zbr:734
+// zbr:selfhost/Lexer.zbr:738
         if ((c == '|')) {
             self.emit(TokenKind{ .vertical_bar = {} }, "|", ln, cl);
-// zbr:selfhost/Lexer.zbr:736
+// zbr:selfhost/Lexer.zbr:740
             return;
         }
-// zbr:selfhost/Lexer.zbr:737
+// zbr:selfhost/Lexer.zbr:741
         if ((c == '^')) {
             self.emit(TokenKind{ .caret = {} }, "^", ln, cl);
-// zbr:selfhost/Lexer.zbr:739
+// zbr:selfhost/Lexer.zbr:743
             return;
         }
-// zbr:selfhost/Lexer.zbr:740
+// zbr:selfhost/Lexer.zbr:744
         if ((c == '~')) {
             self.emit(TokenKind{ .tilde = {} }, "~", ln, cl);
-// zbr:selfhost/Lexer.zbr:742
+// zbr:selfhost/Lexer.zbr:746
             return;
         }
-// zbr:selfhost/Lexer.zbr:743
+// zbr:selfhost/Lexer.zbr:747
         if ((c == '?')) {
             self.emit(TokenKind{ .question = {} }, "?", ln, cl);
-// zbr:selfhost/Lexer.zbr:745
+// zbr:selfhost/Lexer.zbr:749
             return;
         }
-// zbr:selfhost/Lexer.zbr:746
+// zbr:selfhost/Lexer.zbr:750
         if ((c == '!')) {
             self.emit(TokenKind{ .bang = {} }, "!", ln, cl);
-// zbr:selfhost/Lexer.zbr:748
+// zbr:selfhost/Lexer.zbr:752
             return;
         }
-// zbr:selfhost/Lexer.zbr:749
+// zbr:selfhost/Lexer.zbr:753
         if ((c == '.')) {
             self.emit(TokenKind{ .dot = {} }, ".", ln, cl);
-// zbr:selfhost/Lexer.zbr:751
+// zbr:selfhost/Lexer.zbr:755
             return;
         }
-// zbr:selfhost/Lexer.zbr:752
+// zbr:selfhost/Lexer.zbr:756
         if ((c == ':')) {
             self.emit(TokenKind{ .colon = {} }, ":", ln, cl);
-// zbr:selfhost/Lexer.zbr:754
+// zbr:selfhost/Lexer.zbr:758
             return;
         }
-// zbr:selfhost/Lexer.zbr:755
+// zbr:selfhost/Lexer.zbr:759
         if ((c == ';')) {
             self.emit(TokenKind{ .semi = {} }, ";", ln, cl);
-// zbr:selfhost/Lexer.zbr:757
+// zbr:selfhost/Lexer.zbr:761
             return;
         }
-// zbr:selfhost/Lexer.zbr:758
+// zbr:selfhost/Lexer.zbr:762
         if ((c == ',')) {
             self.emit(TokenKind{ .comma = {} }, ",", ln, cl);
-// zbr:selfhost/Lexer.zbr:760
+// zbr:selfhost/Lexer.zbr:764
             return;
         }
-// zbr:selfhost/Lexer.zbr:761
+// zbr:selfhost/Lexer.zbr:765
         if ((c == '(')) {
-// zbr:selfhost/Lexer.zbr:762
+// zbr:selfhost/Lexer.zbr:766
             if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
-// zbr:selfhost/Lexer.zbr:763
+// zbr:selfhost/Lexer.zbr:767
                 const lastKind = self.out.items[@intCast((@as(i64, @intCast(self.out.items.len)) - 1))].kind;
-// zbr:selfhost/Lexer.zbr:764
+// zbr:selfhost/Lexer.zbr:768
                 switch (lastKind) {
                     .kw_def => {
-// zbr:selfhost/Lexer.zbr:766
+// zbr:selfhost/Lexer.zbr:770
                         self.inLambdaParams = true;
-// zbr:selfhost/Lexer.zbr:767
+// zbr:selfhost/Lexer.zbr:771
                         self.lambdaParamDepth = (self.parenDepth + 1);
                     },
                     else => {
@@ -3186,63 +3472,63 @@ pub const Lexer = struct {
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:770
+// zbr:selfhost/Lexer.zbr:774
             self.parenDepth = (self.parenDepth + 1);
             self.emit(TokenKind{ .lparen = {} }, "(", ln, cl);
-// zbr:selfhost/Lexer.zbr:772
+// zbr:selfhost/Lexer.zbr:776
             return;
         }
-// zbr:selfhost/Lexer.zbr:773
+// zbr:selfhost/Lexer.zbr:777
         if ((c == ')')) {
-// zbr:selfhost/Lexer.zbr:774
+// zbr:selfhost/Lexer.zbr:778
             if ((self.inLambdaParams and (self.parenDepth == self.lambdaParamDepth))) {
-// zbr:selfhost/Lexer.zbr:775
+// zbr:selfhost/Lexer.zbr:779
                 self.inLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:776
+// zbr:selfhost/Lexer.zbr:780
                 self.afterLambdaParams = true;
             }
-// zbr:selfhost/Lexer.zbr:777
+// zbr:selfhost/Lexer.zbr:781
             self.parenDepth = (self.parenDepth - 1);
             self.emit(TokenKind{ .rparen = {} }, ")", ln, cl);
-// zbr:selfhost/Lexer.zbr:779
+// zbr:selfhost/Lexer.zbr:783
             return;
         }
-// zbr:selfhost/Lexer.zbr:780
+// zbr:selfhost/Lexer.zbr:784
         if ((c == '[')) {
             self.emit(TokenKind{ .lbracket = {} }, "[", ln, cl);
-// zbr:selfhost/Lexer.zbr:782
+// zbr:selfhost/Lexer.zbr:786
             return;
         }
-// zbr:selfhost/Lexer.zbr:783
+// zbr:selfhost/Lexer.zbr:787
         if ((c == ']')) {
             self.emit(TokenKind{ .rbracket = {} }, "]", ln, cl);
-// zbr:selfhost/Lexer.zbr:785
+// zbr:selfhost/Lexer.zbr:789
             return;
         }
-// zbr:selfhost/Lexer.zbr:786
+// zbr:selfhost/Lexer.zbr:790
         if ((c == '{')) {
             self.emit(TokenKind{ .lcurly = {} }, "{", ln, cl);
-// zbr:selfhost/Lexer.zbr:788
+// zbr:selfhost/Lexer.zbr:792
             return;
         }
-// zbr:selfhost/Lexer.zbr:789
+// zbr:selfhost/Lexer.zbr:793
         if ((c == '}')) {
             self.emit(TokenKind{ .rcurly = {} }, "}", ln, cl);
-// zbr:selfhost/Lexer.zbr:791
+// zbr:selfhost/Lexer.zbr:795
             return;
         }
-// zbr:selfhost/Lexer.zbr:792
+// zbr:selfhost/Lexer.zbr:796
         { _error_ctx = .{ .message = self.lexErr(c, ln, cl) }; return error.ZebraError; }
     }
 
     pub fn scanToken(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:797
+// zbr:selfhost/Lexer.zbr:801
         const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:798
+// zbr:selfhost/Lexer.zbr:802
         const ln = self.line;
-// zbr:selfhost/Lexer.zbr:799
+// zbr:selfhost/Lexer.zbr:803
         const cl = self.col();
-// zbr:selfhost/Lexer.zbr:800
+// zbr:selfhost/Lexer.zbr:804
         switch (c) {
             '0'...'9' => {
                 try self.scanNumericLiteral(ln, cl);
@@ -3272,137 +3558,137 @@ pub const Lexer = struct {
     }
 
     pub fn run(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:821
-        var atLineStart = true;
-// zbr:selfhost/Lexer.zbr:822
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:823
-            if (atLineStart) {
-// zbr:selfhost/Lexer.zbr:824
-                atLineStart = false;
 // zbr:selfhost/Lexer.zbr:825
-                const lk = self.classifyLine();
+        var atLineStart = true;
 // zbr:selfhost/Lexer.zbr:826
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+// zbr:selfhost/Lexer.zbr:827
+            if (atLineStart) {
+// zbr:selfhost/Lexer.zbr:828
+                atLineStart = false;
+// zbr:selfhost/Lexer.zbr:829
+                const lk = self.classifyLine();
+// zbr:selfhost/Lexer.zbr:830
                 switch (lk) {
                     .empty => {
-// zbr:selfhost/Lexer.zbr:828
+// zbr:selfhost/Lexer.zbr:832
                         const ln = self.line;
-// zbr:selfhost/Lexer.zbr:829
+// zbr:selfhost/Lexer.zbr:833
                         const cl = self.col();
                         self.advanceNewline();
-// zbr:selfhost/Lexer.zbr:831
+// zbr:selfhost/Lexer.zbr:835
                         if ((((self.parenDepth == 0) or self.afterLambdaParams) or self.lambdaBodyActive)) {
                             self.emit(TokenKind{ .eol = {} }, "\n", ln, cl);
-// zbr:selfhost/Lexer.zbr:833
+// zbr:selfhost/Lexer.zbr:837
                             if (self.afterLambdaParams) {
-// zbr:selfhost/Lexer.zbr:834
+// zbr:selfhost/Lexer.zbr:838
                                 self.afterLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:835
+// zbr:selfhost/Lexer.zbr:839
                                 self.lambdaBodyActive = true;
-// zbr:selfhost/Lexer.zbr:836
+// zbr:selfhost/Lexer.zbr:840
                                 self.lambdaIndentLevel = self.indentDepth;
                             }
                         }
-// zbr:selfhost/Lexer.zbr:837
+// zbr:selfhost/Lexer.zbr:841
                         atLineStart = true;
                         continue;
                     },
                     .whitespace_only => {
-// zbr:selfhost/Lexer.zbr:840
+// zbr:selfhost/Lexer.zbr:844
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:841
+// zbr:selfhost/Lexer.zbr:845
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:842
+// zbr:selfhost/Lexer.zbr:846
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:844
+// zbr:selfhost/Lexer.zbr:848
                         atLineStart = true;
                         continue;
                     },
                     .comment_only => {
-// zbr:selfhost/Lexer.zbr:847
+// zbr:selfhost/Lexer.zbr:851
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:848
+// zbr:selfhost/Lexer.zbr:852
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:849
+// zbr:selfhost/Lexer.zbr:853
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:851
+// zbr:selfhost/Lexer.zbr:855
                         atLineStart = true;
                         continue;
                     },
                     .has_content => {
-// zbr:selfhost/Lexer.zbr:854
+// zbr:selfhost/Lexer.zbr:858
                         if (((self.parenDepth == 0) or self.lambdaBodyActive)) {
                             try self.processIndentation();
                         }
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:857
+// zbr:selfhost/Lexer.zbr:861
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:859
+// zbr:selfhost/Lexer.zbr:863
             if (((c == ' ') or (c == '\t'))) {
-// zbr:selfhost/Lexer.zbr:860
+// zbr:selfhost/Lexer.zbr:864
                 self.pos = (self.pos + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:863
+// zbr:selfhost/Lexer.zbr:867
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:864
+// zbr:selfhost/Lexer.zbr:868
                 const ln = self.line;
-// zbr:selfhost/Lexer.zbr:865
+// zbr:selfhost/Lexer.zbr:869
                 const cl = self.col();
                 self.advanceNewline();
-// zbr:selfhost/Lexer.zbr:867
+// zbr:selfhost/Lexer.zbr:871
                 if ((((self.parenDepth == 0) or self.afterLambdaParams) or self.lambdaBodyActive)) {
                     self.emit(TokenKind{ .eol = {} }, "\n", ln, cl);
-// zbr:selfhost/Lexer.zbr:869
+// zbr:selfhost/Lexer.zbr:873
                     if (self.afterLambdaParams) {
-// zbr:selfhost/Lexer.zbr:870
+// zbr:selfhost/Lexer.zbr:874
                         self.afterLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:871
+// zbr:selfhost/Lexer.zbr:875
                         self.lambdaBodyActive = true;
-// zbr:selfhost/Lexer.zbr:872
+// zbr:selfhost/Lexer.zbr:876
                         self.lambdaIndentLevel = self.indentDepth;
                     }
                 }
-// zbr:selfhost/Lexer.zbr:873
+// zbr:selfhost/Lexer.zbr:877
                 atLineStart = true;
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:876
+// zbr:selfhost/Lexer.zbr:880
             if ((c == '#')) {
-// zbr:selfhost/Lexer.zbr:877
+// zbr:selfhost/Lexer.zbr:881
                 while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:878
+// zbr:selfhost/Lexer.zbr:882
                     self.pos = (self.pos + 1);
                 }
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:881
+// zbr:selfhost/Lexer.zbr:885
             if (((c == '/') and (self.peek1() == '#'))) {
                 try self.scanBlockComment();
                 continue;
             }
             try self.scanToken();
         }
-// zbr:selfhost/Lexer.zbr:887
+// zbr:selfhost/Lexer.zbr:891
         if ((!atLineStart)) {
             self.emit(TokenKind{ .eol = {} }, "", self.line, self.col());
         }
-// zbr:selfhost/Lexer.zbr:890
+// zbr:selfhost/Lexer.zbr:894
         const eofCol = self.col();
-// zbr:selfhost/Lexer.zbr:891
+// zbr:selfhost/Lexer.zbr:895
         const eofLn = self.line;
-// zbr:selfhost/Lexer.zbr:892
+// zbr:selfhost/Lexer.zbr:896
         while (_zebra_gt(self.indentDepth, 0)) {
             self.emit(TokenKind{ .dedent = {} }, "", eofLn, eofCol);
-// zbr:selfhost/Lexer.zbr:894
+// zbr:selfhost/Lexer.zbr:898
             self.indentDepth = (self.indentDepth - 1);
         }
         self.emit(TokenKind{ .eof = {} }, "", eofLn, eofCol);

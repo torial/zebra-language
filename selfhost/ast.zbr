@@ -63,8 +63,9 @@ struct Modifiers
     var is_reflectable: bool
     var is_profile: bool
     var is_once: bool
+    var is_export: bool
 
-    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool)
+    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool, is_export: bool)
         .is_public = is_public
         .is_private = is_private
         .is_abstract = is_abstract
@@ -74,6 +75,7 @@ struct Modifiers
         .is_reflectable = is_reflectable
         .is_profile = is_profile
         .is_once = is_once
+        .is_export = is_export
 
 # ── Generic type parameter ────────────────────────────────────────────────────
 
@@ -764,6 +766,7 @@ union Expr
     except_: ^ExprExcept
     old_: ^ExprOld
     result_: Span
+    opt_chain: ^ExprOptChain
 
 # integer literal
 
@@ -1039,6 +1042,20 @@ struct ExprChainedCmp
         .span = span
         .ops = ops
         .operands = operands
+
+struct ExprOptChain
+    var span: Span
+    var base: ^Expr
+    var member: String
+    var has_args: bool    # true = method call, false = member access
+    var args: List(Arg)   # empty when has_args = false
+
+    cue init(span: Span, base: ^Expr, member: String, has_args: bool, args: List(Arg))
+        .span = span
+        .base = base
+        .member = member
+        .has_args = has_args
+        .args = args
 
 # nilable / nil-check operators
 

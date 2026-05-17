@@ -366,6 +366,15 @@ for item in items
 for k, v in m
     print "${k} = ${v}"
 
+# Tuple list destructuring — `for a, b in list_of_pairs`
+# The list must be declared as List((T1, T2)) (explicit type annotation required).
+var pairs: List((int, str)) = List((int, str))()
+pairs.add((1, "one"))
+for n, s in pairs           # n: int, s: str
+    print "${n}: ${s}"
+for n, s in pairs if n > 0 # where clause supported
+    print n
+
 # Array literal
 var nums = @[3, 1, 4, 1, 5]
 if 3 in nums
@@ -401,12 +410,14 @@ var z = x ?? 0                       # use 0 if nil
 
 # Optional chaining:
 var n = node?.next                   # nil if node is nil
+var s = node?.toString()             # method call — nil if node is nil
 var v = node?.value to! + 1          # unwrap result of optional chain
 ```
 
 - `x to!` is the force-unwrap operator.  Panics if nil.
 - `??` is nil-coalescing (like `orelse` in Zig).
-- `?.` is optional member access — propagates nil.
+- `?.` is optional member/method access — propagates nil.  Result type is `T?`.
+  If the accessed member is already `T?`, the result is still `T?` (flattened, not `T??`).
 - `if x as n` (when `x: T?`) binds `n: T` in the then-branch.
 
 ---
@@ -1268,6 +1279,65 @@ The compiler resolves `use module_name` by looking for `module_name.zbr` in
 the same directory as the input file, then in `selfhost/`, `test/`, and
 stdlib paths.
 
+### `zebra build` — project build system
+
+Place a `build.zbr` file in your project root and run `zebra build`.
+The `Build` module is a built-in; no `use` import is needed.
+
+```python
+def main()
+    var b = Build.new()
+
+    # exe(name, entry_source) → BuildTarget
+    var app = b.exe("myapp", "src/main.zbr")
+    app.platform("x86_64-linux")      # optional: cross-compilation target
+    app.option("optimize", "Debug")    # optional: zig build-exe flag
+
+    # lib(name, entry_source) → BuildTarget
+    var lib = b.lib("mylib", "src/lib.zbr")
+
+    # linkLib(other: BuildTarget) — record a dependency edge
+    app.linkLib(lib)
+
+    # b.dependency(name, version) — post-1.0 package manager stub (no-op now)
+    b.dependency("some-pkg", "0.1.0")
+
+    # b.run() — compile all exe targets via zig build-exe
+    b.run()
+```
+
+**Declarative style (recommended):** omit the `b.run()` call entirely.
+`zebra build` automatically calls it after `main()` returns — the same pattern
+as Zig's own `build.zig`.  Calling `b.run()` explicitly still works (imperative
+style); the auto-run is a no-op if the explicit call already ran.
+
+```python
+def main()
+    var b = Build.new()
+    b.exe("myapp", "src/main.zbr").option("optimize", "ReleaseSafe")
+    # no b.run() needed — zebra build calls it automatically
+```
+
+**How `b.run()` works:** for each `exe` target it runs
+`zebra --emit-zig <entry>` then `zig build-exe <zig_file> -femit-bin=zig-out/bin/<name>`.
+`lib` and `test_` targets are stubs that print a "not yet implemented" message.
+
+**BuildTarget chain methods** all return `self`, so they can be chained:
+
+```python
+b.exe("app", "src/main.zbr").platform("aarch64-linux").option("optimize", "ReleaseSafe")
+```
+
+| Method | Effect |
+|---|---|
+| `b.exe(name, entry)` | Add an executable target |
+| `b.lib(name, entry)` | Add a library target (stub) |
+| `b.run()` | Compile all registered targets |
+| `target.platform(str)` | Set cross-compilation target triple |
+| `target.option(key, val)` | Pass a build option through to zig |
+| `target.linkLib(other)` | Record a lib dependency edge |
+| `b.dependency(name, ver)` | Stub for future package manager |
+
 ---
 
 ## 30. GUI programming
@@ -1732,6 +1802,9 @@ def main()
 - Positional destructure: `var (x, y) = f()` — binds each name to the matching element.
 - Index access: `t.0`, `t.1` — integer literal after `.`, zero-based.
 - Mixed types are supported: `(str, int)`, `(float, bool)`, etc.
+- `List((T1, T2))` stores tuples in a list; iterate with `for a, b in list` (see §10).
+  - The list variable must have an explicit `List((T1, T2))` type annotation — inferred types do not trigger destructuring.
+  - Arity must match: `for a, b in list` where `list` holds 3-tuples is a compile error.
 
 ### Zig mapping
 

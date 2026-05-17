@@ -228,8 +228,13 @@ def exprHasTry(expr: Expr): bool
                 if exprHasTry(entry.value)
                     return true
             return false
+        on Expr.tuple_lit as tl
+            for telem in tl.elems
+                if exprHasTry(telem)
+                    return true
+            return false
         else
-            # Literals, nil_, this_, ident, zig_lit, list_lit, array_lit, tuple_lit,
+            # Literals, nil_, this_, ident, zig_lit, list_lit, array_lit,
             # lambda, index, slice -- none contain bare try_ in practice.
             return false
 
@@ -449,8 +454,20 @@ def nameUsedInExpr(name: str, expr: Expr): bool
                 if nameUsedInExpr(name, op)
                     return true
             return false
+        on Expr.tuple_lit as tl
+            for telem in tl.elems
+                if nameUsedInExpr(name, telem)
+                    return true
+            return false
+        on Expr.opt_chain as oc
+            if nameUsedInExpr(name, oc.base)
+                return true
+            for arg in oc.args
+                if nameUsedInExpr(name, arg.value)
+                    return true
+            return false
         else
-            # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no idents
+            # Literals, nil_, this_, zig_lit, list_lit, array_lit -- no user idents
             return false
 
 # ── nameUsedInStmt / nameUsedInStmts ─────────────────────────────────────────
@@ -608,8 +625,11 @@ def collectAllIdents(expr: Expr, out: StrSet)
         on Expr.chained_cmp as cc
             for op in cc.operands
                 collectAllIdents(op, out)
+        on Expr.tuple_lit as tl
+            for telem in tl.elems
+                collectAllIdents(telem, out)
         else
-            # Literals, nil_, this_, zig_lit, list_lit, array_lit, tuple_lit -- no user idents
+            # Literals, nil_, this_, zig_lit, list_lit, array_lit -- no user idents
             pass
 
 # ── seedEscapedFromReturns ────────────────────────────────────────────────────
@@ -776,6 +796,9 @@ def isReadOnlyMethod(name: str): bool
         return true
     # SIMD reduction methods — read-only; receivers must not be marked `var`
     if name == "sum" or name == "dot" or name == "max_element" or name == "min_element"
+        return true
+    # SysProcess methods — proc is a pointer; kill/isRunning never reassign the pointer itself
+    if name == "kill" or name == "isRunning"
         return true
     return false
 

@@ -67,6 +67,7 @@ union TokenKind
     caret
     tilde
     question
+    question_dot
     bang
     double_lt
     double_gt
@@ -118,6 +119,7 @@ union TokenKind
     kw_invariant
     kw_where
     kw_abstract
+    kw_export
     kw_extern
     kw_internal
     kw_public
@@ -249,6 +251,8 @@ class Keywords
             return TokenKind.kw_where()
         if word == "abstract"
             return TokenKind.kw_abstract()
+        if word == "export"
+            return TokenKind.kw_export()
         if word == "extern"
             return TokenKind.kw_extern()
         if word == "internal"

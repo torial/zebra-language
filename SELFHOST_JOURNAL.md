@@ -2069,3 +2069,93 @@ naming a known class, return `Type_.named(gcname)` so the conformance check fire
 Bootstrap:  5/5 PASS
 Smoke:      90/90 PASS (added tc_iface_generic_match_test + tc_iface_generic_mismatch_test)
 ```
+
+---
+
+## Gap Note: `g.lowLevel` sub-API (2026-05-13)
+
+**Status:** Not ported to selfhost (`selfhost/typechecker.zbr` and `selfhost/codegen.zbr`).
+
+### What was added to the Zig backend
+
+`g.lowLevel` exposes a `_LowLevel` struct field on `GuiContext` that routes through the
+`_GuiBackend` fn-ptr isolation layer via 14 new `ll_` fn-ptrs:
+
+- **Drawing** (6): `addLine`, `addRect`, `addRectFilled`, `addCircle`, `addCircleFilled`, `addText`
+- **Queries** (4): `getWindowPos`, `getWindowSize`, `getCursorPos`, `getMousePos` — return `(float, float)` tuple
+- **Layout** (3 — reuses existing fn-ptr): `beginGroup`, `endGroup`, `sameLine`
+
+A new `_GuiVec2 = struct { f64, f64 }` named type enables fn-ptr return type consistency.
+
+### TC changes
+
+- New `Type` enum variant `.low_level`
+- `inferMember`: `gui_context + "lowLevel" → .low_level`
+- `inferStdlibMethodType`: `.low_level` block; query methods return `Type{ .tuple = [.float, .float] }`
+
+### Selfhost port requirements
+
+When porting, add:
+1. `Type_.low_level` to the `Type_` union in `typechecker.zbr`
+2. `inferMember` arm: `on .gui_context` + member == "lowLevel" → `Type_.low_level`
+3. `inferStdlibMethodType` arm: query methods → `Type_.tuple([.float_, .float_])`; others → void
+4. `genLowLevelMethod` in `codegen.zbr` — same pattern as `genGuiWidgetMethod`
+5. Dispatch case in `genExprCall` for `.low_level`
+
+### Results
+
+```
+Bootstrap:  5/5 PASS (pending bootstrap_check run)
+Smoke:      94/94 PASS (lowlevel_smoke_test added)
+```
+
+---
+
+## Ergonomics Sprint: Optional Chaining `?.` (2026-05-16)
+
+**Status:** Complete — both compilers, 106/106 smoke, bootstrap 5/5.
+
+### What was added
+
+New postfix `?.` operator propagates nil through member/method access chains:
+
+```zebra
+var port: int? = cfg?.port          # member access — nil if cfg is nil
+var d: int? = cfg?.doubled()        # method call — nil if cfg is nil
+```
+
+Result type is always `T?` — if the accessed member is itself `T?`, the result is still `T?`
+(flattened, not `T??`). This matches Swift/Kotlin optional chaining semantics.
+
+### Bootstrap changes
+
+- **Token**: `question_dot` between `question` and `bang`; Tokenizer emits it before `question` check (after `?=`).
+- **Grammar**: two `Expr9` productions in `ZebraGrammar.zig` — `Expr9 ?. id` and `Expr9 ?. open_call ArgList rparen`.
+- **AST**: `ExprOptChain { span, base: *Expr, member: []const u8, args: ?[]const Arg }`.
+- **AstBuilder**: two arms in `buildExprLevel` before `.dot` member access.
+- **Resolver**: `opt_chain` in `walkExpr`, `collectFreeVars`, `checkCaptureBoundary`.
+- **TypeChecker**: `inferExpr` arm — strip outer optional from base type, infer member/return type, wrap in `optional`, flatten if member was itself optional.
+- **CodeGen**: member form: `(if (base) |_oc_N| _oc_N.member else null)`; method form uses labeled block + `var _oc_N = _oc_val_N` mutable copy to avoid `*const T` mismatch.
+
+### Selfhost changes (three missed cases found at runtime)
+
+All `.zbr` sources were updated along with the bootstrap. Three gaps only surfaced when rebuilding `selfhost/*.zig` and running the selfhost binary:
+
+1. **`astbuilder.zbr`**: `ExprOptChain` missing from `use ast exposing` list → "not defined" error during bootstrap `--update`.
+2. **`resolver.zbr`**: `POptChain` missing from `use Parser exposing` + `expr_opt_chain` arm missing from `resolveExpr` entirely → "pointless discard of function parameter" Zig error in generated code (resolver thought `c` in `def getPort(c: Config?)` was unused because `c?.port` wasn't traversed).
+3. **`cg_helpers.zbr` `nameUsedInExpr`**: `Expr.opt_chain` arm missing → same "pointless discard" symptom: codegen emitted `_ = c;` before `(if (c) |_oc_1| ...)`, Zig 0.15 flagged the discard as pointless since `c` is used.
+
+### Mutable-copy pattern (avoids `*const T`)
+
+```zig
+// Zig: `if (opt) |*v|` gives `*const T` when opt is const — incompatible with `self: *T`
+// Solution: value-capture then var:
+(if (base) |_oc_val_N| _oc_blk_N: { var _oc_N = _oc_val_N; break :_oc_blk_N _oc_N.method(args); } else null)
+```
+
+### Results
+
+```
+Bootstrap:  5/5 PASS
+Smoke:      106/106 PASS (opt_chain_test_run added)
+```

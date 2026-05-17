@@ -332,6 +332,7 @@ const mod_rules: []const Rule = &.{
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_protected) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_internal) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_abstract) } },
+    .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_export) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_static) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_readonly) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_extern) } },
@@ -1094,6 +1095,8 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.toq) } },                                      // expr to?
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), t(.bang) } },                          // expr to!  (non-nil assert)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question) } },                                 // expr?  (propagate error — sugar for try expr)
+    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.id) } },                    // expr?.member  (optional chain — member access)
+    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.open_call), n(.ArgList), t(.rparen) } }, // expr?.method(args)  (optional chain — method call)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Atom) } },
 
     // Lambda expression: def(params) [as T] = Expr  (expression-body, single line)

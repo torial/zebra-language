@@ -16,17 +16,17 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false, false, false, false)
 
 def zstatic(): Modifiers
-    return Modifiers(false, false, false, true, false, false, false, false, false)
+    return Modifiers(false, false, false, true, false, false, false, false, false, false)
 
 # Strip surrounding quote characters from a string token text.
 # The selfhost Lexer captures token text including the surrounding " or '.
@@ -229,7 +229,7 @@ class ASTBuilder
             inv_exprs.add(.buildExpr(inv_pn)?)
         var mods: Modifiers = zmods()
         if c.is_reflectable
-            mods = Modifiers(false, false, false, false, false, false, true, false, false)
+            mods = Modifiers(false, false, false, false, false, false, true, false, false, false)
         return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs))
 
     # ── Interface ─────────────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ class ASTBuilder
             inv_exprs.add(.buildExpr(inv_pn)?)
         var mods: Modifiers = zmods()
         if s.is_reflectable
-            mods = Modifiers(false, false, false, false, false, false, true, false, false)
+            mods = Modifiers(false, false, false, false, false, false, true, false, false, false)
         return Decl.struct_(DeclStruct(zspan(), mods, s.name, ifaces, members, inv_exprs))
 
     # ── Union ─────────────────────────────────────────────────────────────────
@@ -308,6 +308,8 @@ class ASTBuilder
                 var fmods = zmods()
                 if f.is_static
                     fmods = zstatic()
+                if f.is_private
+                    fmods = Modifiers(f.is_public, f.is_private, false, f.is_static, false, false, false, false, false, false)
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
                     return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
@@ -359,7 +361,7 @@ class ASTBuilder
                 else
                     body_stmts.add(s)
         var stmts_list: List(Stmt)? = body_stmts
-        var mods = Modifiers(false, false, false, m.is_static, false, false, false, m.is_profile, m.is_once)
+        var mods = Modifiers(m.is_public, m.is_private, false, m.is_static, false, false, false, m.is_profile, m.is_once, m.is_export)
         return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
@@ -847,6 +849,18 @@ class ASTBuilder
             on PNode.expr_to_bang as inner
                 const inner_expr = .buildExpr(inner)?
                 return Expr.to_non_nil(ExprToNonNil(zspan(), inner_expr))
+
+            on PNode.expr_opt_chain as poc
+                const base_expr = .buildExpr(poc.base.at(0))?
+                var oc_args: List(Arg) = List(Arg)()
+                for arg_pn in poc.args
+                    if arg_pn is PNode.expr_named_arg as pna
+                        const av = .buildExpr(pna.value.at(0))?
+                        oc_args.add(Arg(zspan(), pna.name, av))
+                    else
+                        const av = .buildExpr(arg_pn)?
+                        oc_args.add(Arg(zspan(), nil, av))
+                return Expr.opt_chain(ExprOptChain(zspan(), base_expr, poc.member, poc.has_args, oc_args))
 
             on PNode.expr_except as pex
                 const base_expr = .buildExpr(pex.base.at(0))?

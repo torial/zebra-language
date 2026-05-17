@@ -82,6 +82,8 @@ pub const Type = union(enum) {
     regex,
     /// `Gui` — GUI context passed to `Gui.run` frame callback; also the `Gui` namespace type.
     gui_context,
+    /// `_LowLevel` — DrawList + layout sub-API, accessed as `g.lowLevel`.
+    low_level,
     /// `Shell` — process execution namespace.
     shell,
     /// `File` — file I/O namespace.
@@ -120,6 +122,10 @@ pub const Type = union(enum) {
     /// Cannot be constructed directly; obtained via `.allocator()` on an `AllocatorSource`.
     /// Enables storing and passing allocators as first-class values.
     allocator_ctx,
+    /// `Build` — build context returned by `Build.new()`; accumulates targets via `exe/lib/test_`.
+    build_ctx,
+    /// `BuildTarget` — a single declared build target; supports fluent `.linkLib/.platform/.option`.
+    build_target,
 
     // ── SIMD vectors ──────────────────────────────────────────────────────────
     /// A SIMD vector type: `f32x8`, `i16x16`, `u8x32`, etc.
@@ -251,6 +257,7 @@ pub const Type = union(enum) {
             .udp_socket     => b == .udp_socket,
             .regex          => b == .regex,
             .gui_context    => b == .gui_context,
+            .low_level      => b == .low_level,
             .shell          => b == .shell,
             .file           => b == .file,
             .str_slice      => b == .str_slice,
@@ -268,6 +275,8 @@ pub const Type = union(enum) {
             .progress_bar   => b == .progress_bar,
             .code_editor    => b == .code_editor,
             .allocator_ctx  => b == .allocator_ctx,
+            .build_ctx      => b == .build_ctx,
+            .build_target   => b == .build_target,
             .json_array     => b == .json_array,
             .tuple => |ea| switch (b) {
                 .tuple => |eb| blk: {
@@ -332,6 +341,7 @@ pub const Type = union(enum) {
             .udp_socket     => "UdpSocket",
             .regex          => "Regex",
             .gui_context    => "Gui",
+            .low_level      => "_LowLevel",
             .shell          => "Shell",
             .file           => "File",
             .str_slice      => "[]str",
@@ -350,6 +360,8 @@ pub const Type = union(enum) {
             .progress_bar   => "ProgressBar",
             .code_editor    => "CodeEditor",
             .allocator_ctx  => "Allocator",
+            .build_ctx      => "Build",
+            .build_target   => "BuildTarget",
             .simd           => "simd<N>",
             .optional       => "?T",
             .tuple          => "tuple",
@@ -639,7 +651,11 @@ fn extractFromDecls(
             }
         },
         .use       => {},  // import declaration; nothing to extract
-        .interface => {},  // interface method sigs not extracted today (separate gap)
+        .interface => |i| {
+            const key = try alloc.dupe(u8, i.name);
+            try types.put(key, .class);
+            try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types);
+        },
         .mixin     => {},  // mixin members not extracted today
         .extend    => {},  // extension methods collected by collectExtMethodsInDecls
         .sig_      => {},  // type alias; no class context
@@ -665,6 +681,8 @@ fn extractFromMembers(
 ) !void {
     for (members) |m| switch (m) {
         .method => |meth| {
+            // private/internal members are not visible cross-module.
+            if (meth.mods.private or meth.mods.internal) continue;
             const ret = simpleTypeFromRef(
                 if (meth.return_type) |*rt| rt else null,
                 resolve, alloc,
@@ -690,6 +708,8 @@ fn extractFromMembers(
             }
         },
         .var_  => |v| {
+            // private/internal fields are not visible cross-module.
+            if (v.mods.private or v.mods.internal) continue;
             const t = simpleTypeFromRef(if (v.type_) |*tr| tr else null, resolve, alloc);
             const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ class_name, v.name });
             try fields.put(key, t);
@@ -997,6 +1017,17 @@ pub fn typeCheckPass3(
     diag_alloc:       Allocator,
     imported_modules: ?*const std.StringHashMap(ModuleInterface),
 ) anyerror!TypeCheckResult {
+    return typeCheckPass3Ex(module, resolve, map_alloc, diag_alloc, imported_modules, false);
+}
+
+pub fn typeCheckPass3Ex(
+    module:               Ast.Module,
+    resolve:              *const Resolver.ResolveResult,
+    map_alloc:            Allocator,
+    diag_alloc:           Allocator,
+    imported_modules:     ?*const std.StringHashMap(ModuleInterface),
+    warn_non_exhaustive:  bool,
+) anyerror!TypeCheckResult {
     var expr_types      = std.AutoHashMap(*const Ast.Expr, Type).init(map_alloc);
     var optional_unwraps = std.AutoHashMap(*const Ast.Expr, void).init(map_alloc);
     var fn_ref_args      = std.AutoHashMap(*const Ast.Expr, void).init(map_alloc);
@@ -1017,22 +1048,23 @@ pub fn typeCheckPass3(
     var diags           = std.ArrayList(Diagnostic){};
 
     const tc = TypeChecker{
-        .resolve          = resolve,
-        .map_alloc        = map_alloc,
-        .diag_alloc       = diag_alloc,
-        .expr_types       = &expr_types,
-        .diags            = &diags,
-        .return_type      = .void_,
-        .owner_sym        = null,
-        .loop_var_types   = &loop_var_types,
-        .list_elem_types  = &list_elem_types,
-        .union_variants   = &union_variants,
-        .narrowed_types   = &narrowed_types,
-        .ext_methods      = &ext_methods,
-        .imported_modules = imported_modules,
-        .optional_unwraps = &optional_unwraps,
-        .fn_ref_args      = &fn_ref_args,
-        .iface_decls      = &iface_decls,
+        .resolve              = resolve,
+        .map_alloc            = map_alloc,
+        .diag_alloc           = diag_alloc,
+        .expr_types           = &expr_types,
+        .diags                = &diags,
+        .return_type          = .void_,
+        .owner_sym            = null,
+        .loop_var_types       = &loop_var_types,
+        .list_elem_types      = &list_elem_types,
+        .union_variants       = &union_variants,
+        .narrowed_types       = &narrowed_types,
+        .ext_methods          = &ext_methods,
+        .imported_modules     = imported_modules,
+        .optional_unwraps     = &optional_unwraps,
+        .fn_ref_args          = &fn_ref_args,
+        .iface_decls          = &iface_decls,
+        .warn_non_exhaustive  = warn_non_exhaustive,
     };
 
     try tc.checkModule(module);
@@ -1091,6 +1123,10 @@ const TypeChecker = struct {
     fn_ref_args: *std.AutoHashMap(*const Ast.Expr, void),
     /// Interface name → DeclInterface* for transitive conformance walks.
     iface_decls: *const std.StringHashMap(*const Ast.DeclInterface),
+    /// When true, emit .warn diagnostics for `branch ... else` arms that do not
+    /// explicitly cover all variants of a same-module union type.  Off by default
+    /// so normal compilation is silent; enabled by --warn-non-exhaustive.
+    warn_non_exhaustive: bool = false,
 
     fn withReturn(tc: TypeChecker, ret: Type) TypeChecker {
         var c = tc; c.return_type = ret; return c;
@@ -1121,7 +1157,10 @@ const TypeChecker = struct {
         if (from == .regex      and to == .regex)       return true;
         if (from == .date_time     and to == .date_time)     return true;
         if (from == .calendar_view and to == .calendar_view) return true;
-        if (from == .gui_context and to == .gui_context) return true;
+        if (from == .gui_context  and to == .gui_context)  return true;
+        if (from == .low_level    and to == .low_level)    return true;
+        if (from == .build_ctx    and to == .build_ctx)    return true;
+        if (from == .build_target and to == .build_target) return true;
         // optional(T) is assignable to optional(T), and nil (.optional(.void_)) to any optional
         if (from == .optional and to == .optional) return tc.isAssignable(from.optional.*, to.optional.*);
         if (from == .optional and from.optional.* == .void_) return to == .optional; // nil → ?T
@@ -1437,7 +1476,19 @@ const TypeChecker = struct {
                 } else {
                     const elem = tc.inferForInElemType(s.iter);
                     if (!elem.isAbstract()) {
-                        for (s.vars) |vname| try tc.loop_var_types.put(vname, elem);
+                        // Tuple destructuring: `for a, b in list_of_pairs` where elem is (T1, T2, ...)
+                        if (elem == .tuple and s.vars.len > 1) {
+                            if (s.vars.len != elem.tuple.len) {
+                                try tc.emitError(s.span,
+                                    "for-in tuple destructuring expects {} names but element has {} fields",
+                                    .{ s.vars.len, elem.tuple.len });
+                            }
+                            for (s.vars, 0..) |vname, i| {
+                                if (i < elem.tuple.len) try tc.loop_var_types.put(vname, elem.tuple[i]);
+                            }
+                        } else {
+                            for (s.vars) |vname| try tc.loop_var_types.put(vname, elem);
+                        }
                     }
                     if (s.where) |w| try tc.checkBoolExpr(w);
                     try tc.checkStmts(s.body);
@@ -1596,6 +1647,40 @@ const TypeChecker = struct {
                                         try tc.diags.append(tc.diag_alloc, .{
                                             .span = s.span,
                                             .kind = .err,
+                                            .message = msg,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // --warn-non-exhaustive: warn when an else clause silently catches
+                // variants not listed in any on-arm.  Only fires for same-module
+                // named unions (cross-module unions intentionally use else as a fallback).
+                if (s.else_ != null and tc.warn_non_exhaustive) {
+                    if (subj_type == .named) {
+                        const sym = subj_type.named;
+                        if (sym.kind == .union_) {
+                            const type_name = sym.decl.union_.name;
+                            if (tc.union_variants.get(type_name)) |variants| {
+                                var covered = std.StringHashMap(void).init(tc.diag_alloc);
+                                defer covered.deinit();
+                                for (s.on) |on| {
+                                    for (on.values) |v| {
+                                        if (v.* == .member) covered.put(v.member.member, {}) catch {};
+                                    }
+                                }
+                                for (variants) |vname| {
+                                    if (covered.get(vname) == null) {
+                                        const msg = try std.fmt.allocPrint(
+                                            tc.diag_alloc,
+                                            "branch on '{s}' has 'else' but does not explicitly handle variant '{s}'",
+                                            .{ type_name, vname },
+                                        );
+                                        try tc.diags.append(tc.diag_alloc, .{
+                                            .span = s.span,
+                                            .kind = .warn,
                                             .message = msg,
                                         });
                                     }
@@ -2022,6 +2107,52 @@ const TypeChecker = struct {
                 for (cc.operands) |op| _ = try tc.inferExpr(op);
                 break :blk .bool;
             },
+
+            // `expr?.member` / `expr?.method(args)` — nil-propagating optional access.
+            // Result type is always optional.  Infer args so their TC types are recorded.
+            .opt_chain => |e| blk: {
+                const base_t = try tc.inferExpr(e.base);
+                if (e.args) |args| for (args) |a| { _ = try tc.inferExpr(a.value); };
+                // Unwrap optional to get the inner type.
+                const inner_t: Type = if (base_t == .optional) base_t.optional.* else base_t;
+                // Look up member type on inner_t.
+                const mem_t: Type = mt: {
+                    if (inner_t == .named) {
+                        const sym = inner_t.named;
+                        if (sym.own_scope) |scope| {
+                            if (scope.lookupLocal(e.member)) |msym| {
+                                // For method calls get the return type; for field access get the field type.
+                                if (e.args != null and msym.kind == .method) {
+                                    const decl = msym.decl.method;
+                                    break :mt tc.typeFromOptRef(if (decl.return_type) |*rt| rt else null);
+                                }
+                                break :mt tc.symbolType(msym);
+                            }
+                        }
+                    }
+                    if (inner_t == .cross_module) {
+                        const cm = inner_t.cross_module;
+                        if (tc.imported_modules) |imp| {
+                            if (imp.get(cm.module)) |iface| {
+                                const key = try std.fmt.allocPrint(tc.map_alloc,
+                                    "{s}.{s}", .{ cm.type_name, e.member });
+                                defer tc.map_alloc.free(key);
+                                if (iface.fields.get(key))  |t| if (!t.isAbstract()) break :mt t;
+                                if (iface.methods.get(key)) |t| if (!t.isAbstract()) break :mt t;
+                                if (iface.instance_field_types.get(key)) |tname| {
+                                    break :mt Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
+                                }
+                            }
+                        }
+                    }
+                    break :mt .unknown;
+                };
+                // Flatten: strip one optional from mem_t then wrap in optional.
+                const flat_t: Type = if (mem_t == .optional) mem_t.optional.* else mem_t;
+                const boxed = try tc.map_alloc.create(Type);
+                boxed.* = flat_t;
+                break :blk Type{ .optional = boxed };
+            },
         };
     }
 
@@ -2041,6 +2172,22 @@ const TypeChecker = struct {
         // Return .unknown (opaque) so the alarm bell only fires on actual
         // resolver failures, not on TC inference gaps.
         return tc.loop_var_types.get(e.name) orelse .unknown;
+    }
+
+    fn memberMods(sym: *const Symbol) Ast.Modifiers {
+        return switch (sym.decl) {
+            .var_   => |v| v.mods,
+            .method => |m| m.mods,
+            else    => .{},
+        };
+    }
+
+    fn checkMemberVisibility(tc: TypeChecker, e: *Ast.ExprMember, member_sym: *const Symbol, class_sym: *const Symbol) !void {
+        const mods = TypeChecker.memberMods(member_sym);
+        if (mods.private or mods.protected) {
+            const inside = if (tc.owner_sym) |os| os == class_sym else false;
+            if (!inside) try tc.emitError(e.span, "'{s}' is private", .{e.member});
+        }
     }
 
     fn inferMember(tc: TypeChecker, e: *Ast.ExprMember) anyerror!Type {
@@ -2137,6 +2284,8 @@ const TypeChecker = struct {
                 std.mem.eql(u8, e.member, "query"))  return .string;
             if (std.mem.eql(u8, e.member, "port"))   return .int;
         }
+        // GuiContext.lowLevel field access → _LowLevel type.
+        if (obj_type == .gui_context and std.mem.eql(u8, e.member, "lowLevel")) return .low_level;
         // If the object is an optional type (e.g. after `n?.next` where n is `?Node`),
         // strip the optional wrapper and look up the member on the inner type.
         // This lets the TC correctly infer member types through optional chains.
@@ -2154,6 +2303,7 @@ const TypeChecker = struct {
                         return Type{ .named = sym };
                     if (member_sym.kind == .union_variant and sym.kind == .union_)
                         return Type{ .named = sym };
+                    try tc.checkMemberVisibility(e, member_sym, sym);
                     return tc.symbolType(member_sym);
                 }
             }
@@ -2185,8 +2335,16 @@ const TypeChecker = struct {
                     if (iface.methods.get(key)) |t| if (!t.isAbstract()) return t;
                     // For user-defined field types: return a typed cross_module value
                     // so chained access (inst.field.method()) stays typed.
-                    if (iface.instance_field_types.get(key)) |tname|
-                        return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
+                    // For ^T? (optional_ref_fields) wrap in optional so `if x as n` works.
+                    if (iface.instance_field_types.get(key)) |tname| {
+                        const base = Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
+                        if (iface.optional_ref_fields.contains(key)) {
+                            const boxed = tc.map_alloc.create(Type) catch return base;
+                            boxed.* = base;
+                            return Type{ .optional = boxed };
+                        }
+                        return base;
+                    }
                     if (iface.instance_method_return_types.get(key)) |tname|
                         return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
                 }
@@ -2202,6 +2360,7 @@ const TypeChecker = struct {
             const cls = gn.sym.decl.class;
             if (gn.sym.own_scope) |scope| {
                 if (scope.lookupLocal(e.member)) |member_sym| {
+                    try tc.checkMemberVisibility(e, member_sym, gn.sym);
                     // For fields/params: substitute type params in declared type.
                     switch (member_sym.decl) {
                         .var_   => |v| if (v.type_) |*t| return tc.substituteTypeParam(t, cls, gn.args),
@@ -2665,6 +2824,31 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "errln"))    return .void_;
                     return .void_;
                 }
+                // Build.* / build-context instance methods.
+                // Build.new() returns .build_ctx; instance methods on .build_ctx
+                // return .build_target or .void_.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Build")) {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "new")) return .build_ctx;
+                    return .void_;
+                }
+                // Instance methods on build_ctx (b.exe/lib/test_/run/dependency).
+                {
+                    const obj_tc = try tc.inferExpr(mem.object);
+                    if (obj_tc == .build_ctx) {
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        if (std.mem.eql(u8, mem.member, "exe")    or
+                            std.mem.eql(u8, mem.member, "lib")    or
+                            std.mem.eql(u8, mem.member, "test_")  or
+                            std.mem.eql(u8, mem.member, "target")) return .build_target;
+                        return .void_; // run(), dependency()
+                    }
+                    if (obj_tc == .build_target) {
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        return .build_target; // linkLib, platform, option chain back to self
+                    }
+                }
                 // DateTime.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "DateTime")) {
                     _ = try tc.inferExpr(mem.object);
@@ -3034,7 +3218,6 @@ const TypeChecker = struct {
 
     /// Return type of a stdlib method call given the receiver's inferred Type.
     fn inferStdlibMethodType(tc: TypeChecker, obj_type: Type, method: []const u8) Type {
-        _ = tc;
         // String methods
         if (obj_type == .string) {
             const str_string = std.StaticStringMap(void).initComptime(&.{
@@ -3110,6 +3293,31 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "inputMultiline"))  return .string;
             // void-returning widgets
             return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, …
+        }
+        // LowLevel sub-API methods (g.lowLevel.xxx)
+        if (obj_type == .low_level) {
+            if (std.mem.eql(u8, method, "getWindowPos")  or
+                std.mem.eql(u8, method, "getWindowSize") or
+                std.mem.eql(u8, method, "getCursorPos")  or
+                std.mem.eql(u8, method, "getMousePos")) {
+                const elems = tc.map_alloc.alloc(Type, 2) catch return .unknown;
+                elems[0] = .float; elems[1] = .float;
+                return Type{ .tuple = elems };
+            }
+            return .void_;
+        }
+        // Build context methods
+        if (obj_type == .build_ctx) {
+            if (std.mem.eql(u8, method, "new"))  return .build_ctx;
+            if (std.mem.eql(u8, method, "exe")    or
+                std.mem.eql(u8, method, "lib")    or
+                std.mem.eql(u8, method, "test_")  or
+                std.mem.eql(u8, method, "target")) return .build_target;
+            return .void_; // run(), dependency() → void
+        }
+        // BuildTarget fluent methods
+        if (obj_type == .build_target) {
+            return .build_target; // linkLib, platform, option all chain back to self
         }
         // Shell methods
         if (obj_type == .shell) {
@@ -3594,6 +3802,7 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
         .tuple_lit     => |e| e.span,
         .type_check    => |e| e.span,
         .chained_cmp   => |e| e.span,
+        .opt_chain     => |e| e.span,
     };
 }
 
@@ -3633,6 +3842,8 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "DateTime"))    return .date_time;
     if (std.mem.eql(u8, n, "CalendarView")) return .calendar_view;
     if (std.mem.eql(u8, n, "CodeEditor"))  return .code_editor;
+    if (std.mem.eql(u8, n, "Build"))       return .build_ctx;
+    if (std.mem.eql(u8, n, "BuildTarget")) return .build_target;
     return switch (Builtins.scalarKind(n)) {
         .int        => .int,
         .uint       => .uint,

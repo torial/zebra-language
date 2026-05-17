@@ -135,9 +135,11 @@ pub fn generate(
     native_uses:      ?*const std.StringHashMap(NativeUse),
     emit_exports:     bool,
     imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
-    strip_contracts:  bool,
-    test_mode:        bool,
-    tag_filter:       ?[]const u8,
+    strip_contracts:      bool,
+    test_mode:            bool,
+    build_mode:           bool,
+    list_targets_mode:    bool,
+    tag_filter:           ?[]const u8,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -158,6 +160,8 @@ pub fn generate(
     var uses_gui    = false;
     var has_exports = false;
     var box_counter: u32 = 0;
+    var dynlib_vars = std.StringHashMap(void).init(alloc);
+    defer dynlib_vars.deinit();
     const g = Generator{
         .resolve     = resolve,
         .tc          = tc,
@@ -184,8 +188,12 @@ pub fn generate(
         .imported_modules = imported_modules,
         .box_counter_ptr  = &box_counter,
         .strip_contracts  = strip_contracts,
-        .test_mode        = test_mode,
-        .tag_filter       = tag_filter,
+        .test_mode           = test_mode,
+        .build_mode          = build_mode,
+        .list_targets_mode   = list_targets_mode,
+        .tag_filter          = tag_filter,
+        .module              = module,
+        .dynlib_vars         = &dynlib_vars,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -298,6 +306,43 @@ fn typeRefSimpleName(tr: Ast.TypeRef) ?[]const u8 {
         .generic => |g| g.name,
         else     => null,
     };
+}
+
+/// Returns the interface declaration for `name` if one exists in the current module.
+fn findInterfaceDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclInterface {
+    for (module.decls) |*decl| {
+        if (decl.* == .interface and std.mem.eql(u8, decl.interface.name, name)) return decl.interface;
+    }
+    return null;
+}
+
+/// Emit shim functions + vtable const for `class_name implements iface_name`.
+/// Shims cast `*anyopaque` → `*ClassName` so Zig's strict fn-pointer types are satisfied.
+fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclInterface) anyerror!void {
+    const iname = iface.name;
+    for (iface.members) |m| {
+        const meth = switch (m) { .method => |x| x, else => continue };
+        try g.w.print("fn _shim_{s}_{s}_{s}(ptr: *anyopaque", .{ class_name, iname, meth.name });
+        for (meth.params) |p| {
+            try g.w.print(", {s}: ", .{p.name});
+            if (p.type_) |pt| try g.genType(pt) else try g.w.writeAll("anytype");
+        }
+        try g.w.writeAll(") ");
+        if (meth.throws) try g.w.writeAll("anyerror!");
+        if (meth.return_type) |rt| try g.genType(rt) else try g.w.writeAll("void");
+        try g.w.print(" {{ {s}{s}.{s}(@alignCast(@ptrCast(ptr))", .{
+            if (meth.throws) "return try " else "return ",
+            class_name, meth.name,
+        });
+        for (meth.params) |p| try g.w.print(", {s}", .{p.name});
+        try g.w.writeAll("); }\n");
+    }
+    try g.w.print("const _vtable_{s}_{s} = {s}.VTable{{", .{ class_name, iname, iname });
+    for (iface.members) |m| {
+        const meth = switch (m) { .method => |x| x, else => continue };
+        try g.w.print(" .{s} = &_shim_{s}_{s}_{s},", .{ meth.name, class_name, iname, meth.name });
+    }
+    try g.w.writeAll(" };\n");
 }
 
 /// Map a Zebra primitive / built-in type name to the Zig equivalent.
@@ -751,6 +796,7 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .tuple_lit   => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
         .type_check  => |e| try refsInExpr(e.expr, r, o),
         .this        => o.uses_self = true,  // extension methods: `this` means self is used
+        .opt_chain => |e| { try refsInExpr(e.base, r, o); if (e.args) |args| for (args) |a| try refsInExpr(a.value, r, o); },
         .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit => {},
     }
@@ -791,7 +837,12 @@ fn containsResultRef(expr: *const Ast.Expr) bool {
             for (cc.operands) |op| if (containsResultRef(op)) break :blk true;
             break :blk false;
         },
-        .lambda        => false, // result inside a lambda body refers to the lambda's own ensure (n/a today)
+        .opt_chain => |e| blk: {
+            if (containsResultRef(e.base)) break :blk true;
+            if (e.args) |args| for (args) |a| if (containsResultRef(a.value)) break :blk true;
+            break :blk false;
+        },
+        .lambda        => false,
         .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit => false,
     };
@@ -823,7 +874,8 @@ fn collectOldExprs(expr: *const Ast.Expr, alloc: Allocator, out: *std.ArrayListU
         .string_interp => |e| { for (e.parts) |p| switch (p) { .expr => |ex| try collectOldExprs(ex, alloc, out), else => {} }; },
         .type_check  => |e| try collectOldExprs(e.expr, alloc, out),
         .chained_cmp => |cc| { for (cc.operands) |op| try collectOldExprs(op, alloc, out); },
-        .lambda      => {},  // old doesn't make sense inside a lambda body
+        .opt_chain => |e| { try collectOldExprs(e.base, alloc, out); if (e.args) |args| for (args) |a| try collectOldExprs(a.value, alloc, out); },
+        .lambda      => {},
         .ident, .this, .int_lit, .float_lit, .bool_lit, .char_lit,
         .string_lit, .nil, .zig_lit, .result_ => {},
     }
@@ -1439,6 +1491,10 @@ fn nameUsedInExpr(name: []const u8, expr: *const Ast.Expr) bool {
             for (cc.operands) |op| if (nameUsedInExpr(name, op)) break :blk true;
             break :blk false;
         },
+        .string_interp => |e| blk: {
+            for (e.parts) |p| if (p == .expr and nameUsedInExpr(name, p.expr)) break :blk true;
+            break :blk false;
+        },
         else       => false,
     };
 }
@@ -1614,8 +1670,24 @@ const Generator = struct {
     /// When true, generate a test-runner `pub fn main()` that discovers and calls
     /// all top-level `def test_*()` functions, catches failures, and reports results.
     test_mode: bool = false,
+    /// When true, append `_build_auto_run();` at the end of the top-level `main`
+    /// function so `zebra build` auto-executes the registered build context even if
+    /// the user never calls `b.run()` explicitly (declarative build.zbr style).
+    build_mode: bool = false,
+    /// When true, inject `_list_targets_mode = true;` at the start of `main()` so
+    /// `_build_run()` outputs a JSON target graph instead of invoking the compiler.
+    list_targets_mode: bool = false,
     /// When non-null, only run tests whose effective tags include this value.
     tag_filter: ?[]const u8 = null,
+    /// Return type of the current method; null outside a method or for void methods.
+    /// Used by genReturn so `return HashMap()` gets a type-hinted emission.
+    method_ret_type: ?Ast.TypeRef = null,
+    /// The module being compiled.  Used by interface vtable construction to locate
+    /// interface declarations by name without a separate pre-pass map.
+    module: Ast.Module = undefined,
+    /// Variable names that are DynLib handles (result of DynLib.open).
+    /// Used to dispatch .close() and .lookup() to DynLib-specific codegen.
+    dynlib_vars: *std.StringHashMap(void),
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1664,6 +1736,10 @@ const Generator = struct {
         c.ensure_armed_active = false;
         c.ensure_uses_result = false;
         return c;
+    }
+
+    fn withMethodRetType(g: Generator, rt: ?Ast.TypeRef) Generator {
+        var c = g; c.method_ret_type = rt; return c;
     }
 
     /// When inside a generic class body, resolve the Zig element-type string for a
@@ -1800,6 +1876,7 @@ const Generator = struct {
             \\// ─── GUI: backend isolation ──────────────────────────────────────────────────
             \\// _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
             \\// the renderer without touching user code or GuiContext.
+            \\const _GuiVec2 = struct { f64, f64 };
             \\const _GuiBackend = struct {
             \\    initFn:        *const fn (title: []const u8, width: i64, height: i64) anyerror!void,
             \\    deinitFn:      *const fn () void,
@@ -1836,11 +1913,52 @@ const Generator = struct {
             \\    setColorsDarkFn:    *const fn () void,
             \\    setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
             \\    setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
-            \\    scaleAllSizesFn:    *const fn (scale: f32) void,
-            \\    getDpiFn:           *const fn () f32,
+            \\    scaleAllSizesFn:      *const fn (scale: f32) void,
+            \\    getDpiFn:             *const fn () f32,
+            \\    ll_addLineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+            \\    ll_addRectFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+            \\    ll_addRectFilledFn:   *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void,
+            \\    ll_addCircleFn:       *const fn (cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void,
+            \\    ll_addCircleFilledFn: *const fn (cx: f64, cy: f64, r: f64, col: i64) void,
+            \\    ll_addTextFn:         *const fn (x: f64, y: f64, col: i64, text: []const u8) void,
+            \\    ll_getWindowPosFn:    *const fn () _GuiVec2,
+            \\    ll_getWindowSizeFn:   *const fn () _GuiVec2,
+            \\    ll_getCursorPosFn:    *const fn () _GuiVec2,
+            \\    ll_getMousePosFn:     *const fn () _GuiVec2,
+            \\    ll_beginGroupFn:      *const fn () void,
+            \\    ll_endGroupFn:        *const fn () void,
+            \\};
+            \\const _LowLevel = struct {
+            \\    _b: *const _GuiBackend,
+            \\    pub fn addLine(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+            \\        ll._b.ll_addLineFn(x1, y1, x2, y2, col, thickness);
+            \\    }
+            \\    pub fn addRect(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+            \\        ll._b.ll_addRectFn(x1, y1, x2, y2, col, thickness);
+            \\    }
+            \\    pub fn addRectFilled(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void {
+            \\        ll._b.ll_addRectFilledFn(x1, y1, x2, y2, col);
+            \\    }
+            \\    pub fn addCircle(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void {
+            \\        ll._b.ll_addCircleFn(cx, cy, r, col, thickness);
+            \\    }
+            \\    pub fn addCircleFilled(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64) void {
+            \\        ll._b.ll_addCircleFilledFn(cx, cy, r, col);
+            \\    }
+            \\    pub fn addText(ll: _LowLevel, x: f64, y: f64, col: i64, text: []const u8) void {
+            \\        ll._b.ll_addTextFn(x, y, col, text);
+            \\    }
+            \\    pub fn getWindowPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowPosFn(); }
+            \\    pub fn getWindowSize(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowSizeFn(); }
+            \\    pub fn getCursorPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getCursorPosFn(); }
+            \\    pub fn getMousePos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getMousePosFn(); }
+            \\    pub fn beginGroup(ll: _LowLevel) void { ll._b.ll_beginGroupFn(); }
+            \\    pub fn endGroup(ll: _LowLevel) void { ll._b.ll_endGroupFn(); }
+            \\    pub fn sameLine(ll: _LowLevel) void { ll._b.sameLineFn(); }
             \\};
             \\const GuiContext = struct {
             \\    _b: *const _GuiBackend,
+            \\    lowLevel: _LowLevel,
             \\    pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
             \\    pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
             \\    pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1901,7 +2019,7 @@ const Generator = struct {
             \\fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
             \\    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
             \\    defer _gui_active_backend.deinitFn();
-            \\    const _g = GuiContext{ ._b = &_gui_active_backend };
+            \\    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
             \\    if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
             \\        while (_gui_active_backend.newFrameFn()) {
             \\            frame(_g);
@@ -2004,6 +2122,18 @@ const Generator = struct {
                 \\fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
                 \\fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
                 \\fn _stub_get_dpi() f32 { return 1.0; }
+                \\fn _stub_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+                \\fn _stub_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+                \\fn _stub_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+                \\fn _stub_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_get_window_size() _GuiVec2 { return .{ 800, 600 }; }
+                \\fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_begin_group() void {}
+                \\fn _stub_ll_end_group() void {}
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -2042,6 +2172,18 @@ const Generator = struct {
                 \\    .setVec2Fn          = _stub_set_vec2,
                 \\    .scaleAllSizesFn    = _stub_scale_all_sizes,
                 \\    .getDpiFn           = _stub_get_dpi,
+                \\    .ll_addLineFn         = _stub_ll_add_line,
+                \\    .ll_addRectFn         = _stub_ll_add_rect,
+                \\    .ll_addRectFilledFn   = _stub_ll_add_rect_filled,
+                \\    .ll_addCircleFn       = _stub_ll_add_circle,
+                \\    .ll_addCircleFilledFn = _stub_ll_add_circle_filled,
+                \\    .ll_addTextFn         = _stub_ll_add_text,
+                \\    .ll_getWindowPosFn    = _stub_ll_get_window_pos,
+                \\    .ll_getWindowSizeFn   = _stub_ll_get_window_size,
+                \\    .ll_getCursorPosFn    = _stub_ll_get_cursor_pos,
+                \\    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
+                \\    .ll_beginGroupFn      = _stub_ll_begin_group,
+                \\    .ll_endGroupFn        = _stub_ll_end_group,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2363,6 +2505,36 @@ const Generator = struct {
                 \\    const _cs = _mon.getContentScale();
                 \\    return @max(1.0, _cs[0]);
                 \\}
+                \\fn _imgui_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addLine(.{ .p1 = .{ @floatCast(x1), @floatCast(y1) }, .p2 = .{ @floatCast(x2), @floatCast(y2) }, .col = @intCast(col), .thickness = @floatCast(thickness) });
+                \\}
+                \\fn _imgui_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addRect(.{ .pmin = .{ @floatCast(x1), @floatCast(y1) }, .pmax = .{ @floatCast(x2), @floatCast(y2) }, .col = @intCast(col), .thickness = @floatCast(thickness) });
+                \\}
+                \\fn _imgui_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addRectFilled(.{ .pmin = .{ @floatCast(x1), @floatCast(y1) }, .pmax = .{ @floatCast(x2), @floatCast(y2) }, .col = @intCast(col) });
+                \\}
+                \\fn _imgui_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addCircle(.{ .p = .{ @floatCast(cx), @floatCast(cy) }, .r = @floatCast(r), .col = @intCast(col), .thickness = @floatCast(thickness) });
+                \\}
+                \\fn _imgui_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addCircleFilled(.{ .p = .{ @floatCast(cx), @floatCast(cy) }, .r = @floatCast(r), .col = @intCast(col) });
+                \\}
+                \\fn _imgui_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void {
+                \\    const _dl = zgui.getWindowDrawList();
+                \\    _dl.addTextUnformatted(.{ @floatCast(x), @floatCast(y) }, @intCast(col), text);
+                \\}
+                \\fn _imgui_ll_get_window_pos() _GuiVec2 { const _p = zgui.getWindowPos(); return .{ @floatCast(_p[0]), @floatCast(_p[1]) }; }
+                \\fn _imgui_ll_get_window_size() _GuiVec2 { const _p = zgui.getWindowSize(); return .{ @floatCast(_p[0]), @floatCast(_p[1]) }; }
+                \\fn _imgui_ll_get_cursor_pos() _GuiVec2 { const _p = zgui.getCursorPos(); return .{ @floatCast(_p[0]), @floatCast(_p[1]) }; }
+                \\fn _imgui_ll_get_mouse_pos() _GuiVec2 { const _p = zgui.getMousePos(); return .{ @floatCast(_p[0]), @floatCast(_p[1]) }; }
+                \\fn _imgui_ll_begin_group() void { zgui.beginGroup(); }
+                \\fn _imgui_ll_end_group() void { zgui.endGroup(); }
                 \\const _gui_imgui_backend = _GuiBackend{
                 \\    .initFn             = _imgui_init,
                 \\    .deinitFn           = _imgui_deinit,
@@ -2399,8 +2571,20 @@ const Generator = struct {
                 \\    .setColorsDarkFn    = _imgui_set_colors_dark,
                 \\    .setStyleFloatFn    = _imgui_set_style_float,
                 \\    .setVec2Fn          = _imgui_set_vec2,
-                \\    .scaleAllSizesFn    = _imgui_scale_all_sizes,
-                \\    .getDpiFn           = _imgui_get_dpi,
+                \\    .scaleAllSizesFn      = _imgui_scale_all_sizes,
+                \\    .getDpiFn             = _imgui_get_dpi,
+                \\    .ll_addLineFn         = _imgui_ll_add_line,
+                \\    .ll_addRectFn         = _imgui_ll_add_rect,
+                \\    .ll_addRectFilledFn   = _imgui_ll_add_rect_filled,
+                \\    .ll_addCircleFn       = _imgui_ll_add_circle,
+                \\    .ll_addCircleFilledFn = _imgui_ll_add_circle_filled,
+                \\    .ll_addTextFn         = _imgui_ll_add_text,
+                \\    .ll_getWindowPosFn    = _imgui_ll_get_window_pos,
+                \\    .ll_getWindowSizeFn   = _imgui_ll_get_window_size,
+                \\    .ll_getCursorPosFn    = _imgui_ll_get_cursor_pos,
+                \\    .ll_getMousePosFn     = _imgui_ll_get_mouse_pos,
+                \\    .ll_beginGroupFn      = _imgui_ll_begin_group,
+                \\    .ll_endGroupFn        = _imgui_ll_end_group,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
                 \\
@@ -2491,6 +2675,18 @@ const Generator = struct {
                 \\fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
                 \\fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
                 \\fn _stub_get_dpi() f32 { return 1.0; }
+                \\fn _stub_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+                \\fn _stub_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+                \\fn _stub_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+                \\fn _stub_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+                \\fn _stub_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_get_window_size() _GuiVec2 { return .{ 800, 600 }; }
+                \\fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _stub_ll_begin_group() void {}
+                \\fn _stub_ll_end_group() void {}
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -2529,6 +2725,18 @@ const Generator = struct {
                 \\    .setVec2Fn          = _stub_set_vec2,
                 \\    .scaleAllSizesFn    = _stub_scale_all_sizes,
                 \\    .getDpiFn           = _stub_get_dpi,
+                \\    .ll_addLineFn         = _stub_ll_add_line,
+                \\    .ll_addRectFn         = _stub_ll_add_rect,
+                \\    .ll_addRectFilledFn   = _stub_ll_add_rect_filled,
+                \\    .ll_addCircleFn       = _stub_ll_add_circle,
+                \\    .ll_addCircleFilledFn = _stub_ll_add_circle_filled,
+                \\    .ll_addTextFn         = _stub_ll_add_text,
+                \\    .ll_getWindowPosFn    = _stub_ll_get_window_pos,
+                \\    .ll_getWindowSizeFn   = _stub_ll_get_window_size,
+                \\    .ll_getCursorPosFn    = _stub_ll_get_cursor_pos,
+                \\    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
+                \\    .ll_beginGroupFn      = _stub_ll_begin_group,
+                \\    .ll_endGroupFn        = _stub_ll_end_group,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2573,11 +2781,14 @@ const Generator = struct {
             }
             const alloc_init = alloc_init_buf.items;
 
+            const auto_run_line       = if (g.build_mode) "    _build_auto_run();\n" else "";
+            const list_targets_prefix = if (g.list_targets_mode) "    _list_targets_mode = true;\n" else "";
             if (main_throws) {
                 try g.w.print(
                     "pub fn main() void {{\n" ++
                     "    _allocator = _arena.allocator();\n" ++
                     "    defer _arena.deinit();\n" ++
+                    "{s}" ++
                     "{s}" ++
                     "    {s}.main() catch |_err| {{\n" ++
                     "        if (_err == error.ZebraError) {{\n" ++
@@ -2587,8 +2798,9 @@ const Generator = struct {
                     "        }}\n" ++
                     "        std.process.exit(1);\n" ++
                     "    }};\n" ++
+                    "{s}" ++
                     "}}\n",
-                    .{ alloc_init, class_name },
+                    .{ alloc_init, list_targets_prefix, class_name, auto_run_line },
                 );
             } else {
                 try g.w.print(
@@ -2596,9 +2808,11 @@ const Generator = struct {
                     "    _allocator = _arena.allocator();\n" ++
                     "    defer _arena.deinit();\n" ++
                     "{s}" ++
+                    "{s}" ++
                     "    {s}.main();\n" ++
+                    "{s}" ++
                     "}}\n",
-                    .{ alloc_init, class_name },
+                    .{ alloc_init, list_targets_prefix, class_name, auto_run_line },
                 );
             }
         }
@@ -3021,6 +3235,14 @@ const Generator = struct {
         // Emit a per-class strict parser that returns `?*T`.
         if (n.mods.reflectable) {
             try g.genJsonParseStrictFn(n);
+        }
+
+        // Emit shim + vtable const for each implemented interface.
+        for (n.implements) |tr| {
+            const iname = typeRefSimpleName(tr) orelse continue;
+            if (findInterfaceDecl(g.module, iname)) |iface| {
+                try genIfaceVtable(g, n.name, iface);
+            }
         }
 
         try g.genExportWrappers(n.name, n.members);
@@ -3506,7 +3728,10 @@ const Generator = struct {
 
         try g.writeIndent();
         // @once impl is private (the wrapper above is the public API).
-        if (!n.mods.once) try g.w.writeAll("pub ");
+        if (!n.mods.once) {
+            if (n.mods.export_) try g.w.writeAll("pub export ")
+            else                try g.w.writeAll("pub ");
+        }
         try g.w.print("fn {s}(", .{emit_name});
 
         // Pre-check: does this method have any tail-recursive calls?
@@ -3573,6 +3798,13 @@ const Generator = struct {
 
             try g.w.writeAll(" {\n");
 
+            // `zebra build --list-targets`: set flag before any user code so _build_run()
+            // outputs JSON instead of invoking the compiler.
+            if (g.list_targets_mode and g.owner.len == 0 and std.mem.eql(u8, n.name, "main")) {
+                try mg.indented().writeIndent();
+                try mg.indented().w.writeAll("_list_targets_mode = true;\n");
+            }
+
             // @profile: record entry time and defer _profile_end() on any exit path.
             if (n.mods.profile) {
                 const ig = mg.indented();
@@ -3613,7 +3845,8 @@ const Generator = struct {
 
                 const bg = ig.indented()
                     .withClosureVars(&cv_map).withReturnedNames(&ret_set)
-                    .withTco(n.name, tco_pnames.items, n.mods.static_);
+                    .withTco(n.name, tco_pnames.items, n.mods.static_)
+                    .withMethodRetType(n.return_type);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 // Skip `_ = self` when invariant defer already references self.
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
@@ -3632,7 +3865,8 @@ const Generator = struct {
                 try ig.writeIndent();
                 try ig.w.writeAll("}\n");
             } else {
-                const bg = mg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set);
+                const bg = mg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set)
+                    .withMethodRetType(n.return_type);
                 // Emit `_ = x;` only for params that are NOT referenced in the body.
                 // Skip when invariant defer already references self (avoids "pointless discard" in Zig 0.15).
                 if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
@@ -3652,6 +3886,13 @@ const Generator = struct {
                     try bg.writeIndent();
                     try bg.w.writeAll("_ensure_armed = true;\n");
                 }
+            }
+
+            // `zebra build` declarative mode: auto-run the registered build context
+            // at the end of main() if the user never called b.run() explicitly.
+            if (g.build_mode and g.owner.len == 0 and std.mem.eql(u8, n.name, "main")) {
+                try mg.indented().writeIndent();
+                try mg.indented().w.writeAll("_build_auto_run();\n");
             }
 
             try g.writeIndent();
@@ -3820,6 +4061,7 @@ const Generator = struct {
             .tuple_lit     => |x| x.span,
             .type_check    => |x| x.span,
             .chained_cmp   => |x| x.span,
+            .opt_chain     => |x| x.span,
         };
     }
 
@@ -3980,6 +4222,49 @@ const Generator = struct {
         const needs_var_for_methods = (tc_init_type == .timer_handle);
         const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods)) "const" else "var";
 
+        // Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`.
+        // Emits shim-based vtable construction so Zig's strict fn-pointer types are satisfied.
+        if (n.init) |init_e| {
+            if (init_e.* == .call and init_e.call.callee.* == .ident and init_e.call.type_args.len == 0) {
+                const class_name = init_e.call.callee.ident.name;
+                if (n.type_) |tr| {
+                    // `var x: IFace = ClassCtor()`
+                    if (tr == .named) {
+                        if (findInterfaceDecl(g.module, tr.named.name) != null) {
+                            try g.writeIndent();
+                            try g.w.print("{s} {s}: {s} = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{
+                                kw, n.name, tr.named.name, class_name, class_name, tr.named.name,
+                            });
+                            return;
+                        }
+                    }
+                    // `var x: ^IFace = ClassCtor()`
+                    if (tr == .ref_to and tr.ref_to.* == .named) {
+                        const iname = tr.ref_to.named.name;
+                        if (findInterfaceDecl(g.module, iname) != null) {
+                            const uid = g.nextUid();
+                            try g.writeIndent();
+                            try g.w.print("const _iface_{x} = _allocator.create({s}) catch @panic(\"OOM\");\n", .{ uid, iname });
+                            try g.writeIndent();
+                            try g.w.print("_iface_{x}.* = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ uid, class_name, class_name, iname });
+                            try g.writeIndent();
+                            try g.w.print("{s} {s}: *{s} = _iface_{x};\n", .{ kw, n.name, iname, uid });
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Track DynLib handle variables for instance method dispatch.
+        if (n.init) |e| {
+            if (e.* == .call and e.call.callee.* == .member) {
+                const mem = e.call.callee.member;
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "DynLib") and std.mem.eql(u8, mem.member, "open")) {
+                    try g.dynlib_vars.put(n.name, {});
+                }
+            }
+        }
         // StringBuilder constructor:
         //   annotated form: `var sb as StringBuilder = StringBuilder()`
         //   inferred form:  `var sb = StringBuilder()`  (no type annotation)
@@ -4286,12 +4571,16 @@ const Generator = struct {
             .generic => |gtr| {
                 if (std.mem.eql(u8, gtr.name, "List")) {
                     const item_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
-                    return g.genListMethod(object, item_is_str, method, args);
+                    const item_tr: ?Ast.TypeRef = if (gtr.args.len >= 1) gtr.args[0] else null;
+                    return g.genListMethod(object, item_is_str, item_tr, method, args);
                 }
                 if (std.mem.eql(u8, gtr.name, "HashMap")) {
                     const key_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
                     const val_is_str = gtr.args.len >= 2 and isStringTypeRef(gtr.args[1]);
                     return g.genHashMapMethod(object, key_is_str, val_is_str, method, args);
+                }
+                if (std.mem.eql(u8, gtr.name, "Chan")) {
+                    return g.genChanMethod(object, method, args);
                 }
             },
             .named => |n| {
@@ -4340,7 +4629,7 @@ const Generator = struct {
                     .{ "join", {} },
                 });
                 if (list_methods.get(method) != null) {
-                    return g.genListMethod(object, false, method, args);
+                    return g.genListMethod(object, false, null, method, args);
                 }
             },
         }
@@ -5116,6 +5405,33 @@ const Generator = struct {
             try g.w.writeAll(", ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    // ── DynLib instance methods ───────────────────────────────────────────────
+
+    fn genDynLibMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "close")) {
+            try g.w.writeAll("_dynlib_close(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "lookup")) {
+            // args[0] = interface type ident, args[1] = symbol name string
+            if (args.len < 2) return false;
+            const iface_name = switch (args[0].value.*) {
+                .ident => |id| id.name,
+                else => return false,
+            };
+            const uid = g.nextUid();
+            try g.w.print("blk_{x}: {{ const _fn = ", .{uid});
+            try g.genExpr(obj);
+            try g.w.print(".lib.lookup(*const fn () *{s}, ", .{iface_name});
+            try g.genExpr(args[1].value);
+            try g.w.print(") orelse break :blk_{x} null; break :blk_{x} _fn(); }}", .{ uid, uid });
             return true;
         }
         return false;
@@ -6429,6 +6745,104 @@ const Generator = struct {
         return true;
     }
 
+    fn genLowLevelMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        const known = std.StaticStringMap(void).initComptime(&.{
+            .{ "addLine",          {} }, .{ "addRect",          {} }, .{ "addRectFilled", {} },
+            .{ "addCircle",        {} }, .{ "addCircleFilled",  {} }, .{ "addText",       {} },
+            .{ "getWindowPos",     {} }, .{ "getWindowSize",    {} },
+            .{ "getCursorPos",     {} }, .{ "getMousePos",      {} },
+            .{ "beginGroup",       {} }, .{ "endGroup",         {} }, .{ "sameLine",       {} },
+        });
+        if (known.get(method) == null) return false;
+        try g.genExpr(obj);
+        try g.w.print(".{s}(", .{method});
+        for (args, 0..) |a, i| {
+            if (i > 0) try g.w.writeAll(", ");
+            try g.genExpr(a.value);
+        }
+        try g.w.writeAll(")");
+        return true;
+    }
+
+    // ── Build context methods ─────────────────────────────────────────────────
+
+    fn genBuildMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "new")) {
+            // Build.new() — ignores the receiver (Build type name), emits constructor.
+            try g.w.writeAll("_build_new(_allocator)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "exe") or
+            std.mem.eql(u8, method, "lib") or
+            std.mem.eql(u8, method, "test_"))
+        {
+            // b.exe(name, entry) → _build_add(b, _Build_Kind.exe, name, entry)
+            try g.w.writeAll("_build_add(");
+            try g.genExpr(obj);
+            try g.w.print(", _Build_Kind.{s}, ", .{method});
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "run")) {
+            try g.w.writeAll("_build_run(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "target")) {
+            // b.target(name) — look up a registered BuildTarget by name.
+            try g.w.writeAll("_build_target_by_name(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "dependency")) {
+            // Post-1.0 stub — no-op at runtime.
+            try g.w.writeAll("_build_dep_stub(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    fn genBuildTargetMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "linkLib")) {
+            try g.w.writeAll("_build_target_link_lib(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "platform")) {
+            try g.w.writeAll("_build_target_platform(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "option")) {
+            try g.w.writeAll("_build_target_option(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
     fn genUdpMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "send")) {
             try g.w.writeAll("_udp_send(");
@@ -6509,16 +6923,45 @@ const Generator = struct {
         return false;
     }
 
+    // ── Chan methods ──────────────────────────────────────────────────────────
+
+    fn genChanMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "send")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".send(");
+            if (args.len > 0) try g.genExpr(args[0].value);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "recv")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".recv()");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "close")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".close()");
+            return true;
+        }
+        return false;
+    }
+
     // ── List methods ──────────────────────────────────────────────────────────
 
-    fn genListMethod(g: Generator, obj: *const Ast.Expr, item_is_str: bool, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+    fn genListMethod(g: Generator, obj: *const Ast.Expr, item_is_str: bool, item_tr: ?Ast.TypeRef, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "add")) {
             // list.add(x) → list.append(_allocator, x) catch unreachable  (Zig 0.15)
-            // For List(str), dupe the item so the list owns it.
+            // For List(str), intern the item.  For List(^T) with a struct element, auto-box.
             try g.genExpr(obj);
             try g.w.writeAll(".append(_allocator, ");
             if (args.len > 0) {
-                if (item_is_str) {
+                const item_is_ptr = blk: {
+                    const itr = item_tr orelse break :blk false;
+                    break :blk itr == .ref_to;
+                };
+                if (item_is_ptr) {
+                    try g.genBoxedArgExpr(args[0].value, item_tr.?.ref_to.*);
+                } else if (item_is_str) {
                     try g.w.writeAll("_intern(");
                     try g.genExpr(args[0].value);
                     try g.w.writeAll(")");
@@ -7468,7 +7911,7 @@ const Generator = struct {
             if (s.value) |v| {
                 try g.writeIndent();
                 try g.w.writeAll("{ _result = ");
-                try g.genExpr(v);
+                try g.genTypedOrExpr(v, g.method_ret_type);
                 try g.w.writeAll("; _ensure_armed = true; return _result; }\n");
                 return;
             }
@@ -7504,8 +7947,26 @@ const Generator = struct {
                     return;
                 }
             }
+            // Interface pointer coercion: `return ClassCtor()` when ret type is `^IFace`.
+            if (v.* == .call and v.call.callee.* == .ident and v.call.type_args.len == 0) {
+                if (g.method_ret_type) |ret| {
+                    if (ret == .ref_to and ret.ref_to.* == .named) {
+                        const iname = ret.ref_to.named.name;
+                        if (findInterfaceDecl(g.module, iname) != null) {
+                            const class_name = v.call.callee.ident.name;
+                            const uid = g.nextUid();
+                            try g.w.print("const _iface_{x} = _allocator.create({s}) catch @panic(\"OOM\");\n", .{ uid, iname });
+                            try g.writeIndent();
+                            try g.w.print("_iface_{x}.* = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ uid, class_name, class_name, iname });
+                            try g.writeIndent();
+                            try g.w.print("return _iface_{x};\n", .{uid});
+                            return;
+                        }
+                    }
+                }
+            }
             try g.w.writeAll("return ");
-            try g.genExpr(v);
+            try g.genTypedOrExpr(v, g.method_ret_type);
             try g.w.writeAll(";\n");
         } else {
             try g.w.writeAll("return;\n");
@@ -7814,6 +8275,20 @@ const Generator = struct {
         // for x in str.split(delim) — emit while loop over splitSequence iterator
         if (g.isSplitCallOnString(s.iter)) return g.genForInSplit(s);
 
+        // for a, b in list_of_pairs — tuple List destructuring takes priority over HashMap dispatch.
+        // Only fires when the iter's declared type is List((T1, T2, ...)).
+        if (s.vars.len >= 2) {
+            if (g.getExprDeclaredType(s.iter)) |tr| {
+                if (tr == .generic and
+                    std.mem.eql(u8, tr.generic.name, "List") and
+                    tr.generic.args.len > 0 and
+                    tr.generic.args[0] == .tuple)
+                {
+                    return g.genForInTuple(s);
+                }
+            }
+        }
+
         // for k, v in map — 2-var form is HashMap-only in Zebra; dispatch early
         // so type-inference gaps don't fall through to the native Zig for-loop path.
         if (s.vars.len == 2) return g.genForInHashMap(s);
@@ -7941,6 +8416,40 @@ const Generator = struct {
             try ig.writeIndent();
             try ig.w.writeAll("// for-else: ran to completion\n");
             try ig.genStmts(else_body);
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    /// `for a, b in list_of_pairs` — destructure each tuple element into named variables.
+    /// Emits: for (iter.items) |_zbr_tup| { const a = _zbr_tup.@"0"; const b = _zbr_tup.@"1"; ... }
+    fn genForInTuple(g: Generator, s: *Ast.StmtForIn) anyerror!void {
+        const elem_var = "_zbr_tup";
+        try g.writeIndent();
+        try g.w.writeAll("for (");
+        try g.genExpr(s.iter);
+        try g.w.print(".items) |{s}| {{\n", .{elem_var});
+        var bg = g.indented();
+        bg.for_else_label = null;
+        for (s.vars, 0..) |v, i| {
+            try bg.writeIndent();
+            try bg.w.print("const {s} = {s}.@\"{d}\";\n", .{ v, elem_var, i });
+            if (!nameUsedInStmts(v, s.body)) {
+                try bg.writeIndent();
+                try bg.w.print("_ = {s};\n", .{v});
+            }
+        }
+        if (s.where) |w| {
+            try bg.writeIndent();
+            try bg.w.writeAll("if (!(");
+            try bg.genExpr(w);
+            try bg.w.writeAll(")) continue;\n");
+        }
+        try bg.genStmts(s.body);
+        if (s.else_) |else_body| {
+            try g.writeIndent();
+            try g.w.writeAll("} else {\n");
+            try g.indented().genStmts(else_body);
         }
         try g.writeIndent();
         try g.w.writeAll("}\n");
@@ -9222,6 +9731,27 @@ const Generator = struct {
     /// Primitive types (int/float/bool/char) are value-copied — no heap involved.
     /// Outside an arena block, `<-` degenerates to a plain assignment.
     fn genCopyOut(g: Generator, s: *Ast.StmtCopyOut) anyerror!void {
+        // Type-driven channel disambiguation: check declared types of LHS and RHS.
+        if (g.getExprDeclaredType(s.target)) |tr| {
+            if (tr == .generic and std.mem.eql(u8, tr.generic.name, "Chan")) {
+                try g.writeIndent();
+                try g.genExpr(s.target);
+                try g.w.writeAll(".send(");
+                try g.genExpr(s.value);
+                try g.w.writeAll(");\n");
+                return;
+            }
+        }
+        if (g.getExprDeclaredType(s.value)) |tr| {
+            if (tr == .generic and std.mem.eql(u8, tr.generic.name, "Chan")) {
+                try g.writeIndent();
+                try g.genExpr(s.target);
+                try g.w.writeAll(" = ");
+                try g.genExpr(s.value);
+                try g.w.writeAll(".recv();\n");
+                return;
+            }
+        }
         const rhs_type = if (g.tc) |tc| (tc.expr_types.get(s.value) orelse .unknown) else .unknown;
         const is_str = rhs_type == .string;
         const depth  = g.arena_depth;
@@ -9244,6 +9774,35 @@ const Generator = struct {
             try g.genExpr(s.value);
             try g.w.writeAll(";\n");
         }
+    }
+
+    /// If `expr` is a zero-arg call whose callee name matches the generic type
+    /// in `type_hint`, emit a typed stdlib init (e.g. `std.StringHashMap([]const u8).init(_allocator)`).
+    /// Otherwise emit via `genExpr`. Used at struct literal fields, cue-init args,
+    /// and except-field values to avoid the dumb i64/anytype fallback.
+    fn genTypedOrExpr(g: Generator, expr: *const Ast.Expr, type_hint: ?Ast.TypeRef) anyerror!void {
+        if (type_hint) |tr| {
+            if (tr == .generic) {
+                const gtr = tr.generic;
+                if (expr.* == .call) {
+                    const call = expr.call;
+                    if (call.args.len == 0 and call.callee.* == .ident and
+                        std.mem.eql(u8, call.callee.ident.name, gtr.name))
+                    {
+                        try g.genStdlibInit(gtr);
+                        return;
+                    }
+                }
+            }
+        }
+        try g.genExpr(expr);
+    }
+
+    /// Emit the value expression for a single `except` field.
+    fn genExceptFieldValue(g: Generator, f: Ast.ExceptField) anyerror!void {
+        const gtr = g.resolveFieldGenericTypeRef(f.name);
+        const hint: ?Ast.TypeRef = if (gtr) |r| .{ .generic = r } else null;
+        try g.genTypedOrExpr(f.value, hint);
     }
 
     /// `var name [: T] = base except field=val ...`
@@ -9274,7 +9833,7 @@ const Generator = struct {
             try ig.w.writeAll("_tmp.");
             try ig.w.writeAll(f.name);
             try ig.w.writeAll(" = ");
-            try ig.genExpr(f.value);
+            try ig.genExceptFieldValue(f);
             try ig.w.writeAll(";\n");
         }
         try ig.writeIndent();
@@ -9305,7 +9864,7 @@ const Generator = struct {
             try ig.w.writeAll("_tmp.");
             try ig.w.writeAll(f.name);
             try ig.w.writeAll(" = ");
-            try ig.genExpr(f.value);
+            try ig.genExceptFieldValue(f);
             try ig.w.writeAll(";\n");
         }
         try ig.writeIndent();
@@ -10044,6 +10603,27 @@ const Generator = struct {
                 }
                 try g.w.writeAll("); })");
             },
+
+            // `expr?.member` / `expr?.method(args)` — nil-propagating optional access.
+            // Member: (if (base) |_oc_N| _oc_N.member else null)
+            // Method: (if (base) |_oc_val_N| _oc_blk_N: { var _oc_N = _oc_val_N; break :_oc_blk_N _oc_N.method(args); } else null)
+            // The method path uses a mutable local copy so `self: *T` receives a non-const pointer.
+            .opt_chain => |e| {
+                const uid = g.nextUid();
+                try g.w.writeAll("(if (");
+                try g.genExpr(e.base);
+                if (e.args) |args| {
+                    try g.w.print(") |_oc_val_{d}| _oc_blk_{d}: {{ var _oc_{d} = _oc_val_{d}; break :_oc_blk_{d} _oc_{d}.{s}(", .{uid, uid, uid, uid, uid, uid, e.member});
+                    for (args, 0..) |a, i| {
+                        if (i > 0) try g.w.writeAll(", ");
+                        if (a.name) |nm| try g.w.print(".{s} = ", .{nm});
+                        try g.genExpr(a.value);
+                    }
+                    try g.w.print("); }} else null)", .{});
+                } else {
+                    try g.w.print(") |_oc_{d}| _oc_{d}.{s} else null)", .{uid, uid, e.member});
+                }
+            },
         }
     }
 
@@ -10301,7 +10881,9 @@ const Generator = struct {
                         }
                     }
                 }
-                try g.genArgExpr(a.value);
+                // Use param type hint for zero-arg generic ctors.
+                const pt_positional: ?Ast.TypeRef = if (params) |ps| (if (i < ps.len) ps[i].type_ else null) else null;
+                try g.genTypedOrExpr(a.value, pt_positional);
             }
             return;
         }
@@ -10345,7 +10927,9 @@ const Generator = struct {
                         try g.genArgExpr(expr);
                         try g.w.writeAll(".*");
                     } else {
-                        try g.genArgExpr(expr);
+                        // Plain pass-through: use param type hint for zero-arg generic ctors.
+                        const param_type: ?Ast.TypeRef = if (i < ps.len) ps[i].type_ else null;
+                        try g.genTypedOrExpr(expr, param_type);
                     }
                 } else if (i < ps.len and ps[i].default != null) {
                     if (param_is_ref) {
@@ -10385,7 +10969,16 @@ const Generator = struct {
         // Detected by type_args.len > 0 (set by AstBuilder.buildGenericConstruct).
         if (e.type_args.len > 0 and e.callee.* == .ident) {
             const class_name = e.callee.ident.name;
-            // Stdlib generics: List(T)() → std.ArrayList(T){} (allocator passed to each op)
+            // Stdlib generics: Chan(T)(cap) → _chan_create(T, cap)
+            if (std.mem.eql(u8, class_name, "Chan") and e.type_args.len == 1) {
+                try g.w.writeAll("_chan_create(");
+                try g.genType(e.type_args[0]);
+                try g.w.writeAll(", ");
+                if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("0");
+                try g.w.writeAll(")");
+                return;
+            }
+            // List(T)() → std.ArrayList(T){} (allocator passed to each op)
             if (std.mem.eql(u8, class_name, "List") and e.type_args.len == 1) {
                 try g.w.writeAll("std.ArrayList(");
                 try g.genType(e.type_args[0]);
@@ -10559,7 +11152,9 @@ const Generator = struct {
                 return;
             }
             if (std.mem.eql(u8, name, "HashMap")) {
-                try g.w.writeAll("std.StringHashMap(i64).init(_allocator)");
+                // No LHS type context — emit anytype so the Zig error points at the
+                // missing annotation rather than producing a misleading type mismatch.
+                try g.w.writeAll("std.StringHashMap(anytype).init(_allocator)");
                 return;
             }
             if (std.mem.eql(u8, name, "CsvWriter")) {
@@ -10691,10 +11286,20 @@ const Generator = struct {
                                 if (i > 0) try g.w.writeAll(",");
                                 if (a.name) |n| {
                                     try g.w.print(" .{s} = ", .{n});
+                                    // Look up field type from members for typed generic init.
+                                    const field_type: ?Ast.TypeRef = blk: {
+                                        for (members) |m| {
+                                            if (m != .var_) continue;
+                                            if (!std.mem.eql(u8, m.var_.name, n)) continue;
+                                            break :blk m.var_.type_;
+                                        }
+                                        break :blk null;
+                                    };
+                                    try g.genTypedOrExpr(a.value, field_type);
                                 } else {
                                     try g.w.writeAll(" ");
+                                    try g.genExpr(a.value);
                                 }
-                                try g.genExpr(a.value);
                             }
                             try g.w.writeAll(" }");
                         }
@@ -10733,6 +11338,27 @@ const Generator = struct {
             const mem = e.callee.member;
             if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Http")) {
                 if (try g.genHttpCall(mem.member, e.args)) return;
+            }
+        }
+        // DynLib static calls: DynLib.open(path).
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "DynLib")) {
+                if (std.mem.eql(u8, mem.member, "open") and e.args.len > 0) {
+                    try g.w.writeAll("try _dynlib_open(");
+                    try g.genExpr(e.args[0].value);
+                    try g.w.writeAll(")");
+                    return;
+                }
+            }
+        }
+        // DynLib instance methods: lib.close(), lib.lookup(IFace, "sym").
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident) {
+                if (g.dynlib_vars.contains(mem.object.ident.name)) {
+                    if (try g.genDynLibMethod(mem.object, mem.member, e.args)) return;
+                }
             }
         }
         // Csv static calls: Csv.parse(text), Csv.parseFile(path).
@@ -10918,6 +11544,13 @@ const Generator = struct {
                 if (try g.genShellCall(mem.member, e.args)) return;
             }
         }
+        // Build calls: Build.new() + b.exe/lib/run/dependency.
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Build")) {
+                if (try g.genBuildMethod(mem.object, mem.member, e.args)) return;
+            }
+        }
         // toString() on any value — use TC-inferred type for format specifier.
         if (e.callee.* == .member) {
             const mem = e.callee.member;
@@ -10999,6 +11632,9 @@ const Generator = struct {
                     .udp_socket    => if (try g.genUdpMethod(mem.object, mem.member, e.args)) return,
                     .regex         => if (try g.genRegexMethod(mem.object, mem.member, e.args)) return,
                     .gui_context   => if (try g.genGuiWidgetMethod(mem.object, mem.member, e.args)) return,
+                    .low_level     => if (try g.genLowLevelMethod(mem.object, mem.member, e.args)) return,
+                    .build_ctx     => if (try g.genBuildMethod(mem.object, mem.member, e.args)) return,
+                    .build_target  => if (try g.genBuildTargetMethod(mem.object, mem.member, e.args)) return,
                     .code_editor   => if (try g.genCodeEditorMethod(mem.object, mem.member, e.args)) return,
                     .str_slice     => if (try g.genStrSliceMethod(mem.object, mem.member, e.args)) return,
                     .json_value    => if (try g.genJsonMethod(mem.object, mem.member, e.args)) return,
@@ -11006,14 +11642,14 @@ const Generator = struct {
                     .http_response => if (try g.genHttpResponseMethod(mem.object, mem.member, e.args)) return,
                     .csv_table     => if (try g.genCsvMethod(mem.object, mem.member, e.args)) return,
                     .csv_writer    => if (try g.genCsvWriterMethod(mem.object, mem.member, e.args)) return,
-                    .csv_row       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
+                    .csv_row       => if (try g.genListMethod(mem.object, false, null, mem.member, e.args)) return,
                     .arg_result    => if (try g.genArgResultMethod(mem.object, mem.member, e.args)) return,
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
                     .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
                     .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
                     .string_builder => if (try g.genStringBuilderMethod(mem.object, mem.member, e.args)) return,
                     .sys_process    => if (try g.genSysProcessMethod(mem.object, mem.member, e.args)) return,
-                    .unknown       => if (try g.genListMethod(mem.object, false, mem.member, e.args)) return,
+                    .unknown       => if (try g.genListMethod(mem.object, false, null, mem.member, e.args)) return,
                     else           => {},
                 }
             }
@@ -11741,6 +12377,20 @@ const Generator = struct {
                     try g.w.writeAll("*_SysProcess");
                     return;
                 }
+                // DynLib is a heap-allocated struct; emit as pointer.
+                if (std.mem.eql(u8, n.name, "DynLib")) {
+                    try g.w.writeAll("*_DynLib");
+                    return;
+                }
+                // Build system builtins: heap-allocated, emitted as pointers.
+                if (std.mem.eql(u8, n.name, "Build")) {
+                    try g.w.writeAll("*_Build");
+                    return;
+                }
+                if (std.mem.eql(u8, n.name, "BuildTarget")) {
+                    try g.w.writeAll("*_BuildTarget");
+                    return;
+                }
                 // Cross-module qualified type: "moduleAlias.TypeName".
                 // If the referenced type is a class in the imported module, emit
                 // `*moduleAlias.TypeName` (pointer) rather than a value type.
@@ -11831,6 +12481,13 @@ const Generator = struct {
                 try g.genType(payload);
             },
             .generic     => |gtr| {
+                // Chan(T) — heap-allocated *_Chan(T) pointer.
+                if (std.mem.eql(u8, gtr.name, "Chan")) {
+                    try g.w.writeAll("*_Chan(");
+                    if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("anytype");
+                    try g.w.writeAll(")");
+                    return;
+                }
                 // HashMap(K, V): use StringHashMap for string keys, AutoHashMap otherwise.
                 if (std.mem.eql(u8, gtr.name, "HashMap")) {
                     const key_is_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args[0]);
@@ -12065,6 +12722,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .udp_socket,
         .regex,
         .gui_context,
+        .low_level,
         .shell,
         .file,
         .str_slice,
@@ -12083,6 +12741,8 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .progress_bar,
         .code_editor,
         .allocator_ctx,
+        .build_ctx,
+        .build_target,
         .simd,
         .optional,
         .tuple,
@@ -12354,7 +13014,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     var out = std.ArrayList(u8){};
     errdefer out.deinit(alloc);
 
-    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false, null);
+    _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false, false, false, null);
     return out.toOwnedSlice(alloc);
 }
 

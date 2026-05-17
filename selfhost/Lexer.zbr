@@ -691,6 +691,10 @@ class Lexer
             pos = pos + 2
             emit(TokenKind.question_equals(), "?=", ln, cl)
             return
+        if c == c'?' and c1 == c'.'
+            pos = pos + 2
+            emit(TokenKind.question_dot(), "?.", ln, cl)
+            return
         if c == c'!' and c1 == c'='
             pos = pos + 2
             emit(TokenKind.bang_equals(), "!=", ln, cl)

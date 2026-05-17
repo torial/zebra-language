@@ -144,6 +144,7 @@ pub const TokenKind = enum {
     caret,         // ^
     tilde,         // ~
     question,      // ?
+    question_dot,  // ?.  (optional-chain access)
     bang,          // !
     double_lt,     // <<
     double_gt,     // >>
@@ -216,6 +217,7 @@ pub const TokenKind = enum {
 
     // Modifiers
     kw_abstract,
+    kw_export,
     kw_extern,
     kw_internal,
     kw_public,
@@ -339,6 +341,7 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "static",      .kw_static },
     .{ "invariant",   .kw_invariant },
     .{ "abstract",    .kw_abstract },
+    .{ "export",      .kw_export },
     .{ "extern",      .kw_extern },
     .{ "internal",    .kw_internal },
     .{ "public",      .kw_public },

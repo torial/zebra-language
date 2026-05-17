@@ -299,6 +299,7 @@ const Builder = struct {
                     .kw_protected => m.protected = true,
                     .kw_internal  => m.internal  = true,
                     .kw_abstract  => m.abstract  = true,
+                    .kw_export    => m.export_   = true,
                     .kw_static    => m.static_   = true,
                     .kw_readonly  => m.readonly  = true,
                     .kw_extern    => m.extern_   = true,
@@ -2155,6 +2156,26 @@ const Builder = struct {
             return .{ .try_ = try b.box(Ast.ExprTry, .{
                 .span = s,
                 .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+            }) };
+        }
+
+        // Optional chain: Expr9 ?. id — 3 children → opt_chain member access
+        if (kids.len == 3 and isLeafKind(kids[1], .question_dot) and isLeafKind(kids[2], .id)) {
+            return .{ .opt_chain = try b.box(Ast.ExprOptChain, .{
+                .span   = s,
+                .base   = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+                .member = leafText(kids[2], b.tokens),
+                .args   = null,
+            }) };
+        }
+
+        // Optional chain: Expr9 ?. open_call ArgList rparen — 5 children → opt_chain method call
+        if (kids.len == 5 and isLeafKind(kids[1], .question_dot)) {
+            return .{ .opt_chain = try b.box(Ast.ExprOptChain, .{
+                .span   = s,
+                .base   = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+                .member = leafText(kids[2], b.tokens),
+                .args   = try b.buildArgListNode(kids[3]),
             }) };
         }
 

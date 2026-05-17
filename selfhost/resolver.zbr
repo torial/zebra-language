@@ -22,7 +22,7 @@
 #   - Recursive tree walking: resolveStmt - resolveExpr
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
-use Parser exposing PNode, PParam
+use Parser exposing PNode, PParam, POptChain
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
 # 0 = class / union
@@ -314,6 +314,11 @@ class Resolver
             on PNode.expr_string_interp as si
                 for part in si.parts
                     .resolveExpr(part)
+            on PNode.expr_opt_chain as poc
+                for e in poc.base
+                    .resolveExpr(e)
+                for e in poc.args
+                    .resolveExpr(e)
             else
                 # Literals (int, float, bool, str, nil, this) need no resolution
                 pass
@@ -340,7 +345,9 @@ class Resolver
         if name == "this" or name == "print" or name == "assert"
             return true
         # Standard library entry points
-        if name == "List" or name == "HashMap" or name == "StringBuilder"
+        if name == "List" or name == "HashMap" or name == "StringBuilder" or name == "Chan"
+            return true
+        if name == "DynLib"
             return true
         # Stdlib globals (no `use` required)
         if name == "File" or name == "sys" or name == "Shell" or name == "Math"
