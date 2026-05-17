@@ -1,4 +1,4 @@
-# Tests that `arena` blocks compile and run correctly.
+# Tests that `allocate Arena()` blocks compile and run correctly.
 # List.append allocation issues are a separate pre-existing bug.
 
 class Counter
@@ -13,8 +13,8 @@ class Counter
 def main()
     var x: int = 0
 
-    # arena block: verify it compiles, runs, and exits cleanly
-    arena
+    # allocate Arena() block: verify it compiles, runs, and exits cleanly
+    allocate Arena()
         var c = Counter()
         c.inc()
         c.inc()
@@ -24,16 +24,16 @@ def main()
     # x survives (primitive on the stack)
     assert x == 3
 
-    # nested arena blocks
+    # nested allocate Arena() blocks
     var y: int = 0
-    arena
+    allocate Arena()
         var a = Counter()
         a.inc()
-        arena
+        allocate Arena()
             var b = Counter()
             b.inc()
             b.inc()
             y = a.value() + b.value()
 
     assert y == 3
-    print "arena scope OK"
+    print "allocate Arena() scope OK"

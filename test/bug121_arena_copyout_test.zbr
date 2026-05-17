@@ -1,8 +1,8 @@
 class Main
     static def main()
-        # Basic arena copy-out: str value survives arena deinit.
+        # Basic allocate Arena() copy-out: str value survives arena deinit.
         var result: str = ""
-        arena
+        allocate Arena()
             var tmp = "hello" + " " + "world"
             result <- tmp
         if result == "hello world"
