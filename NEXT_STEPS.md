@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-16 (ergonomics sprint: --warn-non-exhaustive, genMemberCall user-method bypass, cross-module ^T? binding fix, optional chaining ?.)
+**Last updated:** 2026-05-17 (allocate Slice 5: is_scoped/allocate_depth copy-out fix; test sites migrated to allocate Arena())
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -37,7 +37,8 @@ Everything here must ship before 1.0 stability locks in.
 
 **0.14 remaining (entire milestone — priority cluster):**
 - [ ] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks (str+primitives done)
-- [ ] `allocate` Slices 5–6: `is_scoped` copy-out flag + `arena` deprecation sweep
+- [x] `allocate` Slice 5: `is_scoped` flag wired into copy-out; `allocate_depth` replaces `arena_depth`; scoped Arena/Debug/FixedBuffer dupe correctly; 113/113 smoke, bootstrap 5/5 (2026-05-17)
+- [ ] `allocate` Slice 6: `arena` → `allocate Arena()` deprecation sweep + `--warn-deprecated` flag; remove `kw_arena`/`StmtArenaScope` once all sites migrated (test files already migrated in commit 000ed1e)
 - [ ] `Chan(T)` channels (`ch <- val` / `var v <- ch`)
 
 **New at 1.0:**
@@ -111,6 +112,13 @@ Every new stdlib method touches `src/CodeGen.zig`, `selfhost/codegen.zbr`,
 `selfhost/typechecker.zbr` (inferExpr allowlist), and sometimes `cg_helpers.zbr`.
 Long-term fix: a single method-descriptor table driving both TC inference and codegen
 dispatch.  **Defer post-1.0** — the 4-place pattern is painful but mechanical.
+
+**f. Type-first dispatch for str/StringBuilder/List/HashMap** *(complete 2026-05-17)*
+Mode 1 arms added in `selfhost/codegen.zbr` `genMemberCall`: `Type_.string_builder`,
+`Type_.hashmap_`, `Type_.list_`, `Type_.string_` each have a `branch recv_t` arm that
+handles all their known methods and returns; unhandled methods fall through to Mode 2 as
+a safe fallback.  Additive strategy — Mode 2 kept for `infer_ctx == nil` paths (field
+defaults) and TC gaps.  Bootstrap 5/5, 112/112 smoke.  See commit 6c1c072.
 
 ### 6. REPL (Milestone 0.11)
 Two-phase approach: warm-up pre-compiled preamble once → per-input incremental compile.
