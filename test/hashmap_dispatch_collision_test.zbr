@@ -1,0 +1,75 @@
+# hashmap_dispatch_collision_test.zbr
+#
+# Guards against silent wrong codegen when user-defined class methods share names
+# with HashMap heuristics (set, get, contains, remove, count, keys, values).
+#
+# HashMap codegen heuristics in Mode 2 dispatch on method name alone.
+# If TC returns unknown_ for a user-class receiver, the wrong Zig is emitted
+# (e.g. user.get(k) → hm.get(k) which returns an optional, not an int).
+
+class Registry
+    var n: int
+    cue init()
+        .n = 0
+    def set(val: int)
+        .n = val
+    def get(): int
+        return .n
+    def contains(val: int): bool
+        return .n == val
+    def remove(val: int)
+        if .n == val
+            .n = 0
+    def count(): int
+        return .n
+    def keys(): str
+        return .n.toString()
+    def values(): str
+        return .n.toString() + .n.toString()
+
+class Cache
+    var hits: int
+    var misses: int
+    cue init()
+        .hits = 0
+        .misses = 0
+    def get(key: str): int
+        if key == "hit"
+            .hits = .hits + 1
+            return .hits
+        .misses = .misses + 1
+        return -.misses
+    def put(k: str, v: int): bool
+        return k.len > 0 and v >= 0
+    def size(): int
+        return .hits + .misses
+
+def main()
+    var r = Registry()
+
+    r.set(42)
+    assert r.get() == 42, "get: expected 42"
+    assert r.contains(42), "contains true: expected true"
+    assert not r.contains(7), "contains false: expected false"
+    assert r.count() == 42, "count: expected 42"
+    assert r.keys() == "42", "keys: expected '42'"
+    assert r.values() == "4242", "values: expected '4242'"
+
+    r.remove(42)
+    assert r.get() == 0, "after remove get: expected 0"
+
+    r.set(10)
+    assert r.count() == 10, "count after set: expected 10"
+
+    var c = Cache()
+    var v1 = c.get("hit")
+    assert v1 == 1, "cache get hit 1: expected 1"
+    var v2 = c.get("hit")
+    assert v2 == 2, "cache get hit 2: expected 2"
+    var v3 = c.get("miss")
+    assert v3 == -1, "cache get miss: expected -1"
+    assert c.size() == 3, "cache size: expected 3"
+    assert c.put("key", 99), "put valid: expected true"
+    assert not c.put("", 99), "put empty key: expected false"
+
+    print "hashmap_dispatch_collision: OK"

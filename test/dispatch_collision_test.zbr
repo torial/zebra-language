@@ -1,0 +1,67 @@
+# dispatch_collision_test.zbr
+#
+# Guards against silent wrong codegen when user-defined class methods share names
+# with selfhost codegen heuristics (List.add, List.count, List.at, List.remove,
+# List.contains, List.join, List.sort, StringBuilder.append, StringBuilder.build,
+# StringBuilder.len).
+#
+# If any guard condition breaks (is_class_inst, general user-method early-exit, etc.),
+# one of these assertions will fail because the wrong Zig call is emitted.
+
+class Counter
+    var n: int
+    cue init()
+        .n = 0
+    def add(x: int)
+        .n = .n + x
+    def count(): int
+        return .n
+    def at(i: int): int
+        return .n + i
+    def remove(x: int)
+        .n = .n - x
+    def contains(x: int): bool
+        return .n == x
+    def join(sep: str): str
+        return .n.toString() + sep + .n.toString()
+    def sort()
+        .n = 0
+
+class Buffer
+    var data: str
+    cue init()
+        .data = ""
+    def append(s: str)
+        .data = .data + s
+    def build(): str
+        return .data
+    def len(): int
+        return .data.len
+
+def main()
+    var c = Counter()
+
+    c.add(5)
+    c.add(3)
+    assert c.count() == 8, "count: expected 8"
+
+    assert c.at(10) == 18, "at: expected 18"
+
+    c.remove(2)
+    assert c.count() == 6, "remove then count: expected 6"
+
+    assert c.contains(6), "contains: expected true"
+    assert not c.contains(5), "contains false: expected false"
+
+    assert c.join("-") == "6-6", "join: expected '6-6'"
+
+    c.sort()
+    assert c.count() == 0, "sort resets to 0"
+
+    var buf = Buffer()
+    buf.append("hello")
+    buf.append(" world")
+    assert buf.build() == "hello world", "build: expected 'hello world'"
+    assert buf.len() == 11, "len: expected 11"
+
+    print "dispatch_collision: OK"

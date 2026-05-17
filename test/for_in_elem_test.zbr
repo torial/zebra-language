@@ -1,0 +1,89 @@
+# for_in_elem_test.zbr
+#
+# Guards against element-type confusion in for-in loops.
+# The codegen must assign the correct element type to the loop variable so
+# that method calls on it dispatch correctly:
+#   - str.chars()     → char element; char predicates (.isAlpha, .isDigit) work
+#   - str.split(sep)  → typed List(str) needed; each element is str (.len, .startsWith work)
+#   - List(int)       → int loop var; arithmetic works
+#   - List(str)       → str loop var; .len works
+#
+# Note: `for c in s` iterates bytes (u8), not chars.  Use `for c in s.chars()` for Unicode.
+
+def main()
+    # 1. chars() → char element — char predicates must work
+    var alpha_count = 0
+    for c in "hello123".chars()
+        if c.isAlpha()
+            alpha_count = alpha_count + 1
+    assert alpha_count == 5, "chars isAlpha: expected 5"
+
+    # 2. chars() → char element — digit predicate
+    var digit_count = 0
+    for c in "hello123".chars()
+        if c.isDigit()
+            digit_count = digit_count + 1
+    assert digit_count == 3, "chars isDigit: expected 3"
+
+    # 3. chars() → char element — case predicate
+    var upper_count = 0
+    for c in "Hello World".chars()
+        if c.isUpper()
+            upper_count = upper_count + 1
+    assert upper_count == 2, "chars isUpper: expected 2"
+
+    # 4. split() → typed List(str) element — str str-method dispatch must work
+    var non_empty_count = 0
+    var parts: List(str) = "ab,cde,f".split(",")
+    for part in parts
+        if not part.startsWith("x")
+            non_empty_count = non_empty_count + 1
+    assert non_empty_count == 3, "split elem count: expected 3"
+
+    # 5. split() → typed List(str) element — .startsWith must work
+    var sw_count = 0
+    var words: List(str) = "apple,ant,banana,avocado".split(",")
+    for word in words
+        if word.startsWith("a")
+            sw_count = sw_count + 1
+    assert sw_count == 3, "split startsWith: expected 3"
+
+    # 6. List(int) → int loop var — arithmetic must work
+    var items: List(int) = List(int)()
+    items.add(10)
+    items.add(20)
+    items.add(30)
+    var sum = 0
+    for n in items
+        sum = sum + n
+    assert sum == 60, "List(int) sum: expected 60"
+
+    # 7. List(str) → str loop var — str method dispatch must work
+    var strs: List(str) = List(str)()
+    strs.add("cat")
+    strs.add("elephant")
+    strs.add("ox")
+    var sb = StringBuilder()
+    for w in strs
+        sb.append(w)
+        sb.append(",")
+    assert sb.build() == "cat,elephant,ox,", "List(str) concat: expected 'cat,elephant,ox,'"
+
+    # 8. Indexed range for — i is int, loop body has arithmetic
+    var range_sum = 0
+    for i in 0.to(5)
+        range_sum = range_sum + i
+    assert range_sum == 10, "range sum 0..4: expected 10"
+
+    # 9. List(bool) → bool loop var — logical ops must work
+    var bools: List(bool) = List(bool)()
+    bools.add(true)
+    bools.add(false)
+    bools.add(true)
+    var true_count = 0
+    for b in bools
+        if b
+            true_count = true_count + 1
+    assert true_count == 2, "List(bool) true_count: expected 2"
+
+    print "for_in_elem: OK"

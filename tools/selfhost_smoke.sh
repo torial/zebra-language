@@ -410,6 +410,31 @@ smoke_run test/tuple_smoke_test.zbr "done"
 # Optional chaining: expr?.member and expr?.method(args) — nil base propagates nil; non-nil accesses member/calls method.
 smoke_run test/opt_chain_test.zbr "opt_chain: OK"
 
+# Dispatch collision guards: user class methods that share names with stdlib heuristics
+# (List.add/count/at/remove/contains/join/sort, StringBuilder.append/build/len) must
+# not be silently rerouted to the stdlib codegen path.
+smoke_run test/dispatch_collision_test.zbr "dispatch_collision: OK"
+# HashMap heuristic collision: user class with set/get/contains/remove/count/keys/values
+# methods must not be routed through HashMap codegen.
+smoke_run test/hashmap_dispatch_collision_test.zbr "hashmap_dispatch_collision: OK"
+
+# for-in element types: loop variables must carry the correct type so method calls on them
+# dispatch correctly (char predicates from .chars(), str methods from List(str), arithmetic
+# from List(int)).
+smoke_run test/for_in_elem_test.zbr "for_in_elem: OK"
+
+# `in` operator disambiguation: substring test / List membership / array literal membership
+# must each emit distinct Zig — wrong dispatch gives wrong boolean results silently.
+smoke_run test/in_operator_test.zbr "in_operator: OK"
+
+# str method chain: split→count/at/join, trim→len, upper/lower chains — all must correctly
+# infer the str receiver type so the right method is emitted.
+smoke_run test/str_method_chain_test.zbr "str_method_chain: OK"
+
+# TC type propagation through method chains: List(str).at() → str, split→List(str)→at→str,
+# user class method returns — downstream method calls must dispatch correctly.
+smoke_run test/type_infer_chain_test.zbr "type_infer_chain: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

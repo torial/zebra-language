@@ -1,0 +1,45 @@
+# in_operator_test.zbr
+#
+# Guards against `in` operator dispatch confusion.
+# Three distinct codegen paths share the `in` keyword:
+#   1. Substring test:    "needle" in "haystack"  → std.mem.indexOf
+#   2. List membership:   x in list               → linear scan
+#   3. Array literal:     x in @[1, 2, 3]         → comptime check
+#   4. HashMap key:       k in hm                 → hm.contains(k)
+#
+# Wrong dispatch silently compiles but produces wrong boolean values.
+
+def main()
+    # 1. Substring presence — positive
+    assert "ell" in "hello", "substring in: expected true"
+    # 1b. Substring absence
+    assert not ("xyz" in "hello"), "substring not-in: expected false"
+    # 1c. Empty needle is always present
+    assert "" in "hello", "empty substring: expected true"
+    # 1d. Whole-string needle
+    assert "hello" in "hello", "whole string in: expected true"
+
+    # 2. List(int) membership
+    var nums: List(int) = List(int)()
+    nums.add(10)
+    nums.add(20)
+    nums.add(30)
+    assert 20 in nums, "List int in: expected true"
+    assert not (99 in nums), "List int not-in: expected false"
+
+    # 3. List(str) membership
+    var fruits: List(str) = List(str)()
+    fruits.add("apple")
+    fruits.add("banana")
+    assert "banana" in fruits, "List str in: expected true"
+    assert not ("cherry" in fruits), "List str not-in: expected false"
+
+    # 4. Array literal membership — int
+    assert 3 in @[1, 2, 3, 4, 5], "array literal in: expected true"
+    assert not (7 in @[1, 2, 3]), "array literal not-in: expected false"
+
+    # 5. Array literal membership — str
+    assert "cat" in @["dog", "cat", "bird"], "array str in: expected true"
+    assert not ("fish" in @["dog", "cat"]), "array str not-in: expected false"
+
+    print "in_operator: OK"

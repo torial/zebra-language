@@ -1,0 +1,77 @@
+# type_infer_chain_test.zbr
+#
+# Guards against TC returning unknown_ for chained method results, which causes
+# genMemberCall to fall through to name-based heuristics and emit wrong Zig.
+#
+# Key patterns:
+#   1. List(str).at(i) → result must be typed str so .len / str methods work
+#   2. List(int).at(i) → result must be typed int so arithmetic works
+#   3. split → typed List(str) → at(i) → str element
+#   4. Function return stored in var → subsequent method calls dispatch correctly
+#   5. User class method return → TC must not lose the type
+#
+# Note: split() returns SplitIterator unless assigned to typed List(str) var.
+
+class Box
+    var val: int
+    cue init(v: int)
+        .val = v
+    def doubled(): int
+        return .val * 2
+    def asStr(): str
+        return .val.toString()
+
+def makeBox(n: int): Box
+    return Box(n)
+
+def getWord(idx: int): str
+    var words: List(str) = "zero one two three four".split(" ")
+    return words.at(idx)
+
+def main()
+    # 1. List(str).at() → str: .len must work on result
+    var strs: List(str) = List(str)()
+    strs.add("hello")
+    strs.add("world")
+    strs.add("!")
+    var w0 = strs.at(0)
+    assert w0.len == 5, "List(str).at().len: expected 5"
+    assert w0.startsWith("hel"), "List(str).at().startsWith: expected true"
+
+    # 2. List(int).at() → int: arithmetic must work on result
+    var ints: List(int) = List(int)()
+    ints.add(7)
+    ints.add(14)
+    ints.add(21)
+    var elem1 = ints.at(1)
+    assert elem1 * 2 == 28, "List(int).at() * 2: expected 28"
+
+    # 3. split → typed List(str) → at() — two hops: split → list, at → str
+    var word = getWord(2)
+    assert word == "two", "getWord(2): expected 'two'"
+    assert word.len == 3, "getWord(2).len: expected 3"
+
+    # 4. User class method return stored and used
+    var b = makeBox(5)
+    var d = b.doubled()
+    assert d == 10, "makeBox(5).doubled(): expected 10"
+    var sv = b.asStr()
+    assert sv.len == 1, "makeBox(5).asStr().len: expected 1"
+    assert sv == "5", "makeBox(5).asStr(): expected '5'"
+
+    # 5. split → join: result of split used in multiple statements
+    var csv = "alpha,beta,gamma,delta"
+    var csv_parts: List(str) = csv.split(",")
+    assert csv_parts.count() == 4, "csv_parts.count: expected 4"
+    var last = csv_parts.at(3)
+    assert last == "delta", "csv_parts.at(3): expected 'delta'"
+    assert last.len == 5, "csv_parts.at(3).len: expected 5"
+
+    # 6. Nested split: split result at() then split again
+    var rows: List(str) = "a b,c d,e f".split(",")
+    var mid_row = rows.at(1)
+    var mid_parts: List(str) = mid_row.split(" ")
+    assert mid_parts.count() == 2, "nested split count: expected 2"
+    assert mid_parts.at(0) == "c", "nested split at(0): expected 'c'"
+
+    print "type_infer_chain: OK"

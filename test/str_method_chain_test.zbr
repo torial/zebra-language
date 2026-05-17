@@ -1,0 +1,67 @@
+# str_method_chain_test.zbr
+#
+# Guards against str method dispatch errors when methods are chained or when
+# the result is stored and then used.
+#
+# Critical gotcha: genMemberCall Mode 2 dispatches on method name alone.
+# If TC returns unknown_ for a receiver, a user-defined or str method call
+# can be wrongly routed.  This test exercises str methods in positions where
+# the receiver type must be correctly inferred.
+#
+# Key trap: split() returns a SplitIterator, not List(str), unless the var is
+# typed as List(str).  Always use `var parts: List(str) = s.split(sep)`.
+
+def wordsIn(s: str): int
+    var parts: List(str) = s.split(" ")
+    return parts.count()
+
+def firstWord(s: str): str
+    var parts: List(str) = s.split(" ")
+    return parts.at(0)
+
+def main()
+    var s = "  Hello, World!  "
+
+    # 1. trim → len: stored intermediate, len on trimmed value
+    var trimmed = s.trim()
+    assert trimmed.len == 13, "trimmed.len: expected 13"
+
+    # 2. upper → startsWith: method on result of upper()
+    var up = "hello".upper()
+    assert up.startsWith("HE"), "upper startsWith: expected true"
+    assert up == "HELLO", "upper result: expected HELLO"
+
+    # 3. lower → endsWith
+    var lo = "WORLD".lower()
+    assert lo.endsWith("ld"), "lower endsWith: expected true"
+
+    # 4. split → count (TC must know split returns List(str) when typed)
+    assert wordsIn("the quick brown fox") == 4, "wordsIn: expected 4"
+
+    # 5. split → at() (TC must know at() on List(str) returns str)
+    assert firstWord("hello world") == "hello", "firstWord: expected hello"
+
+    # 6. split → stored (typed) → join
+    var parts: List(str) = "a,b,c,d".split(",")
+    var joined = parts.join("-")
+    assert joined == "a-b-c-d", "split join: expected a-b-c-d"
+
+    # 7. split → stored (typed) → count
+    var words: List(str) = "one two three four five".split(" ")
+    assert words.count() == 5, "words count: expected 5"
+
+    # 8. split → stored → at() with str method on result
+    var tokens: List(str) = "foo:bar:baz".split(":")
+    var mid = tokens.at(1)
+    assert mid.len == 3, "tokens.at(1).len: expected 3"
+    assert mid.startsWith("ba"), "tokens.at(1).startsWith: expected true"
+
+    # 9. str.contains via `in` operator (preferred form — substring test)
+    assert "ell" in "hello", "in: expected true"
+    assert not ("xyz" in "hello"), "not in: expected false"
+
+    # 10. trim result chained into another store
+    var inner = "  spaces  ".trim()
+    assert inner.len == 6, "trim().len: expected 6"
+
+    print "str_method_chain: OK"
