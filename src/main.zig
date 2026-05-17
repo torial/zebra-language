@@ -63,6 +63,8 @@ const Mode = enum {
     lib_shared,
     /// Compile with debug info, then start a DAP proxy (lldb-dap backend).
     debug,
+    /// Interactive read-eval-print loop.
+    repl,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -80,10 +82,16 @@ pub fn main() void {
     var gui_backend: CodeGen.GuiBackend = .stub;
     var release: bool = false;
     var turbo: bool = false;
+    var warn_non_exhaustive: bool = false;
     var test_mode: bool = false;
+    var build_mode: bool = false;
+    var list_targets_mode: bool = false;
+    var build_file: ?[]const u8 = null;  // --build-file=FILE override
     var tag_filter: ?[]const u8 = null;
     var source_path: ?[]const u8 = null;
     var listen_port: ?u16 = null;
+    var module_paths = std.ArrayListUnmanaged([]const u8){};
+    defer module_paths.deinit(alloc);
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -93,6 +101,10 @@ pub fn main() void {
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "test") and source_path == null) {
             test_mode = true;
+        } else if (std.mem.eql(u8, arg, "repl") and source_path == null) {
+            mode = .repl;
+        } else if (std.mem.eql(u8, arg, "build") and source_path == null) {
+            build_mode = true;  // source_path set after arg loop using build_file
         } else if (std.mem.eql(u8, arg, "debug") and source_path == null) {
             mode = .debug;
         } else if (std.mem.eql(u8, arg, "--listen")) {
@@ -117,6 +129,8 @@ pub fn main() void {
             release = true;
         } else if (std.mem.eql(u8, arg, "--turbo")) {
             turbo = true;
+        } else if (std.mem.eql(u8, arg, "--warn-non-exhaustive")) {
+            warn_non_exhaustive = true;
         } else if (std.mem.startsWith(u8, arg, "--gui-backend=")) {
             const val = arg["--gui-backend=".len..];
             if (std.mem.eql(u8, val, "stub")) {
@@ -131,6 +145,15 @@ pub fn main() void {
                 std.debug.print("zebra: unknown gui backend '{s}' (stub|glfw|sdl2|dx12)\n", .{val});
                 std.process.exit(1);
             }
+        } else if (std.mem.eql(u8, arg, "--module-path")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("zebra: --module-path requires a directory\n", .{});
+                std.process.exit(1);
+            }
+            module_paths.append(alloc, args[i]) catch @panic("OOM");
+        } else if (std.mem.startsWith(u8, arg, "--module-path=")) {
+            module_paths.append(alloc, arg["--module-path=".len..]) catch @panic("OOM");
         } else if (std.mem.eql(u8, arg, "--tag")) {
             i += 1;
             if (i >= args.len) {
@@ -140,6 +163,10 @@ pub fn main() void {
             tag_filter = args[i];
         } else if (std.mem.startsWith(u8, arg, "--tag=")) {
             tag_filter = arg["--tag=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--build-file=")) {
+            build_file = arg["--build-file=".len..];
+        } else if (std.mem.eql(u8, arg, "--list-targets")) {
+            list_targets_mode = true;
         } else if (std.mem.startsWith(u8, arg, "-")) {
             std.debug.print("zebra: unknown flag '{s}'\n", .{arg});
             std.process.exit(1);
@@ -152,10 +179,29 @@ pub fn main() void {
         }
     }
 
+    // Build mode: resolve source_path from --build-file= or default "build.zbr".
+    if (build_mode and source_path == null) {
+        source_path = build_file orelse "build.zbr";
+    }
+
+    // REPL mode needs no source file.
+    if (mode == .repl) {
+        const Repl = @import("Repl.zig");
+        Repl.runRepl(alloc) catch |err| {
+            std.debug.print("repl error: {}\n", .{err});
+            std.process.exit(1);
+        };
+        std.process.exit(0);
+    }
+
     const path = source_path orelse {
         std.debug.print(
             \\usage:
             \\  zebra <source-file>                        compile and run
+            \\  zebra build                                run build.zbr in current directory
+            \\  zebra build --build-file=FILE              use alternate build script
+            \\  zebra build --list-targets                 print JSON target graph, no compilation
+            \\  zebra repl                                 start interactive REPL
             \\  zebra test <source-file>                   run def test_*() functions
             \\  zebra test --tag <tag> <source-file>       run only tests matching tag
             \\  zebra debug <source-file>                  compile + start DAP debug proxy (requires lldb-dap)
@@ -167,6 +213,7 @@ pub fn main() void {
             \\  zebra --release <source-file>              compile with -OReleaseFast
             \\  zebra --turbo <source-file>                strip require/ensure/invariant checks
             \\  zebra --gui-backend=stub|glfw <source>     select GUI backend (default: stub)
+            \\  zebra --module-path DIR <source>           add DIR to module search path
             \\  zebra --version                            print version and exit
             \\
         , .{});
@@ -174,12 +221,16 @@ pub fn main() void {
     };
 
     const src = std.fs.cwd().readFileAlloc(alloc, path, 64 * 1024 * 1024) catch |err| {
-        std.debug.print("error reading '{s}': {}\n", .{ path, err });
+        if (err == error.FileNotFound and std.mem.eql(u8, path, "build.zbr")) {
+            std.debug.print("zebra: no build.zbr found in current directory\n", .{});
+        } else {
+            std.debug.print("error reading '{s}': {}\n", .{ path, err });
+        }
         std.process.exit(1);
     };
     defer alloc.free(src);
 
-    const exit_code = run(src, path, mode, gui_backend, release, turbo, test_mode, tag_filter, listen_port, alloc) catch |err| {
+    const exit_code = run(src, path, mode, gui_backend, release, turbo, warn_non_exhaustive, test_mode, build_mode, list_targets_mode, tag_filter, listen_port, module_paths.items, alloc) catch |err| {
         std.debug.print("internal compiler error: {}\n", .{err});
         std.process.exit(2);
     };
@@ -191,7 +242,7 @@ pub fn main() void {
 /// Run the full pipeline on `src`.  Returns 0 on success, 1 on user-visible
 /// errors, 2 on backend (Zig compiler) errors.
 /// Internal (OOM etc.) errors propagate as Zig errors.
-fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, test_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, alloc: std.mem.Allocator) !u8 {
+fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, warn_non_exhaustive: bool, test_mode: bool, build_mode: bool, list_targets_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, module_paths: []const []const u8, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
     var tok_diag: Tokenizer.Diag = .{};
     const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
@@ -286,7 +337,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     const src_dir = std.fs.path.dirname(path) orelse ".";
     for (module.decls) |decl| {
         const u = switch (decl) { .use => |u| u, else => continue };
-        const dep = try discoverDep(u.path, src_dir, alloc) orelse {
+        const dep = try discoverDep(u.path, src_dir, module_paths, alloc) orelse {
             std.debug.print("{s}: cannot find module '{s}' (tried .zbr, .zig, .c)\n", .{ path, u.path });
             return 1;
         };
@@ -302,7 +353,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
                     alloc.free(dep.path);
                     continue;
                 }
-                if (try compileZbrToZig(dep.path, &dep_visited, &iface_cache, turbo, alloc)) |iface| {
+                if (try compileZbrToZig(dep.path, &dep_visited, &iface_cache, turbo, module_paths, alloc)) |iface| {
                     try imported_modules.put(u.path, iface);
                 } else {
                     alloc.free(dep.path);
@@ -333,7 +384,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     defer resolve.deinit();
 
     // ── 6. TypeCheck (Pass 3) ─────────────────────────────────────────────────
-    var tc = try TypeChecker.typeCheckPass3(module, &resolve, alloc, alloc, &imported_modules);
+    var tc = try TypeChecker.typeCheckPass3Ex(module, &resolve, alloc, alloc, &imported_modules, warn_non_exhaustive);
     defer tc.deinit();
 
     // ── Report diagnostics ────────────────────────────────────────────────────
@@ -349,7 +400,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     if (mode == .emit_zig) {
         var buf = std.ArrayList(u8){};
         defer buf.deinit(alloc);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, tag_filter);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
         try std.fs.File.stdout().writeAll(buf.items);
         return 0;
     }
@@ -363,7 +414,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     if (mode == .debug) {
         var buf = std.ArrayList(u8){};
         defer buf.deinit(alloc);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, tag_filter);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
         const zf = try std.fs.cwd().createFile(zig_path, .{});
         defer zf.close();
         try zf.writeAll(buf.items);
@@ -373,7 +424,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         return Debugger.runDebugSession(path, zig_path, c_sources.items, alloc);
     }
 
-    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, tag_filter, alloc, &imported_modules);
+    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, tag_filter, alloc, &imported_modules);
 }
 
 // ── Partial class merging ─────────────────────────────────────────────────────
@@ -587,36 +638,48 @@ fn depKindToNativeUse(kind: DepKind) ?CodeGen.NativeUse {
 /// and `.c` in that order.  Returns null when no matching file is found.
 /// Caller must free `DepInfo.path`.
 fn discoverDep(
-    use_path: []const u8,
-    src_dir:  []const u8,
-    alloc:    std.mem.Allocator,
+    use_path:     []const u8,
+    src_dir:      []const u8,
+    module_paths: []const []const u8,
+    alloc:        std.mem.Allocator,
 ) !?DepInfo {
     const rel = try std.mem.replaceOwned(u8, alloc, use_path, ".", std.fs.path.sep_str);
     defer alloc.free(rel);
-    const base = try std.fs.path.join(alloc, &.{ src_dir, rel });
-    defer alloc.free(base);
 
-    // Try each extension in priority order.
+    // Search src_dir first, then each --module-path directory in order.
+    const search_dirs = blk: {
+        var dirs = try std.ArrayList([]const u8).initCapacity(alloc, 1 + module_paths.len);
+        dirs.appendAssumeCapacity(src_dir);
+        dirs.appendSliceAssumeCapacity(module_paths);
+        break :blk try dirs.toOwnedSlice(alloc);
+    };
+    defer alloc.free(search_dirs);
+
     const candidates = [_]struct { ext: []const u8, kind: DepKind }{
         .{ .ext = ".zbr", .kind = .zbr },
         .{ .ext = ".zig", .kind = .zig },
-        .{ .ext = ".c",   .kind = .c_no_header }, // refined below if .h found
+        .{ .ext = ".c",   .kind = .c_no_header },
     };
-    for (candidates) |cand| {
-        const p = try std.fmt.allocPrint(alloc, "{s}{s}", .{ base, cand.ext });
-        std.fs.cwd().access(p, .{}) catch |err| {
-            alloc.free(p);
-            if (err == error.FileNotFound) continue;
-            return err;
-        };
-        // Found a .c file — check whether a matching .h header also exists.
-        if (cand.kind == .c_no_header) {
-            const h = try std.fmt.allocPrint(alloc, "{s}.h", .{base});
-            const has_header = if (std.fs.cwd().access(h, .{})) true else |_| false;
-            alloc.free(h);
-            return DepInfo{ .path = p, .kind = if (has_header) .c_with_header else .c_no_header };
+
+    for (search_dirs) |dir| {
+        const base = try std.fs.path.join(alloc, &.{ dir, rel });
+        defer alloc.free(base);
+
+        for (candidates) |cand| {
+            const p = try std.fmt.allocPrint(alloc, "{s}{s}", .{ base, cand.ext });
+            std.fs.cwd().access(p, .{}) catch |err| {
+                alloc.free(p);
+                if (err == error.FileNotFound) continue;
+                return err;
+            };
+            if (cand.kind == .c_no_header) {
+                const h = try std.fmt.allocPrint(alloc, "{s}.h", .{base});
+                const has_header = if (std.fs.cwd().access(h, .{})) true else |_| false;
+                alloc.free(h);
+                return DepInfo{ .path = p, .kind = if (has_header) .c_with_header else .c_no_header };
+            }
+            return DepInfo{ .path = p, .kind = cand.kind };
         }
-        return DepInfo{ .path = p, .kind = cand.kind };
     }
     return null;
 }
@@ -761,6 +824,7 @@ fn compileZbrToZig(
     visited:         *std.StringHashMap(void),
     iface_cache:     *std.StringHashMap(TypeChecker.ModuleInterface),
     strip_contracts: bool,
+    module_paths:    []const []const u8,
     alloc:           std.mem.Allocator,
 ) anyerror!?TypeChecker.ModuleInterface {
     // Guard against duplicate or circular imports.
@@ -836,13 +900,13 @@ fn compileZbrToZig(
     }
     for (module.decls) |decl| {
         const u = switch (decl) { .use => |u| u, else => continue };
-        const dep = try discoverDep(u.path, dep_dir, alloc) orelse {
+        const dep = try discoverDep(u.path, dep_dir, module_paths, alloc) orelse {
             std.debug.print("{s}: cannot find module '{s}' (tried .zbr, .zig, .c)\n", .{ zbr_path, u.path });
             return null;
         };
         switch (dep.kind) {
             .zbr => {
-                const sub = try compileZbrToZig(dep.path, visited, iface_cache, strip_contracts, alloc);
+                const sub = try compileZbrToZig(dep.path, visited, iface_cache, strip_contracts, module_paths, alloc);
                 if (sub == null) { alloc.free(dep.path); return null; }
                 // Store the sub-interface so cross-module type refs resolve in this dep.
                 try dep_imported_modules.put(u.path, sub.?);
@@ -893,7 +957,7 @@ fn compileZbrToZig(
 
     var buf = std.ArrayList(u8){};
     defer buf.deinit(alloc);
-    _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, null);
+    _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null);
 
     const f = try std.fs.cwd().createFile(zig, .{});
     defer f.close();
@@ -915,17 +979,19 @@ fn backend(
     c_sources:        []const []u8,
     emit_exports:     bool,
     release:          bool,
-    strip_contracts:  bool,
-    test_mode:        bool,
-    tag_filter:       ?[]const u8,
-    alloc:            std.mem.Allocator,
-    imported_modules: ?*const std.StringHashMap(TypeChecker.ModuleInterface),
+    strip_contracts:     bool,
+    test_mode:           bool,
+    build_mode:          bool,
+    list_targets_mode:   bool,
+    tag_filter:          ?[]const u8,
+    alloc:               std.mem.Allocator,
+    imported_modules:    ?*const std.StringHashMap(TypeChecker.ModuleInterface),
 ) !u8 {
     // Emit Zig source to file.
     const result = blk: {
         var buf = std.ArrayList(u8){};
         defer buf.deinit(alloc);
-        const r = try CodeGen.generate(module, resolve, tc, alloc, buf.writer(alloc).any(), gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, tag_filter);
+        const r = try CodeGen.generate(module, resolve, tc, alloc, buf.writer(alloc).any(), gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter);
         const f = try std.fs.cwd().createFile(zig_path, .{});
         defer f.close();
         try f.writeAll(buf.items);
@@ -957,6 +1023,7 @@ fn backend(
         .lib_shared   => compileLib(true,  zig_path, c_sources, release, alloc),
         .emit_zig     => unreachable, // handled before backend() is called
         .debug        => unreachable, // handled before backend() is called
+        .repl         => unreachable, // handled before backend() is called
     };
 }
 
@@ -1386,6 +1453,7 @@ fn printDiag(path: []const u8, d: Binder.Diagnostic) void {
 // ── Sub-module test pull-in ───────────────────────────────────────────────────
 
 comptime {
+    _ = @import("Repl.zig");
     _ = @import("Token.zig");
     _ = @import("Tokenizer.zig");
     _ = @import("Ast.zig");

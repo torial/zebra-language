@@ -52,12 +52,15 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     // Stdlib generic containers
     .{ "List",          {} },
     .{ "HashMap",       {} },
+    .{ "Chan",          {} },
     // Stdlib string builder
     .{ "StringBuilder", {} },
     // Stdlib file I/O and path utilities
     .{ "File",          {} },
     .{ "Dir",           {} },
     .{ "Path",          {} },
+    // Stdlib dynamic library loading (plugin system)
+    .{ "DynLib",        {} },
     // Stdlib shell / process execution
     .{ "Shell",         {} },
     // Stdlib networking
@@ -71,8 +74,9 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Net",           {} },
     // Stdlib math
     .{ "Math",          {} },
-    // Sys process result
+    // Sys process result / spawn handle
     .{ "SysRunResult",  {} },
+    .{ "SysProcess",    {} },
     // Stdlib JSON
     .{ "Json",          {} },
     .{ "JsonValue",     {} },
@@ -115,6 +119,9 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Profile",       {} },
     // Stdlib Base64 encoding
     .{ "Base64",        {} },
+    // Build system
+    .{ "Build",        {} },  // build context: Build.new(), b.exe/lib/run
+    .{ "BuildTarget",  {} },  // build target: target.linkLib/platform/option
     // Allocator type and AllocatorSource constructors
     .{ "Allocator",     {} },  // opaque std.mem.Allocator wrapper
     .{ "Arena",         {} },  // scoped ArenaAllocator
