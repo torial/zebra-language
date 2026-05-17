@@ -10147,7 +10147,7 @@ const Generator = struct {
                 if (g.getExprDeclaredType(e.object)) |tr| {
                     if (try g.genStdlibProp(e.object, tr, e.member)) break :sw;
                 }
-                // TC-type fallback for List/HashMap len/count on unannotated vars.
+                // TC-type fallback for List/HashMap/str len/count on unannotated vars.
                 if (g.tc) |tc| {
                     const obj_tc = tc.expr_types.get(e.object) orelse .unknown;
                     if (obj_tc == .generic_named) {
@@ -10163,6 +10163,13 @@ const Generator = struct {
                             try g.w.writeAll(".count()");
                             break :sw;
                         }
+                    }
+                    // str.len on unannotated vars (e.g. for-in loop vars from List(str))
+                    if (obj_tc == .string and std.mem.eql(u8, e.member, "len")) {
+                        try g.w.writeAll("@as(i64, @intCast(");
+                        try g.genExpr(e.object);
+                        try g.w.writeAll(".len))");
+                        break :sw;
                     }
                 }
                 // TC-type fallback for DateTime field access (unannotated vars).

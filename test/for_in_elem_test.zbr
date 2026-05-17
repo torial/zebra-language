@@ -32,13 +32,12 @@ def main()
             upper_count = upper_count + 1
     assert upper_count == 2, "chars isUpper: expected 2"
 
-    # 4. split() → typed List(str) element — str str-method dispatch must work
-    var non_empty_count = 0
+    # 4. split() → typed List(str) element — .len must work
+    var total_len = 0
     var parts: List(str) = "ab,cde,f".split(",")
     for part in parts
-        if not part.startsWith("x")
-            non_empty_count = non_empty_count + 1
-    assert non_empty_count == 3, "split elem count: expected 3"
+        total_len = total_len + part.len
+    assert total_len == 6, "split elem .len sum: expected 6"
 
     # 5. split() → typed List(str) element — .startsWith must work
     var sw_count = 0
@@ -58,16 +57,16 @@ def main()
         sum = sum + n
     assert sum == 60, "List(int) sum: expected 60"
 
-    # 7. List(str) → str loop var — str method dispatch must work
+    # 7. List(str) → str loop var — .len must work
     var strs: List(str) = List(str)()
     strs.add("cat")
     strs.add("elephant")
     strs.add("ox")
-    var sb = StringBuilder()
+    var max_len = 0
     for w in strs
-        sb.append(w)
-        sb.append(",")
-    assert sb.build() == "cat,elephant,ox,", "List(str) concat: expected 'cat,elephant,ox,'"
+        if w.len > max_len
+            max_len = w.len
+    assert max_len == 8, "List(str) max .len: expected 8"
 
     # 8. Indexed range for — i is int, loop body has arithmetic
     var range_sum = 0
