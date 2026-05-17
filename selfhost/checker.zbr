@@ -1,0 +1,772 @@
+# selfhost/checker.zbr — `zebra check <file.zbr>`
+# Reports dead union arms and unreachable module-level def functions.
+#
+# Regression canary: Type_.str_slice is matched in codegen.zbr (lines 372, 5095,
+# 5130, 7304) but never constructed after Stage-4 shadow-set migration.
+# This tool MUST report it as a dead arm.
+#
+# Checks:
+#   1. Dead arms  — union variants matched in branch/on or if-is but never constructed.
+#   2. Phantoms   — union variants constructed but never matched (forgotten handler).
+#   3. Unreachable — module-level def functions unreachable from any root.
+
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprToNilable, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
+use Parser exposing PNode, PUse, PModule
+use Resolver
+use astbuilder exposing ASTBuilder
+
+# ── UnionInfo ──────────────────────────────────────────────────────────────────
+
+class UnionInfo
+    var name: str
+    var file: str
+    var line: int
+    var variants: List(str)
+    var variant_lines: List(int)
+
+    cue init(name: str, file: str, line: int)
+        .name = name
+        .file = file
+        .line = line
+        .variants = List(str)()
+        .variant_lines = List(int)()
+
+    def addVariant(v: str, ln: int)
+        .variants.add(v)
+        .variant_lines.add(ln)
+
+    def hasVariant(v: str): bool
+        var i: int = 0
+        while i < .variants.count()
+            if .variants.at(i) == v
+                return true
+            i = i + 1
+        return false
+
+    def lineOf(v: str): int
+        var i: int = 0
+        while i < .variants.count()
+            if .variants.at(i) == v
+                return .variant_lines.at(i)
+            i = i + 1
+        return 0
+
+# ── DeadCodeChecker ────────────────────────────────────────────────────────────
+
+class DeadCodeChecker
+    # Union variant tracking
+    var union_infos: HashMap(str, UnionInfo)
+    # match_sites["Union:variant"] = List of "file:line" match locations
+    var match_sites: HashMap(str, List(str))
+    var match_key_list: List(str)            # enumerable match keys
+    # constructed_set["Union:variant"] = true when constructed
+    var constructed_set: HashMap(str, bool)
+    var constructed_key_list: List(str)      # enumerable constructed keys
+    # Call graph — module-level defs only
+    var module_fns: HashMap(str, str)        # "file::fn" → "file:line"
+    var module_fn_key_list: List(str)        # enumerable
+    var fn_edges: HashMap(str, List(str))    # "file::fn" → [callee "file::fn" keys]
+    var root_set: HashMap(str, bool)         # "file::fn" → in root set
+    var root_key_list: List(str)             # enumerable root keys
+    var reachable_set: HashMap(str, bool)    # "file::fn" → reachable after BFS
+    var exposed_names: HashMap(str, bool)    # fn_name → appears in a use...exposing
+    # Walk context (set per-module during walkModule)
+    var current_file: str
+    var current_fn_key: str                  # "" = class/root context
+
+    cue init()
+        .union_infos = HashMap()
+        .match_sites = HashMap()
+        .match_key_list = List(str)()
+        .constructed_set = HashMap()
+        .constructed_key_list = List(str)()
+        .module_fns = HashMap()
+        .module_fn_key_list = List(str)()
+        .fn_edges = HashMap()
+        .root_set = HashMap()
+        .root_key_list = List(str)()
+        .reachable_set = HashMap()
+        .exposed_names = HashMap()
+        .current_file = ""
+        .current_fn_key = ""
+
+    def isKnownUnion(name: str): bool
+        return .union_infos.contains(name)
+
+    def recordMatch(union_name: str, variant: str, file: str, line: int)
+        var key: str = union_name + ":" + variant
+        if not .match_sites.contains(key)
+            .match_sites.put(key, List(str)())
+            .match_key_list.add(key)
+        var sites: List(str) = .match_sites.fetch(key)
+        sites.add(file + ":" + line.toString())
+
+    def recordConstruction(union_name: str, variant: str)
+        var key: str = union_name + ":" + variant
+        if not .constructed_set.contains(key)
+            .constructed_set.put(key, true)
+            .constructed_key_list.add(key)
+
+    def fnKey(file: str, fn_name: str): str
+        return file + "::" + fn_name
+
+    def registerModuleFn(file: str, fn_name: str, line: int)
+        var key: str = .fnKey(file, fn_name)
+        if not .module_fns.contains(key)
+            .module_fns.put(key, file + ":" + line.toString())
+            .module_fn_key_list.add(key)
+            .fn_edges.put(key, List(str)())
+
+    def markAsRoot(fn_key: str)
+        if not .root_set.contains(fn_key)
+            .root_set.put(fn_key, true)
+            .root_key_list.add(fn_key)
+
+    def trackFnCall(callee_name: str)
+        var to_key: str = .fnKey(.current_file, callee_name)
+        if not .module_fns.contains(to_key)
+            return
+        if .current_fn_key == ""
+            # Called from a class method / cue init / module var → root
+            .markAsRoot(to_key)
+        else
+            # Edge from current module-level fn to callee
+            if .fn_edges.contains(.current_fn_key)
+                var edges: List(str) = .fn_edges.fetch(.current_fn_key)
+                edges.add(to_key)
+
+    def extractFnName(fn_key: str): str
+        if fn_key.contains("::")
+            var parts: List(str) = fn_key.split("::")
+            if parts.count() >= 2
+                return parts.at(parts.count() - 1)
+        return fn_key
+
+    # ── Pass 1: collect declarations ──────────────────────────────────────────
+
+    def collectDecls(module: Module)
+        var file: str = module.file
+        .current_file = file
+        var i: int = 0
+        while i < module.decls.count()
+            .collectDecl(module.decls.at(i), file)
+            i = i + 1
+
+    def collectDecl(decl: Decl, file: str)
+        branch decl
+            on Decl.union_ as u
+                var ui: UnionInfo = UnionInfo(u.name, file, u.span.line)
+                var vi: int = 0
+                while vi < u.variants.count()
+                    var vt: UnionVariant = u.variants.at(vi)
+                    ui.addVariant(vt.name, vt.span.line)
+                    vi = vi + 1
+                .union_infos.put(u.name, ui)
+            on Decl.method as m
+                if m.stmts != nil
+                    .registerModuleFn(file, m.name, m.span.line)
+                    if m.name == "main"
+                        .markAsRoot(.fnKey(file, "main"))
+            on Decl.use_ as u
+                var ei: int = 0
+                while ei < u.exposed.count()
+                    var ename: str = u.exposed.at(ei)
+                    .exposed_names.put(ename, true)
+                    ei = ei + 1
+            on Decl.namespace_ as ns
+                var ni: int = 0
+                while ni < ns.decls.count()
+                    .collectDecl(ns.decls.at(ni), file)
+                    ni = ni + 1
+            else
+                pass
+
+    # ── Pass 2: walk bodies ───────────────────────────────────────────────────
+
+    def walkModule(module: Module)
+        var file: str = module.file
+        .current_file = file
+        var i: int = 0
+        while i < module.decls.count()
+            .walkTopDecl(module.decls.at(i), file)
+            i = i + 1
+
+    def walkTopDecl(decl: Decl, file: str)
+        branch decl
+            on Decl.class_ as c
+                .walkMemberDecls(c.members, file)
+            on Decl.struct_ as s
+                .walkMemberDecls(s.members, file)
+            on Decl.method as m
+                if m.stmts as stmts
+                    var fn_key: str = .fnKey(file, m.name)
+                    var saved: str = .current_fn_key
+                    .current_fn_key = fn_key
+                    .walkStmts(stmts, file)
+                    .current_fn_key = saved
+            on Decl.var_ as v
+                if v.init_expr != nil
+                    var saved: str = .current_fn_key
+                    .current_fn_key = ""
+                    .walkExpr(v.init_expr to!, file, false)
+                    .current_fn_key = saved
+            on Decl.namespace_ as ns
+                var ni: int = 0
+                while ni < ns.decls.count()
+                    .walkTopDecl(ns.decls.at(ni), file)
+                    ni = ni + 1
+            else
+                pass
+
+    def walkMemberDecls(members: List(Decl), file: str)
+        var saved: str = .current_fn_key
+        .current_fn_key = ""          # class context is always root
+        var i: int = 0
+        while i < members.count()
+            branch members.at(i)
+                on Decl.method as m
+                    if m.stmts as stmts
+                        .walkStmts(stmts, file)
+                on Decl.init as ini
+                    if ini.stmts as stmts
+                        .walkStmts(stmts, file)
+                on Decl.var_ as v
+                    if v.init_expr != nil
+                        .walkExpr(v.init_expr to!, file, false)
+                else
+                    pass
+            i = i + 1
+        .current_fn_key = saved
+
+    def walkStmts(stmts: List(Stmt), file: str)
+        var i: int = 0
+        while i < stmts.count()
+            .walkStmt(stmts.at(i), file)
+            i = i + 1
+
+    def walkStmt(stmt: Stmt, file: str)
+        branch stmt
+            on Stmt.if_ as si
+                .walkExpr(si.cond, file, false)
+                .walkStmts(si.then_stmts, file)
+                var ei: int = 0
+                while ei < si.else_ifs.count()
+                    var ef: ElseIf = si.else_ifs.at(ei)
+                    .walkExpr(ef.cond, file, false)
+                    .walkStmts(ef.stmts, file)
+                    ei = ei + 1
+                if si.else_stmts as es
+                    .walkStmts(es, file)
+            on Stmt.while_ as sw
+                .walkExpr(sw.cond, file, false)
+                .walkStmts(sw.stmts, file)
+            on Stmt.for_in as fi
+                .walkExpr(fi.iter, file, false)
+                if fi.filter != nil
+                    .walkExpr(fi.filter to!, file, false)
+                .walkStmts(fi.stmts, file)
+                if fi.else_ as fe
+                    .walkStmts(fe, file)
+            on Stmt.for_num as fn2
+                .walkExpr(fn2.start, file, false)
+                .walkExpr(fn2.stop_, file, false)
+                if fn2.step != nil
+                    .walkExpr(fn2.step to!, file, false)
+                .walkStmts(fn2.stmts, file)
+                if fn2.else_ as fne
+                    .walkStmts(fne, file)
+            on Stmt.branch_ as sb
+                .walkExpr(sb.expr, file, false)
+                var ci: int = 0
+                while ci < sb.cases.count()
+                    var bc: BranchOn = sb.cases.at(ci)
+                    .walkBranchValues(bc.values, file)
+                    .walkStmts(bc.stmts, file)
+                    ci = ci + 1
+                if sb.else_ as sbe
+                    .walkStmts(sbe, file)
+            on Stmt.return_ as sr
+                if sr.value != nil
+                    .walkExpr(sr.value to!, file, false)
+            on Stmt.assign as sa
+                .walkExpr(sa.target, file, false)
+                .walkExpr(sa.value, file, false)
+            on Stmt.var_ as sv
+                if sv.init_expr != nil
+                    .walkExpr(sv.init_expr to!, file, false)
+            on Stmt.expr as se
+                .walkExpr(se, file, false)
+            on Stmt.defer_ as sd
+                .walkStmt(sd.stmt, file)
+            on Stmt.with_ as sw2
+                .walkExpr(sw2.target, file, false)
+                .walkStmts(sw2.stmts, file)
+            on Stmt.raise_ as sr2
+                if sr2.message != nil
+                    .walkExpr(sr2.message to!, file, false)
+                if sr2.details != nil
+                    .walkExpr(sr2.details to!, file, false)
+            on Stmt.try_catch as stc
+                .walkStmts(stc.stmts, file)
+                var cli: int = 0
+                while cli < stc.clauses.count()
+                    var cl: CatchClause = stc.clauses.at(cli)
+                    .walkStmts(cl.stmts, file)
+                    cli = cli + 1
+            on Stmt.guard_ as sg
+                .walkExpr(sg.cond, file, false)
+                .walkStmts(sg.else_stmts, file)
+            on Stmt.destruct as sdt
+                .walkExpr(sdt.init_expr, file, false)
+            on Stmt.arena_scope as sas
+                .walkStmts(sas.stmts, file)
+            on Stmt.allocate_ as sal
+                .walkExpr(sal.source, file, false)
+                .walkStmts(sal.stmts, file)
+            on Stmt.copy_out as sco
+                .walkExpr(sco.target, file, false)
+                .walkExpr(sco.value, file, false)
+            on Stmt.print_ as sp
+                var pi: int = 0
+                while pi < sp.args.count()
+                    .walkExpr(sp.args.at(pi), file, false)
+                    pi = pi + 1
+            on Stmt.assert_ as sa2
+                .walkExpr(sa2.cond, file, false)
+                if sa2.message != nil
+                    .walkExpr(sa2.message to!, file, false)
+            on Stmt.assert_eq_ as saeq
+                .walkExpr(saeq.lhs, file, false)
+                .walkExpr(saeq.rhs, file, false)
+            on Stmt.assert_ne_ as sane
+                .walkExpr(sane.lhs, file, false)
+                .walkExpr(sane.rhs, file, false)
+            on Stmt.assert_true_ as sat
+                .walkExpr(sat.expr, file, false)
+            on Stmt.assert_false_ as saf
+                .walkExpr(saf.expr, file, false)
+            on Stmt.contract as sct
+                var cti: int = 0
+                while cti < sct.exprs.count()
+                    .walkExpr(sct.exprs.at(cti), file, false)
+                    cti = cti + 1
+            else
+                pass
+
+    def walkBranchValues(values: List(Expr), file: str)
+        var vi: int = 0
+        while vi < values.count()
+            .walkExpr(values.at(vi), file, true)
+            vi = vi + 1
+
+    def walkCapture(cap: DeclVar, file: str)
+        # DeclVar.init_expr: ^Expr? — passing cap as a named-type param causes
+        # selfhost to seed opt_ptr_field_bindings, so cap.init_expr to! generates .?.* .
+        if cap.init_expr != nil
+            .walkExpr(cap.init_expr to!, file, false)
+
+    def walkDictEntry(entry: DictEntry, file: str)
+        # DictEntry.key/value: ^Expr — passing entry as a named-type param causes
+        # selfhost to seed ptr_field_bindings, so entry.key/value generate .* .
+        .walkExpr(entry.key, file, false)
+        .walkExpr(entry.value, file, false)
+
+    def walkExpr(expr: Expr, file: str, in_match: bool)
+        branch expr
+            on Expr.member as em
+                var mem_name: str = em.member
+                if em.object is Expr.ident as eid
+                    var obj: str = eid.name
+                    if .isKnownUnion(obj)
+                        if in_match
+                            .recordMatch(obj, mem_name, file, em.span.line)
+                        else
+                            .recordConstruction(obj, mem_name)
+                    # ident leaf — no sub-expressions
+                else
+                    .walkExpr(em.object, file, false)
+            on Expr.call as ec
+                var is_union_ctor: bool = false
+                if ec.callee is Expr.member as cm
+                    if cm.object is Expr.ident as cid
+                        if .isKnownUnion(cid.name)
+                            is_union_ctor = true
+                            var v_name: str = cm.member
+                            if in_match
+                                .recordMatch(cid.name, v_name, file, cm.span.line)
+                            else
+                                .recordConstruction(cid.name, v_name)
+                if not is_union_ctor
+                    # ec.callee is Expr (value, not ^Expr) — pass inline to avoid selfhost
+                    # boxing divergence; only member/call callees have subexpressions.
+                    if ec.callee is Expr.member as cal_m
+                        .walkExpr(cal_m.object, file, false)
+                    # ident/literal callees are leaves — no subexpressions to walk
+                # Call graph: direct module-level fn call
+                if ec.callee is Expr.ident as cfn
+                    .trackFnCall(cfn.name)
+                var ai: int = 0
+                while ai < ec.args.count()
+                    # Arg.value: Expr (value type) — branch inline to avoid selfhost
+                    # boxing divergence on list.at(i).field patterns.
+                    var aarg: Arg = ec.args.at(ai)
+                    branch aarg.value
+                        on Expr.member as avm
+                            if avm.object is Expr.ident as avid
+                                if .isKnownUnion(avid.name)
+                                    if in_match
+                                        .recordMatch(avid.name, avm.member, file, avm.span.line)
+                                    else
+                                        .recordConstruction(avid.name, avm.member)
+                                else
+                                    .walkExpr(avm.object, file, false)
+                        on Expr.call as avc
+                            if avc.callee is Expr.member as avcm
+                                if avcm.object is Expr.ident as avci
+                                    if .isKnownUnion(avci.name)
+                                        if in_match
+                                            .recordMatch(avci.name, avcm.member, file, avcm.span.line)
+                                        else
+                                            .recordConstruction(avci.name, avcm.member)
+                            if avc.callee is Expr.ident as avcfn
+                                .trackFnCall(avcfn.name)
+                        on Expr.type_check as avtc
+                            if avtc.variant_name as vn
+                                .recordMatch(avtc.type_name, vn, file, avtc.span.line)
+                            .walkExpr(avtc.expr, file, false)
+                        on Expr.binary as avb
+                            .walkExpr(avb.left, file, false)
+                            .walkExpr(avb.right, file, false)
+                        on Expr.unary as avu
+                            .walkExpr(avu.operand, file, false)
+                        else
+                            pass
+                    ai = ai + 1
+            on Expr.type_check as etc
+                if etc.variant_name as vn
+                    .recordMatch(etc.type_name, vn, file, etc.span.line)
+                .walkExpr(etc.expr, file, false)
+            on Expr.binary as eb
+                .walkExpr(eb.left, file, false)
+                .walkExpr(eb.right, file, false)
+            on Expr.unary as eu
+                .walkExpr(eu.operand, file, false)
+            on Expr.index as eidx
+                .walkExpr(eidx.object, file, false)
+                .walkExpr(eidx.index, file, false)
+            on Expr.slice as esl
+                .walkExpr(esl.object, file, false)
+                if esl.start != nil
+                    .walkExpr(esl.start to!, file, false)
+                if esl.stop_ != nil
+                    .walkExpr(esl.stop_ to!, file, false)
+            on Expr.cast as ec2
+                .walkExpr(ec2.expr, file, false)
+            on Expr.to_nilable as etn
+                .walkExpr(etn.expr, file, false)
+            on Expr.to_non_nil as etnn
+                .walkExpr(etnn.expr, file, false)
+            on Expr.is_nil as ein
+                .walkExpr(ein.expr, file, false)
+            on Expr.orelse_ as eo
+                .walkExpr(eo.expr, file, false)
+                .walkExpr(eo.fallback, file, false)
+            on Expr.catch_ as eca
+                .walkExpr(eca.expr, file, false)
+                .walkExpr(eca.fallback, file, false)
+            on Expr.if_expr as eif
+                .walkExpr(eif.cond, file, false)
+                .walkExpr(eif.then_expr, file, false)
+                .walkExpr(eif.else_expr, file, false)
+            on Expr.lambda as el
+                var ci: int = 0
+                while ci < el.captures.count()
+                    .walkCapture(el.captures.at(ci), file)
+                    ci = ci + 1
+                branch el.body_
+                    on LambdaBody.expr_ as le
+                        .walkExpr(le, file, false)
+                    on LambdaBody.stmts as ls
+                        .walkStmts(ls, file)
+            on Expr.list_lit as ell
+                var eli: int = 0
+                while eli < ell.elems.count()
+                    .walkExpr(ell.elems.at(eli), file, false)
+                    eli = eli + 1
+            on Expr.dict_lit as edl
+                var dli: int = 0
+                while dli < edl.entries.count()
+                    .walkDictEntry(edl.entries.at(dli), file)
+                    dli = dli + 1
+            on Expr.array_lit as eal
+                var ali: int = 0
+                while ali < eal.elems.count()
+                    .walkExpr(eal.elems.at(ali), file, false)
+                    ali = ali + 1
+            on Expr.string_interp as esi
+                var spi: int = 0
+                while spi < esi.parts.count()
+                    var part: StringPart = esi.parts.at(spi)
+                    if part is StringPart.expr_ as pe
+                        .walkExpr(pe, file, false)
+                    spi = spi + 1
+            on Expr.tuple_lit as etup
+                var ti: int = 0
+                while ti < etup.elems.count()
+                    .walkExpr(etup.elems.at(ti), file, false)
+                    ti = ti + 1
+            on Expr.try_ as etr
+                .walkExpr(etr.expr, file, false)
+            on Expr.chained_cmp as ecc
+                var cci: int = 0
+                while cci < ecc.operands.count()
+                    .walkExpr(ecc.operands.at(cci), file, false)
+                    cci = cci + 1
+            on Expr.except_ as eex
+                .walkExpr(eex.base, file, false)
+                var exi: int = 0
+                while exi < eex.fields.count()
+                    # ExceptField.value: Expr (value type) — branch inline to avoid
+                    # selfhost boxing divergence on list.at(i).field patterns.
+                    var exf: ExceptField = eex.fields.at(exi)
+                    branch exf.value
+                        on Expr.member as efvm
+                            if efvm.object is Expr.ident as efvid
+                                if .isKnownUnion(efvid.name)
+                                    .recordConstruction(efvid.name, efvm.member)
+                                else
+                                    .walkExpr(efvm.object, file, false)
+                        on Expr.call as efvc
+                            if efvc.callee is Expr.member as efvcm
+                                if efvcm.object is Expr.ident as efvci
+                                    if .isKnownUnion(efvci.name)
+                                        .recordConstruction(efvci.name, efvcm.member)
+                        on Expr.binary as efvb
+                            .walkExpr(efvb.left, file, false)
+                            .walkExpr(efvb.right, file, false)
+                        else
+                            pass
+                    exi = exi + 1
+            on Expr.old_ as eold
+                .walkExpr(eold.operand, file, false)
+            else
+                pass
+
+    # ── Reachability ──────────────────────────────────────────────────────────
+
+    def computeReachability()
+        var pending: List(str) = List(str)()
+        # Seed from explicit roots (main, class-method callers)
+        var ri: int = 0
+        while ri < .root_key_list.count()
+            pending.add(.root_key_list.at(ri))
+            ri = ri + 1
+        # Seed from exposed names (use X exposing [f, g, ...])
+        var mi: int = 0
+        while mi < .module_fn_key_list.count()
+            var mfk: str = .module_fn_key_list.at(mi)
+            var fn_name: str = .extractFnName(mfk)
+            if .exposed_names.contains(fn_name)
+                pending.add(mfk)
+            mi = mi + 1
+        # BFS
+        var qi: int = 0
+        while qi < pending.count()
+            var key: str = pending.at(qi)
+            if not .reachable_set.contains(key)
+                .reachable_set.put(key, true)
+                if .fn_edges.contains(key)
+                    var edges: List(str) = .fn_edges.fetch(key)
+                    var ei: int = 0
+                    while ei < edges.count()
+                        var target: str = edges.at(ei)
+                        if not .reachable_set.contains(target)
+                            pending.add(target)
+                        ei = ei + 1
+            qi = qi + 1
+
+    # ── Report ────────────────────────────────────────────────────────────────
+
+    def hasIssues(): bool
+        var i: int = 0
+        while i < .match_key_list.count()
+            if not .constructed_set.contains(.match_key_list.at(i))
+                return true
+            i = i + 1
+        i = 0
+        while i < .constructed_key_list.count()
+            if not .match_sites.contains(.constructed_key_list.at(i))
+                return true
+            i = i + 1
+        i = 0
+        while i < .module_fn_key_list.count()
+            if not .reachable_set.contains(.module_fn_key_list.at(i))
+                return true
+            i = i + 1
+        return false
+
+    def report(): str
+        var sb: StringBuilder = StringBuilder()
+        var RED: str = "\x1b[31m"
+        var YLW: str = "\x1b[33m"
+        var CYN: str = "\x1b[36m"
+        var BLD: str = "\x1b[1m"
+        var RST: str = "\x1b[0m"
+
+        # ── Dead arms ─────────────────────────────────────────────────────────
+        var dead_count: int = 0
+        var dead_sb: StringBuilder = StringBuilder()
+        var i: int = 0
+        while i < .match_key_list.count()
+            var key: str = .match_key_list.at(i)
+            if not .constructed_set.contains(key)
+                dead_count = dead_count + 1
+                var kparts: List(str) = key.split(":")
+                var uname: str = kparts.at(0)
+                var vname: str = kparts.at(1)
+                dead_sb.append("  " + BLD + "[" + uname + "]" + RST + "  " + YLW + vname + RST + "\n")
+                var sites: List(str) = .match_sites.fetch(key)
+                var si: int = 0
+                while si < sites.count()
+                    dead_sb.append("    " + CYN + sites.at(si) + RST + "\n")
+                    si = si + 1
+                dead_sb.append("\n")
+            i = i + 1
+
+        # ── Phantom variants ──────────────────────────────────────────────────
+        var phantom_count: int = 0
+        var phantom_sb: StringBuilder = StringBuilder()
+        i = 0
+        while i < .constructed_key_list.count()
+            var key: str = .constructed_key_list.at(i)
+            if not .match_sites.contains(key)
+                phantom_count = phantom_count + 1
+                var kparts: List(str) = key.split(":")
+                var uname: str = kparts.at(0)
+                var vname: str = kparts.at(1)
+                phantom_sb.append("  " + BLD + "[" + uname + "]" + RST + "  " + YLW + vname + RST + "\n\n")
+            i = i + 1
+
+        # ── Unreachable fns ───────────────────────────────────────────────────
+        var unreachable_count: int = 0
+        var unreach_sb: StringBuilder = StringBuilder()
+        i = 0
+        while i < .module_fn_key_list.count()
+            var key: str = .module_fn_key_list.at(i)
+            if not .reachable_set.contains(key)
+                unreachable_count = unreachable_count + 1
+                var loc: str = .module_fns.fetch(key)
+                var fn_name: str = .extractFnName(key)
+                unreach_sb.append("  " + CYN + loc + RST + "  " + YLW + fn_name + RST + "\n")
+            i = i + 1
+
+        # ── Assemble ──────────────────────────────────────────────────────────
+        if dead_count > 0
+            sb.append(RED + BLD + "dead union arms" + RST + " — matched but never constructed (" + dead_count.toString() + "):\n\n")
+            sb.append(dead_sb.build())
+
+        if phantom_count > 0
+            sb.append(YLW + BLD + "phantom variants" + RST + " — constructed but never matched (" + phantom_count.toString() + "):\n\n")
+            sb.append(phantom_sb.build())
+
+        if unreachable_count > 0
+            sb.append(YLW + BLD + "unreachable module-level functions" + RST + " (" + unreachable_count.toString() + "):\n\n")
+            sb.append(unreach_sb.build())
+            sb.append("\n")
+
+        var total: int = dead_count + phantom_count + unreachable_count
+        if total == 0
+            sb.append(BLD + "zebra check: clean" + RST + "\n")
+        else
+            sb.append(BLD + "zebra check: " + RST)
+            sb.append(dead_count.toString() + " dead arm")
+            if dead_count != 1
+                sb.append("s")
+            sb.append(", " + phantom_count.toString() + " phantom variant")
+            if phantom_count != 1
+                sb.append("s")
+            sb.append(", " + unreachable_count.toString() + " unreachable fn")
+            if unreachable_count != 1
+                sb.append("s")
+            sb.append("\n")
+
+        return sb.build()
+
+# ── Multi-file dep loader ──────────────────────────────────────────────────────
+
+def checkerDirOf(path: str): str
+    if not path.contains("/")
+        return ""
+    var parts: List(str) = path.split("/")
+    if parts.count() <= 1
+        return ""
+    var out: str = parts.at(0)
+    var i: int = 1
+    while i < parts.count() - 1
+        out = out + "/" + parts.at(i)
+        i = i + 1
+    return out
+
+def checkerLoadDeps(path: str, visited: List(str), modules: List(Module)) throws
+    var vi: int = 0
+    while vi < visited.count()
+        if visited.at(vi) == path
+            return
+        vi = vi + 1
+    visited.add(path)
+    if not File.exists(path)
+        return
+
+    var src: str = File.read(path)
+    const pm_node = Parser.Parser.parse(src, path)?
+    var resolver = Resolver.Resolver(path)
+    resolver.resolve(pm_node)?
+    if resolver.errorCount() > 0
+        raise "resolver errors in " + path + ":\n" + resolver.allErrorMessages()
+
+    if pm_node is PNode.module_ as pm
+        # Depth-first: load deps before this module
+        var di: int = 0
+        while di < pm.decls.count()
+            if pm.decls.at(di) is PNode.use_ as u
+                var dep_name: str = u.path
+                var src_dir: str = checkerDirOf(path)
+                var dep_path: str = dep_name + ".zbr"
+                if src_dir != ""
+                    dep_path = src_dir + "/" + dep_name + ".zbr"
+                if File.exists(dep_path)
+                    checkerLoadDeps(dep_path, visited, modules)?
+            di = di + 1
+        var module: Module = ASTBuilder.build(pm, path)?
+        modules.add(module)
+
+# ── Public entry point ─────────────────────────────────────────────────────────
+
+def runCheck(root_path: str): bool throws
+    var visited: List(str) = List(str)()
+    var modules: List(Module) = List(Module)()
+    checkerLoadDeps(root_path, visited, modules)?
+    var n_deps: int = modules.count() - 1
+    sys.errln("zebra check: " + root_path + " (+ " + n_deps.toString() + " deps)")
+
+    var checker: DeadCodeChecker = DeadCodeChecker()
+
+    # Pass 1: register all union types and module-level fn names
+    var mi: int = 0
+    while mi < modules.count()
+        checker.collectDecls(modules.at(mi))
+        mi = mi + 1
+
+    # Pass 2: walk all bodies — constructions, matches, and fn calls
+    mi = 0
+    while mi < modules.count()
+        checker.walkModule(modules.at(mi))
+        mi = mi + 1
+
+    # BFS reachability from roots + exposed names
+    checker.computeReachability()
+
+    # Emit report to stderr; caller uses return value for exit code
+    var rpt: str = checker.report()
+    sys.err(rpt)
+    return checker.hasIssues()

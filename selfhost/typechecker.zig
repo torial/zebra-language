@@ -2938,9 +2938,9 @@ pub fn addClassMembers(mt: *ModuleTypes, ct: *ClassTypes, members: std.ArrayList
                         const key: []const u8 = _str_concat(_str_concat(ct.name, ".", _allocator), v.name, _allocator);
 // zbr:selfhost/typechecker.zbr:532
                         if ((refInner == .nilable)) {
-                            mt.opt_ref_field_keys.append(_allocator, key) catch @panic("OOM");
+                            mt.opt_ref_field_keys.append(_allocator, _intern(key)) catch @panic("OOM");
                         } else {
-                            mt.ref_field_keys.append(_allocator, key) catch @panic("OOM");
+                            mt.ref_field_keys.append(_allocator, _intern(key)) catch @panic("OOM");
                         }
                     }
                 } else {

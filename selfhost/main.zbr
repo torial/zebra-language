@@ -41,6 +41,7 @@ use Resolver
 use astbuilder exposing ASTBuilder
 use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith
 use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult
+use checker exposing runCheck
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ class MultiCompiler
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
+    var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -67,6 +69,7 @@ class MultiCompiler
         .strip_contracts = false
         .test_mode = false
         .tag_filter = nil
+        .warn_non_exhaustive = false
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -121,10 +124,14 @@ class MultiCompiler
                 var tc_mt: ModuleTypes = buildModuleTypes(module)
                 var tc_ctx: InferCtx = InferCtx(tc_mt, "")
                 tc_ctx.withDepTypes(dep_types)
+                if warn_non_exhaustive
+                    tc_ctx.enableWarnNonExhaustive()
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
                 if tc_ctx.hasErrors()
                     sys.errln(tc_ctx.errorMessages())
                     sys.exit(1)
+                if tc_ctx.hasWarnings()
+                    sys.errln(tc_ctx.warningMessages())
 
                 # Step 5: Generate Zig
                 var zig_src: str = ""
@@ -488,6 +495,33 @@ def main()
                 sys.errln("usage: zebra typecheck-merge <file.zbr>")
                 sys.exit(1)
 
+    # -- check subcommand --------------------------------------------------
+    # `zebra check <file.zbr>` — dead code detection across all dep modules.
+    # Reports dead union arms, phantom variants, and unreachable module-level fns.
+
+    if args.positional(0) as chk_pos
+        if chk_pos == "check"
+            if args.positional(1) as chk_file
+                var had_issues: bool = try runCheck(chk_file)
+                if had_issues
+                    sys.exit(1)
+                sys.exit(0)
+            else
+                sys.errln("usage: zebra check <file.zbr>")
+                sys.exit(1)
+
+    # -- repl subcommand ---------------------------------------------------
+    # `zebra repl` — interactive REPL, delegated to bootstrap binary which
+    # contains src/Repl.zig.
+
+    if args.positional(0) as repl_pos
+        if repl_pos == "repl"
+            var repl_argv: List(str) = List(str)()
+            repl_argv.add("zig-out/bin/zebra-bootstrap.exe")
+            repl_argv.add("repl")
+            var repl_rc: int = sys.exec_inherit(repl_argv)
+            sys.exit(repl_rc)
+
     # -- debug subcommand --------------------------------------------------
     # `zebra debug <file.zbr>` — DAP proxy via bootstrap binary.
     # The selfhost pipeline delegates to zebra-bootstrap.exe (the Zig-native
@@ -525,6 +559,23 @@ def main()
                 sys.errln("usage: zebra debug [--listen PORT] <file.zbr>")
                 sys.exit(1)
 
+    # -- build subcommand --------------------------------------------------
+    # `zebra build` compiles build.zbr (or --build-file=FILE) using the
+    # bootstrap binary, which contains the full Build stdlib runtime.
+
+    if args.positional(0) as bld_pos
+        if bld_pos == "build"
+            var bld_argv: List(str) = List(str)()
+            bld_argv.add("zig-out/bin/zebra-bootstrap.exe")
+            bld_argv.add("build")
+            var bld_file_opt: str = args.option("--build-file", "")
+            if bld_file_opt != ""
+                bld_argv.add("--build-file=" + bld_file_opt)
+            if args.contains("--list-targets")
+                bld_argv.add("--list-targets")
+            var bld_rc: int = sys.exec_inherit(bld_argv)
+            sys.exit(bld_rc)
+
     # -- test subcommand ---------------------------------------------------
     # `zebra test <file.zbr>` discovers def test_*() and runs them.
 
@@ -556,6 +607,10 @@ def main()
     if src_path == nil
         sys.errln("usage:")
         sys.errln("  zebra <source.zbr>                       compile and run (selfhost pipeline)")
+        sys.errln("  zebra repl                               start interactive REPL")
+        sys.errln("  zebra build                              run build.zbr (Build stdlib)")
+        sys.errln("  zebra build --build-file=FILE            run alternate build script")
+        sys.errln("  zebra build --list-targets               output JSON target graph")
         sys.errln("  zebra test <source.zbr>                  run def test_*() functions")
         sys.errln("  zebra test --tag <tag> <source.zbr>      run only tests matching tag")
         sys.errln("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)")
@@ -564,9 +619,11 @@ def main()
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
         sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
+        sys.errln("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants")
         sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
         sys.errln("  zebra --version                          print version and exit")
         sys.errln("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict")
+        sys.errln("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)")
         sys.exit(1)
 
     var path = src_path to!
@@ -584,6 +641,7 @@ def main()
     var mode_zig             = args.contains("--zig-backend")
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
+    var warn_ne              = args.contains("--warn-non-exhaustive")
     const preamble_path      = "selfhost/stdlib_preamble.zig"
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
@@ -596,6 +654,7 @@ def main()
         mc.strip_contracts = turbo
         mc.test_mode = run_test_mode
         mc.tag_filter = run_tag_filter
+        mc.warn_non_exhaustive = warn_ne
         mc.compileDep(path, true)?
 
         if mode_emit
