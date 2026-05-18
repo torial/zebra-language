@@ -38,7 +38,7 @@ Everything here must ship before 1.0 stability locks in.
 **0.14 remaining (entire milestone — priority cluster):**
 - [ ] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks (str+primitives done)
 - [x] `allocate` Slice 5: `is_scoped` flag wired into copy-out; `allocate_depth` replaces `arena_depth`; scoped Arena/Debug/FixedBuffer dupe correctly; 113/113 smoke, bootstrap 5/5 (2026-05-17)
-- [ ] `allocate` Slice 6: `arena` → `allocate Arena()` deprecation sweep + `--warn-deprecated` flag; remove `kw_arena`/`StmtArenaScope` once all sites migrated (test files already migrated in commit 000ed1e)
+- [x] `allocate` Slice 6: `arena` keyword removed (soft deprecation — helpful error message); `StmtArenaScope` removed from both compilers; `kw_arena` kept in lexer so parser can surface the error cleanly; 113/113 smoke, bootstrap 5/5 (2026-05-17)
 - [ ] `Chan(T)` channels (`ch <- val` / `var v <- ch`)
 
 **New at 1.0:**
@@ -240,8 +240,8 @@ Remaining:
 - **Slice 5** — copy-out reconciliation: `StmtAllocate.is_scoped` flag wired into `<-`
   codegen; `allocate_depth` replaces `arena_depth`; non-scoped wrappers short-circuit
   to plain assignment.  See `docs/allocate_design.md`.
-- **Slice 6** — `arena` → `allocate Arena()` unification: deprecation sweep + `--warn-deprecated`
-  flag; remove `kw_arena` / `StmtArenaScope` once all sites migrated.
+- **Slice 6** ✅ — `arena` keyword removed; `StmtArenaScope` gone from both compilers; `kw_arena` kept
+  in lexer so the parser surfaces a helpful error instead of crashing. (2026-05-17)
 
 **b. `<-` copy-out operator — prototype done, full deep-copy pending**
 Parser + both backends shipped for `str` + primitives (2026-05-10).
