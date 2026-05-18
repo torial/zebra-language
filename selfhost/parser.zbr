@@ -57,7 +57,6 @@ union PNode
     stmt_try_catch: ^PTryCatch
     stmt_expr: ^PNode
     stmt_print: ^PNode
-    stmt_arena_scope: ^PArenaScope
     stmt_allocate: ^PAllocate
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
@@ -342,13 +341,6 @@ struct PWhile
     var line: int
     cue init(cond: List(PNode), stmts: List(PNode), line: int)
         .cond = cond
-        .stmts = stmts
-        .line = line
-
-struct PArenaScope
-    var stmts: List(PNode)
-    var line: int
-    cue init(stmts: List(PNode), line: int)
         .stmts = stmts
         .line = line
 
@@ -674,7 +666,7 @@ class Parser
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
         # Used to distinguish `on Pat, print "stmt"` from `on Pat1, Pat2`.
-        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|arena|allocate|filter|defer|"
+        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|defer|"
         var needle = "|" + text + "|"
         return needle in kws
 
@@ -1589,7 +1581,7 @@ class Parser
         else if .textIs("branch")
             return .parseBranchStmt()
         else if .textIs("arena")
-            return .parseArenaScopeStmt()
+            raise "the 'arena' keyword is removed; use 'allocate Arena()' instead"
         else if .textIs("allocate")
             return .parseAllocateStmt()
         else if .textIs("with")
@@ -1726,13 +1718,6 @@ class Parser
         if kw == "ensure"
             return PNode.stmt_ensure(expr_nodes)
         return PNode.stmt_require(expr_nodes)
-
-    def parseArenaScopeStmt(): PNode throws
-        const line = .peek().line
-        .expectText("arena")
-        .skipEol()
-        const stmts = .parseBlock()
-        return PNode.stmt_arena_scope(PArenaScope(stmts, line))
 
     def parseAllocateStmt(): PNode throws
         const line = .peek().line

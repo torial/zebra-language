@@ -15,14 +15,14 @@
 #   genStmts / genStmt                — statement dispatch
 #   genLocalVar, genAssign, genReturn, genIf, genWhile
 #   genForIn, genForNum, genBranch, genPrint, genRaise
-#   genTryCatch, genAssert, genDefer, genWith, genArenaScope
+#   genTryCatch, genAssert, genDefer, genWith
 #   genGuard, genDestruct
 #   genExpr                           — expression dispatch
 #   genIdent, genBinary, genUnary, genStringLit, genStringInterp
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -1174,8 +1174,6 @@ def stmtLine(s: Stmt): int
             return d.span.line
         on Stmt.with_ as ww
             return ww.span.line
-        on Stmt.arena_scope as a
-            return a.span.line
         on Stmt.allocate_ as al
             return al.span.line
         on Stmt.copy_out as co
@@ -3009,8 +3007,6 @@ struct Generator
                     addAddrOfMutationsInStmts(tc.stmts, out)
                     for cl in tc.clauses
                         addAddrOfMutationsInStmts(cl.stmts, out)
-                on Stmt.arena_scope as a2
-                    addAddrOfMutationsInStmts(a2.stmts, out)
                 on Stmt.allocate_ as al2
                     addAddrOfMutationsInStmts(al2.stmts, out)
                 on Stmt.copy_out as co2
@@ -3213,8 +3209,6 @@ struct Generator
                 genDefer(d)
             on Stmt.with_ as ww
                 genWith(ww)
-            on Stmt.arena_scope as a
-                genArenaScope(a)
             on Stmt.allocate_ as al
                 genAllocate(al)
             on Stmt.copy_out as co
@@ -5748,26 +5742,6 @@ struct Generator
         w.emit("{ // with\n")
         var ig = indented()
         ig.genStmts(ww.stmts)
-        writeIndent()
-        w.emit("}\n")
-
-    # ── genArenaScope ─────────────────────────────────────────────────────────
-
-    def genArenaScope(a: StmtArenaScope)
-        var n = arena_counter
-        arena_counter = arena_counter + 1
-        var aname = "_scope_arena_".concat(n.toString())
-        var saved_name = "_saved_alloc_".concat(n.toString())
-        writeIndent()
-        w.emit("{\n")
-        var ig = indented()
-        ig.allocate_depth = allocate_depth + 1
-        ig.line("var ".concat(aname).concat(" = std.heap.ArenaAllocator.init(_allocator);"))
-        ig.line("defer ".concat(aname).concat(".deinit();"))
-        ig.line("const ".concat(saved_name).concat(" = _allocator;"))
-        ig.line("_allocator = ".concat(aname).concat(".allocator();"))
-        ig.genStmts(a.stmts)
-        ig.line("_allocator = ".concat(saved_name).concat(";"))
         writeIndent()
         w.emit("}\n")
 

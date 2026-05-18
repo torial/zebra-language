@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtArenaScope, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -1766,8 +1766,6 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                         if ft as ft2
                             ftype = ft2
                     ctx.bind(nm_s, ftype)
-        on Stmt.arena_scope as sas
-            walkStmts(sas.stmts, ctx)
         on Stmt.allocate_ as sal
             walkExpr(sal.source, ctx)
             walkStmts(sal.stmts, ctx)
@@ -1976,8 +1974,6 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.guard_ as sg
                 checkStmts(sg.else_stmts, file, ctx)
-            on Stmt.arena_scope as sas
-                checkStmts(sas.stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
             on Stmt.branch_ as sb

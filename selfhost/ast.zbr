@@ -426,7 +426,6 @@ union Stmt
     try_catch: ^StmtTryCatch
     guard_: ^StmtGuard
     destruct: ^StmtDestruct
-    arena_scope: ^StmtArenaScope
     allocate_: ^StmtAllocate
     copy_out: ^StmtCopyOut
     print_: ^StmtPrint
@@ -669,14 +668,6 @@ struct StmtDestruct
         .names = names
         .init_expr = init_expr
         .is_struct = is_struct
-
-struct StmtArenaScope
-    var span: Span
-    var stmts: List(Stmt)
-
-    cue init(span: Span, stmts: List(Stmt))
-        .span = span
-        .stmts = stmts
 
 struct StmtAllocate
     var span: Span

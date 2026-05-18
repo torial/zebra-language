@@ -1696,13 +1696,9 @@ const Builder = struct {
     }
 
     fn buildStmtArenaScope(b: Builder, node: TN) anyerror!Ast.StmtArenaScope {
-        // kw_arena eol Block
-        const kids       = ch(node);
-        const block_kids = ch(kids[2]); // Block → indent StmtList dedent
-        return .{
-            .span = spanOf(node, b.tokens),
-            .body = try b.buildStmtList(block_kids[1]),
-        };
+        const s = spanOf(node, b.tokens);
+        std.debug.print("{d}:{d}: error: 'arena' keyword is removed; use 'allocate Arena()' instead\n", .{ s.line, s.col });
+        std.process.exit(1);
     }
 
     fn buildStmtAllocate(b: Builder, node: TN) anyerror!Ast.StmtAllocate {

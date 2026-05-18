@@ -309,9 +309,6 @@ def bodyHasRaise(stmts: List(Stmt)): bool
             on Stmt.with_ as w
                 if bodyHasRaise(w.stmts)
                     return true
-            on Stmt.arena_scope as a
-                if bodyHasRaise(a.stmts)
-                    return true
             on Stmt.defer_ as d
                 # Defer body is a single statement; wrap in a temporary list to recurse.
                 var dl = List(Stmt)()
@@ -533,8 +530,6 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             return nameUsedInStmts(name, g.else_stmts)
         on Stmt.destruct as d
             return nameUsedInExpr(name, d.init_expr)
-        on Stmt.arena_scope as a
-            return nameUsedInStmts(name, a.stmts)
         on Stmt.print_ as p
             var pi = 0
             while pi < p.args.count()
@@ -660,8 +655,6 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
                     seedEscapedFromReturns(b.else_ to!, out)
             on Stmt.with_ as w
                 seedEscapedFromReturns(w.stmts, out)
-            on Stmt.arena_scope as a
-                seedEscapedFromReturns(a.stmts, out)
             on Stmt.try_catch as tc
                 seedEscapedFromReturns(tc.stmts, out)
                 for cl in tc.clauses
@@ -723,9 +716,6 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                         grew = true
             on Stmt.with_ as ww
                 if propagateEscapesOnce(ww.stmts, out)
-                    grew = true
-            on Stmt.arena_scope as a
-                if propagateEscapesOnce(a.stmts, out)
                     grew = true
             on Stmt.try_catch as tc
                 if propagateEscapesOnce(tc.stmts, out)
@@ -895,8 +885,6 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 if w.target is Expr.ident as id
                     out.add(id.name)
                 scanMutationsInto(w.stmts, out)
-            on Stmt.arena_scope as a
-                scanMutationsInto(a.stmts, out)
             on Stmt.copy_out as co
                 if co.target is Expr.ident as id
                     out.add(id.name)

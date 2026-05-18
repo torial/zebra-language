@@ -16,8 +16,8 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtArenaScope, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PArenaScope, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -544,10 +544,6 @@ class ASTBuilder
 
             on PNode.stmt_branch as pb
                 return .buildBranch(pb)?
-
-            on PNode.stmt_arena_scope as pas
-                var stmts = .buildStmts(pas.stmts)?
-                return Stmt.arena_scope(StmtArenaScope(Span(pas.line, 0, pas.line, 0), stmts))
 
             on PNode.stmt_allocate as pa
                 const source_expr = .buildExpr(pa.source.at(0))?
