@@ -1,6 +1,6 @@
 # `allocate` block — design document
 
-**Status:** Slices 1–4 complete (2026-05-12); Slices 5–6 pending  
+**Status:** All slices complete (Slices 1–4: 2026-05-12; Slice 5: 2026-05-17; Slice 6: 2026-05-17)  
 **Milestone:** 0.14
 
 ---
@@ -24,8 +24,9 @@ allocate <expr>
 The compiler saves `_allocator`, sets it to `expr.allocator()`, runs `<body>`,
 then restores `_allocator` and calls `expr.deinit()`.
 
-`arena` is sugar for `allocate Arena()` and will be deprecated once
-all existing sites are migrated.
+The old `arena` keyword has been removed (Slice 6).  Use `allocate Arena()`
+instead.  The lexer still recognises `arena` so the parser can emit a helpful
+error message rather than a cryptic `UnexpectedCharacter` crash.
 
 ---
 
@@ -61,7 +62,7 @@ All wrappers implement `AllocatorSource`.
 
 | Zebra name | Zig backing | Scoped? | Notes |
 |------------|-------------|---------|-------|
-| `Arena()` | `std.heap.ArenaAllocator.init(_allocator)` | ✓ | replaces `arena` keyword |
+| `Arena()` | `std.heap.ArenaAllocator.init(_allocator)` | ✓ | replacement for the removed `arena` keyword |
 | `Debug()` | `std.heap.DebugAllocator(.{}){}` | ✓ | leak detection; `GeneralPurposeAllocator` alias |
 | `Page()` | `std.heap.page_allocator` (singleton) | ✗ | no-op `deinit` |
 | `Smp()` | `std.heap.smp_allocator` (singleton) | ✗ | no-op `deinit` |
@@ -81,7 +82,7 @@ All wrappers implement `AllocatorSource`.
 
 - Inside a **scoped** `allocate` block (Arena, Debug, FixedBuffer, Pool,
   StackFallback, StackFallback): `<-` deep-copies the value into the *parent*
-  allocator so it survives `deinit`.  Same behavior as today's `arena`.
+  allocator so it survives `deinit`.  Same behavior as the old `arena` block.
 - Inside a **non-scoped** block (Page, Smp, C) or a **borrowed** expression:
   `<-` degenerates to a plain assignment.  No deep-copy needed — the allocator
   outlives the scope anyway.
@@ -105,8 +106,8 @@ conservative default — the user manages lifetime).
   Likely `AllocatorSource` so the inner wrapper's lifetime is also managed.
 - [ ] `Pool(T)` — does `T` need to be a concrete Zebra type, or can it be a
   type parameter?  Deferring generic pools until generic allocators are clearer.
-- [ ] Migration path for existing `arena` sites — `arena` stays as an alias
-  until a `--warn-deprecated` pass flags it.
+- [x] Migration path for existing `arena` sites — all user-facing `.zbr` files
+  already use `allocate Arena()`; `arena` keyword removed in Slice 6 (2026-05-17).
 
 ---
 
@@ -117,6 +118,7 @@ conservative default — the user manages lifetime).
 3. ~~**Slice 3** — `Arena` stdlib wrapper; confirm `AllocatorSource` interface path~~ **DONE** (commit 18bccac)
 4. ~~**Slice 4** — remaining named wrappers (Page, Smp, Debug, FixedBuffer, ThreadSafe, Pool, StackFallback)~~ **DONE** (commit 18bccac)
 5. ~~**Slice 5** — copy-out reconciliation (`is_scoped` flag, `allocate_depth` replaces `arena_depth`)~~ **DONE** (commit 18c58ac)
-6. **Slice 6** — `arena` → `allocate Arena()` unification + deprecation sweep
+6. ~~**Slice 6** — `arena` → `allocate Arena()` unification + deprecation sweep~~ **DONE** (commit 4477d73, 2026-05-17)
 
-Slice 6 is the remaining work.  Slice 5 unblocked the full `<-` deep-copy (§23b).
+All slices complete.  The remaining open work is the full `<-` deep-copy for `List`/classes
+(tracked in NEXT_STEPS.md §14b) and `Chan(T)` channels (§14c).

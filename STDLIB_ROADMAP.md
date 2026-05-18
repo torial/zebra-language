@@ -209,7 +209,7 @@ Both implemented in `src/CodeGen.zig` + `selfhost/codegen.zbr`.
 
 **Allocator note:**
 All stdlib functions use the program-wide `_allocator` (arena). Memory is held until
-program exit. For compute-intensive stdlib use, users can scope with `arena` blocks.
+program exit. For compute-intensive stdlib use, scope with `allocate Arena()` blocks.
 
 **TC integration pattern:**
 Each new stdlib module adds entries to `inferCall` and `inferMember` in TypeChecker.zig —

@@ -1139,8 +1139,8 @@ are deferred.
         summary = summarise(src)     # copies result into outer arena
     print summary                    # safe
     ```
-    `arena` still works as legacy sugar for `allocate Arena()`.  New code
-    should prefer the explicit form.
+    The old `arena { }` keyword is removed.  Use `allocate Arena()` instead
+    (the compiler will print a helpful error if you use the old form).
 
 13. **CRLF line endings crash the tokenizer.**  `.zbr` files must use LF only.
     A `\r` produces `unexpected '\r' (CRLF line endings — convert to LF)`.
@@ -1238,21 +1238,6 @@ x <- "hello"                    # equivalent to x = "hello"
 - **Primitives (`int`, `float`, `bool`):** plain assignment — no heap involved.
 - **Outside a scoped block (or with a non-scoped wrapper):** plain assignment.
 - **Classes and `List`:** `str` + primitives only for now; full deep-copy deferred to 0.14.
-
-### `arena` — legacy sugar
-
-`arena` is still accepted and equivalent to `allocate Arena()`.  Existing code
-continues to work.  New code should prefer `allocate Arena()` for consistency
-with the other named wrappers.
-
-```zebra
-# These are equivalent:
-arena
-    process(data)
-
-allocate Arena()
-    process(data)
-```
 
 ### Why individual `free` calls are absent
 
