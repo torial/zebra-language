@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     compiler_mod.addImport("earley", earley_mod);
-    const raw_preamble = std.fs.cwd().readFileAlloc(b.allocator, "selfhost/stdlib_preamble.zig", 256 * 1024) catch @panic("selfhost/stdlib_preamble.zig missing");
+    const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(256 * 1024)) catch @panic("selfhost/stdlib_preamble.zig missing");
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
     // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
     const helpers_start_marker = "// === STDLIB_PREAMBLE_HELPERS_START ===\n";

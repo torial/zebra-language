@@ -69,13 +69,14 @@ const Mode = enum {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn main() void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+pub fn main(init: std.process.Init.Minimal) void {
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
-    const args = std.process.argsAlloc(alloc) catch @panic("OOM");
-    defer std.process.argsFree(alloc, args);
+    var args_arena = std.heap.ArenaAllocator.init(alloc);
+    defer args_arena.deinit();
+    const args = init.args.toSlice(args_arena.allocator()) catch @panic("OOM");
 
     // Parse flags and find the source path.
     var mode: Mode = .run;
@@ -90,7 +91,7 @@ pub fn main() void {
     var tag_filter: ?[]const u8 = null;
     var source_path: ?[]const u8 = null;
     var listen_port: ?u16 = null;
-    var module_paths = std.ArrayListUnmanaged([]const u8){};
+    var module_paths = std.ArrayListUnmanaged([]const u8).empty;
     defer module_paths.deinit(alloc);
 
     var i: usize = 1;
@@ -1241,9 +1242,9 @@ fn runChild(argv: []const []const u8, alloc: std.mem.Allocator) !u8 {
     const term = try child.spawnAndWait();
     return switch (term) {
         .Exited  => |code| code,
-        .Signal  => |_|    1,
-        .Stopped => |_|    1,
-        .Unknown => |_|    1,
+        .Signal  =>        1,
+        .Stopped =>        1,
+        .Unknown =>        1,
     };
 }
 
@@ -1263,9 +1264,9 @@ fn runChildRemapped(argv: []const []const u8, zig_path: []const u8, alloc: std.m
     const term = try child.wait();
     const code: u8 = switch (term) {
         .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .Signal  => 1,
+        .Stopped => 1,
+        .Unknown => 1,
     };
 
     if (stderr_text.len > 0) {

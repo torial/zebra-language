@@ -2679,7 +2679,7 @@ pub const Resolver = struct {
                     self.module_scope.put(_intern(name), 5) catch @panic("OOM");
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -2712,7 +2712,7 @@ pub const Resolver = struct {
                 const m = _ptr_m.*;
                 try self.enterMethod(m.params, m.stmts);
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -2753,7 +2753,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:164
                 self.symbol_count = (self.symbol_count + 1);
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -2770,7 +2770,7 @@ pub const Resolver = struct {
                 const i = _ptr_i.*;
                 try self.enterMethod(i.params, i.stmts);
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -2926,16 +2926,16 @@ pub const Resolver = struct {
                 const inner = _ptr_inner.*;
                 try self.resolveExpr(inner);
             },
-            .stmt_pass => |_| {
+            .stmt_pass => {
                 // pass
             },
-            .stmt_break => |_| {
+            .stmt_break => {
                 // pass
             },
-            .stmt_continue => |_| {
+            .stmt_continue => {
                 // pass
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3013,10 +3013,10 @@ pub const Resolver = struct {
                     try self.resolveExpr(e);
                 }
             },
-            .expr_try => |_| {
+            .expr_try => {
                 // pass
             },
-            .expr_to_bang => |_| {
+            .expr_to_bang => {
                 // pass
             },
             .expr_except => |_ptr_ex| {
@@ -3051,7 +3051,7 @@ pub const Resolver = struct {
                     try self.resolveExpr(e);
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }

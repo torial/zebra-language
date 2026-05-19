@@ -2810,11 +2810,11 @@ pub fn typeRefStr(tr: TypeRef) []const u8 {
 // zbr:selfhost/cg_helpers.zbr:147
             return (b.toOwnedSlice(_allocator) catch "");
         },
-        .void_ => |_| {
+        .void_ => {
 // zbr:selfhost/cg_helpers.zbr:149
             return "void";
         },
-        .same_ => |_| {
+        .same_ => {
 // zbr:selfhost/cg_helpers.zbr:151
             return "same";
         },
@@ -2844,7 +2844,7 @@ pub fn typeRefStr(tr: TypeRef) []const u8 {
 pub fn exprHasTry(expr: Expr) bool {
 // zbr:selfhost/cg_helpers.zbr:171
     switch (expr) {
-        .try_ => |_| {
+        .try_ => {
 // zbr:selfhost/cg_helpers.zbr:173
             return true;
         },
@@ -3008,7 +3008,7 @@ pub fn exprHasTry(expr: Expr) bool {
 // zbr:selfhost/cg_helpers.zbr:235
             return false;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/cg_helpers.zbr:239
             return false;
         },
@@ -3020,23 +3020,23 @@ pub fn bodyHasRaise(stmts: std.ArrayList(Stmt)) bool {
     for (stmts.items) |s| {
 // zbr:selfhost/cg_helpers.zbr:247
         switch (s) {
-            .raise_ => |_| {
+            .raise_ => {
 // zbr:selfhost/cg_helpers.zbr:249
                 return true;
             },
-            .assert_eq_ => |_| {
+            .assert_eq_ => {
 // zbr:selfhost/cg_helpers.zbr:251
                 return true;
             },
-            .assert_ne_ => |_| {
+            .assert_ne_ => {
 // zbr:selfhost/cg_helpers.zbr:253
                 return true;
             },
-            .assert_true_ => |_| {
+            .assert_true_ => {
 // zbr:selfhost/cg_helpers.zbr:255
                 return true;
             },
-            .assert_false_ => |_| {
+            .assert_false_ => {
 // zbr:selfhost/cg_helpers.zbr:257
                 return true;
             },
@@ -3207,10 +3207,10 @@ pub fn bodyHasRaise(stmts: std.ArrayList(Stmt)) bool {
                     return true;
                 }
             },
-            .try_catch => |_| {
+            .try_catch => {
                 // pass
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3274,7 +3274,7 @@ pub fn nilNarrowVar(cond: Expr, for_then: bool) ?[]const u8 {
 // zbr:selfhost/cg_helpers.zbr:364
             return null;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/cg_helpers.zbr:366
             return null;
         },
@@ -3519,7 +3519,7 @@ pub fn nameUsedInExpr(name: []const u8, expr: Expr) bool {
 // zbr:selfhost/cg_helpers.zbr:465
             return false;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/cg_helpers.zbr:468
             return false;
         },
@@ -3764,7 +3764,7 @@ pub fn nameUsedInStmt(name: []const u8, stmt: Stmt) bool {
 // zbr:selfhost/cg_helpers.zbr:567
             return nameUsedInStmt(name, d.stmt.*);
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/cg_helpers.zbr:569
             return false;
         },
@@ -3872,7 +3872,7 @@ pub fn collectAllIdents(expr: Expr, out: *StrSet) void {
                 collectAllIdents(telem, out);
             }
         },
-        else => |_| {
+        else => {
             // pass
         },
     }
@@ -3941,7 +3941,7 @@ pub fn seedEscapedFromReturns(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                 const g = _ptr_g.*;
                 seedEscapedFromReturns(g.else_stmts, out);
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -4094,7 +4094,7 @@ pub fn propagateEscapesOnce(stmts: std.ArrayList(Stmt), out: *StrSet) bool {
                     grew = true;
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -4300,7 +4300,7 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
                 scanMutationsInExpr(op, out);
             }
         },
-        else => |_| {
+        else => {
             // pass
         },
     }
@@ -4334,7 +4334,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                             out.add(id.name);
                         }
                     },
-                    else => |_| {
+                    else => {
                         // pass
                     },
                 }
@@ -4473,7 +4473,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                     pi += 1;
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -4495,7 +4495,7 @@ pub fn isContainerTypeRef(tr: TypeRef) bool {
 // zbr:selfhost/cg_helpers.zbr:944
             return (std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap"));
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/cg_helpers.zbr:946
             return false;
         },

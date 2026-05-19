@@ -743,7 +743,7 @@ fn bodyHasThrowsCall(
 
 fn exprHasTry(expr: *const Ast.Expr, tc_opt: ?*const TypeChecker.TypeCheckResult) bool {
     return switch (expr.*) {
-        .try_ => |_| blk: {
+        .try_ => blk: {
             // TC records optional-unwrap `.try_` nodes in `optional_unwraps` by
             // checking the inner ident's DECLARED type (pre nil-narrowing).
             // Only count this as a real error propagation if it's NOT an opt-unwrap.
@@ -1652,7 +1652,7 @@ const Generator = struct {
     /// Enables `@This()` instead of `owner` for self-type references in init/methods.
     is_generic: bool = false,
     /// When `is_generic`, points to the class declaration so that `genAssign` can
-    /// resolve field types for explicit `std.ArrayList(T){}` emission.
+    /// resolve field types for explicit `std.ArrayList(T).empty` emission.
     owner_class: ?*const Ast.DeclClass = null,
     /// True when generating the body of a `struct` (not a `class`).
     /// Structs have no `_type_tag` field, so `cue init` bodies must skip the
@@ -3308,7 +3308,7 @@ const Generator = struct {
             // Accessed as StructName.field, not instance.field.
             const kw: []const u8 = if (n.mods.readonly or n.is_const) "const" else "var";
             // Stdlib constructor shorthand: `shared var x as List(T) = List()` or HashMap variant.
-            // Must emit `std.ArrayList(T){}` / `std.StringHashMap(T).init(_allocator)`, not `List()`.
+            // Must emit `std.ArrayList(T).empty` / `std.StringHashMap(T).init(_allocator)`, not `List()`.
             if (n.init) |e| {
                 if (n.type_) |tr| {
                     if (tr == .generic) {
@@ -3345,7 +3345,7 @@ const Generator = struct {
             // StringBuilder as struct field: emit the concrete type and default to empty.
             if (n.type_) |tr| {
                 if (tr == .named and std.mem.eql(u8, tr.named.name, "StringBuilder")) {
-                    try g.w.writeAll("std.ArrayList(u8) = .{}");
+                    try g.w.writeAll("std.ArrayList(u8) = .empty");
                     try g.w.writeAll(",\n");
                     return;
                 }
@@ -4417,7 +4417,7 @@ const Generator = struct {
                 is_sb_ctor; // infer StringBuilder type from the constructor call alone
             if (has_sb_type and is_sb_ctor) {
                 // Always var: ArrayList.appendSlice takes *Self.
-                try g.w.print("var {s} = std.ArrayList(u8){{}};\n", .{n.name});
+                try g.w.print("var {s} = std.ArrayList(u8).empty;\n", .{n.name});
                 try g.writeIndent();
                 try g.w.print("defer {s}.deinit(_allocator);\n", .{n.name});
                 return;
@@ -4710,7 +4710,7 @@ const Generator = struct {
     // ── Stdlib type initialisation ────────────────────────────────────────────
 
     /// Emit the Zig init expression for a stdlib generic type.
-    ///   List(int)       → std.ArrayList(i64){}   (Zig 0.15: unmanaged, alloc per-op)
+    ///   List(int)       → std.ArrayList(i64).empty   (Zig 0.15: unmanaged, alloc per-op)
     ///   HashMap(str, T) → std.StringHashMap(T).init(_allocator)
     ///   HashMap(K, V)   → std.AutoHashMap(K, V).init(_allocator)
     fn genStdlibInit(g: Generator, gtr: Ast.GenericTypeRef) anyerror!void {
@@ -4916,7 +4916,7 @@ const Generator = struct {
             if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
             try bg.w.writeAll(", std.math.maxInt(usize)) catch @panic(\"File.readLines error\");\n");
             try bg.writeIndent();
-            try bg.w.writeAll("var _fl_list = std.ArrayList([]const u8){};\n");
+            try bg.w.writeAll("var _fl_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
             try bg.w.writeAll("var _fl_it = std.mem.splitScalar(u8, _fl_content, '\\n');\n");
             try bg.writeIndent();
@@ -5048,7 +5048,7 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("defer _ld_dir.close();\n");
             try bg.writeIndent();
-            try bg.w.writeAll("var _ld_list = std.ArrayList([]const u8){};\n");
+            try bg.w.writeAll("var _ld_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
             try bg.w.writeAll("var _ld_iter = _ld_dir.iterate();\n");
             try bg.writeIndent();
@@ -5118,7 +5118,7 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("defer _dl_dir.close();\n");
             try bg.writeIndent();
-            try bg.w.writeAll("var _dl_list = std.ArrayList([]const u8){};\n");
+            try bg.w.writeAll("var _dl_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
             try bg.w.writeAll("var _dl_iter = _dl_dir.iterate();\n");
             try bg.writeIndent();
@@ -5151,7 +5151,7 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("defer _dw_walker.deinit();\n");
             try bg.writeIndent();
-            try bg.w.writeAll("var _dw_list = std.ArrayList([]const u8){};\n");
+            try bg.w.writeAll("var _dw_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
             try bg.w.writeAll("while (_dw_walker.next() catch null) |_dw_entry| {\n");
             const ig = bg.indented();
@@ -5504,7 +5504,7 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("const _sa_raw = std.process.argsAlloc(_allocator) catch @panic(\"sys.args OOM\");\n");
             try bg.writeIndent();
-            try bg.w.writeAll("var _sa_list = std.ArrayList([]const u8){};\n");
+            try bg.w.writeAll("var _sa_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
             try bg.w.writeAll("for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n");
             try bg.writeIndent();
@@ -6946,7 +6946,7 @@ const Generator = struct {
         try g.writeIndent();
         try g.w.writeAll("{\n");
         const bg = g.indented();
-        var tmp_names = std.ArrayList(?[]const u8){};
+        var tmp_names = std.ArrayList(?[]const u8).empty;
         try tmp_names.ensureTotalCapacity(g.alloc, call.args.len);
         defer {
             for (tmp_names.items) |tn| if (tn) |n| g.alloc.free(n);
@@ -7601,7 +7601,7 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "repeat")) {
             // str.repeat(n) → allocate n concatenated copies
-            try g.w.writeAll("(blk: { var _rep = std.ArrayList([]const u8){}; ");
+            try g.w.writeAll("(blk: { var _rep = std.ArrayList([]const u8).empty; ");
             try g.w.writeAll("defer _rep.deinit(_allocator); ");
             try g.w.writeAll("var _ri: i64 = 0; while (_ri < ");
             if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
@@ -7756,7 +7756,7 @@ const Generator = struct {
             try g.genExpr(obj);
             try g.w.writeAll(", ");
             if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\" \"");
-            try g.w.writeAll("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })");
+            try g.w.writeAll("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })");
             return true;
         }
         // ── Base64 instance methods (ergonomic form) ──────────────────────────
@@ -7779,7 +7779,7 @@ const Generator = struct {
     /// The result is a value of an anonymous struct type; call sites use `.call()`.
     fn genCaptureClosureStruct(g: Generator, e: *Ast.ExprLambda) anyerror!void {
         // Collect capture field names so body idents use `self.name`
-        var field_names = std.ArrayList([]const u8){};
+        var field_names = std.ArrayList([]const u8).empty;
         defer field_names.deinit(g.alloc);
         for (e.capture) |cv| try field_names.append(g.alloc, cv.name);
 
@@ -8056,7 +8056,7 @@ const Generator = struct {
                     };
                     // In class bodies (generic or concrete), resolve the declared generic
                     // field type from the LHS so any zero-arg constructor `T()` emits
-                    // `std.ArrayList(T){}` / `T(Arg).init()` correctly.
+                    // `std.ArrayList(T).empty` / `T(Arg).init()` correctly.
                     // Works for List, HashMap, and user-defined generics alike.
                     const generic_emitted: bool = emit: {
                         if (fn_ref_emitted) break :emit true;
@@ -9445,7 +9445,7 @@ const Generator = struct {
                         // When binding is "_" (discard), skip the dereference — Zig accepts
                         // |_| { directly even for pointer payloads.
                         if (std.mem.eql(u8, bname, "_")) {
-                            try bg.w.writeAll(" => |_| {\n");
+                            try bg.w.writeAll(" => {\n");
                         } else {
                             try bg.w.print(" => |{s}_ptr| {{\n", .{bname});
                             try bg.indented().writeIndent();
@@ -9524,7 +9524,7 @@ const Generator = struct {
         try g.w.writeAll("{\n");
         const bg = g.indented();
         // Collect temp-var names (null = not a temp).
-        var tmp_names = std.ArrayList(?[]const u8){};
+        var tmp_names = std.ArrayList(?[]const u8).empty;
         try tmp_names.ensureTotalCapacity(g.alloc, s.args.len);
         defer {
             for (tmp_names.items) |tn| if (tn) |n| g.alloc.free(n);
@@ -10703,7 +10703,7 @@ const Generator = struct {
                 // to ArrayList([]const u8) which Zig will reject if used
                 // wrong — that's intentional, the caller needs to annotate.
                 if (e.elems.len == 0) {
-                    try g.w.writeAll("std.ArrayList([]const u8){}");
+                    try g.w.writeAll("std.ArrayList([]const u8).empty");
                 } else {
                     const elem_zig: []const u8 = blk: {
                         if (g.tc) |tc| {
@@ -10714,7 +10714,7 @@ const Generator = struct {
                     };
                     const uid = g.nextUid();
                     try g.w.print("(blk_{x}: {{ ", .{uid});
-                    try g.w.print("var _ll_{x}: std.ArrayList({s}) = std.ArrayList({s}){{}}; ", .{ uid, elem_zig, elem_zig });
+                    try g.w.print("var _ll_{x}: std.ArrayList({s}) = std.ArrayList({s}).empty; ", .{ uid, elem_zig, elem_zig });
                     for (e.elems) |el| {
                         try g.w.print("_ll_{x}.append(_allocator, ", .{uid});
                         try g.genExpr(el);
@@ -10746,7 +10746,7 @@ const Generator = struct {
                     try g.genExpr(e.expr);
                 }
             },
-            .result_ => |_| {
+            .result_ => {
                 // Always emits `_result` — only valid inside an ensure clause.
                 // Resolver/TC reject result outside ensure or in void functions.
                 try g.w.writeAll("_result");
@@ -11255,7 +11255,7 @@ const Generator = struct {
                 try g.w.writeAll(")");
                 return;
             }
-            // List(T)() → std.ArrayList(T){} (allocator passed to each op)
+            // List(T)() → std.ArrayList(T).empty (allocator passed to each op)
             if (std.mem.eql(u8, class_name, "List") and e.type_args.len == 1) {
                 try g.w.writeAll("std.ArrayList(");
                 try g.genType(e.type_args[0]);
@@ -11409,7 +11409,7 @@ const Generator = struct {
                 }
             }
         }
-        // Builtin collection constructors: `List()` → `std.ArrayList(...){}`,
+        // Builtin collection constructors: `List()` → `std.ArrayList(...).empty`,
         // `HashMap()` → `std.StringHashMap(...).init(_allocator)`.
         // These appear in assignment RHS and field initializers when no type annotation
         // is available, so we emit the least-typed form that Zig can infer.
@@ -11424,7 +11424,7 @@ const Generator = struct {
                 if (g.is_generic) {
                     try g.w.writeAll(".{}");
                 } else {
-                    try g.w.writeAll("std.ArrayList([]const u8){}");
+                    try g.w.writeAll("std.ArrayList([]const u8).empty");
                 }
                 return;
             }
@@ -11445,7 +11445,7 @@ const Generator = struct {
             // StringBuilder() as an assignment RHS (e.g. class field init in `cue init`).
             // Local `var` declarations are intercepted earlier in genLocalVar.
             if (std.mem.eql(u8, name, "StringBuilder")) {
-                try g.w.writeAll("std.ArrayList(u8){}");
+                try g.w.writeAll("std.ArrayList(u8).empty");
                 return;
             }
         }
@@ -12372,18 +12372,18 @@ const Generator = struct {
     ///     if a `.format` part immediately follows
     fn genStringInterp(g: Generator, e: Ast.ExprStringInterp) anyerror!void {
         // ── Build format string ──────────────────────────────────────────────
-        var fmt_buf = std.ArrayList(u8){};
+        var fmt_buf = std.ArrayList(u8).empty;
         defer fmt_buf.deinit(g.alloc);
 
         // Per-arg unsigned cast type (null = no cast needed).
         // Needed when a bit-repr spec (x/X/o/b) is applied to a signed integer:
         // Zig prepends '+' for positive signed ints, which is wrong for hex dumps.
-        var cast_types = std.ArrayList(?[]const u8){};
+        var cast_types = std.ArrayList(?[]const u8).empty;
         defer cast_types.deinit(g.alloc);
 
         // Per-arg flag: true when the expr has a named type with toString() —
         // emit `.toString()` call suffix and use {s} format.
-        var needs_tostring = std.ArrayList(bool){};
+        var needs_tostring = std.ArrayList(bool).empty;
         defer needs_tostring.deinit(g.alloc);
 
         var i: usize = 0;
@@ -12586,7 +12586,7 @@ const Generator = struct {
         }
         try g.w.writeAll(" {");
         // Build capture_fields list so idents inside the body emit `self.name`
-        var cap_names = std.ArrayList([]const u8){};
+        var cap_names = std.ArrayList([]const u8).empty;
         defer cap_names.deinit(g.alloc);
         for (e.capture) |cv| try cap_names.append(g.alloc, cv.name);
         const lg = g.asMethod().withCaptureFields(cap_names.items);
@@ -13338,7 +13338,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     var resolve = try Resolver.resolvePass2(module, &bind.table, alloc, alloc, null);
     defer resolve.deinit();
 
-    var out = std.ArrayList(u8){};
+    var out = std.ArrayList(u8).empty;
     errdefer out.deinit(alloc);
 
     _ = try generate(module, &resolve, null, alloc, out.writer(alloc).any(), .stub, null, false, null, false, false, false, false, null);

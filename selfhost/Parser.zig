@@ -5770,7 +5770,7 @@ pub const Parser = struct {
                     const inner = _ptr_inner.*;
                     expr_nodes.append(_allocator, inner) catch @panic("OOM");
                 },
-                else => |_| {
+                else => {
                     expr_nodes.append(_allocator, s) catch @panic("OOM");
                 },
             }

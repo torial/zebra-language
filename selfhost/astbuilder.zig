@@ -2907,7 +2907,7 @@ pub fn getObjectIdentName(e: Expr) ?[]const u8 {
 // zbr:selfhost/astbuilder.zbr:151
             return id.name;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/astbuilder.zbr:153
             return null;
         },
@@ -3029,7 +3029,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:210
                 return try self.buildMethod(m, false);
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:212
                 { _error_ctx = .{ .message = "buildTopDecl: unexpected PNode variant" }; return error.ZebraError; }
             },
@@ -3248,7 +3248,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:334
                 return try self.buildInit(pinit);
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:336
                 { _error_ctx = .{ .message = "buildMember: unexpected PNode variant" }; return error.ZebraError; }
             },
@@ -3319,7 +3319,7 @@ pub const ASTBuilder = struct {
                         },
                     }
                 },
-                else => |_| {
+                else => {
                     body_stmts.append(_allocator, s) catch @panic("OOM");
                 },
             }
@@ -3381,7 +3381,7 @@ pub const ASTBuilder = struct {
                         },
                     }
                 },
-                else => |_| {
+                else => {
                     body_stmts.append(_allocator, s) catch @panic("OOM");
                 },
             }
@@ -3419,13 +3419,13 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:430
                         return Stmt{ .assign = blk_box_18: { const _bv: std.meta.Child(@FieldType(Stmt, "assign")) = StmtAssign.init(zspan(), _bx0: { const _bv = new_target; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, sa.op, _bx1: { const _bv = val_copy; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_18 _bp; } };
                     },
-                    else => |_| {
+                    else => {
 // zbr:selfhost/astbuilder.zbr:432
                         return s;
                     },
                 }
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:434
                 return s;
             },
@@ -3435,15 +3435,15 @@ pub const ASTBuilder = struct {
     pub fn buildStmt(self: *ASTBuilder, pn: PNode) anyerror!Stmt {
 // zbr:selfhost/astbuilder.zbr:437
         switch (pn) {
-            .stmt_pass => |_| {
+            .stmt_pass => {
 // zbr:selfhost/astbuilder.zbr:439
                 return Stmt{ .pass_ = zspan() };
             },
-            .stmt_break => |_| {
+            .stmt_break => {
 // zbr:selfhost/astbuilder.zbr:442
                 return Stmt{ .break_ = zspan() };
             },
-            .stmt_continue => |_| {
+            .stmt_continue => {
 // zbr:selfhost/astbuilder.zbr:445
                 return Stmt{ .continue_ = zspan() };
             },
@@ -3764,7 +3764,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:613
                 return Stmt{ .contract = blk_box_48: { const _bv: std.meta.Child(@FieldType(Stmt, "contract")) = StmtContract.init(zspan(), ContractKind.postcond, exprs); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:616
                 { _error_ctx = .{ .message = "buildStmt: unexpected PNode variant" }; return error.ZebraError; }
             },
@@ -3903,7 +3903,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:688
                         tname = m.member;
                     },
-                    else => |_| {
+                    else => {
 // zbr:selfhost/astbuilder.zbr:690
                         return null;
                     },
@@ -3940,7 +3940,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:704
                 return StructPat.init(tname, fields);
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:706
                 return null;
             },
@@ -3978,15 +3978,15 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:728
                 return Expr{ .bool_lit = ExprBoolLit.init(zspan(), v) };
             },
-            .expr_nil => |_| {
+            .expr_nil => {
 // zbr:selfhost/astbuilder.zbr:731
                 return Expr{ .nil_ = zspan() };
             },
-            .expr_this => |_| {
+            .expr_this => {
 // zbr:selfhost/astbuilder.zbr:734
                 return Expr{ .this_ = zspan() };
             },
-            .expr_result => |_| {
+            .expr_result => {
 // zbr:selfhost/astbuilder.zbr:737
                 return Expr{ .result_ = zspan() };
             },
@@ -4100,7 +4100,7 @@ pub const ASTBuilder = struct {
                                 { _error_ctx = .{ .message = "buildExpr: `is` member object must be a plain identifier" }; return error.ZebraError; }
                             }
                         },
-                        else => |_| {
+                        else => {
 // zbr:selfhost/astbuilder.zbr:809
                             { _error_ctx = .{ .message = "buildExpr: `is` RHS must be a plain identifier or Union.variant" }; return error.ZebraError; }
                         },
@@ -4153,7 +4153,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:834
                         return Expr{ .call = blk_box_61: { const _bv: std.meta.Child(@FieldType(Expr, "call")) = ExprCall.init(zspan(), callee_expr, args); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_61 _bp; } };
                     },
-                    else => |_| {
+                    else => {
 // zbr:selfhost/astbuilder.zbr:836
                         { _error_ctx = .{ .message = "buildExpr: pipeline RHS must be a call expression" }; return error.ZebraError; }
                     },
@@ -4260,7 +4260,7 @@ pub const ASTBuilder = struct {
                         .expr_format => |fspec| {
                             parts.append(_allocator, StringPart{ .format = fspec[@as(usize, @intCast(1))..@as(usize, @intCast(@as(i64, @intCast(fspec.len))))] }) catch @panic("OOM");
                         },
-                        else => |_| {
+                        else => {
 // zbr:selfhost/astbuilder.zbr:892
                             const part_expr = try self.buildExpr(part);
                             parts.append(_allocator, StringPart{ .expr_ = blk_box_69: { const _bv: std.meta.Child(@FieldType(StringPart, "expr_")) = part_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_69 _bp; } }) catch @panic("OOM");
@@ -4326,7 +4326,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:928
                 return Expr{ .chained_cmp = blk_box_74: { const _bv: std.meta.Child(@FieldType(Expr, "chained_cmp")) = ExprChainedCmp.init(zspan(), ops_list, operands_list); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_74 _bp; } };
             },
-            else => |_| {
+            else => {
 // zbr:selfhost/astbuilder.zbr:931
                 { _error_ctx = .{ .message = "buildExpr: unexpected PNode variant" }; return error.ZebraError; }
             },

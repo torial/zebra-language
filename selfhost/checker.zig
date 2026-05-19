@@ -813,7 +813,7 @@ fn _http_serve(port: u16, handler: anytype) void {
                 500 => "Internal Server Error",
                 else => "Unknown",
             };
-            var _xh: std.ArrayList(u8) = .{};
+            var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
@@ -1061,7 +1061,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
 }
 
 fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
-    var msg: std.ArrayList(u8) = .{};
+    var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
@@ -1191,7 +1191,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
-    var _rows: std.ArrayList([]const []const u8) = .{};
+    var _rows: std.ArrayList([]const []const u8) = .empty;
     var _row:  std.ArrayList([]const u8) = .{};
     var _f:    std.ArrayList(u8) = .{};
     const _St = enum { s, fld, q, aq };
@@ -1239,25 +1239,25 @@ fn _csv_parse_file(path: []const u8) _CsvTable {
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
 fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
@@ -1297,7 +1297,7 @@ fn _tcp_read(conn: TcpConn) []const u8 {
     return _hb.written();
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
-    var _buf: std.ArrayList(u8) = .{};
+    var _buf: std.ArrayList(u8) = .empty;
     while (true) {
         var _b: [1]u8 = undefined;
         const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
@@ -1342,7 +1342,7 @@ fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
 fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
 
 fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .{};
+    var _result: std.ArrayList([]const u8) = .empty;
     const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
     defer _list.deinit();
     for (_list.addrs) |_addr| {
@@ -2391,8 +2391,8 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
 // ── Profile stdlib ────────────────────────────────────────────────────────────
 const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
 var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
-var _profile_name_stack: std.ArrayList([]const u8) = .{};
-var _profile_time_stack: std.ArrayList(i128) = .{};
+var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
     _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
@@ -2400,7 +2400,7 @@ fn _profile_start(name: []const u8) void {
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
     const elapsed_ns = std.time.nanoTimestamp() - start_ns;
-    var key_buf: std.ArrayList(u8) = .{};
+    var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
         if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
@@ -2417,7 +2417,7 @@ fn _profile_end() void {
 }
 fn _profile_report() void {
     const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
-    var list: std.ArrayList(_ProfEntry) = .{};
+    var list: std.ArrayList(_ProfEntry) = .empty;
     defer list.deinit(std.heap.page_allocator);
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
@@ -2514,7 +2514,7 @@ fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64
 }
 // ── File extended ─────────────────────────────────────────────────────────────
 fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
-    var content = std.ArrayList(u8){};
+    var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {
         content.appendSlice(_allocator, line) catch return;
@@ -2633,9 +2633,9 @@ pub const UnionInfo = struct {
 // zbr:selfhost/checker.zbr:30
             _self.line = line;
 // zbr:selfhost/checker.zbr:31
-            _self.variants = std.ArrayList([]const u8){};
+            _self.variants = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:32
-            _self.variant_lines = std.ArrayList(i64){};
+            _self.variant_lines = std.ArrayList(i64).empty;
         return _self;
     }
 
@@ -2708,21 +2708,21 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:79
             _self.match_sites = std.StringHashMap(std.ArrayList([]const u8)).init(_allocator);
 // zbr:selfhost/checker.zbr:80
-            _self.match_key_list = std.ArrayList([]const u8){};
+            _self.match_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:81
             _self.constructed_set = std.StringHashMap(bool).init(_allocator);
 // zbr:selfhost/checker.zbr:82
-            _self.constructed_key_list = std.ArrayList([]const u8){};
+            _self.constructed_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:83
             _self.module_fns = std.StringHashMap([]const u8).init(_allocator);
 // zbr:selfhost/checker.zbr:84
-            _self.module_fn_key_list = std.ArrayList([]const u8){};
+            _self.module_fn_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:85
             _self.fn_edges = std.StringHashMap(std.ArrayList([]const u8)).init(_allocator);
 // zbr:selfhost/checker.zbr:86
             _self.root_set = std.StringHashMap(bool).init(_allocator);
 // zbr:selfhost/checker.zbr:87
-            _self.root_key_list = std.ArrayList([]const u8){};
+            _self.root_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:88
             _self.reachable_set = std.StringHashMap(bool).init(_allocator);
 // zbr:selfhost/checker.zbr:89
@@ -2744,7 +2744,7 @@ pub const DeadCodeChecker = struct {
         const key: []const u8 = _str_concat(_str_concat(union_name, ":", _allocator), variant, _allocator);
 // zbr:selfhost/checker.zbr:98
         if ((!self.match_sites.contains(key))) {
-            self.match_sites.put(_intern(key), std.ArrayList([]const u8){}) catch @panic("OOM");
+            self.match_sites.put(_intern(key), std.ArrayList([]const u8).empty) catch @panic("OOM");
             self.match_key_list.append(_allocator, _intern(key)) catch @panic("OOM");
         }
 // zbr:selfhost/checker.zbr:101
@@ -2775,7 +2775,7 @@ pub const DeadCodeChecker = struct {
         if ((!self.module_fns.contains(key))) {
             self.module_fns.put(_intern(key), _intern(_str_concat(_str_concat(file, ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{line}) catch unreachable), _allocator))) catch @panic("OOM");
             self.module_fn_key_list.append(_allocator, _intern(key)) catch @panic("OOM");
-            self.fn_edges.put(_intern(key), std.ArrayList([]const u8){}) catch @panic("OOM");
+            self.fn_edges.put(_intern(key), std.ArrayList([]const u8).empty) catch @panic("OOM");
         }
     }
 
@@ -2813,7 +2813,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:139
         if ((std.mem.indexOf(u8, fn_key, "::") != null)) {
 // zbr:selfhost/checker.zbr:140
-            const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, fn_key, "::"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+            const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_1 = std.mem.splitSequence(u8, fn_key, "::"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/checker.zbr:141
             if (_zebra_ge(@as(i64, @intCast(parts.items.len)), 2)) {
 // zbr:selfhost/checker.zbr:142
@@ -2893,7 +2893,7 @@ pub const DeadCodeChecker = struct {
                     ni = (ni + 1);
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -2964,7 +2964,7 @@ pub const DeadCodeChecker = struct {
                     ni = (ni + 1);
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3002,7 +3002,7 @@ pub const DeadCodeChecker = struct {
                         self.walkExpr(v.init_expr.?.*, file, false);
                     }
                 },
-                else => |_| {
+                else => {
                     // pass
                 },
             }
@@ -3222,7 +3222,7 @@ pub const DeadCodeChecker = struct {
                     cti = (cti + 1);
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3385,7 +3385,7 @@ pub const DeadCodeChecker = struct {
                             const avu = _ptr_avu.*;
                             self.walkExpr(avu.operand.*, file, false);
                         },
-                        else => |_| {
+                        else => {
                             // pass
                         },
                     }
@@ -3601,7 +3601,7 @@ pub const DeadCodeChecker = struct {
                             self.walkExpr(efvb.left.*, file, false);
                             self.walkExpr(efvb.right.*, file, false);
                         },
-                        else => |_| {
+                        else => {
                             // pass
                         },
                     }
@@ -3613,7 +3613,7 @@ pub const DeadCodeChecker = struct {
                 const eold = _ptr_eold.*;
                 self.walkExpr(eold.operand.*, file, false);
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3621,7 +3621,7 @@ pub const DeadCodeChecker = struct {
 
     pub fn computeReachability(self: *DeadCodeChecker) void {
 // zbr:selfhost/checker.zbr:556
-        var pending = std.ArrayList([]const u8){};
+        var pending = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:558
         var ri: i64 = 0;
 // zbr:selfhost/checker.zbr:559
@@ -3721,7 +3721,7 @@ pub const DeadCodeChecker = struct {
 
     pub fn report(self: *DeadCodeChecker) []const u8 {
 // zbr:selfhost/checker.zbr:607
-        var sb = std.ArrayList(u8){};
+        var sb = std.ArrayList(u8).empty;
 // zbr:selfhost/checker.zbr:608
         const RED: []const u8 = "\x1b[31m";
 // zbr:selfhost/checker.zbr:609
@@ -3735,7 +3735,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:615
         var dead_count: i64 = 0;
 // zbr:selfhost/checker.zbr:616
-        var dead_sb = std.ArrayList(u8){};
+        var dead_sb = std.ArrayList(u8).empty;
 // zbr:selfhost/checker.zbr:617
         var i: i64 = 0;
 // zbr:selfhost/checker.zbr:618
@@ -3747,7 +3747,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:621
                 dead_count = (dead_count + 1);
 // zbr:selfhost/checker.zbr:622
-                const kparts: std.ArrayList([]const u8) = blk092_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_2 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
+                const kparts: std.ArrayList([]const u8) = blk092_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_2 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
 // zbr:selfhost/checker.zbr:623
                 const uname: []const u8 = kparts.items[@intCast(0)];
 // zbr:selfhost/checker.zbr:624
@@ -3771,7 +3771,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:635
         var phantom_count: i64 = 0;
 // zbr:selfhost/checker.zbr:636
-        var phantom_sb = std.ArrayList(u8){};
+        var phantom_sb = std.ArrayList(u8).empty;
 // zbr:selfhost/checker.zbr:637
         i = 0;
 // zbr:selfhost/checker.zbr:638
@@ -3783,7 +3783,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:641
                 phantom_count = (phantom_count + 1);
 // zbr:selfhost/checker.zbr:642
-                const kparts: std.ArrayList([]const u8) = blk092_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_3 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_3.next()) |_se_3| { _ll_3.append(_allocator, _se_3) catch @panic("OOM"); } break :blk092_3 _ll_3; };
+                const kparts: std.ArrayList([]const u8) = blk092_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_3 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_3.next()) |_se_3| { _ll_3.append(_allocator, _se_3) catch @panic("OOM"); } break :blk092_3 _ll_3; };
 // zbr:selfhost/checker.zbr:643
                 const uname: []const u8 = kparts.items[@intCast(0)];
 // zbr:selfhost/checker.zbr:644
@@ -3796,7 +3796,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/checker.zbr:649
         var unreachable_count: i64 = 0;
 // zbr:selfhost/checker.zbr:650
-        var unreach_sb = std.ArrayList(u8){};
+        var unreach_sb = std.ArrayList(u8).empty;
 // zbr:selfhost/checker.zbr:651
         i = 0;
 // zbr:selfhost/checker.zbr:652
@@ -3873,7 +3873,7 @@ pub fn checkerDirOf(path: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/checker.zbr:698
-    const parts: std.ArrayList([]const u8) = blk092_4: { var _ll_4: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_4 = std.mem.splitSequence(u8, path, "/"); while (_split_iter_4.next()) |_se_4| { _ll_4.append(_allocator, _se_4) catch @panic("OOM"); } break :blk092_4 _ll_4; };
+    const parts: std.ArrayList([]const u8) = blk092_4: { var _ll_4: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_4 = std.mem.splitSequence(u8, path, "/"); while (_split_iter_4.next()) |_se_4| { _ll_4.append(_allocator, _se_4) catch @panic("OOM"); } break :blk092_4 _ll_4; };
 // zbr:selfhost/checker.zbr:699
     if (_zebra_le(@as(i64, @intCast(parts.items.len)), 1)) {
 // zbr:selfhost/checker.zbr:700
@@ -3964,9 +3964,9 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 
 pub fn runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/checker.zbr:744
-    var visited = std.ArrayList([]const u8){};
+    var visited = std.ArrayList([]const u8).empty;
 // zbr:selfhost/checker.zbr:745
-    var modules = std.ArrayList(Module){};
+    var modules = std.ArrayList(Module).empty;
     try checkerLoadDeps(root_path, &visited, &modules);
 // zbr:selfhost/checker.zbr:747
     const n_deps: i64 = (@as(i64, @intCast(modules.items.len)) - 1);

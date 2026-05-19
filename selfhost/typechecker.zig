@@ -3303,7 +3303,7 @@ pub fn typeFromRef(tr: TypeRef) Type_ {
 // zbr:selfhost/typechecker.zbr:517
             return Type_{ .ref_to = blk_box_5: { const _bv: std.meta.Child(@FieldType(Type_, "ref_to")) = typeFromRef(inner); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
         },
-        .void_ => |_| {
+        .void_ => {
 // zbr:selfhost/typechecker.zbr:519
             return Type_.void_;
         },
@@ -3338,11 +3338,11 @@ pub fn typeFromRef(tr: TypeRef) Type_ {
 // zbr:selfhost/typechecker.zbr:533
             return Type_{ .tuple_ = TupleType_.init(ttelems) };
         },
-        .alias_applied => |_| {
+        .alias_applied => {
 // zbr:selfhost/typechecker.zbr:536
             return Type_.unknown_;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:539
             return Type_.unknown_;
         },
@@ -3352,7 +3352,7 @@ pub fn typeFromRef(tr: TypeRef) Type_ {
 pub fn isStrSetOrWrapped(t: Type_) bool {
 // zbr:selfhost/typechecker.zbr:549
     switch (t) {
-        .str_set => |_| {
+        .str_set => {
 // zbr:selfhost/typechecker.zbr:551
             return true;
         },
@@ -3366,7 +3366,7 @@ pub fn isStrSetOrWrapped(t: Type_) bool {
 // zbr:selfhost/typechecker.zbr:555
             return isStrSetOrWrapped(inner);
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:557
             return false;
         },
@@ -3390,7 +3390,7 @@ pub fn isHashMapTypeRef(tr: TypeRef) bool {
 // zbr:selfhost/typechecker.zbr:569
             return isHashMapTypeRef(inner);
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:571
             return false;
         },
@@ -3414,7 +3414,7 @@ pub fn isListTypeRef(tr: TypeRef) bool {
 // zbr:selfhost/typechecker.zbr:583
             return isListTypeRef(inner);
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:585
             return false;
         },
@@ -3544,7 +3544,7 @@ pub fn addClassMembers(mt: *ModuleTypes, ct: *ClassTypes, members: std.ArrayList
                     }
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -3740,7 +3740,7 @@ pub fn populateModuleTypes(mt: *ModuleTypes, m: Module) void {
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes);
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -4145,7 +4145,7 @@ pub fn stripModulePrefix(name: []const u8) []const u8 {
 pub fn isString(t: Type_) bool {
 // zbr:selfhost/typechecker.zbr:996
     switch (t) {
-        .string_ => |_| {
+        .string_ => {
 // zbr:selfhost/typechecker.zbr:998
             return true;
         },
@@ -4153,7 +4153,7 @@ pub fn isString(t: Type_) bool {
 // zbr:selfhost/typechecker.zbr:1001
             return std.mem.eql(u8, cm.type_name, "String");
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:1003
             return false;
         },
@@ -4258,31 +4258,31 @@ pub fn stringMethodReturn(name: []const u8) ?Type_ {
 pub fn typeTag(t: Type_) []const u8 {
 // zbr:selfhost/typechecker.zbr:1051
     switch (t) {
-        .int_ => |_| {
+        .int_ => {
 // zbr:selfhost/typechecker.zbr:1053
             return "int";
         },
-        .uint_ => |_| {
+        .uint_ => {
 // zbr:selfhost/typechecker.zbr:1055
             return "uint";
         },
-        .float_ => |_| {
+        .float_ => {
 // zbr:selfhost/typechecker.zbr:1057
             return "flt";
         },
-        .bool_ => |_| {
+        .bool_ => {
 // zbr:selfhost/typechecker.zbr:1059
             return "bool";
         },
-        .char_ => |_| {
+        .char_ => {
 // zbr:selfhost/typechecker.zbr:1061
             return "char";
         },
-        .string_ => |_| {
+        .string_ => {
 // zbr:selfhost/typechecker.zbr:1063
             return "str";
         },
-        .void_ => |_| {
+        .void_ => {
 // zbr:selfhost/typechecker.zbr:1065
             return "void";
         },
@@ -4290,19 +4290,19 @@ pub fn typeTag(t: Type_) []const u8 {
 // zbr:selfhost/typechecker.zbr:1067
             return _str_concat(_str_concat("named(", n, _allocator), ")", _allocator);
         },
-        .optional => |_| {
+        .optional => {
 // zbr:selfhost/typechecker.zbr:1069
             return "opt";
         },
-        .ref_to => |_| {
+        .ref_to => {
 // zbr:selfhost/typechecker.zbr:1071
             return "ref";
         },
-        .cross_module => |_| {
+        .cross_module => {
 // zbr:selfhost/typechecker.zbr:1073
             return "crossmod";
         },
-        .str_slice => |_| {
+        .str_slice => {
 // zbr:selfhost/typechecker.zbr:1075
             return "slice";
         },
@@ -4320,35 +4320,35 @@ pub fn typeTag(t: Type_) []const u8 {
 // zbr:selfhost/typechecker.zbr:1081
             return _str_concat(_str_concat("chan(", typeTag(ce), _allocator), ")", _allocator);
         },
-        .tuple_ => |_| {
+        .tuple_ => {
 // zbr:selfhost/typechecker.zbr:1083
             return "tpl";
         },
-        .string_builder => |_| {
+        .string_builder => {
 // zbr:selfhost/typechecker.zbr:1085
             return "sbld";
         },
-        .regex => |_| {
+        .regex => {
 // zbr:selfhost/typechecker.zbr:1087
             return "rgx";
         },
-        .str_set => |_| {
+        .str_set => {
 // zbr:selfhost/typechecker.zbr:1089
             return "sset";
         },
-        .unknown_ => |_| {
+        .unknown_ => {
 // zbr:selfhost/typechecker.zbr:1091
             return "unk";
         },
-        .context_dependent => |_| {
+        .context_dependent => {
 // zbr:selfhost/typechecker.zbr:1093
             return "ctx";
         },
-        .unresolved => |_| {
+        .unresolved => {
 // zbr:selfhost/typechecker.zbr:1095
             return "unres";
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:1097
             return "?";
         },
@@ -4358,31 +4358,31 @@ pub fn typeTag(t: Type_) []const u8 {
 pub fn isNumeric(t: Type_) bool {
 // zbr:selfhost/typechecker.zbr:1101
     switch (t) {
-        .int_ => |_| {
+        .int_ => {
 // zbr:selfhost/typechecker.zbr:1103
             return true;
         },
-        .uint_ => |_| {
+        .uint_ => {
 // zbr:selfhost/typechecker.zbr:1105
             return true;
         },
-        .float_ => |_| {
+        .float_ => {
 // zbr:selfhost/typechecker.zbr:1107
             return true;
         },
-        .int_n => |_| {
+        .int_n => {
 // zbr:selfhost/typechecker.zbr:1109
             return true;
         },
-        .uint_n => |_| {
+        .uint_n => {
 // zbr:selfhost/typechecker.zbr:1111
             return true;
         },
-        .float_n => |_| {
+        .float_n => {
 // zbr:selfhost/typechecker.zbr:1113
             return true;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:1115
             return false;
         },
@@ -4461,37 +4461,37 @@ const _reflect_TcResult_field_types: []const []const u8 = &.{"HashMap(str, Infer
 pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1153
     switch (e) {
-        .int_lit => |_| {
+        .int_lit => {
 // zbr:selfhost/typechecker.zbr:1155
             return Type_.int_;
         },
-        .float_lit => |_| {
+        .float_lit => {
 // zbr:selfhost/typechecker.zbr:1157
             return Type_.float_;
         },
-        .bool_lit => |_| {
+        .bool_lit => {
 // zbr:selfhost/typechecker.zbr:1159
             return Type_.bool_;
         },
-        .char_lit => |_| {
+        .char_lit => {
 // zbr:selfhost/typechecker.zbr:1161
             return Type_.char_;
         },
-        .string_lit => |_| {
+        .string_lit => {
 // zbr:selfhost/typechecker.zbr:1163
             return Type_.string_;
         },
-        .string_interp => |_| {
+        .string_interp => {
 // zbr:selfhost/typechecker.zbr:1165
             return Type_.string_;
         },
-        .nil_ => |_| {
+        .nil_ => {
 // zbr:selfhost/typechecker.zbr:1169
             const inner_unk: Type_ = Type_.context_dependent;
 // zbr:selfhost/typechecker.zbr:1170
             return Type_{ .optional = blk_box_10: { const _bv: std.meta.Child(@FieldType(Type_, "optional")) = inner_unk; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } };
         },
-        .this_ => |_| {
+        .this_ => {
 // zbr:selfhost/typechecker.zbr:1172
             if (std.mem.eql(u8, ctx.current_class, "")) {
 // zbr:selfhost/typechecker.zbr:1173
@@ -4500,7 +4500,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1174
             return Type_{ .named = ctx.current_class };
         },
-        .result_ => |_| {
+        .result_ => {
 // zbr:selfhost/typechecker.zbr:1178
             if (ctx.current_return_type) |crt| {
 // zbr:selfhost/typechecker.zbr:1179
@@ -4551,7 +4551,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1209
                     obj_t = ot;
                 },
-                else => |_| {
+                else => {
                     // pass
                 },
             }
@@ -4635,10 +4635,10 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                     const as_name: Type_ = typeFromName(cname);
 // zbr:selfhost/typechecker.zbr:1251
                     switch (as_name) {
-                        .named => |_| {
+                        .named => {
                             // pass
                         },
-                        else => |_| {
+                        else => {
 // zbr:selfhost/typechecker.zbr:1255
                             return as_name;
                         },
@@ -4726,7 +4726,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1323
                             recv = rro;
                         },
-                        else => |_| {
+                        else => {
                             // pass
                         },
                     }
@@ -4741,7 +4741,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return rt_v;
                             }
                         },
-                        .string_ => |_| {
+                        .string_ => {
 // zbr:selfhost/typechecker.zbr:1332
                             const srt: ?Type_ = stringMethodReturn(mem.member);
 // zbr:selfhost/typechecker.zbr:1333
@@ -4750,7 +4750,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return srt_v;
                             }
                         },
-                        .regex => |_| {
+                        .regex => {
 // zbr:selfhost/typechecker.zbr:1336
                             const mname: []const u8 = mem.member;
 // zbr:selfhost/typechecker.zbr:1337
@@ -4764,7 +4764,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return Type_.bool_;
                             }
                         },
-                        .string_builder => |_| {
+                        .string_builder => {
 // zbr:selfhost/typechecker.zbr:1342
                             const sbmname: []const u8 = mem.member;
 // zbr:selfhost/typechecker.zbr:1343
@@ -4778,7 +4778,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return Type_.int_;
                             }
                         },
-                        .sys_process => |_| {
+                        .sys_process => {
 // zbr:selfhost/typechecker.zbr:1348
                             const pmname: []const u8 = mem.member;
 // zbr:selfhost/typechecker.zbr:1349
@@ -4802,7 +4802,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return Type_.void_;
                             }
                         },
-                        .build_ctx => |_| {
+                        .build_ctx => {
 // zbr:selfhost/typechecker.zbr:1358
                             const bcmname: []const u8 = mem.member;
 // zbr:selfhost/typechecker.zbr:1359
@@ -4813,11 +4813,11 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1361
                             return Type_.void_;
                         },
-                        .build_target => |_| {
+                        .build_target => {
 // zbr:selfhost/typechecker.zbr:1363
                             return Type_.build_target;
                         },
-                        .ws_conn => |_| {
+                        .ws_conn => {
 // zbr:selfhost/typechecker.zbr:1365
                             const wsmname: []const u8 = mem.member;
 // zbr:selfhost/typechecker.zbr:1366
@@ -4915,7 +4915,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
                                 return Type_{ .list_ = blk_box_17: { const _bv: std.meta.Child(@FieldType(Type_, "list_")) = hmt.val_t; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
                             }
                         },
-                        else => |_| {
+                        else => {
                             // pass
                         },
                     }
@@ -4975,7 +4975,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1431
                     return Type_.unresolved;
                 },
-                else => |_| {
+                else => {
 // zbr:selfhost/typechecker.zbr:1433
                     return Type_.unresolved;
                 },
@@ -4997,7 +4997,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1443
                     return opt;
                 },
-                else => |_| {
+                else => {
 // zbr:selfhost/typechecker.zbr:1445
                     return inner;
                 },
@@ -5021,7 +5021,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1456
                     return opt_o;
                 },
-                else => |_| {
+                else => {
 // zbr:selfhost/typechecker.zbr:1458
                     return lt_o;
                 },
@@ -5166,7 +5166,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
             const idx_recv: Type_ = inferExpr(ei.object.*, ctx);
 // zbr:selfhost/typechecker.zbr:1528
             switch (idx_recv) {
-                .string_ => |_| {
+                .string_ => {
 // zbr:selfhost/typechecker.zbr:1530
                     return Type_.char_;
                 },
@@ -5175,7 +5175,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1532
                     return list_elem;
                 },
-                else => |_| {
+                else => {
 // zbr:selfhost/typechecker.zbr:1534
                     return Type_.unresolved;
                 },
@@ -5187,15 +5187,15 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
             const sl_recv: Type_ = inferExpr(esl.object.*, ctx);
 // zbr:selfhost/typechecker.zbr:1538
             switch (sl_recv) {
-                .string_ => |_| {
+                .string_ => {
 // zbr:selfhost/typechecker.zbr:1540
                     return Type_.string_;
                 },
-                .list_ => |_| {
+                .list_ => {
 // zbr:selfhost/typechecker.zbr:1542
                     return sl_recv;
                 },
-                else => |_| {
+                else => {
 // zbr:selfhost/typechecker.zbr:1544
                     return Type_.unresolved;
                 },
@@ -5301,7 +5301,7 @@ pub fn inferExpr(e: Expr, ctx: *InferCtx) Type_ {
 // zbr:selfhost/typechecker.zbr:1588
             return Type_{ .tuple_ = TupleType_.init(telems) };
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:1590
             return Type_.unresolved;
         },
@@ -5691,13 +5691,13 @@ pub fn walkStmt(s: Stmt, ctx: *InferCtx) void {
             const sau = _ptr_sau.*;
             walkExpr(sau.expr.*, ctx);
         },
-        .pass_ => |_| {
+        .pass_ => {
             // pass
         },
-        .break_ => |_| {
+        .break_ => {
             // pass
         },
-        .continue_ => |_| {
+        .continue_ => {
             // pass
         },
         .assign => |_ptr_sasn| {
@@ -6037,7 +6037,7 @@ pub fn checkCallExpr(call: ExprCall, file: []const u8, line: i64, ctx: *InferCtx
                 return;
             }
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker.zbr:1999
             return;
         },
@@ -6384,7 +6384,7 @@ pub fn checkStmts(stmts: std.ArrayList(Stmt), file: []const u8, ctx: *InferCtx) 
                     }
                 }
             },
-            else => |_| {
+            else => {
                 // pass
             },
         }
@@ -6462,7 +6462,7 @@ pub fn checkDecl(decl: Decl, file: []const u8, ctx: *InferCtx, tc_result: *TcRes
             const dv = _ptr_dv.*;
             checkVarDecl(dv, file, ctx);
         },
-        else => |_| {
+        else => {
             // pass
         },
     }

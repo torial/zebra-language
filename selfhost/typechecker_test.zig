@@ -1560,11 +1560,11 @@ pub fn typeIsString(t: Type_) bool {
 pub fn typeIsNamed(t: Type_) bool {
 // zbr:selfhost/typechecker_test.zbr:36
     switch (t) {
-        .named => |_| {
+        .named => {
 // zbr:selfhost/typechecker_test.zbr:38
             return true;
         },
-        else => |_| {
+        else => {
 // zbr:selfhost/typechecker_test.zbr:40
             return false;
         },
@@ -1736,7 +1736,7 @@ pub fn testCrossModuleType() void {
             check(std.mem.eql(u8, c.module, "parser"), "Type_.cross_module.module");
             check(std.mem.eql(u8, c.type_name, "PNode"), "Type_.cross_module.type_name");
         },
-        else => |_| {
+        else => {
             check(false, "Type_.cross_module branch");
         },
     }

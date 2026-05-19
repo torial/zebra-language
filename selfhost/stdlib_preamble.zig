@@ -810,7 +810,7 @@ fn _http_serve(port: u16, handler: anytype) void {
                 500 => "Internal Server Error",
                 else => "Unknown",
             };
-            var _xh: std.ArrayList(u8) = .{};
+            var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
@@ -1058,7 +1058,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
 }
 
 fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
-    var msg: std.ArrayList(u8) = .{};
+    var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
@@ -1188,7 +1188,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
-    var _rows: std.ArrayList([]const []const u8) = .{};
+    var _rows: std.ArrayList([]const []const u8) = .empty;
     var _row:  std.ArrayList([]const u8) = .{};
     var _f:    std.ArrayList(u8) = .{};
     const _St = enum { s, fld, q, aq };
@@ -1236,25 +1236,25 @@ fn _csv_parse_file(path: []const u8) _CsvTable {
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
 fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
@@ -1294,7 +1294,7 @@ fn _tcp_read(conn: TcpConn) []const u8 {
     return _hb.written();
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
-    var _buf: std.ArrayList(u8) = .{};
+    var _buf: std.ArrayList(u8) = .empty;
     while (true) {
         var _b: [1]u8 = undefined;
         const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
@@ -1339,7 +1339,7 @@ fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
 fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
 
 fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .{};
+    var _result: std.ArrayList([]const u8) = .empty;
     const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
     defer _list.deinit();
     for (_list.addrs) |_addr| {
@@ -2388,8 +2388,8 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
 // ── Profile stdlib ────────────────────────────────────────────────────────────
 const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
 var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
-var _profile_name_stack: std.ArrayList([]const u8) = .{};
-var _profile_time_stack: std.ArrayList(i128) = .{};
+var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
     _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
@@ -2397,7 +2397,7 @@ fn _profile_start(name: []const u8) void {
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
     const elapsed_ns = std.time.nanoTimestamp() - start_ns;
-    var key_buf: std.ArrayList(u8) = .{};
+    var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
         if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
@@ -2414,7 +2414,7 @@ fn _profile_end() void {
 }
 fn _profile_report() void {
     const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
-    var list: std.ArrayList(_ProfEntry) = .{};
+    var list: std.ArrayList(_ProfEntry) = .empty;
     defer list.deinit(std.heap.page_allocator);
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
@@ -2511,7 +2511,7 @@ fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64
 }
 // ── File extended ─────────────────────────────────────────────────────────────
 fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
-    var content = std.ArrayList(u8){};
+    var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {
         content.appendSlice(_allocator, line) catch return;

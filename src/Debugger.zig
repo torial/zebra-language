@@ -602,9 +602,9 @@ fn compileDebug(zig_path: []const u8, c_sources: []const []u8, alloc: std.mem.Al
     const term = try child.spawnAndWait();
     return switch (term) {
         .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .Signal  => 1,
+        .Stopped => 1,
+        .Unknown => 1,
     };
 }
 
@@ -831,9 +831,9 @@ pub fn runDebugSession(
     const term = try lldb_child.wait();
     return switch (term) {
         .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .Signal  => 1,
+        .Stopped => 1,
+        .Unknown => 1,
     };
 }
 
@@ -1001,8 +1001,8 @@ pub fn runDebugSessionListen(
     const term = try lldb_child.wait();
     return switch (term) {
         .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .Signal  => 1,
+        .Stopped => 1,
+        .Unknown => 1,
     };
 }
