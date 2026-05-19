@@ -75,11 +75,14 @@ const Builder = struct {
         var pending_reflectable = false;
         var pending_profile = false;
         var pending_once = false;
+        var pending_derive_debug = false;
+        var pending_derive_eq = false;
+        var pending_derive_hash = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_tags);
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -87,20 +90,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_tags);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_tags);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_tags);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -116,6 +119,9 @@ const Builder = struct {
             } else if (std.mem.eql(u8, name, "tag")) {
                 // @tag("foo", "bar") — extract string literals from ArgList
                 if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
+            } else if (std.mem.eql(u8, name, "derive")) {
+                // @derive(Debug, Eq, Hash) — extract identifier names from ArgList
+                if (at_kids.len > 2) try b.extractDeriveIdents(at_kids[2], pending_derive_debug, pending_derive_eq, pending_derive_hash);
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -153,6 +159,17 @@ const Builder = struct {
             };
             pending_once.* = false;
         }
+        if (pending_derive_debug.* or pending_derive_eq.* or pending_derive_hash.*) {
+            applyDerive(&d, pending_derive_debug.*, pending_derive_eq.*, pending_derive_hash.*) catch |err| switch (err) {
+                error.DeriveOnNonStruct => std.debug.panic(
+                    "@derive can only precede `struct` declarations",
+                    .{},
+                ),
+            };
+            pending_derive_debug.* = false;
+            pending_derive_eq.* = false;
+            pending_derive_hash.* = false;
+        }
         try out.append(b.arena, d);
     }
 
@@ -168,7 +185,8 @@ const Builder = struct {
             .EnumDecl      => .{ .enum_     = try b.box(Ast.DeclEnum,      try b.buildEnumDecl(decl_node)) },
             .ExtendDecl    => .{ .extend    = try b.box(Ast.DeclExtend,    try b.buildExtendDecl(decl_node)) },
             .DeclUnion     => .{ .union_    = try b.box(Ast.DeclUnion,      try b.buildDeclUnion(decl_node)) },
-            .SigDecl       => .{ .sig_      = try b.box(Ast.DeclSig,        try b.buildSigDecl(decl_node)) },
+            .SigDecl       => .{ .sig_       = try b.box(Ast.DeclSig,       try b.buildSigDecl(decl_node)) },
+            .TypeAliasDecl => .{ .type_alias = try b.box(Ast.DeclTypeAlias, try b.buildTypeAliasDecl(decl_node)) },
             .MethodDecl    => blk: {
                 var m = try b.buildMethodDecl(decl_node);
                 m.is_top_level = true;
@@ -237,6 +255,32 @@ const Builder = struct {
                 },
                 else => {},
             }
+        }
+    }
+
+    fn extractDeriveIdents(b: Builder, args_node: TN, dbg: *bool, eq: *bool, hash: *bool) !void {
+        const args = try b.buildArgListNode(args_node);
+        for (args) |arg| {
+            switch (arg.value.*) {
+                .ident => |id| {
+                    if (std.mem.eql(u8, id.name, "Debug")) dbg.* = true
+                    else if (std.mem.eql(u8, id.name, "Eq"))    eq.* = true
+                    else if (std.mem.eql(u8, id.name, "Hash"))  hash.* = true
+                    else std.debug.print("warning: unknown @derive trait '{s}'; ignored\n", .{id.name});
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn applyDerive(d: *Ast.Decl, dbg: bool, eq: bool, hash: bool) error{DeriveOnNonStruct}!void {
+        switch (d.*) {
+            .struct_ => |s| {
+                if (dbg)  s.mods.derive_debug = true;
+                if (eq)   s.mods.derive_eq    = true;
+                if (hash) s.mods.derive_hash  = true;
+            },
+            else => return error.DeriveOnNonStruct,
         }
     }
 
@@ -1014,8 +1058,18 @@ const Builder = struct {
             },
             3 => blk: {
                 if (isLeafKind(kids[0], .open_call)) {
-                    // open_call TypeRefListNE rparen — generic type e.g. List(int)
                     const name = leafText(kids[0], b.tokens);
+                    if (kids[1] == .inner and ntOf(kids[1]) == .ValueArgListNE) {
+                        // open_call ValueArgListNE rparen — value-parameterized alias e.g. Bounded(0, 100)
+                        var args = std.ArrayList(Ast.Expr){};
+                        try b.collectValueArgListNE(kids[1], &args);
+                        break :blk .{ .alias_applied = .{
+                            .span = spanOf(node, b.tokens),
+                            .name = name,
+                            .args = try args.toOwnedSlice(b.arena),
+                        }};
+                    }
+                    // open_call TypeRefListNE rparen — generic type e.g. List(int)
                     const args = try b.buildTypeRefListNE(kids[1]);
                     break :blk .{ .generic = .{
                         .span = spanOf(node, b.tokens),
@@ -1057,6 +1111,47 @@ const Builder = struct {
             },
             else => std.debug.panic("buildTypeRef: child count {}", .{kids.len}),
         };
+    }
+
+    fn collectValueArgListNE(b: Builder, node: TN, out: *std.ArrayList(Ast.Expr)) anyerror!void {
+        // ValueArgListNE → ValueArg | ValueArgListNE comma ValueArg
+        // ValueArg → integer_lit | float_lit | string_lit | minus integer_lit | minus float_lit
+        const kids = ch(node);
+        if (kids.len == 1) {
+            try out.append(b.arena, try b.buildValueArg(kids[0]));
+        } else {
+            try b.collectValueArgListNE(kids[0], out);
+            try out.append(b.arena, try b.buildValueArg(kids[2]));
+        }
+    }
+
+    fn buildValueArg(b: Builder, node: TN) anyerror!Ast.Expr {
+        // ValueArg → integer_lit | float_lit | string_single | string_double
+        //           | minus integer_lit | minus float_lit
+        const kids = ch(node);
+        const span = spanOf(node, b.tokens);
+        if (kids.len == 1) {
+            const tok  = kids[0].leaf.token;
+            const text = leafText(kids[0], b.tokens);
+            return switch (tok) {
+                .integer_lit   => .{ .int_lit   = .{ .span = span, .text = text,
+                                      .base = if (std.mem.startsWith(u8, text, "0x")) .hex else .decimal } },
+                .float_lit     => .{ .float_lit = .{ .span = span, .text = text } },
+                .string_single,
+                .string_double => .{ .string_lit = .{ .span = span, .text = text, .kind = .plain } },
+                else => std.debug.panic("buildValueArg: unexpected token {s}", .{@tagName(tok)}),
+            };
+        } else {
+            // minus integer_lit or minus float_lit — store the negated text
+            const tok  = kids[1].leaf.token;
+            const text = leafText(kids[1], b.tokens);
+            const neg  = try std.fmt.allocPrint(b.arena, "-{s}", .{text});
+            return switch (tok) {
+                .integer_lit => .{ .int_lit   = .{ .span = span, .text = neg, .base = .decimal } },
+                .float_lit   => .{ .float_lit = .{ .span = span, .text = neg } },
+                else => std.debug.panic("buildValueArg: unexpected token {s} after minus", .{@tagName(tok)}),
+            };
+        }
     }
 
     fn buildTypeRefListNE(b: Builder, node: TN) anyerror![]const Ast.TypeRef {
@@ -1871,6 +1966,77 @@ const Builder = struct {
             .params      = try b.buildParamList(kids[2]),
             .return_type = try b.buildReturnAnnotOpt(kids[4]),
         };
+    }
+
+    fn buildTypeAliasDecl(b: Builder, node: TN) anyerror!Ast.DeclTypeAlias {
+        const kids = ch(node);
+        // Two productions:
+        //   non-parametric: kw_type id assign TypeRef WhereClauseOpt eol  (6 kids)
+        //   parametric:     kw_type open_call AliasParamListNE rparen assign TypeRef WhereClauseOpt eol  (8 kids)
+        const is_parametric = kids.len == 8;
+        const name_kid    = kids[1];
+        const type_ref_ki = if (is_parametric) @as(usize, 5) else @as(usize, 3);
+        const where_ki    = if (is_parametric) @as(usize, 6) else @as(usize, 4);
+
+        const name = leafText(name_kid, b.tokens);
+        const base = try b.buildTypeRef(kids[type_ref_ki]);
+
+        const params: ?[]Ast.Param = if (is_parametric) blk: {
+            var ps = std.ArrayList(Ast.Param){};
+            try b.collectAliasParams(kids[2], &ps);
+            break :blk try ps.toOwnedSlice(b.arena);
+        } else null;
+
+        const constraint: ?*Ast.Expr = blk: {
+            const where = kids[where_ki];
+            switch (where) {
+                .epsilon => break :blk null,
+                .inner   => |inner| {
+                    const expr = try b.buildExpr(inner.children[1]);
+                    break :blk try b.box(Ast.Expr, expr);
+                },
+                else => break :blk null,
+            }
+        };
+        return .{
+            .span       = spanOf(node, b.tokens),
+            .name       = name,
+            .params     = params,
+            .base       = base,
+            .constraint = constraint,
+        };
+    }
+
+    fn collectAliasParams(b: Builder, node: TN, out: *std.ArrayList(Ast.Param)) anyerror!void {
+        // AliasParamListNE → AliasParam
+        //                  | AliasParamListNE comma AliasParam
+        // AliasParam → id colon TypeRef
+        if (node != .inner) return;
+        const nt = ntOf(node);
+        const kids = ch(node);
+        switch (nt) {
+            .AliasParamListNE => {
+                if (kids.len == 1) {
+                    try b.collectAliasParams(kids[0], out);
+                } else {
+                    // AliasParamListNE comma AliasParam
+                    try b.collectAliasParams(kids[0], out);
+                    try b.collectAliasParams(kids[2], out);
+                }
+            },
+            .AliasParam => {
+                const pname = leafText(kids[0], b.tokens);
+                const ptype = try b.buildTypeRef(kids[2]);
+                try out.append(b.arena, .{
+                    .span    = spanOf(node, b.tokens),
+                    .mode    = .normal,
+                    .name    = pname,
+                    .type_   = ptype,
+                    .default = null,
+                });
+            },
+            else => {},
+        }
     }
 
     fn buildDeclUnion(b: Builder, node: TN) anyerror!Ast.DeclUnion {
@@ -2871,7 +3037,7 @@ fn setShared(d: *Ast.Decl) void {
         .mixin    => |n| n.mods.static_ = true,
         .enum_    => |n| n.mods.static_ = true,
         .union_   => |n| n.mods.static_ = true,
-        .use, .namespace, .extend, .sig_ => {}, // no mods field
+        .use, .namespace, .extend, .sig_, .type_alias => {}, // no mods field
     }
 }
 

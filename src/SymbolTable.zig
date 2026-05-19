@@ -76,6 +76,8 @@ pub const SymbolKind = enum {
     type_param,
     /// Named function-type alias (`sig Name(params) as RetType`).
     sig_,
+    /// Named type alias with optional constraint (`type Name = BaseType where ...`).
+    type_alias,
 };
 
 // ── Declaration reference ─────────────────────────────────────────────────────
@@ -111,6 +113,8 @@ pub const DeclRef = union(enum) {
     type_param:    Ast.Span,
     /// Named function-type alias.
     sig_:          *Ast.DeclSig,
+    /// Named type alias.
+    type_alias_:   *Ast.DeclTypeAlias,
 };
 
 // ── Symbol ────────────────────────────────────────────────────────────────────

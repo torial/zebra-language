@@ -1,0 +1,25 @@
+# iter_collision_test.zbr — regression test: two for-in loops with the same
+# variable name in the same scope must not produce Zig _it_ redeclaration errors.
+def main()
+    var s1: str = "a,b,c"
+    var s2: str = "x,y,z"
+    var out1: str = ""
+    var out2: str = ""
+    for p in s1.split(",")
+        out1 = out1 + p
+    for p in s2.split(",")
+        out2 = out2 + p
+    var m: HashMap(str, str) = HashMap()
+    m.set("k1", "hello")
+    m.set("k2", "world")
+    var m2: HashMap(str, str) = HashMap()
+    m2.set("k1", "foo")
+    var count1: int = 0
+    var count2: int = 0
+    for k, v in m
+        if v.len > 0
+            count1 += 1
+    for k, v in m2
+        if v.len > 0
+            count2 += 1
+    print(out1 + " " + out2 + " " + count1.toString() + " " + count2.toString())

@@ -790,6 +790,9 @@ def isReadOnlyMethod(name: str): bool
     # SysProcess methods — proc is a pointer; kill/isRunning never reassign the pointer itself
     if name == "kill" or name == "isRunning"
         return true
+    # @derive(Eq) / @derive(Hash) — take *const Self, do not mutate receiver
+    if name == "eql" or name == "hash"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)
@@ -897,6 +900,8 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                     scanMutationsInto(cl.stmts, out)
             on Stmt.guard_ as g
                 scanMutationsInto(g.else_stmts, out)
+            on Stmt.allocate_ as al
+                scanMutationsInto(al.stmts, out)
             on Stmt.assert_ as a
                 scanMutationsInExpr(a.cond, out)
             on Stmt.assert_eq_ as a

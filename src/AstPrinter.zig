@@ -89,10 +89,11 @@ const Printer = struct {
             .enum_     => |n| try p.printEnum(n.*),
             .extend    => |n| try p.printExtend(n.*),
             .union_    => |n| try p.w("(union {s})", .{n.name}),
-            .sig_      => |n| try p.w("(sig {s})", .{n.name}),
-            .method    => |n| try p.printMethod(n.*),
-            .var_      => |n| try p.printVar(n.*),
-            .init      => |n| try p.printInit(n.*),
+            .sig_       => |n| try p.w("(sig {s})", .{n.name}),
+            .type_alias => |n| try p.w("(type {s})", .{n.name}),
+            .method     => |n| try p.printMethod(n.*),
+            .var_       => |n| try p.printVar(n.*),
+            .init       => |n| try p.printInit(n.*),
         }
     }
 
@@ -297,6 +298,7 @@ const Printer = struct {
                 for (tup.elems) |el| { try p.w(" ", .{}); try p.printTypeRef(el); }
                 try p.w(")", .{});
             },
+            .alias_applied => |aa| try p.w("{s}(...)", .{aa.name}),
         }
     }
 
@@ -533,6 +535,7 @@ const Printer = struct {
                 }
                 try p.w(")", .{});
             },
+            .opt_chain => |n| { try p.printExpr(n.base.*); try p.w("?.{s}", .{n.member}); },
         }
     }
 

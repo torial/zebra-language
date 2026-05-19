@@ -1,0 +1,26 @@
+# Refinement types test: parametric type aliases + struct-based constraints
+
+# Simple parametric alias: integer in [lo, hi]
+type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi
+
+# Multi-field struct constraint (base feature, already worked)
+struct Range
+    var lo: int
+    var hi: int
+
+type ValidRange = Range where value.lo < value.hi
+
+# Negative bounds
+type Temperature(min: int, max: int) = int where value >= min and value <= max
+
+def main()
+    var score: Bounded(0, 100) = 85
+    var neg: Bounded(-50, 50) = -20
+    var temp: Temperature(-273, 1000) = 37
+
+    var r: ValidRange = Range(lo: 0, hi: 10)
+
+    print(score.toString())
+    print(neg.toString())
+    print(temp.toString())
+    print(r.lo.toString())

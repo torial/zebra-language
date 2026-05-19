@@ -197,7 +197,7 @@ struct Point
     var x: int
     var y: int
 
-    cue init(x: int, y: int)
+    cue init(x: int = 0, y: int = 0)  # default params allowed on cue init
         .x = x                        # leading-dot shorthand: param `x` shadows field `x`
         .y = y
 
@@ -208,6 +208,11 @@ struct Point
         var p = this except
             x = nx
         return p
+
+# Call sites — named args and defaults work on constructors too:
+var p1 = Point()                  # x=0, y=0 (all defaults)
+var p2 = Point(y: 5)              # x=0 (default), y=5 (named)
+var p3 = Point(3, 4)              # positional — x=3, y=4
 ```
 
 - `.field` is the canonical receiver-field access (works regardless of local
@@ -1218,26 +1223,42 @@ allocated inside survive naturally; `<-` degenerates to plain assignment for the
 
 ### `<-` copy-out operator
 
-The `<-` operator copies a value from the inner allocator into the parent arena
-and assigns it to an outer variable — surviving the block's deinit:
+The `<-` operator deep-copies a value from the inner allocator into the parent
+allocator and assigns it to an outer variable — surviving the block's deinit:
 
 ```zebra
 var result: str = ""
 allocate Arena()
     var src = File.read("big_file.txt")
     var summary = process(src)
-    result <- summary           # copies 'summary' into the parent arena
+    result <- summary           # deep-copies 'summary' into the parent allocator
 # src + all temporaries freed here; 'result' is safe
 
 # Outside any allocate block: <- is a plain assignment (no copy needed)
 var x: str = ""
 x <- "hello"                    # equivalent to x = "hello"
+
+# List copy-out
+var words: List(str) = List()
+allocate Arena()
+    var inner: List(str) = List()
+    inner.add("hello")
+    inner.add("world")
+    words <- inner              # deep-copies all elements into the parent allocator
+
+# Class instance copy-out (including recursive ^T? fields)
+var head: ^Node? = nil
+allocate Arena()
+    var n = Node("a", Node("b", nil))
+    head <- n                   # recursively copies the entire linked list
 ```
 
-- **`str`:** duplicated into the parent allocator so it survives the block's deinit.
-- **Primitives (`int`, `float`, `bool`):** plain assignment — no heap involved.
+- **`str`:** duplicated into the parent allocator via `alloc.dupe`.
+- **`List(T)`:** a new ArrayList is allocated in the parent; each element is deep-copied.
+- **Class/struct:** each field is recursively deep-copied (handles `^T?` linked lists).
+- **Primitives (`int`, `float`, `bool`, `char`):** plain assignment — no heap involved.
+- **`HashMap`:** not supported — `HashMap` copy-out is a compile error. Iterate and rebuild manually.
 - **Outside a scoped block (or with a non-scoped wrapper):** plain assignment.
-- **Classes and `List`:** `str` + primitives only for now; full deep-copy deferred to 0.14.
 
 ### Why individual `free` calls are absent
 
@@ -1796,3 +1817,188 @@ def main()
 `(T1, T2)` maps to `struct { T1, T2 }` (Zig anonymous tuple struct).
 `(a, b)` maps to `.{ a, b }`.
 `t.0` maps to `t.@"0"`.
+
+## 35. Channels and threads — `Chan(T)` + `sys.go()`
+
+### Chan(T)
+
+`Chan(T)` is a thread-safe buffered channel. Construct with a capacity:
+
+```zebra
+var ch: Chan(int) = Chan(int)(4)   # capacity 4
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `ch.send(val)` | `void` | Send a value; blocks when full |
+| `ch.recv()` | `int?` | Receive a value; blocks when empty; `nil` when closed + empty |
+| `ch.close()` | `void` | Signal no more values; recv drains remaining then returns nil |
+
+The `<-` operator is syntactic sugar:
+
+```zebra
+ch <- 42          # send: ch.send(42)
+var v: int? = nil
+v <- ch           # recv: v = ch.recv()
+```
+
+### sys.go()
+
+`sys.go(lambda)` spawns a fire-and-forget background thread:
+
+```zebra
+sys.go(lambda
+    # runs on a new thread; captures surrounding vars
+    ch.send(1)
+    ch.send(2)
+    ch.close()
+)
+```
+
+The lambda can capture variables from the enclosing scope. Captured variables
+are copied into the thread closure at spawn time.
+
+### Producer / consumer pattern
+
+```zebra
+var ch: Chan(int) = Chan(int)(4)
+
+sys.go(lambda
+    for i in 1..5
+        ch.send(i)
+    ch.close()
+)
+
+var sum: int = 0
+var done: bool = false
+while not done
+    var v: int? = ch.recv()
+    if v as n
+        sum = sum + n
+    else
+        done = true
+# sum == 15
+```
+
+### Notes
+
+- `Chan(T)` uses page-allocator; do not use inside short-lived `allocate` blocks.
+- Closing an already-closed channel is a no-op.
+- Sending to a closed channel panics at runtime.
+- `sys.go()` accepts any zero-parameter lambda (with or without captures).
+- Threads are detached — no join mechanism yet; use a channel to signal completion.
+
+## 36. Type aliases with constraints
+
+A `type` declaration creates a named alias for a base type, optionally with a runtime constraint.
+
+```zebra
+type PositiveInt  = int   where value > 0
+type NonEmptyStr  = str   where value.len > 0
+type Ratio        = float where value >= 0.0 and value <= 1.0
+type UncheckedInt = int                # no constraint
+```
+
+### Transparency
+
+The alias is **transparent** — it maps to the same Zig type as its base. No wrapper struct is created. `PositiveInt` variables hold `i64` and are interchangeable with `int` in arithmetic, assignments, and function calls.
+
+```zebra
+type PositiveInt = int where value > 0
+
+var count: PositiveInt = 42   # OK — 42 > 0
+var doubled: int = count * 2  # fine — transparent
+```
+
+### Constraint syntax
+
+The constraint uses the keyword `value` as the implicit binding for the variable being declared:
+
+```zebra
+type Name = BaseType where <expr-using-value>
+```
+
+The constraint expression has access to all the methods and operators of the base type. For `str`, `value.len`, `value.startsWith(...)`, etc. are all valid.
+
+### Runtime check
+
+After each `var x: AliasType = expr` declaration, the compiler emits:
+
+```zig
+{ const value = x; if (!(constraint)) std.debug.panic("type constraint 'AliasType' failed\n", .{}); }
+```
+
+The check fires at runtime when the variable is initialized, not when the alias is declared.
+
+### --turbo strips checks
+
+Pass `--turbo` to compile with contracts and type-alias checks stripped. Equivalent to release mode for constraint-heavy code.
+
+### Notes
+
+- Only `var` declarations with an explicit alias type annotation trigger checks. Function return values or implicit coercions do not.
+- The `where` clause is optional — `type RawInt = int` is a valid unconstrained alias.
+- Aliases do not participate in the type system beyond name transparency; there is no alias-coercion error.
+
+## 37. Refinement types (parametric aliases)
+
+A type alias can carry **value parameters** that are bound into the constraint expression.  This lets the same alias family describe a whole range of bounds without repeating the constraint.
+
+```zebra
+type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi
+
+var score: Bounded(0, 100) = 85    # OK
+var neg:   Bounded(-50, 50) = -20  # OK
+# var bad: Bounded(0, 100) = 150   # runtime panic: "type constraint 'Bounded' failed"
+```
+
+### Declaration syntax
+
+```
+type AliasName(param1: T1, param2: T2, ...) = BaseType where <expr-using-value-and-params>
+```
+
+The parameters are available in the `where` expression alongside `value`:
+
+```zebra
+type Temperature(min: int, max: int) = int where value >= min and value <= max
+
+var temp: Temperature(-273, 1000) = 37   # body temperature — OK
+```
+
+### Struct base types
+
+The base type can be a struct. The constraint can inspect struct fields through `value.field`:
+
+```zebra
+struct Range
+    var lo: int
+    var hi: int
+
+type ValidRange = Range where value.lo < value.hi
+
+var r: ValidRange = Range(lo: 0, hi: 10)   # OK — lo < hi
+```
+
+(Struct aliases do not support value parameters in v1.)
+
+### Transparency
+
+Refinement types are transparent like plain aliases — `Bounded(0, 100)` variables hold `i64` in the generated Zig and are interchangeable with `int`.
+
+### Generated check
+
+After `var score: Bounded(0, 100) = 85`, the compiler emits:
+
+```zig
+{
+    const lo: i64 = 0;
+    const hi: i64 = 100;
+    const value = score;
+    if (!(value >= lo and value <= hi)) std.debug.panic("type constraint 'Bounded' failed\n", .{});
+}
+```
+
+### --turbo
+
+`--turbo` strips all alias constraint checks, including refinement type checks.

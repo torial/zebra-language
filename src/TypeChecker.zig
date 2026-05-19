@@ -656,11 +656,12 @@ fn extractFromDecls(
             try types.put(key, .class);
             try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types);
         },
-        .mixin     => {},  // mixin members not extracted today
-        .extend    => {},  // extension methods collected by collectExtMethodsInDecls
-        .sig_      => {},  // type alias; no class context
-        .var_      => {},  // top-level var; no class context to register under
-        .init      => {},  // top-level init is malformed; skip safely
+        .mixin      => {},  // mixin members not extracted today
+        .extend     => {},  // extension methods collected by collectExtMethodsInDecls
+        .sig_       => {},  // function-type alias; no class context
+        .type_alias => {},  // type alias; no class members to extract
+        .var_       => {},  // top-level var; no class context to register under
+        .init       => {},  // top-level init is malformed; skip safely
     };
 }
 
@@ -777,11 +778,12 @@ fn extractFromMembers(
         .class     => {},
         .interface => {},
         .struct_   => {},
-        .mixin     => {},
-        .enum_     => {},
-        .extend    => {},
-        .union_    => {},
-        .sig_      => {},
+        .mixin      => {},
+        .enum_      => {},
+        .extend     => {},
+        .union_     => {},
+        .sig_       => {},
+        .type_alias => {},
     };
 }
 
@@ -843,6 +845,8 @@ fn simpleTypeFromRef(
         .ref_to => |inner| simpleTypeFromRef(inner, resolve, alloc),
         // Compound types deferred.
         .stream, .error_union, .generic, .same => .unknown,
+        // Parametric alias applied — treat as same as the named alias at TC time.
+        .alias_applied => .unknown,
     };
 }
 
@@ -906,6 +910,31 @@ fn collectUnionVariantsInDecls(
     };
 }
 
+fn collectEnumMembers(
+    module: Ast.Module,
+    out:    *std.StringHashMap([]const []const u8),
+    alloc:  Allocator,
+) !void {
+    try collectEnumMembersInDecls(module.decls, out, alloc);
+}
+
+fn collectEnumMembersInDecls(
+    decls: []const Ast.Decl,
+    out:   *std.StringHashMap([]const []const u8),
+    alloc: Allocator,
+) !void {
+    for (decls) |decl| switch (decl) {
+        .enum_ => |e| {
+            var names = try alloc.alloc([]const u8, e.members.len);
+            for (e.members, 0..) |m, i| names[i] = m.name;
+            try out.put(e.name, names);
+        },
+        .namespace => |n| try collectEnumMembersInDecls(n.decls, out, alloc),
+        .class     => |c| try collectEnumMembersInDecls(c.members, out, alloc),
+        else       => {},
+    };
+}
+
 // ── Nil narrowing helpers ─────────────────────────────────────────────────────
 
 const NilNarrow = struct { name: []const u8, expr: *const Ast.Expr };
@@ -957,27 +986,29 @@ fn collectExtMethodsInDecls(
                 .class     => {},
                 .interface => {},
                 .struct_   => {},
-                .mixin     => {},
-                .enum_     => {},
-                .var_      => {},  // extend var fields; not collected here
-                .init      => {},  // extend ctors; not collected here
-                .extend    => {},
-                .union_    => {},
-                .sig_      => {},
+                .mixin      => {},
+                .enum_      => {},
+                .var_       => {},  // extend var fields; not collected here
+                .init       => {},  // extend ctors; not collected here
+                .extend     => {},
+                .union_     => {},
+                .sig_       => {},
+                .type_alias => {},
             };
         },
-        .namespace => |n| try collectExtMethodsInDecls(n.decls, out, alloc),
-        .use       => {},  // import; no extension methods
-        .class     => {},
-        .interface => {},
-        .struct_   => {},
-        .mixin     => {},
-        .enum_     => {},
-        .method    => {},  // top-level fn; not an extension method
-        .var_      => {},
-        .init      => {},
-        .union_    => {},
-        .sig_      => {},
+        .namespace  => |n| try collectExtMethodsInDecls(n.decls, out, alloc),
+        .use        => {},  // import; no extension methods
+        .class      => {},
+        .interface  => {},
+        .struct_    => {},
+        .mixin      => {},
+        .enum_      => {},
+        .method     => {},  // top-level fn; not an extension method
+        .var_       => {},
+        .init       => {},
+        .union_     => {},
+        .sig_       => {},
+        .type_alias => {},
     };
 }
 
@@ -1038,6 +1069,9 @@ pub fn typeCheckPass3Ex(
     var union_variants  = std.StringHashMap([]const []const u8).init(map_alloc);
     defer union_variants.deinit();
     try collectUnionVariants(module, &union_variants, map_alloc);
+    var enum_members    = std.StringHashMap([]const []const u8).init(map_alloc);
+    defer enum_members.deinit();
+    try collectEnumMembers(module, &enum_members, map_alloc);
     var ext_methods     = std.StringHashMap(*const Ast.DeclMethod).init(map_alloc);
     try collectExtMethods(module, &ext_methods, map_alloc);
     var iface_decls     = std.StringHashMap(*const Ast.DeclInterface).init(map_alloc);
@@ -1058,6 +1092,7 @@ pub fn typeCheckPass3Ex(
         .loop_var_types       = &loop_var_types,
         .list_elem_types      = &list_elem_types,
         .union_variants       = &union_variants,
+        .enum_members         = &enum_members,
         .narrowed_types       = &narrowed_types,
         .ext_methods          = &ext_methods,
         .imported_modules     = imported_modules,
@@ -1106,6 +1141,9 @@ const TypeChecker = struct {
     /// Union type name → slice of variant name strings.
     /// Used for exhaustiveness checking on `branch`.
     union_variants: *const std.StringHashMap([]const []const u8),
+    /// Enum type name → slice of member name strings.
+    /// Used for exhaustiveness checking on `branch`.
+    enum_members: *const std.StringHashMap([]const []const u8),
     /// Nil-narrowed variable name → unwrapped inner Type.
     /// When `x != nil` is the condition of an `if`, `x` is pushed here for the then_body.
     narrowed_types: *std.StringHashMap(Type),
@@ -1244,8 +1282,9 @@ const TypeChecker = struct {
             .method    => |n| try tc.checkMethod(n),
             .var_      => |n| try tc.checkVarDecl(n, false),
             .init      => |n| try tc.checkInit(n),
-            .union_    => {},  // no body to type-check (variants are types, not expressions)
-            .sig_      => {},  // type alias — no body to type-check
+            .union_      => {},  // no body to type-check (variants are types, not expressions)
+            .sig_        => {},  // function-type alias — no body to type-check
+            .type_alias  => |n| try tc.checkTypeAlias(n),
         }
     }
 
@@ -1274,6 +1313,15 @@ const TypeChecker = struct {
     fn checkEnum(tc: TypeChecker, n: *Ast.DeclEnum) anyerror!void {
         for (n.members) |*m| {
             if (m.value) |v| _ = try tc.inferExpr(v);
+        }
+    }
+
+    fn checkTypeAlias(tc: TypeChecker, n: *Ast.DeclTypeAlias) anyerror!void {
+        if (n.constraint) |c| {
+            const ct = try tc.inferExpr(c);
+            if (ct != .bool and !ct.isAbstract()) {
+                try tc.emitError(n.span, "type alias constraint must be 'bool', got '{s}'", .{ct.name()});
+            }
         }
     }
 
@@ -1689,6 +1737,70 @@ const TypeChecker = struct {
                         }
                     }
                 }
+                // Enum exhaustiveness: error when branch on enum has no else and doesn't cover all members.
+                if (s.else_ == null) {
+                    if (subj_type == .named) {
+                        const sym = subj_type.named;
+                        if (sym.kind == .enum_) {
+                            const type_name = sym.decl.enum_.name;
+                            if (tc.enum_members.get(type_name)) |members| {
+                                var covered = std.StringHashMap(void).init(tc.diag_alloc);
+                                defer covered.deinit();
+                                for (s.on) |on| {
+                                    for (on.values) |v| {
+                                        if (v.* == .member) covered.put(v.member.member, {}) catch {};
+                                    }
+                                }
+                                for (members) |mname| {
+                                    if (covered.get(mname) == null) {
+                                        const msg = try std.fmt.allocPrint(
+                                            tc.diag_alloc,
+                                            "branch on '{s}' does not cover member '{s}' (add 'on {s}.{s}' or an 'else' clause)",
+                                            .{ type_name, mname, type_name, mname },
+                                        );
+                                        try tc.diags.append(tc.diag_alloc, .{
+                                            .span = s.span,
+                                            .kind = .err,
+                                            .message = msg,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // --warn-non-exhaustive for enums: warn when else silently catches unhandled members.
+                if (s.else_ != null and tc.warn_non_exhaustive) {
+                    if (subj_type == .named) {
+                        const sym = subj_type.named;
+                        if (sym.kind == .enum_) {
+                            const type_name = sym.decl.enum_.name;
+                            if (tc.enum_members.get(type_name)) |members| {
+                                var covered = std.StringHashMap(void).init(tc.diag_alloc);
+                                defer covered.deinit();
+                                for (s.on) |on| {
+                                    for (on.values) |v| {
+                                        if (v.* == .member) covered.put(v.member.member, {}) catch {};
+                                    }
+                                }
+                                for (members) |mname| {
+                                    if (covered.get(mname) == null) {
+                                        const msg = try std.fmt.allocPrint(
+                                            tc.diag_alloc,
+                                            "branch on '{s}' has 'else' but does not explicitly handle member '{s}'",
+                                            .{ type_name, mname },
+                                        );
+                                        try tc.diags.append(tc.diag_alloc, .{
+                                            .span = s.span,
+                                            .kind = .warn,
+                                            .message = msg,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             },
             .return_  => |s| try tc.checkReturn(s),
             .assert   => |s| {
@@ -1989,7 +2101,15 @@ const TypeChecker = struct {
             },
             .binary         => |e| try tc.inferBinary(e),
             .unary          => |e| try tc.inferUnary(e),
-            .cast           => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk tc.typeFromRef(&e.target); },
+            .cast           => |e| blk: {
+                const src = try tc.inferExpr(e.expr);
+                const tgt = tc.typeFromRef(&e.target);
+                // BUG-106: reject primitive-to-named-class casts (42 as ClassType)
+                if ((src.isNumeric() or src == .bool or src == .string) and tgt == .named) {
+                    try tc.emitError(e.span, "cannot cast '{s}' to class/struct type '{s}'", .{ src.name(), tgt.named.name });
+                }
+                break :blk tgt;
+            },
             .to_nilable     => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk .context_dependent; },
             .to_non_nil     => |e| blk: {
                 // `expr to!` — force-unwrap optional; result is the inner type.
@@ -3133,6 +3253,10 @@ const TypeChecker = struct {
                             return tc.symbolType(member_sym);
                         }
                     }
+                    // Synthetic struct `init` (generated by CodeGen, not in AST):
+                    // StructName.init(...) returns the struct type.
+                    if (class_sym.kind == .struct_ and std.mem.eql(u8, mem.member, "init"))
+                        return obj_type;
                     // No scope match but object is a union — still a variant constructor.
                     if (class_sym.kind == .union_) return obj_type;
                     // Exposed cross-module type: `Generator` from `use codegen exposing Generator`
@@ -3582,6 +3706,7 @@ const TypeChecker = struct {
             .module        => .unknown, // imported module — cross-file types not yet resolved
             .type_param    => .unknown, // generic type parameter — concrete type determined at instantiation
             .sig_          => .{ .fn_sig = sym.decl.sig_ }, // sig used as a value (rare; for symmetry)
+            .type_alias    => .unknown, // type aliases are type-level constructs, not value expressions
         };
     }
 
@@ -3624,8 +3749,9 @@ const TypeChecker = struct {
                         break :blk2 .unknown;
                     },
                     .symbol  => |s| switch (s.kind) {
-                        .type_param => .unknown,
-                        .sig_       => .{ .fn_sig = s.decl.sig_ }, // named delegate type
+                        .type_param  => .unknown,
+                        .sig_        => .{ .fn_sig = s.decl.sig_ }, // named delegate type
+                        .type_alias  => tc.typeFromRef(&s.decl.type_alias_.base), // transparent alias
                         // Exposed cross-module type: `DeclMethod` from `use ast exposing DeclMethod`.
                         // Return cross_module so field/method lookups use the module interface tables.
                         .module => blk2: {
@@ -3655,6 +3781,8 @@ const TypeChecker = struct {
                 for (ttr.elems, elems) |*el, *out| out.* = tc.typeFromRef(el);
                 break :blk Type{ .tuple = elems };
             },
+            // Parametric alias applied — same resolution path as the base alias name.
+            .alias_applied => .unknown,
         };
     }
 

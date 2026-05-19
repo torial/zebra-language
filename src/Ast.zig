@@ -60,6 +60,21 @@ pub const Decl = union(enum) {
     extend: *DeclExtend,
     union_: *DeclUnion,
     sig_: *DeclSig,
+    type_alias: *DeclTypeAlias,
+};
+
+/// `type Name = BaseType where value > 0` — named type alias with optional constraint.
+/// `type Name(p: T, ...) = BaseType where value >= p` — parametric alias with value params.
+/// Transparent at the Zig level (emits the base type directly); constraint is checked
+/// at variable-declaration sites unless `--turbo` is active.
+pub const DeclTypeAlias = struct {
+    span:       Span,
+    name:       []const u8,
+    /// Value parameters for parametric aliases, e.g. `lo: int, hi: int`.
+    /// Nil for non-parametric aliases.
+    params:     ?[]const Param,
+    base:       TypeRef,
+    constraint: ?*Expr,
 };
 
 /// `sig Name(params) as RetType` — named function-type alias (delegate).
@@ -119,6 +134,12 @@ pub const Modifiers = packed struct {
     once: bool = false,
     /// `export def` — emits `pub export fn`; marks the symbol as exported from a shared library.
     export_: bool = false,
+    /// `@derive(Debug)` — auto-generates `toString()` returning `TypeName(field=val, …)`.
+    derive_debug: bool = false,
+    /// `@derive(Eq)` — auto-generates `eql(other)` and makes `==` / `!=` call it.
+    derive_eq: bool = false,
+    /// `@derive(Hash)` — auto-generates `hash()` for use as a HashMap key.
+    derive_hash: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────
@@ -295,6 +316,15 @@ pub const TypeRef = union(enum) {
     same: void,
     /// `(T1, T2, …)` — tuple type with two or more element types.
     tuple: TupleTypeRef,
+    /// `Bounded(0, 100)` — value-parameterized alias applied with literal args.
+    /// Only literal args are supported in v1 (integer, float, string, negated number).
+    alias_applied: AliasAppliedTypeRef,
+};
+
+pub const AliasAppliedTypeRef = struct {
+    span: Span,
+    name: []const u8,
+    args: []const Expr,
 };
 
 pub const NamedTypeRef = struct {

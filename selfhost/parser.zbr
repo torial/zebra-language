@@ -31,6 +31,7 @@ union PNode
     enum_: ^PEnum
     union_decl: ^PUnionDecl
     sig_: ^PSig
+    type_alias_: ^PTypeAlias
     namespace_decl: ^PNamespace
 
     # Members / declarations
@@ -118,6 +119,17 @@ struct PUnionVariant
     cue init(name: str, type_name: str)
         .name = name
         .type_name = type_name
+
+struct PTypeAlias
+    var name: str
+    var params: List(PParam)
+    var base_type: str
+    var constraint: List(PNode)
+    cue init(name: str, params: List(PParam), base_type: str, constraint: List(PNode))
+        .name = name
+        .params = params
+        .base_type = base_type
+        .constraint = constraint
 
 struct PSig
     var name: str
@@ -241,7 +253,10 @@ struct PClass
     var members: List(PNode)
     var invs: List(PNode)
     var is_reflectable: bool
-    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool)
+    var is_derive_debug: bool
+    var is_derive_eq: bool
+    var is_derive_hash: bool
+    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false)
         .name = name
         .type_params = type_params
         .ifaces = ifaces
@@ -249,6 +264,9 @@ struct PClass
         .members = members
         .invs = invs
         .is_reflectable = is_reflectable
+        .is_derive_debug = is_derive_debug
+        .is_derive_eq = is_derive_eq
+        .is_derive_hash = is_derive_hash
 
 struct PExtend
     var target_name: str
@@ -879,8 +897,36 @@ class Parser
             return sb.build()
         const text = .peek().text
         if .isOpenCall()
-            # Generic type: "List(str)" — open_call token is "Name(" (text is just "Name")
             .advance()  # consume "Name("
+            # Detect value-parameterized alias: first arg is a literal or unary minus
+            var first_kind = .peek().kind
+            var is_value_args = first_kind == TokenKind.integer_lit or first_kind == TokenKind.float_lit or first_kind == TokenKind.string_single or first_kind == TokenKind.string_double or first_kind == TokenKind.minus
+            if is_value_args
+                # Parse as value-arg alias reference: encode as "__alias__Name__args__a,b,c"
+                var value_args: List(str) = List(str)()
+                while not .textIs(")")
+                    if .textIs(",")
+                        .advance()
+                    else
+                        var neg = ""
+                        if .textIs("-")
+                            .advance()
+                            neg = "-"
+                        value_args.add(neg + .peek().text)
+                        .advance()
+                .expectText(")")
+                var sb_a: StringBuilder = StringBuilder()
+                sb_a.append("__alias__")
+                sb_a.append(text)
+                sb_a.append("__args__")
+                var first_a = true
+                for va in value_args
+                    if not first_a
+                        sb_a.append(",")
+                    sb_a.append(va)
+                    first_a = false
+                return sb_a.build()
+            # Generic type: "List(str)" — type args
             var args: List(str) = List(str)()
             while not .textIs(")")
                 if .textIs(",")
@@ -984,11 +1030,14 @@ class Parser
     # -- Top-level declarations ------------------------------------------------
 
     def parseTopDecl(): PNode throws
-        # `@directive` annotation — @reflectable, @profile, @once, @tag recognized.
+        # `@directive` annotation — @reflectable, @profile, @once, @tag, @derive recognized.
         # Consume the directive and apply it to the immediately-following decl.
         var pending_reflectable: bool = false
         var pending_profile: bool = false
         var pending_once: bool = false
+        var pending_derive_debug: bool = false
+        var pending_derive_eq: bool = false
+        var pending_derive_hash: bool = false
         var pending_tags: List(str) = List(str)()
         var saw_directive: bool = true
         while saw_directive
@@ -1022,6 +1071,26 @@ class Parser
                                     pending_tags.add(tag_val)
                             .expectText(")")
                         .skipEol()
+                    else if dtext == "@derive"
+                        # Parse @derive(Debug, Eq, Hash) — extract identifier names.
+                        if .textIs("(")
+                            .advance()
+                            while not .textIs(")")
+                                if .textIs(",")
+                                    .advance()
+                                else
+                                    const trait_name: str = .peek().text
+                                    .advance()
+                                    if trait_name == "Debug"
+                                        pending_derive_debug = true
+                                    else if trait_name == "Eq"
+                                        pending_derive_eq = true
+                                    else if trait_name == "Hash"
+                                        pending_derive_hash = true
+                                    else
+                                        sys.errln("warning: unknown @derive trait '" + trait_name + "'; ignored")
+                            .expectText(")")
+                        .skipEol()
                     else
                         .skipEol()
                         sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
@@ -1035,7 +1104,7 @@ class Parser
         else if .textIs("class")
             return .parseClassDecl(pending_reflectable)
         else if .textIs("struct")
-            return .parseStructDecl(pending_reflectable)
+            return .parseStructDecl(pending_reflectable, pending_derive_debug, pending_derive_eq, pending_derive_hash)
         else if .textIs("interface")
             return .parseInterfaceDecl()
         else if .textIs("mixin")
@@ -1048,6 +1117,8 @@ class Parser
             return .parseEnumDecl()
         else if .textIs("sig")
             return .parseSigDecl()
+        else if .textIs("type")
+            return .parseTypeAliasDecl()
         else if .textIs("static")
             .advance()
             return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false)
@@ -1168,7 +1239,7 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 .advance()
-        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable))
+        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")
@@ -1187,7 +1258,7 @@ class Parser
                 .advance()
         return PNode.enum_(PEnum(name, variants))
 
-    def parseStructDecl(is_reflectable: bool): PNode throws
+    def parseStructDecl(is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false): PNode throws
         .expectText("struct")
         const name = .eatId()
         .skipEol()
@@ -1210,7 +1281,7 @@ class Parser
                 .advance()
         var ifaces = List(str)()
         var type_params = List(str)()
-        return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable))
+        return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash))
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")
@@ -1234,7 +1305,7 @@ class Parser
             if .isDedent()
                 .advance()
         var type_params = List(str)()
-        return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false))
+        return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false, false, false, false))
 
     def parseMixinDecl(): PNode throws
         .expectText("mixin")
@@ -1251,7 +1322,7 @@ class Parser
             if .isDedent()
                 .advance()
         var empty_str_list = List(str)()
-        return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false))
+        return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false, false, false, false))
 
     def parseExtendDecl(): PNode throws
         .expectText("extend")
@@ -1332,6 +1403,35 @@ class Parser
             return_type = .eatTypeName()
         .skipEol()
         return PNode.sig_(PSig(name, params, return_type))
+
+    def parseTypeAliasDecl(): PNode throws
+        .expectText("type")
+        var params: List(PParam) = List(PParam)()
+        var name: str = ""
+        if .isOpenCall()
+            # parametric: type Bounded(lo: int, hi: int) = ...
+            # open_call token has the name; consume it then parse typed params
+            name = .peek().text
+            .advance()
+            while not .textIs(")")
+                if .textIs(",")
+                    .advance()
+                else
+                    const pname = .eatId()
+                    .expectText(":")
+                    const ptype = .eatTypeName()
+                    params.add(PParam(pname, ptype, List(PNode)()))
+            .expectText(")")
+        else
+            name = .eatId()
+        .expectText("=")
+        const base_type = .eatTypeName()
+        var constraint: List(PNode) = List(PNode)()
+        if .textIs("where")
+            .advance()
+            constraint.add(.parseExpr())
+        .skipEol()
+        return PNode.type_alias_(PTypeAlias(name, params, base_type, constraint))
 
     # -- Member declarations ---------------------------------------------------
 

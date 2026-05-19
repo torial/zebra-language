@@ -199,6 +199,7 @@ pub const TokenKind = enum {
     // Member declarations
     kw_def,
     kw_sig,
+    kw_type,
     kw_var,
     kw_const,
     kw_cue,
@@ -328,6 +329,7 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "extend",      .kw_extend },
     .{ "def",         .kw_def },
     .{ "sig",         .kw_sig },
+    .{ "type",        .kw_type },
     .{ "var",         .kw_var },
     .{ "const",       .kw_const },
     .{ "cue",         .kw_cue },

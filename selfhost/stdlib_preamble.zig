@@ -396,6 +396,18 @@ fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// sys.go(lambda) — fire-and-forget thread spawn.
+// Accepts either a plain fn() void (no-capture lambda) or a struct with a
+// call(self) void method (captured lambda).  Both patterns are produced by
+// Zebra's lambda codegen; comptime dispatch selects the right Thread.spawn form.
+fn _sys_go(f: anytype) void {
+    const T = @TypeOf(f);
+    const _t = if (comptime @typeInfo(T) == .@"fn")
+        std.Thread.spawn(.{}, f, .{}) catch @panic("sys.go: thread spawn failed")
+    else
+        std.Thread.spawn(.{}, T.call, .{f}) catch @panic("sys.go: thread spawn failed");
+    _t.detach();
+}
 
 // ── Build system ──────────────────────────────────────────────────────────────
 const _Build_Kind = enum { exe, lib, test_ };
@@ -1394,6 +1406,53 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+// ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
+// Detects ArrayList by method presence, not field names, to avoid false-positives
+// on user structs that happen to have `items`/`capacity` fields.
+fn _zbr_is_arraylist(comptime T: type) bool {
+    return @hasDecl(T, "initCapacity") and @hasDecl(T, "append");
+}
+
+fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8) anyerror!T {
+    if (depth > 64) @panic("_zbr_deep_copy: cycle or excessive depth (>64)");
+    if (comptime T == []const u8) return try alloc.dupe(u8, src);
+    if (comptime std.mem.containsAtLeast(u8, @typeName(T), 1, "HashMap")) {
+        @compileError("HashMap copy-out via <- is not supported; iterate and rebuild manually");
+    }
+    switch (@typeInfo(T)) {
+        .optional => |opt| {
+            if (src) |v| return try _zbr_deep_copy(opt.child, alloc, v, depth + 1);
+            return null;
+        },
+        .pointer => |ptr| {
+            if (ptr.size == .slice) {
+                const copy = try alloc.alloc(ptr.child, src.len);
+                for (src, 0..) |item, i|
+                    copy[i] = try _zbr_deep_copy(ptr.child, alloc, item, depth + 1);
+                return copy;
+            }
+            // Single-item *T: allocate a new node and recurse into its fields.
+            const copy = try alloc.create(ptr.child);
+            copy.* = try _zbr_deep_copy(ptr.child, alloc, src.*, depth + 1);
+            return copy;
+        },
+        .@"struct" => {
+            if (comptime _zbr_is_arraylist(T)) {
+                const Elem = std.meta.Elem(@TypeOf(src.items));
+                var copy = try T.initCapacity(alloc, src.items.len);
+                for (src.items) |item|
+                    try copy.append(alloc, try _zbr_deep_copy(Elem, alloc, item, depth + 1));
+                return copy;
+            }
+            var out: T = undefined;
+            inline for (@typeInfo(T).@"struct".fields) |f|
+                @field(out, f.name) = try _zbr_deep_copy(f.type, alloc, @field(src, f.name), depth + 1);
+            return out;
+        },
+        else => return src,
+    }
+}
+
 // === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change

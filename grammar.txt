@@ -11,6 +11,7 @@ TopDecl              → UseDecl
                      |  MixinDecl
                      |  EnumDecl
                      |  ExtendDecl
+                     |  TypeAliasDecl
                      |  AtDirective
                      |  AspectDecl
                      |  WeaveDecl
@@ -416,6 +417,28 @@ ExprList             → ε
 
 ExprListNE           → Expr
                      |  ExprListNE comma Expr
+
+TypeAliasDecl        → kw_type id assign TypeRef eol
+                     |  kw_type id assign TypeRef kw_where Expr eol
+                     |  kw_type open_call AliasParamListNE rparen assign TypeRef eol
+                     |  kw_type open_call AliasParamListNE rparen assign TypeRef kw_where Expr eol
+
+AliasParamListNE     → AliasParam
+                     |  AliasParamListNE comma AliasParam
+
+AliasParam           → id colon TypeRef
+
+# Value-applied alias in type position (only literal args — not identifier args to avoid
+# ambiguity with generic type args, which are always TypeRef productions)
+ValueArgListNE       → ValueArg
+                     |  ValueArgListNE comma ValueArg
+
+ValueArg             → integer_lit
+                     |  float_lit
+                     |  string_single
+                     |  string_double
+                     |  minus integer_lit
+                     |  minus float_lit
 
 AspectDecl           → kw_aspect id eol indent AspectBodyListNE dedent
 

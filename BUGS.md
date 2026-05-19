@@ -135,14 +135,16 @@ Closing as not-reproduced.
 
 ---
 
-### BUG-115: Real `private` / `internal` visibility keywords (phase 13 language proposal)
-- **Severity:** Low (open language design question, not a defect)
-- **Status:** Open — phase 0.13 language proposal
-- **Background:** Repo convention has used a leading `_` prefix on fields to signal "private" (e.g., `_radius`, `_items`). Verified 2026-05-04: this prefix has zero compiler-level enforcement — `f._hidden` from outside the class compiles and runs without complaint. The convention is purely social and misleads readers about what the language guarantees.
-- **Decision needed:** Should Zebra add real visibility keywords (`private` / `internal` / `public`), or accept that the language has no field privacy and require the style guide to drop the `_` convention?
-- **Style guide stance (2026-05-04):** Drop the `_` convention until/unless real keywords land. Compiler-emitted internals (`_allocator`, `_arena`, `_intern`, `_str_pool`, `_error_ctx`) are out of scope.
-- **Cost sketch (if implementing):** parser arm for the visibility token; resolver enforces at member-access; codegen unaffected (Zig has no equivalent — emit `pub` / non-`pub` only). Scope of "internal" (module-private) needs design — Zig has it via `pub` boundary; Zebra would need an analogous module model.
-- **Discovered:** 2026-05-04 during style guide drafting.
+### BUG-115: ✅ FIXED 2026-05-14 — `private` / `internal` visibility keywords shipped
+
+`private` and `internal` keywords implemented and enforced by both compilers:
+- **Zig backend (`src/TypeChecker.zig`):** `checkMemberVisibility` at line 2185 checks `mods.private` / `mods.protected`; error if accessed outside the owning class. `extractModuleInterface` already skips `private`/`internal` members from cross-module export.
+- **Selfhost (`selfhost/typechecker.zbr`):** `ModuleTypes.private_member_keys: HashMap(str, bool)` reverse index populated by `addClassMembers`; `inferExpr Expr.member` checks `isPrivateMember` and emits `"'X' is private"`.
+
+Original open question (resolved by implementing):
+- **Status (2026-05-04):** Design question — add keywords, or drop the `_` convention?
+- **Decision (2026-05-14):** Implement keywords. Both backends enforce `private` (per-class) and `internal` (treated as protected/module-scoped). Sweep: `_` convention retained only for compiler-emitted internals (`_allocator`, `_arena`, etc.).
+- **Evidence:** NEXT_STEPS.md `[x] BUG-115` entry marked complete 2026-05-14.
 - **Source:** `STYLE_GUIDE.md` §1 Q3.
 
 ---
@@ -313,9 +315,17 @@ element's span. Numeric mixes `[1, 2.0, 3]` still pass (untyped-numeric
 semantic). Test: `test/bug106_heterogeneous_list_test.zbr`. See commit
 `4c84c51b`.
 
-REMAINING (deferred): cast-validity check (line 1693 — `42 as ClassType`
-still typechecks). Separate scope from literal homogeneity; tracked
-within this entry but lower priority.
+CAST-VALIDITY (2026-05-18): TC check added proactively to both backends —
+when source type is numeric/bool/string and target is `.named` (class/struct),
+the TC now emits "cannot cast 'int' to class/struct type 'ClassName'" (Zig:
+`src/TypeChecker.zig` cast arm; selfhost: `inferExpr Expr.cast` arm).
+
+The check is correct but currently untestable because the `expr to TypeRef`
+cast syntax is broken: the selfhost parser only handles `to!`; the bootstrap
+AstBuilder panics with "unexpected NT TypeRef" when the grammar produces an
+`Expr9 kw_to TypeRef` subtree. The `ExprCast` AST node exists but is never
+created in practice. This is documented in `test/bug106_cast_test.zbr`.
+Fix will become testable once the cast parser path is wired up.
 
 ---
 
@@ -333,15 +343,15 @@ within this entry but lower priority.
 
 ---
 
-### BUG-107: TC halt-on-diagnostics audit — verify codegen never runs on a tree with diags present
-- **Severity:** Medium (verification task; if the property doesn't hold today, this becomes High)
-- **Status:** Open (verification needed)
-- **Symptom:** `src/TypeChecker.zig` has only ONE `return error.X` site (line 3170, `error.ParseFailed`). The TC accumulates diagnostics into `tc.diags` and returns void; the halting story lives in `main.zig` (or wherever the TC is invoked from).
-- **Verification needed:**
-  1. Confirm `main.zig` checks `diags.items.len > 0` after typecheck and halts before codegen.
-  2. Confirm any other call site (selfhost, REPL, IDE, future merge-oracle) does the same.
-  3. If any path runs codegen on a diagnosed tree, that's an immediate elevation to High severity.
-- **Fix sketch (if gap found):** Centralize the check — TC could expose `hasErrors()` and any consumer that proceeds without consulting it should be considered a bug.
+### BUG-107: ✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
+
+Verified all three entry points halt before codegen when diagnostics are present:
+
+1. **`src/main.zig:396`:** `if (had_error) return 1;` — after collecting `bind.diags`, `resolve.diags`, `tc.diags`. CodeGen is invoked only on the `else` path.
+2. **`selfhost/main.zbr:130-132`:** `if tc_ctx.hasErrors()` → `sys.errln(tc_ctx.errorMessages())` → `sys.exit(1)`. Explicit process exit before Step 5 (Zig emit).
+3. **`src/Repl.zig:439-443`:** `had_error` checked after `bind.diags`, `resolve.diags`, `tc.diags`; `if (had_error) return null;` before `CodeGen.generate`.
+
+Property holds. No code change needed.
 - **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-5]).
 
 ---
@@ -690,28 +700,18 @@ REMAINING (deferred):
 
 ---
 
-### BUG-119: Selfhost `isListField` fails for `List` fields accessed through function parameters
-- **Severity:** Medium (codegen silently emits wrong Zig — `.len` instead of `.items.len`)
-- **Status:** Open — proper fix deferred; workaround: add accessor method to the class
-- **Symptom:** In a free function (not a class method) that receives a class instance as a parameter, accessing `.len` on a `List` field of that instance generates `state.diags.len` instead of `state.diags.items.len`. The generated Zig fails to compile because `std.ArrayList` has no `.len` field.
-- **Reproducer:**
-  ```zebra
-  class IDEState
-      var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
+### BUG-119: ✅ FIXED 2026-05-18 — `list_field_names` reverse index in ModuleTypes
 
-  def renderDiags(gc: Gui, state: IDEState, editor: CodeEditor)
-      gc.text("Count: ${state.diags.len}")   # ← wrong: emits .len not .items.len
-  ```
-- **Root cause:** In `selfhost/codegen.zbr`, the `.len` property handler calls `isListField(fname)` which only inspects `owner_members` (the current class's declared fields). For free functions, `owner_members` is empty. The `isKnownListField(fname)` hardcoded fallback only covers compiler-internal field names (`args`, `params`, `stmts`, etc.) — "diags" is not in that list.
-- **Proper fix:** Add a `list_field_names: HashMap(str, bool)` reverse index to `ModuleTypes` in `selfhost/typechecker.zbr`, populated by `addClassMembers` (parallel to the existing `hashmap_field_names` and `strset_field_names`). Add a `fieldIsList(mt, dep_mt, name)` helper (parallel to `fieldIsHashMap`). Call it in the `.len` handler in `codegen.zbr`. ~3 files, ~25 lines.
-- **Workaround:** Add a helper method to the class that accesses the List field from within the method body, where `owner_members` is populated:
-  ```zebra
-  class IDEState
-      var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
-      def diagCount(): int
-          return .diags.len   # inside the method, isListField("diags") works
-  ```
-  Then call `state.diagCount()` at the free-function call site.
+`List` fields accessed through function parameters now emit `.items.len` correctly.
+
+**Fix:**
+- `selfhost/typechecker.zbr ModuleTypes`: added `list_field_names: HashMap(str, bool)` field (parallel to `hashmap_field_names`), `addListField(name)` + `hasListField(name)` methods; initialized in `cue init()`.
+- `selfhost/typechecker.zbr`: added `isListTypeRef(tr: TypeRef): bool` helper (mirrors `isHashMapTypeRef`).
+- `selfhost/typechecker.zbr addClassMembers`: after the `isHashMapTypeRef` check, added `if isListTypeRef(v.type_ to!)` → `mt.addListField(v.name)`.
+- `selfhost/codegen.zbr`: added `fieldIsList(mt, dep_mt, field_name): bool` helper (parallel to `fieldIsHashMap`); `.len` handler now includes `fieldIsList(.module_types, .dep_types, fn2)` in the `is_list_obj` check.
+
+Test: `test/bug119_list_field_param_test.zbr` (smoke_run: "bug119_list_field_param: OK").
+Bootstrap verified: `zig build update-selfhost` + smoke 117/117 passing + bootstrap 5/5.
 - **Discovered:** 2026-05-06 while compiling `IDE/ZebraIDE.zbr`.
 
 ---
@@ -752,4 +752,88 @@ REMAINING (deferred):
 
 ---
 
-*Last updated: 2026-05-09 — BUG-121 filed: TC diagnostics report col 0; span resolution deferred*
+---
+
+### BUG-122: Selfhost codegen — `opt_ptr_field_bindings` not seeded for local variables with inferred types
+
+- **Severity:** Low (workaround exists; only hits when a local var holds a struct with `^T?` fields and those fields are accessed via `to!`)
+- **Status:** Open — sub-problem 1 (explicit annotation) easy; sub-problem 2 (inferred type) deferred
+
+#### Background
+
+`opt_ptr_field_bindings` is a `StrSet` on `Generator` tracking `"bindingName.fieldName"` pairs for fields typed `^T?` (optional heap-pointer). The `to_non_nil` (`to!`) codegen handler (codegen.zbr ~line 6245) emits `.?.*` instead of `.?` when the key is present, because Zig needs the extra `.*` deref for pointer fields.
+
+The set is seeded in three places:
+- **Named parameters** (line ~2613): at method entry, for each `TypeRef.named` param, scans `opt_ref_fields` for `"TypeName.*"` and adds `"paramName.*"`.
+- **`capture` bindings** (line ~4195): when a union arm is bound with `if x is T as cap`, seeds for the variant payload's struct fields.
+- **`if x as n` / `if x is T as n` bindings** (line ~5122): same seeding for optional-unwrap and type-check bindings.
+
+**Local `var` declarations are not seeded.** So `var x = someFunc()` where `someFunc` returns `DeclTypeAlias?` does NOT get `"x.constraint"` added to `opt_ptr_field_bindings`, and `x to!.constraint to!` emits `.?` without `.*`, producing a Zig type error (`expected 'ast.Expr', found '*ast.Expr'`).
+
+#### Two sub-problems
+
+**Sub-problem 1 — explicit type annotation** (`var x: DeclTypeAlias = ...`)
+
+When `n.type_` on a `StmtVar` is `TypeRef.named as nt`, the fix is identical to the parameter seeding logic already at line 2613. In `genLocalVar`, after emitting the declaration:
+
+```zebra
+if n.type_ is TypeRef.named as nt
+    var nt_dot = nt.name + "."
+    var orf = opt_ref_fields.items()
+    var orfi = 0
+    while orfi < orf.count()
+        var orf_e: str = orf.at(orfi)
+        if orf_e.startsWith(nt_dot)
+            opt_ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(orf_e)))
+        orfi += 1
+```
+
+Scope cleanup: `opt_ptr_field_bindings` is reset at method entry (line ~1565: `opt_ptr_field_bindings = StrSet()`), so no per-scope removal is needed for local vars — they live for the method duration and cannot bleed across method boundaries.
+
+This sub-problem is **easy (~1h)** and has no known risks.
+
+**Sub-problem 2 — inferred type** (`var x = someFunc()` where return type is `SomeStruct?`)
+
+The codegen does not currently know what a call expression returns. To seed `opt_ptr_field_bindings` for this case, you need to resolve the return type at the call site.
+
+**Recommended approach:** add a `local_var_types: HashMap(str, str)` (var name → struct type name) to `Generator`. Populate it in `genLocalVar` by inspecting the RHS expression:
+
+- `Expr.call` whose callee is a known function: look up the return type in `module_types` / `dep_types`. The key lookup is `module_types.funcReturnType(funcName)` — this method does not exist yet and would need to be added to `ModuleTypes` in `typechecker.zbr`. It mirrors how `inferExpr` for `Expr.call` already looks up `module_types.methodReturn(...)`.
+- `Expr.member_call` (method call): look up via `module_types.methodReturn(typeName, methodName)`, strip `?` if the type is optional, then use the base struct name.
+
+Once `local_var_types` is populated, the `to_non_nil` handler (line ~6245) should additionally check: if `tnn_obj` is in `local_var_types`, get the struct name, form `"structName.memberName"`, and check `opt_ref_fields` directly — eliminating the need for the key to be pre-seeded.
+
+```zebra
+# In to_non_nil handler, after the opt_ptr_field_bindings check:
+if tnn_obj != nil
+    var lv_type = local_var_types.get(tnn_obj to!)
+    if lv_type != nil
+        var orf_key = makeDottedKey(lv_type to!, tnn_m.member)
+        if opt_ref_fields.contains_(orf_key)
+            w.emit(".*")
+```
+
+**Complexity:** `local_var_types` must propagate into `indented()` child generators (branches, loops, etc.) so bindings declared in an outer scope are visible in inner scopes. The simplest approach is to pass a reference to the parent's `local_var_types` into child generators, or to copy it at `indented()` creation. Since the set only grows within a method and resets at method boundaries, copy-on-enter is safe.
+
+`funcReturnType` on `ModuleTypes` is the new surface that needs implementing in `typechecker.zbr`. It needs to handle: plain functions, methods, and the `?`-strip for optional returns. This is roughly 30-50 lines in `typechecker.zbr` and a corresponding update to `selfhost/typechecker.zig` via `update-selfhost`.
+
+Estimated effort: **~half a day** once sub-problem 1 is done as a warm-up.
+
+#### Current workaround
+
+Extract the code that accesses `^T?` fields into a helper method where the struct is a **named parameter** (not a local variable). This forces `opt_ptr_field_bindings` to be seeded at method entry.
+
+Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_decl` is a parameter so `"alias_decl.constraint"` is seeded. See selfhost/codegen.zbr ~line 3557.
+
+#### Files to change when fixing
+
+- `selfhost/typechecker.zbr` — add `funcReturnType(name: str): str?` (or similar) to `ModuleTypes`
+- `selfhost/codegen.zbr` — add `local_var_types: HashMap(str, str)` to `Generator`; populate in `genLocalVar`; consult in `to_non_nil` handler; propagate into `indented()`
+- `selfhost/typechecker.zig`, `selfhost/codegen.zig` — regenerated via `zig build update-selfhost`
+- Add a test: a local var holding a struct with `^T?` field, accessed via `to!`, without extracting into a helper
+
+- **Discovered:** 2026-05-18 during type alias `^Expr?` constraint access in selfhost codegen.
+
+---
+
+*Last updated: 2026-05-18 — BUG-115 closed (visibility keywords shipped 2026-05-14); BUG-107 verified (halt confirmed in all 3 entry points); BUG-119 fixed (list_field_names index in ModuleTypes); BUG-106 TC check added (cast syntax not yet parseable); BUG-122 filed (opt_ptr_field_bindings gap for local vars with inferred types)*

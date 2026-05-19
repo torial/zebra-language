@@ -1,0 +1,16 @@
+# BUG-106 cast validity — documentation only.
+#
+# The TC fix (TypeChecker.zig + typechecker.zbr) is in place: if a numeric/bool/string
+# value is cast to a named class/struct type, the TC now emits:
+#   "cannot cast 'int' to class/struct type 'Box'"
+#
+# However, the `expr to TypeRef` cast syntax is not yet usable:
+#   - selfhost parser: `to` only accepts `to!` (force-unwrap); `to TypeRef` gives
+#     "expected '!', got 'TypeName'"
+#   - bootstrap AstBuilder: panics with "unexpected NT TypeRef" when it encounters
+#     `Expr9 kw_to TypeRef` in the grammar-generated parse tree
+#
+# The TC check is correct and will fire once the cast syntax is properly implemented.
+# This file is NOT registered in selfhost_smoke.sh until the syntax is fixed.
+#
+# QUICKSTART.md §30 also notes: "There is no `expr as T` cast operator in current Zebra."

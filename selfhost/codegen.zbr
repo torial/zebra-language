@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -243,6 +243,16 @@ def fieldIsHashMap(mt: ModuleTypes, dep_mt: ModuleTypes, field_name: str): bool
     if mt.hasHashMapField(field_name)
         return true
     if dep_mt.hasHashMapField(field_name)
+        return true
+    return false
+
+# BUG-119: "Is there a field by this name with List(T) type anywhere in the
+# current-module or dep-module type tables?" Parallel to fieldIsHashMap;
+# populated at class-build time in typechecker.addClassMembers via isListTypeRef.
+def fieldIsList(mt: ModuleTypes, dep_mt: ModuleTypes, field_name: str): bool
+    if mt.hasListField(field_name)
+        return true
+    if dep_mt.hasListField(field_name)
         return true
     return false
 
@@ -626,6 +636,8 @@ def typeRefStr(tr: TypeRef): str
             return "same"
         on TypeRef.tuple
             return "tuple"
+        on TypeRef.alias_applied as aa
+            return aa.name + "(...)"
     return "unknown"
 
 def generateModule(m: Module, file: str): str
@@ -1307,6 +1319,7 @@ struct Generator
     # Variable names bound to DynLib handles (result of DynLib.open).
     # Used to dispatch .close() and .lookup() to DynLib-specific codegen.
     var dynlib_vars          : StrSet
+    var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .eql()
 
     invariant
         indent >= 0
@@ -1374,6 +1387,7 @@ struct Generator
         .tc_result             = nil
         .method_return_type    = nil
         .dynlib_vars           = StrSet()
+        .derive_eq_structs     = StrSet()
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1518,6 +1532,26 @@ struct Generator
                 return true
         return isStringExpr(e)
 
+    def isPrimType(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        branch t
+            on Type_.int_   return true
+            on Type_.uint_  return true
+            on Type_.float_ return true
+            on Type_.bool_  return true
+            on Type_.char_  return true
+            on Type_.void_  return true
+            on Type_.int_n as _
+                return true
+            on Type_.uint_n as _
+                return true
+            on Type_.float_n as _
+                return true
+            else
+                return false
+
     def withMethodCtx(ms: StrSet?, rs: StrSet?, throws_: bool, members: List(Decl), pnames: StrSet?, sparams: StrSet, sname: str): Generator
         var g = this except
             in_method              = true
@@ -1565,9 +1599,21 @@ struct Generator
 
     # ── genType ───────────────────────────────────────────────────────────────
 
+    def findTypeAlias(name: str): DeclTypeAlias?
+        for decl in module_decls
+            if decl is Decl.type_alias_ as ta
+                if ta.name == name
+                    return ta
+        return nil
+
     def genType(tr: TypeRef)
         branch tr
             on TypeRef.named as n
+                # Transparent alias: emit base type instead.
+                var maybe_alias = findTypeAlias(n.name)
+                if maybe_alias != nil
+                    genType(maybe_alias to!.base)
+                    return
                 if isSimdTypeName(n.name)
                     var sparts: List(str) = n.name.split("x")
                     w.emit("@Vector(")
@@ -1694,6 +1740,14 @@ struct Generator
                     genType(ttr.elems.at(j))
                     j += 1
                 w.emit(" }")
+
+            on TypeRef.alias_applied as aa
+                # Transparent alias: emit base type of the alias declaration.
+                var maybe_alias = findTypeAlias(aa.name)
+                if maybe_alias != nil
+                    genType(maybe_alias to!.base)
+                else
+                    w.emit("i64")
 
     def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN
@@ -1939,6 +1993,10 @@ struct Generator
 
     def genStruct(n: DeclStruct)
         struct_names.add(n.name)
+        if n.mods.is_derive_eq
+            derive_eq_structs.add(n.name)
+        if n.mods.is_derive_debug
+            toString_types.add(n.name)
         # Track ^T fields for auto-deref
         for decl in n.members
             if decl is Decl.var_ as fld
@@ -2025,8 +2083,135 @@ struct Generator
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
+        if n.mods.is_derive_debug
+            ig.genDeriveToString(n)
+        if n.mods.is_derive_eq
+            ig.genDeriveEql(n)
+        if n.mods.is_derive_hash
+            ig.genDeriveHash(n)
         writeIndent()
         w.emit("};\n\n")
+
+    def isStrFieldType(tr: TypeRef?): bool
+        if tr == nil
+            return false
+        var t = tr to!
+        if t is TypeRef.named as n
+            return n.name == "str" or n.name == "String"
+        return false
+
+    def isFloatFieldType(tr: TypeRef?): bool
+        if tr == nil
+            return false
+        var t = tr to!
+        if t is TypeRef.named as n
+            return n.name == "float" or n.name == "num"
+        return false
+
+    def genDeriveToString(n: DeclStruct)
+        writeIndent()
+        w.emit("pub fn toString(self: *const ")
+        w.emit(n.name)
+        w.emit(") []const u8 {\n")
+        var ig_ts = indented()
+        # Build format string in a StringBuilder
+        var fmt_str: str = n.name + "("
+        var field_count = 0
+        for decl in n.members
+            if decl is Decl.var_ as fld
+                if fld.mods.is_static
+                    continue
+                if field_count > 0
+                    fmt_str = fmt_str + ", "
+                fmt_str = fmt_str + fld.name + "="
+                if .isStrFieldType(fld.type_)
+                    fmt_str = fmt_str + "{s}"
+                else if .isFloatFieldType(fld.type_)
+                    fmt_str = fmt_str + "{d}"
+                else
+                    fmt_str = fmt_str + "{}"
+                field_count = field_count + 1
+        fmt_str = fmt_str + ")"
+        ig_ts.writeIndent()
+        w.emit("return std.fmt.allocPrint(_allocator, \"")
+        w.emit(fmt_str)
+        w.emit("\", .{")
+        var first_arg = true
+        for decl in n.members
+            if decl is Decl.var_ as fld
+                if fld.mods.is_static
+                    continue
+                if not first_arg
+                    w.emit(", ")
+                first_arg = false
+                w.emit("self.")
+                w.emit(fld.name)
+        w.emit("}) catch unreachable;\n")
+        writeIndent()
+        w.emit("}\n")
+
+    def genDeriveEql(n: DeclStruct)
+        writeIndent()
+        w.emit("pub fn eql(self: *const ")
+        w.emit(n.name)
+        w.emit(", other: *const ")
+        w.emit(n.name)
+        w.emit(") bool {\n")
+        var ig_eq = indented()
+        var field_count = 0
+        for decl in n.members
+            if decl is Decl.var_ as fld
+                if not fld.mods.is_static
+                    field_count = field_count + 1
+        ig_eq.writeIndent()
+        if field_count == 0
+            w.emit("return true;\n")
+        else
+            w.emit("return ")
+            var first_fld = true
+            for decl in n.members
+                if decl is Decl.var_ as fld
+                    if fld.mods.is_static
+                        continue
+                    if not first_fld
+                        w.emit(" and ")
+                    first_fld = false
+                    if .isStrFieldType(fld.type_)
+                        w.emit("std.mem.eql(u8, self.")
+                        w.emit(fld.name)
+                        w.emit(", other.")
+                        w.emit(fld.name)
+                        w.emit(")")
+                    else
+                        w.emit("(self.")
+                        w.emit(fld.name)
+                        w.emit(" == other.")
+                        w.emit(fld.name)
+                        w.emit(")")
+            w.emit(";\n")
+        writeIndent()
+        w.emit("}\n")
+
+    def genDeriveHash(n: DeclStruct)
+        writeIndent()
+        w.emit("pub fn hash(self: *const ")
+        w.emit(n.name)
+        w.emit(") u64 {\n")
+        var ig_h = indented()
+        ig_h.writeIndent()
+        w.emit("var hasher = std.hash.Wyhash.init(0);\n")
+        for decl in n.members
+            if decl is Decl.var_ as fld
+                if fld.mods.is_static
+                    continue
+                ig_h.writeIndent()
+                w.emit("std.hash.autoHashStrat(&hasher, self.")
+                w.emit(fld.name)
+                w.emit(", .Deep);\n")
+        ig_h.writeIndent()
+        w.emit("return hasher.final();\n")
+        writeIndent()
+        w.emit("}\n")
 
     # ── genGenericClass ───────────────────────────────────────────────────────
 
@@ -3502,6 +3687,64 @@ struct Generator
         else
             w.emit("undefined")
         w.emit(";\n")
+        # Type alias constraint check: { const value = varname; if (!(cond)) panic; }
+        if not strip_contracts
+            if n.type_ != nil
+                var alias_lookup_name: str = ""
+                var alias_value_args: List(Expr) = List(Expr)()
+                branch n.type_ to!
+                    on TypeRef.named as alias_tn
+                        alias_lookup_name = alias_tn.name
+                    on TypeRef.alias_applied as aa
+                        alias_lookup_name = aa.name
+                        alias_value_args = aa.args
+                    else
+                        pass
+                if alias_lookup_name != ""
+                    var alias_decl = findTypeAlias(alias_lookup_name)
+                    if alias_decl != nil
+                        genTypeAliasConstraint(alias_decl to!, alias_lookup_name, n.name, alias_value_args)
+
+    # Emits the constraint-check block for a type alias local variable.
+    # alias_decl must be a named-type PARAMETER (not a local var) so the selfhost compiler
+    # seeds opt_ptr_field_bindings for alias_decl.constraint (a ^Expr? field), ensuring the
+    # required `.*` deref is emitted at `alias_decl.constraint to!` call sites.
+    # value_args: the literal args from TypeRef.alias_applied (empty for non-parametric aliases).
+    def genTypeAliasConstraint(alias_decl: DeclTypeAlias, alias_name: str, var_name: str, value_args: List(Expr))
+        if alias_decl.constraint == nil
+            return
+        var ig = indented()
+        # Seed str_params so `value.len` emits `.len` not `.items.len`
+        # when the alias base is str (isKnownListField fires on "value").
+        var base_t = typeFromRef(alias_decl.base)
+        if base_t is Type_.string_
+            ig.str_params.add("value")
+        if ig.infer_ctx != nil
+            ig.infer_ctx to!.bind("value", base_t)
+        writeIndent()
+        w.emit("{\n")
+        # Emit const bindings for value params (e.g. `const lo: i64 = 0;`)
+        var pi = 0
+        while pi < alias_decl.params.count() and pi < value_args.count()
+            ig.writeIndent()
+            var p = alias_decl.params.at(pi)
+            w.emit("const " + p.name + ": ")
+            if p.type_ != nil
+                ig.genType(p.type_ to!)
+            else
+                w.emit("i64")
+            w.emit(" = ")
+            ig.genExpr(value_args.at(pi))
+            w.emit(";\n")
+            pi += 1
+        ig.writeIndent()
+        w.emit("const value = " + var_name + ";\n")
+        ig.writeIndent()
+        w.emit("if (!(")
+        ig.genExpr(alias_decl.constraint to!)
+        w.emit(")) std.debug.panic(\"type constraint '" + alias_name + "' failed\\n\", .{});\n")
+        writeIndent()
+        w.emit("}\n")
 
     # Returns true if `name` is a top-level `def` in the current module.
     # Used to detect bare function-name expressions (fn_ref) in local var inits
@@ -5879,9 +6122,8 @@ struct Generator
                 genExpr(co.value)
                 w.emit(".recv();\n")
                 return
-        # Inside an arena block and value is a str: dupe to the parent allocator.
-        # Otherwise: plain assignment (primitives copy by value; outside arena no-op).
-        var is_str = .isStringBoth(co.value, "copy_out")
+        var is_str  = .isStringBoth(co.value, "copy_out")
+        var is_prim = .isPrimType(co.value)
         if allocate_depth > 0 and is_str
             var uid = w.nextUid()
             var uid_str = uid.toString()
@@ -5901,6 +6143,25 @@ struct Generator
             w.emit(") catch _co_")
             w.emit(uid_str)
             w.emit(";\n")
+        else if allocate_depth > 0 and not is_prim
+            var uid = w.nextUid()
+            var uid_str = uid.toString()
+            writeIndent()
+            w.emit("const _co_")
+            w.emit(uid_str)
+            w.emit(" = ")
+            genExpr(co.value)
+            w.emit(";\n")
+            writeIndent()
+            genExpr(co.target)
+            w.emit(" = _zbr_deep_copy(@TypeOf(_co_")
+            w.emit(uid_str)
+            w.emit("), _saved_alloc_")
+            var saved_idx2 = arena_counter - 1
+            w.emit(saved_idx2.toString())
+            w.emit(", _co_")
+            w.emit(uid_str)
+            w.emit(", 0) catch @panic(\"OOM copy-out\");\n")
         else
             writeIndent()
             genExpr(co.target)
@@ -6034,7 +6295,9 @@ struct Generator
                     var is_hm_obj = false
                     if fname != nil
                         var fn2 = fname to!
-                        is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2)
+                        # str_params takes priority — string variables are never lists
+                        if not str_params.contains_(fn2)
+                            is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
                         is_hm_obj = localIsHashMap(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")
@@ -6550,6 +6813,17 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
+            # @derive(Eq) struct: route == / != through the generated eql() method.
+            if not either_nil
+                var left_eq_struct = .isDeriveEqExpr(b.left)
+                if left_eq_struct
+                    if b.op == BinaryOp.ne
+                        w.emit("!")
+                    genExpr(b.left)
+                    w.emit(".eql(&")
+                    genExpr(b.right)
+                    w.emit(")")
+                    return
         # Ordered comparisons use _zebra_gt/lt/ge/le helpers which handle strings via comptime.
         # This is critical for anytype lambda params where Zig's > is invalid on []const u8.
         if b.op == BinaryOp.gt or b.op == BinaryOp.lt or b.op == BinaryOp.ge or b.op == BinaryOp.le
@@ -6628,6 +6902,15 @@ struct Generator
                 if obj_name != nil
                     if union_names.contains_(obj_name to!)
                         return true
+        return false
+
+    def isDeriveEqExpr(e: Expr): bool
+        # Detect @derive(Eq) struct variable: ident whose type name is in derive_eq_structs.
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        if t is Type_.named as tn
+            return derive_eq_structs.contains_(tn)
         return false
 
     # ── genUnary ──────────────────────────────────────────────────────────────
@@ -6981,53 +7264,73 @@ struct Generator
             if class_names.contains_(id.name) or struct_with_init.contains_(id.name)
                 w.emit(id.name)
                 w.emit(".init(")
-                var first2 = true
-                var box_labels: List(str) = List(str)()
-                box_labels.add("_bx0")
-                box_labels.add("_bx1")
-                box_labels.add("_bx2")
-                box_labels.add("_bx3")
-                box_labels.add("_bx4")
-                box_labels.add("_bx5")
-                var box_idx: int = 0
-                var arg_idx: int = 0
-                for a in c.args
-                    if not first2
-                        w.emit(", ")
-                    first2 = false
-                    # Phase 17c: box when the ctor param is ^T (per ModuleTypes)
-                    # and inferExpr says the arg produces a union-typed value.
-                    # This replaced `shouldBoxCtorArg`, a name-pattern
-                    # heuristic (idents ending in _expr, _stmt, etc., plus a
-                    # short allow-list of known variable names). Walker is
-                    # strictly more conservative: on a 175-.zbr corpus it
-                    # boxed 16 additional sites the heuristic missed — all
-                    # of them legitimately require `&local` / boxing since
-                    # the receiving ctor param is `^Expr` and Zig does not
-                    # implicitly take addresses of values.
-                    var is_ref_param: bool = ctorParamAtIsRefTo(.module_types, .dep_types, id.name, arg_idx)
-                    var should_box: bool = false
-                    if is_ref_param and .infer_ctx != nil
-                        var wt17c: Type_ = inferExpr(a.value, .infer_ctx to!)
-                        should_box = .isUnionType(wt17c)
-                    if is_ref_param and should_box
-                        # Box: heap-allocate for ^T parameter
-                        var lbl = box_labels.at(box_idx)
-                        w.emit(lbl)
-                        w.emit(": { const _bv = ")
-                        genExpr(a.value)
-                        w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :")
-                        w.emit(lbl)
-                        w.emit(" _bp; }")
-                        box_idx = box_idx + 1
-                    else
-                        # Use param type hint for zero-arg generic ctors (HashMap(), List(), etc.)
-                        var ctor_pt = lookupCtorParamType(id.name, a.name, arg_idx)
-                        if ctor_pt != nil
-                            genCallWithTypeHint(a.value, ctor_pt to!)
-                        else
+                # Named-arg / default-fill path: any arg has a name, or caller passed
+                # fewer args than params (some need their declared defaults filled in).
+                # Delegates to genArgListFull which does name→param matching + default emit.
+                # Limitation: genArgListNamed does not do the ^T/union-boxing dance that
+                # the positional path below does. Named calls with ^Expr-typed params +
+                # union-valued args would miss the _bx0 boxing — but such calls don't
+                # occur in practice (all user-facing cue init params are value types).
+                var ctor_ps: List(Param)? = lookupFnParams(id.name + ".init")
+                var ctor_has_named = false
+                for ck_a in c.args
+                    if ck_a.name != nil
+                        ctor_has_named = true
+                        break
+                var ctor_needs_fill: bool = ctor_has_named
+                if not ctor_needs_fill and ctor_ps != nil
+                    ctor_needs_fill = c.args.count() < ctor_ps to!.count()
+                if ctor_needs_fill
+                    var ctor_body: List(Stmt)? = lookupFnBody(id.name + ".init")
+                    genArgListFull(c.args, ctor_ps, ctor_body)
+                else
+                    var first2 = true
+                    var box_labels: List(str) = List(str)()
+                    box_labels.add("_bx0")
+                    box_labels.add("_bx1")
+                    box_labels.add("_bx2")
+                    box_labels.add("_bx3")
+                    box_labels.add("_bx4")
+                    box_labels.add("_bx5")
+                    var box_idx: int = 0
+                    var arg_idx: int = 0
+                    for a in c.args
+                        if not first2
+                            w.emit(", ")
+                        first2 = false
+                        # Phase 17c: box when the ctor param is ^T (per ModuleTypes)
+                        # and inferExpr says the arg produces a union-typed value.
+                        # This replaced `shouldBoxCtorArg`, a name-pattern
+                        # heuristic (idents ending in _expr, _stmt, etc., plus a
+                        # short allow-list of known variable names). Walker is
+                        # strictly more conservative: on a 175-.zbr corpus it
+                        # boxed 16 additional sites the heuristic missed — all
+                        # of them legitimately require `&local` / boxing since
+                        # the receiving ctor param is `^Expr` and Zig does not
+                        # implicitly take addresses of values.
+                        var is_ref_param: bool = ctorParamAtIsRefTo(.module_types, .dep_types, id.name, arg_idx)
+                        var should_box: bool = false
+                        if is_ref_param and .infer_ctx != nil
+                            var wt17c: Type_ = inferExpr(a.value, .infer_ctx to!)
+                            should_box = .isUnionType(wt17c)
+                        if is_ref_param and should_box
+                            # Box: heap-allocate for ^T parameter
+                            var lbl = box_labels.at(box_idx)
+                            w.emit(lbl)
+                            w.emit(": { const _bv = ")
                             genExpr(a.value)
-                    arg_idx = arg_idx + 1
+                            w.emit("; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic(\"OOM\"); _bp.* = _bv; break :")
+                            w.emit(lbl)
+                            w.emit(" _bp; }")
+                            box_idx = box_idx + 1
+                        else
+                            # Use param type hint for zero-arg generic ctors (HashMap(), List(), etc.)
+                            var ctor_pt = lookupCtorParamType(id.name, a.name, arg_idx)
+                            if ctor_pt != nil
+                                genCallWithTypeHint(a.value, ctor_pt to!)
+                            else
+                                genExpr(a.value)
+                        arg_idx = arg_idx + 1
                 w.emit(")")
                 return
             # BUG-118: plain struct (no cue init) → struct literal StructName{ .field = val }
@@ -8251,25 +8554,32 @@ struct Generator
             w.emit(") catch unreachable)")
             return
         if mname == "toString"
-            # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
-            # Int/other receivers need decimal string via allocPrint.
-            var is_char_recv = false
+            # Types with a real toString() method (user-defined or @derive(Debug)) — don't intercept.
+            var is_real_tostring_recv = false
             if .infer_ctx != nil
-                var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
-                branch recv_t
-                    on Type_.char_
-                        is_char_recv = true
-                    else
-                        pass
-            if is_char_recv
-                w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
-                genExpr(m.object)
-                w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")
-            else
-                w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
-                genExpr(m.object)
-                w.emit("}) catch unreachable)")
-            return
+                var recv_dd: Type_ = inferExpr(m.object, .infer_ctx to!)
+                if recv_dd is Type_.named as tn_dd
+                    is_real_tostring_recv = toString_types.contains_(tn_dd)
+            if not is_real_tostring_recv
+                # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
+                # Int/other receivers need decimal string via allocPrint.
+                var is_char_recv = false
+                if .infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                    branch recv_t
+                        on Type_.char_
+                            is_char_recv = true
+                        else
+                            pass
+                if is_char_recv
+                    w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
+                    genExpr(m.object)
+                    w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")
+                else
+                    w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
+                    genExpr(m.object)
+                    w.emit("}) catch unreachable)")
+                return
         if mname == "toFloat"
             # Mirror `toInt`'s str-vs-numeric dispatch: a string parses
             # via std.fmt.parseFloat (catching → 0.0), while a numeric
@@ -9714,6 +10024,12 @@ struct Generator
             return
         if mname == "readLine"
             w.emit("_sys_readline()")
+            return
+        if mname == "go"
+            w.emit("_sys_go(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            w.emit(")")
             return
         if mname == "sleep"
             w.emit("std.Thread.sleep(@as(u64, @intCast(")

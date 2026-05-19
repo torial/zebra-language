@@ -162,6 +162,8 @@ pub fn generate(
     var box_counter: u32 = 0;
     var dynlib_vars = std.StringHashMap(void).init(alloc);
     defer dynlib_vars.deinit();
+    var type_alias_decls = try collectTypeAliases(module, alloc);
+    defer type_alias_decls.deinit();
     const g = Generator{
         .resolve     = resolve,
         .tc          = tc,
@@ -194,6 +196,7 @@ pub fn generate(
         .tag_filter          = tag_filter,
         .module              = module,
         .dynlib_vars         = &dynlib_vars,
+        .type_alias_decls    = &type_alias_decls,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
@@ -237,6 +240,15 @@ fn collectUnionNamesInDecls(decls: []const Ast.Decl, set: *std.StringHashMap(voi
 /// Collect a map from union-type name → DeclUnion pointer for same-module
 /// union variant construction.  Used by CodeGen to detect `^T` payloads and
 /// emit the labeled-block boxing expression instead of a bare value.
+fn collectTypeAliases(module: Ast.Module, alloc: Allocator) !std.StringHashMap(*const Ast.DeclTypeAlias) {
+    var map = std.StringHashMap(*const Ast.DeclTypeAlias).init(alloc);
+    errdefer map.deinit();
+    for (module.decls) |decl| {
+        if (decl == .type_alias) try map.put(decl.type_alias.name, decl.type_alias);
+    }
+    return map;
+}
+
 fn collectUnionDecls(module: Ast.Module, alloc: Allocator) !std.StringHashMap(*const Ast.DeclUnion) {
     var map = std.StringHashMap(*const Ast.DeclUnion).init(alloc);
     errdefer map.deinit();
@@ -294,9 +306,10 @@ fn typeRefStr(tr: Ast.TypeRef, alloc: Allocator) ![]const u8 {
             try buf.append(alloc, ')');
             break :blk try buf.toOwnedSlice(alloc);
         },
-        .void_       => try alloc.dupe(u8, "void"),
-        .same        => try alloc.dupe(u8, "same"),
-        .tuple       => try alloc.dupe(u8, "tuple"),
+        .void_         => try alloc.dupe(u8, "void"),
+        .same          => try alloc.dupe(u8, "same"),
+        .tuple         => try alloc.dupe(u8, "tuple"),
+        .alias_applied => |aa| try alloc.dupe(u8, aa.name),
     };
 }
 
@@ -354,6 +367,18 @@ const zigGenericName  = Builtins.zigGenericName;
 
 fn isStringTypeRef(tr: Ast.TypeRef) bool {
     return tr == .named and isStringTypeName(tr.named.name);
+}
+
+/// Returns the Zig type string for a value parameter in a parametric alias constraint block.
+/// Only handles the primitive types that are legal as alias value-param types.
+fn zigTypeForParam(tr: Ast.TypeRef) []const u8 {
+    if (tr != .named) return "i64";
+    const n = tr.named.name;
+    if (std.mem.eql(u8, n, "int") or std.mem.startsWith(u8, n, "int"))   return "i64";
+    if (std.mem.eql(u8, n, "float") or std.mem.startsWith(u8, n, "float")) return "f64";
+    if (std.mem.eql(u8, n, "bool"))   return "bool";
+    if (std.mem.eql(u8, n, "str") or std.mem.eql(u8, n, "String"))  return "[]const u8";
+    return "i64"; // safe default — error surfaces at Zig compile time
 }
 
 fn assignOpStr(op: Ast.AssignOp) []const u8 {
@@ -1206,7 +1231,17 @@ fn scanMutationsInExpr(
                                 if (obj_type == .named) {
                                     const sym = obj_type.named;
                                     // Structs need var; classes do not.
-                                    if (sym.kind == .struct_ or sym.kind == .interface) break :blk true;
+                                    // Exception: @derive methods take *const Self and do not mutate.
+                                    if (sym.kind == .struct_) {
+                                        const sd = sym.decl.struct_;
+                                        const is_derive_readonly =
+                                            (sd.mods.derive_debug and std.mem.eql(u8, method, "toString")) or
+                                            (sd.mods.derive_eq    and std.mem.eql(u8, method, "eql")) or
+                                            (sd.mods.derive_hash  and std.mem.eql(u8, method, "hash"));
+                                        if (!is_derive_readonly) break :blk true;
+                                        break :blk false;
+                                    }
+                                    if (sym.kind == .interface) break :blk true;
                                     // Exposed cross-module symbols (from `use Mod exposing TypeName`)
                                     // have kind=.module and could be structs (value types needing *Self).
                                     // Conservatively require var — harmless for class pointers.
@@ -1688,6 +1723,10 @@ const Generator = struct {
     /// Variable names that are DynLib handles (result of DynLib.open).
     /// Used to dispatch .close() and .lookup() to DynLib-specific codegen.
     dynlib_vars: *std.StringHashMap(void),
+    /// Named type aliases declared in the current module.
+    /// Used by genType to emit the base Zig type and by genLocalVar to
+    /// emit constraint checks at variable-declaration sites.
+    type_alias_decls: *const std.StringHashMap(*const Ast.DeclTypeAlias),
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -2836,8 +2875,9 @@ const Generator = struct {
             },
             .var_      => |n| try g.genTopVar(n),
             .init      => {},   // top-level constructor makes no sense
-            .union_    => |n| try g.genUnion(n),
-            .sig_      => |n| try g.genSig(n),
+            .union_      => |n| try g.genUnion(n),
+            .sig_        => |n| try g.genSig(n),
+            .type_alias  => {},  // transparent alias — base type emitted inline at use sites
         }
     }
 
@@ -3485,9 +3525,108 @@ const Generator = struct {
             try ig.writeIndent();
             try ig.w.writeAll("}\n");
         }
+        if (n.mods.derive_debug) try ig.genDeriveToString(n);
+        if (n.mods.derive_eq)    try ig.genDeriveEql(n);
+        if (n.mods.derive_hash)  try ig.genDeriveHash(n);
         try g.writeIndent();
         try g.w.writeAll("};\n\n");
         try g.genExportWrappers(n.name, n.members);
+    }
+
+    fn genDeriveToString(g: Generator, n: *Ast.DeclStruct) anyerror!void {
+        try g.writeIndent();
+        try g.w.print("pub fn toString(self: *const {s}) []const u8 {{\n", .{n.name});
+        const ig = g.indented();
+        // Build format string and args list
+        var fmt_buf: std.ArrayListUnmanaged(u8) = .{};
+        defer fmt_buf.deinit(g.alloc);
+        try fmt_buf.appendSlice(g.alloc, n.name);
+        try fmt_buf.append(g.alloc, '(');
+        var field_count: usize = 0;
+        for (n.members) |m| {
+            if (m != .var_) continue;
+            if (m.var_.mods.static_) continue;
+            if (field_count > 0) try fmt_buf.appendSlice(g.alloc, ", ");
+            try fmt_buf.appendSlice(g.alloc, m.var_.name);
+            try fmt_buf.append(g.alloc, '=');
+            const is_str = if (m.var_.type_) |tr| isStringTypeRef(tr) else false;
+            const is_float = if (m.var_.type_) |tr| (tr == .named and (std.mem.eql(u8, tr.named.name, "float") or std.mem.eql(u8, tr.named.name, "num"))) else false;
+            if (is_str) {
+                try fmt_buf.appendSlice(g.alloc, "{s}");
+            } else if (is_float) {
+                try fmt_buf.appendSlice(g.alloc, "{d}");
+            } else {
+                try fmt_buf.appendSlice(g.alloc, "{}");
+            }
+            field_count += 1;
+        }
+        try fmt_buf.append(g.alloc, ')');
+        try ig.writeIndent();
+        try ig.w.print("return std.fmt.allocPrint(_allocator, \"{s}\", .{{", .{fmt_buf.items});
+        var fi: usize = 0;
+        for (n.members) |m| {
+            if (m != .var_) continue;
+            if (m.var_.mods.static_) continue;
+            if (fi > 0) try ig.w.writeAll(", ");
+            try ig.w.print("self.{s}", .{m.var_.name});
+            fi += 1;
+        }
+        try ig.w.writeAll("}) catch unreachable;\n");
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    fn genDeriveEql(g: Generator, n: *Ast.DeclStruct) anyerror!void {
+        try g.writeIndent();
+        try g.w.print("pub fn eql(self: *const {s}, other: *const {s}) bool {{\n", .{ n.name, n.name });
+        const ig = g.indented();
+        var field_count: usize = 0;
+        for (n.members) |m| {
+            if (m != .var_) continue;
+            if (m.var_.mods.static_) continue;
+            field_count += 1;
+        }
+        if (field_count == 0) {
+            try ig.writeIndent();
+            try ig.w.writeAll("return true;\n");
+        } else {
+            try ig.writeIndent();
+            try ig.w.writeAll("return ");
+            var fi: usize = 0;
+            for (n.members) |m| {
+                if (m != .var_) continue;
+                if (m.var_.mods.static_) continue;
+                if (fi > 0) try ig.w.writeAll(" and ");
+                const is_str = if (m.var_.type_) |tr| isStringTypeRef(tr) else false;
+                if (is_str) {
+                    try ig.w.print("std.mem.eql(u8, self.{s}, other.{s})", .{ m.var_.name, m.var_.name });
+                } else {
+                    try ig.w.print("(self.{s} == other.{s})", .{ m.var_.name, m.var_.name });
+                }
+                fi += 1;
+            }
+            try ig.w.writeAll(";\n");
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    fn genDeriveHash(g: Generator, n: *Ast.DeclStruct) anyerror!void {
+        try g.writeIndent();
+        try g.w.print("pub fn hash(self: *const {s}) u64 {{\n", .{n.name});
+        const ig = g.indented();
+        try ig.writeIndent();
+        try ig.w.writeAll("var hasher = std.hash.Wyhash.init(0);\n");
+        for (n.members) |m| {
+            if (m != .var_) continue;
+            if (m.var_.mods.static_) continue;
+            try ig.writeIndent();
+            try ig.w.print("std.hash.autoHashStrat(&hasher, self.{s}, .Deep);\n", .{m.var_.name});
+        }
+        try ig.writeIndent();
+        try ig.w.writeAll("return hasher.final();\n");
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
     }
 
     // ── enum ──────────────────────────────────────────────────────────────────
@@ -4453,6 +4592,45 @@ const Generator = struct {
             }
         }
         try g.w.writeAll(";\n");
+        // Type alias constraint check: if the declared type is a named alias with a
+        // constraint, validate it at the declaration site (skipped under --turbo).
+        if (!g.strip_contracts) {
+            if (n.type_) |tr| {
+                const alias_name_opt: ?[]const u8 = switch (tr) {
+                    .named         => |nt| nt.name,
+                    .alias_applied => |aa| aa.name,
+                    else           => null,
+                };
+                if (alias_name_opt) |alias_name| {
+                    if (g.type_alias_decls.get(alias_name)) |alias| {
+                        if (alias.constraint) |c| {
+                            const ig = g.indented();
+                            try g.writeIndent();
+                            try g.w.writeAll("{\n");
+                            // Bind value params for parametric aliases: const lo: i64 = 0;
+                            if (alias.params) |params| {
+                                const value_args = tr.alias_applied.args;
+                                for (params, 0..) |param, i| {
+                                    try ig.writeIndent();
+                                    const zig_type = zigTypeForParam(param.type_.?);
+                                    try ig.w.print("const {s}: {s} = ", .{ param.name, zig_type });
+                                    try ig.genExpr(&value_args[i]);
+                                    try ig.w.writeAll(";\n");
+                                }
+                            }
+                            try ig.writeIndent();
+                            try ig.w.print("const value = {s};\n", .{n.name});
+                            try ig.writeIndent();
+                            try ig.w.writeAll("if (!(");
+                            try ig.genExpr(c);
+                            try ig.w.print(")) std.debug.panic(\"type constraint '{s}' failed\\n\", .{{}});\n", .{alias.name});
+                            try g.writeIndent();
+                            try g.w.writeAll("}\n");
+                        }
+                    }
+                }
+            }
+        }
         // No defer free for local string variables: Zebra uses ArenaAllocator, where
         // individual frees are either a no-op (middle allocation) or dangerous (last
         // allocation — Zig 0.15 rewinds end_index, corrupting any sub-slice still in use).
@@ -5391,6 +5569,15 @@ const Generator = struct {
             try g.w.writeAll("std.Thread.sleep(@as(u64, @intCast(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
             try g.w.writeAll(")) * std.time.ns_per_ms)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "go")) {
+            // sys.go(lambda) — fire-and-forget thread spawn.
+            // lambda emits as either fn() void (no capture) or struct instance (captured).
+            // _sys_go() in stdlib_preamble.zig handles both via comptime dispatch.
+            try g.w.writeAll("_sys_go(");
+            if (args.len >= 1) try g.genExpr(args[0].value);
+            try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "cwd")) {
@@ -8490,17 +8677,23 @@ const Generator = struct {
         const iter_var   = try std.fmt.allocPrint(g.alloc, "_it_{s}",  .{first_var});
         defer g.alloc.free(iter_var);
 
+        // Wrap in a block to scope `_it_*` and `_e_*`/`_kp_*` — prevents redeclaration
+        // when the same loop-variable name appears in multiple HashMap loops in the same scope.
+        try g.writeIndent();
+        try g.w.writeAll("{\n");
+        const og = g.indented();
+
         // for-else: wrap while in a labeled block that evaluates to bool
         var fels_lbl: ?[]const u8 = null;
         if (s.else_ != null) {
             const uid = g.nextUid();
             fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
-            try g.writeIndent();
-            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+            try og.writeIndent();
+            try og.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
         }
         defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
         // wg = level where `var _it_` and `while` are emitted
-        const wg = if (fels_lbl != null) g.indented() else g;
+        const wg = if (fels_lbl != null) og.indented() else og;
 
         try wg.writeIndent();
         if (s.vars.len >= 2) {
@@ -8587,14 +8780,16 @@ const Generator = struct {
         if (s.else_) |else_body| {
             try wg.writeIndent();
             try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
-            try g.writeIndent();
-            try g.w.writeAll("};\n");
-            try g.writeIndent();
-            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
-            try g.indented().genStmts(else_body);
-            try g.writeIndent();
-            try g.w.writeAll("}\n");
+            try og.writeIndent();
+            try og.w.writeAll("};\n");
+            try og.writeIndent();
+            try og.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try og.indented().genStmts(else_body);
+            try og.writeIndent();
+            try og.w.writeAll("}\n");
         }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
     }
 
     /// `for row in csv.rows()` / `for col in csv.header()` etc.
@@ -8643,16 +8838,22 @@ const Generator = struct {
         const s_args = s.iter.call.args;
         const is_lines = std.mem.eql(u8, method, "lines");
 
+        // Wrap in a block to scope `_it_*` — prevents redeclaration when the same
+        // loop-variable name appears in multiple split/lines loops in the same Zig scope.
+        try g.writeIndent();
+        try g.w.writeAll("{\n");
+        const og = g.indented();
+
         // for-else: wrap while in a labeled block that evaluates to bool
         var fels_lbl: ?[]const u8 = null;
         if (s.else_ != null) {
             const uid = g.nextUid();
             fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
-            try g.writeIndent();
-            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+            try og.writeIndent();
+            try og.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
         }
         defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
-        const wg = if (fels_lbl != null) g.indented() else g;
+        const wg = if (fels_lbl != null) og.indented() else og;
 
         try wg.writeIndent();
         if (is_lines) {
@@ -8684,14 +8885,16 @@ const Generator = struct {
         if (s.else_) |else_body| {
             try wg.writeIndent();
             try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
-            try g.writeIndent();
-            try g.w.writeAll("};\n");
-            try g.writeIndent();
-            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
-            try g.indented().genStmts(else_body);
-            try g.writeIndent();
-            try g.w.writeAll("}\n");
+            try og.writeIndent();
+            try og.w.writeAll("};\n");
+            try og.writeIndent();
+            try og.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try og.indented().genStmts(else_body);
+            try og.writeIndent();
+            try og.w.writeAll("}\n");
         }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
     }
 
     /// True when `expr` is a call to `str.chars()` on a string — codepoint iteration.
@@ -9724,12 +9927,20 @@ const Generator = struct {
         try g.w.writeAll("}\n");
     }
 
-    /// `lhs <- rhs` — arena copy-out.
+    fn isCopyByValueType(t: TypeChecker.Type) bool {
+        return switch (t) {
+            .int, .uint, .float, .bool, .char, .void_, .int_n, .uint_n, .float_n, .simd => true,
+            else => false,
+        };
+    }
+
+    /// `lhs <- rhs` — copy-out across an `allocate` block boundary.
     ///
-    /// Inside an arena block (arena_depth > 0), str values are duplicated into the
-    /// parent allocator (_parent_alloc_N) so they survive arena deinit.
-    /// Primitive types (int/float/bool/char) are value-copied — no heap involved.
-    /// Outside an arena block, `<-` degenerates to a plain assignment.
+    /// Inside a scoped `allocate` block (arena_depth > 0):
+    ///   - str → dupe into parent allocator (handles *const[N:0]u8 literal coercion)
+    ///   - List/class/other heap types → _zbr_deep_copy into parent allocator
+    ///   - primitives (int/float/bool/char) → plain assignment (value types, no heap)
+    /// Outside a scoped block, `<-` degenerates to a plain assignment.
     fn genCopyOut(g: Generator, s: *Ast.StmtCopyOut) anyerror!void {
         // Type-driven channel disambiguation: check declared types of LHS and RHS.
         if (g.getExprDeclaredType(s.target)) |tr| {
@@ -9756,16 +9967,25 @@ const Generator = struct {
         const is_str = rhs_type == .string;
         const depth  = g.arena_depth;
 
-        if (is_str and depth > 0) {
-            // Hoist rhs into a temp to avoid double-eval in the catch fallback.
+        if (depth > 0 and !isCopyByValueType(rhs_type)) {
             const uid = g.nextUid();
             try g.writeIndent();
-            try g.w.print("const _co_{x}: []const u8 = ", .{uid});
-            try g.genExpr(s.value);
-            try g.w.writeAll(";\n");
-            try g.writeIndent();
-            try g.genExpr(s.target);
-            try g.w.print(" = _parent_alloc_{d}.dupe(u8, _co_{x}) catch _co_{x};\n", .{ depth, uid, uid });
+            if (is_str) {
+                // Explicit []const u8 annotation coerces string literals (*const[N:0]u8 → []const u8).
+                try g.w.print("const _co_{x}: []const u8 = ", .{uid});
+                try g.genExpr(s.value);
+                try g.w.writeAll(";\n");
+                try g.writeIndent();
+                try g.genExpr(s.target);
+                try g.w.print(" = _parent_alloc_{d}.dupe(u8, _co_{x}) catch _co_{x};\n", .{ depth, uid, uid });
+            } else {
+                try g.w.print("const _co_{x} = ", .{uid});
+                try g.genExpr(s.value);
+                try g.w.writeAll(";\n");
+                try g.writeIndent();
+                try g.genExpr(s.target);
+                try g.w.print(" = _zbr_deep_copy(@TypeOf(_co_{x}), _parent_alloc_{d}, _co_{x}, 0) catch @panic(\"OOM copy-out\");\n", .{ uid, depth, uid });
+            }
         } else {
             // Outside arena or primitive: plain assignment — no heap involved.
             try g.writeIndent();
@@ -10858,7 +11078,8 @@ const Generator = struct {
         args:   []const Ast.Arg,
     ) anyerror!void {
         const has_named = for (args) |a| { if (a.name != null) break true; } else false;
-        if (!has_named) {
+        const needs_defaults = if (params) |ps| args.len < ps.len else false;
+        if (!has_named and !needs_defaults) {
             for (args, 0..) |a, i| {
                 if (i > 0) try g.w.writeAll(", ");
                 // Box the arg if the corresponding param is ^T.
@@ -11567,14 +11788,19 @@ const Generator = struct {
                 if (obj_tc == .char) {
                     if (try g.genCharMethod(mem.object, "toString", e.args)) return;
                 }
-                const fmt: []const u8 = switch (obj_tc) {
-                    .float => "{d}",
-                    else   => "{}",
-                };
-                try g.w.print("(std.fmt.allocPrint(_allocator, \"{s}\", .{{", .{fmt});
-                try g.genExpr(mem.object);
-                try g.w.writeAll("}) catch unreachable)");
-                return;
+                // @derive(Debug) structs have a real toString() — emit as a direct method call.
+                if (obj_tc == .named and obj_tc.named.kind == .struct_ and obj_tc.named.decl.struct_.mods.derive_debug) {
+                    // Fall through to normal method call codegen below.
+                } else {
+                    const fmt: []const u8 = switch (obj_tc) {
+                        .float => "{d}",
+                        else   => "{}",
+                    };
+                    try g.w.print("(std.fmt.allocPrint(_allocator, \"{s}\", .{{", .{fmt});
+                    try g.genExpr(mem.object);
+                    try g.w.writeAll("}) catch unreachable)");
+                    return;
+                }
             }
         }
         // Extension method call: obj.method(args) where "TypeName.method" is in ext_methods.
@@ -11905,6 +12131,18 @@ const Generator = struct {
                     }
                     break :blk false;
                 };
+                // For @derive(Eq) structs, route == / != through the generated eql() method.
+                const left_is_eq_struct = blk: {
+                    if (either_nil or left_is_str or right_is_str or left_is_union) break :blk false;
+                    if (g.tc) |tc| {
+                        const t = tc.expr_types.get(e.left) orelse .unknown;
+                        if (t == .named and t.named.kind == .struct_) {
+                            const decl = t.named.decl.struct_;
+                            break :blk decl.mods.derive_eq;
+                        }
+                    }
+                    break :blk false;
+                };
                 if (left_is_str or right_is_str) {
                     if (e.op == .ne) try g.w.writeAll("!");
                     try g.w.writeAll("std.mem.eql(u8, ");
@@ -11917,6 +12155,12 @@ const Generator = struct {
                     try g.w.writeAll("std.meta.eql(");
                     try g.genExpr(e.left);
                     try g.w.writeAll(", ");
+                    try g.genExpr(e.right);
+                    try g.w.writeAll(")");
+                } else if (left_is_eq_struct) {
+                    if (e.op == .ne) try g.w.writeAll("!");
+                    try g.genExpr(e.left);
+                    try g.w.writeAll(".eql(&");
                     try g.genExpr(e.right);
                     try g.w.writeAll(")");
                 } else {
@@ -12353,7 +12597,20 @@ const Generator = struct {
 
     fn genType(g: Generator, tr: Ast.TypeRef) anyerror!void {
         switch (tr) {
+            .alias_applied => |aa| {
+                // Value-parameterized alias: emit the base type, same as named alias.
+                if (g.type_alias_decls.get(aa.name)) |alias| {
+                    try g.genType(alias.base);
+                    return;
+                }
+                try g.w.writeAll(aa.name);
+            },
             .named       => |n| {
+                // Type alias: emit the base type instead of the alias name.
+                if (g.type_alias_decls.get(n.name)) |alias| {
+                    try g.genType(alias.base);
+                    return;
+                }
                 // SIMD vector type annotation: f32x8, i16x16, u8x32, etc.
                 if (Builtins.parseSimdType(n.name)) |si| {
                     try g.w.print("@Vector({d}, {s})", .{ si.lanes, si.elem_zig });

@@ -123,7 +123,8 @@ const Binder = struct {
             .var_      => |n| try b.declareVar_(n, scope),
             .init      => {},  // constructors have no name to declare
             .union_    => |n| try b.declareUnion(n, scope),
-            .sig_      => |n| try b.declareSig(n, scope),
+            .sig_        => |n| try b.declareSig(n, scope),
+            .type_alias  => |n| try b.declareTypeAlias(n, scope),
         }
     }
 
@@ -224,6 +225,12 @@ const Binder = struct {
 
     fn declareSig(b: Binder, n: *Ast.DeclSig, scope: *Scope) anyerror!void {
         const sym = try b.table.newSymbol(n.name, .sig_, .{ .sig_ = n });
+        if (try scope.define(n.name, sym)) |_|
+            try b.emitDuplicateError(n.span, n.name);
+    }
+
+    fn declareTypeAlias(b: Binder, n: *Ast.DeclTypeAlias, scope: *Scope) anyerror!void {
+        const sym = try b.table.newSymbol(n.name, .type_alias, .{ .type_alias_ = n });
         if (try scope.define(n.name, sym)) |_|
             try b.emitDuplicateError(n.span, n.name);
     }

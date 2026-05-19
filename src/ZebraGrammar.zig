@@ -240,6 +240,12 @@ pub const NT = enum {
     // ── Discriminated union types ──────────────────────────────────────────
     DeclUnion,          // union Name eol indent UnionVariantList dedent
     SigDecl,            // sig Name(ParamList) as TypeRef eol  — named function-type alias
+    TypeAliasDecl,      // type Name = TypeRef (where Expr)? eol  — named type alias with constraint
+    WhereClauseOpt,     // optional where constraint
+    AliasParam,         // id colon TypeRef  — one value parameter in a parametric alias
+    AliasParamListNE,   // non-empty comma-separated AliasParam list
+    ValueArg,           // integer_lit | float_lit | string_lit | minus integer_lit | minus float_lit
+    ValueArgListNE,     // non-empty comma-separated ValueArg list
     UnionVariantList,   // one or more variants
     UnionVariant,       // id eol  |  id as TypeRef eol
 
@@ -300,6 +306,7 @@ const program_rules: []const Rule = &.{
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.WeaveDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.DeclUnion) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.SigDecl) } },
+    .{ .lhs = .TopDecl,     .rhs = &.{ n(.TypeAliasDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.MethodDecl) } }, // top-level free function
 };
 
@@ -1296,6 +1303,35 @@ const sig_rules: []const Rule = &.{
     .{ .lhs = .SigDecl, .rhs = &.{ t(.kw_sig), t(.open_call), n(.ParamList), t(.rparen), n(.ReturnAnnotOpt), t(.eol) } },
 };
 
+const type_alias_rules: []const Rule = &.{
+    // type Name = TypeRef eol                               — alias without constraint
+    // type Name = TypeRef where Expr eol                   — alias with constraint
+    .{ .lhs = .TypeAliasDecl, .rhs = &.{ t(.kw_type), t(.id), t(.assign), n(.TypeRef), n(.WhereClauseOpt), t(.eol) } },
+    // type Name(p: T, ...) = TypeRef where Expr eol        — parametric alias (value params)
+    // `Name(` is a single open_call token; rparen closes the param list
+    .{ .lhs = .TypeAliasDecl, .rhs = &.{ t(.kw_type), t(.open_call), n(.AliasParamListNE), t(.rparen), t(.assign), n(.TypeRef), n(.WhereClauseOpt), t(.eol) } },
+    .{ .lhs = .WhereClauseOpt, .rhs = &.{} },                               // ε
+    .{ .lhs = .WhereClauseOpt, .rhs = &.{ t(.kw_where), n(.Expr) } },      // where Expr
+
+    // Alias parameter list: `lo: int, hi: int`
+    .{ .lhs = .AliasParamListNE, .rhs = &.{ n(.AliasParam) } },
+    .{ .lhs = .AliasParamListNE, .rhs = &.{ n(.AliasParamListNE), t(.comma), n(.AliasParam) } },
+    .{ .lhs = .AliasParam, .rhs = &.{ t(.id), t(.colon), n(.TypeRef) } },
+
+    // Value-parameterized alias use site: Name(0, 100) — only literal args to avoid
+    // ambiguity with generic types like List(int).  Unambiguous: integer_lit/float_lit
+    // are not valid TypeRef productions.
+    .{ .lhs = .TypeRef, .rhs = &.{ t(.open_call), n(.ValueArgListNE), t(.rparen) } },
+    .{ .lhs = .ValueArgListNE, .rhs = &.{ n(.ValueArg) } },
+    .{ .lhs = .ValueArgListNE, .rhs = &.{ n(.ValueArgListNE), t(.comma), n(.ValueArg) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.integer_lit) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.float_lit) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.string_single) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.string_double) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.minus), t(.integer_lit) } },
+    .{ .lhs = .ValueArg, .rhs = &.{ t(.minus), t(.float_lit) } },
+};
+
 const union_rules: []const Rule = &.{
     .{ .lhs = .DeclUnion, .rhs = &.{
         n(.ModList), t(.kw_union), t(.id), t(.eol),
@@ -1374,4 +1410,5 @@ const rules: []const Rule = program_rules ++
     lambda_stmt_rules ++
     union_rules ++
     sig_rules ++
+    type_alias_rules ++
     except_rules;

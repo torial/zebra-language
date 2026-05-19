@@ -1,0 +1,19 @@
+# BUG-119: List fields accessed through function parameters should use .items.len
+# Previously: state.items.len instead of state.items.items.len (wrong Zig)
+
+class State
+    var items: List(int) = List(int)()
+    cue init()
+        pass
+
+def itemCount(s: State): int
+    return s.items.len
+
+def main()
+    var st: State = State()
+    st.items.add(10)
+    st.items.add(20)
+    st.items.add(30)
+    var n: int = itemCount(st)
+    assert n == 3
+    print("bug119_list_field_param: OK")

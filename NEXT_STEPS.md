@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-17 (allocate Slice 5: is_scoped/allocate_depth copy-out fix; test sites migrated to allocate Arena())
+**Last updated:** 2026-05-18 (type aliases with constraints complete: transparent emit, constraint after var init, --turbo strips, both backends, QUICKSTART §36, bootstrap 5/5)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -36,14 +36,15 @@ Everything here must ship before 1.0 stability locks in.
 - [ ] Book docs for `sig`, raw strings, `"""`
 
 **0.14 remaining (entire milestone — priority cluster):**
-- [ ] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks (str+primitives done)
+- [x] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks via `_zbr_deep_copy`; HashMap blocked (compile error by design); 114/114 smoke, bootstrap 5/5 (2026-05-17)
 - [x] `allocate` Slice 5: `is_scoped` flag wired into copy-out; `allocate_depth` replaces `arena_depth`; scoped Arena/Debug/FixedBuffer dupe correctly; 113/113 smoke, bootstrap 5/5 (2026-05-17)
 - [x] `allocate` Slice 6: `arena` keyword removed (soft deprecation — helpful error message); `StmtArenaScope` removed from both compilers; `kw_arena` kept in lexer so parser can surface the error cleanly; 113/113 smoke, bootstrap 5/5 (2026-05-17)
-- [ ] `Chan(T)` channels (`ch <- val` / `var v <- ch`)
+- [x] `Chan(T)` channels (`ch <- val` / `var v <- ch`); `sys.go(lambda)` fire-and-forget threads; TC inference (recv→?T, send/close→void); chan+thread smoke tests; QUICKSTART §35; 116/116 smoke, bootstrap 5/5 (2026-05-18)
 
 **New at 1.0:**
 - [x] `Test` stdlib module + `zebra test` subcommand
-- [ ] Type aliases with constraints (`type Name = str where len > 0`)
+- [x] Type aliases with constraints (`type Name = BaseType where value > expr`); transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
+- [x] Refinement types (parametric aliases): `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint; `Bounded(0, 100)` in type position; struct-base aliases; both backends; 119/119 smoke, bootstrap 5/5 (2026-05-18)
 - [ ] WebSocket (`Ws.connect/send/recv/close`)
 - [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
@@ -202,7 +203,9 @@ in method A + bad expression in method B" cheaply.
   **Zig 0.16 now released** — unblocked, but migration to 0.16 may bring its own
   headaches.  Revisit once the Zig upgrade is done.
 - **JSON auto-inference** — `Json.parse(T, str)` without a separate `as T` annotation.
-- **`LowLevel` Gui sub-API** — direct ImGui vertex / draw-command access for custom rendering.
+- **Gui stack** — ImGui GLFW backend is superseded by the MVU + ZigZag TUI + libui-ng redesign
+  (decided 2026-05-18; see §14 and `wiki/pages/concepts/concept_zebra-gui-redesign.md`).
+  `LowLevel` sub-API work is on hold pending ZigZag canonical backend implementation.
 - **Debugger / DAP** — `zebra debug <file.zbr>` subcommand implemented (commit 18bccac).
   Full DAP proxy in `src/Debugger.zig`: bidirectional `zbr↔zig` source-map (reads
   `// zbr:file:line` markers), Content-Length framed JSON transport, two-relay-thread
@@ -243,21 +246,24 @@ Remaining:
 - **Slice 6** ✅ — `arena` keyword removed; `StmtArenaScope` gone from both compilers; `kw_arena` kept
   in lexer so the parser surfaces a helpful error instead of crashing. (2026-05-17)
 
-**b. `<-` copy-out operator — prototype done, full deep-copy pending**
-Parser + both backends shipped for `str` + primitives (2026-05-10).
-Full deep-copy for `List` / classes with provenance tracking is the remaining work.
-Implementation split: comptime per-type traversal generation + runtime `_arena_owns()`
-provenance check.  Blocked on Slice 5 above (needs `is_scoped` flag in codegen first).
-See [[concept_zebra-arena-copyout]] for design doc.
+**b. `<-` copy-out operator — DONE (2026-05-17)**
+`str` → `dupe`; `List(T)` / class / struct → `_zbr_deep_copy` (comptime recursive
+traversal via `@typeInfo`; ArrayList detected by method presence; single-item `*T`
+recurses into fields; `HashMap` is a compile-time error by design).
+Primitives (int/float/bool/char) → plain assignment.  `scanMutations` now descends
+into `allocate` blocks so LHS targets are correctly emitted as `var`.
+See `selfhost/stdlib_preamble.zig` for `_zbr_deep_copy` and `selfhost/cg_helpers.zbr`
+for the `scanMutationsInto` fix.
 
-**c. `Chan(T)` channels**
-`ch <- val` (send), `var v <- ch` (receive).  Backed by `std.Thread` +
-mutex/condvar queue.  `Chan(T)(capacity: n)` construction.  Parser support for
-`<-` is already in place — disambiguation between channel-receive and copy-out
-is type-driven (RHS `Chan(T)` → channel; else → copy-out).
-**Effort:** unknown; channel runtime is real work; language-side parser piece is small.
+**c. `Chan(T)` channels** *(complete 2026-05-18)*
+`_Chan(T)` runtime (mutex/condvar/ring buffer), `_chan_create`, `genChanMethod` (send/recv/close),
+`<-` sugar in `genCopyOut`, `Chan(T)` → `*_Chan(T)` in genType, `Chan(T)(cap)` constructor —
+all implemented in both compilers.  `sys.go(lambda)` fire-and-forget thread spawning via
+`_sys_go` comptime helper in `stdlib_preamble.zig`.  Selfhost TC inference added (chan_ Type_ variant,
+recv→?T, send/close→void).  `chan_smoke_test.zbr` + `chan_thread_test.zbr` both in `selfhost_smoke.sh`.
+QUICKSTART §35 documents full API.  116/116 smoke, bootstrap 5/5.
 
-**Sequencing:** (a) Slice 5 → (b) full deep-copy → (c).  Slice 6 is independent and can run after (c).
+**Sequencing:** (a) Slice 5 → (b) full deep-copy → (c) — all complete.
 
 ### 15. 1.0 — Language stability + CHANGELOG (cumulative commitment)
 
@@ -273,13 +279,15 @@ the broader commitment is everything that landed from 0.1 onward.
   Gui, Reflect, Json.parseStrict, Progress, Base64, Path, Profile, SIMD
 - ✅ Self-hosting + bootstrap round-trip (Phase 22, 2026-04-21)
 - ✅ Source-mapped errors (delivered 0.5)
-- 0.11 deliverables: REPL, real ImGui backend, regex per-quantifier, JSON auto-inference, gzip, debugger/DAP, build system
+- 0.11 deliverables: REPL, Gui stack (ImGui superseded by ZigZag+libui-ng redesign — see §14), regex per-quantifier, JSON auto-inference, gzip, debugger/DAP, build system
 - 0.13 deliverables: BUG-115 resolved, remaining sweeps, `^T` fixes
 - 0.14 deliverables: full `<-` deep-copy, `Chan(T)`, allocator context
 
 **New at 1.0:**
+- ~~Named `cue init` construction calls~~ **DONE (2026-05-19)**: `Point(y: 5)` with defaults; `Config(debug: true)` reorders and fills remaining defaults. Both compilers. Limitation: selfhost codegen only does named/default fill for same-module types — cross-module (`ast.Modifiers`) still needs positional args in selfhost-compiled code.  All `Modifiers` params now have `= false` defaults for bootstrap use.  bootstrap 5/5, 121/121 smoke.  Cross-module selfhost fill is deferred to a future sprint (requires threading dep module AST through `lookupFnParams`).
 - ~~`Test` stdlib module~~ **DONE**: `zebra test` subcommand, `assert_eq/ne/true/false` statements, `def test_*` discovery, structured pass/fail output; both backends
-- Type aliases with constraints (`type Name = str where len > 0`)
+- ~~Type aliases with constraints~~ **DONE**: `type Name = BaseType where value > expr`; transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
+- ~~Refinement types (parametric aliases)~~ **DONE**: `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint check; 119/119 smoke, bootstrap 5/5 (2026-05-18)
 - WebSocket (`Ws.connect/send/recv/close`)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
@@ -295,10 +303,28 @@ The daily-useful pieces (`zebra typecheck-merge` subcommand, per-commit zip snap
 were extracted and shipped in §19.5.  The full VCS rewrite is a post-1.0 research /
 teaching artifact.  See `wiki/pages/concepts/concept_zebra-vcs-architecture.md`.
 
-### 14. IDE — self-hosted
-Self-hosted Zebra + ImGui editor: syntax highlighting (pthom `ImGuiColorTextEdit`),
-inline diagnostics (source-mapping already done), REPL pane, plugin loading.
-See: `wiki/pages/concepts/concept_zebra-imgui-backend.md`, `concept_zebra-pthom-editor.md`
+### 14. IDE — self-hosted (GUI stack redesigned 2026-05-18)
+
+**Previous direction (superseded):** ImGui GLFW backend + pthom ImGuiColorTextEdit.
+
+**New direction:** MVU/Elm architecture + ZigZag TUI canonical backend + libui-ng GUI adapter.
+- **API model:** `init()` / `update(msg)` / `view(model)` — users write MVU; ZigZag TUI is the
+  canonical backend that defines the API ceiling.
+- **ZigZag TUI** (meszmate/zigzag, v0.1.5, Zig 0.15.2-compatible): pure Zig, zero deps, CodeView
+  with syntax highlighting, 34+ components including DiffView/Table/BarChart/FilePicker.
+- **libui-ng GUI** (kojix2 fork, active): native OS controls (Win32/GTK3/Cocoa).  Zig binding:
+  `desttinghim/zig-libui-ng` — **validate against Zig 0.15.2 before starting** (30 min check).
+- **Code editor:** ZigZag CodeView (full); libui-ng `uiMultilineEntry` (degraded); stub no-op.
+  `uiArea` is the long-term libui-ng path.
+- **Layout:** `.fill` / `.fraction(n)` / `.fixed(n)` semantic values — each backend maps its own density.
+
+**Implementation sequence:**
+1. Validate `desttinghim/zig-libui-ng` against Zig 0.15.2
+2. Design MVU Gui API in QUICKSTART.md + toy programs (no code yet)
+3. ZigZag TUI backend (canonical reference)
+4. libui-ng adapter (~200-300 lines widget-cache reconciliation)
+
+See: `wiki/pages/concepts/concept_zebra-gui-redesign.md`
 
 ### 17. 1.5 — WASM Compilation Target + Web Frontend SDK
 
@@ -334,6 +360,21 @@ and WASI (server-side Wasm runtimes).  Full design doc at
 with the §22 kernel track — implement those two foundations once, both milestones benefit.
 
 See: `wiki/pages/concepts/concept_zebra-wasm-frontend.md`
+
+### 17b. 1.5 — Http server ergonomics (swerver-inspired)
+
+Three patterns from the [swerver](https://ziggit.dev/t/building-an-http-server-with-no-per-request-allocations-in-zig/15578) zero-allocation Zig HTTP server worth adopting at 1.5.  See design notes at `wiki/pages/concepts/concept_zebra-http-design.md`.
+
+**a. Arena-per-request as the idiomatic `Http` handler model**
+The runtime supplies a fresh `Allocator` (backed by a fixed-size arena) to every handler; it resets automatically on handler return.  Zero per-request heap churn for typical GET traffic.  Aligns with Zebra's existing `allocate` block + `Chan(T)` model.  Primary open question: explicit arena parameter vs implicit allocator context (explicit is safer for 1.5; contextual sugar can follow).
+
+**b. `str_view` / borrowed string slice type**
+Swerver's zero-copy header parser works because Zig can express `[]const u8` slices that borrow from the read buffer without copying.  Zebra's `str` is always owned — no way to say "this string lives as long as this buffer."  A `str_view` (or `StrSlice`, `&str`) unlocks zero-copy HTTP header parsing, zero-copy CSV/JSON tokenization, and cheap substring operations.  **This is the biggest structural gap between Zebra's string model and what high-performance servers need.**  Requires a design spike on lifetime annotation or scoped-lifetime guarantees before implementation.
+
+**c. `BoundedPool(T, N)` stdlib module**
+`Pool(T)()` already exists as an allocator wrapper.  What swerver adds on top: a LIFO free-index stack (O(1) acquire/release) and an acquired bitmap for double-release detection in debug mode (`BoundedPool(T, N, .debug)`).  Useful beyond HTTP: any program managing fixed pools of buffers (audio, video, network I/O) benefits from the correctness guarantee with zero overhead on the success path.
+
+See: `wiki/pages/concepts/concept_zebra-http-design.md`
 
 ### 22. 2.0 — Kernel track (Zebra for OS-writing)
 2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no

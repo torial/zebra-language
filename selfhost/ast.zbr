@@ -50,6 +50,7 @@ union Decl
     extend_: ^DeclExtend
     union_: ^DeclUnion
     sig_: ^DeclSig
+    type_alias_: ^DeclTypeAlias
 
 # ── Modifiers ────────────────────────────────────────────────────────────────
 
@@ -64,8 +65,11 @@ struct Modifiers
     var is_profile: bool
     var is_once: bool
     var is_export: bool
+    var is_derive_debug: bool
+    var is_derive_eq: bool
+    var is_derive_hash: bool
 
-    cue init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool, is_export: bool)
+    cue init(is_public: bool = false, is_private: bool = false, is_abstract: bool = false, is_static: bool = false, is_readonly: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false)
         .is_public = is_public
         .is_private = is_private
         .is_abstract = is_abstract
@@ -76,6 +80,9 @@ struct Modifiers
         .is_profile = is_profile
         .is_once = is_once
         .is_export = is_export
+        .is_derive_debug = is_derive_debug
+        .is_derive_eq = is_derive_eq
+        .is_derive_hash = is_derive_hash
 
 # ── Generic type parameter ────────────────────────────────────────────────────
 
@@ -243,6 +250,22 @@ struct DeclUnion
         .name = name
         .variants = variants
 
+# ── Type alias ───────────────────────────────────────────────────────────────
+
+struct DeclTypeAlias
+    var span: Span
+    var name: String
+    var params: List(Param)
+    var base: TypeRef
+    var constraint: ^Expr?
+
+    cue init(span: Span, name: String, params: List(Param), base: TypeRef, constraint: ^Expr?)
+        .span = span
+        .name = name
+        .params = params
+        .base = base
+        .constraint = constraint
+
 # ── Sig (named function-type alias) ──────────────────────────────────────────
 
 struct DeclSig
@@ -355,6 +378,7 @@ union TypeRef
     void_
     same_
     tuple: TupleTypeRef
+    alias_applied: AliasAppliedTypeRef
 
 struct NamedTypeRef
     var span: Span
@@ -381,6 +405,16 @@ struct TupleTypeRef
     cue init(span: Span, elems: List(TypeRef))
         .span = span
         .elems = elems
+
+struct AliasAppliedTypeRef
+    var span: Span
+    var name: String
+    var args: List(Expr)
+
+    cue init(span: Span, name: String, args: List(Expr))
+        .span = span
+        .name = name
+        .args = args
 
 # ── Assign operators ──────────────────────────────────────────────────────────
 

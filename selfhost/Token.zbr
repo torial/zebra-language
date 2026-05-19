@@ -105,6 +105,7 @@ union TokenKind
     kw_extend
     kw_def
     kw_sig
+    kw_type
     kw_var
     kw_const
     kw_cue
@@ -223,6 +224,8 @@ class Keywords
             return TokenKind.kw_def()
         if word == "sig"
             return TokenKind.kw_sig()
+        if word == "type"
+            return TokenKind.kw_type()
         if word == "var"
             return TokenKind.kw_var()
         if word == "const"

@@ -1,0 +1,19 @@
+type NonEmptyStr = str where value.len > 0
+type PositiveInt  = int where value > 0
+type Ratio        = float where value >= 0.0 and value <= 1.0
+type UncheckedInt = int
+
+def main()
+    var name: NonEmptyStr = "hello"
+    var count: PositiveInt = 42
+    var ratio: Ratio = 0.5
+    var raw: UncheckedInt = -7
+
+    # aliases are transparent — arithmetic works naturally
+    var doubled: int = count * 2
+    var combined: str = name + " world"
+
+    print name
+    print combined
+    print doubled
+    print raw

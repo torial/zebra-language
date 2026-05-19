@@ -156,8 +156,9 @@ const Resolver = struct {
             .method    => |n| try r.walkMethod(n, scope),
             .var_      => |n| try r.walkVarDecl(n, scope),
             .init      => |n| try r.walkInit(n, scope),
-            .union_    => |n| try r.walkUnion(n, scope),
-            .sig_      => {}, // type alias — no body to resolve
+            .union_      => |n| try r.walkUnion(n, scope),
+            .sig_        => {}, // type alias — no body to resolve
+            .type_alias  => |n| try r.walkTypeAlias(n, scope),
         }
     }
 
@@ -246,6 +247,35 @@ const Resolver = struct {
         const inner = sym.own_scope orelse return;
         for (n.members) |*m| {
             if (m.value) |v| try r.walkExpr(v, inner);
+        }
+    }
+
+    fn walkTypeAlias(r: Resolver, n: *Ast.DeclTypeAlias, scope: *Scope) anyerror!void {
+        // Resolve the base type reference so TypeChecker can look it up.
+        try r.resolveTypeRef(&n.base, scope);
+        // If there is a constraint, resolve it in a child scope that has `value`
+        // bound to a synthetic param representing the value being constrained,
+        // plus any value params (`lo`, `hi`, etc.) for parametric aliases.
+        if (n.constraint) |constraint| {
+            const value_param = try r.table.arena.create(Ast.Param);
+            value_param.* = .{
+                .span    = n.span,
+                .mode    = .normal,
+                .name    = "value",
+                .type_   = n.base,
+                .default = null,
+            };
+            const value_sym = try r.table.newSymbol("value", .param, .{ .param = value_param });
+            const constraint_scope = try r.table.newScope(.method, scope);
+            _ = try constraint_scope.define("value", value_sym);
+            // Bind alias value params so the constraint expression can reference them.
+            if (n.params) |params| {
+                for (params) |*p| {
+                    const sym = try r.table.newSymbol(p.name, .param, .{ .param = p });
+                    _ = try constraint_scope.define(p.name, sym);
+                }
+            }
+            try r.walkExpr(constraint, constraint_scope);
         }
     }
 
@@ -1044,6 +1074,11 @@ const Resolver = struct {
             },
             .void_, .same => {},
             .tuple => |*ttr| { for (ttr.elems) |*el| try r.resolveTypeRef(el, scope); },
+            .alias_applied => |*aa| {
+                // Resolve the alias name; arg expressions are literals so no sub-resolution needed.
+                if (scope.lookup(aa.name) == null)
+                    try r.emitUnresolved(aa.span, aa.name);
+            },
         }
     }
 

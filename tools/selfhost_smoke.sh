@@ -436,6 +436,28 @@ smoke_run test/str_method_chain_test.zbr "str_method_chain: OK"
 # user class method returns — downstream method calls must dispatch correctly.
 smoke_run test/type_infer_chain_test.zbr "type_infer_chain: OK"
 
+# `<-` deep copy-out: List(str), List(int), and recursive class instances must all
+# survive arena deinit — plain assign was wrong before _zbr_deep_copy was added.
+smoke_run test/allocate_copyout_deep_test.zbr "allocate_copyout_deep: OK"
+
+# Chan(T): buffered channel API (send/recv/close) + `<-` sugar — single-threaded.
+smoke_run test/chan_smoke_test.zbr "chan: OK"
+# Chan(T) + sys.go(): producer/consumer via fire-and-forget thread spawn.
+smoke_run test/chan_thread_test.zbr "chan_thread: OK"
+
+# BUG-119: List fields accessed through function parameters now emit .items.len.
+smoke_run test/bug119_list_field_param_test.zbr "bug119_list_field_param: OK"
+
+# Type aliases: transparent alias + where-clause constraint check at variable declaration.
+smoke_run test/type_alias_test.zbr "hello"
+smoke_run test/refinement_type_test.zbr "85"
+
+# BUG: for-loop iterator variable collision — two loops with the same var name in the same scope.
+smoke_run test/iter_collision_test.zbr "abc xyz 2 1"
+
+# Exhaustiveness checking: branch on enum/union covers all members without else.
+smoke_run test/enum_branch_test.zbr "north"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

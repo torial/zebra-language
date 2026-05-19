@@ -122,6 +122,8 @@ union Type_
     # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
     list_: ^Type_
     hashmap_: HashMapType_
+    # Thread-safe channel Chan(T) — element type T in payload.
+    chan_: ^Type_
     # Tuple type — ordered sequence of heterogeneous element types.
     tuple_: TupleType_
 
@@ -228,6 +230,10 @@ class ModuleTypes
     # HashMap vs List receivers at .remove / .contains dispatch sites
     # (BUG-032 et al). Populated by addClassMembers.
     var hashmap_field_names: HashMap(str, bool)
+    # Parallel to hashmap_field_names: field names whose declared type is List(T).
+    # Used by codegen to correctly emit `.items.len` for List fields accessed through
+    # function parameters, where owner_members is empty (BUG-119).
+    var list_field_names: HashMap(str, bool)
     # Union variant payload index — key "UnionName.variantName", value is
     # the payload's Type_ (or Type_.unknown_ for payload-less variants).
     # Drives Phase 17b branch-on narrowing: `branch x on Foo.bar: n`
@@ -257,10 +263,18 @@ class ModuleTypes
     # "ClassName.memberName" keys for fields/methods marked private/protected.
     # Enforced in inferExpr Expr.member: access from outside the owning class is an error.
     var private_member_keys: HashMap(str, bool)
+    # Names of type aliases declared in this module — used by TC to skip mismatch
+    # checks when the declared type is an alias for a different (but compatible) type.
+    var type_alias_names: HashMap(str, bool)
+    # Enum type names declared in this module — used for exhaustiveness checking.
+    var enum_names: HashMap(str, bool)
+    # All enum member keys ("EnumName.memberName") in insertion order.
+    var all_enum_member_keys: List(str)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
         hashmap_field_names = HashMap()
+        list_field_names = HashMap()
         variant_payloads = HashMap()
         boxed_variant_keys = List()
         ref_field_keys = List()
@@ -269,6 +283,9 @@ class ModuleTypes
         all_variant_keys = List()
         class_interfaces = HashMap()
         private_member_keys = HashMap()
+        type_alias_names = HashMap()
+        enum_names = HashMap()
+        all_enum_member_keys = List()
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -285,11 +302,43 @@ class ModuleTypes
     def hasHashMapField(field_name: str): bool
         return .hashmap_field_names.contains(field_name)
 
+    def addListField(field_name: str)
+        .list_field_names.put(internString(field_name), true)
+
+    def hasListField(field_name: str): bool
+        return .list_field_names.contains(field_name)
+
     def addPrivateMemberKey(class_name: str, member_name: str)
         .private_member_keys.put(internString(class_name + "." + member_name), true)
 
     def isPrivateMember(class_name: str, member_name: str): bool
         return .private_member_keys.contains(class_name + "." + member_name)
+
+    def addTypeAlias(name: str)
+        .type_alias_names.put(internString(name), true)
+
+    def isTypeAlias(name: str): bool
+        return .type_alias_names.contains(name)
+
+    def addEnumMember(enum_name: str, member_name: str)
+        .enum_names.put(internString(enum_name), true)
+        .all_enum_member_keys.add(internString(enum_name + "." + member_name))
+
+    def hasEnum(name: str): bool
+        return .enum_names.contains(name)
+
+    def memberNamesForEnum(enum_name: str): List(str)
+        var result: List(str) = List(str)()
+        var prefix: str = enum_name + "."
+        var i: int = 0
+        while i < all_enum_member_keys.count()
+            var k: str = all_enum_member_keys.at(i)
+            if k.startsWith(prefix)
+                var parts: List(str) = k.split(".")
+                if parts.count() >= 2
+                    result.add(parts.at(1))
+            i = i + 1
+        return result
 
     def addUnion(name: str)
         .union_names.put(internString(name), true)
@@ -470,12 +519,17 @@ def typeFromRef(tr: TypeRef): Type_
                 return Type_.list_(typeFromRef(g.args.at(0)))
             if gname == "HashMap" and g.args.count() == 2
                 return Type_.hashmap_(HashMapType_(typeFromRef(g.args.at(0)), typeFromRef(g.args.at(1))))
+            if gname == "Chan" and g.args.count() == 1
+                return Type_.chan_(typeFromRef(g.args.at(0)))
             return Type_.unknown_
         on TypeRef.tuple as tt
             var ttelems: List(Type_) = List()
             for ttr in tt.elems
                 ttelems.add(typeFromRef(ttr))
             return Type_.tuple_(TupleType_(ttelems))
+        on TypeRef.alias_applied
+            # value-parameterized alias — codegen resolves to base type; TC treats as unknown
+            return Type_.unknown_
         else
             # error_union, stream, same_ — handled as unknown.
             return Type_.unknown_
@@ -512,6 +566,20 @@ def isHashMapTypeRef(tr: TypeRef): bool
         else
             return false
 
+# Helper: true if tr is List(T), or a nilable/ref_to wrapping one.
+# Mirrors isHashMapTypeRef; detects List-ness from the raw TypeRef before
+# typeFromRef loses generic-arg fidelity. Used to populate list_field_names.
+def isListTypeRef(tr: TypeRef): bool
+    branch tr
+        on TypeRef.generic as gtr
+            return gtr.name == "List"
+        on TypeRef.nilable as inner
+            return isListTypeRef(inner)
+        on TypeRef.ref_to as inner
+            return isListTypeRef(inner)
+        else
+            return false
+
 def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
     for member in members
         branch member
@@ -525,6 +593,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                         mt.addStrSetField(v.name)
                     if isHashMapTypeRef(v.type_ to!)  # safe: nil checked above
                         mt.addHashMapField(v.name)
+                    if isListTypeRef(v.type_ to!)  # safe: nil checked above
+                        mt.addListField(v.name)
                     # Populate ref_field_keys / opt_ref_field_keys for ^T and ^T? fields.
                     # ^T? parses as ref_to(nilable(inner)); ^T as ref_to(non-nilable inner).
                     if v.type_ to! is TypeRef.ref_to as refInner  # safe: nil checked above
@@ -645,6 +715,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var mct = ClassTypes(mx.name)
                 addClassMembers(mt, mct, mx.members)
                 mt.addClass(mct)
+            on Decl.type_alias_ as ta
+                mt.addTypeAlias(ta.name)
+            on Decl.enum_ as de
+                for mem in de.members
+                    mt.addEnumMember(de.name, mem.name)
             on Decl.union_ as u
                 # Index variant → payload Type_ for branch-on narrowing (17b).
                 var uname: str = u.name
@@ -884,6 +959,10 @@ class InferCtx
             return .dep_types.hasClass(bare)
         return false
 
+    # True if name is a type alias in this module or any dep.
+    def isTypeAlias(name: str): bool
+        return .module_types.isTypeAlias(name) or .dep_types.isTypeAlias(name)
+
     # True if class_name is known to implement iface_name in this module or any dep.
     def classConformsToAny(class_name: str, iface_name: str): bool
         if .module_types.classConformsTo(class_name, iface_name)
@@ -994,6 +1073,8 @@ def typeTag(t: Type_): str
             return "list(" + typeTag(le) + ")"
         on Type_.hashmap_ as hm
             return "hmap(" + typeTag(hm.key_t) + "," + typeTag(hm.val_t) + ")"
+        on Type_.chan_ as ce
+            return "chan(" + typeTag(ce) + ")"
         on Type_.tuple_ as _
             return "tpl"
         on Type_.string_builder
@@ -1286,6 +1367,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(list_elem)
                             if lmname == "contains"
                                 return Type_.bool_
+                        on Type_.chan_ as chan_elem
+                            var cmname: str = mem.member
+                            if cmname == "recv"
+                                return Type_.optional(chan_elem)
+                            if cmname == "send" or cmname == "close"
+                                return Type_.void_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
                             if hmname == "fetch"
@@ -1366,7 +1453,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             return inferExpr(eif.then_expr, ctx)
         on Expr.cast as ect
             # `expr: TypeRef` / `cast(Expr, T)` — result is the target type.
-            return typeFromRef(ect.target)
+            var src_t: Type_ = inferExpr(ect.expr, ctx)
+            var tgt_t: Type_ = typeFromRef(ect.target)
+            # BUG-106: reject numeric/bool/string cast to a named class/struct
+            if tgt_t is Type_.named as tgt_class
+                if isPrimitive(src_t)
+                    ctx.addErr(ctx.file, ect.span.line, ect.span.col,
+                        "cannot cast '" + typeTag(src_t) + "' to class/struct type '" + tgt_class + "'")
+            return tgt_t
         on Expr.binary as b
             var lt: Type_ = inferExpr(b.left, ctx)
             var rt: Type_ = inferExpr(b.right, ctx)
@@ -1827,6 +1921,9 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if inferred is Type_.context_dependent
         return exp
     if exp is Type_.named as exp_class
+        # Type aliases are transparent — skip conformance check when expected is an alias.
+        if ctx.isTypeAlias(exp_class)
+            return inferred
         if inferred is Type_.named as inf_class
             if exp_class != inf_class
                 if not ctx.classConformsToAny(inf_class, exp_class)
@@ -1903,6 +2000,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         return
     var declared: Type_ = typeFromRef(dv.type_ to!)  # safe: nil returned above
     if declared is Type_.named as dec_class
+        # Type aliases are transparent — skip the conformance check; codegen resolves to base.
+        if ctx.isTypeAlias(dec_class)
+            return
         if dv.init_expr != nil
             var cv_inferred: Type_ = inferExpr(dv.init_expr to!, ctx)
             if cv_inferred is Type_.named as inf_class
@@ -1981,28 +2081,62 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkStmts(c.stmts, file, ctx)
                 if sb.else_ as sb_else
                     checkStmts(sb_else, file, ctx)
-                if ctx.warn_non_exhaustive
-                    var subj_t: Type_ = inferExpr(sb.expr, ctx)
-                    var uname: str = ""
-                    if subj_t is Type_.named as tn
-                        uname = tn
-                    if uname != "" and ctx.module_types.hasUnion(uname)
-                        var variants: List(str) = ctx.module_types.variantNamesForUnion(uname)
-                        if variants.count() > 0
-                            var covered: List(str) = List(str)()
-                            for c in sb.cases
-                                if c.values.count() == 1
-                                    var v: Expr = c.values.at(0)
-                                    if v is Expr.member as vm
-                                        covered.add(vm.member)
-                            if sb.else_ != nil
-                                for vname in variants
-                                    var found: bool = false
-                                    for cv in covered
-                                        if cv == vname
-                                            found = true
-                                    if not found
-                                        ctx.addWarn(file, sb.span.line, 0, "branch on '" + uname + "' has 'else' but does not explicitly handle variant '" + vname + "'")
+                # Infer subject type once for all exhaustiveness checks.
+                var sb_subj: Type_ = inferExpr(sb.expr, ctx)
+                var sb_tname: str = ""
+                if sb_subj is Type_.named as tn
+                    sb_tname = tn
+                # Union exhaustiveness error: no else, not all variants covered.
+                if sb.else_ == nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
+                    var sb_vars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)
+                    if sb_vars.count() > 0
+                        var sb_cvd: List(str) = List(str)()
+                        for bc in sb.cases
+                            if bc.values.count() == 1
+                                var bv: Expr = bc.values.at(0)
+                                if bv is Expr.member as bvm
+                                    sb_cvd.add(bvm.member)
+                        for vname in sb_vars
+                            var found: bool = false
+                            for cv in sb_cvd
+                                if cv == vname
+                                    found = true
+                            if not found
+                                ctx.addErr(file, sb.span.line, 0, "branch on '" + sb_tname + "' does not cover variant '" + vname + "' (add 'on " + sb_tname + "." + vname + "' or an 'else' clause)")
+                # Enum exhaustiveness error: no else, not all members covered.
+                if sb.else_ == nil and sb_tname != "" and ctx.module_types.hasEnum(sb_tname)
+                    var sb_mems: List(str) = ctx.module_types.memberNamesForEnum(sb_tname)
+                    if sb_mems.count() > 0
+                        var sb_mcvd: List(str) = List(str)()
+                        for bc in sb.cases
+                            if bc.values.count() == 1
+                                var bv: Expr = bc.values.at(0)
+                                if bv is Expr.member as bvm
+                                    sb_mcvd.add(bvm.member)
+                        for mname in sb_mems
+                            var found: bool = false
+                            for cv in sb_mcvd
+                                if cv == mname
+                                    found = true
+                            if not found
+                                ctx.addErr(file, sb.span.line, 0, "branch on '" + sb_tname + "' does not cover member '" + mname + "' (add 'on " + sb_tname + "." + mname + "' or an 'else' clause)")
+                # --warn-non-exhaustive: warn when else silently catches union variants.
+                if ctx.warn_non_exhaustive and sb.else_ != nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
+                    var sb_wvars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)
+                    if sb_wvars.count() > 0
+                        var sb_wcvd: List(str) = List(str)()
+                        for bc in sb.cases
+                            if bc.values.count() == 1
+                                var bv: Expr = bc.values.at(0)
+                                if bv is Expr.member as bvm
+                                    sb_wcvd.add(bvm.member)
+                        for vname in sb_wvars
+                            var found: bool = false
+                            for cv in sb_wcvd
+                                if cv == vname
+                                    found = true
+                            if not found
+                                ctx.addWarn(file, sb.span.line, 0, "branch on '" + sb_tname + "' has 'else' but does not explicitly handle variant '" + vname + "'")
             else
                 pass
 

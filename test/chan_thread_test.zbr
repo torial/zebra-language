@@ -1,0 +1,29 @@
+# Chan(T) threaded test — producer/consumer via sys.go()
+
+def main()
+    var ch: Chan(int) = Chan(int)(4)
+
+    # Producer: send 4 values then close.
+    # Capture uses same name (standard Zebra idiom).
+    sys.go(def()
+        capture
+            var ch: Chan(int) = ch
+        ch.send(1)
+        ch.send(2)
+        ch.send(3)
+        ch.send(4)
+        ch.close()
+    )
+
+    # Consumer: drain until closed
+    var sum: int = 0
+    var done: bool = false
+    while not done
+        var v: int? = ch.recv()
+        if v as n
+            sum = sum + n
+        else
+            done = true
+
+    assert sum == 10
+    print("chan_thread: OK")
