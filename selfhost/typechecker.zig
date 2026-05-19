@@ -1110,13 +1110,20 @@ fn _ws_close(conn: *_WsConn) void {
     // WsConn struct itself not freed here — OK for arena-allocator model
 }
 
+// Supports both void-returning and anyerror!void-returning handlers by coercing
+// via an anyerror!void wrapper, which lets a void return succeed silently.
+inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
+    const _Wrap = struct {
+        fn call(hh: @TypeOf(h), wws: *_WsConn) anyerror!void { return hh(wws); }
+    };
+    _Wrap.call(h, ws) catch |e| std.debug.print("Ws.serve: handler error: {s}\n", .{@errorName(e)});
+}
+
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
-    const _HFn = *const fn(*_WsConn) void;
-    const _fn: _HFn = handler;
     const _Ctx = struct {
         conn: std.net.Server.Connection,
-        handler_fn: _HFn,
+        handler_fn: @TypeOf(handler),
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
@@ -1158,8 +1165,8 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
             defer _pa.destroy(ws);
             ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
-            ctx.handler_fn(ws);
-            // Close if handler didn't
+            _ws_invoke(ctx.handler_fn, ws);
+            // Close if handler didn't (or errored out)
             if (!ws.closed) {
                 ws.closed = true;
                 _ws_send_close_frame(ws);
@@ -1176,7 +1183,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     while (true) {
         const _c = _srv.accept() catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
-        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
+        _ctx.* = .{ .conn = _c, .handler_fn = handler };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
     }
 }
