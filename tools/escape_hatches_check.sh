@@ -39,7 +39,10 @@ cd "$REPO"
 #         profile data must survive the scope that is being profiled)
 #   - 2× _Chan(T) channel runtime (_alloc const + _chan_create; channel
 #         buffers are shared across threads and must outlive arena rewinds)
-EXPECTED_PREAMBLE=54
+#   - 7× WebSocket (_WsTlsState heap-alloc + _ws_connect TLS init + _ws_serve
+#         per-connection heap-alloc; TLS state must be stable in memory since
+#         tls.Client holds internal pointers back into its own buffer fields)
+EXPECTED_PREAMBLE=61
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)

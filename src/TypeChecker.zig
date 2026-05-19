@@ -126,6 +126,8 @@ pub const Type = union(enum) {
     build_ctx,
     /// `BuildTarget` — a single declared build target; supports fluent `.linkLib/.platform/.option`.
     build_target,
+    /// `WsConn` — WebSocket connection returned by `Ws.connect()` or supplied to `Ws.serve` handler.
+    ws_conn,
 
     // ── SIMD vectors ──────────────────────────────────────────────────────────
     /// A SIMD vector type: `f32x8`, `i16x16`, `u8x32`, etc.
@@ -277,6 +279,7 @@ pub const Type = union(enum) {
             .allocator_ctx  => b == .allocator_ctx,
             .build_ctx      => b == .build_ctx,
             .build_target   => b == .build_target,
+            .ws_conn        => b == .ws_conn,
             .json_array     => b == .json_array,
             .tuple => |ea| switch (b) {
                 .tuple => |eb| blk: {
@@ -362,6 +365,7 @@ pub const Type = union(enum) {
             .allocator_ctx  => "Allocator",
             .build_ctx      => "Build",
             .build_target   => "BuildTarget",
+            .ws_conn        => "WsConn",
             .simd           => "simd<N>",
             .optional       => "?T",
             .tuple          => "tuple",
@@ -2396,6 +2400,16 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, e.member, "kill"))       return .void_;
             if (std.mem.eql(u8, e.member, "isRunning"))  return .bool;
         }
+        // WsConn instance methods.
+        if (obj_type == .ws_conn) {
+            if (std.mem.eql(u8, e.member, "send"))  return .void_;
+            if (std.mem.eql(u8, e.member, "close")) return .void_;
+            if (std.mem.eql(u8, e.member, "recv")) {
+                const boxed = tc.map_alloc.create(Type) catch return .string;
+                boxed.* = .string;
+                return .{ .optional = boxed };
+            }
+        }
         // UriResult field access.
         if (obj_type == .uri_result) {
             if (std.mem.eql(u8, e.member, "scheme") or
@@ -2865,6 +2879,16 @@ const TypeChecker = struct {
                     _ = try tc.inferExpr(mem.object);
                     if (std.mem.eql(u8, mem.member, "run")) return .string;
                     return .void_;
+                }
+                // Ws.* static methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Ws")) {
+                    _ = try tc.inferExpr(mem.object);
+                    if (std.mem.eql(u8, mem.member, "connect")) {
+                        const boxed = tc.map_alloc.create(Type) catch return .ws_conn;
+                        boxed.* = .ws_conn;
+                        return .{ .optional = boxed };
+                    }
+                    return .void_; // serve
                 }
                 // Http.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Http")) {
@@ -3972,6 +3996,7 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "CodeEditor"))  return .code_editor;
     if (std.mem.eql(u8, n, "Build"))       return .build_ctx;
     if (std.mem.eql(u8, n, "BuildTarget")) return .build_target;
+    if (std.mem.eql(u8, n, "WsConn"))     return .ws_conn;
     return switch (Builtins.scalarKind(n)) {
         .int        => .int,
         .uint       => .uint,

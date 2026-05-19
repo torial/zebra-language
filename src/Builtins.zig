@@ -72,6 +72,8 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Udp",           {} },
     .{ "UdpSocket",     {} },
     .{ "Net",           {} },
+    .{ "Ws",            {} },
+    .{ "WsConn",        {} },
     // Stdlib math
     .{ "Math",          {} },
     // Sys process result / spawn handle

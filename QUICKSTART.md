@@ -1566,6 +1566,44 @@ var present  = args.contains("--dry-run")    # bool
 | `HttpResponse.ok(body)` / `notFound(body)` / etc. | `HttpResponse` |
 | `r.status / r.text / r.headers`               | mixed           |
 
+### `Ws` — WebSocket client and server
+
+`Ws.connect(url)` opens a WebSocket connection to `ws://` or `wss://` URLs.
+`Ws.serve(port, handler)` runs a plain-TCP WebSocket server on `port`, calling
+`handler` once per accepted connection. `recv()` blocks on the calling thread.
+
+```zebra
+# ── client ──────────────────────────────────────────────────────────────────
+var conn = Ws.connect("ws://echo.example.com/ws")
+if conn as ws
+    ws.send("hello")
+    var msg = ws.recv()
+    if msg as m
+        print(m)
+    ws.close()
+
+# ── server ───────────────────────────────────────────────────────────────────
+Ws.serve(8765, def(ws: WsConn)
+    var msg = ws.recv()
+    if msg as m
+        ws.send("echo: " + m)
+    ws.close()
+)
+```
+
+| Call                              | Returns      | Notes                                        |
+|-----------------------------------|--------------|-----------------------------------------------|
+| `Ws.connect(url)`                 | `WsConn?`    | `ws://` or `wss://`; nil on handshake failure |
+| `Ws.serve(port, handler)`         | void         | Accepts in a loop; calls `handler(WsConn)` per client |
+| `ws.send(msg)`                    | void         | Send a UTF-8 text frame (RFC 6455)            |
+| `ws.recv()`                       | `str?`       | Block until a message arrives; nil on close/error |
+| `ws.close()`                      | void         | Send close frame and shut down the connection |
+
+**Notes:**
+- `wss://` (TLS) is supported for `Ws.connect`; `Ws.serve` uses plain TCP (put a reverse proxy for TLS serving).
+- Client→server frames are automatically masked (RFC 6455 §5.3).
+- Pings from the server are answered automatically with pong.
+
 ### Networking — `Tcp`, `Udp`, `Net`
 
 | Call                              | Returns         | Notes                              |

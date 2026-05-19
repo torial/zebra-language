@@ -458,6 +458,9 @@ smoke_run test/iter_collision_test.zbr "abc xyz 2 1"
 # Exhaustiveness checking: branch on enum/union covers all members without else.
 smoke_run test/enum_branch_test.zbr "north"
 
+# WebSocket API: Ws.connect/serve/WsConn.send/recv/close emit-zig smoke test.
+smoke test/ws_smoke_test.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

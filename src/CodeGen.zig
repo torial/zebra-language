@@ -6496,6 +6496,55 @@ const Generator = struct {
         return false;
     }
 
+    // ── Ws static methods ─────────────────────────────────────────────────────
+
+    /// Emit a static `Ws.*` call.
+    ///   Ws.connect(url) → _ws_connect(url) → ?*_WsConn
+    ///   Ws.serve(port, handler) → _ws_serve(port, handler)
+    fn genWsCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "connect")) {
+            try g.w.writeAll("_ws_connect(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "serve")) {
+            try g.w.writeAll("_ws_serve(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
+    // ── WsConn instance methods ───────────────────────────────────────────────
+
+    fn genWsConnMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "send")) {
+            try g.w.writeAll("_ws_send(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "recv")) {
+            try g.w.writeAll("_ws_recv(");
+            try g.genExpr(obj);
+            try g.w.writeAll(", _allocator)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "close")) {
+            try g.w.writeAll("_ws_close(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
     // ── Csv static + instance methods ────────────────────────────────────────
 
     fn genCsvCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
@@ -11561,6 +11610,13 @@ const Generator = struct {
                 if (try g.genPathCall(mem.member, e.args)) return;
             }
         }
+        // Ws static calls: Ws.connect/serve.
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Ws")) {
+                if (try g.genWsCall(mem.member, e.args)) return;
+            }
+        }
         // Http static calls: Http.get/post/json/postJson/serve.
         if (e.callee.* == .member) {
             const mem = e.callee.member;
@@ -11882,6 +11938,7 @@ const Generator = struct {
                     .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
                     .string_builder => if (try g.genStringBuilderMethod(mem.object, mem.member, e.args)) return,
                     .sys_process    => if (try g.genSysProcessMethod(mem.object, mem.member, e.args)) return,
+                    .ws_conn        => if (try g.genWsConnMethod(mem.object, mem.member, e.args)) return,
                     .unknown       => if (try g.genListMethod(mem.object, false, null, mem.member, e.args)) return,
                     else           => {},
                 }
@@ -12641,6 +12698,11 @@ const Generator = struct {
                     try g.w.writeAll("*_SysProcess");
                     return;
                 }
+                // WsConn is a heap-allocated struct; emit as pointer.
+                if (std.mem.eql(u8, n.name, "WsConn")) {
+                    try g.w.writeAll("*_WsConn");
+                    return;
+                }
                 // DynLib is a heap-allocated struct; emit as pointer.
                 if (std.mem.eql(u8, n.name, "DynLib")) {
                     try g.w.writeAll("*_DynLib");
@@ -13007,6 +13069,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .allocator_ctx,
         .build_ctx,
         .build_target,
+        .ws_conn,
         .simd,
         .optional,
         .tuple,

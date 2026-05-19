@@ -354,6 +354,8 @@ class Resolver
             return true
         if name == "Json" or name == "Http" or name == "Tcp" or name == "Udp" or name == "Net"
             return true
+        if name == "Ws" or name == "WsConn"
+            return true
         if name == "Hash" or name == "Random" or name == "Arg" or name == "Terminal"
             return true
         if name == "Log" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Timer"

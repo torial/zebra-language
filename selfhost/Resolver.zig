@@ -838,6 +838,349 @@ fn _http_serve(port: u16, handler: anytype) void {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WebSocket (RFC 6455) — Ws.connect/send/recv/close + Ws.serve
+// ─────────────────────────────────────────────────────────────────────────────
+const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B24";
+const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
+
+// Heap-allocated TLS state — must not move after _ws_tls_init() is called.
+// Internal pointers: tls_client.input = &stream_reader.interface_state,
+//                   tls_client.output = &stream_writer.interface.
+const _WsTlsState = struct {
+    stream: std.net.Stream,
+    stream_reader: std.net.Stream.Reader,
+    stream_writer: std.net.Stream.Writer,
+    tls_client: std.crypto.tls.Client,
+    rbuf:     [_WS_TLS_BUF]u8,
+    wbuf:     [_WS_TLS_BUF]u8,
+    sock_rbuf: [4096]u8,
+    sock_wbuf: [4096]u8,
+};
+
+const _WsConn = struct {
+    impl: union(enum) {
+        plain: std.net.Stream,
+        tls:   *_WsTlsState,
+    },
+    server_side: bool,
+    closed: bool,
+
+    fn readExact(self: *_WsConn, buf: []u8) !void {
+        switch (self.impl) {
+            .plain => |s| {
+                var n: usize = 0;
+                while (n < buf.len) {
+                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
+                    if (r == 0) return error.ConnectionResetByPeer;
+                    n += r;
+                }
+            },
+            .tls => |t| {
+                var slices: [1][]u8 = .{buf};
+                t.tls_client.reader.readVecAll(&slices) catch return error.ConnectionResetByPeer;
+            },
+        }
+    }
+
+    fn writeAll(self: *_WsConn, buf: []const u8) !void {
+        switch (self.impl) {
+            .plain => |s| try s.writeAll(buf),
+            .tls   => |t| {
+                try t.tls_client.writer.writeAll(buf);
+                try t.tls_client.writer.flush();
+            },
+        }
+    }
+
+    fn closeStream(self: *_WsConn) void {
+        switch (self.impl) {
+            .plain => |s| s.close(),
+            .tls   => |t| {
+                t.tls_client.end() catch {};
+                t.stream.close();
+                std.heap.page_allocator.destroy(t);
+            },
+        }
+    }
+};
+
+fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+    state.stream = stream;
+    state.stream_reader = stream.reader(&state.sock_rbuf);
+    state.stream_writer = stream.writer(&state.sock_wbuf);
+    var ca = std.crypto.Certificate.Bundle{};
+    defer ca.deinit(std.heap.page_allocator);
+    ca.rescan(std.heap.page_allocator) catch {};
+    state.tls_client = try std.crypto.tls.Client.init(
+        state.stream_reader.interface(),
+        &state.stream_writer.interface,
+        .{
+            .host        = .{ .explicit = host },
+            .ca          = .{ .bundle = ca },
+            .read_buffer = &state.rbuf,
+            .write_buffer = &state.wbuf,
+            .allow_truncation_attacks = true,
+        },
+    );
+}
+
+fn _ws_send_close_frame(conn: *_WsConn) void {
+    const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
+            close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
+        conn.writeAll(&frame) catch {};
+    } else {
+        const frame = [4]u8{ 0x88, 0x02, close_code[0], close_code[1] };
+        conn.writeAll(&frame) catch {};
+    }
+}
+
+fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
+    const plen: u8 = @intCast(@min(payload.len, 125));
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
+        conn.writeAll(&hdr) catch return;
+        if (plen > 0) {
+            const _pa = std.heap.page_allocator;
+            const masked = _pa.alloc(u8, plen) catch return;
+            defer _pa.free(masked);
+            for (payload[0..plen], 0..) |b, i| masked[i] = b ^ mk[i % 4];
+            conn.writeAll(masked) catch {};
+        }
+    } else {
+        const hdr = [2]u8{ 0x8a, plen };
+        conn.writeAll(&hdr) catch return;
+        if (plen > 0) conn.writeAll(payload[0..plen]) catch {};
+    }
+}
+
+fn _ws_connect(url: []const u8) ?*_WsConn {
+    const _pa = std.heap.page_allocator;
+    // Parse scheme
+    const is_tls = std.mem.startsWith(u8, url, "wss://");
+    const rest = if (is_tls) url[6..] else if (std.mem.startsWith(u8, url, "ws://")) url[5..] else return null;
+    const default_port: u16 = if (is_tls) 443 else 80;
+    // host[:port]/path
+    const path_start = std.mem.indexOfScalar(u8, rest, '/') orelse rest.len;
+    const host_port = rest[0..path_start];
+    const path = if (path_start < rest.len) rest[path_start..] else "/";
+    const host: []const u8 = if (std.mem.lastIndexOfScalar(u8, host_port, ':')) |c| host_port[0..c] else host_port;
+    const port: u16 = if (std.mem.lastIndexOfScalar(u8, host_port, ':')) |c|
+        std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
+
+    // TCP connect
+    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+
+    if (is_tls) {
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
+    } else {
+        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+    }
+
+    // Build WebSocket upgrade request
+    var key_bytes: [16]u8 = undefined;
+    std.crypto.random.bytes(&key_bytes);
+    var key_b64: [24]u8 = undefined;
+    _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
+
+    var req_buf: [1024]u8 = undefined;
+    const req = std.fmt.bufPrint(&req_buf,
+        "GET {s} HTTP/1.1\r\nHost: {s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" ++
+        "Sec-WebSocket-Key: {s}\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        .{ path, host, key_b64 },
+    ) catch { conn.closeStream(); _pa.destroy(conn); return null; };
+    conn.writeAll(req) catch { conn.closeStream(); _pa.destroy(conn); return null; };
+
+    // Read HTTP response until \r\n\r\n
+    var resp_buf: [4096]u8 = undefined;
+    var resp_len: usize = 0;
+    while (resp_len + 1 < resp_buf.len) {
+        var b: [1]u8 = undefined;
+        conn.readExact(&b) catch break;
+        resp_buf[resp_len] = b[0];
+        resp_len += 1;
+        if (resp_len >= 4 and
+            resp_buf[resp_len-4] == '\r' and resp_buf[resp_len-3] == '\n' and
+            resp_buf[resp_len-2] == '\r' and resp_buf[resp_len-1] == '\n') break;
+    }
+    if (!std.mem.startsWith(u8, resp_buf[0..resp_len], "HTTP/1.1 101") and
+        !std.mem.startsWith(u8, resp_buf[0..resp_len], "HTTP/1.0 101")) {
+        conn.closeStream();
+        _pa.destroy(conn);
+        return null;
+    }
+    return conn;
+}
+
+fn _ws_send(conn: *_WsConn, msg: []const u8) void {
+    const len = msg.len;
+    var hdr: [14]u8 = undefined;
+    hdr[0] = 0x81; // FIN=1, opcode=1 (text)
+    var h: usize = 1;
+    const mask_bit: u8 = if (!conn.server_side) 0x80 else 0x00;
+    if (len <= 125) {
+        hdr[h] = mask_bit | @as(u8, @intCast(len)); h += 1;
+    } else if (len <= 0xffff) {
+        hdr[h] = mask_bit | 126; h += 1;
+        hdr[h] = @intCast(len >> 8); h += 1;
+        hdr[h] = @intCast(len & 0xff); h += 1;
+    } else {
+        hdr[h] = mask_bit | 127; h += 1;
+        const l64: u64 = @intCast(len);
+        var s: u6 = 56;
+        while (true) { hdr[h] = @intCast((l64 >> s) & 0xff); h += 1; if (s == 0) break; s -= 8; }
+    }
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
+        hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
+        conn.writeAll(hdr[0..h]) catch return;
+        // Write masked payload in 4096-byte chunks (no heap alloc needed)
+        var i: usize = 0;
+        while (i < len) {
+            const end = @min(i + 4096, len);
+            var chunk: [4096]u8 = undefined;
+            for (msg[i..end], 0..) |b, j| chunk[j] = b ^ mk[(i + j) % 4];
+            conn.writeAll(chunk[0..end - i]) catch return;
+            i = end;
+        }
+    } else {
+        conn.writeAll(hdr[0..h]) catch return;
+        conn.writeAll(msg) catch return;
+    }
+}
+
+fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
+    var msg: std.ArrayList(u8) = .{};
+    defer msg.deinit(alloc);
+    while (true) {
+        var hdr2: [2]u8 = undefined;
+        conn.readExact(&hdr2) catch return null;
+        const fin     = (hdr2[0] & 0x80) != 0;
+        const opcode  = hdr2[0] & 0x0f;
+        const has_mask = (hdr2[1] & 0x80) != 0;
+        var plen: u64 = hdr2[1] & 0x7f;
+        if (plen == 126) {
+            var ext2: [2]u8 = undefined;
+            conn.readExact(&ext2) catch return null;
+            plen = (@as(u64, ext2[0]) << 8) | ext2[1];
+        } else if (plen == 127) {
+            var ext8: [8]u8 = undefined;
+            conn.readExact(&ext8) catch return null;
+            plen = 0;
+            for (ext8) |b| plen = (plen << 8) | b;
+        }
+        var mk: [4]u8 = .{ 0, 0, 0, 0 };
+        if (has_mask) conn.readExact(&mk) catch return null;
+        // Read payload (cap at 64 MiB)
+        const safe: usize = @intCast(@min(plen, 64 * 1024 * 1024));
+        const payload = alloc.alloc(u8, safe) catch return null;
+        defer alloc.free(payload);
+        conn.readExact(payload) catch return null;
+        if (has_mask) { for (payload, 0..) |*b, i| { b.* = b.* ^ mk[i % 4]; } }
+        switch (opcode) {
+            0, 1, 2 => {
+                msg.appendSlice(alloc, payload) catch return null;
+                if (fin) return msg.toOwnedSlice(alloc) catch null;
+            },
+            8  => { _ws_send_close_frame(conn); return null; },
+            9  => _ws_send_pong(conn, payload),
+            0xa => {}, // pong — ignore
+            else => return null,
+        }
+    }
+}
+
+fn _ws_close(conn: *_WsConn) void {
+    if (!conn.closed) {
+        conn.closed = true;
+        _ws_send_close_frame(conn);
+        conn.closeStream();
+    }
+    // WsConn struct itself not freed here — OK for arena-allocator model
+}
+
+// Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
+fn _ws_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(*_WsConn) void;
+    const _fn: _HFn = handler;
+    const _Ctx = struct {
+        conn: std.net.Server.Connection,
+        handler_fn: _HFn,
+        fn run(ctx: *@This()) void {
+            const _pa = std.heap.page_allocator;
+            defer _pa.destroy(ctx);
+            // Read HTTP upgrade headers
+            var hdr_buf: [8192]u8 = undefined;
+            var hdr_len: usize = 0;
+            while (hdr_len + 1 < hdr_buf.len) {
+                var b: [1]u8 = undefined;
+                const n = ctx.conn.stream.read(&b) catch break;
+                if (n == 0) break;
+                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                if (hdr_len >= 4 and
+                    hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
+                    hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
+            }
+            const headers = hdr_buf[0..hdr_len];
+            // Extract Sec-WebSocket-Key
+            const key_marker = "Sec-WebSocket-Key: ";
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k1 = k0 + key_marker.len;
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const client_key = headers[k1..k2];
+            // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
+            var sha = std.crypto.hash.Sha1.init(.{});
+            sha.update(client_key);
+            sha.update(_WS_GUID);
+            var hash_out: [20]u8 = undefined;
+            sha.final(&hash_out);
+            var accept_buf: [28]u8 = undefined;
+            _ = std.base64.standard.Encoder.encode(&accept_buf, &hash_out);
+            // Send 101 response
+            var resp_buf: [256]u8 = undefined;
+            const resp = std.fmt.bufPrint(&resp_buf,
+                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
+                .{accept_buf},
+            ) catch { ctx.conn.stream.close(); return; };
+            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            // Create WsConn and call handler
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            defer _pa.destroy(ws);
+            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            ctx.handler_fn(ws);
+            // Close if handler didn't
+            if (!ws.closed) {
+                ws.closed = true;
+                _ws_send_close_frame(ws);
+                ws.closeStream();
+            }
+        }
+    };
+    const _pa = std.heap.page_allocator;
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit();
+    while (true) {
+        const _c = _srv.accept() catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
+        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+    }
+}
+
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
@@ -2769,96 +3112,101 @@ pub const Resolver = struct {
             return true;
         }
 // zbr:selfhost/Resolver.zbr:357
-        if ((((std.mem.eql(u8, name, "Hash") or std.mem.eql(u8, name, "Random")) or std.mem.eql(u8, name, "Arg")) or std.mem.eql(u8, name, "Terminal"))) {
+        if ((std.mem.eql(u8, name, "Ws") or std.mem.eql(u8, name, "WsConn"))) {
 // zbr:selfhost/Resolver.zbr:358
             return true;
         }
 // zbr:selfhost/Resolver.zbr:359
-        if (((((std.mem.eql(u8, name, "Log") or std.mem.eql(u8, name, "Uri")) or std.mem.eql(u8, name, "Compress")) or std.mem.eql(u8, name, "Mime")) or std.mem.eql(u8, name, "Timer"))) {
+        if ((((std.mem.eql(u8, name, "Hash") or std.mem.eql(u8, name, "Random")) or std.mem.eql(u8, name, "Arg")) or std.mem.eql(u8, name, "Terminal"))) {
 // zbr:selfhost/Resolver.zbr:360
             return true;
         }
 // zbr:selfhost/Resolver.zbr:361
-        if ((((std.mem.eql(u8, name, "Regex") or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Reflect"))) {
+        if (((((std.mem.eql(u8, name, "Log") or std.mem.eql(u8, name, "Uri")) or std.mem.eql(u8, name, "Compress")) or std.mem.eql(u8, name, "Mime")) or std.mem.eql(u8, name, "Timer"))) {
 // zbr:selfhost/Resolver.zbr:362
             return true;
         }
 // zbr:selfhost/Resolver.zbr:363
-        if (((std.mem.eql(u8, name, "Csv") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
+        if ((((std.mem.eql(u8, name, "Regex") or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Reflect"))) {
 // zbr:selfhost/Resolver.zbr:364
             return true;
         }
 // zbr:selfhost/Resolver.zbr:365
-        if (((std.mem.eql(u8, name, "Dir") or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "HttpResponse"))) {
+        if (((std.mem.eql(u8, name, "Csv") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
 // zbr:selfhost/Resolver.zbr:366
             return true;
         }
 // zbr:selfhost/Resolver.zbr:367
-        if (((std.mem.eql(u8, name, "Progress") or std.mem.eql(u8, name, "Profile")) or std.mem.eql(u8, name, "Base64"))) {
+        if (((std.mem.eql(u8, name, "Dir") or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "HttpResponse"))) {
 // zbr:selfhost/Resolver.zbr:368
             return true;
         }
 // zbr:selfhost/Resolver.zbr:369
-        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
+        if (((std.mem.eql(u8, name, "Progress") or std.mem.eql(u8, name, "Profile")) or std.mem.eql(u8, name, "Base64"))) {
 // zbr:selfhost/Resolver.zbr:370
             return true;
         }
 // zbr:selfhost/Resolver.zbr:371
-        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
+        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
 // zbr:selfhost/Resolver.zbr:372
             return true;
         }
 // zbr:selfhost/Resolver.zbr:373
-        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
+        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
 // zbr:selfhost/Resolver.zbr:374
             return true;
         }
 // zbr:selfhost/Resolver.zbr:375
-        if (self.isSimdName(name)) {
+        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
 // zbr:selfhost/Resolver.zbr:376
             return true;
         }
 // zbr:selfhost/Resolver.zbr:377
+        if (self.isSimdName(name)) {
+// zbr:selfhost/Resolver.zbr:378
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:379
         return false;
     }
 
     pub fn isSimdName(self: *Resolver, name: []const u8) bool {
         _ = self;
-// zbr:selfhost/Resolver.zbr:381
-        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
-// zbr:selfhost/Resolver.zbr:382
-            return false;
-        }
 // zbr:selfhost/Resolver.zbr:383
-        const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
 // zbr:selfhost/Resolver.zbr:384
-        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
-// zbr:selfhost/Resolver.zbr:385
             return false;
         }
+// zbr:selfhost/Resolver.zbr:385
+        const parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8){}; var _split_iter_1 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/Resolver.zbr:386
-        if (std.mem.eql(u8, parts.items[@intCast(1)], "")) {
+        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
 // zbr:selfhost/Resolver.zbr:387
             return false;
         }
 // zbr:selfhost/Resolver.zbr:388
-        const prefix = parts.items[@intCast(0)];
+        if (std.mem.eql(u8, parts.items[@intCast(1)], "")) {
 // zbr:selfhost/Resolver.zbr:389
-        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
-// zbr:selfhost/Resolver.zbr:390
-            return true;
+            return false;
         }
+// zbr:selfhost/Resolver.zbr:390
+        const prefix = parts.items[@intCast(0)];
 // zbr:selfhost/Resolver.zbr:391
-        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
 // zbr:selfhost/Resolver.zbr:392
             return true;
         }
 // zbr:selfhost/Resolver.zbr:393
-        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
 // zbr:selfhost/Resolver.zbr:394
             return true;
         }
 // zbr:selfhost/Resolver.zbr:395
+        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+// zbr:selfhost/Resolver.zbr:396
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:397
         return false;
     }
 

@@ -1,0 +1,27 @@
+# ws_smoke_test.zbr — WebSocket emit-zig smoke test
+#
+# Verifies that the selfhost and bootstrap compilers can process
+# Ws.connect / Ws.serve / WsConn.send / recv / close through
+# the full lex→parse→resolve→TC→codegen pipeline.
+# Actual network I/O is NOT exercised here (no echo server available
+# in CI); this file just ensures valid Zig is emitted.
+
+def main()
+    # Client API shape
+    var url: str = "ws://localhost:9999/echo"
+    var conn = Ws.connect(url)
+    if conn as ws
+        ws.send("hello")
+        var reply = ws.recv()
+        if reply as r
+            print(r)
+        ws.close()
+
+    # Server API shape — handler type annotation kept as WsConn
+    # so TC can verify the parameter is treated as ws_conn.
+    Ws.serve(9999, def(ws: WsConn)
+        var msg = ws.recv()
+        if msg as m
+            ws.send(m)
+        ws.close()
+    )

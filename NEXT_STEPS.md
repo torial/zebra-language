@@ -45,7 +45,7 @@ Everything here must ship before 1.0 stability locks in.
 - [x] `Test` stdlib module + `zebra test` subcommand
 - [x] Type aliases with constraints (`type Name = BaseType where value > expr`); transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
 - [x] Refinement types (parametric aliases): `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint; `Bounded(0, 100)` in type position; struct-base aliases; both backends; 119/119 smoke, bootstrap 5/5 (2026-05-18)
-- [ ] WebSocket (`Ws.connect/send/recv/close`)
+- [x] WebSocket (`Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close); both backends; bootstrap 5/5 (2026-05-19)
 - [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
 - [ ] CHANGELOG covering the full 0.1 → 1.0 surface
@@ -288,7 +288,7 @@ the broader commitment is everything that landed from 0.1 onward.
 - ~~`Test` stdlib module~~ **DONE**: `zebra test` subcommand, `assert_eq/ne/true/false` statements, `def test_*` discovery, structured pass/fail output; both backends
 - ~~Type aliases with constraints~~ **DONE**: `type Name = BaseType where value > expr`; transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
 - ~~Refinement types (parametric aliases)~~ **DONE**: `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint check; 119/119 smoke, bootstrap 5/5 (2026-05-18)
-- WebSocket (`Ws.connect/send/recv/close`)
+- ~~WebSocket~~ **DONE**: `Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close; both backends; bootstrap 5/5 (2026-05-19)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
 - CHANGELOG covering the full 0.1 → 1.0 surface

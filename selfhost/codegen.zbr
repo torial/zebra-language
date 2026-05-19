@@ -1635,6 +1635,9 @@ struct Generator
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
                     return
+                if n.name == "WsConn"
+                    w.emit("*_WsConn")
+                    return
                 if n.name == "Build"
                     w.emit("*_Build")
                     return
@@ -7487,6 +7490,27 @@ struct Generator
                 on Type_.build_target
                     genBuildTargetInstanceCall(m.object, mname, args)
                     return
+                on Type_.ws_conn
+                    if mname == "send"
+                        w.emit("_ws_send(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "recv"
+                        w.emit("_ws_recv(")
+                        genExpr(m.object)
+                        w.emit(", _allocator)")
+                        return
+                    if mname == "close"
+                        w.emit("_ws_close(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                 on Type_.string_builder
                     if mname == "append"
                         genExpr(m.object)
@@ -8637,6 +8661,9 @@ struct Generator
                     return
             if id.name == "Http"
                 genHttpCall(mname, args)
+                return
+            if id.name == "Ws"
+                genWsCall(mname, args)
                 return
             if id.name == "HttpResponse"
                 genHttpResponseFactory(mname, args)
@@ -10363,6 +10390,33 @@ struct Generator
             w.emit(" }")
             return
         w.emit("@compileError(\"selfhost: unknown HttpResponse.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # ── genWsCall ────────────────────────────────────────────────────────────
+    def genWsCall(mname: str, args: List(Arg))
+        if mname == "connect"
+            w.emit("_ws_connect(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "serve"
+            w.emit("_ws_serve(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Ws.")
         w.emit(mname)
         w.emit("\")")
 
