@@ -574,8 +574,17 @@ var idx = s.indexOf("ll")            # int? (nil if not found)
 var parts  = s.split(",")            # List(str)
 var joined = items.join(", ")        # str
 
-# String interpolation
+# String interpolation — basic
 var msg = "Hello, ${name}!  You have ${count} items."
+
+# Format specifiers: ${expr:spec}  spec = [fill][align][width][.prec][type]
+var hex  = "${n:08x}"               # 000000ff  (zero-padded 8-digit hex)
+var flt  = "${fval:.2f}"            # 3.14      (2 decimal places)
+var rpad = "${greeting:>20}"        #                hello  (right-align, width 20)
+var lpad = "${tag:-<15}"            # ok-------------       (left-align, fill '-')
+var cpt  = "${codepoint:c}"         # Unicode scalar as character
+# align chars: < left  > right  ^ center
+# type chars:  x/X hex  o octal  b binary  f float  e/E scientific  s string
 
 # StringBuilder
 var sb = StringBuilder()
@@ -586,6 +595,14 @@ var result = sb.build()              # str (drains the builder)
 
 - `in` operator: `if "needle" in haystack` — substring test.
 - Inside `${…}`, non-string values get an implicit `.toString()` call.
+- **Format specifiers** — `${expr:spec}` where `spec` follows
+  `[fill][align][width][.precision][type]`.  Fill is any character; align is
+  `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`
+  octal, `b` binary, `f` float, `e`/`E` scientific, `c` Unicode scalar, `s`
+  string.  Examples: `${n:08x}` → `000000ff`, `${v:.2f}` → `3.14`,
+  `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
+  `-` fill.
+- To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 
 ### Raw strings
 

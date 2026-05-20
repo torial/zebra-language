@@ -826,7 +826,9 @@ def generateEntryPoint(m: Module): str
     if main_class == ""
         return ""
     var sb: StringBuilder = StringBuilder()
-    sb.append("pub fn main() void {\n")
+    sb.append("pub fn main(init: std.process.Init) void {\n")
+    sb.append("    _io = init.io;\n")
+    sb.append("    _args = init.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
     if main_throws
@@ -892,12 +894,14 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                                         matched = true
                             included = matched
                         if included
-                            var entry: str = class_name + "." + mth.name
+                            var entry: str = "${class_name}.${mth.name}"
                             test_calls.add(entry)
                             test_labels.add(entry)
 
     var sb: StringBuilder = StringBuilder()
-    sb.append("pub fn main() void {\n")
+    sb.append("pub fn main(init: std.process.Init) void {\n")
+    sb.append("    _io = init.io;\n")
+    sb.append("    _args = init.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
     sb.append("    var _test_pass: usize = 0;\n")
@@ -1934,7 +1938,7 @@ struct Generator
             var tr = n.type_ to!
             if tr is TypeRef.named as nt
                 if nt.name == "StringBuilder"
-                    w.emit("std.ArrayList(u8) = .{},\n")
+                    w.emit("std.ArrayList(u8) = .empty,\n")
                     return
             genType(tr)
         else
@@ -2239,7 +2243,7 @@ struct Generator
         var ig0 = fg.indented()
         var ig1 = ig0.withOwner(n.name)
         var ig  = ig1.withGeneric(n)
-        ig.line("_type_tag: u64 = _ttag_" + n.name + ",")
+        ig.line("_type_tag: u64 = _ttag_${n.name},")
         for decl in n.members
             if decl is Decl.var_ as fld
                 ig.genFieldDecl(fld)
@@ -2307,11 +2311,11 @@ struct Generator
             else
                 return false
             var uid = w.nextUid()
-            w.emit("blk_" + uid.toString() + ": { const _fn = ")
+            w.emit("blk_${uid.toString()}: { const _fn = ")
             genExpr(obj)
-            w.emit(".lib.lookup(*const fn () *" + iface_name + ", ")
+            w.emit(".lib.lookup(*const fn () *${iface_name}, ")
             genExpr(args.at(1).value)
-            w.emit(") orelse break :blk_" + uid.toString() + " null; break :blk_" + uid.toString() + " _fn(); }")
+            w.emit(") orelse break :blk_${uid.toString()} null; break :blk_${uid.toString()} _fn(); }")
             return true
         return false
 
@@ -2328,7 +2332,7 @@ struct Generator
         var iname = ifc.name
         for m in ifc.members
             if m is Decl.method as meth
-                w.emit("fn _shim_" + class_name + "_" + iname + "_" + meth.name + "(ptr: *anyopaque")
+                w.emit("fn _shim_${class_name}_${iname}_${meth.name}(ptr: *anyopaque")
                 for p in meth.params
                     w.emit(", " + p.name + ": ")
                     if p.type_ != nil
@@ -2349,10 +2353,10 @@ struct Generator
                 for p in meth.params
                     w.emit(", " + p.name)
                 w.emit("); }\n")
-        w.emit("const _vtable_" + class_name + "_" + iname + " = " + iname + ".VTable{")
+        w.emit("const _vtable_${class_name}_${iname} = ${iname}.VTable{")
         for m in ifc.members
             if m is Decl.method as meth
-                w.emit(" ." + meth.name + " = &_shim_" + class_name + "_" + iname + "_" + meth.name + ",")
+                w.emit(" .${meth.name} = &_shim_${class_name}_${iname}_${meth.name},")
         w.emit(" };\n")
 
     # ── genClass ──────────────────────────────────────────────────────────────
@@ -2370,7 +2374,7 @@ struct Generator
         var ig1 = ig0.withOwner(n.name)
         var ig2 = ig1.withOwnerMembers(n.members)
         var ig  = ig2.withOwnerInvariants(n.invariants)
-        ig.line("_type_tag: u64 = _ttag_" + n.name + ",")
+        ig.line("_type_tag: u64 = _ttag_${n.name},")
         for decl in n.members
             if decl is Decl.var_ as fld
                 ig.genFieldDecl(fld)
@@ -2653,7 +2657,7 @@ struct Generator
             wg.w.emit("return _zbr_r;\n")
             writeIndent()
             w.emit("}\n\n")
-            fn_name = "_zbr_once_" + m.name + "_impl"
+            fn_name = "_zbr_once_${m.name}_impl"
         writeIndent()
         if m.mods.is_once
             w.emit("fn ")
@@ -2672,6 +2676,11 @@ struct Generator
             if m.params.count() > 0
                 w.emit(", ")
         genParamList(m.params, m.stmts)
+        # Root entry point (Zig 0.16): top-level def main() receives init: std.process.Init
+        if owner == "" and m.name == "main"
+            if m.params.count() > 0 or has_self
+                w.emit(", ")
+            w.emit("init: std.process.Init")
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre to!))
@@ -2693,6 +2702,24 @@ struct Generator
                         if nt.name == "str" or nt.name == "String"
                             sp.add(p.name)
             w.emit(" {\n")
+            # Root entry point (Zig 0.16): inject _io/_args/_allocator init + dep propagation
+            if owner == "" and m.name == "main"
+                var ei = indented()
+                ei.writeIndent()
+                ei.w.emit("_io = init.io;\n")
+                ei.writeIndent()
+                ei.w.emit("_args = init.minimal.args;\n")
+                ei.writeIndent()
+                ei.w.emit("_allocator = _arena.allocator();\n")
+                ei.writeIndent()
+                ei.w.emit("defer _arena.deinit();\n")
+                for ei_decl in module_decls
+                    if ei_decl is Decl.use_ as ei_u
+                        var ei_path: str = ei_u.path.replace(".", "/")
+                        ei.writeIndent()
+                        ei.w.emit("@import(\"" + ei_path + ".zig\")._initAllocator(_allocator);\n")
+                        ei.writeIndent()
+                        ei.w.emit("@import(\"" + ei_path + ".zig\")._initIo(_io);\n")
             # @profile: record entry time and defer _profile_end() on any exit path.
             if m.mods.is_profile
                 var prof_ig = indented()
@@ -2751,7 +2778,7 @@ struct Generator
                                         for ptelem in pttr.elems
                                             if ptelem is TypeRef.named as pten
                                                 if pten.name == "str" or pten.name == "String"
-                                                    bg.list_tuple_str_pos.add(p2.name + ":" + ptpos.toString())
+                                                    bg.list_tuple_str_pos.add("${p2.name}:${ptpos.toString()}")
                                             ptpos = ptpos + 1
                         on TypeRef.named as nt2
                             if nt2.name == "StrSet"
@@ -3248,14 +3275,14 @@ struct Generator
                 branch mem.object
                     on Expr.this_
                         if owner != ""
-                            key = owner + "." + mem.member
+                            key = "${owner}.${mem.member}"
                     on Expr.ident as obj_id
                         if class_names.contains_(obj_id.name)
-                            key = obj_id.name + "." + mem.member
+                            key = "${obj_id.name}.${mem.member}"
                         else if .infer_ctx != nil
                             var rt_a: Type_ = inferExpr(mem.object, .infer_ctx to!)
                             if rt_a is Type_.named as cn_a
-                                key = cn_a + "." + mem.member
+                                key = "${cn_a}.${mem.member}"
                     else
                         pass
             if key != ""
@@ -3433,7 +3460,7 @@ struct Generator
                 line("// pass")
             on Stmt.break_
                 if for_else_label != nil
-                    line("break :" + for_else_label to! + " false;")
+                    line("break :${for_else_label to!} false;")
                 else
                     line("break;")
             on Stmt.continue_
@@ -3531,7 +3558,7 @@ struct Generator
                                 for telem in ttr.elems
                                     if telem is TypeRef.named as ten
                                         if ten.name == "str" or ten.name == "String"
-                                            list_tuple_str_pos.add(n.name + ":" + tpos.toString())
+                                            list_tuple_str_pos.add("${n.name}:${tpos.toString()}")
                                     tpos = tpos + 1
                     if gtn.name == "Chan"
                         chan_locals.add(n.name)
@@ -3562,7 +3589,7 @@ struct Generator
         if n.init_expr != nil
             var ie = n.init_expr to!
             if isStringBuilderCtor(ie)
-                w.emit(" = std.ArrayList(u8){};\n")
+                w.emit(" = std.ArrayList(u8).empty;\n")
                 return
             if isGenericStdlibCtor(ie)
                 w.emit(" = ")
@@ -3581,7 +3608,7 @@ struct Generator
                             genType(n.type_ to!)
                             w.emit(" = ")
                             genType(n.type_ to!)
-                            w.emit("{};\n")
+                            w.emit(".empty;\n")
                             var lli = 0
                             while lli < ll_init.elems.count()
                                 writeIndent()
@@ -3601,10 +3628,10 @@ struct Generator
                             if ec092.callee is Expr.member as mem092
                                 if mem092.member == "split" or mem092.member == "lines"
                                     var uid092 = w.nextUid()
-                                    var lbl092: str = "blk092_" + uid092.toString()
-                                    var lname092: str = "_ll_" + uid092.toString()
-                                    var sname092: str = "_split_iter_" + uid092.toString()
-                                    var ename092: str = "_se_" + uid092.toString()
+                                    var lbl092: str = "blk092_${uid092.toString()}"
+                                    var lname092: str = "_ll_${uid092.toString()}"
+                                    var sname092: str = "_split_iter_${uid092.toString()}"
+                                    var ename092: str = "_se_${uid092.toString()}"
                                     w.emit(": ")
                                     genType(n.type_ to!)
                                     w.emit(" = ")
@@ -3615,7 +3642,7 @@ struct Generator
                                     genType(n.type_ to!)
                                     w.emit(" = ")
                                     genType(n.type_ to!)
-                                    w.emit("{}; var ")
+                                    w.emit(".empty; var ")
                                     w.emit(sname092)
                                     w.emit(" = ")
                                     genExpr(ie)
@@ -3669,7 +3696,7 @@ struct Generator
         if mc_recv.len > 0
             if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr
                 w.emit("try ")
-            w.emit(mc_recv + "." + mc_field + "(")
+            w.emit("${mc_recv}.${mc_field}(")
             if n.init_expr != nil
                 var ch2 = tryChain(n.init_expr to!)
                 if ch2 != nil
@@ -3821,7 +3848,7 @@ struct Generator
                                 genTypeFromExpr(inner.args.at(0).value)
                             else
                                 w.emit("anytype")
-                            w.emit("){}")
+                            w.emit(").empty")
                             return
                         if id.name == "HashMap"
                             var key_str = inner.args.count() > 0 and isStringArgExpr(inner.args.at(0).value)
@@ -3859,7 +3886,7 @@ struct Generator
                                     w.emit("anytype")
                         else
                             w.emit("anytype")
-                        w.emit("){}")
+                        w.emit(").empty")
                         return
                     if id.name == "HashMap"
                         if type_hint != nil
@@ -3900,7 +3927,7 @@ struct Generator
         branch e
             on Expr.ident as id
                 if class_names.contains_(id.name)
-                    w.emit("*" + id.name)
+                    w.emit("*${id.name}")
                     return
                 w.emit(zigPrimitive(id.name))
             on Expr.tuple_lit as tl
@@ -3957,7 +3984,7 @@ struct Generator
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
                 genExpr(a.target)
-                w.emit(" = " + mc_recv + "." + chain.method + "(")
+                w.emit(" = ${mc_recv}.${chain.method}(")
                 genArgList(chain.args)
                 w.emit(");\n")
                 return
@@ -4178,7 +4205,7 @@ struct Generator
                                     w.emit("anytype")
                             else
                                 w.emit("anytype")
-                        w.emit("){}")
+                        w.emit(").empty")
                         return
                     if id.name == "HashMap"
                         branch hint
@@ -4232,7 +4259,7 @@ struct Generator
                 var chain = ch to!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
-                w.emit("return " + mc_recv + "." + chain.method + "(")
+                w.emit("return ${mc_recv}.${chain.method}(")
                 genArgList(chain.args)
                 w.emit(");\n")
                 return
@@ -4273,9 +4300,9 @@ struct Generator
         branch obj
             on Expr.call
                 var uid = w.nextUid()
-                var mc = "_mc_" + uid.toString()
+                var mc = "_mc_${uid.toString()}"
                 writeIndent()
-                w.emit("var " + mc + " = ")
+                w.emit("var ${mc} = ")
                 genExpr(obj)
                 w.emit(";\n")
                 writeIndent()
@@ -4287,7 +4314,7 @@ struct Generator
                             stmt_is_throws = true
                 if stmt_is_throws and current_method_throws and try_block_label == nil and not in_try_expr
                     w.emit("try ")
-                w.emit(mc + "." + method_name + "(")
+                w.emit("${mc}.${method_name}(")
                 genArgList(call_args)
                 w.emit(");\n")
                 return true
@@ -4304,17 +4331,17 @@ struct Generator
             var chain = ch to!
             var inner = hoistCallChain(chain.recv)
             var uid = w.nextUid()
-            var mc = "_mc_" + uid.toString()
+            var mc = "_mc_${uid.toString()}"
             writeIndent()
-            w.emit("var " + mc + " = " + inner + "." + chain.method + "(")
+            w.emit("var ${mc} = ${inner}.${chain.method}(")
             genArgList(chain.args)
             w.emit(");\n")
             return mc
         # Base case: emit a temp for the plain expression
         var uid = w.nextUid()
-        var mc = "_mc_" + uid.toString()
+        var mc = "_mc_${uid.toString()}"
         writeIndent()
-        w.emit("var " + mc + " = ")
+        w.emit("var ${mc} = ")
         genExpr(expr)
         w.emit(";\n")
         return mc
@@ -5245,12 +5272,12 @@ struct Generator
                         ig.w.emit("|_ptr_")
                         ig.w.emit(bnd)
                         ig.w.emit("| ")
-                    else
+                    else if bnd != "_"
                         ig.w.emit("|")
                         ig.w.emit(bnd)
                         ig.w.emit("| ")
-                else
-                    ig.w.emit("|_| ")
+                    # else bnd == "_": Zig 0.16 rejects |_|; omit capture entirely
+                # else nil binding: no capture
             ig.w.emit("{\n")
             var iig = ig.indented()
             if needs_deref and (cas.binding == nil or cas.binding to! != "_")
@@ -5311,8 +5338,7 @@ struct Generator
         if b.else_ != nil
             ig.writeIndent()
             ig.w.emit("else => ")
-            if has_binding
-                ig.w.emit("|_| ")
+            # Zig 0.16: |_| capture discard not allowed; omit entirely
             ig.w.emit("{\n")
             var iig = ig.indented()
             iig.genStmts(b.else_ to!)
@@ -6469,13 +6495,13 @@ struct Generator
                     genType(ll.elem_type to!)
                     w.emit(") = std.ArrayList(")
                     genType(ll.elem_type to!)
-                    w.emit("){}; ")
+                    w.emit(").empty; ")
                 else if ll.elems.count() > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx to!)
                     elem_zig = zigTypeForListElem(et)
-                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + "){}; ")
+                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 else
-                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + "){}; ")
+                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 var li = 0
                 while li < ll.elems.count()
                     w.emit(ll_var + ".append(_allocator, ")
@@ -6549,7 +6575,7 @@ struct Generator
                 # a < b < c → (_cchain_N: { const _cm0_N = b; break :_cchain_N (_zebra_lt(a, _cm0_N) and _zebra_lt(_cm0_N, c)); })
                 var cc_uid = w.nextUid()
                 var cc_n = cc.ops.count()
-                w.emit("(_cchain_" + cc_uid.toString() + ": {")
+                w.emit("(_cchain_${cc_uid.toString()}: {")
                 # Emit temps for middle operands (indices 1..n-1)
                 var cc_ti = 0
                 while cc_ti < cc_n - 1
@@ -7003,6 +7029,32 @@ struct Generator
 
     # ── genStringInterp ───────────────────────────────────────────────────────
 
+    # Escape literal parts of a string interpolation for use in a Zig allocPrint
+    # format string: double { → {{ and } → }} so they are not mistaken for format
+    # specifiers. Other escape sequences (\n, \\, \") are kept as-is — the
+    # tokenizer stores them as raw two-char sequences, which Zig interprets
+    # correctly when the format string is emitted between double-quotes.
+    def escapeLitForFmt(lit: str): str
+        var parts1: List(str) = List(str)()
+        for p in lit.split("{")
+            parts1.add(p)
+        var out: str = parts1.at(0)
+        var i: int = 1
+        while i < parts1.count()
+            out = out + "{{"
+            out = out + parts1.at(i)
+            i = i + 1
+        var parts2: List(str) = List(str)()
+        for p in out.split("}")
+            parts2.add(p)
+        var out2: str = parts2.at(0)
+        var j: int = 1
+        while j < parts2.count()
+            out2 = out2 + "}}"
+            out2 = out2 + parts2.at(j)
+            j = j + 1
+        return out2
+
     def genStringInterp(si: ExprStringInterp)
         # First pass: build format string and collect cast types for each expr slot
         var fmt_str: str = ""
@@ -7013,7 +7065,7 @@ struct Generator
             var part = si.parts.at(i)
             branch part
                 on StringPart.literal as lit
-                    fmt_str = fmt_str + lit
+                    fmt_str = fmt_str + escapeLitForFmt(lit)
                 on StringPart.expr_ as e
                     var has_fmt: bool = false
                     var fmt_spec: str = ""
@@ -7255,7 +7307,7 @@ struct Generator
                 w.emit("StrSet.init()")
                 return
             if id.name == "StringBuilder" and c.args.count() == 0
-                w.emit("std.ArrayList(u8){}")
+                w.emit("std.ArrayList(u8).empty")
                 return
         # SIMD vector constructor: f32x8(1.0, ...) → @as(@Vector(8, f32), .{1.0, ...})
         if c.callee is Expr.ident as simd_id
@@ -7641,7 +7693,7 @@ struct Generator
                                 var ref_lbl = "_box_" + ref_uid.toString()
                                 w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + item_ref_type + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
                                 genExpr(args.at(0).value)
-                                w.emit("; break :" + ref_lbl + " _bp_" + ref_uid.toString() + "; }")
+                                w.emit("; break :${ref_lbl} _bp_${ref_uid.toString()}; }")
                             else if item_is_str
                                 w.emit("_intern(")
                                 genExpr(args.at(0).value)
@@ -7840,19 +7892,19 @@ struct Generator
                         w.emit(") catch unreachable)")
                         return
                     if mname == "repeat" and args.count() > 0
-                        w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8){}; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+                        w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
                         genExpr(args.at(0).value)
                         w.emit(") : (_ri += 1) _rep.append(_allocator, ")
                         genExpr(m.object)
                         w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })")
                         return
                     if mname == "trimLeft"
-                        w.emit("std.mem.trimLeft(u8, ")
+                        w.emit("std.mem.trimStart(u8, ")
                         genExpr(m.object)
                         w.emit(", &std.ascii.whitespace)")
                         return
                     if mname == "trimRight"
-                        w.emit("std.mem.trimRight(u8, ")
+                        w.emit("std.mem.trimEnd(u8, ")
                         genExpr(m.object)
                         w.emit(", &std.ascii.whitespace)")
                         return
@@ -8005,7 +8057,7 @@ struct Generator
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
-                        w.emit("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+                        w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
                         return
                     if mname == "encodeBase64"
                         w.emit("_base64_encode(")
@@ -8810,7 +8862,7 @@ struct Generator
             return
         if mname == "split" and args.count() > 0
             # Return an ArrayList from split
-            w.emit("blk_split: { var _sp = std.ArrayList([]const u8){}; var _it = std.mem.splitSequence(u8, ")
+            w.emit("blk_split: { var _sp = std.ArrayList([]const u8).empty; var _it = std.mem.splitSequence(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
@@ -8826,19 +8878,19 @@ struct Generator
             w.emit(") catch unreachable)")
             return
         if mname == "repeat" and args.count() > 0
-            w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8){}; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+            w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
             genExpr(args.at(0).value)
             w.emit(") : (_ri += 1) _rep.append(_allocator, ")
             genExpr(m.object)
             w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })")
             return
         if mname == "trimLeft"
-            w.emit("std.mem.trimLeft(u8, ")
+            w.emit("std.mem.trimStart(u8, ")
             genExpr(m.object)
             w.emit(", &std.ascii.whitespace)")
             return
         if mname == "trimRight"
-            w.emit("std.mem.trimRight(u8, ")
+            w.emit("std.mem.trimEnd(u8, ")
             genExpr(m.object)
             w.emit(", &std.ascii.whitespace)")
             return
@@ -8991,7 +9043,7 @@ struct Generator
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
-            w.emit("); var _tok_list = std.ArrayList([]const u8){}; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+            w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
             return
         if mname == "encodeBase64"
             w.emit("_base64_encode(")
@@ -9836,28 +9888,40 @@ struct Generator
 
     def genFileCall(mname: str, args: List(Arg))
         if mname == "read"
-            w.emit("(std.fs.cwd().readFileAlloc(_allocator, ")
+            w.emit("(std.Io.Dir.cwd().readFileAlloc(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", std.math.maxInt(usize)) catch @panic(\"File.read error\"))")
+            w.emit(", _allocator, .unlimited) catch @panic(\"File.read error\"))")
             return
         if mname == "write"
-            w.emit("(std.fs.cwd().writeFile(.{ .sub_path = ")
+            w.emit("(blk_fw: {\n")
+            writeIndent()
+            w.emit("    const _fw_path = ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", .data = ")
+            w.emit(";\n")
+            writeIndent()
+            w.emit("    const _fw_f = std.Io.Dir.cwd().createFile(_io, _fw_path, .{}) catch @panic(\"File.write error\");\n")
+            writeIndent()
+            w.emit("    defer _fw_f.close(_io);\n")
+            writeIndent()
+            w.emit("    _fw_f.writeStreamingAll(_io, ")
             if args.count() >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
-            w.emit(" }) catch @panic(\"File.write error\"))")
+            w.emit(") catch @panic(\"File.write error\");\n")
+            writeIndent()
+            w.emit("    break :blk_fw {};\n")
+            writeIndent()
+            w.emit("})")
             return
         if mname == "exists"
-            w.emit("(blk_fex: { std.fs.cwd().access(")
+            w.emit("(blk_fex: { std.Io.Dir.cwd().access(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -9867,14 +9931,14 @@ struct Generator
         if mname == "readLines"
             w.emit("(blk_frl: {\n")
             writeIndent()
-            w.emit("    const _fl_content = std.fs.cwd().readFileAlloc(_allocator, ")
+            w.emit("    const _fl_content = std.Io.Dir.cwd().readFileAlloc(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", std.math.maxInt(usize)) catch @panic(\"File.readLines error\");\n")
+            w.emit(", _allocator, .unlimited) catch @panic(\"File.readLines error\");\n")
             writeIndent()
-            w.emit("    var _fl_list = std.ArrayList([]const u8){};\n")
+            w.emit("    var _fl_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
             w.emit("    var _fl_it = std.mem.splitScalar(u8, _fl_content, '\\n');\n")
             writeIndent()
@@ -9894,14 +9958,14 @@ struct Generator
                 w.emit("\"\"")
             w.emit(";\n")
             writeIndent()
-            w.emit("    const _fa_file = std.fs.cwd().openFile(_fa_path, .{ .mode = .read_write })")
-            w.emit(" catch std.fs.cwd().createFile(_fa_path, .{}) catch @panic(\"File.append error\");\n")
+            w.emit("    const _fa_file = std.Io.Dir.cwd().openFile(_io, _fa_path, .{ .mode = .read_write })")
+            w.emit(" catch std.Io.Dir.cwd().createFile(_io, _fa_path, .{}) catch @panic(\"File.append error\");\n")
             writeIndent()
-            w.emit("    defer _fa_file.close();\n")
+            w.emit("    defer _fa_file.close(_io);\n")
             writeIndent()
-            w.emit("    _ = _fa_file.seekFromEnd(0) catch @panic(\"File.append seek error\");\n")
+            w.emit("    _ = _fa_file.seekFromEnd(_io, 0) catch @panic(\"File.append seek error\");\n")
             writeIndent()
-            w.emit("    _fa_file.writeAll(")
+            w.emit("    _fa_file.writeStreamingAll(_io, ")
             if args.count() >= 2
                 genExpr(args.at(1).value)
             else
@@ -9913,7 +9977,7 @@ struct Generator
             w.emit("})")
             return
         if mname == "delete"
-            w.emit("(std.fs.cwd().deleteFile(")
+            w.emit("(std.Io.Dir.cwd().deleteFile(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -9921,7 +9985,7 @@ struct Generator
             w.emit(") catch @panic(\"File.delete error\"))")
             return
         if mname == "size"
-            w.emit("(blk_fsz: { const _sz_stat = std.fs.cwd().statFile(")
+            w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -9929,7 +9993,7 @@ struct Generator
             w.emit(") catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })")
             return
         if mname == "isFile"
-            w.emit("(blk_fif: { const _if_stat = std.fs.cwd().statFile(")
+            w.emit("(blk_fif: { const _if_stat = std.Io.Dir.cwd().statFile(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -9937,12 +10001,12 @@ struct Generator
             w.emit(") catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })")
             return
         if mname == "isDir"
-            w.emit("(blk_fid: { var _fd_dir = std.fs.cwd().openDir(")
+            w.emit("(blk_fid: { var _fd_dir = std.Io.Dir.cwd().openDir(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", .{}) catch break :blk_fid false; _fd_dir.close(); break :blk_fid true; })")
+            w.emit(", .{}) catch break :blk_fid false; _fd_dir.close(_io); break :blk_fid true; })")
             return
         if mname == "writeLines"
             w.emit("_file_write_lines(")
@@ -9960,7 +10024,7 @@ struct Generator
         if mname == "modtime"
             w.emit("(blk_mt: {\n")
             writeIndent()
-            w.emit("    const _mt_stat = std.fs.cwd().statFile(")
+            w.emit("    const _mt_stat = std.Io.Dir.cwd().statFile(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -10033,7 +10097,7 @@ struct Generator
             writeIndent()
             w.emit("    const _sa_raw = std.process.argsAlloc(_allocator) catch @panic(\"sys.args OOM\");\n")
             writeIndent()
-            w.emit("    var _sa_list = std.ArrayList([]const u8){};\n")
+            w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
             w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n")
             writeIndent()
@@ -10067,7 +10131,7 @@ struct Generator
             w.emit(")) * std.time.ns_per_ms)")
             return
         if mname == "cwd"
-            w.emit("(std.fs.cwd().realpathAlloc(_allocator, \".\") catch @panic(\"sys.cwd error\"))")
+            w.emit("(std.Io.Dir.cwd().realpathAlloc(_io, \".\", _allocator) catch @panic(\"sys.cwd error\"))")
             return
         if mname == "setenv"
             w.emit("_sys_setenv(")
@@ -11069,7 +11133,7 @@ struct Generator
     # ── genDirCall ───────────────────────────────────────────────────────────
     def genDirCall(mname: str, args: List(Arg))
         if mname == "create"
-            w.emit("(std.fs.cwd().makeDir(")
+            w.emit("(std.Io.Dir.cwd().makeDir(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -11077,15 +11141,15 @@ struct Generator
             w.emit(") catch |_dc_err| { if (_dc_err != error.PathAlreadyExists) @panic(\"Dir.create error\"); })")
             return
         if mname == "createAll"
-            w.emit("(std.fs.cwd().makePath(")
+            w.emit("(std.Io.Dir.cwd().createDirPath(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(") catch @panic(\"Dir.createAll error\"))")
+            w.emit(", .{}) catch @panic(\"Dir.createAll error\"))")
             return
         if mname == "delete"
-            w.emit("(std.fs.cwd().deleteDir(")
+            w.emit("(std.Io.Dir.cwd().deleteDir(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -11093,7 +11157,7 @@ struct Generator
             w.emit(") catch |_dd_err| { if (_dd_err != error.FileNotFound) @panic(\"Dir.delete error\"); })")
             return
         if mname == "deleteAll"
-            w.emit("(std.fs.cwd().deleteTree(")
+            w.emit("(std.Io.Dir.cwd().deleteTree(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
@@ -11101,30 +11165,30 @@ struct Generator
             w.emit(") catch @panic(\"Dir.deleteAll error\"))")
             return
         if mname == "exists"
-            w.emit("(blk_de: { var _de_d = std.fs.cwd().openDir(")
+            w.emit("(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", .{}) catch break :blk_de false; _de_d.close(); break :blk_de true; })")
+            w.emit(", .{}) catch break :blk_de false; _de_d.close(_io); break :blk_de true; })")
             return
         if mname == "list"
             w.emit("(blk_dl: {\n")
             writeIndent()
-            w.emit("    var _dl_dir = std.fs.cwd().openDir(")
+            w.emit("    var _dl_dir = std.Io.Dir.cwd().openDir(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\".\"")
             w.emit(", .{ .iterate = true }) catch @panic(\"Dir.list error\");\n")
             writeIndent()
-            w.emit("    defer _dl_dir.close();\n")
+            w.emit("    defer _dl_dir.close(_io);\n")
             writeIndent()
-            w.emit("    var _dl_list = std.ArrayList([]const u8){};\n")
+            w.emit("    var _dl_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
             w.emit("    var _dl_iter = _dl_dir.iterate();\n")
             writeIndent()
-            w.emit("    while (_dl_iter.next() catch null) |_dl_entry| {\n")
+            w.emit("    while (_dl_iter.next(_io) catch null) |_dl_entry| {\n")
             writeIndent()
             w.emit("        _dl_list.append(_allocator, _allocator.dupe(u8, _dl_entry.name) catch @panic(\"OOM\")) catch @panic(\"OOM\");\n")
             writeIndent()
@@ -11144,15 +11208,15 @@ struct Generator
                 w.emit("\".\"")
             w.emit(";\n")
             writeIndent()
-            w.emit("    var _dw_dir = std.fs.cwd().openDir(_dw_root, .{ .iterate = true }) catch @panic(\"Dir.walk error\");\n")
+            w.emit("    var _dw_dir = std.Io.Dir.cwd().openDir(_io, _dw_root, .{ .iterate = true }) catch @panic(\"Dir.walk error\");\n")
             writeIndent()
-            w.emit("    defer _dw_dir.close();\n")
+            w.emit("    defer _dw_dir.close(_io);\n")
             writeIndent()
             w.emit("    var _dw_walker = _dw_dir.walk(_allocator) catch @panic(\"Dir.walk alloc error\");\n")
             writeIndent()
             w.emit("    defer _dw_walker.deinit();\n")
             writeIndent()
-            w.emit("    var _dw_list = std.ArrayList([]const u8){};\n")
+            w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
             w.emit("    while (_dw_walker.next() catch null) |_dw_entry| {\n")
             writeIndent()
@@ -11244,7 +11308,7 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit("; break :blk_pa std.fs.cwd().realpathAlloc(_allocator, _pp) catch _pp; })")
+            w.emit("; break :blk_pa std.Io.Dir.cwd().realpathAlloc(_io, _pp, _allocator) catch _pp; })")
             return
         w.emit("@compileError(\"selfhost: unknown Path.")
         w.emit(mname)
@@ -11294,7 +11358,7 @@ struct Generator
                 genTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
-            w.emit("){}")
+            w.emit(").empty")
             return
         if name == "HashMap"
             var key_is_str = type_args.count() > 0 and isStringArgExpr(type_args.at(0).value)

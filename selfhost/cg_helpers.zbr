@@ -126,13 +126,13 @@ def typeRefStr(tr: TypeRef): str
         on TypeRef.named as n
             return n.name
         on TypeRef.nilable as inner
-            return "?" + typeRefStr(inner)
+            return "?${typeRefStr(inner)}"
         on TypeRef.stream as inner
-            return typeRefStr(inner) + "*"
+            return "${typeRefStr(inner)}*"
         on TypeRef.error_union as inner
-            return "!" + typeRefStr(inner)
+            return "!${typeRefStr(inner)}"
         on TypeRef.ref_to as inner
-            return "^" + typeRefStr(inner)
+            return "^${typeRefStr(inner)}"
         on TypeRef.generic as g
             var b: StringBuilder = StringBuilder()
             b.append(g.name)
