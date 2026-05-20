@@ -7035,25 +7035,7 @@ struct Generator
     # tokenizer stores them as raw two-char sequences, which Zig interprets
     # correctly when the format string is emitted between double-quotes.
     def escapeLitForFmt(lit: str): str
-        var parts1: List(str) = List(str)()
-        for p in lit.split("{")
-            parts1.add(p)
-        var out: str = parts1.at(0)
-        var i: int = 1
-        while i < parts1.count()
-            out = out + "{{"
-            out = out + parts1.at(i)
-            i = i + 1
-        var parts2: List(str) = List(str)()
-        for p in out.split("}")
-            parts2.add(p)
-        var out2: str = parts2.at(0)
-        var j: int = 1
-        while j < parts2.count()
-            out2 = out2 + "}}"
-            out2 = out2 + parts2.at(j)
-            j = j + 1
-        return out2
+        return lit.replace("{", "{{").replace("}", "}}")
 
     def genStringInterp(si: ExprStringInterp)
         # First pass: build format string and collect cast types for each expr slot
