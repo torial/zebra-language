@@ -11045,27 +11045,42 @@ struct Generator
     # ── genGuiCall ───────────────────────────────────────────────────────────
     def genGuiCall(mname: str, args: List(Arg))
         if mname == "run"
-            w.emit("_gui_run(")
-            if args.count() > 0
+            if args.count() >= 6
+                w.emit("_gui_mvu_run(")
                 genExpr(args.at(0).value)
-            else
-                w.emit("\"App\"")
-            w.emit(", ")
-            if args.count() >= 2
+                w.emit(", ")
                 genExpr(args.at(1).value)
-            else
-                w.emit("800")
-            w.emit(", ")
-            if args.count() >= 3
+                w.emit(", ")
                 genExpr(args.at(2).value)
-            else
-                w.emit("600")
-            w.emit(", ")
-            if args.count() >= 4
+                w.emit(", ")
                 genExpr(args.at(3).value)
+                w.emit(", ")
+                genExpr(args.at(4).value)
+                w.emit(", ")
+                genExpr(args.at(5).value)
+                w.emit(")")
             else
-                w.emit("undefined")
-            w.emit(")")
+                w.emit("_gui_run(")
+                if args.count() > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("\"App\"")
+                w.emit(", ")
+                if args.count() >= 2
+                    genExpr(args.at(1).value)
+                else
+                    w.emit("800")
+                w.emit(", ")
+                if args.count() >= 3
+                    genExpr(args.at(2).value)
+                else
+                    w.emit("600")
+                w.emit(", ")
+                if args.count() >= 4
+                    genExpr(args.at(3).value)
+                else
+                    w.emit("undefined")
+                w.emit(")")
             return
         if mname == "setColor"
             w.emit("_gui_active_backend.setColorFn(")

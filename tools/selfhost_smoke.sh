@@ -480,6 +480,9 @@ smoke_run test/is_not_class_test.zbr "is_not_class: OK"
 # `not x is not V` precedence: not binds looser than is not → not (x is not V).
 smoke_run test/is_not_precedence_test.zbr "is_not_precedence: OK"
 
+# MVU Gui.run: 6-arg form Gui.run(t,w,h,init,update,view) — emits _gui_mvu_run.
+smoke examples/counter.zbr
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

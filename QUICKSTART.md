@@ -1396,7 +1396,56 @@ class Main
             )
 ```
 
-### `Gui.run`
+### `Gui.run` — MVU form (recommended)
+
+```zebra
+Gui.run(title: str, width: int, height: int, init, update, view)
+```
+
+**MVU (Model-View-Update)** is the recommended architecture. State is explicit,
+transitions are testable, and the view is a pure function of the model.
+
+```zebra
+struct Counter
+    var count: int
+
+union Msg
+    inc
+    dec
+    reset
+
+def counterInit(): Counter
+    return Counter(count: 0)
+
+def update(model: Counter, msg: Msg): Counter
+    branch msg
+        on Msg.inc   return Counter(count: model.count + 1)
+        on Msg.dec   return Counter(count: model.count - 1)
+        on Msg.reset return Counter(count: 0)
+
+def view(g: Gui, model: Counter)
+    g.text("Count: " + model.count.toString())
+    g.separator()
+    if g.button("+"):  g.send(Msg.inc)
+    g.sameLine()
+    if g.button("-"):  g.send(Msg.dec)
+    g.sameLine()
+    if g.button("Reset"):  g.send(Msg.reset)
+
+def main()
+    Gui.run("Counter", 400, 200, counterInit, update, view)
+```
+
+- `init` — called once, returns the initial model value
+- `update(model, msg)` — pure function: given old model + message, returns new model
+- `view(g, model)` — renders widgets; call `g.send(msg)` to dispatch messages
+- Messages are queued during `view` and processed after it returns (multiple per frame supported)
+
+> **Note:** Do not name the init function `init` — the generated Zig `main` has a
+> parameter named `init` that will shadow it (BUG-123). Use a qualified name like
+> `counterInit`, `makeModel`, etc.
+
+### `Gui.run` — frame-callback form (legacy)
 
 ```zebra
 Gui.run(title: str, width: int, height: int, frame: def(g: Gui))
@@ -1421,6 +1470,7 @@ Calls `frame` once per rendered frame until the window is closed.  Use a
 | `g.indent()` / `g.unindent()`            | void    | Indentation level                   |
 | `g.panel(label, callback)`               | void    | Collapsible child window            |
 | `g.window(label, callback)`              | void    | Floating sub-window                 |
+| `g.send(msg)`                            | void    | Dispatch a message (MVU form only)  |
 
 ### `CodeEditor` widget
 

@@ -2010,6 +2010,11 @@ const Generator = struct {
             \\const GuiContext = struct {
             \\    _b: *const _GuiBackend,
             \\    lowLevel: _LowLevel,
+            \\    _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
+            \\    _send_ptr: ?*anyopaque = null,
+            \\    pub fn send(self: GuiContext, msg: anytype) void {
+            \\        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+            \\    }
             \\    pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
             \\    pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
             \\    pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -2082,6 +2087,36 @@ const Generator = struct {
             \\            _mframe.call(_g);
             \\            _gui_active_backend.endFrameFn();
             \\        }
+            \\    }
+            \\}
+            \\fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
+            \\    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
+            \\    defer _gui_active_backend.deinitFn();
+            \\    const MsgType = comptime blk: {
+            \\        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            \\            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+            \\        else
+            \\            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+            \\    };
+            \\    const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
+            \\    var _pq = _MvuQueue{};
+            \\    const _sfn = struct {
+            \\        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+            \\            const q: *_MvuQueue = @ptrCast(@alignCast(ctx));
+            \\            if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
+            \\        }
+            \\    }.send;
+            \\    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+            \\    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+            \\    while (_gui_active_backend.newFrameFn()) {
+            \\        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+            \\        for (_pq.buf[0.._pq.len]) |msg| {
+            \\            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            \\                _model = _mvu_update(_model, msg)
+            \\            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+            \\        }
+            \\        _pq.len = 0;
+            \\        _gui_active_backend.endFrameFn();
             \\    }
             \\}
             \\
@@ -6811,15 +6846,32 @@ const Generator = struct {
     fn genGuiCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "run")) {
             if (g.uses_gui_ptr) |p| p.* = true;
-            try g.w.writeAll("_gui_run(");
-            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"App\"");
-            try g.w.writeAll(", ");
-            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("800");
-            try g.w.writeAll(", ");
-            if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("600");
-            try g.w.writeAll(", ");
-            if (args.len >= 4) try g.genExpr(args[3].value) else try g.w.writeAll("undefined");
-            try g.w.writeAll(")");
+            if (args.len >= 6) {
+                // MVU form: Gui.run(title, w, h, init, update, view)
+                try g.w.writeAll("_gui_mvu_run(");
+                try g.genExpr(args[0].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(args[1].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(args[2].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(args[3].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(args[4].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(args[5].value);
+                try g.w.writeAll(")");
+            } else {
+                try g.w.writeAll("_gui_run(");
+                if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"App\"");
+                try g.w.writeAll(", ");
+                if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("800");
+                try g.w.writeAll(", ");
+                if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("600");
+                try g.w.writeAll(", ");
+                if (args.len >= 4) try g.genExpr(args[3].value) else try g.w.writeAll("undefined");
+                try g.w.writeAll(")");
+            }
             return true;
         }
         if (std.mem.eql(u8, method, "setColor")) {
