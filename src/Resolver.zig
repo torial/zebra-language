@@ -100,7 +100,7 @@ pub fn resolvePass2(
     var exprs       = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
     var class_syms  = std.AutoHashMap(*const Ast.DeclClass, *const Symbol).init(map_alloc);
     var struct_syms = std.AutoHashMap(*const Ast.DeclStruct, *const Symbol).init(map_alloc);
-    var diags       = std.ArrayList(Diagnostic){};
+    var diags       = std.ArrayList(Diagnostic).empty;
 
     const r = Resolver{
         .table            = table,
@@ -694,7 +694,7 @@ const Resolver = struct {
         // synthesise a DeclVar and extend e.capture so CodeGen emits the struct
         // field and initialiser automatically — no `capture` block needed in source.
         {
-            var free_names = std.ArrayList([]const u8){};
+            var free_names = std.ArrayList([]const u8).empty;
             defer free_names.deinit(r.diag_alloc);
             var free_seen = std.StringHashMap(void).init(r.diag_alloc);
             defer free_seen.deinit();

@@ -84,7 +84,7 @@ pub const BindResult = struct {
 /// - `diag_alloc` — owns the `diags` slice and message strings in `BindResult`.
 pub fn bindPass1(module: Ast.Module, sym_arena: Allocator, diag_alloc: Allocator) anyerror!BindResult {
     var table = try SymbolTable.init(sym_arena);
-    var diags = std.ArrayList(Diagnostic){};
+    var diags = std.ArrayList(Diagnostic).empty;
     const b = Binder{ .table = &table, .diag_alloc = diag_alloc, .diags = &diags };
     try b.declareModule(module, table.root);
     return .{

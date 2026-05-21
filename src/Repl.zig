@@ -37,7 +37,7 @@ const Session = struct {
     alloc:   std.mem.Allocator,
 
     fn init(alloc: std.mem.Allocator) Session {
-        return .{ .decls = .{}, .stmts = .{}, .history = .{}, .alloc = alloc };
+        return .{ .decls = .empty, .stmts = .empty, .history = .empty, .alloc = alloc };
     }
 
     fn deinit(self: *Session) void {
@@ -111,7 +111,7 @@ const Session = struct {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn runRepl(alloc: std.mem.Allocator) !void {
+pub fn runRepl(io: std.Io, alloc: std.mem.Allocator) !void {
     std.debug.print(
         \\Zebra REPL  (:help for commands, Ctrl-D to exit)
         \\
@@ -120,10 +120,10 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
     var session = Session.init(alloc);
     defer session.deinit();
 
-    var accum = std.ArrayList(u8){};
+    var accum = std.ArrayList(u8).empty;
     defer accum.deinit(alloc);
 
-    const stdin_file = std.fs.File.stdin();
+    const stdin_file = std.Io.File.stdin();
 
     while (true) {
         // Prompt
@@ -134,7 +134,7 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
         }
 
         // Read a line byte-by-byte until '\n' or EOF.
-        const line_raw = readLine(stdin_file, alloc) catch |err| {
+        const line_raw = readLine(io, stdin_file, alloc) catch |err| {
             std.debug.print("read error: {}\n", .{err});
             return err;
         } orelse {
@@ -142,7 +142,7 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
             break;
         };
         defer alloc.free(line_raw);
-        const line = std.mem.trimRight(u8, line_raw, "\r\n");
+        const line = std.mem.trimEnd(u8, line_raw, "\r\n");
 
         // Accumulate lines.
         if (accum.items.len > 0) try accum.append(alloc, '\n');
@@ -157,10 +157,10 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
             continue;
         }
         if (line.len == 0 and std.mem.count(u8, cell_raw, "\n") > 0) {
-            const cell = std.mem.trimRight(u8, cell_raw, " \t\r\n");
+            const cell = std.mem.trimEnd(u8, cell_raw, " \t\r\n");
             if (cell.len > 0) {
                 try session.addHistory(cell);
-                evalCell(&session, cell, alloc) catch |err| {
+                evalCell(&session, cell, io, alloc) catch |err| {
                     std.debug.print("internal error: {}\n", .{err});
                 };
             }
@@ -202,7 +202,7 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
             }
             if (std.mem.startsWith(u8, cell_trim, ":load ")) {
                 const fname = std.mem.trim(u8, cell_trim[":load ".len..], " \t");
-                cmdLoad(&session, fname, alloc) catch |err| {
+                cmdLoad(&session, fname, io, alloc) catch |err| {
                     std.debug.print("load error: {}\n", .{err});
                 };
                 accum.clearRetainingCapacity();
@@ -210,7 +210,7 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
             }
             if (std.mem.startsWith(u8, cell_trim, ":save ")) {
                 const fname = std.mem.trim(u8, cell_trim[":save ".len..], " \t");
-                cmdSave(&session, fname, alloc) catch |err| {
+                cmdSave(&session, fname, io, alloc) catch |err| {
                     std.debug.print("save error: {}\n", .{err});
                 };
                 accum.clearRetainingCapacity();
@@ -223,7 +223,7 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
 
         // Submit cell.
         try session.addHistory(cell_trim);
-        evalCell(&session, cell_trim, alloc) catch |err| {
+        evalCell(&session, cell_trim, io, alloc) catch |err| {
             std.debug.print("internal error: {}\n", .{err});
         };
         accum.clearRetainingCapacity();
@@ -234,18 +234,20 @@ pub fn runRepl(alloc: std.mem.Allocator) !void {
 
 /// Read one line from `file`, including the '\n'.  Returns null on EOF.
 /// Caller must free the returned slice.
-fn readLine(file: std.fs.File, alloc: std.mem.Allocator) !?[]u8 {
-    var buf = std.ArrayList(u8){};
+fn readLine(io: std.Io, file: std.Io.File, alloc: std.mem.Allocator) !?[]u8 {
+    var buf = std.ArrayList(u8).empty;
     errdefer buf.deinit(alloc);
-    var byte: [1]u8 = undefined;
+    var storage: [64]u8 = undefined;
+    var reader = file.readerStreaming(io, &storage);
+    var byte_buf: [1]u8 = undefined;
     while (true) {
-        const n = try file.read(&byte);
+        const n = reader.interface.readSliceShort(&byte_buf) catch return error.Unexpected;
         if (n == 0) {
-            if (buf.items.len == 0) return null; // EOF with no data
+            if (buf.items.len == 0) return null;
             break;
         }
-        try buf.append(alloc, byte[0]);
-        if (byte[0] == '\n') break;
+        try buf.append(alloc, byte_buf[0]);
+        if (byte_buf[0] == '\n') break;
     }
     return try buf.toOwnedSlice(alloc);
 }
@@ -287,11 +289,11 @@ fn hasDeclHeaderOnly(src: []const u8) bool {
 
 // ── Cell evaluation ───────────────────────────────────────────────────────────
 
-fn evalCell(session: *Session, cell: []const u8, alloc: std.mem.Allocator) !void {
+fn evalCell(session: *Session, cell: []const u8, io: std.Io, alloc: std.mem.Allocator) !void {
     const is_decl = isDeclCell(cell);
 
     // Build the complete session .zbr with new cell appended.
-    var zbr_buf = std.ArrayList(u8){};
+    var zbr_buf = std.ArrayList(u8).empty;
     defer zbr_buf.deinit(alloc);
     const boundary = try session.buildZbr(cell, is_decl, &zbr_buf);
 
@@ -318,12 +320,12 @@ fn evalCell(session: *Session, cell: []const u8, alloc: std.mem.Allocator) !void
     defer alloc.free(zig_modified);
 
     {
-        const f = try std.fs.cwd().createFile(SESSION_ZIG, .{});
-        defer f.close();
-        try f.writeAll(zig_modified);
+        const f = try std.Io.Dir.cwd().createFile(io, SESSION_ZIG, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, zig_modified);
     }
 
-    const output = runZig(SESSION_ZIG, alloc) catch |err| {
+    const output = runZig(io, SESSION_ZIG, alloc) catch |err| {
         std.debug.print("zig run error: {}\n", .{err});
         return;
     };
@@ -354,7 +356,7 @@ fn evalCell(session: *Session, cell: []const u8, alloc: std.mem.Allocator) !void
 /// Scan the generated Zig source for `// zbr:<zbr_name>:N` where N >= boundary,
 /// and insert a sentinel debug.print before the first such line.
 fn injectSentinel(zig_src: []const u8, zbr_name: []const u8, boundary: usize, alloc: std.mem.Allocator) ![]u8 {
-    var out = std.ArrayList(u8){};
+    var out = std.ArrayList(u8).empty;
     errdefer out.deinit(alloc);
 
     var injected = false;
@@ -362,7 +364,7 @@ fn injectSentinel(zig_src: []const u8, zbr_name: []const u8, boundary: usize, al
 
     while (it.next()) |line| {
         if (!injected) {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            const trimmed = std.mem.trimStart(u8, line, " \t");
             if (std.mem.startsWith(u8, trimmed, "// zbr:")) {
                 const payload = trimmed["// zbr:".len..];
                 // payload = "filename:N"  (last colon splits file from line)
@@ -446,12 +448,14 @@ fn runPipeline(src: []const u8, path: []const u8, alloc: std.mem.Allocator) !?[]
     var native_uses = std.StringHashMap(CodeGen.NativeUse).init(alloc);
     defer native_uses.deinit();
 
-    var buf = std.ArrayList(u8){};
+    var buf = std.ArrayList(u8).empty;
     errdefer buf.deinit(alloc);
+    var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
     _ = try CodeGen.generate(
-        module, &resolve, &tc, alloc, buf.writer(alloc).any(),
+        module, &resolve, &tc, alloc, &aw.writer,
         .stub, &native_uses, false, &empty_imports, false, false, false, false, null,
     );
+    buf = aw.toArrayList();
     return try buf.toOwnedSlice(alloc);
 }
 
@@ -466,16 +470,18 @@ fn printDiag(path: []const u8, d: Binder.Diagnostic) void {
 
 /// Spawn `zig run <zig_file> -lc`, capture stderr (where Zebra print writes).
 /// Returns the captured output; caller must free.
-fn runZig(zig_file: []const u8, alloc: std.mem.Allocator) ![]u8 {
+fn runZig(io: std.Io, zig_file: []const u8, alloc: std.mem.Allocator) ![]u8 {
     const argv = [_][]const u8{ "zig", "run", zig_file, "-lc" };
-    var child = std.process.Child.init(&argv, alloc);
-    child.stdin_behavior  = .Ignore;
-    child.stdout_behavior = .Ignore; // Zebra print → stderr via std.debug.print
-    child.stderr_behavior = .Pipe;
-    try child.spawn();
-
-    const captured = try child.stderr.?.readToEndAlloc(alloc, MAX_OUTPUT);
-    _ = try child.wait();
+    var child = try std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin  = .ignore,
+        .stdout = .ignore,
+        .stderr = .pipe,
+    });
+    var read_buf: [4096]u8 = undefined;
+    var reader = child.stderr.?.readerStreaming(io, &read_buf);
+    const captured = try reader.interface.allocRemaining(alloc, .limited(MAX_OUTPUT));
+    _ = try child.wait(io);
     return captured;
 }
 
@@ -485,7 +491,7 @@ fn runZig(zig_file: []const u8, alloc: std.mem.Allocator) ![]u8 {
 /// These are expected when a REPL cell declares a variable that hasn't been
 /// used yet — later cells will reference it.
 fn filterUnusedErrors(output: []const u8, alloc: std.mem.Allocator) ![]u8 {
-    var out = std.ArrayList(u8){};
+    var out = std.ArrayList(u8).empty;
     errdefer out.deinit(alloc);
     var it = std.mem.splitScalar(u8, output, '\n');
     var skip_context = false;
@@ -519,8 +525,8 @@ fn isDeclCell(cell: []const u8) bool {
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 /// :load <file.zbr> — replay each non-empty non-comment line of the file.
-fn cmdLoad(session: *Session, path: []const u8, alloc: std.mem.Allocator) !void {
-    const src = std.fs.cwd().readFileAlloc(alloc, path, 64 * 1024 * 1024) catch |err| {
+fn cmdLoad(session: *Session, path: []const u8, io: std.Io, alloc: std.mem.Allocator) !void {
+    const src = std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
         std.debug.print("cannot read '{s}': {}\n", .{ path, err });
         return;
     };
@@ -529,12 +535,12 @@ fn cmdLoad(session: *Session, path: []const u8, alloc: std.mem.Allocator) !void 
     var it = std.mem.splitScalar(u8, src, '\n');
     var n: usize = 0;
     while (it.next()) |raw| {
-        const line = std.mem.trimRight(u8, raw, "\r\n ");
+        const line = std.mem.trimEnd(u8, raw, "\r\n ");
         if (line.len == 0 or std.mem.startsWith(u8, line, "#")) continue;
         n += 1;
         std.debug.print(">>> {s}\n", .{line});
         try session.addHistory(line);
-        evalCell(session, line, alloc) catch |err| {
+        evalCell(session, line, io, alloc) catch |err| {
             std.debug.print("internal error: {}\n", .{err});
         };
     }
@@ -542,8 +548,8 @@ fn cmdLoad(session: *Session, path: []const u8, alloc: std.mem.Allocator) !void 
 }
 
 /// :save <file.zbr> — write committed decls + stmts to a file.
-fn cmdSave(session: *Session, path: []const u8, alloc: std.mem.Allocator) !void {
-    var buf = std.ArrayList(u8){};
+fn cmdSave(session: *Session, path: []const u8, io: std.Io, alloc: std.mem.Allocator) !void {
+    var buf = std.ArrayList(u8).empty;
     defer buf.deinit(alloc);
 
     for (session.decls.items) |d| {
@@ -562,12 +568,12 @@ fn cmdSave(session: *Session, path: []const u8, alloc: std.mem.Allocator) !void 
         }
     }
 
-    const f = std.fs.cwd().createFile(path, .{}) catch |err| {
+    const f = std.Io.Dir.cwd().createFile(io, path, .{}) catch |err| {
         std.debug.print("cannot create '{s}': {}\n", .{ path, err });
         return;
     };
-    defer f.close();
-    try f.writeAll(buf.items);
+    defer f.close(io);
+    try f.writeStreamingAll(io, buf.items);
     std.debug.print("saved {d} decl(s) + {d} stmt(s) to '{s}'\n", .{
         session.decls.items.len, session.stmts.items.len, path,
     });

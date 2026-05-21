@@ -18,6 +18,10 @@
 
 const std         = @import("std");
 const builtin     = @import("builtin");
+
+/// Module-level IO context set once from main(init.io).
+/// Used by all internal helpers without threading io through every signature.
+var _io: std.Io = undefined;
 const Ast         = @import("Ast.zig");
 const Tokenizer   = @import("Tokenizer.zig");
 const Parser      = @import("Parser.zig");
@@ -69,14 +73,16 @@ const Mode = enum {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn main(init: std.process.Init.Minimal) void {
+pub fn main(init: std.process.Init) void {
+    _io = init.io;
+
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const alloc = gpa.allocator();
 
     var args_arena = std.heap.ArenaAllocator.init(alloc);
     defer args_arena.deinit();
-    const args = init.args.toSlice(args_arena.allocator()) catch @panic("OOM");
+    const args = init.minimal.args.toSlice(args_arena.allocator()) catch @panic("OOM");
 
     // Parse flags and find the source path.
     var mode: Mode = .run;
@@ -188,7 +194,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // REPL mode needs no source file.
     if (mode == .repl) {
         const Repl = @import("Repl.zig");
-        Repl.runRepl(alloc) catch |err| {
+        Repl.runRepl(_io, alloc) catch |err| {
             std.debug.print("repl error: {}\n", .{err});
             std.process.exit(1);
         };
@@ -221,7 +227,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         std.process.exit(1);
     };
 
-    const src = std.fs.cwd().readFileAlloc(alloc, path, 64 * 1024 * 1024) catch |err| {
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
         if (err == error.FileNotFound and std.mem.eql(u8, path, "build.zbr")) {
             std.debug.print("zebra: no build.zbr found in current directory\n", .{});
         } else {
@@ -332,7 +338,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     var native_uses = std.StringHashMap(CodeGen.NativeUse).init(alloc);
     defer native_uses.deinit();
     // Paths of C source files to pass to the Zig backend.  Freed at end of run().
-    var c_sources: std.ArrayListUnmanaged([]u8) = .{};
+    var c_sources: std.ArrayListUnmanaged([]u8) = .empty;
     defer { for (c_sources.items) |p| alloc.free(p); c_sources.deinit(alloc); }
 
     const src_dir = std.fs.path.dirname(path) orelse ".";
@@ -399,10 +405,12 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     // ── 7. CodeGen (Pass 4) ───────────────────────────────────────────────────
     const emit_exports = (mode == .lib_static or mode == .lib_shared);
     if (mode == .emit_zig) {
-        var buf = std.ArrayList(u8){};
+        var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
-        try std.fs.File.stdout().writeAll(buf.items);
+        var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
+        buf = aw.toArrayList();
+        try std.Io.File.stdout().writeStreamingAll(_io, buf.items);
         return 0;
     }
 
@@ -413,16 +421,18 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
 
     // Debug mode: emit .zig file then hand off to the DAP proxy.
     if (mode == .debug) {
-        var buf = std.ArrayList(u8){};
+        var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
-        const zf = try std.fs.cwd().createFile(zig_path, .{});
-        defer zf.close();
-        try zf.writeAll(buf.items);
+        var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
+        buf = aw.toArrayList();
+        const zf = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
+        defer zf.close(_io);
+        try zf.writeStreamingAll(_io, buf.items);
         if (listen_port) |port| {
-            return Debugger.runDebugSessionListen(path, zig_path, c_sources.items, port, alloc);
+            return Debugger.runDebugSessionListen(path, zig_path, c_sources.items, port, _io, alloc);
         }
-        return Debugger.runDebugSession(path, zig_path, c_sources.items, alloc);
+        return Debugger.runDebugSession(path, zig_path, c_sources.items, _io, alloc);
     }
 
     return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, tag_filter, alloc, &imported_modules);
@@ -449,7 +459,7 @@ fn mergePartials(
     arena:     std.mem.Allocator,
     alloc:     std.mem.Allocator,
 ) !std.ArrayListUnmanaged([]u8) {
-    var srcs = std.ArrayListUnmanaged([]u8){};
+    var srcs = std.ArrayListUnmanaged([]u8).empty;
     errdefer { for (srcs.items) |s| alloc.free(s); srcs.deinit(alloc); }
 
     // Only primary files (stem has no dots) can own partials.
@@ -461,13 +471,13 @@ fn mergePartials(
     const src_dir_path = std.fs.path.dirname(root_path) orelse ".";
 
     // Collect matching partial paths.
-    var partial_paths = std.ArrayListUnmanaged([]u8){};
+    var partial_paths = std.ArrayListUnmanaged([]u8).empty;
     defer { for (partial_paths.items) |p| alloc.free(p); partial_paths.deinit(alloc); }
 
-    var dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch return srcs;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(_io, src_dir_path, .{ .iterate = true }) catch return srcs;
+    defer dir.close(_io);
     var dir_it = dir.iterate();
-    while (try dir_it.next()) |entry| {
+    while (try dir_it.next(_io)) |entry| {
         if (entry.kind != .file) continue;
         const name = entry.name;
         if (!std.mem.startsWith(u8, name, stem)) continue;
@@ -491,7 +501,7 @@ fn mergePartials(
     }.lt);
 
     for (partial_paths.items) |partial_path| {
-        const partial_src = std.fs.cwd().readFileAlloc(alloc, partial_path, 64 * 1024 * 1024) catch |err| {
+        const partial_src = std.Io.Dir.cwd().readFileAlloc(_io, partial_path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
             std.debug.print("error reading partial '{s}': {}\n", .{ partial_path, err });
             continue;
         };
@@ -527,7 +537,7 @@ fn mergePartials(
 /// Merge top-level declarations from `partial` into `root`.
 /// Class declarations are merged member-by-member; everything else is appended.
 fn mergePartialInto(root: *Ast.Module, partial: *const Ast.Module, arena: std.mem.Allocator) !void {
-    var extra = std.ArrayListUnmanaged(Ast.Decl){};
+    var extra = std.ArrayListUnmanaged(Ast.Decl).empty;
     // Arena-allocated — no explicit deinit needed; freed when arena is freed.
 
     for (partial.decls) |pdecl| {
@@ -558,7 +568,7 @@ fn mergePartialInto(root: *Ast.Module, partial: *const Ast.Module, arena: std.me
                         }
                     }
                     // Filter out duplicates before appending.
-                    var filtered = std.ArrayListUnmanaged(Ast.Decl){};
+                    var filtered = std.ArrayListUnmanaged(Ast.Decl).empty;
                     for (pc.members) |pm| {
                         if (pm == .method) {
                             const pname = pm.method.name;
@@ -668,14 +678,14 @@ fn discoverDep(
 
         for (candidates) |cand| {
             const p = try std.fmt.allocPrint(alloc, "{s}{s}", .{ base, cand.ext });
-            std.fs.cwd().access(p, .{}) catch |err| {
+            std.Io.Dir.cwd().access(_io, p, .{}) catch |err| {
                 alloc.free(p);
                 if (err == error.FileNotFound) continue;
                 return err;
             };
             if (cand.kind == .c_no_header) {
                 const h = try std.fmt.allocPrint(alloc, "{s}.h", .{base});
-                const has_header = if (std.fs.cwd().access(h, .{})) true else |_| false;
+                const has_header = if (std.Io.Dir.cwd().access(_io, h, .{})) true else |_| false;
                 alloc.free(h);
                 return DepInfo{ .path = p, .kind = if (has_header) .c_with_header else .c_no_header };
             }
@@ -854,7 +864,7 @@ fn compileZbrToZig(
     }
 
     // ── 1. Read source ────────────────────────────────────────────────────────
-    const src = std.fs.cwd().readFileAlloc(alloc, zbr_path, 64 * 1024 * 1024) catch |err| {
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, zbr_path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
         std.debug.print("error reading '{s}': {}\n", .{ zbr_path, err });
         return null;
     };
@@ -956,13 +966,15 @@ fn compileZbrToZig(
     const zig = try zigPath(zbr_path, alloc);
     defer alloc.free(zig);
 
-    var buf = std.ArrayList(u8){};
+    var buf = std.ArrayList(u8).empty;
     defer buf.deinit(alloc);
-    _ = try CodeGen.generate(module, &resolve, &tc, alloc, buf.writer(alloc).any(), .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null);
+    var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+    _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null);
+    buf = aw.toArrayList();
 
-    const f = try std.fs.cwd().createFile(zig, .{});
-    defer f.close();
-    try f.writeAll(buf.items);
+    const f = try std.Io.Dir.cwd().createFile(_io, zig, .{});
+    defer f.close(_io);
+    try f.writeStreamingAll(_io, buf.items);
 
     return iface;
 }
@@ -990,12 +1002,14 @@ fn backend(
 ) !u8 {
     // Emit Zig source to file.
     const result = blk: {
-        var buf = std.ArrayList(u8){};
+        var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
-        const r = try CodeGen.generate(module, resolve, tc, alloc, buf.writer(alloc).any(), gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter);
-        const f = try std.fs.cwd().createFile(zig_path, .{});
-        defer f.close();
-        try f.writeAll(buf.items);
+        var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter);
+        buf = aw.toArrayList();
+        const f = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
+        defer f.close(_io);
+        try f.writeStreamingAll(_io, buf.items);
         break :blk r;
     };
 
@@ -1003,12 +1017,14 @@ fn backend(
     if (emit_exports and result.has_exports) {
         const h_path = try headerPath(zig_path, alloc);
         defer alloc.free(h_path);
-        var hbuf = std.ArrayList(u8){};
+        var hbuf = std.ArrayList(u8).empty;
         defer hbuf.deinit(alloc);
-        try CodeGen.generateHeader(module, hbuf.writer(alloc).any());
-        const hf = try std.fs.cwd().createFile(h_path, .{});
-        defer hf.close();
-        try hf.writeAll(hbuf.items);
+        var haw = std.Io.Writer.Allocating.fromArrayList(alloc, &hbuf);
+        try CodeGen.generateHeader(module, &haw.writer);
+        hbuf = haw.toArrayList();
+        const hf = try std.Io.Dir.cwd().createFile(_io, h_path, .{});
+        defer hf.close(_io);
+        try hf.writeStreamingAll(_io, hbuf.items);
     }
 
     // When using a real GUI backend and the program actually references the
@@ -1112,12 +1128,12 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator)
     defer alloc.free(src_dir);
 
     // 1. Create directory tree.
-    try std.fs.cwd().makePath(src_dir);
+    try std.Io.Dir.cwd().createDirPath(_io, src_dir);
 
     // 2. Copy generated .zig → project/src/main.zig.
     const main_zig = try std.fs.path.join(alloc, &.{ src_dir, "main.zig" });
     defer alloc.free(main_zig);
-    try std.fs.cwd().copyFile(zig_path, std.fs.cwd(), main_zig, .{});
+    try std.Io.Dir.cwd().copyFile(zig_path, std.Io.Dir.cwd(), main_zig, _io, .{});
 
     // 3. Write build.zig and build.zig.zon — but only on first creation.
     // If a customised build.zig already exists (e.g. IDE/ZebraIDE_gui/ with
@@ -1129,28 +1145,30 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator)
         const fpath = try std.fs.path.join(alloc, &.{ proj, pair[0] });
         defer alloc.free(fpath);
         // Skip if the file already exists.
-        std.fs.cwd().access(fpath, .{}) catch {
-            const f = try std.fs.cwd().createFile(fpath, .{});
-            defer f.close();
-            try f.writeAll(pair[1]);
+        std.Io.Dir.cwd().access(_io, fpath, .{}) catch {
+            const f = try std.Io.Dir.cwd().createFile(_io, fpath, .{});
+            defer f.close(_io);
+            try f.writeStreamingAll(_io, pair[1]);
         };
     }
 
-    // 4. Absolute path of the project dir (needed for child.cwd).
-    const abs_proj = try std.fs.cwd().realpathAlloc(alloc, proj);
-    defer alloc.free(abs_proj);
+    // 4. Open the project dir so we can pass it as cwd to the child process.
+    var proj_dir = try std.Io.Dir.cwd().openDir(_io, proj, .{});
+    defer proj_dir.close(_io);
 
     // 5. zig build run / install.
     {
         const build_step = if (mode == .run) "run" else "install";
         const argv = [_][]const u8{ "zig", "build", build_step };
-        var child = std.process.Child.init(&argv, alloc);
-        child.cwd             = abs_proj;
-        child.stdin_behavior  = .Inherit;
-        child.stdout_behavior = .Inherit;
-        child.stderr_behavior = .Inherit;
-        const term = try child.spawnAndWait();
-        return switch (term) { .Exited => |c| c, else => 1 };
+        var child = try std.process.spawn(_io, .{
+            .argv   = &argv,
+            .cwd    = .{ .dir = proj_dir },
+            .stdin  = .inherit,
+            .stdout = .inherit,
+            .stderr = .inherit,
+        });
+        const term = try child.wait(_io);
+        return switch (term) { .exited => |c| c, else => 1 };
     }
 }
 
@@ -1173,9 +1191,9 @@ fn compileAndRun(zig_path: []const u8, c_sources: []const []u8, release: bool, a
 /// `zig build-lib [--dynamic] <file.zig> [c_sources...] -lc`
 /// Produces a static `.a` / `.lib` or shared `.so` / `.dll`.
 fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, release: bool, alloc: std.mem.Allocator) !u8 {
-    var argv: std.ArrayListUnmanaged([]const u8) = .{};
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     defer argv.deinit(alloc);
-    var i_flags: std.ArrayListUnmanaged([]u8) = .{};
+    var i_flags: std.ArrayListUnmanaged([]u8) = .empty;
     defer { for (i_flags.items) |f| alloc.free(f); i_flags.deinit(alloc); }
 
     try argv.appendSlice(alloc, &.{ "zig", "build-lib", zig_path });
@@ -1206,9 +1224,9 @@ fn runZigCmd(
     alloc:     std.mem.Allocator,
 ) !u8 {
     // Collect argv + any allocated -I flags (freed after child exits).
-    var argv: std.ArrayListUnmanaged([]const u8) = .{};
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     defer argv.deinit(alloc);
-    var i_flags: std.ArrayListUnmanaged([]u8) = .{};
+    var i_flags: std.ArrayListUnmanaged([]u8) = .empty;
     defer { for (i_flags.items) |f| alloc.free(f); i_flags.deinit(alloc); }
 
     try argv.appendSlice(alloc, &.{ "zig", cmd, zig_path });
@@ -1235,16 +1253,19 @@ fn runZigCmd(
 /// Used for non-primary compile steps (zig fetch, zig build) where we
 /// don't have a generated .zig file to remap errors against.
 fn runChild(argv: []const []const u8, alloc: std.mem.Allocator) !u8 {
-    var child = std.process.Child.init(argv, alloc);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    const term = try child.spawnAndWait();
+    _ = alloc;
+    var child = try std.process.spawn(_io, .{
+        .argv   = argv,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const term = try child.wait(_io);
     return switch (term) {
-        .Exited  => |code| code,
-        .Signal  =>        1,
-        .Stopped =>        1,
-        .Unknown =>        1,
+        .exited  => |code| code,
+        .signal  =>        1,
+        .stopped =>        1,
+        .unknown =>        1,
     };
 }
 
@@ -1252,21 +1273,24 @@ fn runChild(argv: []const []const u8, alloc: std.mem.Allocator) !u8 {
 /// error locations to their originating Zebra source lines using the
 /// `// zbr:file:line` markers emitted by CodeGen.
 fn runChildRemapped(argv: []const []const u8, zig_path: []const u8, alloc: std.mem.Allocator) !u8 {
-    var child = std.process.Child.init(argv, alloc);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Pipe;
-    try child.spawn();
+    var child = try std.process.spawn(_io, .{
+        .argv   = argv,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .pipe,
+    });
 
-    const stderr_text = try child.stderr.?.readToEndAlloc(alloc, 16 * 1024 * 1024);
+    var read_buf: [4096]u8 = undefined;
+    var reader = child.stderr.?.readerStreaming(_io, &read_buf);
+    const stderr_text = try reader.interface.allocRemaining(alloc, .limited(16 * 1024 * 1024));
     defer alloc.free(stderr_text);
 
-    const term = try child.wait();
+    const term = try child.wait(_io);
     const code: u8 = switch (term) {
-        .Exited  => |c| c,
-        .Signal  => 1,
-        .Stopped => 1,
-        .Unknown => 1,
+        .exited  => |c| c,
+        .signal  => 1,
+        .stopped => 1,
+        .unknown => 1,
     };
 
     if (stderr_text.len > 0) {
@@ -1297,20 +1321,20 @@ fn runChildRemapped(argv: []const []const u8, zig_path: []const u8, alloc: std.m
 /// suppressed since they show Zig internals the user never wrote.
 fn remapZigErrors(stderr_text: []const u8, zig_path: []const u8, alloc: std.mem.Allocator) ![]const u8 {
     // Read the generated .zig file.  If unavailable, return original text.
-    const zig_src = std.fs.cwd().readFileAlloc(alloc, zig_path, 64 * 1024 * 1024) catch {
+    const zig_src = std.Io.Dir.cwd().readFileAlloc(_io, zig_path, alloc, .limited(64 * 1024 * 1024)) catch {
         return alloc.dupe(u8, stderr_text);
     };
     defer alloc.free(zig_src);
 
     // Split into lines for backward searching.
-    var zig_lines: std.ArrayListUnmanaged([]const u8) = .{};
+    var zig_lines: std.ArrayListUnmanaged([]const u8) = .empty;
     defer zig_lines.deinit(alloc);
     var lit = std.mem.splitScalar(u8, zig_src, '\n');
     while (lit.next()) |l| try zig_lines.append(alloc, l);
 
     const zig_base = std.fs.path.basename(zig_path);
 
-    var out: std.ArrayListUnmanaged(u8) = .{};
+    var out: std.ArrayListUnmanaged(u8) = .empty;
     errdefer out.deinit(alloc);
 
     var sit = std.mem.splitScalar(u8, stderr_text, '\n');
@@ -1331,9 +1355,11 @@ fn remapZigErrors(stderr_text: []const u8, zig_path: []const u8, alloc: std.mem.
         if (parseZigDiagLine(line, zig_base)) |d| {
             // Walk backward in the generated file to find the zbr: marker.
             if (findZbrComment(zig_lines.items, d.zig_line)) |loc| {
-                try out.writer(alloc).print("{s}:{d}: {s}: {s}\n", .{
+                const diag_line = try std.fmt.allocPrint(alloc, "{s}:{d}: {s}: {s}\n", .{
                     loc.file, loc.line, d.severity, d.message,
                 });
+                defer alloc.free(diag_line);
+                try out.appendSlice(alloc, diag_line);
                 skip_context = true;
                 continue;
             }
@@ -1400,7 +1426,7 @@ fn findZbrComment(zig_lines: []const []const u8, error_line: usize) ?ZbrLoc {
     // Convert 1-based line to 0-based index, clamped to file length.
     var i: usize = @min(error_line - 1, zig_lines.len - 1);
     while (true) {
-        const trimmed = std.mem.trimLeft(u8, zig_lines[i], " \t");
+        const trimmed = std.mem.trimStart(u8, zig_lines[i], " \t");
         if (std.mem.startsWith(u8, trimmed, "// zbr:")) {
             const payload = trimmed["// zbr:".len..];
             // payload = "filename:N"  (last colon separates file from line)

@@ -37,6 +37,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# One-off migration scripts
+fix_016*.py
+
 # Claude Code internal
 .claude/scheduled_tasks.lock
 

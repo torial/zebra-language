@@ -1083,7 +1083,7 @@ pub fn typeCheckPass3Ex(
     try collectIfaceDecls(module, &iface_decls);
     var narrowed_types  = std.StringHashMap(Type).init(map_alloc);
     defer narrowed_types.deinit();
-    var diags           = std.ArrayList(Diagnostic){};
+    var diags           = std.ArrayList(Diagnostic).empty;
 
     const tc = TypeChecker{
         .resolve              = resolve,
