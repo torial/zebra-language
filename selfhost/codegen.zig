@@ -4292,9 +4292,9 @@ pub fn generateEntryPoint(m: Module) []const u8 {
     }
 // zbr:selfhost/codegen.zbr:828
     var sb = std.ArrayList(u8).empty;
-    sb.appendSlice(_allocator, "pub fn main(init: std.process.Init) void {\n") catch @panic("OOM");
-    sb.appendSlice(_allocator, "    _io = init.io;\n") catch @panic("OOM");
-    sb.appendSlice(_allocator, "    _args = init.minimal.args;\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "pub fn main(_zinit: std.process.Init) void {\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _io = _zinit.io;\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _args = _zinit.minimal.args;\n") catch @panic("OOM");
     sb.appendSlice(_allocator, "    _allocator = _arena.allocator();\n") catch @panic("OOM");
     sb.appendSlice(_allocator, "    defer _arena.deinit();\n") catch @panic("OOM");
 // zbr:selfhost/codegen.zbr:834
@@ -4429,9 +4429,9 @@ pub fn generateTestEntryPoint(m: Module, file_stem: []const u8, tag_filter: ?[]c
     }
 // zbr:selfhost/codegen.zbr:901
     var sb = std.ArrayList(u8).empty;
-    sb.appendSlice(_allocator, "pub fn main(init: std.process.Init) void {\n") catch @panic("OOM");
-    sb.appendSlice(_allocator, "    _io = init.io;\n") catch @panic("OOM");
-    sb.appendSlice(_allocator, "    _args = init.minimal.args;\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "pub fn main(_zinit: std.process.Init) void {\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _io = _zinit.io;\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _args = _zinit.minimal.args;\n") catch @panic("OOM");
     sb.appendSlice(_allocator, "    _allocator = _arena.allocator();\n") catch @panic("OOM");
     sb.appendSlice(_allocator, "    defer _arena.deinit();\n") catch @panic("OOM");
     sb.appendSlice(_allocator, "    var _test_pass: usize = 0;\n") catch @panic("OOM");
@@ -7369,7 +7369,7 @@ pub const Generator = struct {
             if ((_zebra_gt(@as(i64, @intCast(m.params.items.len)), 0) or has_self)) {
                 self.w.emit(", ");
             }
-            self.w.emit("init: std.process.Init");
+            self.w.emit("_zinit: std.process.Init");
         }
         self.w.emit(") ");
 // zbr:selfhost/codegen.zbr:2698
@@ -7417,9 +7417,9 @@ pub const Generator = struct {
 // zbr:selfhost/codegen.zbr:2720
                 var ei = self.indented();
                 ei.writeIndent();
-                ei.w.emit("_io = init.io;\n");
+                ei.w.emit("_io = _zinit.io;\n");
                 ei.writeIndent();
-                ei.w.emit("_args = init.minimal.args;\n");
+                ei.w.emit("_args = _zinit.minimal.args;\n");
                 ei.writeIndent();
                 ei.w.emit("_allocator = _arena.allocator();\n");
                 ei.writeIndent();

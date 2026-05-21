@@ -826,9 +826,9 @@ def generateEntryPoint(m: Module): str
     if main_class == ""
         return ""
     var sb: StringBuilder = StringBuilder()
-    sb.append("pub fn main(init: std.process.Init) void {\n")
-    sb.append("    _io = init.io;\n")
-    sb.append("    _args = init.minimal.args;\n")
+    sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    _io = _zinit.io;\n")
+    sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
     if main_throws
@@ -899,9 +899,9 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                             test_labels.add(entry)
 
     var sb: StringBuilder = StringBuilder()
-    sb.append("pub fn main(init: std.process.Init) void {\n")
-    sb.append("    _io = init.io;\n")
-    sb.append("    _args = init.minimal.args;\n")
+    sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    _io = _zinit.io;\n")
+    sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
     sb.append("    defer _arena.deinit();\n")
     sb.append("    var _test_pass: usize = 0;\n")
@@ -2693,7 +2693,7 @@ struct Generator
         if owner == "" and m.name == "main"
             if m.params.count() > 0 or has_self
                 w.emit(", ")
-            w.emit("init: std.process.Init")
+            w.emit("_zinit: std.process.Init")
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre to!))
@@ -2719,9 +2719,9 @@ struct Generator
             if owner == "" and m.name == "main"
                 var ei = indented()
                 ei.writeIndent()
-                ei.w.emit("_io = init.io;\n")
+                ei.w.emit("_io = _zinit.io;\n")
                 ei.writeIndent()
-                ei.w.emit("_args = init.minimal.args;\n")
+                ei.w.emit("_args = _zinit.minimal.args;\n")
                 ei.writeIndent()
                 ei.w.emit("_allocator = _arena.allocator();\n")
                 ei.writeIndent()

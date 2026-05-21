@@ -2872,9 +2872,9 @@ const Generator = struct {
             const list_targets_prefix = if (g.list_targets_mode) "    _list_targets_mode = true;\n" else "";
             if (main_throws) {
                 try g.w.print(
-                    "pub fn main(init: std.process.Init) void {{\n" ++
-                    "    _io = init.io;\n" ++
-                    "    _args = init.minimal.args;\n" ++
+                    "pub fn main(_zinit: std.process.Init) void {{\n" ++
+                    "    _io = _zinit.io;\n" ++
+                    "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
                     "    defer _arena.deinit();\n" ++
                     "{s}" ++
@@ -2893,9 +2893,9 @@ const Generator = struct {
                 );
             } else {
                 try g.w.print(
-                    "pub fn main(init: std.process.Init) void {{\n" ++
-                    "    _io = init.io;\n" ++
-                    "    _args = init.minimal.args;\n" ++
+                    "pub fn main(_zinit: std.process.Init) void {{\n" ++
+                    "    _io = _zinit.io;\n" ++
+                    "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
                     "    defer _arena.deinit();\n" ++
                     "{s}" ++
@@ -3958,7 +3958,7 @@ const Generator = struct {
         // the _io handle and process args before any user code runs.
         if (g.owner.len == 0 and std.mem.eql(u8, n.name, "main") and !g.test_mode) {
             if (n.params.len > 0 or has_self) try g.w.writeAll(", ");
-            try g.w.writeAll("init: std.process.Init");
+            try g.w.writeAll("_zinit: std.process.Init");
         }
         try g.w.writeAll(") ");
 
@@ -3998,8 +3998,8 @@ const Generator = struct {
             // Root entry point: inject _io/_args/_allocator init before user code.
             if (g.owner.len == 0 and std.mem.eql(u8, n.name, "main") and !g.test_mode) {
                 const _eg = mg.indented();
-                try _eg.writeIndent(); try _eg.w.writeAll("_io = init.io;\n");
-                try _eg.writeIndent(); try _eg.w.writeAll("_args = init.minimal.args;\n");
+                try _eg.writeIndent(); try _eg.w.writeAll("_io = _zinit.io;\n");
+                try _eg.writeIndent(); try _eg.w.writeAll("_args = _zinit.minimal.args;\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("_allocator = _arena.allocator();\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("defer _arena.deinit();\n");
                 for (g.module.decls) |_ed| {
@@ -9854,9 +9854,9 @@ const Generator = struct {
         }
 
         try g.w.writeAll(
-            "pub fn main(init: std.process.Init) void {\n" ++
-            "    _io = init.io;\n" ++
-            "    _args = init.minimal.args;\n" ++
+            "pub fn main(_zinit: std.process.Init) void {\n" ++
+            "    _io = _zinit.io;\n" ++
+            "    _args = _zinit.minimal.args;\n" ++
             "    _allocator = _arena.allocator();\n" ++
             "    defer _arena.deinit();\n" ++
             "    var _test_pass: usize = 0;\n" ++

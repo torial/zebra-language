@@ -838,11 +838,9 @@ Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_dec
 
 ### BUG-123: Generated `pub fn main(init: std.process.Init)` shadows user-defined `init` function
 
-- **Status:** Open
-- **Symptom:** An MVU program with `def init(): Model` will fail to compile. Inside the generated `main`, the parameter `init: std.process.Init` shadows the user's top-level `init` function. `_gui_mvu_run(..., init, ...)` passes the `std.process.Init` struct instead of the user's function.
-- **Workaround:** Name the MVU init function something other than `init` (e.g. `counterInit`, `makeModel`).
-- **Fix:** Rename the `main` parameter from `init` to `_zinit` in the generated Zig. Affects `genMain` in `src/CodeGen.zig` (lines ~2875, ~2896, ~3961, ~9857) and matching locations in `selfhost/codegen.zbr`. The parameter is purely internal boilerplate and renaming it doesn't affect any user-visible API.
-- **Discovered:** 2026-05-21 during MVU `Gui.run` implementation.
+- **Status:** Fixed (2026-05-21)
+- **Symptom:** An MVU program with `def init(): Model` would fail to compile. Inside the generated `main`, the parameter `init: std.process.Init` shadowed the user's top-level `init` function.
+- **Fix:** Renamed the parameter from `init` to `_zinit` in `genMain` in `src/CodeGen.zig` (4 sites) and matching locations in `selfhost/codegen.zbr` (4 sites). Both compilers regenerated. Bootstrap 5/5.
 
 ---
 

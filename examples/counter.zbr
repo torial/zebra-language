@@ -12,7 +12,7 @@ union Msg
     dec
     reset
 
-def counterInit(): Counter
+def init(): Counter
     return Counter(count: 0)
 
 def update(model: Counter, msg: Msg): Counter
@@ -34,4 +34,4 @@ def view(g: Gui, model: Counter)
         g.send(Msg.reset)
 
 def main()
-    Gui.run("Counter", 400, 200, counterInit, update, view)
+    Gui.run("Counter", 400, 200, init, update, view)
