@@ -459,7 +459,7 @@ def testNarrowPayloadFromOnValue()
 # in ModuleTypes and that inferExpr resolves bare calls to them correctly.
 
 def moduleFuncDecl(name: str, ret: TypeRef): Decl
-    return Decl.method(DeclMethod(mkSpan(), emptyMods(), name, List(Param)(), ret, nil, false, false, List(Expr)(), List(Expr)(), List(str)()))
+    return Decl.method(DeclMethod(mkSpan(), emptyMods(), name, List(str)(), List(Param)(), ret, nil, false, false, List(Expr)(), List(Expr)(), List(str)()))
 
 def testInferModuleFuncCall()
     # Module: struct Point { var x: int }  +  def makePoint(): Point

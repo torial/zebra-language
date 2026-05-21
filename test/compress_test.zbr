@@ -1,13 +1,28 @@
-class CompressTest
-    static def main
-        # gzip: stubbed in Zig 0.15.2 (std.compress.flate.Compress not yet implemented)
-        # Returns "" since compression is not yet implemented
-        print Compress.gzip("hello world").len
-        print "gzip (stubbed): OK"
+def main()
+    # gzip round-trip: compress then decompress should recover original
+    const original: str = "hello world"
+    const compressed: str = Compress.gzip(original)
+    assert compressed.len > 0
+    print "gzip produces output: OK"
 
-        # gunzip: valid gzip data is non-trivial to embed; test failure path returns nil
-        var result = Compress.gunzip("not valid gzip")
-        assert result == nil
-        print "gunzip bad input: OK"
+    var recovered = Compress.gunzip(compressed)
+    assert recovered != nil
+    assert recovered to! == original
+    print "gzip round-trip: OK"
 
-        print "All compress tests passed."
+    # Larger input to exercise real compression
+    const big: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const big_gz: str = Compress.gzip(big)
+    assert big_gz.len > 0
+    assert big_gz.len < big.len   # highly compressible — should shrink
+    var big_back = Compress.gunzip(big_gz)
+    assert big_back != nil
+    assert big_back to! == big
+    print "gzip compressible data round-trip: OK"
+
+    # gunzip on invalid data returns nil
+    var bad = Compress.gunzip("not valid gzip")
+    assert bad == nil
+    print "gunzip bad input: OK"
+
+    print "All compress tests passed."

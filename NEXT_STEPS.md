@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-18 (type aliases with constraints complete: transparent emit, constraint after var init, --turbo strips, both backends, QUICKSTART §36, bootstrap 5/5)
+**Last updated:** 2026-05-20 (Zig 0.16 fully complete: bootstrap 5/5, 122/122 smoke; _Chan→std.Io.Mutex/Condition, _build_new .empty; bamos + oma tracked; _initIo gap noted)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -25,8 +25,10 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Real ImGui backend completion (`LowLevel` sub-API) — `g.lowLevel.addLine/addRect/addRectFilled/addCircle/addCircleFilled/addText` (DrawList), `getWindowPos/Size/getCursorPos/getMousePos` → `(float,float)` tuple, `beginGroup/endGroup/sameLine`; stub + ImGui backends; 94/94 smoke (2026-05-13)
 - [x] JSON auto-inference — `Json.parse(T, src)` typed overload routes to `parseStrict` machinery; `@reflectable` required; both backends; bootstrap 5/5 (2026-05-13)
 - [x] Tuple/multi-return — `(T1, T2)` type, `(a, b)` literal, `var (x, y) = f()` destructure, `.0`/`.1` index; TC element-type registration; 93/93 smoke; bootstrap 5/5 (2026-05-13)
-- [ ] gzip compress — **blocked on Zig 0.16 upgrade** (see below)
-- [ ] Zig 0.16 upgrade — unblocks gzip; compile-performance improvements help REPL latency
+- [x] gzip compress — `std.compress.flate.Compress.init` + round-trip test; 124/124 smoke, bootstrap 5/5 (2026-05-20)
+- [x] Generic functions — `def identity(T)(x: T): T` syntax; `comptime T: type` Zig emission; call-site flattening `identity(int)(42)` → `identity(i64, 42)`; TC inference for format specs; 125/125 smoke, bootstrap 5/5 (2026-05-20)
+- [x] Zig 0.16 upgrade (core) — `ArrayList.empty`, `init: std.process.Init`, `_initIo` chain, selfhost `genMethod` fix; bootstrap 5/5 (2026-05-20)
+- [x] Zig 0.16 compat — `_Chan` updated to `std.Io.Mutex`/`Condition` + `std.Options.debug_io`; `_build_new` `.targets = .empty`; 122/122 smoke, bootstrap 5/5 (2026-05-20)
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
 - [x] Build system in Zebra — `zebra build` + `Build` stdlib module; selfhost TC/codegen parity; --build-file/--list-targets/b.target(); 96/96 smoke, bootstrap 5/5 (2026-05-14)
 
@@ -53,6 +55,14 @@ Everything here must ship before 1.0 stability locks in.
 ---
 
 ## Open Bugs
+
+**Selfhost `_initIo` propagation gap** —
+Selfhost-emitted dep modules get a simple `_initIo` from the preamble (sets local `_io` only);
+bootstrap-emitted dep modules get a propagating version that chains to their own transitive deps.
+Currently harmless: `ast.zbr`/`cg_helpers.zbr`/`typechecker.zbr` don't call any `_io`-dependent
+operations directly.  If a transitive dep gains file I/O calls in future, it will silently use
+undefined `_io`.  Long-term fix: emit a propagating `_initIo` in `generateModuleWith` (mirroring
+`src/CodeGen.zig` `genModule` lines 1896–1907).  **Deferred** — harmless now; track for 1.0 pre-flight.
 
 **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains
 Not manifesting in practice — `scanMutationsInExpr` conservatively marks cross-module calls as mutated.
@@ -127,6 +137,13 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 `sys.readLine()` is done (2026-05-10); remaining work is the incremental-compile mode.
 See design notes in `SELFHOST_JOURNAL.md`.
 
+**REPL latency — resident compiler (`--watch` / compiler server) — pre-1.0:**
+Current model spawns a fresh `zig` process per REPL entry; Zig 0.16 incremental compilation
+helps mid-session (declaration-level cache hits on append-only generated source), but cold-start
+and link cost remain.  Next unlock: keep a resident Zig compiler process alive for the REPL
+session using `--watch` or the compiler server API so incremental state stays warm in memory.
+This would make per-entry latency feel near-instant for small additions.  **Target: pre-1.0.**
+
 ### 7. Regex per-quantifier lazy/greedy (Milestone 0.11)
 Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
 to track per-node shortest/longest flags, not a global flag.
@@ -136,6 +153,15 @@ SIMD types shipped 2026-05-08 — the reason for deferring this port is gone.
 Scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window, TF-IDF /
 cosine similarity via `f32x8` dot-product.  See `concept_zebra-simd-design.md`
 for the fuzzy-match and text-analytics use-case table.
+
+**SIMD 1.0 enhancement — runtime CPU dispatch:**
+[oma](https://github.com/ATTron/oma) (One Man Array) is a Zig library for runtime SIMD
+dispatch: at startup the binary detects CPU capabilities and selects the best kernel
+(SSE2 → AVX2 → AVX-512 on x86-64; NEON → SVE2 on AArch64) without requiring separate
+builds.  By 1.0, Zebra's SIMD types should use runtime dispatch so a single
+`zebra build` binary runs optimally across CPUs without per-target compilation.
+Design spike needed: integrate `oma`-style dispatch or expose `@cpu_feature` primitives
+that map to the same pattern.  **Target: 1.0.**
 
 ### 10. Plugin system — DynLib demo ✓ (2026-05-16)
 Interface vtable construction, shim functions, DynLib stdlib, and demo files are complete.
@@ -199,9 +225,7 @@ in method A + bad expression in method B" cheaply.
 
 ### 21. Milestone 0.11 — remaining items
 
-- **gzip compress** — `std.compress.flate.Compress` was `@panic("TODO")` in Zig 0.15.2.
-  **Zig 0.16 now released** — unblocked, but migration to 0.16 may bring its own
-  headaches.  Revisit once the Zig upgrade is done.
+- **gzip compress** ✅ — `std.compress.flate.Compress.init` + round-trip test; 124/124 smoke, bootstrap 5/5 (2026-05-20).
 - **JSON auto-inference** — `Json.parse(T, str)` without a separate `as T` annotation.
 - **Gui stack** — ImGui GLFW backend is superseded by the MVU + ZigZag TUI + libui-ng redesign
   (decided 2026-05-18; see §14 and `wiki/pages/concepts/concept_zebra-gui-redesign.md`).
@@ -403,6 +427,11 @@ Contracts, generics, interface vtables, `^T`, throws, nil tracking all survive.
 
 See: `wiki/pages/concepts/concept_zebra-os-additions.md`
 Sister page: `concept_zebra-systems-additions.md` (browser-class additions; subset of this).
+
+**Reference project:** [BamOS](https://github.com/bagggage/bamos) — Zig-native OS kernel with
+multi-ABI support (GNU/Linux + Windows NT) and a pure-Zig build pipeline.  Use as a concrete
+test target / compatibility reference when designing `.zeb` freestanding mode and `@freestanding`
+ABI conventions.  Bootstrappable with `zig build` alone — no external toolchain needed.
 
 **WASM track (builds on §17 1.5 foundations):**
 The `@freestanding` mode and module blacklist built for the kernel track are shared with

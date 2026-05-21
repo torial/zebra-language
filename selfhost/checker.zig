@@ -14,6 +14,8 @@
 
 const std     = @import("std");
 const builtin = @import("builtin");
+var _io: std.Io = undefined;
+var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
@@ -22,6 +24,9 @@ var _allocator: std.mem.Allocator = _arena.allocator();
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+pub fn _initIo(io: std.Io) void {
+    _io = io;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
@@ -256,25 +261,41 @@ fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T 
 }
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    const _r = std.process.Child.run(.{
-        .allocator = _allocator,
-        .argv = argv.items,
-        .max_output_bytes = 16 * 1024 * 1024,
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
     }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    const _ec: i64 = switch (_r.term) {
-        .Exited => |code| @intCast(code),
+    var stdout_bytes: []const u8 = "";
+    var stderr_bytes: []const u8 = "";
+    if (child.stdout) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    if (child.stderr) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
+    const _ec: i64 = switch (term) {
+        .exited => |code| @intCast(code),
         else    => -1,
     };
-    return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
+    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
 }
 fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
-    var child = std.process.Child.init(argv.items, _allocator);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    const term = child.spawnAndWait() catch return -1;
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch return -1;
+    const term = child.wait(_io) catch return -1;
     return switch (term) {
-        .Exited => |code| @intCast(code),
+        .exited => |code| @intCast(code),
         else    => -1,
     };
 }
@@ -285,13 +306,15 @@ const _SysProcess = struct {
 };
 fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
-    p.* = .{ .child = std.process.Child.init(argv.items, _allocator), .alive = false, .pid = -1 };
-    p.child.stdin_behavior  = .Ignore;
-    p.child.stdout_behavior = .Ignore;
-    p.child.stderr_behavior = .Inherit;
-    p.child.spawn() catch return p;
+    p.* = .{ .child = undefined, .alive = false, .pid = -1 };
+    p.child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .ignore,
+        .stderr = .inherit,
+    }) catch return p;
     p.alive = true;
-    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig 0.15 std so we leave -1.
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
     if (comptime builtin.os.tag != .windows) {
         p.pid = @intCast(p.child.id);
     }
@@ -299,7 +322,7 @@ fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
 }
 fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
-    _ = p.child.kill() catch {};
+    _ = p.child.kill(_io) catch {};
     p.alive = false;
 }
 fn _sys_process_is_running(p: *_SysProcess) bool {
@@ -316,15 +339,19 @@ fn _sys_process_is_running(p: *_SysProcess) bool {
     }
 }
 fn _sys_readline() ?[]const u8 {
-    const stdin = std.fs.File.stdin();
-    var buf: [4096]u8 = undefined;
-    const n = stdin.read(&buf) catch return null;
-    if (n == 0) return null;
-    const line = buf[0..n];
-    const trimmed = if (line.len > 0 and line[line.len - 1] == '\n')
-        if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
-    else line;
-    return _allocator.dupe(u8, trimmed) catch return null;
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var line: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    while (true) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
+        if (n == 0) return if (line.items.len > 0) line.items else null;
+        const b = byte_buf[0];
+        if (b == '\n') break;
+        if (b != '\r') line.append(_allocator, b) catch return null;
+    }
+    return line.items;
 }
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
 const _DynLib = struct {
@@ -342,55 +369,55 @@ fn _dynlib_close(dl: *_DynLib) void {
 // ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
 fn _Chan(comptime T: type) type {
     return struct {
-        mutex:     std.Thread.Mutex = .{},
-        not_empty: std.Thread.Condition = .{},
-        not_full:  std.Thread.Condition = .{},
+        mutex:     std.Io.Mutex = .init,
+        not_empty: std.Io.Condition = .init,
+        not_full:  std.Io.Condition = .init,
         buf:       std.ArrayList(T),
         capacity:  usize,
         closed:    bool = false,
 
         const Self = @This();
-        // Zig 0.15: std.ArrayList is unmanaged — allocator passed per operation.
         const _alloc = std.heap.page_allocator;
+        const _dio = std.Options.debug_io;
 
         pub fn init(cap: usize) Self {
-            return .{ .buf = .{}, .capacity = cap };
+            return .{ .buf = .empty, .capacity = cap };
         }
 
         pub fn send(self: *Self, val: T) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             if (self.closed) @panic("send on closed channel");
             const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
             while (self.buf.items.len >= eff_cap and !self.closed)
-                self.not_full.wait(&self.mutex);
+                self.not_full.waitUncancelable(_dio, &self.mutex);
             if (self.closed) return;
             self.buf.append(_alloc, val) catch @panic("OOM");
-            self.not_empty.signal();
+            self.not_empty.signal(_dio);
             // Rendezvous (cap=0): sender blocks until receiver drains the slot.
             if (self.capacity == 0) {
                 while (self.buf.items.len > 0 and !self.closed)
-                    self.not_full.wait(&self.mutex);
+                    self.not_full.waitUncancelable(_dio, &self.mutex);
             }
         }
 
         pub fn recv(self: *Self) ?T {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             while (self.buf.items.len == 0 and !self.closed)
-                self.not_empty.wait(&self.mutex);
+                self.not_empty.waitUncancelable(_dio, &self.mutex);
             if (self.buf.items.len == 0) return null;
             const val = self.buf.orderedRemove(0);
-            self.not_full.signal();
+            self.not_full.signal(_dio);
             return val;
         }
 
         pub fn close(self: *Self) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             self.closed = true;
-            self.not_empty.broadcast();
-            self.not_full.broadcast();
+            self.not_empty.broadcast(_dio);
+            self.not_full.broadcast(_dio);
         }
     };
 }
@@ -427,7 +454,7 @@ var _build_ran: bool = false;
 var _list_targets_mode: bool = false;
 fn _build_new(alloc: std.mem.Allocator) *_Build {
     const b = alloc.create(_Build) catch @panic("OOM");
-    b.* = .{ .targets = .{} };
+    b.* = .{ .targets = .empty };
     _global_build = b;
     return b;
 }
@@ -455,18 +482,20 @@ fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     std.process.exit(1);
 }
 fn _build_list_targets(b: *_Build) void {
-    const _out = std.fs.File.stdout().deprecatedWriter();
-    _out.writeAll("{\"targets\":[") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
-        if (i > 0) _out.writeAll(",") catch {};
+        if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
         const kind_str: []const u8 = switch (t.kind) {
             .exe   => "exe",
             .lib   => "lib",
             .test_ => "test",
         };
-        _out.print("{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
-    _out.writeAll("]}\n") catch {};
+    _stdout.writeStreamingAll(_io, "]}\n") catch {};
 }
 fn _build_auto_run() void {
     if (!_build_ran) {
@@ -478,8 +507,8 @@ fn _build_run(b: *_Build) void {
     if (_list_targets_mode) { _build_list_targets(b); return; }
     const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
     defer _allocator.free(self_exe);
-    std.fs.cwd().makePath(".zig-cache/zbr") catch {};
-    std.fs.cwd().makePath("zig-out/bin")    catch {};
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin",    .{}) catch {};
     for (b.targets.items) |t| {
         switch (t.kind) {
             .exe => {
@@ -493,18 +522,16 @@ fn _build_run(b: *_Build) void {
                 std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
                 {
                     const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Ignore;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .ignore, .stderr = .inherit }) catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: emit-zig wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
                 {
                     const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Inherit;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: zig build-exe wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
             },
@@ -726,9 +753,11 @@ const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2
 fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
     var _hc = std.http.Client{ .allocator = _allocator };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &_hb.writer }) catch return null;
-    return .{ .status = @intFromEnum(_hr.status), .text = _hb.written() };
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
 fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
 fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
@@ -736,11 +765,13 @@ fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, u
 fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
     var _hc = std.http.Client{ .allocator = _allocator };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
     _ = _hc.fetch(.{ .location = .{ .url = url }, .method = .POST, .payload = body,
         .extra_headers = &.{ .{ .name = "Content-Type", .value = "application/json" } },
-        .response_writer = &_hb.writer }) catch return null;
-    return _json_parse(_hb.written());
+        .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return _json_parse(out_list.items);
 }
 fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
     var _new = std.heap.page_allocator.alloc([2][]const u8, resp.headers.len + 1) catch return resp;
@@ -1192,8 +1223,8 @@ const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
     var _rows: std.ArrayList([]const []const u8) = .empty;
-    var _row:  std.ArrayList([]const u8) = .{};
-    var _f:    std.ArrayList(u8) = .{};
+    var _row:  std.ArrayList([]const u8) = .empty;
+    var _f:    std.ArrayList(u8) = .empty;
     const _St = enum { s, fld, q, aq };
     var _st: _St = .s;
     for (src) |c| {
@@ -1233,7 +1264,7 @@ fn _csv_parse(src: []const u8) _CsvTable {
     return .{ .rows = _rows.toOwnedSlice(_pa) catch &.{} };
 }
 fn _csv_parse_file(path: []const u8) _CsvTable {
-    const src = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return .{ .rows = &.{} };
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, path, std.heap.page_allocator, .unlimited) catch return .{ .rows = &.{} };
     return _csv_parse(src);
 }
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
@@ -1292,9 +1323,11 @@ fn _tcp_write(conn: TcpConn, data: []const u8) void {
 fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
     var _rd = conn.stream.reader(&_rb);
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    _ = _rd.interface().streamRemaining(&_hb.writer) catch |e| @panic(@errorName(e));
-    return _hb.written();
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    _ = _rd.interface().streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    out_list = out_aw.toArrayList();
+    return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
     var _buf: std.ArrayList(u8) = .empty;
@@ -2206,15 +2239,14 @@ const ArgResult = struct {
     pub fn usage(_: ArgResult) []const u8 { return "Usage: program [options]"; }
 };
 fn _arg_parse() ArgResult {
-    const _argv = std.process.argsAlloc(_allocator) catch return ArgResult{ ._raw = &.{} };
+    const _argv = _args.toSlice(_allocator) catch return ArgResult{ ._raw = &.{} };
     const _raw_slice = if (_argv.len > 1) _argv[1..] else _argv[0..0];
     var _out = _allocator.alloc([]const u8, _raw_slice.len) catch return ArgResult{ ._raw = &.{} };
     for (_raw_slice, 0..) |a, i| _out[i] = a;
     return ArgResult{ ._raw = _out };
 }
 fn _term_is_tty() bool {
-    const cfg = std.io.tty.detectConfig(std.fs.File.stdout());
-    return cfg != .no_color;
+    return std.Io.File.stdout().isTty(_io) catch false;
 }
 fn _term_width() i64 { return 80; }
 fn _term_height() i64 { return 24; }
@@ -2231,13 +2263,15 @@ fn _term_ansi(color: []const u8) []const u8 {
     return "";
 }
 fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.fs.File.stdout();
+    const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
-        _f.deprecatedWriter().print("{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _f.deprecatedWriter().writeAll(msg) catch {};
+        _f.writeStreamingAll(_io, msg) catch {};
     }
-    if (newline) _f.deprecatedWriter().writeByte('\n') catch {};
+    if (newline) _f.writeStreamingAll(_io, "\n") catch {};
 }
 var _log_level: u8 = 1;        // default: info
 var _log_timestamps: bool = true;
@@ -2250,11 +2284,15 @@ fn _log_ts() []const u8 {
 }
 fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _lw = if (_log_to_stderr) std.fs.File.stderr().deprecatedWriter() else std.fs.File.stdout().deprecatedWriter();
+    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
     if (_log_timestamps) {
-        _lw.print("[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _lw.print("[{s:<5}] {s}\n", .{ level_str, msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5}] {s}\n", .{ level_str, msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
@@ -2290,7 +2328,28 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(_: []const u8) []const u8 { return ""; }
+fn _compress_gzip(data: []const u8) []const u8 {
+    // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
+    const out_capacity = data.len + data.len / 100 + 100;
+    const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
+    var flate_w: std.Io.Writer = .fixed(out_buf);
+    var deflate_buf: [std.compress.flate.max_window_len * 2]u8 = undefined;
+    var comp = std.compress.flate.Compress.init(&flate_w, &deflate_buf, .gzip, .default) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.writer.writeAll(data) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.finish() catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    const written = flate_w.end;
+    const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
+    return result;
+}
 fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -2427,19 +2486,23 @@ fn _profile_report() void {
         fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
     };
     std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
-    const _w = std.fs.File.stdout().deprecatedWriter();
-    _w.writeAll("── Profile report ───────────────────────────────────────────────\n") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
     for (list.items) |e| {
         const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
-        _w.print("  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_dump_folded() void {
-    const _w = std.fs.File.stdout().deprecatedWriter();
+    const _stdout = std.Io.File.stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
         const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
-        _w.print("{s} {d}\n", .{ e.key_ptr.*, us }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{s} {d}\n", .{ e.key_ptr.*, us }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_reset() void {
@@ -2520,7 +2583,9 @@ fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
         content.appendSlice(_allocator, line) catch return;
         content.append(_allocator, '\n') catch return;
     }
-    std.fs.cwd().writeFile(.{ .sub_path = path, .data = content.items }) catch {};
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, content.items) catch {};
 }
 // ── sys extended ──────────────────────────────────────────────────────────────
 fn _sys_setenv(key: []const u8, val: []const u8) void {
@@ -3909,12 +3974,12 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
     }
     visited.append(_allocator, _intern(path)) catch @panic("OOM");
 // zbr:selfhost/checker.zbr:715
-    if ((!(blk_fex: { std.fs.cwd().access(path, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
+    if ((!(blk_fex: { std.Io.Dir.cwd().access(_io, path, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
 // zbr:selfhost/checker.zbr:716
         return;
     }
 // zbr:selfhost/checker.zbr:718
-    const src: []const u8 = (std.fs.cwd().readFileAlloc(_allocator, path, std.math.maxInt(usize)) catch @panic("File.read error"));
+    const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_io, path, _allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/checker.zbr:719
     const pm_node = try Parser.Parser.parse(src, path);
 // zbr:selfhost/checker.zbr:720
@@ -3949,7 +4014,7 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
                     dep_path = _str_concat(_str_concat(_str_concat(src_dir, "/", _allocator), dep_name, _allocator), ".zbr", _allocator);
                 }
 // zbr:selfhost/checker.zbr:735
-                if ((blk_fex: { std.fs.cwd().access(dep_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
+                if ((blk_fex: { std.Io.Dir.cwd().access(_io, dep_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
                     try checkerLoadDeps(dep_path, visited, modules);
                 }
             }

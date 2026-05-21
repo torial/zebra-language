@@ -2328,7 +2328,28 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(_: []const u8) []const u8 { return ""; }
+fn _compress_gzip(data: []const u8) []const u8 {
+    // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
+    const out_capacity = data.len + data.len / 100 + 100;
+    const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
+    var flate_w: std.Io.Writer = .fixed(out_buf);
+    var deflate_buf: [std.compress.flate.max_window_len * 2]u8 = undefined;
+    var comp = std.compress.flate.Compress.init(&flate_w, &deflate_buf, .gzip, .default) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.writer.writeAll(data) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.finish() catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    const written = flate_w.end;
+    const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
+    return result;
+}
 fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
