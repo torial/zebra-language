@@ -1,0 +1,42 @@
+union Color
+    red
+    green
+    blue
+
+union Shape
+    circle: int
+    square: int
+
+def classify(c: Color): str
+    if c is not Color.red
+        return "non-red"
+    return "red"
+
+def main()
+    # Basic is not on union variant
+    var c = Color.red
+    if c is not Color.blue
+        print "not blue"
+    else
+        print "blue"
+
+    # is not in function
+    print classify(Color.green)
+    print classify(Color.red)
+
+    # is not with payloaded variant
+    var s = Shape.square(5)
+    if s is not Shape.circle
+        print "not a circle"
+
+    # is not in expression position
+    var c2 = Color.blue
+    var result: bool = c2 is not Color.red
+    print result
+
+    # plain is still works
+    var c3 = Color.green
+    if c3 is Color.green
+        print "is green"
+
+    print "is_not: OK"

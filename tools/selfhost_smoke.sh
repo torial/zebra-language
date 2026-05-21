@@ -182,6 +182,10 @@ smoke test/interface_test.zbr
 # BUG-083 fix: genGenericClass now emits comptime { IFoo.check(@This()); }.
 smoke test/generic_iface_test.zbr
 
+# Generic toString() dispatch: user-defined toString() on Box(T)/Pair(A,B) should
+# call the method directly, not fall back to std.fmt.allocPrint("{}", .{obj}).
+smoke test/generic_tostring_test.zbr
+
 # @[...] array literal in expression + `in @[...]` membership test.
 smoke test/array_in_test.zbr
 
@@ -460,6 +464,21 @@ smoke_run test/enum_branch_test.zbr "north"
 
 # WebSocket API: Ws.connect/serve/WsConn.send/recv/close emit-zig smoke test.
 smoke test/ws_smoke_test.zbr
+
+# gzip compress + gunzip round-trip: unblocked by Zig 0.16 (flate.Compress.init).
+smoke test/compress_test.zbr
+
+# Generic functions: def identity(T)(x: T): T — comptime type params, multi-type-arg calls.
+smoke_run test/generic_fn_test.zbr "generic functions: OK"
+
+# `is not` operator: x is not Union.variant — negated type/variant check.
+smoke_run test/is_not_test.zbr "is_not: OK"
+
+# `is not` on class type-tag: x is not ClassName — emits !(x._type_tag == _ttag_C).
+smoke_run test/is_not_class_test.zbr "is_not_class: OK"
+
+# `not x is not V` precedence: not binds looser than is not → not (x is not V).
+smoke_run test/is_not_precedence_test.zbr "is_not_precedence: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

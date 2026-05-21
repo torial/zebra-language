@@ -39,8 +39,9 @@
 use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use astbuilder exposing ASTBuilder
+use ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef
 use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith
-use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult
+use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use checker exposing runCheck
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
@@ -475,6 +476,115 @@ def runTypecheckMerge(path: str) throws
             sys.errln("    " + theirs_diags.at(ti))
             ti = ti + 1
 
+# ── zebra types — expression type dumper ─────────────────────────────────────
+#
+# Walks all methods in the module and prints inferred types for local variable
+# declarations. Useful for debugging type inference: shows what the selfhost TC
+# knows at each `var`/`const` declaration site.
+#
+# Output format (one line per top-level var declaration):
+#   file:line  Owner.method  var name: TAG
+#
+# Where TAG is from typeTag(): str/int/bool/named(Foo)/list(str)/etc.
+
+def dumpMethodVars(owner: str, meth_name: str, stmts: List(Stmt), params: List(Param), mt: ModuleTypes, file: str, dep_mt: ModuleTypes)
+    var ctx: InferCtx = InferCtx(mt, owner)
+    ctx.withDepTypes(dep_mt)
+    for pp in params
+        if pp.type_ != nil
+            ctx.bind(pp.name, typeFromRef(pp.type_ to!))
+    # Walk all statements first to populate ctx with all local variable types.
+    walkStmts(stmts, ctx)
+    # Then iterate top-level statements and print var declarations with their types.
+    var prefix: str = owner + "." + meth_name
+    if owner == ""
+        prefix = meth_name
+    for s in stmts
+        if s is Stmt.var_ as dv
+            var tag: str = "unk"
+            if ctx.hasLocal(dv.name)
+                tag = typeTag(ctx.localType(dv.name))
+            sys.errln("  " + file + ":" + dv.span.line.toString() + "  " + prefix + "  var " + dv.name + ": " + tag)
+
+def runTypes(path: str) throws
+    var src: str = File.read(path)
+    const pm_node = Parser.Parser.parse(src, path)?
+    var resolver = Resolver.Resolver(path)
+    resolver.resolve(pm_node)?
+    if resolver.errorCount() > 0
+        sys.errln(resolver.allErrorMessages())
+        sys.exit(1)
+    if pm_node is PNode.module_ as pm
+        const module = ASTBuilder.build(pm, path)?
+        var mt: ModuleTypes = buildModuleTypes(module)
+        var dep_mt: ModuleTypes = ModuleTypes()
+
+        sys.errln("types: " + path)
+        for decl in module.decls
+            branch decl
+                on Decl.method as dm
+                    if dm.stmts != nil
+                        dumpMethodVars("", dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                on Decl.class_ as dc
+                    for mem in dc.members
+                        if mem is Decl.method as dm
+                            if dm.stmts != nil
+                                dumpMethodVars(dc.name, dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                on Decl.struct_ as ds
+                    for mem in ds.members
+                        if mem is Decl.method as dm
+                            if dm.stmts != nil
+                                dumpMethodVars(ds.name, dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                else
+                    pass
+
+# ── zebra fmt — source normalizer ────────────────────────────────────────────
+#
+# Normalizes Zebra source files to canonical style:
+#   - Tabs replaced with spaces (4 per indent level)
+#   - Trailing whitespace stripped from each line
+#   - File ends with exactly one newline
+#   - No windows CRLF line endings
+#
+# Usage:
+#   zebra fmt <file.zbr>          normalize in-place
+#   zebra fmt --check <file.zbr>  exit 1 if file would change (CI check)
+#   zebra fmt --print <file.zbr>  print normalized output without writing
+
+def fmtNormalize(src: str): str
+    var sb: StringBuilder = StringBuilder()
+    for line in src.split("\n")
+        # Replace tabs with 4 spaces, then strip trailing whitespace.
+        # Two separate named str variables — avoids a method-chain inference
+        # gap in the selfhost codegen where trimRight() on a chained result
+        # isn't recognized as a string method.
+        var tab_replaced: str = line.replace("\t", "    ")
+        var normalized: str = tab_replaced.trimRight()
+        sb.append(normalized + "\n")
+    var result: str = sb.build()
+    # Trim trailing blank lines, leave exactly one trailing newline
+    result = result.trimRight() + "\n"
+    return result
+
+def runFmt(path: str, check_only: bool, print_only: bool) throws
+    if not File.exists(path)
+        raise "fmt: file not found: " + path
+    var original: str = File.read(path)
+    var formatted: str = fmtNormalize(original)
+    if check_only
+        if original != formatted
+            sys.errln("fmt: " + path + " would be reformatted")
+            sys.exit(1)
+        sys.exit(0)
+    if print_only
+        print formatted
+        sys.exit(0)
+    if original == formatted
+        sys.errln("fmt: " + path + " already formatted")
+        sys.exit(0)
+    File.write(path, formatted)
+    sys.errln("fmt: " + path + " reformatted")
+
 def main()
     var args = Arg.parse()
 
@@ -493,6 +603,35 @@ def main()
                 sys.exit(0)
             else
                 sys.errln("usage: zebra typecheck-merge <file.zbr>")
+                sys.exit(1)
+
+    # -- types subcommand --------------------------------------------------
+    # `zebra types <file.zbr>` — print inferred types for all local variable
+    # declarations. Shows what the selfhost TC knows at each var/const site.
+
+    if args.positional(0) as types_pos
+        if types_pos == "types"
+            if args.positional(1) as types_file
+                try runTypes(types_file)
+                sys.exit(0)
+            else
+                sys.errln("usage: zebra types <file.zbr>")
+                sys.exit(1)
+
+    # -- fmt subcommand ----------------------------------------------------
+    # `zebra fmt <file.zbr>` — normalize source formatting in-place.
+    # `zebra fmt --check <file.zbr>` — check without writing (CI).
+    # `zebra fmt --print <file.zbr>` — print normalized output to stdout.
+
+    if args.positional(0) as fmt_pos
+        if fmt_pos == "fmt"
+            var fmt_check: bool = args.contains("--check")
+            var fmt_print: bool = args.contains("--print")
+            if args.positional(1) as fmt_file
+                try runFmt(fmt_file, fmt_check, fmt_print)
+                sys.exit(0)
+            else
+                sys.errln("usage: zebra fmt [--check|--print] <file.zbr>")
                 sys.exit(1)
 
     # -- check subcommand --------------------------------------------------
@@ -624,6 +763,10 @@ def main()
         sys.errln("  zebra --version                          print version and exit")
         sys.errln("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict")
         sys.errln("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)")
+        sys.errln("  zebra types <file.zbr>                   print inferred types at each var declaration")
+        sys.errln("  zebra fmt <file.zbr>                     normalize formatting in-place (tabs→spaces, trim whitespace)")
+        sys.errln("  zebra fmt --check <file.zbr>             exit 1 if file would be reformatted")
+        sys.errln("  zebra fmt --print <file.zbr>             print normalized output to stdout")
         sys.exit(1)
 
     var path = src_path to!

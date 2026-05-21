@@ -312,6 +312,11 @@ else
 # Standalone `is` check (no binding):
 var ok  = e is Expr.int_      # true — union variant check
 var ok2 = e is MyClass        # true — class type-tag check
+
+# Negated check — `is not`:
+var not_int = e is not Expr.int_     # true when e is any variant except int_
+if e is not Expr.str_
+    print "not a string"
 ```
 
 **Style rule — `if … is … as` vs `branch`:**

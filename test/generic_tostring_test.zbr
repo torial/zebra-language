@@ -1,0 +1,40 @@
+class Box(T)
+    var value: T
+
+    cue init(v: T)
+        value = v
+
+    def get(): T
+        return value
+
+    def toString(): str
+        return "Box"
+
+class Pair(A, B)
+    var first: A
+    var second: B
+
+    cue init(a: A, b: B)
+        first = a
+        second = b
+
+    def toString(): str
+        return "Pair"
+
+def main()
+    const bi = Box(int)(42)
+    const bf = Box(float)(1.5)
+    const p  = Pair(int, str)(7, "hi")
+
+    # toString() should dispatch to user method, not allocPrint
+    print bi.toString()    # Box
+    print bf.toString()    # Box
+    print p.toString()     # Pair
+
+    # get() should return typed values
+    print bi.get()         # 42
+    print bf.get()         # 1.5
+
+    # fields should be accessible
+    print p.first          # 7
+    print p.second         # hi

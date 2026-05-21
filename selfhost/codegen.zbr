@@ -2667,6 +2667,19 @@ struct Generator
             w.emit("pub fn ")
         w.emit(fn_name)
         w.emit("(")
+        # Generic function type params: def identity(T)(x: T): T → pub fn identity(comptime T: type, x: T) T
+        var gfn_tp_count: int = m.type_params.count()
+        if gfn_tp_count > 0
+            var gfn_tpi: int = 0
+            while gfn_tpi < gfn_tp_count
+                if gfn_tpi > 0
+                    w.emit(", ")
+                w.emit("comptime ")
+                w.emit(m.type_params.at(gfn_tpi))
+                w.emit(": type")
+                gfn_tpi += 1
+            if has_self or m.params.count() > 0
+                w.emit(", ")
         if has_self
             if is_generic
                 w.emit("self: *@This()")
@@ -3471,6 +3484,19 @@ struct Generator
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
     def genLocalVar(n: DeclVar)
+        # Seed infer_ctx with this variable's type so subsequent statements
+        # in the same method body can resolve it via inferExpr(Expr.ident(n.name)).
+        # This covers generic class instances (Box(int)(42) → Type_.named("Box"))
+        # and other locally-declared class vars with no explicit annotation.
+        if .infer_ctx != nil
+            var ic_lv = .infer_ctx to!
+            var var_t: Type_ = Type_.unknown_
+            if n.type_ != nil
+                var_t = typeFromRef(n.type_ to!)
+            else if n.init_expr != nil
+                var_t = inferExpr(n.init_expr to!, ic_lv)
+            if not (var_t is Type_.unknown_) and not (var_t is Type_.unresolved)
+                ic_lv.bind(n.name, var_t)
         # BUG-079: auto-hoist method chains on call temporaries.
         # If init_expr is `someCall().method(args)`, materialize someCall() first.
         var mc_recv = ""
@@ -4252,17 +4278,25 @@ struct Generator
         if ensure_armed_active
             writeIndent()
             w.emit("_ensure_armed = true;\n")
-        # BUG-079: auto-hoist method chain on struct temporary in return position
+        # BUG-079: auto-hoist method chain on struct temporary in return position.
+        # Only applies to named class types — string/list/hashmap stdlib chains must
+        # go through genMemberCall (which dispatches to std.mem.replaceOwned etc.).
         if r.value != nil
             var ch = tryChain(r.value to!)
             if ch != nil
                 var chain = ch to!
-                var mc_recv = hoistCallChain(chain.recv)
-                writeIndent()
-                w.emit("return ${mc_recv}.${chain.method}(")
-                genArgList(chain.args)
-                w.emit(");\n")
-                return
+                var should_hoist = true
+                if .infer_ctx != nil
+                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx to!)
+                    if not (recv_t is Type_.named)
+                        should_hoist = false
+                if should_hoist
+                    var mc_recv = hoistCallChain(chain.recv)
+                    writeIndent()
+                    w.emit("return ${mc_recv}.${chain.method}(")
+                    genArgList(chain.args)
+                    w.emit(");\n")
+                    return
         # Interface pointer coercion: `return ClassCtor()` when ret type is `^IFace`
         if r.value != nil
             if method_return_type != nil
@@ -4381,6 +4415,9 @@ struct Generator
                         if vp_ == nil
                             vp_ = .dep_types.variantPayload(union_nm, variant)
                         if vp_ != nil
+                            # Seed str_params so str methods work on the binding
+                            if isString(vp_ to!)
+                                ig.str_params.add(cap)
                             var sname = structNameFromType(vp_ to!)
                             if sname != nil
                                 var st_dot = sname to! + "."
@@ -5307,6 +5344,9 @@ struct Generator
                         if vp_ == nil
                             vp_ = .dep_types.variantPayload(uname, vname)
                         if vp_ != nil
+                            # Seed str_params so str methods work on the binding
+                            if isString(vp_ to!)
+                                iig.str_params.add(cas.binding to!)
                             var sname = structNameFromType(vp_ to!)
                             if sname != nil
                                 var st_dot = sname to! + "."
@@ -6561,9 +6601,11 @@ struct Generator
                     w.emit(")")
                 else
                     # Class type-tag check: expr._type_tag == _ttag_TypeName
+                    w.emit("(")
                     genExpr(tc2.expr)
                     w.emit("._type_tag == _ttag_")
                     w.emit(tc2.type_name)
+                    w.emit(")")
             on Expr.old_ as o
                 # ensure contract: emit _old_N reference (uid set at AST build time)
                 if in_ensure_emit
@@ -7111,9 +7153,37 @@ struct Generator
                 arg_idx = arg_idx + 1
         w.emit("}) catch @panic(\"OOM\"))")
 
+    # Emit a type argument expression as a Zig type name.
+    # Used for generic function call sites: identity(int)(42) → identity(i64, 42).
+    def genTypeArg(e: Expr)
+        if e is Expr.ident as id
+            w.emit(zigPrimitive(id.name))
+        else
+            genExpr(e)
+
     # ── genCall ───────────────────────────────────────────────────────────────
 
     def genCall(c: ExprCall)
+        # Generic function call: identity(int)(42) → identity(i64, 42).
+        # Detected as outer call where callee is a call of a known generic fn name.
+        if c.callee is Expr.call as gf_inner
+            if gf_inner.callee is Expr.ident as gf_id
+                if .module_types.hasGenericFn(gf_id.name) or .dep_types.hasGenericFn(gf_id.name)
+                    w.emit(gf_id.name)
+                    w.emit("(")
+                    var gf_first = true
+                    for ta in gf_inner.args
+                        if not gf_first
+                            w.emit(", ")
+                        gf_first = false
+                        genTypeArg(ta.value)
+                    for va in c.args
+                        if not gf_first
+                            w.emit(", ")
+                        gf_first = false
+                        genExpr(va.value)
+                    w.emit(")")
+                    return
         # Closure vars: capture-lambda struct instances use .call()
         if c.callee is Expr.ident as cid
             if closure_vars.contains_(cid.name)
@@ -7265,7 +7335,7 @@ struct Generator
                             var gca_nm: str = gcid.name
                             if class_names.contains_(gca_nm)
                                 w.emit("*")
-                            w.emit(gca_nm)
+                            w.emit(zigPrimitive(gca_nm))
                         else
                             genExpr(gca)
                         gci += 1

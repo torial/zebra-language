@@ -1,0 +1,36 @@
+# Tests for `not x is not V` precedence.
+# `not` (parseNot) wraps `is not` (parseComparison), so:
+#   not x is not V   →  not (x is not V)   i.e. same as  x is V
+# This matches Python semantics where `not` is lower precedence than comparisons.
+
+union Color
+    red
+    green
+    blue
+
+def main()
+    var c = Color.red
+
+    # not (c is not Color.blue)
+    # = not (red is not blue)
+    # = not true
+    # = false
+    var r1: bool = not c is not Color.blue
+    print r1
+
+    # not (c is not Color.red)
+    # = not (red is not red)
+    # = not false
+    # = true
+    var r2: bool = not c is not Color.red
+    print r2
+
+    # Sanity: plain `is not` still works
+    var r3: bool = c is not Color.green
+    print r3
+
+    # `not` of a plain `is` — existing behavior unchanged
+    var r4: bool = not c is Color.blue
+    print r4
+
+    print "is_not_precedence: OK"

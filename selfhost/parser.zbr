@@ -312,7 +312,8 @@ struct PMethod
     var is_once: bool
     var tags: List(str)
     var is_export: bool
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool)
+    var type_params: List(str)
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str))
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -325,6 +326,7 @@ struct PMethod
         .is_once = is_once
         .tags = tags
         .is_export = is_export
+        .type_params = type_params
 
 struct PInit
     var params: List(PParam)
@@ -1561,6 +1563,7 @@ class Parser
         var name = ""
         var has_params = false
         var params = List(PParam)()
+        var type_params = List(str)()
         if .isOpenCall()
             name = .peek().text
             .advance()
@@ -1568,6 +1571,30 @@ class Parser
         else
             name = .eatId()
         if has_params
+            # Speculative check: is the first group type params?
+            # def identity(T)(x: T): T — first group has only bare identifiers,
+            # and the closing `)` is followed by `(`.
+            # If so, collect them as type_params and parse value params from the second `(`.
+            var saved_pos = .pos
+            var all_bare = true
+            while not .textIs(")") and not .isEol() and not .isEof()
+                if .textIs(",")
+                    .advance()
+                else if .isId() and .peekAt(1).text != ":" and .peekAt(1).text != "="
+                    type_params.add(.peek().text)
+                    .advance()
+                else
+                    all_bare = false
+                    break
+            if all_bare and .textIs(")") and .peekAt(1).text == "("
+                # Confirmed type-param group: consume `)` and the opening `(` of value params.
+                .advance()
+                .advance()
+            else
+                # Not type params — restore position and clear any tentative entries.
+                .pos = saved_pos
+                type_params = List(str)()
+            # Parse value params (either from the second `(` or the only `(`).
             while not .textIs(")")
                 if .textIs(",")
                     .advance()
@@ -1616,7 +1643,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params))
 
     # -- Block and statements --------------------------------------------------
 
@@ -2255,7 +2282,23 @@ class Parser
         else if .textIs("in")
             op = "in"
         else if .textIs("is")
-            op = "is"
+            # Consume "is"; peek for `not` to handle `x is not T` → not (x is T)
+            .advance()
+            var negate_is = false
+            if .textIs("not")
+                .advance()
+                negate_is = true
+            const right = .parseAddSub()
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            var tc_node = PNode.expr_binary(PBinary("is", l, r))
+            if negate_is
+                var inner = List(PNode)()
+                inner.add(tc_node)
+                return PNode.expr_unary(PUnary("not", inner))
+            return tc_node
         else if .textIs("not")
             # Peek ahead: `not in` is a binary operator
             # Consume "not", then expect "in"

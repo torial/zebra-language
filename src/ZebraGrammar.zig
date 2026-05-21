@@ -1057,8 +1057,9 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.gt),            n(.Expr5) } },
     .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.le),            n(.Expr5) } },
     .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.ge),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is),         n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_in),         n(.Expr5) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is),           n(.Expr5) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is), t(.kw_not), n(.Expr5) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_in),           n(.Expr5) } },
     .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_not), t(.kw_in), n(.Expr5) } },
     .{ .lhs = .Expr4, .rhs = &.{ n(.Expr5) } },
 

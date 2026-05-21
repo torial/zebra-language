@@ -286,6 +286,7 @@ struct DeclMethod
     var span: Span
     var mods: Modifiers
     var name: String
+    var type_params: List(str)
     var params: List(Param)
     var return_type: TypeRef?
     var stmts: List(Stmt)?
@@ -295,10 +296,11 @@ struct DeclMethod
     var ensure_: List(Expr)
     var tags: List(str)
 
-    cue init(span: Span, mods: Modifiers, name: String, params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool, require_: List(Expr), ensure_: List(Expr), tags: List(str))
+    cue init(span: Span, mods: Modifiers, name: String, type_params: List(str), params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool, require_: List(Expr), ensure_: List(Expr), tags: List(str))
         .span = span
         .mods = mods
         .name = name
+        .type_params = type_params
         .params = params
         .return_type = return_type
         .stmts = stmts

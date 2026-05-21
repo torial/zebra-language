@@ -61,7 +61,7 @@ const Builder = struct {
     fn buildModule(b: Builder, root: TN) anyerror!Ast.Module {
         // Program → TopDeclList eof
         const tdl_node = ch(root)[0];
-        var decls = std.ArrayList(Ast.Decl){};
+        var decls = std.ArrayList(Ast.Decl).empty;
         try b.collectTopDecls(tdl_node, &decls);
         return .{
             .file  = "",
@@ -78,7 +78,7 @@ const Builder = struct {
         var pending_derive_debug = false;
         var pending_derive_eq = false;
         var pending_derive_hash = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
         return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags);
     }
 
@@ -290,7 +290,7 @@ const Builder = struct {
         const kids = ch(node);
         if (kids.len == 5) {
             // use UsePath kw_exposing IdListNE eol
-            var names = std.ArrayList([]const u8){};
+            var names = std.ArrayList([]const u8).empty;
             try b.collectIdListNE(kids[3], &names);
             return .{
                 .span     = spanOf(node, b.tokens),
@@ -311,7 +311,7 @@ const Builder = struct {
     fn buildNamespaceDecl(b: Builder, node: TN) anyerror!Ast.DeclNamespace {
         // kw_namespace UsePath eol indent TopDeclList dedent
         const kids = ch(node);
-        var decls = std.ArrayList(Ast.Decl){};
+        var decls = std.ArrayList(Ast.Decl).empty;
         try b.collectTopDecls(kids[4], &decls);
         return .{
             .span  = spanOf(node, b.tokens),
@@ -372,14 +372,14 @@ const Builder = struct {
         const kids = ch(node);
         const is_generic = isLeafKind(kids[2], .open_call);
 
-        var type_params = std.ArrayList(Ast.TypeParam){};
-        var implements  = std.ArrayList(Ast.TypeRef){};
-        var adds        = std.ArrayList(Ast.TypeRef){};
+        var type_params = std.ArrayList(Ast.TypeParam).empty;
+        var implements  = std.ArrayList(Ast.TypeRef).empty;
+        var adds        = std.ArrayList(Ast.TypeRef).empty;
 
         if (is_generic) {
             try b.collectTypeParamListNE(kids[3], &type_params);
             try b.collectClassHeader(kids[5], &implements, &adds);
-            var invs = std.ArrayList(*Ast.Expr){};
+            var invs = std.ArrayList(*Ast.Expr).empty;
             try b.collectClassInvariants(kids[11], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
@@ -393,7 +393,7 @@ const Builder = struct {
             };
         } else {
             try b.collectClassHeader(kids[3], &implements, &adds);
-            var invs = std.ArrayList(*Ast.Expr){};
+            var invs = std.ArrayList(*Ast.Expr).empty;
             try b.collectClassInvariants(kids[9], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
@@ -478,7 +478,7 @@ const Builder = struct {
 
     fn buildInterfaceDecl(b: Builder, node: TN) anyerror!Ast.DeclInterface {
         const kids = ch(node);
-        var implements = std.ArrayList(Ast.TypeRef){};
+        var implements = std.ArrayList(Ast.TypeRef).empty;
         switch (kids[3]) {
             .inner => |inner| {
                 if (inner.children.len >= 2)
@@ -503,7 +503,7 @@ const Builder = struct {
 
     fn buildStructDecl(b: Builder, node: TN) anyerror!Ast.DeclStruct {
         const kids = ch(node);
-        var implements = std.ArrayList(Ast.TypeRef){};
+        var implements = std.ArrayList(Ast.TypeRef).empty;
         switch (kids[3]) {
             .inner => |inner| {
                 if (inner.children.len >= 2)
@@ -511,7 +511,7 @@ const Builder = struct {
             },
             else => {},
         }
-        var invs = std.ArrayList(*Ast.Expr){};
+        var invs = std.ArrayList(*Ast.Expr).empty;
         try b.collectClassInvariants(kids[9], &invs);
         return .{
             .span       = spanOf(node, b.tokens),
@@ -546,7 +546,7 @@ const Builder = struct {
 
     fn buildEnumDecl(b: Builder, node: TN) anyerror!Ast.DeclEnum {
         const kids = ch(node);
-        var members = std.ArrayList(Ast.EnumMember){};
+        var members = std.ArrayList(Ast.EnumMember).empty;
         try b.collectEnumMembers(kids[5], &members);
         return .{
             .span    = spanOf(node, b.tokens),
@@ -610,10 +610,10 @@ const Builder = struct {
     // ── Member declaration list ───────────────────────────────────────────────
 
     fn buildMemberDeclList(b: Builder, node: TN) anyerror![]const Ast.Decl {
-        var out = std.ArrayList(Ast.Decl){};
+        var out = std.ArrayList(Ast.Decl).empty;
         var pending_profile = false;
         var pending_once = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
         try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_tags);
         return out.toOwnedSlice(b.arena);
     }
@@ -693,7 +693,7 @@ const Builder = struct {
         const start = out.items.len;
         var pending_profile = false;
         var pending_once = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
         try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_tags);
         for (out.items[start..]) |*d| setShared(d);
     }
@@ -755,9 +755,9 @@ const Builder = struct {
                 .Block         => {
                     const all_stmts = try b.buildBlock(kid);
                     // Partition require/ensure contract stmts out of the body.
-                    var req_exprs  = std.ArrayList(*Ast.Expr){};
-                    var ens_exprs  = std.ArrayList(*Ast.Expr){};
-                    var body_stmts = std.ArrayList(Ast.Stmt){};
+                    var req_exprs  = std.ArrayList(*Ast.Expr).empty;
+                    var ens_exprs  = std.ArrayList(*Ast.Expr).empty;
+                    var body_stmts = std.ArrayList(Ast.Stmt).empty;
                     for (all_stmts) |s| {
                         if (s == .contract) {
                             switch (s.contract.kind) {
@@ -781,7 +781,7 @@ const Builder = struct {
                 },
                 .CatchClauseList => {
                     // Method-level catch: wrap body in a StmtTryCatch node.
-                    var clauses = std.ArrayList(Ast.CatchClause){};
+                    var clauses = std.ArrayList(Ast.CatchClause).empty;
                     try b.collectCatchClauses(kid, &clauses);
                     const tc = try b.box(Ast.StmtTryCatch, .{
                         .span    = spanOf(kid, b.tokens),
@@ -881,11 +881,11 @@ const Builder = struct {
 
     fn buildContractBlock(b: Builder, node: TN) anyerror!ContractResult {
         const clause_list = ch(node)[1];
-        var require = std.ArrayList(*Ast.Expr){};
-        var ensure  = std.ArrayList(*Ast.Expr){};
+        var require = std.ArrayList(*Ast.Expr).empty;
+        var ensure  = std.ArrayList(*Ast.Expr).empty;
         const body: ?[]const Ast.Stmt = null;
 
-        var clauses = std.ArrayList(TN){};
+        var clauses = std.ArrayList(TN).empty;
         defer clauses.deinit(b.arena);
         try b.flattenContractClauses(clause_list, &clauses);
 
@@ -932,7 +932,7 @@ const Builder = struct {
             .epsilon => return &.{},
             .inner   => |inner| {
                 if (inner.children.len == 0) return &.{};
-                var out = std.ArrayList(Ast.Param){};
+                var out = std.ArrayList(Ast.Param).empty;
                 try b.flattenParamListNE(inner.children[0], &out);
                 return out.toOwnedSlice(b.arena);
             },
@@ -1061,7 +1061,7 @@ const Builder = struct {
                     const name = leafText(kids[0], b.tokens);
                     if (kids[1] == .inner and ntOf(kids[1]) == .ValueArgListNE) {
                         // open_call ValueArgListNE rparen — value-parameterized alias e.g. Bounded(0, 100)
-                        var args = std.ArrayList(Ast.Expr){};
+                        var args = std.ArrayList(Ast.Expr).empty;
                         try b.collectValueArgListNE(kids[1], &args);
                         break :blk .{ .alias_applied = .{
                             .span = spanOf(node, b.tokens),
@@ -1100,7 +1100,7 @@ const Builder = struct {
             5 => blk: {
                 // ( TypeRef , TypeRefListNE )  — tuple type
                 // lparen TypeRef comma TypeRefListNE rparen
-                var elems = std.ArrayList(Ast.TypeRef){};
+                var elems = std.ArrayList(Ast.TypeRef).empty;
                 try elems.append(b.arena, try b.buildTypeRef(kids[1]));
                 const rest = try b.buildTypeRefListNE(kids[3]);
                 try elems.appendSlice(b.arena, rest);
@@ -1155,7 +1155,7 @@ const Builder = struct {
     }
 
     fn buildTypeRefListNE(b: Builder, node: TN) anyerror![]const Ast.TypeRef {
-        var out = std.ArrayList(Ast.TypeRef){};
+        var out = std.ArrayList(Ast.TypeRef).empty;
         try b.collectTypeRefs(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -1192,7 +1192,7 @@ const Builder = struct {
     }
 
     fn buildStmtList(b: Builder, node: TN) anyerror![]const Ast.Stmt {
-        var out = std.ArrayList(Ast.Stmt){};
+        var out = std.ArrayList(Ast.Stmt).empty;
         try b.collectStmts(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -1270,7 +1270,7 @@ const Builder = struct {
             .StmtLocalVarLambda => try b.buildStmtLocalVarLambda(inner),
             .StmtDestruct       => blk: {
                 // kw_var lparen IdListNE rparen assign Expr eol
-                var names = std.ArrayList([]const u8){};
+                var names = std.ArrayList([]const u8).empty;
                 try b.collectIdListNE(kids[2], &names);
                 break :blk .{ .destruct = try b.box(Ast.StmtDestruct, .{
                     .span  = s,
@@ -1281,7 +1281,7 @@ const Builder = struct {
             },
             .StmtDestructStruct => blk: {
                 // kw_var lcurly IdListNE rcurly assign Expr eol
-                var names = std.ArrayList([]const u8){};
+                var names = std.ArrayList([]const u8).empty;
                 try b.collectIdListNE(kids[2], &names);
                 break :blk .{ .destruct = try b.box(Ast.StmtDestruct, .{
                     .span  = s,
@@ -1325,7 +1325,7 @@ const Builder = struct {
 
     fn buildStmtIf(b: Builder, node: TN) anyerror!Ast.StmtIf {
         const kids = ch(node);
-        var else_ifs  = std.ArrayList(Ast.ElseIf){};
+        var else_ifs  = std.ArrayList(Ast.ElseIf).empty;
         var else_body: ?[]const Ast.Stmt = null;
         if (kids.len == 7) {
             // Capture form: kw_if Expr kw_as id eol Block IfTail
@@ -1462,7 +1462,7 @@ const Builder = struct {
         // 7-child: kw_for ForVarList kw_in Expr eol Block ForElseOpt
         // 9-child: kw_for ForVarList kw_in Expr kw_if Expr eol Block ForElseOpt
         const kids = ch(node);
-        var vars = std.ArrayList([]const u8){};
+        var vars = std.ArrayList([]const u8).empty;
         try b.collectForVarList(kids[1], &vars);
         const guarded = kids.len == 9;
         return .{
@@ -1513,7 +1513,7 @@ const Builder = struct {
     fn buildStmtBranch(b: Builder, node: TN) anyerror!Ast.StmtBranch {
         // kw_branch Expr eol indent BranchOnList BranchElseOpt dedent
         const kids = ch(node);
-        var ons = std.ArrayList(Ast.BranchOn){};
+        var ons = std.ArrayList(Ast.BranchOn).empty;
         try b.collectBranchOnList(kids[4], &ons);
         var else_: ?[]const Ast.Stmt = null;
         try b.collectBranchElse(kids[5], &else_);
@@ -1759,7 +1759,7 @@ const Builder = struct {
         const raw_body    = try b.buildStmtList(block_kids[1]);
 
         // Desugar bare-name assignments: `x = val` → `target.x = val`
-        var body = std.ArrayList(Ast.Stmt){};
+        var body = std.ArrayList(Ast.Stmt).empty;
         for (raw_body) |stmt| {
             if (stmt == .assign) {
                 const sa = stmt.assign;
@@ -1836,7 +1836,7 @@ const Builder = struct {
         // Extract each expression-statement from the block as a condition.
         const kids  = ch(node);
         const stmts = try b.buildBlock(kids[2]);
-        var exprs   = std.ArrayList(*Ast.Expr){};
+        var exprs   = std.ArrayList(*Ast.Expr).empty;
         for (stmts) |s| {
             if (s == .expr) try exprs.append(b.arena, s.expr);
         }
@@ -1851,7 +1851,7 @@ const Builder = struct {
     /// InvariantDecl → kw_invariant eol indent StmtList dedent
     fn buildInvariantExprs(b: Builder, node: TN) anyerror![]const *Ast.Expr {
         const stmts = try b.buildStmtList(ch(node)[3]);
-        var exprs = std.ArrayList(*Ast.Expr){};
+        var exprs = std.ArrayList(*Ast.Expr).empty;
         for (stmts) |s| {
             if (s == .expr) try exprs.append(b.arena, s.expr);
         }
@@ -1917,7 +1917,7 @@ const Builder = struct {
     fn buildStmtTryCatch(b: Builder, node: TN) anyerror!Ast.StmtTryCatch {
         // kw_try eol Block CatchClauseList
         const kids = ch(node);
-        var clauses = std.ArrayList(Ast.CatchClause){};
+        var clauses = std.ArrayList(Ast.CatchClause).empty;
         try b.collectCatchClauses(kids[3], &clauses);
         return .{
             .span    = spanOf(node, b.tokens),
@@ -1982,7 +1982,7 @@ const Builder = struct {
         const base = try b.buildTypeRef(kids[type_ref_ki]);
 
         const params: ?[]Ast.Param = if (is_parametric) blk: {
-            var ps = std.ArrayList(Ast.Param){};
+            var ps = std.ArrayList(Ast.Param).empty;
             try b.collectAliasParams(kids[2], &ps);
             break :blk try ps.toOwnedSlice(b.arena);
         } else null;
@@ -2042,7 +2042,7 @@ const Builder = struct {
     fn buildDeclUnion(b: Builder, node: TN) anyerror!Ast.DeclUnion {
         // ModList kw_union id eol indent UnionVariantList dedent
         const kids = ch(node);
-        var variants = std.ArrayList(Ast.UnionVariant){};
+        var variants = std.ArrayList(Ast.UnionVariant).empty;
         try b.collectUnionVariants(kids[5], &variants);
         return .{
             .span     = spanOf(node, b.tokens),
@@ -2168,7 +2168,7 @@ const Builder = struct {
     }
 
     fn buildExceptFieldList(b: Builder, node: TN) anyerror![]const Ast.ExceptField {
-        var out = std.ArrayList(Ast.ExceptField){};
+        var out = std.ArrayList(Ast.ExceptField).empty;
         try b.collectExceptFields(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2219,7 +2219,7 @@ const Builder = struct {
     }
 
     fn buildCaptureVarList(b: Builder, node: TN) anyerror![]const *Ast.DeclVar {
-        var out = std.ArrayList(*Ast.DeclVar){};
+        var out = std.ArrayList(*Ast.DeclVar).empty;
         try b.collectCaptureVars(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2449,6 +2449,29 @@ const Builder = struct {
             };
         }
 
+        // `is not` — 4 children: Expr kw_is kw_not Expr  →  not (expr is TypeName)
+        if (kids.len == 4 and isLeafKind(kids[1], .kw_is) and isLeafKind(kids[2], .kw_not)) {
+            const left  = try b.box(Ast.Expr, try b.buildExpr(kids[0]));
+            const right = try b.box(Ast.Expr, try b.buildExpr(kids[3]));
+            const tc: Ast.Expr = if (right.* == .ident)
+                .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
+                    .span = s, .expr = left, .type_name = right.ident.name,
+                }) }
+            else if (right.* == .member and right.member.object.* == .ident)
+                .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
+                    .span = s, .expr = left,
+                    .type_name    = right.member.object.ident.name,
+                    .variant_name = right.member.member,
+                }) }
+            else
+                std.debug.panic("is not: RHS must be a type name or Union.variant", .{});
+            return .{ .unary = try b.box(Ast.ExprUnary, .{
+                .span    = s,
+                .op      = .not_,
+                .operand = try b.box(Ast.Expr, tc),
+            }) };
+        }
+
         // `not in` — 4 children: Expr kw_not kw_in Expr
         if (kids.len == 4 and isLeafKind(kids[1], .kw_not) and isLeafKind(kids[2], .kw_in)) {
             const inner_bin = try b.box(Ast.ExprBinary, .{
@@ -2605,7 +2628,7 @@ const Builder = struct {
 
         // (Expr, ExprListNE)  — tuple literal (5 children)
         if (kids.len == 5 and isLeafKind(kids[0], .lparen) and isLeafKind(kids[2], .comma)) {
-            var elems = std.ArrayList(*Ast.Expr){};
+            var elems = std.ArrayList(*Ast.Expr).empty;
             try elems.append(b.arena, try b.box(Ast.Expr, try b.buildExpr(kids[1])));
             const rest = try b.buildExprListNE(kids[3]);
             try elems.appendSlice(b.arena, rest);
@@ -2685,7 +2708,7 @@ const Builder = struct {
     /// no closing quote).
     fn buildStringInterp(b: Builder, s: Ast.Span, kids: []const TN) anyerror!Ast.Expr {
         // kids: [string_start_X, InterpBodyX, string_stop_X]
-        var parts = std.ArrayList(Ast.StringPart){};
+        var parts = std.ArrayList(Ast.StringPart).empty;
 
         // Leading literal (strip opening quote character).
         const start_text = leafText(kids[0], b.tokens);
@@ -2759,7 +2782,7 @@ const Builder = struct {
         const callee = try b.box(Ast.Expr, .{ .ident = .{ .span = s, .name = class_name } });
 
         // kids[1] = TypeRefListNE
-        var type_args = std.ArrayList(Ast.TypeRef){};
+        var type_args = std.ArrayList(Ast.TypeRef).empty;
         try b.collectTypeRefListNE(kids[1], &type_args);
 
         // kids.len == 5: open_call TypeRefListNE rparen lparen rparen  (no value args)
@@ -2793,7 +2816,7 @@ const Builder = struct {
             const fname = leafText(p_kids[0], b.tokens); // open_call text has no `(`
             const rest  = try b.buildArgListNode(p_kids[1]);
             // Prepend piped value
-            var args = std.ArrayList(Ast.Arg){};
+            var args = std.ArrayList(Ast.Arg).empty;
             try args.append(b.arena, .{ .span = s, .name = null, .value = piped });
             try args.appendSlice(b.arena, rest);
             return .{ .call = try b.box(Ast.ExprCall, .{
@@ -2812,7 +2835,7 @@ const Builder = struct {
                 .span = s, .object = obj, .member = mname,
             }) });
             const rest  = try b.buildArgListNode(p_kids[3]);
-            var args = std.ArrayList(Ast.Arg){};
+            var args = std.ArrayList(Ast.Arg).empty;
             try args.append(b.arena, .{ .span = s, .name = null, .value = piped });
             try args.appendSlice(b.arena, rest);
             return .{ .call = try b.box(Ast.ExprCall, .{
@@ -2880,7 +2903,7 @@ const Builder = struct {
     }
 
     fn collectArgListNE(b: Builder, node: TN) anyerror![]const Ast.Arg {
-        var out = std.ArrayList(Ast.Arg){};
+        var out = std.ArrayList(Ast.Arg).empty;
         try b.flattenArgListNE(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2944,7 +2967,7 @@ const Builder = struct {
     }
 
     fn buildExprListNE(b: Builder, node: TN) anyerror![]const *Ast.Expr {
-        var out = std.ArrayList(*Ast.Expr){};
+        var out = std.ArrayList(*Ast.Expr).empty;
         try b.flattenExprListNE(node, &out);
         return out.toOwnedSlice(b.arena);
     }

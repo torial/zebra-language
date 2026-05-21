@@ -272,6 +272,9 @@ class ModuleTypes
     var enum_names: HashMap(str, bool)
     # All enum member keys ("EnumName.memberName") in insertion order.
     var all_enum_member_keys: List(str)
+    # Top-level generic function names (def name(T)(...)). Used by codegen to
+    # detect call-site pattern name(TypeArg)(valueArgs) and flatten to name(T, args).
+    var generic_fn_names: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -288,6 +291,7 @@ class ModuleTypes
         type_alias_names = HashMap()
         enum_names = HashMap()
         all_enum_member_keys = List()
+        generic_fn_names = HashMap()
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -400,6 +404,12 @@ class ModuleTypes
                     result.add(parts.at(1))
             i = i + 1
         return result
+
+    def addGenericFn(fn_name: str)
+        .generic_fn_names.put(internString(fn_name), true)
+
+    def hasGenericFn(fn_name: str): bool
+        return .generic_fn_names.contains(fn_name)
 
     def hasClass(class_name: str): bool
         return .classes.contains(class_name)
@@ -754,6 +764,9 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     tl_pti += 1
                 if tl_ptypes != ""
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
+                # Register as generic function if it declares type params.
+                if topfn.type_params.count() > 0
+                    mt.addGenericFn(topfn.name)
             else
                 pass
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
@@ -1428,6 +1441,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if gcname == "List" and gc.args.count() == 1
                             if gc.args.at(0).value is Expr.ident as tn
                                 return Type_.list_(typeFromName(tn.name))
+                        # Generic function call: identity(str)("hi") — the outer call's callee is
+                        # identity(str), a call of a generic fn with a type arg. Return type is the
+                        # function's declared return type with the type param substituted.
+                        # Simple single-type-param case: return typeFromName(type_arg).
+                        if ctx.module_types.hasGenericFn(gcname) or ctx.dep_types.hasGenericFn(gcname)
+                            if gc.args.count() == 1
+                                if gc.args.at(0).value is Expr.ident as targ
+                                    var subst_t: Type_ = typeFromName(targ.name)
+                                    if subst_t is not Type_.named
+                                        return subst_t
                     return Type_.unresolved
                 else
                     return Type_.unresolved
