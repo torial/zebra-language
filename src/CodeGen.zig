@@ -3090,24 +3090,64 @@ const Generator = struct {
         // Interactive widgets (button/checkbox/slider/entry/mle): label-keyed StringHashMap.
         // Display widgets (text/separator): frame-counter ArrayList.
         .libui_ng => try g.w.writeAll(
-            \\// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
-            \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+            \\// ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
+            \\const sci = @import("sci");
+            \\const _CodeEditor = struct {
+            \\    scint: ?*sci.Scintilla = null,
+            \\    read_only: bool = false,
+            \\    text: []u8 = &.{},
+            \\};
             \\fn _code_editor_new() *_CodeEditor {
             \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
-            \\    _ed.* = .{ .text = "", .read_only = false };
+            \\    _ed.* = .{};
             \\    return _ed;
             \\}
-            \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
-            \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
-            \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
-            \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-            \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
-            \\    if (!_ed.read_only) { _ed.text = _r; }
+            \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
+            \\    _allocator.free(_ed.text);
+            \\    _ed.text = _allocator.dupe(u8, text) catch &.{};
+            \\    if (_ed.scint) |_s| _s.setText(_ed.text);
+            \\}
+            \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
+            \\    if (_ed.scint) |_s| {
+            \\        const _len = _s.getLength();
+            \\        if (_len > _ed.text.len) {
+            \\            _allocator.free(_ed.text);
+            \\            _ed.text = _allocator.alloc(u8, _len + 1) catch return _ed.text;
+            \\        }
+            \\        if (_len > 0) _s.getRange(0, _len, _ed.text.ptr);
+            \\        _ed.text = _ed.text[0.._len];
+            \\    }
+            \\    return _ed.text;
+            \\}
+            \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
+            \\    _ed.read_only = v;
+            \\    if (_ed.scint) |_s| _ = _s.sendMessage(2171, @intFromBool(v), 0);
+            \\}
+            \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f64, _h: f64) void {
+            \\    _ = id; _ = _w; _ = _h; _ = _g;
+            \\    if (_ed.scint == null) {
+            \\        _ed.scint = sci.Scintilla.new() catch return;
+            \\        if (_ed.text.len > 0) _ed.scint.?.setText(_ed.text);
+            \\        if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
+            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+            \\    }
             \\}
             \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-            \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-            \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-            \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+            \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 {
+            \\    const _s = _ed.scint orelse return 1;
+            \\    const _pos = _s.sendMessage(2008, 0, 0);
+            \\    return @intCast(_s.sendMessage(2166, _pos, 0) + 1);
+            \\}
+            \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 {
+            \\    const _s = _ed.scint orelse return 1;
+            \\    const _pos = _s.sendMessage(2008, 0, 0);
+            \\    return @intCast(_s.sendMessage(2129, _pos, 0) + 1);
+            \\}
+            \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void {
+            \\    _ = col;
+            \\    const _s = _ed.scint orelse return;
+            \\    _ = _s.sendMessage(2024, @intCast(@max(0, line - 1)), 0);
+            \\}
             \\// ─── libui-ng retained-mode adapter ──────────────────────────────────────────
             \\const ui = @import("ui");
             \\const _LuiMut = struct {

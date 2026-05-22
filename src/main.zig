@@ -1186,7 +1186,8 @@ const gui_libui_ng_project_build_zig =
     \\        .target           = target,
     \\        .optimize         = optimize,
     \\    });
-    \\    app_mod.addImport("ui", lui_dep.module("ui"));
+    \\    app_mod.addImport("ui",  lui_dep.module("ui"));
+    \\    app_mod.addImport("sci", lui_dep.module("sci"));
     \\    const exe = b.addExecutable(.{
     \\        .name        = "app",
     \\        .root_module = app_mod,
@@ -1207,8 +1208,8 @@ const gui_libui_ng_project_build_zig_zon =
     \\    .fingerprint  = 0xc96e70cfe3b36b0a,
     \\    .dependencies = .{
     \\        .zig_libui_ng = .{
-    \\            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#39665dcd12b134dc228de97cc4a8cd5768752b11",
-    \\            .hash = "bindings_libui_ng-0.1.0-p2CY9WKMAgCOLTUoD8b1NK1eplwP9TucFhKQV_iE6c-B",
+    \\            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#d99a49c7ac342b800f48d518ba1728c11684db2a",
+    \\            .hash = "bindings_libui_ng-0.1.0-p2CY9QkWGgBjeLI8hICTNlxLEjcSbkLLJCh3-CHi11Kj",
     \\        },
     \\    },
     \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
