@@ -2692,9 +2692,9 @@ const _reflect_SafeParser_name: []const u8 = "SafeParser";
 const _reflect_SafeParser_fields: []const []const u8 = &.{};
 const _reflect_SafeParser_field_types: []const []const u8 = &.{};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/dynlib_iface_throws_test.zbr:11

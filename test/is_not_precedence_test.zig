@@ -2648,9 +2648,9 @@ pub const Color = union(enum) {
     blue,
 };
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/is_not_precedence_test.zbr:12

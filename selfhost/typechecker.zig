@@ -6613,9 +6613,9 @@ pub fn checkModule(m: Module, file: []const u8, ctx: *InferCtx) *TcResult {
     return tc_result;
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
     @import("ast.zig")._initAllocator(_allocator);

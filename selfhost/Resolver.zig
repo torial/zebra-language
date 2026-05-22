@@ -3323,9 +3323,9 @@ const _reflect_Resolver_name: []const u8 = "Resolver";
 const _reflect_Resolver_fields: []const []const u8 = &.{"module_scope", "class_scope", "method_scope", "errors", "symbol_count", "file_name"};
 const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)", "HashMap(str, int)", "HashMap(str, int)", "List(ResolveError)", "int", "str"};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
     @import("Parser.zig")._initAllocator(_allocator);

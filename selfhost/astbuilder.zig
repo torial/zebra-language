@@ -4958,9 +4958,9 @@ const _reflect_ASTBuilder_name: []const u8 = "ASTBuilder";
 const _reflect_ASTBuilder_fields: []const []const u8 = &.{"next_old_uid"};
 const _reflect_ASTBuilder_field_types: []const []const u8 = &.{"int"};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
     @import("ast.zig")._initAllocator(_allocator);

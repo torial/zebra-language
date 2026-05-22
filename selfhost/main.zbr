@@ -759,6 +759,7 @@ def main()
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
         sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
         sys.errln("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants")
+        sys.errln("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app (stub|glfw|tui); delegates to bootstrap")
         sys.errln("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe")
         sys.errln("  zebra --version                          print version and exit")
         sys.errln("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict")
@@ -781,10 +782,13 @@ def main()
 
     var mode_c               = args.contains("-c")
     var mode_emit            = args.contains("--emit-zig")
-    var mode_zig             = args.contains("--zig-backend")
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
     var warn_ne              = args.contains("--warn-non-exhaustive")
+    var gui_backend: str     = args.option("--gui-backend", "")
+    # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
+    var has_gui              = gui_backend != ""
+    var mode_zig             = args.contains("--zig-backend") or has_gui
     const preamble_path      = "selfhost/stdlib_preamble.zig"
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
@@ -854,6 +858,8 @@ def main()
         argv.add("-c")
     if release
         argv.add("--release")
+    if gui_backend != ""
+        argv.add("--gui-backend=" + gui_backend)
     argv.add(path)
 
     var r = sys.run(argv)

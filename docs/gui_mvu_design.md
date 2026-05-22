@@ -1,6 +1,6 @@
 # GUI MVU Design Document
 
-Status: open for review — written 2026-05-21, decisions pending before implementation.
+Status: **both backends complete** — ZigZag TUI (2026-05-21) + libui-ng native (2026-05-22).
 
 ## Background
 
@@ -32,26 +32,55 @@ The `_GuiBackend` implementation is ~250-300 lines sitting on top of ZigZag's pr
 `g.button(): bool` API — the bool comes from pre-processed input (set by ZigZag's update cycle),
 not from view(). This is the standard "immediate mode over reactive loop" pattern.
 
-### zig-libui-ng native backend
+### zig-libui-ng native backend — COMPLETE (2026-05-22)
 
-**Zig 0.16 compatibility status: BROKEN.** As of 2026-05-21:
+**Zig 0.16 compatibility fixed** via two GitHub forks (4 patches total):
 
+`torial/libui-ng` (wp-2025 branch):
+- `de1b1305`: Build.Step.Compile.Xxx → Build.Module.Xxx (addIncludePath, addCSourceFiles, linkFramework, linkSystemLibrary, link_libcpp, addWin32ResourceFile)
+- `5c24fd66`: `InitCommonControlsEx` FALSE+GetLastError==0 is non-fatal on Vista+ (Windows 11 runtime fix)
+
+`torial/zig-libui-ng` (zig-0.16 branch):
+- `fe1d7fa`: `callconv(.C)` → `callconv(.c)` across all 72 sites in ui.zig (Zig 0.16 CallingConvention union renamed tags)
+- `95d01af`: `Checkbox.OnToggled` — add `comptime f`, remove erroneous `void catch` (Zig 0.16 inner-function closure capture restriction)
+- `39665dc`: update libui-ng dep to InitCommonControls-fixed commit
+
+**Widget cache adapter — COMPLETE** (~300 lines in `src/CodeGen.zig`):
+
+Retained-mode mismatch solved by two parallel caches:
+
+1. **Interactive widgets** (button, checkbox, slider, entry, multiline entry): `_lui_icache: std.StringHashMap(*_LuiMut)`, keyed by the label string. On first call (frame 0) the widget is created and added to the vbox. On frame 1+, the callback-maintained `_LuiMut` state is read.
+
+2. **Display widgets** (text, separator): `_lui_dcache: std.ArrayList(*_LuiMut)` + `_lui_didx` counter. Widget order must be stable frame-to-frame. Text labels are updated via `ui.Label.SetText` each frame (dynamic content supported).
+
+**Creation frame trick**: `newFrameFn()` on frame 0 returns `true` immediately (no `uiMainStep` call). The view function runs, creating all widgets in order. `endFrameFn()` on frame 0 sets the vbox as window child, shows the window, and increments the frame counter. Frame 1+ call `uiMainStep(.blocking)` to wait for OS events.
+
+**`_LuiMut` struct** (heap-allocated per widget for stable callback pointers):
+```zig
+const _LuiMut = struct {
+    ctrl: ?*ui.Control = null,    // main control
+    lbl:  ?*ui.Label  = null,     // companion label (slider/entry/text)
+    clicked: bool = false,         // button
+    checked: bool = false,         // checkbox
+    text_buf: [1024]u8 = undefined, // entry/mle text buffer
+    text_len: usize = 0,
+    sval: c_int = 0,               // slider: raw 0-1000 value
+    smin: f64 = 0, smax: f64 = 1, // slider: user range
+};
 ```
-build.zig:31:14: error: no field named 'root_source_file' in Build.ExecutableOptions
-zig-pkg/libui/build.zig:23:8: error: no field or member function named 'linkLibC' in Compile
-```
 
-Two API breaks in `build.zig` files (one in zig-libui-ng, one in the libui-ng package it fetches).
-Both are fixable (~10 line patches) but the second is in an upstream dependency.
+**Activate:** `--gui-backend=libui_ng` (or `libui-ng`). Generates a `build.zig.zon` that fetches `torial/zig-libui-ng`. Project directory: `<stem>_gui_libui_ng/` (TUI uses `<stem>_gui_tui/`, others use `<stem>_gui/`).
 
-The native backend also has a retained-mode vs immediate-mode mismatch:
-- libui-ng creates widgets once and attaches click callbacks
-- Our `buttonFn(label)` API assumes widgets are "recreated" each frame
-- A **widget cache adapter** is needed: keyed by label, create on first call, reuse on subsequent
+**Package hashes (pinned, 2026-05-22):**
+- zig-libui-ng: `bindings_libui_ng-0.1.0-p2CY9WKMAgCOLTUoD8b1NK1eplwP9TucFhKQV_iE6c-B` (commit `39665dc`)
+- libui-ng: `N-V-__8AAEujJQCHCZIDKlQ1fg9j03MUEN1w3FPRW4g0HojW` (commit `5c24fd66`)
 
-Estimated work: 400+ lines for the widget cache adapter + build.zig fixes.
+**MVP limitations:**
+- `beginPanel`/`beginWindow`/table/tree/color/style calls are no-ops (all widgets render in one flat vbox)
+- Low-level draw API is no-op
+- Display widget order must be stable (frame-counter cache)
 
-**Verdict:** Feasible but non-trivial. Best addressed as a separate sprint with the user present.
+**Verdict:** Complete. ~300 lines of adapter code.
 
 ## Open question 1: MVU dispatch mechanism
 
@@ -128,21 +157,28 @@ Options:
 
 **Recommendation:** Option 2 — add a TODO comment, migrate when a real backend is ready.
 
-## Proposed implementation order (morning sprint)
+## Implementation outcome
 
-1. **Open question decisions** (user answers 1-3 above, ~5 min)
-2. **Fix zig-libui-ng Zig 0.16 compatibility** (~30 min — patch two `build.zig` files)
-3. **Add ZigZag dependency** to `build.zig.zon` + write ZigZag TUI `_GuiBackend` adapter (~3 hrs)
-4. **Add `_gui_mvu_run` preamble + update `genGuiCall`** in both compilers (~1 hr)
-5. **Counter example** + smoke test (~30 min)
-6. **ZebraIDE TODO comment** (~5 min)
-7. **Bootstrap + full smoke** (~30 min)
-8. **QUICKSTART.md §30 update** + wiki update (~30 min)
+**ZigZag TUI backend — shipped 2026-05-21:**
 
-## zig-libui-ng Zig 0.16 fix notes
+- `--gui-backend=tui` flag added to both bootstrap (`src/main.zig`) and selfhost (`selfhost/main.zbr`).
+- Selfhost delegates `--gui-backend=XXX` to bootstrap (GUI compilation requires `zig build` + package deps, not `zig run`).
+- `src/CodeGen.zig`: `.tui` enum variant; full `_tui_*` function suite injected into the generated Zig preamble.
+- `src/main.zig`: `gui_tui_project_build_zig` + `gui_tui_project_build_zig_zon` templates; `compileGuiProject` parameterized on backend.
+- ZigZag dep: `git+https://github.com/meszmate/zigzag#v0.1.5`, hash `zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv`.
+- Counter example compiles and links against ZigZag successfully.
 
-In `/tmp/zig-libui-ng-check/build.zig`, the `root_source_file` field needs to move
-to a module definition. The upstream libui-ng package's `build.zig` needs `lib.*.linkLibC()`
-(pointer dereference). Alternatively, bump the libui-ng `url` reference to a fork with the fix.
+**Open questions resolved:**
+- Q1 (dispatch): **Option A — `g.send(msg)`** chosen. Type erasure handled by fn-ptr in GuiContext.
+- Q2 (keep/replace): **Replace entirely** — 6-arg `Gui.run(title, w, h, init, update, view)` is the only form.
+- Q3 (ZebraIDE): Deferred — add TODO comment when IDE gets a real backend sprint.
 
-The libui examples have a `counter` app which is a useful reference implementation.
+**libui-scintilla note:** The Scintilla code editor was extracted into a separate project (`petabyt/libui-scintilla`) from libui-dev. When the libui-ng sprint happens, start from the main libui-ng repo and add libui-scintilla separately if code editing is needed.
+
+**libui-ng status:** ✅ Complete (2026-05-22).
+
+## Remaining work
+
+1. **ZebraIDE migration to MVU** (when a real backend sprint happens)
+2. **Selfhost `--gui-backend` native codegen** (generate TUI/libui-ng block in codegen.zbr, scaffold `zig build` project in Zebra)
+3. **QUICKSTART.md §30 update** + wiki update

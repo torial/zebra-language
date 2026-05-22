@@ -2726,9 +2726,9 @@ const _reflect_Buffer_name: []const u8 = "Buffer";
 const _reflect_Buffer_fields: []const []const u8 = &.{"data"};
 const _reflect_Buffer_field_types: []const []const u8 = &.{"str"};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/dispatch_collision_test.zbr:42

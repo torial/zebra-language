@@ -2668,9 +2668,9 @@ pub fn first(comptime T: type, a: T, b: T) T {
     return a;
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
     std.debug.print("{}\n", .{identity(i64, 42)});

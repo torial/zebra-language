@@ -88,7 +88,7 @@ fn zbr_hash_str(s: []const u8) u32 {
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Which GUI backend to embed in the generated Zig preamble.
-pub const GuiBackend = enum { stub, glfw, sdl2, dx12 };
+pub const GuiBackend = enum { stub, glfw, sdl2, dx12, tui, libui_ng };
 
 /// How a native (non-Zebra) `use` dependency is backed.
 /// Used by `genUse` to emit the correct import statement.
@@ -2827,6 +2827,631 @@ const Generator = struct {
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
             ),
+            // ── ZigZag TUI backend ────────────────────────────────────────────
+            // Requires a `zig build` project with the `zigzag` dependency.
+            // main.zig wires up a generated project dir when uses_gui is true.
+            .tui => try g.w.writeAll(
+                \\// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
+                \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+                \\fn _code_editor_new() *_CodeEditor {
+                \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+                \\    _ed.* = .{ .text = "", .read_only = false };
+                \\    return _ed;
+                \\}
+                \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+                \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+                \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+                \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+                \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+                \\    if (!_ed.read_only) { _ed.text = _r; }
+                \\}
+                \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+                \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+                \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+                \\// ─── ZigZag TUI backend ──────────────────────────────────────────────────────
+                \\const zz = @import("zigzag");
+                \\var _tui_env: *std.process.Environ.Map = undefined;
+                \\var _tui_terminal: ?zz.Terminal = null;
+                \\var _tui_current_row: u16 = 0;
+                \\var _tui_click_y: i32 = -1;
+                \\var _tui_quit: bool = false;
+                \\var _tui_indent_level: u16 = 0;
+                \\fn _tui_init(title: []const u8, width: i64, height: i64) anyerror!void {
+                \\    _ = width; _ = height;
+                \\    var _t = try zz.Terminal.init(_io, _tui_env, .{
+                \\        .alt_screen = true,
+                \\        .mouse = true,
+                \\        .hide_cursor = true,
+                \\        .bracketed_paste = false,
+                \\    });
+                \\    try _t.setTitle(title);
+                \\    _tui_terminal = _t;
+                \\}
+                \\fn _tui_deinit() void {
+                \\    if (_tui_terminal) |*_t| _t.deinit();
+                \\    _tui_terminal = null;
+                \\}
+                \\fn _tui_new_frame() bool {
+                \\    if (_tui_quit) return false;
+                \\    const _t = &(_tui_terminal orelse return false);
+                \\    _tui_click_y = -1;
+                \\    _tui_indent_level = 0;
+                \\    var _buf: [256]u8 = undefined;
+                \\    const _n = _t.readInput(&_buf, 16) catch 0;
+                \\    if (_n > 0) {
+                \\        const _evs = zz.input.keyboard.parseAll(_allocator, _buf[0.._n]) catch &.{};
+                \\        for (_evs) |_ev| {
+                \\            switch (_ev) {
+                \\                .key => |_k| switch (_k.key) {
+                \\                    .char => |_c| { if (_c == 'q' or _c == 'Q') _tui_quit = true; },
+                \\                    .escape => { _tui_quit = true; },
+                \\                    else => {},
+                \\                },
+                \\                .mouse => |_m| {
+                \\                    if (_m.event_type == .press and _m.button == .left)
+                \\                        _tui_click_y = @as(i32, _m.y);
+                \\                },
+                \\                .none => {},
+                \\            }
+                \\        }
+                \\    }
+                \\    _t.clear() catch return false;
+                \\    _tui_current_row = 0;
+                \\    return !_tui_quit;
+                \\}
+                \\fn _tui_end_frame() void {
+                \\    if (_tui_terminal) |*_t| _t.flush() catch {};
+                \\}
+                \\fn _tui_text(s: []const u8) void {
+                \\    if (_tui_terminal) |*_t| {
+                \\        _t.writeAt(_tui_current_row, _tui_indent_level * 2, s) catch {};
+                \\        _tui_current_row += 1;
+                \\    }
+                \\}
+                \\fn _tui_separator() void {
+                \\    if (_tui_terminal) |*_t| {
+                \\        _t.writeAt(_tui_current_row, 0, "──────────────────────────────") catch {};
+                \\        _tui_current_row += 1;
+                \\    }
+                \\}
+                \\fn _tui_same_line() void {}
+                \\fn _tui_spacing() void { _tui_current_row += 1; }
+                \\fn _tui_indent() void { _tui_indent_level += 1; }
+                \\fn _tui_unindent() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
+                \\fn _tui_button(label: []const u8) bool {
+                \\    const _row = _tui_current_row;
+                \\    _tui_current_row += 1;
+                \\    if (_tui_terminal) |*_t| {
+                \\        const _col = _tui_indent_level * 2;
+                \\        const _clicked = (_tui_click_y == @as(i32, _row));
+                \\        var _buf: [256]u8 = undefined;
+                \\        const _s = std.fmt.bufPrint(&_buf, "[ {s} ]", .{label}) catch label;
+                \\        if (_clicked) {
+                \\            var _sb: [320]u8 = undefined;
+                \\            const _rs = std.fmt.bufPrint(&_sb, "\x1b[7m{s}\x1b[27m", .{_s}) catch _s;
+                \\            _t.writeAt(_row, _col, _rs) catch {};
+                \\        } else {
+                \\            _t.writeAt(_row, _col, _s) catch {};
+                \\        }
+                \\        return _clicked;
+                \\    }
+                \\    return false;
+                \\}
+                \\fn _tui_checkbox(label: []const u8, value: bool) bool {
+                \\    const _row = _tui_current_row;
+                \\    _tui_current_row += 1;
+                \\    if (_tui_terminal) |*_t| {
+                \\        const _col = _tui_indent_level * 2;
+                \\        var _buf: [256]u8 = undefined;
+                \\        const _s = std.fmt.bufPrint(&_buf, "[{s}] {s}", .{ if (value) "x" else " ", label }) catch label;
+                \\        _t.writeAt(_row, _col, _s) catch {};
+                \\        if (_tui_click_y == @as(i32, _row)) return !value;
+                \\    }
+                \\    return value;
+                \\}
+                \\fn _tui_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
+                \\    _ = min; _ = max;
+                \\    if (_tui_terminal) |*_t| {
+                \\        const _col = _tui_indent_level * 2;
+                \\        var _buf: [256]u8 = undefined;
+                \\        const _s = std.fmt.bufPrint(&_buf, "{s}: {d:.2}", .{ label, value }) catch label;
+                \\        _t.writeAt(_tui_current_row, _col, _s) catch {};
+                \\        _tui_current_row += 1;
+                \\    }
+                \\    return value;
+                \\}
+                \\fn _tui_input(label: []const u8, value: []const u8) []const u8 {
+                \\    if (_tui_terminal) |*_t| {
+                \\        const _col = _tui_indent_level * 2;
+                \\        var _buf: [256]u8 = undefined;
+                \\        const _s = std.fmt.bufPrint(&_buf, "{s}: {s}", .{ label, value }) catch label;
+                \\        _t.writeAt(_tui_current_row, _col, _s) catch {};
+                \\        _tui_current_row += 1;
+                \\    }
+                \\    return value;
+                \\}
+                \\fn _tui_input_multiline(label: []const u8, value: []const u8, w: f64, h: f64) []const u8 {
+                \\    _ = w; _ = h;
+                \\    return _tui_input(label, value);
+                \\}
+                \\fn _tui_begin_panel(label: []const u8) bool {
+                \\    if (_tui_terminal) |*_t| {
+                \\        const _col = _tui_indent_level * 2;
+                \\        var _buf: [256]u8 = undefined;
+                \\        const _s = std.fmt.bufPrint(&_buf, "\x1b[1m\u{25b6} {s}\x1b[22m", .{label}) catch label;
+                \\        _t.writeAt(_tui_current_row, _col, _s) catch {};
+                \\        _tui_current_row += 1;
+                \\        _tui_indent_level += 1;
+                \\    }
+                \\    return true;
+                \\}
+                \\fn _tui_end_panel() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
+                \\fn _tui_begin_window(label: []const u8) bool { return _tui_begin_panel(label); }
+                \\fn _tui_end_window() void { _tui_end_panel(); }
+                \\fn _tui_selectable(label: []const u8) bool {
+                \\    const _row = _tui_current_row;
+                \\    _tui_text(label);
+                \\    return _tui_click_y == @as(i32, _row);
+                \\}
+                \\fn _tui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
+                \\    _ = r; _ = gv; _ = b_; _ = a;
+                \\    _tui_text(s);
+                \\}
+                \\fn _tui_begin_table(id: []const u8, cols: i64) bool { _ = id; _ = cols; return true; }
+                \\fn _tui_table_setup_column(label: []const u8) void { _ = label; }
+                \\fn _tui_table_headers_row() void {}
+                \\fn _tui_table_next_row() void { _tui_current_row += 1; }
+                \\fn _tui_table_next_column() bool { return true; }
+                \\fn _tui_end_table() void {}
+                \\fn _tui_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+                \\fn _tui_end_child() void {}
+                \\fn _tui_tree_node(label: []const u8) bool { return _tui_begin_panel(label); }
+                \\fn _tui_tree_pop() void { _tui_end_panel(); }
+                \\fn _tui_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+                \\fn _tui_set_colors_dark() void {}
+                \\fn _tui_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+                \\fn _tui_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+                \\fn _tui_scale_all_sizes(scale: f32) void { _ = scale; }
+                \\fn _tui_get_dpi() f32 { return 1.0; }
+                \\fn _tui_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _tui_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+                \\fn _tui_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+                \\fn _tui_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+                \\fn _tui_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+                \\fn _tui_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+                \\fn _tui_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+                \\fn _tui_ll_get_window_size() _GuiVec2 { return .{ 80, 24 }; }
+                \\fn _tui_ll_get_cursor_pos() _GuiVec2 { return .{ 0, @floatFromInt(_tui_current_row) }; }
+                \\fn _tui_ll_get_mouse_pos() _GuiVec2 {
+                \\    return .{ 0, if (_tui_click_y >= 0) @floatFromInt(_tui_click_y) else -1 };
+                \\}
+                \\fn _tui_ll_begin_group() void {}
+                \\fn _tui_ll_end_group() void {}
+                \\const _gui_tui_backend = _GuiBackend{
+                \\    .initFn             = _tui_init,
+                \\    .deinitFn           = _tui_deinit,
+                \\    .newFrameFn         = _tui_new_frame,
+                \\    .endFrameFn         = _tui_end_frame,
+                \\    .textFn             = _tui_text,
+                \\    .separatorFn        = _tui_separator,
+                \\    .sameLineFn         = _tui_same_line,
+                \\    .spacingFn          = _tui_spacing,
+                \\    .indentFn           = _tui_indent,
+                \\    .unindentFn         = _tui_unindent,
+                \\    .buttonFn           = _tui_button,
+                \\    .checkboxFn         = _tui_checkbox,
+                \\    .sliderFn           = _tui_slider,
+                \\    .inputFn            = _tui_input,
+                \\    .inputMultilineFn   = _tui_input_multiline,
+                \\    .beginPanelFn       = _tui_begin_panel,
+                \\    .endPanelFn         = _tui_end_panel,
+                \\    .beginWindowFn      = _tui_begin_window,
+                \\    .endWindowFn        = _tui_end_window,
+                \\    .selectableFn       = _tui_selectable,
+                \\    .textColoredFn      = _tui_text_colored,
+                \\    .beginTableFn       = _tui_begin_table,
+                \\    .tableSetupColumnFn = _tui_table_setup_column,
+                \\    .tableHeadersRowFn  = _tui_table_headers_row,
+                \\    .tableNextRowFn     = _tui_table_next_row,
+                \\    .tableNextColumnFn  = _tui_table_next_column,
+                \\    .endTableFn         = _tui_end_table,
+                \\    .beginChildFn       = _tui_begin_child,
+                \\    .endChildFn         = _tui_end_child,
+                \\    .treeNodeFn         = _tui_tree_node,
+                \\    .treePopFn          = _tui_tree_pop,
+                \\    .setColorFn         = _tui_set_color,
+                \\    .setColorsDarkFn    = _tui_set_colors_dark,
+                \\    .setStyleFloatFn    = _tui_set_style_float,
+                \\    .setVec2Fn          = _tui_set_vec2,
+                \\    .scaleAllSizesFn    = _tui_scale_all_sizes,
+                \\    .getDpiFn           = _tui_get_dpi,
+                \\    .ll_addLineFn         = _tui_ll_add_line,
+                \\    .ll_addRectFn         = _tui_ll_add_rect,
+                \\    .ll_addRectFilledFn   = _tui_ll_add_rect_filled,
+                \\    .ll_addCircleFn       = _tui_ll_add_circle,
+                \\    .ll_addCircleFilledFn = _tui_ll_add_circle_filled,
+                \\    .ll_addTextFn         = _tui_ll_add_text,
+                \\    .ll_getWindowPosFn    = _tui_ll_get_window_pos,
+                \\    .ll_getWindowSizeFn   = _tui_ll_get_window_size,
+                \\    .ll_getCursorPosFn    = _tui_ll_get_cursor_pos,
+                \\    .ll_getMousePosFn     = _tui_ll_get_mouse_pos,
+                \\    .ll_beginGroupFn      = _tui_ll_begin_group,
+                \\    .ll_endGroupFn        = _tui_ll_end_group,
+                \\};
+                \\const _gui_active_backend: _GuiBackend = _gui_tui_backend;
+                \\
+            ),
+        // ── libui-ng native OS GUI backend ───────────────────────────────────────
+        // Retained-mode adapter: immediate-mode Zebra API → libui-ng widget tree.
+        // Frame 0 = creation pass (widgets are created + added to vbox).
+        // Frames 1+ = event-driven: newFrameFn blocks on uiMainStep(.blocking),
+        // callbacks write into _LuiMut, view() reads _LuiMut state.
+        // Interactive widgets (button/checkbox/slider/entry/mle): label-keyed StringHashMap.
+        // Display widgets (text/separator): frame-counter ArrayList.
+        .libui_ng => try g.w.writeAll(
+            \\// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
+            \\const _CodeEditor = struct { text: []const u8, read_only: bool };
+            \\fn _code_editor_new() *_CodeEditor {
+            \\    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+            \\    _ed.* = .{ .text = "", .read_only = false };
+            \\    return _ed;
+            \\}
+            \\fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
+            \\fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
+            \\fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
+            \\fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
+            \\    const _r = _g.inputMultiline(id, _ed.text, w, h);
+            \\    if (!_ed.read_only) { _ed.text = _r; }
+            \\}
+            \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+            \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+            \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+            \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+            \\// ─── libui-ng retained-mode adapter ──────────────────────────────────────────
+            \\const ui = @import("ui");
+            \\const _LuiMut = struct {
+            \\    ctrl: ?*ui.Control = null,
+            \\    lbl: ?*ui.Label = null,
+            \\    clicked: bool = false,
+            \\    checked: bool = false,
+            \\    text_buf: [1024]u8 = undefined,
+            \\    text_len: usize = 0,
+            \\    sval: c_int = 0,
+            \\    smin: f64 = 0,
+            \\    smax: f64 = 1,
+            \\};
+            \\var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
+            \\var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
+            \\var _lui_didx: usize = 0;
+            \\var _lui_frame: u32 = 0;
+            \\var _lui_quit: bool = false;
+            \\var _lui_win_w: i64 = 800;
+            \\var _lui_win_h: i64 = 600;
+            \\var _lui_window: ?*ui.Window = null;
+            \\var _lui_vbox: ?*ui.Box = null;
+            \\fn _lui_on_close(_w: *ui.Window, _q: ?*bool) anyerror!ui.Window.ClosingAction {
+            \\    _ = _w;
+            \\    if (_q) |p| p.* = true;
+            \\    ui.Quit();
+            \\    return .should_close;
+            \\}
+            \\fn _lui_btn_cb(_btn: *ui.Button, _m: ?*_LuiMut) anyerror!void {
+            \\    _ = _btn;
+            \\    if (_m) |p| p.clicked = true;
+            \\}
+            \\fn _lui_chk_cb(_chk: *ui.Checkbox, _m: ?*_LuiMut) void {
+            \\    if (_m) |p| p.checked = _chk.Checked();
+            \\}
+            \\fn _lui_entry_cb(_ent: *ui.Entry, _m: ?*_LuiMut) anyerror!void {
+            \\    if (_m) |p| {
+            \\        const _s = std.mem.span(_ent.Text());
+            \\        const _n = @min(_s.len, 1023);
+            \\        @memcpy(p.text_buf[0.._n], _s[0.._n]);
+            \\        p.text_len = _n;
+            \\    }
+            \\}
+            \\fn _lui_mle_cb(_mle: *ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
+            \\    if (_m) |p| {
+            \\        const _s = std.mem.span(_mle.Text());
+            \\        const _n = @min(_s.len, 1023);
+            \\        @memcpy(p.text_buf[0.._n], _s[0.._n]);
+            \\        p.text_len = _n;
+            \\    }
+            \\}
+            \\fn _lui_slider_cb(_sld: *ui.Slider, _m: ?*_LuiMut) anyerror!void {
+            \\    if (_m) |p| p.sval = _sld.Value();
+            \\}
+            \\fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
+            \\    _lui_win_w = _width; _lui_win_h = _height;
+            \\    var _d = ui.InitData{ .options = .{ .Size = @sizeOf(ui.InitOptions) } };
+            \\    try ui.Init(&_d);
+            \\    _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
+            \\    _lui_dcache = .empty;
+            \\    var _tbuf: [256]u8 = undefined;
+            \\    const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
+            \\    _lui_window = try ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
+            \\    ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
+            \\    _lui_vbox = try ui.Box.New(.Vertical);
+            \\    _lui_vbox.?.SetPadded(true);
+            \\    _lui_frame = 0; _lui_quit = false;
+            \\}
+            \\fn _lui_deinit() void {
+            \\    _lui_icache.deinit();
+            \\    _lui_dcache.deinit(_allocator);
+            \\    ui.Uninit();
+            \\}
+            \\fn _lui_newframe() bool {
+            \\    _lui_didx = 0;
+            \\    if (_lui_frame == 0) return true;
+            \\    if (_lui_quit) return false;
+            \\    return ui.MainStep(.blocking) == .running and !_lui_quit;
+            \\}
+            \\fn _lui_endframe() void {
+            \\    if (_lui_frame == 0) {
+            \\        _lui_frame = 1;
+            \\        if (_lui_window) |_w| {
+            \\            if (_lui_vbox) |_vb| _w.SetChild(_vb.as_control());
+            \\            _w.SetMargined(true);
+            \\            _w.as_control().Show();
+            \\        }
+            \\    }
+            \\}
+            \\const _LuiIR = struct { m: *_LuiMut, fresh: bool };
+            \\fn _lui_iget(_label: []const u8) _LuiIR {
+            \\    if (_lui_icache.get(_label)) |_m| return .{ .m = _m, .fresh = false };
+            \\    const _m = _allocator.create(_LuiMut) catch unreachable;
+            \\    _m.* = .{};
+            \\    _lui_icache.put(_label, _m) catch unreachable;
+            \\    return .{ .m = _m, .fresh = true };
+            \\}
+            \\fn _lui_dget() _LuiIR {
+            \\    if (_lui_didx < _lui_dcache.items.len) {
+            \\        const _m = _lui_dcache.items[_lui_didx];
+            \\        _lui_didx += 1;
+            \\        return .{ .m = _m, .fresh = false };
+            \\    }
+            \\    const _m = _allocator.create(_LuiMut) catch unreachable;
+            \\    _m.* = .{};
+            \\    _lui_dcache.append(_allocator, _m) catch unreachable;
+            \\    _lui_didx += 1;
+            \\    return .{ .m = _m, .fresh = true };
+            \\}
+            \\fn _lui_text(_s: []const u8) void {
+            \\    const _r = _lui_dget();
+            \\    const _n = @min(_s.len, 510);
+            \\    var _tb: [512]u8 = undefined;
+            \\    @memcpy(_tb[0.._n], _s[0.._n]);
+            \\    _tb[_n] = 0;
+            \\    const _tz: [:0]u8 = _tb[0.._n :0];
+            \\    if (_r.fresh) {
+            \\        const _lbl = ui.Label.New(_tz) catch return;
+            \\        _r.m.lbl = _lbl;
+            \\        _r.m.ctrl = _lbl.as_control();
+            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
+            \\    } else {
+            \\        if (_r.m.lbl) |_lb| _lb.SetText(_tz);
+            \\    }
+            \\}
+            \\fn _lui_sep() void {
+            \\    const _r = _lui_dget();
+            \\    if (_r.fresh) {
+            \\        const _sep = ui.Separator.New(.Horizontal) catch return;
+            \\        _r.m.ctrl = _sep.as_control();
+            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
+            \\    }
+            \\}
+            \\fn _lui_noop_void() void {}
+            \\fn _lui_noop_bool(_l: []const u8) bool { _ = _l; return true; }
+            \\fn _lui_selectable(_l: []const u8) bool { _ = _l; return false; }
+            \\fn _lui_text_colored(_rv: f32, _gv: f32, _bv: f32, _av: f32, _s: []const u8) void {
+            \\    _ = _rv; _ = _gv; _ = _bv; _ = _av; _lui_text(_s);
+            \\}
+            \\fn _lui_begin_table(_id: []const u8, _cols: i64) bool { _ = _id; _ = _cols; return true; }
+            \\fn _lui_table_setup_col(_l: []const u8) void { _ = _l; }
+            \\fn _lui_table_next_col() bool { return true; }
+            \\fn _lui_begin_child(_id: []const u8, _cw: f64, _ch: f64) bool {
+            \\    _ = _id; _ = _cw; _ = _ch; return true;
+            \\}
+            \\fn _lui_set_color(_role: []const u8, _rv: f32, _gv: f32, _bv: f32, _av: f32) void {
+            \\    _ = _role; _ = _rv; _ = _gv; _ = _bv; _ = _av;
+            \\}
+            \\fn _lui_set_style_float(_name: []const u8, _v: f32) void { _ = _name; _ = _v; }
+            \\fn _lui_set_vec2(_name: []const u8, _xv: f32, _yv: f32) void { _ = _name; _ = _xv; _ = _yv; }
+            \\fn _lui_scale_all(_sc: f32) void { _ = _sc; }
+            \\fn _lui_get_dpi() f32 { return 1.0; }
+            \\fn _lui_ll_noop_line(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64, _t: f64) void {
+            \\    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c; _ = _t;
+            \\}
+            \\fn _lui_ll_noop_rect(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64, _t: f64) void {
+            \\    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c; _ = _t;
+            \\}
+            \\fn _lui_ll_noop_rectfill(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64) void {
+            \\    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c;
+            \\}
+            \\fn _lui_ll_noop_circle(_cx: f64, _cy: f64, _r: f64, _c: i64, _t: f64) void {
+            \\    _ = _cx; _ = _cy; _ = _r; _ = _c; _ = _t;
+            \\}
+            \\fn _lui_ll_noop_circlefill(_cx: f64, _cy: f64, _r: f64, _c: i64) void {
+            \\    _ = _cx; _ = _cy; _ = _r; _ = _c;
+            \\}
+            \\fn _lui_ll_noop_text(_x: f64, _y: f64, _c: i64, _s: []const u8) void {
+            \\    _ = _x; _ = _y; _ = _c; _ = _s;
+            \\}
+            \\fn _lui_ll_get_win_pos() _GuiVec2 { return .{ 0, 0 }; }
+            \\fn _lui_ll_get_win_size() _GuiVec2 {
+            \\    return .{ @floatFromInt(_lui_win_w), @floatFromInt(_lui_win_h) };
+            \\}
+            \\fn _lui_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+            \\fn _lui_ll_get_mouse_pos() _GuiVec2 { return .{ -1, -1 }; }
+            \\fn _lui_button(_label: []const u8) bool {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _n = @min(_label.len, 255);
+            \\        var _lb: [256]u8 = undefined;
+            \\        @memcpy(_lb[0.._n], _label[0.._n]);
+            \\        _lb[_n] = 0;
+            \\        const _lz: [:0]u8 = _lb[0.._n :0];
+            \\        const _btn = ui.Button.New(_lz) catch return false;
+            \\        ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
+            \\        _r.m.ctrl = _btn.as_control();
+            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+            \\    }
+            \\    const _clicked = _r.m.clicked;
+            \\    _r.m.clicked = false;
+            \\    return _clicked;
+            \\}
+            \\fn _lui_checkbox(_label: []const u8, _value: bool) bool {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _n = @min(_label.len, 255);
+            \\        var _lb: [256]u8 = undefined;
+            \\        @memcpy(_lb[0.._n], _label[0.._n]);
+            \\        _lb[_n] = 0;
+            \\        const _lz: [:0]u8 = _lb[0.._n :0];
+            \\        const _chk = ui.Checkbox.New(_lz) catch return _value;
+            \\        _chk.SetChecked(_value);
+            \\        _r.m.checked = _value;
+            \\        ui.Checkbox.OnToggled(_chk, _LuiMut, _lui_chk_cb, _r.m);
+            \\        _r.m.ctrl = _chk.as_control();
+            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
+            \\    }
+            \\    return _r.m.checked;
+            \\}
+            \\fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _n = @min(_label.len, 255);
+            \\        var _lb: [256]u8 = undefined;
+            \\        @memcpy(_lb[0.._n], _label[0.._n]);
+            \\        _lb[_n] = 0;
+            \\        const _lz: [:0]u8 = _lb[0.._n :0];
+            \\        const _sllbl = ui.Label.New(_lz) catch return _value;
+            \\        const _sld = ui.Slider.New(0, 1000) catch return _value;
+            \\        const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
+            \\        const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
+            \\        _sld.SetValue(_init);
+            \\        _r.m.sval = _init; _r.m.smin = _min; _r.m.smax = _max;
+            \\        ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
+            \\        _r.m.ctrl = _sld.as_control();
+            \\        _r.m.lbl = _sllbl;
+            \\        if (_lui_vbox) |_vb| {
+            \\            ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
+            \\            ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
+            \\        }
+            \\    }
+            \\    const _t = @as(f64, @floatFromInt(_r.m.sval)) / 1000.0;
+            \\    return _r.m.smin + _t * (_r.m.smax - _r.m.smin);
+            \\}
+            \\fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _n = @min(_label.len, 255);
+            \\        var _lb: [256]u8 = undefined;
+            \\        @memcpy(_lb[0.._n], _label[0.._n]);
+            \\        _lb[_n] = 0;
+            \\        const _lz: [:0]u8 = _lb[0.._n :0];
+            \\        const _enlbl = ui.Label.New(_lz) catch return _value;
+            \\        const _ent = ui.Entry.New(.Entry) catch return _value;
+            \\        const _vn = @min(_value.len, 1022);
+            \\        var _vtb: [1024]u8 = undefined;
+            \\        @memcpy(_vtb[0.._vn], _value[0.._vn]);
+            \\        _vtb[_vn] = 0;
+            \\        _ent.SetText(_vtb[0.._vn :0]);
+            \\        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
+            \\        _r.m.text_len = _vn;
+            \\        ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
+            \\        _r.m.ctrl = _ent.as_control();
+            \\        _r.m.lbl = _enlbl;
+            \\        if (_lui_vbox) |_vb| {
+            \\            ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
+            \\            ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
+            \\        }
+            \\    }
+            \\    return _r.m.text_buf[0.._r.m.text_len];
+            \\}
+            \\fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []const u8 {
+            \\    _ = _mw; _ = _mh;
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _n = @min(_label.len, 255);
+            \\        var _lb: [256]u8 = undefined;
+            \\        @memcpy(_lb[0.._n], _label[0.._n]);
+            \\        _lb[_n] = 0;
+            \\        const _lz: [:0]u8 = _lb[0.._n :0];
+            \\        const _mllbl = ui.Label.New(_lz) catch return _value;
+            \\        const _mle = ui.MultilineEntry.New(.Wrapping) catch return _value;
+            \\        const _vn = @min(_value.len, 1022);
+            \\        var _vtb: [1024]u8 = undefined;
+            \\        @memcpy(_vtb[0.._vn], _value[0.._vn]);
+            \\        _vtb[_vn] = 0;
+            \\        _mle.SetText(_vtb[0.._vn :0]);
+            \\        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
+            \\        _r.m.text_len = _vn;
+            \\        ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
+            \\        _r.m.ctrl = _mle.as_control();
+            \\        _r.m.lbl = _mllbl;
+            \\        if (_lui_vbox) |_vb| {
+            \\            ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
+            \\            ui.Box.Append(_vb, _mle.as_control(), .stretch);
+            \\        }
+            \\    }
+            \\    return _r.m.text_buf[0.._r.m.text_len];
+            \\}
+            \\const _gui_lui_backend = _GuiBackend{
+            \\    .initFn             = _lui_init,
+            \\    .deinitFn           = _lui_deinit,
+            \\    .newFrameFn         = _lui_newframe,
+            \\    .endFrameFn         = _lui_endframe,
+            \\    .textFn             = _lui_text,
+            \\    .separatorFn        = _lui_sep,
+            \\    .sameLineFn         = _lui_noop_void,
+            \\    .spacingFn          = _lui_noop_void,
+            \\    .indentFn           = _lui_noop_void,
+            \\    .unindentFn         = _lui_noop_void,
+            \\    .buttonFn           = _lui_button,
+            \\    .checkboxFn         = _lui_checkbox,
+            \\    .sliderFn           = _lui_slider,
+            \\    .inputFn            = _lui_input,
+            \\    .inputMultilineFn   = _lui_input_ml,
+            \\    .beginPanelFn       = _lui_noop_bool,
+            \\    .endPanelFn         = _lui_noop_void,
+            \\    .beginWindowFn      = _lui_noop_bool,
+            \\    .endWindowFn        = _lui_noop_void,
+            \\    .selectableFn       = _lui_selectable,
+            \\    .textColoredFn      = _lui_text_colored,
+            \\    .beginTableFn       = _lui_begin_table,
+            \\    .tableSetupColumnFn = _lui_table_setup_col,
+            \\    .tableHeadersRowFn  = _lui_noop_void,
+            \\    .tableNextRowFn     = _lui_noop_void,
+            \\    .tableNextColumnFn  = _lui_table_next_col,
+            \\    .endTableFn         = _lui_noop_void,
+            \\    .beginChildFn       = _lui_begin_child,
+            \\    .endChildFn         = _lui_noop_void,
+            \\    .treeNodeFn         = _lui_noop_bool,
+            \\    .treePopFn          = _lui_noop_void,
+            \\    .setColorFn         = _lui_set_color,
+            \\    .setColorsDarkFn    = _lui_noop_void,
+            \\    .setStyleFloatFn    = _lui_set_style_float,
+            \\    .setVec2Fn          = _lui_set_vec2,
+            \\    .scaleAllSizesFn    = _lui_scale_all,
+            \\    .getDpiFn           = _lui_get_dpi,
+            \\    .ll_addLineFn         = _lui_ll_noop_line,
+            \\    .ll_addRectFn         = _lui_ll_noop_rect,
+            \\    .ll_addRectFilledFn   = _lui_ll_noop_rectfill,
+            \\    .ll_addCircleFn       = _lui_ll_noop_circle,
+            \\    .ll_addCircleFilledFn = _lui_ll_noop_circlefill,
+            \\    .ll_addTextFn         = _lui_ll_noop_text,
+            \\    .ll_getWindowPosFn    = _lui_ll_get_win_pos,
+            \\    .ll_getWindowSizeFn   = _lui_ll_get_win_size,
+            \\    .ll_getCursorPosFn    = _lui_ll_get_cursor_pos,
+            \\    .ll_getMousePosFn     = _lui_ll_get_mouse_pos,
+            \\    .ll_beginGroupFn      = _lui_noop_void,
+            \\    .ll_endGroupFn        = _lui_noop_void,
+            \\};
+            \\const _gui_active_backend: _GuiBackend = _gui_lui_backend;
+            \\
+        ),
         }
 
         try g.w.writeAll(build_options.stdlib_preamble_post_gui);
@@ -4002,6 +4627,9 @@ const Generator = struct {
                 try _eg.writeIndent(); try _eg.w.writeAll("_args = _zinit.minimal.args;\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("_allocator = _arena.allocator();\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("defer _arena.deinit();\n");
+                if (g.gui_backend == .tui) {
+                    try _eg.writeIndent(); try _eg.w.writeAll("_tui_env = _zinit.environ_map;\n");
+                }
                 for (g.module.decls) |_ed| {
                     const _eu = switch (_ed) { .use => |u| u, else => continue };
                     if (g.native_uses) |nu| if (nu.get(_eu.path) != null) continue;

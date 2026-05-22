@@ -2681,9 +2681,9 @@ pub fn getWord(idx: i64) []const u8 {
     return words.items[@intCast(idx)];
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/type_infer_chain_test.zbr:33

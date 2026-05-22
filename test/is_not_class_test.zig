@@ -2676,9 +2676,9 @@ const _reflect_Dog_name: []const u8 = "Dog";
 const _reflect_Dog_fields: []const []const u8 = &.{"name"};
 const _reflect_Dog_field_types: []const []const u8 = &.{"str"};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/is_not_class_test.zbr:15

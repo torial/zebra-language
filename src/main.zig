@@ -148,8 +148,12 @@ pub fn main(init: std.process.Init) void {
                 gui_backend = .sdl2;
             } else if (std.mem.eql(u8, val, "dx12")) {
                 gui_backend = .dx12;
+            } else if (std.mem.eql(u8, val, "tui")) {
+                gui_backend = .tui;
+            } else if (std.mem.eql(u8, val, "libui_ng") or std.mem.eql(u8, val, "libui-ng")) {
+                gui_backend = .libui_ng;
             } else {
-                std.debug.print("zebra: unknown gui backend '{s}' (stub|glfw|sdl2|dx12)\n", .{val});
+                std.debug.print("zebra: unknown gui backend '{s}' (stub|glfw|sdl2|dx12|tui|libui_ng)\n", .{val});
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "--module-path")) {
@@ -219,7 +223,7 @@ pub fn main(init: std.process.Init) void {
             \\  zebra --shared <source-file>               compile to shared library + .h header
             \\  zebra --release <source-file>              compile with -OReleaseFast
             \\  zebra --turbo <source-file>                strip require/ensure/invariant checks
-            \\  zebra --gui-backend=stub|glfw <source>     select GUI backend (default: stub)
+            \\  zebra --gui-backend=stub|glfw|tui <source> select GUI backend (default: stub)
             \\  zebra --module-path DIR <source>           add DIR to module search path
             \\  zebra --version                            print version and exit
             \\
@@ -1030,7 +1034,7 @@ fn backend(
     // When using a real GUI backend and the program actually references the
     // GUI API, we need a `zig build` project (zgui requires build dependencies).
     if (gui_backend != .stub and result.uses_gui) {
-        return compileGuiProject(zig_path, mode, alloc);
+        return compileGuiProject(zig_path, mode, gui_backend, alloc);
     }
 
     return switch (mode) {
@@ -1118,11 +1122,110 @@ const gui_project_build_zig_zon =
     \\
 ;
 
-/// Create a `zig build` project next to `zig_path`, fetch zgui, then build/run.
+/// Minimal `build.zig` written into the generated TUI project.
+const gui_tui_project_build_zig =
+    \\const std = @import("std");
+    \\pub fn build(b: *std.Build) void {
+    \\    const target   = b.standardTargetOptions(.{});
+    \\    const optimize = b.standardOptimizeOption(.{});
+    \\    const zz_dep = b.dependency("zigzag", .{
+    \\        .target   = target,
+    \\        .optimize = optimize,
+    \\    });
+    \\    const app_mod = b.createModule(.{
+    \\        .root_source_file = b.path("src/main.zig"),
+    \\        .target           = target,
+    \\        .optimize         = optimize,
+    \\    });
+    \\    app_mod.addImport("zigzag", zz_dep.module("zigzag"));
+    \\    const exe = b.addExecutable(.{
+    \\        .name        = "app",
+    \\        .root_module = app_mod,
+    \\    });
+    \\    b.installArtifact(exe);
+    \\    const run_step = b.addRunArtifact(exe);
+    \\    b.step("run", "Run the app").dependOn(&run_step.step);
+    \\}
+    \\
+;
+
+/// `build.zig.zon` written into the generated TUI project.
+/// Fingerprint 0xc96e70cf4d3a38ad was computed by Zig 0.16 when the template was first
+/// accepted; if zigzag or the package structure changes and Zig rejects the fingerprint,
+/// delete the .fingerprint line from an existing project and run `zig build` once — Zig
+/// will print the correct value to paste here.
+const gui_tui_project_build_zig_zon =
+    \\.{
+    \\    .name                 = .app,
+    \\    .version              = "0.0.1",
+    \\    .minimum_zig_version  = "0.16.0",
+    \\    .fingerprint          = 0xc96e70cf4d3a38ad,
+    \\    .dependencies = .{
+    \\        .zigzag = .{
+    \\            .url  = "git+https://github.com/meszmate/zigzag#v0.1.5",
+    \\            .hash = "zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv",
+    \\        },
+    \\    },
+    \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    \\}
+    \\
+;
+
+/// Minimal `build.zig` written into the generated libui-ng project.
+const gui_libui_ng_project_build_zig =
+    \\const std = @import("std");
+    \\pub fn build(b: *std.Build) void {
+    \\    const target   = b.standardTargetOptions(.{});
+    \\    const optimize = b.standardOptimizeOption(.{});
+    \\    const lui_dep  = b.dependency("zig_libui_ng", .{
+    \\        .target   = target,
+    \\        .optimize = optimize,
+    \\    });
+    \\    const app_mod = b.createModule(.{
+    \\        .root_source_file = b.path("src/main.zig"),
+    \\        .target           = target,
+    \\        .optimize         = optimize,
+    \\    });
+    \\    app_mod.addImport("ui", lui_dep.module("ui"));
+    \\    const exe = b.addExecutable(.{
+    \\        .name        = "app",
+    \\        .root_module = app_mod,
+    \\    });
+    \\    b.installArtifact(exe);
+    \\    const run_step = b.addRunArtifact(exe);
+    \\    b.step("run", "Run the app").dependOn(&run_step.step);
+    \\}
+    \\
+;
+
+/// `build.zig.zon` written into the generated libui-ng project.
+/// Pins to the Zig 0.16-patched forks of libui-ng and zig-libui-ng.
+const gui_libui_ng_project_build_zig_zon =
+    \\.{
+    \\    .name         = .app,
+    \\    .version      = "0.0.1",
+    \\    .fingerprint  = 0xc96e70cfe3b36b0a,
+    \\    .dependencies = .{
+    \\        .zig_libui_ng = .{
+    \\            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#39665dcd12b134dc228de97cc4a8cd5768752b11",
+    \\            .hash = "bindings_libui_ng-0.1.0-p2CY9WKMAgCOLTUoD8b1NK1eplwP9TucFhKQV_iE6c-B",
+    \\        },
+    \\    },
+    \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    \\}
+    \\
+;
+
+/// Create a `zig build` project next to `zig_path`, fetch GUI deps, then build/run.
 /// Project dir: `<stem>_gui/` (e.g. `test/gui_test_gui/`).
-fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator) !u8 {
+fn compileGuiProject(zig_path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, alloc: std.mem.Allocator) !u8 {
     const stem    = pathStem(zig_path);
-    const proj    = try std.fmt.allocPrint(alloc, "{s}_gui", .{stem});
+    const _bsuffix: []const u8 = switch (gui_backend) {
+        .tui      => "_tui",
+        .libui_ng => "_libui_ng",
+        else      => "",
+    };
+    const proj    = try std.fmt.allocPrint(alloc, "{s}_gui{s}", .{stem, _bsuffix});
     defer alloc.free(proj);
     const src_dir = try std.fs.path.join(alloc, &.{ proj, "src" });
     defer alloc.free(src_dir);
@@ -1138,17 +1241,28 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, alloc: std.mem.Allocator)
     // 3. Write build.zig and build.zig.zon — but only on first creation.
     // If a customised build.zig already exists (e.g. IDE/ZebraIDE_gui/ with
     // C++ sources), preserve it so project-specific settings survive regens.
-    inline for (.{
-        .{ "build.zig",     gui_project_build_zig     },
-        .{ "build.zig.zon", gui_project_build_zig_zon },
+    const _build_zig_src:     []const u8 = switch (gui_backend) {
+        .tui      => gui_tui_project_build_zig,
+        .libui_ng => gui_libui_ng_project_build_zig,
+        else      => gui_project_build_zig,
+    };
+    const _build_zig_zon_src: []const u8 = switch (gui_backend) {
+        .tui      => gui_tui_project_build_zig_zon,
+        .libui_ng => gui_libui_ng_project_build_zig_zon,
+        else      => gui_project_build_zig_zon,
+    };
+    const _tmpl_File = struct { name: []const u8, content: []const u8 };
+    for ([_]_tmpl_File{
+        .{ .name = "build.zig",     .content = _build_zig_src     },
+        .{ .name = "build.zig.zon", .content = _build_zig_zon_src },
     }) |pair| {
-        const fpath = try std.fs.path.join(alloc, &.{ proj, pair[0] });
+        const fpath = try std.fs.path.join(alloc, &.{ proj, pair.name });
         defer alloc.free(fpath);
         // Skip if the file already exists.
         std.Io.Dir.cwd().access(_io, fpath, .{}) catch {
             const f = try std.Io.Dir.cwd().createFile(_io, fpath, .{});
             defer f.close(_io);
-            try f.writeStreamingAll(_io, pair[1]);
+            try f.writeStreamingAll(_io, pair.content);
         };
     }
 

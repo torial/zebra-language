@@ -2664,9 +2664,9 @@ pub fn itemCount(s: *State) i64 {
     return @as(i64, @intCast(s.items.items.len));
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/bug119_list_field_param_test.zbr:13

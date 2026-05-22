@@ -343,10 +343,10 @@ teaching artifact.  See `wiki/pages/concepts/concept_zebra-vcs-architecture.md`.
 - **Layout:** `.fill` / `.fraction(n)` / `.fixed(n)` semantic values — each backend maps its own density.
 
 **Implementation sequence:**
-1. Validate `desttinghim/zig-libui-ng` against Zig 0.15.2
-2. Design MVU Gui API in QUICKSTART.md + toy programs (no code yet)
-3. ZigZag TUI backend (canonical reference)
-4. libui-ng adapter (~200-300 lines widget-cache reconciliation)
+1. ~~Validate `desttinghim/zig-libui-ng` against Zig 0.15.2~~ — done (broken, ~30 min fix deferred)
+2. ~~Design MVU Gui API in QUICKSTART.md + toy programs~~ — done (see §30 in QUICKSTART.md)
+3. ~~ZigZag TUI backend (canonical reference)~~ — **done 2026-05-21** (`--gui-backend=tui`; counter example works end-to-end; see `docs/gui_mvu_design.md`)
+4. libui-ng adapter (~200-300 lines widget-cache reconciliation + two `build.zig` Zig 0.16 fixes)
 
 See: `wiki/pages/concepts/concept_zebra-gui-redesign.md`
 

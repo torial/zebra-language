@@ -1376,12 +1376,20 @@ Zebra has a built-in immediate-mode GUI API backed by Dear ImGui (via the
 ### Running a GUI program
 
 ```bash
-zebra --gui-backend=glfw myapp.zbr
+zebra --gui-backend=glfw myapp.zbr   # Dear ImGui (OpenGL/GLFW)
+zebra --gui-backend=tui  myapp.zbr   # Terminal UI (ZigZag — no GPU required)
 ```
 
 The compiler auto-scaffolds a `zig build` project (e.g. `myapp_gui/`) next to
 the generated `.zig` file, writes a pinned `build.zig.zon`, and invokes
 `zig build run`.  The project directory is reused on subsequent runs.
+
+**TUI backend notes:**
+- Renders entirely in the terminal using ANSI escape codes (alternate screen).
+- Press `q`, `Q`, or `Escape` to quit.
+- Left-click to activate buttons, checkboxes, and selectables.
+- `sameLine()` has no visual effect in TUI mode (widgets always stack vertically).
+- Low-level draw calls (`ll.*`) are no-ops.
 
 ### Minimal example
 
@@ -1508,6 +1516,9 @@ and reused every frame.
 The GUI layer uses a `_GuiBackend` fn-pointer struct internally.  Swap the
 backend by implementing the fn-ptr slots and changing `_gui_active_backend`
 — no changes to user Zebra code required.
+
+Available backends: `stub` (no-op, for tests), `glfw`/`sdl2`/`dx12` (Dear ImGui),
+`tui` (ZigZag terminal — zero dependencies, works anywhere).
 
 ---
 

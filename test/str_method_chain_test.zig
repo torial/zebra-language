@@ -2656,9 +2656,9 @@ pub fn firstWord(s: []const u8) []const u8 {
     return parts.items[@intCast(0)];
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/str_method_chain_test.zbr:23

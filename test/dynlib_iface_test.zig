@@ -2687,9 +2687,9 @@ const _reflect_HelloGreeter_name: []const u8 = "HelloGreeter";
 const _reflect_HelloGreeter_fields: []const []const u8 = &.{};
 const _reflect_HelloGreeter_field_types: []const []const u8 = &.{};
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/dynlib_iface_test.zbr:9

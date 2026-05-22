@@ -2667,9 +2667,9 @@ pub fn mixed(n: i64, s: []const u8) struct { []const u8, i64 } {
     return .{_str_concat(s, "!", _allocator), (n * 2)};
 }
 
-pub fn main(init: std.process.Init) void {
-    _io = init.io;
-    _args = init.minimal.args;
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
 // zbr:test/tuple_smoke_test.zbr:17
