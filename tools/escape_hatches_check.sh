@@ -42,7 +42,10 @@ cd "$REPO"
 #   - 7× WebSocket (_WsTlsState heap-alloc + _ws_connect TLS init + _ws_serve
 #         per-connection heap-alloc; TLS state must be stable in memory since
 #         tls.Client holds internal pointers back into its own buffer fields)
-EXPECTED_PREAMBLE=61
+#   - 8× Zig 0.16 API migration (commit 294bcf6): std.Io.Writer.Allocating.fromArrayList
+#         now requires explicit page_allocator where std.io.Writer.Allocating.init did not;
+#         includes 2× build target JSON emit + 6× HTTP/CSV/Regex/Profile writer conversions
+EXPECTED_PREAMBLE=69
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)

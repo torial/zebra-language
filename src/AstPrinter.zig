@@ -32,7 +32,7 @@ const Ast = @import("Ast.zig");
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Write a human-readable S-expression listing of `module` to `writer`.
-pub fn print(module: Ast.Module, writer: std.io.AnyWriter) anyerror!void {
+pub fn print(module: Ast.Module, writer: *std.Io.Writer) anyerror!void {
     var p = Printer{ .writer = writer, .indent = 0 };
     try p.printModule(module);
 }
@@ -40,7 +40,7 @@ pub fn print(module: Ast.Module, writer: std.io.AnyWriter) anyerror!void {
 // ── Printer context ───────────────────────────────────────────────────────────
 
 const Printer = struct {
-    writer: std.io.AnyWriter,
+    writer: *std.Io.Writer,
     indent: u32,
 
     // ── Indent helpers ────────────────────────────────────────────────────────

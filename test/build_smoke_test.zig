@@ -303,24 +303,27 @@ fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     p.alive = true;
     // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
     if (comptime builtin.os.tag != .windows) {
-        p.pid = @intCast(p.child.id);
+        if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
 }
 fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
-    _ = p.child.kill(_io) catch {};
+    p.child.kill(_io);
     p.alive = false;
 }
 fn _sys_process_is_running(p: *_SysProcess) bool {
     if (!p.alive) return false;
     if (comptime builtin.os.tag == .windows) {
-        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
-        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
-        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
-        return true;
+        const handle = p.child.id orelse { p.alive = false; return false; };
+        var timeout: std.os.windows.LARGE_INTEGER = 0;
+        const status = std.os.windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &timeout);
+        if (status == .TIMEOUT) return true;
+        p.alive = false;
+        return false;
     } else {
-        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        const pid = p.child.id orelse { p.alive = false; return false; };
+        const r = std.posix.waitpid(pid, std.posix.W.NOHANG);
         if (r.pid != 0) { p.alive = false; return false; }
         return true;
     }

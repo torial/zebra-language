@@ -32,22 +32,22 @@ fn parseAndPrint(src: []const u8, gpa: std.mem.Allocator) ![]u8 {
     const module = try AstBuilder.build(ok, arena.allocator());
 
     // 4. Print
-    var buf = std.ArrayList(u8){};
-    try AstPrinter.print(module, buf.writer(gpa).any());
-    return buf.toOwnedSlice(gpa);
+    var aw: std.Io.Writer.Allocating = .init(gpa);
+    try AstPrinter.print(module, &aw.writer);
+    return try aw.toOwnedSlice();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn expectPrint(src: []const u8, expected: []const u8) !void {
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa_state = std.heap.DebugAllocator(.{}){};
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
     const got = try parseAndPrint(src, gpa);
     defer gpa.free(got);
 
-    if (!std.mem.eql(u8, std.mem.trimRight(u8, got, "\n"), std.mem.trimRight(u8, expected, "\n"))) {
+    if (!std.mem.eql(u8, std.mem.trimEnd(u8, got, "\n"), std.mem.trimEnd(u8, expected, "\n"))) {
         std.debug.print("\n=== expected ===\n{s}\n=== got ===\n{s}\n", .{ expected, got });
         return error.TestExpectedEqual;
     }

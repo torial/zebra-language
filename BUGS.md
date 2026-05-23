@@ -844,4 +844,4 @@ Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_dec
 
 ---
 
-*Last updated: 2026-05-21 — BUG-123 filed (main `init` param shadows user init function); MVU Gui.run implemented (6-arg form dispatches to `_gui_mvu_run`)*
+*Last updated: 2026-05-22 — ZebraIDE.zbr rewritten to MVU 6-arg form; SysProcess Zig 0.16 fixes (kill()→void, NtWaitForSingleObject); escape_hatches baseline bumped to 69*
