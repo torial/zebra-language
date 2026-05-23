@@ -290,6 +290,7 @@ smoke test/stdlib_str_test.zbr
 smoke test/stdlib_hash_test.zbr
 smoke test/stdlib_file_test.zbr
 smoke test/stdlib_misc_test.zbr
+smoke test/datetime_inzone_test.zbr
 # Combined integration test: all stdlib additions together.
 smoke test/stdlib_additions_test.zbr
 

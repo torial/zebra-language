@@ -3490,6 +3490,7 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "toIso8601") or
                 std.mem.eql(u8, method, "format"))        return .string;
             if (std.mem.eql(u8, method, "inCalendar"))    return .calendar_view;
+            if (std.mem.eql(u8, method, "inZone"))        return .date_time;
             return .void_;
         }
         // JsonValue methods

@@ -1630,13 +1630,78 @@ var present  = args.contains("--dry-run")    # bool
 
 ### `DateTime` — date/time
 
-| Call                              | Returns        | Notes                              |
-|-----------------------------------|----------------|-------------------------------------|
-| `DateTime.now()`                  | `DateTime`     | Current time                        |
-| `dt.epochMs`                      | int            | Milliseconds since epoch            |
-| `dt.inCalendar(Calendar.X)`       | `CalendarView` | Calendar-specific lens              |
-| `view.year/month/day/...`         | int            | Calendar fields                     |
-| `view.format(pattern)`            | str            |                                     |
+**Constructors**
+
+| Call                              | Returns    | Notes                               |
+|-----------------------------------|------------|--------------------------------------|
+| `DateTime.now()`                  | `DateTime` | Current wall-clock time              |
+| `DateTime.fromEpoch(ms)`          | `DateTime` | From milliseconds since Unix epoch   |
+| `DateTime.of(y,m,d)`             | `DateTime` | Midnight UTC on that date            |
+| `DateTime.of(y,m,d,h,min,s)`     | `DateTime` | Full UTC date+time                   |
+
+**Field access** (computed from `epoch_ms`)
+
+| Field        | Returns | Notes               |
+|--------------|---------|----------------------|
+| `dt.year`    | int     | Gregorian year       |
+| `dt.month`   | int     | 1–12                 |
+| `dt.day`     | int     | 1–31                 |
+| `dt.hour`    | int     | 0–23                 |
+| `dt.minute`  | int     | 0–59                 |
+| `dt.second`  | int     | 0–59                 |
+| `dt.weekday` | int     | 1=Mon … 7=Sun (ISO)  |
+
+**Methods**
+
+| Call                              | Returns        | Notes                                        |
+|-----------------------------------|----------------|-----------------------------------------------|
+| `dt.inZone(zone)`                 | `DateTime`     | Shift to named IANA timezone (see below)      |
+| `dt.inCalendar(cal)`              | `CalendarView` | Calendar-specific lens (Gregorian, Hebrew, …) |
+| `dt.addDays(n)`                   | `DateTime`     |                                               |
+| `dt.addHours(n)`                  | `DateTime`     |                                               |
+| `dt.addMinutes(n)`                | `DateTime`     |                                               |
+| `dt.addSeconds(n)`                | `DateTime`     |                                               |
+| `dt.addMonths(n)`                 | `DateTime`     |                                               |
+| `dt.addYears(n)`                  | `DateTime`     |                                               |
+| `dt.toEpoch()`                    | int            | Milliseconds since Unix epoch                 |
+| `dt.toIso8601()`                  | str            | e.g. `"2024-03-15T14:30:45"`                 |
+| `dt.format(pattern)`              | str            | `"yyyy-MM-dd HH:mm:ss"` etc.                  |
+| `dt.daysBetween(other)`           | int            |                                               |
+| `dt.secondsBetween(other)`        | int            |                                               |
+
+**`dt.inZone(zone)` — IANA timezone support**
+
+Returns a new `DateTime` whose `epoch_ms` is shifted by the UTC offset of the
+named IANA zone, accounting for DST rules where applicable.  Unknown zone names
+fall back to UTC (no crash).  The zone table is dead-stripped by the linker when
+`inZone` is never called — **zero binary-size cost if unused**.
+
+```zebra
+var epoch = DateTime.fromEpoch(0)
+var ny    = epoch.inZone("America/New_York")
+print ny.year   # 1969
+print ny.hour   # 19   (UTC-5 winter)
+
+var summer = DateTime.of(2024, 7, 4, 12, 0, 0)
+var ny_edt = summer.inZone("America/New_York")
+print ny_edt.hour   # 8   (UTC-4 summer DST)
+```
+
+Supported DST rules: US (post-2007 EESA), EU, AU Eastern, New Zealand.
+Representative zones (≈ 75 total):
+
+| Zone                    | Std offset | DST          |
+|-------------------------|------------|---------------|
+| `"UTC"`                 | UTC+0      | no DST        |
+| `"America/New_York"`    | UTC-5      | US DST (−4)   |
+| `"America/Chicago"`     | UTC-6      | US DST (−5)   |
+| `"America/Denver"`      | UTC-7      | US DST (−6)   |
+| `"America/Los_Angeles"` | UTC-8      | US DST (−7)   |
+| `"Europe/London"`       | UTC+0      | EU DST (+1)   |
+| `"Europe/Paris"`        | UTC+1      | EU DST (+2)   |
+| `"Asia/Tokyo"`          | UTC+9      | no DST        |
+| `"Australia/Sydney"`    | UTC+10     | AU DST (+11)  |
+| `"Pacific/Auckland"`    | UTC+12     | NZ DST (+13)  |
 
 ### `Http` / `HttpResponse`
 

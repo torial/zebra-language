@@ -48,7 +48,7 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Type aliases with constraints (`type Name = BaseType where value > expr`); transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
 - [x] Refinement types (parametric aliases): `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint; `Bounded(0, 100)` in type position; struct-base aliases; both backends; 119/119 smoke, bootstrap 5/5 (2026-05-18)
 - [x] WebSocket (`Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close); both backends; bootstrap 5/5 (2026-05-19)
-- [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
+- [x] IANA timezone support (`DateTime.inZone("America/New_York")`) — built-in table (~75 zones), 4 DST rules (US/EU/AU/NZ), zero binary-size cost if unused, both backends, 130/130 smoke, bootstrap 5/5 (2026-05-23)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
 - [ ] CHANGELOG covering the full 0.1 → 1.0 surface
 

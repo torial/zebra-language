@@ -6625,6 +6625,14 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "inZone")) {
+            try g.w.writeAll("_dt_in_zone(");
+            try g.genExpr(object);
+            try g.w.writeAll(", ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"UTC\"");
+            try g.w.writeAll(")");
+            return true;
+        }
         return false;
     }
 

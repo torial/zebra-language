@@ -682,6 +682,209 @@ const Calendar = struct {
     pub const Persian   = "persian";
     pub const Julian    = "julian";
 };
+
+// ── IANA Timezone support ─────────────────────────────────────────────────────
+// Common IANA zones: UTC offset in minutes (std/dst) and DST rule index.
+// DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
+//            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
+// Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
+const _tz_table = [_]_TzEntry{
+    .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/UTC",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/GMT",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "America/New_York",            .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Detroit",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Indiana/Indianapolis",.std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Kentucky/Louisville", .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Toronto",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Chicago",             .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Winnipeg",            .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Mexico_City",         .std = -360, .dst = -360, .rule = 0 },
+    .{ .name = "America/Denver",              .std = -420, .dst = -360, .rule = 1 },
+    .{ .name = "America/Phoenix",             .std = -420, .dst = -420, .rule = 0 },
+    .{ .name = "America/Los_Angeles",         .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Vancouver",           .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Anchorage",           .std = -540, .dst = -480, .rule = 1 },
+    .{ .name = "America/Adak",               .std = -600, .dst = -540, .rule = 1 },
+    .{ .name = "Pacific/Honolulu",            .std = -600, .dst = -600, .rule = 0 },
+    .{ .name = "America/Bogota",              .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Lima",                .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Sao_Paulo",           .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Argentina/Buenos_Aires",.std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Santiago",            .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "Europe/London",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Dublin",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Lisbon",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Paris",                .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Berlin",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Amsterdam",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Rome",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Madrid",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Brussels",             .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Vienna",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Warsaw",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Prague",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Stockholm",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Oslo",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Copenhagen",           .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Zurich",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Athens",               .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Helsinki",             .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Bucharest",            .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Kyiv",                 .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Istanbul",             .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Moscow",               .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Minsk",                .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Asia/Dubai",                  .std = 240,  .dst = 240,  .rule = 0 },
+    .{ .name = "Asia/Tehran",                 .std = 210,  .dst = 210,  .rule = 0 },
+    .{ .name = "Asia/Kabul",                  .std = 270,  .dst = 270,  .rule = 0 },
+    .{ .name = "Asia/Karachi",                .std = 300,  .dst = 300,  .rule = 0 },
+    .{ .name = "Asia/Kolkata",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Colombo",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Kathmandu",              .std = 345,  .dst = 345,  .rule = 0 },
+    .{ .name = "Asia/Dhaka",                  .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Almaty",                 .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Yangon",                 .std = 390,  .dst = 390,  .rule = 0 },
+    .{ .name = "Asia/Bangkok",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Ho_Chi_Minh",            .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Jakarta",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Shanghai",               .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Hong_Kong",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Singapore",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Taipei",                 .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Kuala_Lumpur",           .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Seoul",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Asia/Tokyo",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Australia/Darwin",            .std = 570,  .dst = 570,  .rule = 0 },
+    .{ .name = "Australia/Adelaide",          .std = 570,  .dst = 630,  .rule = 3 },
+    .{ .name = "Australia/Perth",             .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Australia/Brisbane",          .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Australia/Sydney",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Melbourne",         .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Hobart",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Pacific/Auckland",            .std = 720,  .dst = 780,  .rule = 4 },
+    .{ .name = "Pacific/Fiji",                .std = 720,  .dst = 720,  .rule = 0 },
+    .{ .name = "Pacific/Guam",                .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Africa/Cairo",                .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Nairobi",              .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Africa/Johannesburg",         .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Lagos",                .std = 60,   .dst = 60,   .rule = 0 },
+    .{ .name = "Atlantic/Azores",             .std = -60,  .dst = 0,    .rule = 2 },
+    .{ .name = "Atlantic/Cape_Verde",         .std = -60,  .dst = -60,  .rule = 0 },
+};
+
+// First Sunday on or after epoch_days D (Sundays: epoch_days % 7 == 3).
+fn _tz_first_sun_on_or_after(d: i64) i64 {
+    return d + @mod(3 - d, 7);
+}
+
+// Last Sunday on or before epoch_days D.
+fn _tz_last_sun_on_or_before(d: i64) i64 {
+    return d - @mod(d - 3, 7);
+}
+
+fn _tz_us_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // US DST (since 2007): 2nd Sunday March 02:00 LST → 1st Sunday November 02:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    if (g.year < 2007) return false;
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    const mar1 = @divFloor(_dt_from_gregorian(g.year, 3, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_mar = _tz_first_sun_on_or_after(mar1);
+    const sun2_mar = sun1_mar + 7;
+    // 02:00 local standard → UTC: subtract std offset (std_ms is negative for West)
+    const dst_start = sun2_mar * 86400000 + 7200000 - std_ms;
+
+    const nov1 = @divFloor(_dt_from_gregorian(g.year, 11, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_nov = _tz_first_sun_on_or_after(nov1);
+    // 02:00 local DST → UTC: subtract dst offset
+    const dst_end = sun1_nov * 86400000 + 7200000 - dst_ms;
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_eu_dst_active(epoch_ms: i64) bool {
+    // EU DST: last Sunday March 01:00 UTC → last Sunday October 01:00 UTC
+    const g = _dt_to_gregorian(epoch_ms);
+
+    const mar31 = @divFloor(_dt_from_gregorian(g.year, 3, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_mar = _tz_last_sun_on_or_before(mar31);
+    const dst_start = last_sun_mar * 86400000 + 3600000; // 01:00 UTC
+
+    const oct31 = @divFloor(_dt_from_gregorian(g.year, 10, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_oct = _tz_last_sun_on_or_before(oct31);
+    const dst_end = last_sun_oct * 86400000 + 3600000; // 01:00 UTC
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_au_east_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // AU Eastern DST: 1st Sunday October 02:00 LST → 1st Sunday April 03:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–September: always standard time
+    if (g.month >= 5 and g.month <= 9) return false;
+
+    if (g.month >= 10) {
+        const oct1 = @divFloor(_dt_from_gregorian(g.year, 10, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_oct = _tz_first_sun_on_or_after(oct1);
+        const dst_start = sun1_oct * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        // January–April: DST started last October; check if before 1st Sunday April 03:00 LDT
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms; // 03:00 LDT → UTC
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // NZ DST: last Sunday September 02:00 NZST → 1st Sunday April 03:00 NZDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–August: always standard time
+    if (g.month >= 5 and g.month <= 8) return false;
+
+    if (g.month >= 9) {
+        const sep30 = @divFloor(_dt_from_gregorian(g.year, 9, 30, 0, 0, 0).epoch_ms, 86400000);
+        const last_sun_sep = _tz_last_sun_on_or_before(sep30);
+        const dst_start = last_sun_sep * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms;
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+    for (&_tz_table) |*entry| {
+        if (std.mem.eql(u8, entry.name, zone)) {
+            const std_ms: i64 = @as(i64, entry.std) * 60000;
+            if (entry.std == entry.dst or entry.rule == 0) {
+                return .{ .epoch_ms = dt.epoch_ms + std_ms };
+            }
+            const dst_ms: i64 = @as(i64, entry.dst) * 60000;
+            const in_dst = switch (entry.rule) {
+                1 => _tz_us_dst_active(dt.epoch_ms, entry.std),
+                2 => _tz_eu_dst_active(dt.epoch_ms),
+                3 => _tz_au_east_dst_active(dt.epoch_ms, entry.std),
+                4 => _tz_nz_dst_active(dt.epoch_ms, entry.std),
+                else => false,
+            };
+            return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
+        }
+    }
+    return dt; // Unknown zone: return as-is (UTC)
+}
 const JsonValue = std.json.Value;
 fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
@@ -4319,29 +4522,49 @@ pub fn isReadOnlyMethod(name: []const u8) bool {
 // zbr:selfhost/cg_helpers.zbr:795
         return true;
     }
-// zbr:selfhost/cg_helpers.zbr:796
+// zbr:selfhost/cg_helpers.zbr:797
+    if ((((std.mem.eql(u8, name, "inZone") or std.mem.eql(u8, name, "inCalendar")) or std.mem.eql(u8, name, "toEpoch")) or std.mem.eql(u8, name, "toIso8601"))) {
+// zbr:selfhost/cg_helpers.zbr:798
+        return true;
+    }
+// zbr:selfhost/cg_helpers.zbr:799
+    if ((((std.mem.eql(u8, name, "addDays") or std.mem.eql(u8, name, "addHours")) or std.mem.eql(u8, name, "addMinutes")) or std.mem.eql(u8, name, "addSeconds"))) {
+// zbr:selfhost/cg_helpers.zbr:800
+        return true;
+    }
+// zbr:selfhost/cg_helpers.zbr:801
+    if ((((std.mem.eql(u8, name, "addMonths") or std.mem.eql(u8, name, "addYears")) or std.mem.eql(u8, name, "daysBetween")) or std.mem.eql(u8, name, "secondsBetween"))) {
+// zbr:selfhost/cg_helpers.zbr:802
+        return true;
+    }
+// zbr:selfhost/cg_helpers.zbr:803
+    if (std.mem.eql(u8, name, "format")) {
+// zbr:selfhost/cg_helpers.zbr:804
+        return true;
+    }
+// zbr:selfhost/cg_helpers.zbr:805
     return false;
 }
 
 pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
-// zbr:selfhost/cg_helpers.zbr:799
+// zbr:selfhost/cg_helpers.zbr:808
     switch (expr) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/cg_helpers.zbr:801
+// zbr:selfhost/cg_helpers.zbr:810
             if (c.callee == .member) {
                 const m_ptr = c.callee.member;
                 const m = m_ptr.*;
-// zbr:selfhost/cg_helpers.zbr:802
+// zbr:selfhost/cg_helpers.zbr:811
                 if ((!isReadOnlyMethod(m.member))) {
-// zbr:selfhost/cg_helpers.zbr:803
+// zbr:selfhost/cg_helpers.zbr:812
                     if (m.object.* == .ident) {
                         const id = m.object.*.ident;
                         out.add(id.name);
                     }
                 }
             }
-// zbr:selfhost/cg_helpers.zbr:805
+// zbr:selfhost/cg_helpers.zbr:814
             for (c.args.items) |arg| {
                 scanMutationsInExpr(arg.value, out);
             }
@@ -4385,7 +4608,7 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .dict_lit => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/cg_helpers.zbr:829
+// zbr:selfhost/cg_helpers.zbr:838
             for (d.entries.items) |entry| {
                 scanMutationsInExpr(entry.key.*, out);
                 scanMutationsInExpr(entry.value.*, out);
@@ -4393,9 +4616,9 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/cg_helpers.zbr:833
+// zbr:selfhost/cg_helpers.zbr:842
             for (si.parts.items) |part| {
-// zbr:selfhost/cg_helpers.zbr:834
+// zbr:selfhost/cg_helpers.zbr:843
                 if (part == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
@@ -4405,7 +4628,7 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/cg_helpers.zbr:837
+// zbr:selfhost/cg_helpers.zbr:846
             for (cc.operands.items) |op| {
                 scanMutationsInExpr(op, out);
             }
@@ -4417,20 +4640,20 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
 }
 
 pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
-// zbr:selfhost/cg_helpers.zbr:845
+// zbr:selfhost/cg_helpers.zbr:854
     for (stmts.items) |s| {
-// zbr:selfhost/cg_helpers.zbr:846
+// zbr:selfhost/cg_helpers.zbr:855
         switch (s) {
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/cg_helpers.zbr:848
+// zbr:selfhost/cg_helpers.zbr:857
                 switch (a.target.*) {
                     .ident => |id| {
                         out.add(id.name);
                     },
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
-// zbr:selfhost/cg_helpers.zbr:852
+// zbr:selfhost/cg_helpers.zbr:861
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
                             out.add(id.name);
@@ -4438,7 +4661,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                     },
                     .index => |_ptr_ix| {
                         const ix = _ptr_ix.*;
-// zbr:selfhost/cg_helpers.zbr:856
+// zbr:selfhost/cg_helpers.zbr:865
                         if (ix.object.* == .ident) {
                             const id = ix.object.*.ident;
                             out.add(id.name);
@@ -4452,11 +4675,11 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
                 scanMutationsInto(si.then_stmts, out);
-// zbr:selfhost/cg_helpers.zbr:862
+// zbr:selfhost/cg_helpers.zbr:871
                 for (si.else_ifs.items) |ei| {
                     scanMutationsInto(ei.stmts, out);
                 }
-// zbr:selfhost/cg_helpers.zbr:864
+// zbr:selfhost/cg_helpers.zbr:873
                 if ((si.else_stmts != null)) {
                     scanMutationsInto(si.else_stmts.?, out);
                 }
@@ -4468,7 +4691,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
                 scanMutationsInto(f.stmts, out);
-// zbr:selfhost/cg_helpers.zbr:870
+// zbr:selfhost/cg_helpers.zbr:879
                 if ((f.else_ != null)) {
                     scanMutationsInto(f.else_.?, out);
                 }
@@ -4479,25 +4702,25 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/cg_helpers.zbr:875
+// zbr:selfhost/cg_helpers.zbr:884
                 for (b.cases.items) |c| {
                     scanMutationsInto(c.stmts, out);
                 }
-// zbr:selfhost/cg_helpers.zbr:877
+// zbr:selfhost/cg_helpers.zbr:886
                 if ((b.else_ != null)) {
                     scanMutationsInto(b.else_.?, out);
                 }
             },
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
-// zbr:selfhost/cg_helpers.zbr:880
+// zbr:selfhost/cg_helpers.zbr:889
                 if ((n.init_expr != null)) {
                     scanMutationsInExpr(n.init_expr.?.*, out);
                 }
             },
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/cg_helpers.zbr:883
+// zbr:selfhost/cg_helpers.zbr:892
                 if ((r.value != null)) {
                     scanMutationsInExpr(r.value.?.*, out);
                 }
@@ -4508,7 +4731,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/cg_helpers.zbr:888
+// zbr:selfhost/cg_helpers.zbr:897
                 if (w.target.* == .ident) {
                     const id = w.target.*.ident;
                     out.add(id.name);
@@ -4517,16 +4740,16 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .copy_out => |_ptr_co| {
                 const co = _ptr_co.*;
-// zbr:selfhost/cg_helpers.zbr:892
+// zbr:selfhost/cg_helpers.zbr:901
                 if (co.target == .ident) {
                     const id = co.target.ident;
                     out.add(id.name);
                 } else {
-// zbr:selfhost/cg_helpers.zbr:894
+// zbr:selfhost/cg_helpers.zbr:903
                     if (co.target == .member) {
                         const m_ptr = co.target.member;
                         const m = m_ptr.*;
-// zbr:selfhost/cg_helpers.zbr:895
+// zbr:selfhost/cg_helpers.zbr:904
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
                             out.add(id.name);
@@ -4537,7 +4760,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
                 scanMutationsInto(tc.stmts, out);
-// zbr:selfhost/cg_helpers.zbr:899
+// zbr:selfhost/cg_helpers.zbr:908
                 for (tc.clauses.items) |cl| {
                     scanMutationsInto(cl.stmts, out);
                 }
@@ -4574,12 +4797,12 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .print_ => |_ptr_p| {
                 const p = _ptr_p.*;
-// zbr:selfhost/cg_helpers.zbr:918
+// zbr:selfhost/cg_helpers.zbr:927
                 var pi: i64 = 0;
-// zbr:selfhost/cg_helpers.zbr:919
+// zbr:selfhost/cg_helpers.zbr:928
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
                     scanMutationsInExpr(p.args.items[@intCast(pi)], out);
-// zbr:selfhost/cg_helpers.zbr:921
+// zbr:selfhost/cg_helpers.zbr:930
                     pi += 1;
                 }
             },
@@ -4591,46 +4814,46 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
 }
 
 pub fn scanMutations(stmts: std.ArrayList(Stmt)) *StrSet {
-// zbr:selfhost/cg_helpers.zbr:926
+// zbr:selfhost/cg_helpers.zbr:935
     const out = StrSet.init();
     scanMutationsInto(stmts, out);
-// zbr:selfhost/cg_helpers.zbr:928
+// zbr:selfhost/cg_helpers.zbr:937
     return out;
 }
 
 pub fn isContainerTypeRef(tr: TypeRef) bool {
-// zbr:selfhost/cg_helpers.zbr:942
+// zbr:selfhost/cg_helpers.zbr:951
     switch (tr) {
         .generic => |g| {
-// zbr:selfhost/cg_helpers.zbr:944
+// zbr:selfhost/cg_helpers.zbr:953
             return (std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap"));
         },
         else => {
-// zbr:selfhost/cg_helpers.zbr:946
+// zbr:selfhost/cg_helpers.zbr:955
             return false;
         },
     }
 }
 
 pub fn paramNeedsAddrOf(p: Param, body: ?std.ArrayList(Stmt)) bool {
-// zbr:selfhost/cg_helpers.zbr:956
+// zbr:selfhost/cg_helpers.zbr:965
     if ((p.type_ == null)) {
-// zbr:selfhost/cg_helpers.zbr:957
+// zbr:selfhost/cg_helpers.zbr:966
         return false;
     }
-// zbr:selfhost/cg_helpers.zbr:958
+// zbr:selfhost/cg_helpers.zbr:967
     if ((!isContainerTypeRef(p.type_.?))) {
-// zbr:selfhost/cg_helpers.zbr:959
+// zbr:selfhost/cg_helpers.zbr:968
         return false;
     }
-// zbr:selfhost/cg_helpers.zbr:960
+// zbr:selfhost/cg_helpers.zbr:969
     if ((body == null)) {
-// zbr:selfhost/cg_helpers.zbr:961
+// zbr:selfhost/cg_helpers.zbr:970
         return false;
     }
-// zbr:selfhost/cg_helpers.zbr:962
+// zbr:selfhost/cg_helpers.zbr:971
     const ms: *StrSet = scanMutations(body.?);
-// zbr:selfhost/cg_helpers.zbr:963
+// zbr:selfhost/cg_helpers.zbr:972
     return ms.contains_(p.name);
 }
 

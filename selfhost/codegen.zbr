@@ -1324,6 +1324,7 @@ struct Generator
     # Used to dispatch .close() and .lookup() to DynLib-specific codegen.
     var dynlib_vars          : StrSet
     var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .eql()
+    var datetime_vars        : StrSet   # local var names holding _DateTime instances
 
     invariant
         indent >= 0
@@ -1392,6 +1393,7 @@ struct Generator
         .method_return_type    = nil
         .dynlib_vars           = StrSet()
         .derive_eq_structs     = StrSet()
+        .datetime_vars         = StrSet()
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -3598,6 +3600,10 @@ struct Generator
                     if dynlib_m.object is Expr.ident as dynlib_id
                         if dynlib_id.name == "DynLib" and dynlib_m.member == "open"
                             dynlib_vars.add(n.name)
+        # Track DateTime variables so field access (.year/.month etc.) emits _dt_to_gregorian(v.epoch_ms).field
+        if n.init_expr != nil
+            if isDateTimeExpr(n.init_expr to!)
+                .datetime_vars.add(n.name)
         # Detect StrSet from init expression (StrSet() has no type annotation)
         if n.init_expr != nil
             if isStrSetCtor(n.init_expr to!)
@@ -3831,6 +3837,28 @@ struct Generator
             if c.args.count() == 0
                 if c.callee is Expr.ident as id
                     return id.name == "StrSet"
+        return false
+
+    # Returns true if the expression produces a _DateTime value.
+    # Used to route field access (.year/.month/.day/.hour/.minute/.second/.weekday)
+    # through _dt_to_gregorian / _dt_weekday instead of direct struct access.
+    def isDateTimeExpr(e: Expr): bool
+        if e is Expr.ident as id
+            return .datetime_vars.contains_(id.name)
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                # DateTime.fromEpoch / DateTime.of / DateTime.now
+                if m.object is Expr.ident as cid
+                    if cid.name == "DateTime"
+                        return true
+                # obj.inZone / obj.addDays / obj.addHours / obj.addMinutes /
+                # obj.addSeconds / obj.addMonths / obj.addYears → all return _DateTime
+                if m.member == "inZone" or m.member == "addDays" or m.member == "addHours"
+                    return true
+                if m.member == "addMinutes" or m.member == "addSeconds"
+                    return true
+                if m.member == "addMonths" or m.member == "addYears"
+                    return true
         return false
 
     # Returns the type-arg names for `HashMap(K,V)()` init expressions (no type annotation).
@@ -6414,6 +6442,23 @@ struct Generator
                         if m.member == "LN10"
                             w.emit("std.math.ln10")
                             return
+                # DateTime field access: obj.year → _dt_to_gregorian(obj.epoch_ms).year
+                # obj.weekday → _dt_weekday(obj)
+                var is_dt_field = m.member == "year" or m.member == "month" or m.member == "day"
+                var is_dt_field2 = m.member == "hour" or m.member == "minute" or m.member == "second"
+                if is_dt_field or is_dt_field2
+                    if isDateTimeExpr(m.object)
+                        w.emit("_dt_to_gregorian(")
+                        genExpr(m.object)
+                        w.emit(".epoch_ms).")
+                        w.emit(m.member)
+                        return
+                if m.member == "weekday"
+                    if isDateTimeExpr(m.object)
+                        w.emit("_dt_weekday(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                 # Tuple index access: p.0 → p.@"0"
                 if m.member.len > 0 and m.member.isNumeric()
                     genExpr(m.object)
@@ -7517,6 +7562,17 @@ struct Generator
             if isDetailsMemberOnCatchVar(m.object, catch_var)
                 w.emit("(if (_error_ctx.details) |_det| _det.toString() else \"\")")
                 return
+        # DateTime.inZone — unique enough name; dispatch without type inference
+        if mname == "inZone"
+            w.emit("_dt_in_zone(")
+            genExpr(m.object)
+            w.emit(", ")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"UTC\"")
+            w.emit(")")
+            return
         # Regex instance methods: re.match/find/findAll/replace/groups
         if .infer_ctx != nil
             var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)

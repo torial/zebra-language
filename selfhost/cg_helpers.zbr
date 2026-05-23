@@ -793,6 +793,15 @@ def isReadOnlyMethod(name: str): bool
     # @derive(Eq) / @derive(Hash) — take *const Self, do not mutate receiver
     if name == "eql" or name == "hash"
         return true
+    # DateTime methods — all return a new value, never mutate the receiver
+    if name == "inZone" or name == "inCalendar" or name == "toEpoch" or name == "toIso8601"
+        return true
+    if name == "addDays" or name == "addHours" or name == "addMinutes" or name == "addSeconds"
+        return true
+    if name == "addMonths" or name == "addYears" or name == "daysBetween" or name == "secondsBetween"
+        return true
+    if name == "format"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)
