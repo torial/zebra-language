@@ -3,12 +3,17 @@
 
 const std     = @import("std");
 const builtin = @import("builtin");
+var _io: std.Io = undefined;
+var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+}
+pub fn _initIo(io: std.Io) void {
+    _io = io;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
@@ -42,6 +47,53 @@ fn _zebra_gt(a: anytype, b: anytype) bool {
 fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
+}
+fn _zebra_eq(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return std.mem.eql(u8, a, b);
+    return a == b;
+}
+fn _zebra_ne(a: anytype, b: anytype) bool {
+    if (comptime @TypeOf(a) == []const u8) return !std.mem.eql(u8, a, b);
+    return a != b;
+}
+fn _zbr_is_u8_like(comptime T: type) bool {
+    if (T == []const u8 or T == []u8) return true;
+    const ai = @typeInfo(T);
+    if (ai == .pointer) {
+        const ci = @typeInfo(ai.pointer.child);
+        if (ci == .array and ci.array.child == u8) return true;
+        if (ai.pointer.child == u8) return true;
+    }
+    return false;
+}
+fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
+    const is_str = comptime _zbr_is_u8_like(@TypeOf(a));
+    const ok = if (comptime is_str)
+        std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b))
+    else
+        a == b;
+    if (ok != expect_eq) {
+        if (comptime is_str) {
+            if (expect_eq) {
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: \"{s}\" != \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_eq failed" };
+            } else {
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: \"{s}\" == \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_ne failed" };
+            }
+        } else {
+            if (expect_eq) {
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: {} != {}", .{a, b}) catch "assert_eq failed" };
+            } else {
+                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
+            }
+        }
+        return error.ZebraError;
+    }
+}
+fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
+    if (val != expect_true) {
+        _error_ctx = .{ .message = if (expect_true) "assert_true failed: got false" else "assert_false failed: got true" };
+        return error.ZebraError;
+    }
 }
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 fn _zebra_in(item: anytype, container: anytype) bool {
@@ -190,18 +242,290 @@ fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool
     for (list.items) |item| { if (!pred(item)) return false; }
     return true;
 }
+fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T {
+    for (list.items) |item| { if (pred(item)) return item; }
+    return null;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    const _r = std.process.Child.run(.{
-        .allocator = _allocator,
-        .argv = argv.items,
-        .max_output_bytes = 16 * 1024 * 1024,
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
     }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    const _ec: i64 = switch (_r.term) {
-        .Exited => |code| @intCast(code),
+    var stdout_bytes: []const u8 = "";
+    var stderr_bytes: []const u8 = "";
+    if (child.stdout) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    if (child.stderr) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
+    const _ec: i64 = switch (term) {
+        .exited => |code| @intCast(code),
         else    => -1,
     };
-    return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
+    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
+}
+fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch return -1;
+    const term = child.wait(_io) catch return -1;
+    return switch (term) {
+        .exited => |code| @intCast(code),
+        else    => -1,
+    };
+}
+const _SysProcess = struct {
+    child: std.process.Child,
+    alive: bool,
+    pid: i64,
+};
+fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
+    const p = _allocator.create(_SysProcess) catch @panic("OOM");
+    p.* = .{ .child = undefined, .alive = false, .pid = -1 };
+    p.child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .ignore,
+        .stderr = .inherit,
+    }) catch return p;
+    p.alive = true;
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
+    if (comptime builtin.os.tag != .windows) {
+        p.pid = @intCast(p.child.id);
+    }
+    return p;
+}
+fn _sys_process_kill(p: *_SysProcess) void {
+    if (!p.alive) return;
+    _ = p.child.kill(_io) catch {};
+    p.alive = false;
+}
+fn _sys_process_is_running(p: *_SysProcess) bool {
+    if (!p.alive) return false;
+    if (comptime builtin.os.tag == .windows) {
+        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
+        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
+        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
+        return true;
+    } else {
+        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        if (r.pid != 0) { p.alive = false; return false; }
+        return true;
+    }
+}
+fn _sys_readline() ?[]const u8 {
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var line: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    while (true) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
+        if (n == 0) return if (line.items.len > 0) line.items else null;
+        const b = byte_buf[0];
+        if (b == '\n') break;
+        if (b != '\r') line.append(_allocator, b) catch return null;
+    }
+    return line.items;
+}
+// ── DynLib — platform plugin loader ───────────────────────────────────────────
+const _DynLib = struct {
+    lib: std.DynLib,
+};
+fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
+    const dl = _allocator.create(_DynLib) catch @panic("OOM");
+    errdefer _allocator.destroy(dl);
+    dl.lib = try std.DynLib.open(path);
+    return dl;
+}
+fn _dynlib_close(dl: *_DynLib) void {
+    dl.lib.close();
+}
+// ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
+fn _Chan(comptime T: type) type {
+    return struct {
+        mutex:     std.Io.Mutex = .init,
+        not_empty: std.Io.Condition = .init,
+        not_full:  std.Io.Condition = .init,
+        buf:       std.ArrayList(T),
+        capacity:  usize,
+        closed:    bool = false,
+
+        const Self = @This();
+        const _alloc = std.heap.page_allocator;
+        const _dio = std.Options.debug_io;
+
+        pub fn init(cap: usize) Self {
+            return .{ .buf = .empty, .capacity = cap };
+        }
+
+        pub fn send(self: *Self, val: T) void {
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
+            if (self.closed) @panic("send on closed channel");
+            const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
+            while (self.buf.items.len >= eff_cap and !self.closed)
+                self.not_full.waitUncancelable(_dio, &self.mutex);
+            if (self.closed) return;
+            self.buf.append(_alloc, val) catch @panic("OOM");
+            self.not_empty.signal(_dio);
+            // Rendezvous (cap=0): sender blocks until receiver drains the slot.
+            if (self.capacity == 0) {
+                while (self.buf.items.len > 0 and !self.closed)
+                    self.not_full.waitUncancelable(_dio, &self.mutex);
+            }
+        }
+
+        pub fn recv(self: *Self) ?T {
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
+            while (self.buf.items.len == 0 and !self.closed)
+                self.not_empty.waitUncancelable(_dio, &self.mutex);
+            if (self.buf.items.len == 0) return null;
+            const val = self.buf.orderedRemove(0);
+            self.not_full.signal(_dio);
+            return val;
+        }
+
+        pub fn close(self: *Self) void {
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
+            self.closed = true;
+            self.not_empty.broadcast(_dio);
+            self.not_full.broadcast(_dio);
+        }
+    };
+}
+fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
+    const ch = std.heap.page_allocator.create(_Chan(T)) catch @panic("OOM");
+    ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
+    return ch;
+}
+// sys.go(lambda) — fire-and-forget thread spawn.
+// Accepts either a plain fn() void (no-capture lambda) or a struct with a
+// call(self) void method (captured lambda).  Both patterns are produced by
+// Zebra's lambda codegen; comptime dispatch selects the right Thread.spawn form.
+fn _sys_go(f: anytype) void {
+    const T = @TypeOf(f);
+    const _t = if (comptime @typeInfo(T) == .@"fn")
+        std.Thread.spawn(.{}, f, .{}) catch @panic("sys.go: thread spawn failed")
+    else
+        std.Thread.spawn(.{}, T.call, .{f}) catch @panic("sys.go: thread spawn failed");
+    _t.detach();
+}
+
+// ── Build system ──────────────────────────────────────────────────────────────
+const _Build_Kind = enum { exe, lib, test_ };
+const _BuildTarget = struct {
+    kind:     _Build_Kind,
+    name:     []const u8,
+    entry:    []const u8,
+    platform: ?[]const u8 = null,
+    linked:   ?*_BuildTarget = null,
+};
+const _Build = struct { targets: std.ArrayList(*_BuildTarget) };
+var _global_build: ?*_Build = null;
+var _build_ran: bool = false;
+var _list_targets_mode: bool = false;
+fn _build_new(alloc: std.mem.Allocator) *_Build {
+    const b = alloc.create(_Build) catch @panic("OOM");
+    b.* = .{ .targets = .empty };
+    _global_build = b;
+    return b;
+}
+fn _build_add(b: *_Build, kind: _Build_Kind, name: []const u8, entry: []const u8) *_BuildTarget {
+    const t = _allocator.create(_BuildTarget) catch @panic("OOM");
+    t.* = .{ .kind = kind, .name = name, .entry = entry };
+    b.targets.append(_allocator, t) catch @panic("OOM");
+    return t;
+}
+fn _build_target_link_lib(t: *_BuildTarget, dep: *_BuildTarget) *_BuildTarget {
+    t.linked = dep; return t;
+}
+fn _build_target_platform(t: *_BuildTarget, p: []const u8) *_BuildTarget {
+    t.platform = p; return t;
+}
+fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_BuildTarget {
+    _ = _k; _ = _v; return t;
+}
+fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
+fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
+    for (b.targets.items) |t| {
+        if (std.mem.eql(u8, t.name, name)) return t;
+    }
+    std.debug.print("build: no target named '{s}'\n", .{name});
+    std.process.exit(1);
+}
+fn _build_list_targets(b: *_Build) void {
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
+    for (b.targets.items, 0..) |t, i| {
+        if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
+        const kind_str: []const u8 = switch (t.kind) {
+            .exe   => "exe",
+            .lib   => "lib",
+            .test_ => "test",
+        };
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
+    }
+    _stdout.writeStreamingAll(_io, "]}\n") catch {};
+}
+fn _build_auto_run() void {
+    if (!_build_ran) {
+        if (_global_build) |b| _build_run(b);
+    }
+}
+fn _build_run(b: *_Build) void {
+    _build_ran = true;
+    if (_list_targets_mode) { _build_list_targets(b); return; }
+    const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
+    defer _allocator.free(self_exe);
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin",    .{}) catch {};
+    for (b.targets.items) |t| {
+        switch (t.kind) {
+            .exe => {
+                const stem     = std.fs.path.stem(t.entry);
+                const zig_file  = std.fmt.allocPrint(_allocator, ".zig-cache/zbr/{s}.zig", .{stem})     catch @panic("OOM");
+                const out_path  = std.fmt.allocPrint(_allocator, "zig-out/bin/{s}",         .{t.name})   catch @panic("OOM");
+                const emit_flag = std.fmt.allocPrint(_allocator, "-femit-bin={s}",           .{out_path}) catch @panic("OOM");
+                defer _allocator.free(zig_file);
+                defer _allocator.free(out_path);
+                defer _allocator.free(emit_flag);
+                std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
+                {
+                    const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .ignore, .stderr = .inherit }) catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: emit-zig wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
+                {
+                    const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: zig build-exe wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                }
+                std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
+            },
+            .lib   => std.debug.print("build: lib targets not yet implemented ({s})\n",  .{t.name}),
+            .test_ => std.debug.print("build: test targets not yet implemented ({s})\n", .{t.name}),
+        }
+    }
 }
 const _DateTime = struct { epoch_ms: i64 };
 const _CalendarView = struct {
@@ -416,9 +740,11 @@ const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2
 fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
     var _hc = std.http.Client{ .allocator = _allocator };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &_hb.writer }) catch return null;
-    return .{ .status = @intFromEnum(_hr.status), .text = _hb.written() };
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
 fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
 fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
@@ -426,11 +752,13 @@ fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, u
 fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
     var _hc = std.http.Client{ .allocator = _allocator };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
     _ = _hc.fetch(.{ .location = .{ .url = url }, .method = .POST, .payload = body,
         .extra_headers = &.{ .{ .name = "Content-Type", .value = "application/json" } },
-        .response_writer = &_hb.writer }) catch return null;
-    return _json_parse(_hb.written());
+        .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return _json_parse(out_list.items);
 }
 fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
     var _new = std.heap.page_allocator.alloc([2][]const u8, resp.headers.len + 1) catch return resp;
@@ -503,7 +831,7 @@ fn _http_serve(port: u16, handler: anytype) void {
                 500 => "Internal Server Error",
                 else => "Unknown",
             };
-            var _xh: std.ArrayList(u8) = .{};
+            var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
@@ -512,7 +840,10 @@ fn _http_serve(port: u16, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = true }) catch |e| @panic(@errorName(e));
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
     defer _srv.deinit();
     while (true) {
         const _conn = _srv.accept() catch continue;
@@ -525,12 +856,362 @@ fn _http_serve(port: u16, handler: anytype) void {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WebSocket (RFC 6455) — Ws.connect/send/recv/close + Ws.serve
+// ─────────────────────────────────────────────────────────────────────────────
+const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B24";
+const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
+
+// Heap-allocated TLS state — must not move after _ws_tls_init() is called.
+// Internal pointers: tls_client.input = &stream_reader.interface_state,
+//                   tls_client.output = &stream_writer.interface.
+const _WsTlsState = struct {
+    stream: std.net.Stream,
+    stream_reader: std.net.Stream.Reader,
+    stream_writer: std.net.Stream.Writer,
+    tls_client: std.crypto.tls.Client,
+    rbuf:     [_WS_TLS_BUF]u8,
+    wbuf:     [_WS_TLS_BUF]u8,
+    sock_rbuf: [4096]u8,
+    sock_wbuf: [4096]u8,
+};
+
+const _WsConn = struct {
+    impl: union(enum) {
+        plain: std.net.Stream,
+        tls:   *_WsTlsState,
+    },
+    server_side: bool,
+    closed: bool,
+
+    fn readExact(self: *_WsConn, buf: []u8) !void {
+        switch (self.impl) {
+            .plain => |s| {
+                var n: usize = 0;
+                while (n < buf.len) {
+                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
+                    if (r == 0) return error.ConnectionResetByPeer;
+                    n += r;
+                }
+            },
+            .tls => |t| {
+                var slices: [1][]u8 = .{buf};
+                t.tls_client.reader.readVecAll(&slices) catch return error.ConnectionResetByPeer;
+            },
+        }
+    }
+
+    fn writeAll(self: *_WsConn, buf: []const u8) !void {
+        switch (self.impl) {
+            .plain => |s| try s.writeAll(buf),
+            .tls   => |t| {
+                try t.tls_client.writer.writeAll(buf);
+                try t.tls_client.writer.flush();
+            },
+        }
+    }
+
+    fn closeStream(self: *_WsConn) void {
+        switch (self.impl) {
+            .plain => |s| s.close(),
+            .tls   => |t| {
+                t.tls_client.end() catch {};
+                t.stream.close();
+                std.heap.page_allocator.destroy(t);
+            },
+        }
+    }
+};
+
+fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+    state.stream = stream;
+    state.stream_reader = stream.reader(&state.sock_rbuf);
+    state.stream_writer = stream.writer(&state.sock_wbuf);
+    var ca = std.crypto.Certificate.Bundle{};
+    defer ca.deinit(std.heap.page_allocator);
+    ca.rescan(std.heap.page_allocator) catch {};
+    state.tls_client = try std.crypto.tls.Client.init(
+        state.stream_reader.interface(),
+        &state.stream_writer.interface,
+        .{
+            .host        = .{ .explicit = host },
+            .ca          = .{ .bundle = ca },
+            .read_buffer = &state.rbuf,
+            .write_buffer = &state.wbuf,
+            .allow_truncation_attacks = true,
+        },
+    );
+}
+
+fn _ws_send_close_frame(conn: *_WsConn) void {
+    const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
+            close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
+        conn.writeAll(&frame) catch {};
+    } else {
+        const frame = [4]u8{ 0x88, 0x02, close_code[0], close_code[1] };
+        conn.writeAll(&frame) catch {};
+    }
+}
+
+fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
+    const plen: u8 = @intCast(@min(payload.len, 125));
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
+        conn.writeAll(&hdr) catch return;
+        if (plen > 0) {
+            const _pa = std.heap.page_allocator;
+            const masked = _pa.alloc(u8, plen) catch return;
+            defer _pa.free(masked);
+            for (payload[0..plen], 0..) |b, i| masked[i] = b ^ mk[i % 4];
+            conn.writeAll(masked) catch {};
+        }
+    } else {
+        const hdr = [2]u8{ 0x8a, plen };
+        conn.writeAll(&hdr) catch return;
+        if (plen > 0) conn.writeAll(payload[0..plen]) catch {};
+    }
+}
+
+fn _ws_connect(url: []const u8) ?*_WsConn {
+    const _pa = std.heap.page_allocator;
+    // Parse scheme
+    const is_tls = std.mem.startsWith(u8, url, "wss://");
+    const rest = if (is_tls) url[6..] else if (std.mem.startsWith(u8, url, "ws://")) url[5..] else return null;
+    const default_port: u16 = if (is_tls) 443 else 80;
+    // host[:port]/path
+    const path_start = std.mem.indexOfScalar(u8, rest, '/') orelse rest.len;
+    const host_port = rest[0..path_start];
+    const path = if (path_start < rest.len) rest[path_start..] else "/";
+    const host: []const u8 = if (std.mem.lastIndexOfScalar(u8, host_port, ':')) |c| host_port[0..c] else host_port;
+    const port: u16 = if (std.mem.lastIndexOfScalar(u8, host_port, ':')) |c|
+        std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
+
+    // TCP connect
+    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+
+    if (is_tls) {
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
+    } else {
+        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+    }
+
+    // Build WebSocket upgrade request
+    var key_bytes: [16]u8 = undefined;
+    std.crypto.random.bytes(&key_bytes);
+    var key_b64: [24]u8 = undefined;
+    _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
+
+    var req_buf: [1024]u8 = undefined;
+    const req = std.fmt.bufPrint(&req_buf,
+        "GET {s} HTTP/1.1\r\nHost: {s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" ++
+        "Sec-WebSocket-Key: {s}\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        .{ path, host, key_b64 },
+    ) catch { conn.closeStream(); _pa.destroy(conn); return null; };
+    conn.writeAll(req) catch { conn.closeStream(); _pa.destroy(conn); return null; };
+
+    // Read HTTP response until \r\n\r\n
+    var resp_buf: [4096]u8 = undefined;
+    var resp_len: usize = 0;
+    while (resp_len + 1 < resp_buf.len) {
+        var b: [1]u8 = undefined;
+        conn.readExact(&b) catch break;
+        resp_buf[resp_len] = b[0];
+        resp_len += 1;
+        if (resp_len >= 4 and
+            resp_buf[resp_len-4] == '\r' and resp_buf[resp_len-3] == '\n' and
+            resp_buf[resp_len-2] == '\r' and resp_buf[resp_len-1] == '\n') break;
+    }
+    if (!std.mem.startsWith(u8, resp_buf[0..resp_len], "HTTP/1.1 101") and
+        !std.mem.startsWith(u8, resp_buf[0..resp_len], "HTTP/1.0 101")) {
+        conn.closeStream();
+        _pa.destroy(conn);
+        return null;
+    }
+    return conn;
+}
+
+fn _ws_send(conn: *_WsConn, msg: []const u8) void {
+    const len = msg.len;
+    var hdr: [14]u8 = undefined;
+    hdr[0] = 0x81; // FIN=1, opcode=1 (text)
+    var h: usize = 1;
+    const mask_bit: u8 = if (!conn.server_side) 0x80 else 0x00;
+    if (len <= 125) {
+        hdr[h] = mask_bit | @as(u8, @intCast(len)); h += 1;
+    } else if (len <= 0xffff) {
+        hdr[h] = mask_bit | 126; h += 1;
+        hdr[h] = @intCast(len >> 8); h += 1;
+        hdr[h] = @intCast(len & 0xff); h += 1;
+    } else {
+        hdr[h] = mask_bit | 127; h += 1;
+        const l64: u64 = @intCast(len);
+        var s: u6 = 56;
+        while (true) { hdr[h] = @intCast((l64 >> s) & 0xff); h += 1; if (s == 0) break; s -= 8; }
+    }
+    if (!conn.server_side) {
+        var mk: [4]u8 = undefined;
+        std.crypto.random.bytes(&mk);
+        hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
+        hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
+        conn.writeAll(hdr[0..h]) catch return;
+        // Write masked payload in 4096-byte chunks (no heap alloc needed)
+        var i: usize = 0;
+        while (i < len) {
+            const end = @min(i + 4096, len);
+            var chunk: [4096]u8 = undefined;
+            for (msg[i..end], 0..) |b, j| chunk[j] = b ^ mk[(i + j) % 4];
+            conn.writeAll(chunk[0..end - i]) catch return;
+            i = end;
+        }
+    } else {
+        conn.writeAll(hdr[0..h]) catch return;
+        conn.writeAll(msg) catch return;
+    }
+}
+
+fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(alloc);
+    while (true) {
+        var hdr2: [2]u8 = undefined;
+        conn.readExact(&hdr2) catch return null;
+        const fin     = (hdr2[0] & 0x80) != 0;
+        const opcode  = hdr2[0] & 0x0f;
+        const has_mask = (hdr2[1] & 0x80) != 0;
+        var plen: u64 = hdr2[1] & 0x7f;
+        if (plen == 126) {
+            var ext2: [2]u8 = undefined;
+            conn.readExact(&ext2) catch return null;
+            plen = (@as(u64, ext2[0]) << 8) | ext2[1];
+        } else if (plen == 127) {
+            var ext8: [8]u8 = undefined;
+            conn.readExact(&ext8) catch return null;
+            plen = 0;
+            for (ext8) |b| plen = (plen << 8) | b;
+        }
+        var mk: [4]u8 = .{ 0, 0, 0, 0 };
+        if (has_mask) conn.readExact(&mk) catch return null;
+        // Read payload (cap at 64 MiB)
+        const safe: usize = @intCast(@min(plen, 64 * 1024 * 1024));
+        const payload = alloc.alloc(u8, safe) catch return null;
+        defer alloc.free(payload);
+        conn.readExact(payload) catch return null;
+        if (has_mask) { for (payload, 0..) |*b, i| { b.* = b.* ^ mk[i % 4]; } }
+        switch (opcode) {
+            0, 1, 2 => {
+                msg.appendSlice(alloc, payload) catch return null;
+                if (fin) return msg.toOwnedSlice(alloc) catch null;
+            },
+            8  => { _ws_send_close_frame(conn); return null; },
+            9  => _ws_send_pong(conn, payload),
+            0xa => {}, // pong — ignore
+            else => return null,
+        }
+    }
+}
+
+fn _ws_close(conn: *_WsConn) void {
+    if (!conn.closed) {
+        conn.closed = true;
+        _ws_send_close_frame(conn);
+        conn.closeStream();
+    }
+    // WsConn struct itself not freed here — OK for arena-allocator model
+}
+
+// Supports both void-returning and anyerror!void-returning handlers by coercing
+// via an anyerror!void wrapper, which lets a void return succeed silently.
+inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
+    const _Wrap = struct {
+        fn call(hh: @TypeOf(h), wws: *_WsConn) anyerror!void { return hh(wws); }
+    };
+    _Wrap.call(h, ws) catch |e| std.debug.print("Ws.serve: handler error: {s}\n", .{@errorName(e)});
+}
+
+// Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
+fn _ws_serve(port: u16, handler: anytype) void {
+    const _Ctx = struct {
+        conn: std.net.Server.Connection,
+        handler_fn: @TypeOf(handler),
+        fn run(ctx: *@This()) void {
+            const _pa = std.heap.page_allocator;
+            defer _pa.destroy(ctx);
+            // Read HTTP upgrade headers
+            var hdr_buf: [8192]u8 = undefined;
+            var hdr_len: usize = 0;
+            while (hdr_len + 1 < hdr_buf.len) {
+                var b: [1]u8 = undefined;
+                const n = ctx.conn.stream.read(&b) catch break;
+                if (n == 0) break;
+                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                if (hdr_len >= 4 and
+                    hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
+                    hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
+            }
+            const headers = hdr_buf[0..hdr_len];
+            // Extract Sec-WebSocket-Key
+            const key_marker = "Sec-WebSocket-Key: ";
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k1 = k0 + key_marker.len;
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const client_key = headers[k1..k2];
+            // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
+            var sha = std.crypto.hash.Sha1.init(.{});
+            sha.update(client_key);
+            sha.update(_WS_GUID);
+            var hash_out: [20]u8 = undefined;
+            sha.final(&hash_out);
+            var accept_buf: [28]u8 = undefined;
+            _ = std.base64.standard.Encoder.encode(&accept_buf, &hash_out);
+            // Send 101 response
+            var resp_buf: [256]u8 = undefined;
+            const resp = std.fmt.bufPrint(&resp_buf,
+                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
+                .{accept_buf},
+            ) catch { ctx.conn.stream.close(); return; };
+            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            // Create WsConn and call handler
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            defer _pa.destroy(ws);
+            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            _ws_invoke(ctx.handler_fn, ws);
+            // Close if handler didn't (or errored out)
+            if (!ws.closed) {
+                ws.closed = true;
+                _ws_send_close_frame(ws);
+                ws.closeStream();
+            }
+        }
+    };
+    const _pa = std.heap.page_allocator;
+    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+        std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit();
+    while (true) {
+        const _c = _srv.accept() catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
+        _ctx.* = .{ .conn = _c, .handler_fn = handler };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+    }
+}
+
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
-    var _rows: std.ArrayList([]const []const u8) = .{};
-    var _row:  std.ArrayList([]const u8) = .{};
-    var _f:    std.ArrayList(u8) = .{};
+    var _rows: std.ArrayList([]const []const u8) = .empty;
+    var _row:  std.ArrayList([]const u8) = .empty;
+    var _f:    std.ArrayList(u8) = .empty;
     const _St = enum { s, fld, q, aq };
     var _st: _St = .s;
     for (src) |c| {
@@ -570,31 +1251,31 @@ fn _csv_parse(src: []const u8) _CsvTable {
     return .{ .rows = _rows.toOwnedSlice(_pa) catch &.{} };
 }
 fn _csv_parse_file(path: []const u8) _CsvTable {
-    const src = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return .{ .rows = &.{} };
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, path, std.heap.page_allocator, .unlimited) catch return .{ .rows = &.{} };
     return _csv_parse(src);
 }
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
 fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
@@ -629,12 +1310,14 @@ fn _tcp_write(conn: TcpConn, data: []const u8) void {
 fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
     var _rd = conn.stream.reader(&_rb);
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    _ = _rd.interface().streamRemaining(&_hb.writer) catch |e| @panic(@errorName(e));
-    return _hb.written();
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    _ = _rd.interface().streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    out_list = out_aw.toArrayList();
+    return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
-    var _buf: std.ArrayList(u8) = .{};
+    var _buf: std.ArrayList(u8) = .empty;
     while (true) {
         var _b: [1]u8 = undefined;
         const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
@@ -679,7 +1362,7 @@ fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
 fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
 
 fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .{};
+    var _result: std.ArrayList([]const u8) = .empty;
     const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
     defer _list.deinit();
     for (_list.addrs) |_addr| {
@@ -1096,6 +1779,53 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     }
     return &.{};
 }
+// ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
+// Detects ArrayList by method presence, not field names, to avoid false-positives
+// on user structs that happen to have `items`/`capacity` fields.
+fn _zbr_is_arraylist(comptime T: type) bool {
+    return @hasDecl(T, "initCapacity") and @hasDecl(T, "append");
+}
+
+fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8) anyerror!T {
+    if (depth > 64) @panic("_zbr_deep_copy: cycle or excessive depth (>64)");
+    if (comptime T == []const u8) return try alloc.dupe(u8, src);
+    if (comptime std.mem.containsAtLeast(u8, @typeName(T), 1, "HashMap")) {
+        @compileError("HashMap copy-out via <- is not supported; iterate and rebuild manually");
+    }
+    switch (@typeInfo(T)) {
+        .optional => |opt| {
+            if (src) |v| return try _zbr_deep_copy(opt.child, alloc, v, depth + 1);
+            return null;
+        },
+        .pointer => |ptr| {
+            if (ptr.size == .slice) {
+                const copy = try alloc.alloc(ptr.child, src.len);
+                for (src, 0..) |item, i|
+                    copy[i] = try _zbr_deep_copy(ptr.child, alloc, item, depth + 1);
+                return copy;
+            }
+            // Single-item *T: allocate a new node and recurse into its fields.
+            const copy = try alloc.create(ptr.child);
+            copy.* = try _zbr_deep_copy(ptr.child, alloc, src.*, depth + 1);
+            return copy;
+        },
+        .@"struct" => {
+            if (comptime _zbr_is_arraylist(T)) {
+                const Elem = std.meta.Elem(@TypeOf(src.items));
+                var copy = try T.initCapacity(alloc, src.items.len);
+                for (src.items) |item|
+                    try copy.append(alloc, try _zbr_deep_copy(Elem, alloc, item, depth + 1));
+                return copy;
+            }
+            var out: T = undefined;
+            inline for (@typeInfo(T).@"struct".fields) |f|
+                @field(out, f.name) = try _zbr_deep_copy(f.type, alloc, @field(src, f.name), depth + 1);
+            return out;
+        },
+        else => return src,
+    }
+}
+
 pub fn _zbr_error_msg() []const u8 {
     if (_error_ctx.message.len > 0) return _error_ctx.message;
     return "";
@@ -1103,6 +1833,7 @@ pub fn _zbr_error_msg() []const u8 {
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
 // the renderer without touching user code or GuiContext.
+const _GuiVec2 = struct { f64, f64 };
 const _GuiBackend = struct {
     initFn:        *const fn (title: []const u8, width: i64, height: i64) anyerror!void,
     deinitFn:      *const fn () void,
@@ -1119,14 +1850,81 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    codeEditorFn:  *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    beginPanelFn:  *const fn (label: []const u8) bool,
-    endPanelFn:    *const fn () void,
-    beginWindowFn: *const fn (label: []const u8) bool,
-    endWindowFn:   *const fn () void,
+    beginPanelFn:       *const fn (label: []const u8) bool,
+    endPanelFn:         *const fn () void,
+    beginWindowFn:      *const fn (label: []const u8) bool,
+    endWindowFn:        *const fn () void,
+    selectableFn:       *const fn (label: []const u8) bool,
+    textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
+    beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
+    tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableHeadersRowFn:  *const fn () void,
+    tableNextRowFn:     *const fn () void,
+    tableNextColumnFn:  *const fn () bool,
+    endTableFn:         *const fn () void,
+    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
+    endChildFn:         *const fn () void,
+    treeNodeFn:         *const fn (label: []const u8) bool,
+    treePopFn:          *const fn () void,
+    setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
+    setColorsDarkFn:    *const fn () void,
+    setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
+    setVec2Fn:          *const fn (name: []const u8, x: f32, y: f32) void,
+    scaleAllSizesFn:      *const fn (scale: f32) void,
+    getDpiFn:             *const fn () f32,
+    ll_addLineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void,
+    ll_addRectFilledFn:   *const fn (x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void,
+    ll_addCircleFn:       *const fn (cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void,
+    ll_addCircleFilledFn: *const fn (cx: f64, cy: f64, r: f64, col: i64) void,
+    ll_addTextFn:         *const fn (x: f64, y: f64, col: i64, text: []const u8) void,
+    ll_getWindowPosFn:    *const fn () _GuiVec2,
+    ll_getWindowSizeFn:   *const fn () _GuiVec2,
+    ll_getCursorPosFn:    *const fn () _GuiVec2,
+    ll_getMousePosFn:     *const fn () _GuiVec2,
+    ll_beginGroupFn:      *const fn () void,
+    ll_endGroupFn:        *const fn () void,
+    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endHBoxFn:   *const fn () void,
+    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endVBoxFn:   *const fn () void,
+};
+const _LowLevel = struct {
+    _b: *const _GuiBackend,
+    pub fn addLine(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addLineFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRect(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addRectFn(x1, y1, x2, y2, col, thickness);
+    }
+    pub fn addRectFilled(ll: _LowLevel, x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void {
+        ll._b.ll_addRectFilledFn(x1, y1, x2, y2, col);
+    }
+    pub fn addCircle(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void {
+        ll._b.ll_addCircleFn(cx, cy, r, col, thickness);
+    }
+    pub fn addCircleFilled(ll: _LowLevel, cx: f64, cy: f64, r: f64, col: i64) void {
+        ll._b.ll_addCircleFilledFn(cx, cy, r, col);
+    }
+    pub fn addText(ll: _LowLevel, x: f64, y: f64, col: i64, text: []const u8) void {
+        ll._b.ll_addTextFn(x, y, col, text);
+    }
+    pub fn getWindowPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowPosFn(); }
+    pub fn getWindowSize(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getWindowSizeFn(); }
+    pub fn getCursorPos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getCursorPosFn(); }
+    pub fn getMousePos(ll: _LowLevel) _GuiVec2 { return ll._b.ll_getMousePosFn(); }
+    pub fn beginGroup(ll: _LowLevel) void { ll._b.ll_beginGroupFn(); }
+    pub fn endGroup(ll: _LowLevel) void { ll._b.ll_endGroupFn(); }
+    pub fn sameLine(ll: _LowLevel) void { ll._b.sameLineFn(); }
 };
 const GuiContext = struct {
     _b: *const _GuiBackend,
+    lowLevel: _LowLevel,
+    _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
+    _send_ptr: ?*anyopaque = null,
+    pub fn send(self: GuiContext, msg: anytype) void {
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+    }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1138,6 +1936,39 @@ const GuiContext = struct {
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
+    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
+        self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
+    }
+    pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
+    pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
+    pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
+    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
+        const _vis = self._b.beginChildFn(id, w, h);
+        if (_vis) {
+            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+        }
+        self._b.endChildFn();
+    }
+    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
+        self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
+    }
+    pub fn setColorsDark(self: GuiContext) void { self._b.setColorsDarkFn(); }
+    pub fn setStyleFloat(self: GuiContext, name: []const u8, value: f64) void {
+        self._b.setStyleFloatFn(name, @floatCast(value));
+    }
+    pub fn setVec2(self: GuiContext, name: []const u8, x: f64, y: f64) void {
+        self._b.setVec2Fn(name, @floatCast(x), @floatCast(y));
+    }
+    pub fn scaleAllSizes(self: GuiContext, scale: f64) void {
+        self._b.scaleAllSizesFn(@floatCast(scale));
+    }
+    pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
             if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
@@ -1150,11 +1981,16 @@ const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
 };
+const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
-    const _g = GuiContext{ ._b = &_gui_active_backend };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
     if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
         while (_gui_active_backend.newFrameFn()) {
             frame(_g);
@@ -1168,6 +2004,37 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
         }
     }
 }
+fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
+    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
+    defer _gui_active_backend.deinitFn();
+    const MsgType = comptime blk: {
+        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+        else
+            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+    };
+    const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
+    var _pq = _MvuQueue{};
+    const _sfn = struct {
+        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+            const q: *_MvuQueue = @ptrCast(@alignCast(ctx));
+            if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
+        }
+    }.send;
+    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+    while (_gui_active_backend.newFrameFn()) {
+        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+        for (_pq.buf[0.._pq.len]) |msg| {
+            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+                _model = _mvu_update(_model, msg)
+            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+        }
+        _pq.len = 0;
+        _gui_active_backend.endFrameFn();
+    }
+}
+// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
 const _CodeEditor = struct { text: []const u8, read_only: bool };
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
@@ -1178,10 +2045,13 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = 
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
 fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g._b.codeEditorFn(id, _ed.text, w, h);
+    const _r = _g.inputMultiline(id, _ed.text, w, h);
     if (!_ed.read_only) { _ed.text = _r; }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -1230,27 +2100,94 @@ fn _stub_begin_window(label: []const u8) bool {
     return true;
 }
 fn _stub_end_window() void {}
+fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
+fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
+fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
+fn _stub_table_headers_row() void {}
+fn _stub_table_next_row() void {}
+fn _stub_table_next_column() bool { return true; }
+fn _stub_end_table() void {}
+fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
+fn _stub_end_child() void {}
+fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
+fn _stub_tree_pop() void {}
+fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
+fn _stub_set_colors_dark() void {}
+fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
+fn _stub_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
+fn _stub_scale_all_sizes(scale: f32) void { _ = scale; }
+fn _stub_get_dpi() f32 { return 1.0; }
+fn _stub_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
+fn _stub_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
+fn _stub_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
+fn _stub_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
+fn _stub_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
+fn _stub_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_window_size() _GuiVec2 { return .{ 800, 600 }; }
+fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _stub_ll_begin_group() void {}
+fn _stub_ll_end_group() void {}
+fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_hbox() void {}
+fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_vbox() void {}
 const _gui_stub_backend = _GuiBackend{
-    .initFn        = _stub_init,
-    .deinitFn      = _stub_deinit,
-    .newFrameFn    = _stub_new_frame,
-    .endFrameFn    = _stub_end_frame,
-    .textFn        = _stub_text,
-    .separatorFn   = _stub_separator,
-    .sameLineFn    = _stub_same_line,
-    .spacingFn     = _stub_spacing,
-    .indentFn      = _stub_indent,
-    .unindentFn    = _stub_unindent,
-    .buttonFn      = _stub_button,
-    .checkboxFn    = _stub_checkbox,
-    .sliderFn      = _stub_slider,
-    .inputFn       = _stub_input,
-    .inputMultilineFn = _stub_input_multiline,
-    .codeEditorFn  = _stub_input_multiline,
-    .beginPanelFn  = _stub_begin_panel,
-    .endPanelFn    = _stub_end_panel,
-    .beginWindowFn = _stub_begin_window,
-    .endWindowFn   = _stub_end_window,
+    .initFn             = _stub_init,
+    .deinitFn           = _stub_deinit,
+    .newFrameFn         = _stub_new_frame,
+    .endFrameFn         = _stub_end_frame,
+    .textFn             = _stub_text,
+    .separatorFn        = _stub_separator,
+    .sameLineFn         = _stub_same_line,
+    .spacingFn          = _stub_spacing,
+    .indentFn           = _stub_indent,
+    .unindentFn         = _stub_unindent,
+    .buttonFn           = _stub_button,
+    .checkboxFn         = _stub_checkbox,
+    .sliderFn           = _stub_slider,
+    .inputFn            = _stub_input,
+    .inputMultilineFn   = _stub_input_multiline,
+    .beginPanelFn       = _stub_begin_panel,
+    .endPanelFn         = _stub_end_panel,
+    .beginWindowFn      = _stub_begin_window,
+    .endWindowFn        = _stub_end_window,
+    .selectableFn       = _stub_selectable,
+    .textColoredFn      = _stub_text_colored,
+    .beginTableFn       = _stub_begin_table,
+    .tableSetupColumnFn = _stub_table_setup_column,
+    .tableHeadersRowFn  = _stub_table_headers_row,
+    .tableNextRowFn     = _stub_table_next_row,
+    .tableNextColumnFn  = _stub_table_next_column,
+    .endTableFn         = _stub_end_table,
+    .beginChildFn       = _stub_begin_child,
+    .endChildFn         = _stub_end_child,
+    .treeNodeFn         = _stub_tree_node,
+    .treePopFn          = _stub_tree_pop,
+    .setColorFn         = _stub_set_color,
+    .setColorsDarkFn    = _stub_set_colors_dark,
+    .setStyleFloatFn    = _stub_set_style_float,
+    .setVec2Fn          = _stub_set_vec2,
+    .scaleAllSizesFn    = _stub_scale_all_sizes,
+    .getDpiFn           = _stub_get_dpi,
+    .ll_addLineFn         = _stub_ll_add_line,
+    .ll_addRectFn         = _stub_ll_add_rect,
+    .ll_addRectFilledFn   = _stub_ll_add_rect_filled,
+    .ll_addCircleFn       = _stub_ll_add_circle,
+    .ll_addCircleFilledFn = _stub_ll_add_circle_filled,
+    .ll_addTextFn         = _stub_ll_add_text,
+    .ll_getWindowPosFn    = _stub_ll_get_window_pos,
+    .ll_getWindowSizeFn   = _stub_ll_get_window_size,
+    .ll_getCursorPosFn    = _stub_ll_get_cursor_pos,
+    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
+    .ll_beginGroupFn      = _stub_ll_begin_group,
+    .ll_endGroupFn        = _stub_ll_end_group,
+    .beginHBoxFn = _stub_begin_hbox,
+    .endHBoxFn   = _stub_end_hbox,
+    .beginVBoxFn = _stub_begin_vbox,
+    .endVBoxFn   = _stub_end_vbox,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 fn _hex_encode(bytes: []const u8) []const u8 {
@@ -1319,6 +2256,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];
@@ -1343,15 +2287,14 @@ const ArgResult = struct {
     pub fn usage(_: ArgResult) []const u8 { return "Usage: program [options]"; }
 };
 fn _arg_parse() ArgResult {
-    const _argv = std.process.argsAlloc(_allocator) catch return ArgResult{ ._raw = &.{} };
+    const _argv = _args.toSlice(_allocator) catch return ArgResult{ ._raw = &.{} };
     const _raw_slice = if (_argv.len > 1) _argv[1..] else _argv[0..0];
     var _out = _allocator.alloc([]const u8, _raw_slice.len) catch return ArgResult{ ._raw = &.{} };
     for (_raw_slice, 0..) |a, i| _out[i] = a;
     return ArgResult{ ._raw = _out };
 }
 fn _term_is_tty() bool {
-    const cfg = std.io.tty.detectConfig(std.fs.File.stdout());
-    return cfg != .no_color;
+    return std.Io.File.stdout().isTty(_io) catch false;
 }
 fn _term_width() i64 { return 80; }
 fn _term_height() i64 { return 24; }
@@ -1368,13 +2311,15 @@ fn _term_ansi(color: []const u8) []const u8 {
     return "";
 }
 fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.fs.File.stdout();
+    const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
-        _f.deprecatedWriter().print("{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _f.deprecatedWriter().writeAll(msg) catch {};
+        _f.writeStreamingAll(_io, msg) catch {};
     }
-    if (newline) _f.deprecatedWriter().writeByte('\n') catch {};
+    if (newline) _f.writeStreamingAll(_io, "\n") catch {};
 }
 var _log_level: u8 = 1;        // default: info
 var _log_timestamps: bool = true;
@@ -1387,11 +2332,15 @@ fn _log_ts() []const u8 {
 }
 fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _lw = if (_log_to_stderr) std.fs.File.stderr().deprecatedWriter() else std.fs.File.stdout().deprecatedWriter();
+    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
     if (_log_timestamps) {
-        _lw.print("[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _lw.print("[{s:<5}] {s}\n", .{ level_str, msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5}] {s}\n", .{ level_str, msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
@@ -1427,7 +2376,28 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(_: []const u8) []const u8 { return ""; }
+fn _compress_gzip(data: []const u8) []const u8 {
+    // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
+    const out_capacity = data.len + data.len / 100 + 100;
+    const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
+    var flate_w: std.Io.Writer = .fixed(out_buf);
+    var deflate_buf: [std.compress.flate.max_window_len * 2]u8 = undefined;
+    var comp = std.compress.flate.Compress.init(&flate_w, &deflate_buf, .gzip, .default) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.writer.writeAll(data) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.finish() catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    const written = flate_w.end;
+    const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
+    return result;
+}
 fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -1525,6 +2495,165 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
     const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
     return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
 }
+// ── Profile stdlib ────────────────────────────────────────────────────────────
+const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
+var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
+var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+var _profile_time_stack: std.ArrayList(i128) = .empty;
+fn _profile_start(name: []const u8) void {
+    _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+}
+fn _profile_end() void {
+    const start_ns = _profile_time_stack.pop() orelse return;
+    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
+    var key_buf: std.ArrayList(u8) = .empty;
+    defer key_buf.deinit(std.heap.page_allocator);
+    for (_profile_name_stack.items, 0..) |n, i| {
+        if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
+        key_buf.appendSlice(std.heap.page_allocator, n) catch @panic("OOM");
+    }
+    _ = _profile_name_stack.pop();
+    if (_profile_entries.getPtr(key_buf.items)) |e| {
+        e.total_ns += elapsed_ns;
+        e.call_count += 1;
+    } else {
+        const owned_key = std.heap.page_allocator.dupe(u8, key_buf.items) catch @panic("OOM");
+        _profile_entries.put(owned_key, .{ .total_ns = elapsed_ns, .call_count = 1 }) catch @panic("OOM");
+    }
+}
+fn _profile_report() void {
+    const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
+    var list: std.ArrayList(_ProfEntry) = .empty;
+    defer list.deinit(std.heap.page_allocator);
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        list.append(std.heap.page_allocator, .{ .key = e.key_ptr.*, .total_ns = e.value_ptr.total_ns, .calls = e.value_ptr.call_count }) catch @panic("OOM");
+    }
+    const _Cmp = struct {
+        fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
+    };
+    std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
+    for (list.items) |e| {
+        const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
+    }
+}
+fn _profile_dump_folded() void {
+    const _stdout = std.Io.File.stdout();
+    var it = _profile_entries.iterator();
+    while (it.next()) |e| {
+        const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{s} {d}\n", .{ e.key_ptr.*, us }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
+    }
+}
+fn _profile_reset() void {
+    _profile_entries.clearRetainingCapacity();
+    _profile_name_stack.clearRetainingCapacity();
+    _profile_time_stack.clearRetainingCapacity();
+}
+// ── Base64 stdlib ─────────────────────────────────────────────────────────────
+fn _base64_encode(s: []const u8) []const u8 {
+    const enc = std.base64.standard.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode(s: []const u8) ?[]const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+fn _base64_decode_str(s: []const u8) []const u8 {
+    const dec = std.base64.standard.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch @panic("invalid base64");
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch @panic("invalid base64");
+    return out;
+}
+fn _base64_encode_url(s: []const u8) []const u8 {
+    const enc = std.base64.url_safe_no_pad.Encoder;
+    const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
+    return enc.encode(out, s);
+}
+fn _base64_decode_url(s: []const u8) ?[]const u8 {
+    const dec = std.base64.url_safe_no_pad.Decoder;
+    const out_len = dec.calcSizeForSlice(s) catch return null;
+    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
+    dec.decode(out, s) catch return null;
+    return out;
+}
+// ── Hash fast (non-crypto) hashes ────────────────────────────────────────────
+fn _hash_crc32(s: []const u8) i64 {
+    return @as(i64, @intCast(std.hash.crc.Crc32.hash(s)));
+}
+fn _hash_fnv64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.Fnv1a_64.hash(s)));
+}
+fn _hash_xxhash64(s: []const u8) i64 {
+    return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
+}
+fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
+    var out: [std.crypto.auth.hmac.sha2.HmacSha512.mac_length]u8 = undefined;
+    std.crypto.auth.hmac.sha2.HmacSha512.create(&out, data, key);
+    return _hex_encode(&out);
+}
+// ── Random extended ───────────────────────────────────────────────────────────
+fn _random_gaussian(mean: f64, stddev: f64) f64 {
+    const _gu1 = _rng().float(f64);
+    const _gu2 = _rng().float(f64);
+    const _gz = @sqrt(-2.0 * @log(_gu1)) * @cos(2.0 * std.math.pi * _gu2);
+    return mean + stddev * _gz;
+}
+fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
+    if (items.items.len == 0) return "";
+    var total: f64 = 0.0;
+    for (weights.items) |w| total += w;
+    var r = _rng().float(f64) * total;
+    for (items.items, 0..) |item, i| {
+        r -= if (i < weights.items.len) weights.items[i] else 0.0;
+        if (r <= 0.0) return item;
+    }
+    return items.items[items.items.len - 1];
+}
+// ── File extended ─────────────────────────────────────────────────────────────
+fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
+    var content = std.ArrayList(u8).empty;
+    defer content.deinit(_allocator);
+    for (lines.items) |line| {
+        content.appendSlice(_allocator, line) catch return;
+        content.append(_allocator, '\n') catch return;
+    }
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, content.items) catch {};
+}
+// ── sys extended ──────────────────────────────────────────────────────────────
+fn _sys_setenv(key: []const u8, val: []const u8) void {
+    if (comptime builtin.os.tag == .windows) {
+        const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
+        defer _allocator.free(key_w);
+        const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
+        defer _allocator.free(val_w);
+        _ = std.os.windows.kernel32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
+    } else {
+        std.posix.setenv(key, val) catch {};
+    }
+}
+fn _sys_getenv(key: []const u8) ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+    } else {
+        return std.posix.getenv(key);
+    }
+}
 pub const ArgTest = struct {
     _type_tag: u64 = _ttag_ArgTest,
     pub fn main() void {
@@ -1561,7 +2690,7 @@ pub const ArgTest = struct {
 // zbr:test/arg_test.zbr:31
         const u = args.usage();
 // zbr:test/arg_test.zbr:32
-        std.debug.assert(_zebra_gt(u.len, 0));
+        std.debug.assert(_zebra_gt(@as(i64, @intCast(u.len)), 0));
 // zbr:test/arg_test.zbr:33
         std.debug.print("{s}\n", .{"usage: OK"});
 // zbr:test/arg_test.zbr:35
@@ -1582,7 +2711,9 @@ const _reflect_ArgTest_name: []const u8 = "ArgTest";
 const _reflect_ArgTest_fields: []const []const u8 = &.{};
 const _reflect_ArgTest_field_types: []const []const u8 = &.{};
 
-pub fn main() void {
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io;
+    _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
     ArgTest.main();

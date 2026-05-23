@@ -1884,6 +1884,10 @@ const _GuiBackend = struct {
     ll_getMousePosFn:     *const fn () _GuiVec2,
     ll_beginGroupFn:      *const fn () void,
     ll_endGroupFn:        *const fn () void,
+    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endHBoxFn:   *const fn () void,
+    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endVBoxFn:   *const fn () void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -1977,7 +1981,12 @@ const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
 };
+const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -2025,24 +2034,64 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
         _gui_active_backend.endFrameFn();
     }
 }
-// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
-const _CodeEditor = struct { text: []const u8, read_only: bool };
+// ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
+const sci = @import("sci");
+const _CodeEditor = struct {
+    scint: ?*sci.Scintilla = null,
+    read_only: bool = false,
+    text: []u8 = &.{},
+};
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
-    _ed.* = .{ .text = "", .read_only = false };
+    _ed.* = .{};
     return _ed;
 }
-fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
-fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
-fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
-fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g.inputMultiline(id, _ed.text, w, h);
-    if (!_ed.read_only) { _ed.text = _r; }
+fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
+    _allocator.free(_ed.text);
+    _ed.text = _allocator.dupe(u8, text) catch &.{};
+    if (_ed.scint) |_s| _s.setText(_ed.text);
+}
+fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
+    if (_ed.scint) |_s| {
+        const _len = _s.getLength();
+        if (_len > _ed.text.len) {
+            _allocator.free(_ed.text);
+            _ed.text = _allocator.alloc(u8, _len + 1) catch return _ed.text;
+        }
+        if (_len > 0) _s.getRange(0, _len, _ed.text.ptr);
+        _ed.text = _ed.text[0.._len];
+    }
+    return _ed.text;
+}
+fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
+    _ed.read_only = v;
+    if (_ed.scint) |_s| _ = _s.sendMessage(2171, @intFromBool(v), 0);
+}
+fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f64, _h: f64) void {
+    _ = id; _ = _w; _ = _h; _ = _g;
+    if (_ed.scint == null) {
+        _ed.scint = sci.Scintilla.new() catch return;
+        if (_ed.text.len > 0) _ed.scint.?.setText(_ed.text);
+        if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+    }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 {
+    const _s = _ed.scint orelse return 1;
+    const _pos = _s.sendMessage(2008, 0, 0);
+    return @intCast(_s.sendMessage(2166, _pos, 0) + 1);
+}
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 {
+    const _s = _ed.scint orelse return 1;
+    const _pos = _s.sendMessage(2008, 0, 0);
+    return @intCast(_s.sendMessage(2129, _pos, 0) + 1);
+}
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void {
+    _ = col;
+    const _s = _ed.scint orelse return;
+    _ = _s.sendMessage(2024, @intCast(@max(0, line - 1)), 0);
+}
 // ─── libui-ng retained-mode adapter ──────────────────────────────────────────
 const ui = @import("ui");
 const _LuiMut = struct {
@@ -2064,7 +2113,18 @@ var _lui_quit: bool = false;
 var _lui_win_w: i64 = 800;
 var _lui_win_h: i64 = 600;
 var _lui_window: ?*ui.Window = null;
-var _lui_vbox: ?*ui.Box = null;
+var _lui_root_box: ?*ui.Box = null;
+var _lui_box_stack: [32]?*ui.Box = [_]?*ui.Box{null} ** 32;
+var _lui_box_depth: usize = 0;
+var _lui_box_icache: std.StringHashMap(*ui.Box) = undefined;
+fn _lui_cur_box() ?*ui.Box {
+    if (_lui_box_depth == 0) return null;
+    return _lui_box_stack[_lui_box_depth - 1];
+}
+fn _lui_push_box(_b: *ui.Box) void {
+    if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
+}
+fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 fn _lui_on_close(_w: *ui.Window, _q: ?*bool) anyerror!ui.Window.ClosingAction {
     _ = _w;
     if (_q) |p| p.* = true;
@@ -2103,17 +2163,23 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     try ui.Init(&_d);
     _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
     _lui_dcache = .empty;
+    _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
+    _lui_box_depth = 0;
     var _tbuf: [256]u8 = undefined;
     const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
     _lui_window = try ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
     ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
-    _lui_vbox = try ui.Box.New(.Vertical);
-    _lui_vbox.?.SetPadded(true);
+    _lui_root_box = try ui.Box.New(.Vertical);
+    _lui_root_box.?.SetPadded(true);
+    _lui_push_box(_lui_root_box.?);
+    ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
     _lui_frame = 0; _lui_quit = false;
 }
+fn _lui_poll_tick(_: ?*anyopaque) anyerror!ui.TimerAction { return .rearm; }
 fn _lui_deinit() void {
     _lui_icache.deinit();
     _lui_dcache.deinit(_allocator);
+    _lui_box_icache.deinit();
     ui.Uninit();
 }
 fn _lui_newframe() bool {
@@ -2123,10 +2189,11 @@ fn _lui_newframe() bool {
     return ui.MainStep(.blocking) == .running and !_lui_quit;
 }
 fn _lui_endframe() void {
+    _lui_box_depth = 1; // reset to root box only
     if (_lui_frame == 0) {
         _lui_frame = 1;
         if (_lui_window) |_w| {
-            if (_lui_vbox) |_vb| _w.SetChild(_vb.as_control());
+            if (_lui_root_box) |_vb| _w.SetChild(_vb.as_control());
             _w.SetMargined(true);
             _w.as_control().Show();
         }
@@ -2163,7 +2230,7 @@ fn _lui_text(_s: []const u8) void {
         const _lbl = ui.Label.New(_tz) catch return;
         _r.m.lbl = _lbl;
         _r.m.ctrl = _lbl.as_control();
-        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
     } else {
         if (_r.m.lbl) |_lb| _lb.SetText(_tz);
     }
@@ -2173,7 +2240,7 @@ fn _lui_sep() void {
     if (_r.fresh) {
         const _sep = ui.Separator.New(.Horizontal) catch return;
         _r.m.ctrl = _sep.as_control();
-        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
     }
 }
 fn _lui_noop_void() void {}
@@ -2230,7 +2297,7 @@ fn _lui_button(_label: []const u8) bool {
         const _btn = ui.Button.New(_lz) catch return false;
         ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
         _r.m.ctrl = _btn.as_control();
-        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
     }
     const _clicked = _r.m.clicked;
     _r.m.clicked = false;
@@ -2249,7 +2316,7 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
         _r.m.checked = _value;
         ui.Checkbox.OnToggled(_chk, _LuiMut, _lui_chk_cb, _r.m);
         _r.m.ctrl = _chk.as_control();
-        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
     }
     return _r.m.checked;
 }
@@ -2270,7 +2337,7 @@ fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
         ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
         _r.m.ctrl = _sld.as_control();
         _r.m.lbl = _sllbl;
-        if (_lui_vbox) |_vb| {
+        if (_lui_cur_box()) |_vb| {
             ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
             ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
         }
@@ -2298,7 +2365,7 @@ fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
         ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
         _r.m.ctrl = _ent.as_control();
         _r.m.lbl = _enlbl;
-        if (_lui_vbox) |_vb| {
+        if (_lui_cur_box()) |_vb| {
             ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
             ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
         }
@@ -2326,13 +2393,35 @@ fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []c
         ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
         _r.m.ctrl = _mle.as_control();
         _r.m.lbl = _mllbl;
-        if (_lui_vbox) |_vb| {
+        if (_lui_cur_box()) |_vb| {
             ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
             ui.Box.Append(_vb, _mle.as_control(), .stretch);
         }
     }
     return _r.m.text_buf[0.._r.m.text_len];
 }
+fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
+    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _hb = ui.Box.New(.Horizontal) catch return;
+        _hb.SetPadded(true);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _hb.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        _e.value_ptr.* = _hb;
+    }
+    _lui_push_box(_e.value_ptr.*);
+}
+fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
+    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _vb2 = ui.Box.New(.Vertical) catch return;
+        _vb2.SetPadded(false);
+        if (_lui_cur_box()) |_pvb| ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        _e.value_ptr.* = _vb2;
+    }
+    _lui_push_box(_e.value_ptr.*);
+}
+fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 const _gui_lui_backend = _GuiBackend{
     .initFn             = _lui_init,
     .deinitFn           = _lui_deinit,
@@ -2383,6 +2472,10 @@ const _gui_lui_backend = _GuiBackend{
     .ll_getMousePosFn     = _lui_ll_get_mouse_pos,
     .ll_beginGroupFn      = _lui_noop_void,
     .ll_endGroupFn        = _lui_noop_void,
+    .beginHBoxFn = _lui_begin_hbox,
+    .endHBoxFn   = _lui_end_hbox,
+    .beginVBoxFn = _lui_begin_vbox,
+    .endVBoxFn   = _lui_end_vbox,
 };
 const _gui_active_backend: _GuiBackend = _gui_lui_backend;
 fn _hex_encode(bytes: []const u8) []const u8 {
@@ -2451,6 +2544,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];

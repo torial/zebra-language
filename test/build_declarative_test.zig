@@ -1884,6 +1884,10 @@ const _GuiBackend = struct {
     ll_getMousePosFn:     *const fn () _GuiVec2,
     ll_beginGroupFn:      *const fn () void,
     ll_endGroupFn:        *const fn () void,
+    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endHBoxFn:   *const fn () void,
+    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endVBoxFn:   *const fn () void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -1977,7 +1981,12 @@ const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
 };
+const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -2121,6 +2130,10 @@ fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_begin_group() void {}
 fn _stub_ll_end_group() void {}
+fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_hbox() void {}
+fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_vbox() void {}
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -2171,6 +2184,10 @@ const _gui_stub_backend = _GuiBackend{
     .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
     .ll_beginGroupFn      = _stub_ll_begin_group,
     .ll_endGroupFn        = _stub_ll_end_group,
+    .beginHBoxFn = _stub_begin_hbox,
+    .endHBoxFn   = _stub_end_hbox,
+    .beginVBoxFn = _stub_begin_vbox,
+    .endVBoxFn   = _stub_end_vbox,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 fn _hex_encode(bytes: []const u8) []const u8 {
@@ -2239,6 +2256,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];
