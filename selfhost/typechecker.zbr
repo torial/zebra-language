@@ -120,6 +120,8 @@ union Type_
     build_target
     # WebSocket connection returned by Ws.connect() or passed to Ws.serve handler.
     ws_conn
+    # GUI context passed to view(g: Gui, ...) in MVU programs.
+    gui_context
     # Generic collections with element/key/value type info.
     # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
     list_: ^Type_
@@ -482,6 +484,8 @@ def typeFromName(n: str): Type_
         return Type_.allocator_ctx
     if n == "WsConn"
         return Type_.ws_conn
+    if n == "Gui"
+        return Type_.gui_context
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)

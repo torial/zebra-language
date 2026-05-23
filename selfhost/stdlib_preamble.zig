@@ -2247,6 +2247,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];

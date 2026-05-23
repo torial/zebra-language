@@ -1978,6 +1978,10 @@ const Generator = struct {
             \\    ll_getMousePosFn:     *const fn () _GuiVec2,
             \\    ll_beginGroupFn:      *const fn () void,
             \\    ll_endGroupFn:        *const fn () void,
+            \\    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+            \\    endHBoxFn:   *const fn () void,
+            \\    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+            \\    endVBoxFn:   *const fn () void,
             \\};
             \\const _LowLevel = struct {
             \\    _b: *const _GuiBackend,
@@ -2071,7 +2075,12 @@ const Generator = struct {
             \\            self._b.endWindowFn();
             \\        }
             \\    }
+            \\    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+            \\    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+            \\    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+            \\    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
             \\};
+            \\const Gui = GuiContext;
             \\fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
             \\    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
             \\    defer _gui_active_backend.deinitFn();
@@ -2220,6 +2229,10 @@ const Generator = struct {
                 \\fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
                 \\fn _stub_ll_begin_group() void {}
                 \\fn _stub_ll_end_group() void {}
+                \\fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _stub_end_hbox() void {}
+                \\fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _stub_end_vbox() void {}
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -2270,6 +2283,10 @@ const Generator = struct {
                 \\    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
                 \\    .ll_beginGroupFn      = _stub_ll_begin_group,
                 \\    .ll_endGroupFn        = _stub_ll_end_group,
+                \\    .beginHBoxFn = _stub_begin_hbox,
+                \\    .endHBoxFn   = _stub_end_hbox,
+                \\    .beginVBoxFn = _stub_begin_vbox,
+                \\    .endVBoxFn   = _stub_end_vbox,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2621,6 +2638,10 @@ const Generator = struct {
                 \\fn _imgui_ll_get_mouse_pos() _GuiVec2 { const _p = zgui.getMousePos(); return .{ @floatCast(_p[0]), @floatCast(_p[1]) }; }
                 \\fn _imgui_ll_begin_group() void { zgui.beginGroup(); }
                 \\fn _imgui_ll_end_group() void { zgui.endGroup(); }
+                \\fn _imgui_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _imgui_end_hbox() void {}
+                \\fn _imgui_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _imgui_end_vbox() void {}
                 \\const _gui_imgui_backend = _GuiBackend{
                 \\    .initFn             = _imgui_init,
                 \\    .deinitFn           = _imgui_deinit,
@@ -2671,6 +2692,10 @@ const Generator = struct {
                 \\    .ll_getMousePosFn     = _imgui_ll_get_mouse_pos,
                 \\    .ll_beginGroupFn      = _imgui_ll_begin_group,
                 \\    .ll_endGroupFn        = _imgui_ll_end_group,
+                \\    .beginHBoxFn = _imgui_begin_hbox,
+                \\    .endHBoxFn   = _imgui_end_hbox,
+                \\    .beginVBoxFn = _imgui_begin_vbox,
+                \\    .endVBoxFn   = _imgui_end_vbox,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
                 \\
@@ -2773,6 +2798,10 @@ const Generator = struct {
                 \\fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
                 \\fn _stub_ll_begin_group() void {}
                 \\fn _stub_ll_end_group() void {}
+                \\fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _stub_end_hbox() void {}
+                \\fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _stub_end_vbox() void {}
                 \\const _gui_stub_backend = _GuiBackend{
                 \\    .initFn             = _stub_init,
                 \\    .deinitFn           = _stub_deinit,
@@ -2823,6 +2852,10 @@ const Generator = struct {
                 \\    .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
                 \\    .ll_beginGroupFn      = _stub_ll_begin_group,
                 \\    .ll_endGroupFn        = _stub_ll_end_group,
+                \\    .beginHBoxFn = _stub_begin_hbox,
+                \\    .endHBoxFn   = _stub_end_hbox,
+                \\    .beginVBoxFn = _stub_begin_vbox,
+                \\    .endVBoxFn   = _stub_end_vbox,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -3028,6 +3061,10 @@ const Generator = struct {
                 \\}
                 \\fn _tui_ll_begin_group() void {}
                 \\fn _tui_ll_end_group() void {}
+                \\fn _tui_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _tui_end_hbox() void {}
+                \\fn _tui_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+                \\fn _tui_end_vbox() void {}
                 \\const _gui_tui_backend = _GuiBackend{
                 \\    .initFn             = _tui_init,
                 \\    .deinitFn           = _tui_deinit,
@@ -3078,6 +3115,10 @@ const Generator = struct {
                 \\    .ll_getMousePosFn     = _tui_ll_get_mouse_pos,
                 \\    .ll_beginGroupFn      = _tui_ll_begin_group,
                 \\    .ll_endGroupFn        = _tui_ll_end_group,
+                \\    .beginHBoxFn = _tui_begin_hbox,
+                \\    .endHBoxFn   = _tui_end_hbox,
+                \\    .beginVBoxFn = _tui_begin_vbox,
+                \\    .endVBoxFn   = _tui_end_vbox,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_tui_backend;
                 \\
@@ -3129,7 +3170,7 @@ const Generator = struct {
             \\        _ed.scint = sci.Scintilla.new() catch return;
             \\        if (_ed.text.len > 0) _ed.scint.?.setText(_ed.text);
             \\        if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
-            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
             \\    }
             \\}
             \\fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
@@ -3169,7 +3210,18 @@ const Generator = struct {
             \\var _lui_win_w: i64 = 800;
             \\var _lui_win_h: i64 = 600;
             \\var _lui_window: ?*ui.Window = null;
-            \\var _lui_vbox: ?*ui.Box = null;
+            \\var _lui_root_box: ?*ui.Box = null;
+            \\var _lui_box_stack: [32]?*ui.Box = [_]?*ui.Box{null} ** 32;
+            \\var _lui_box_depth: usize = 0;
+            \\var _lui_box_icache: std.StringHashMap(*ui.Box) = undefined;
+            \\fn _lui_cur_box() ?*ui.Box {
+            \\    if (_lui_box_depth == 0) return null;
+            \\    return _lui_box_stack[_lui_box_depth - 1];
+            \\}
+            \\fn _lui_push_box(_b: *ui.Box) void {
+            \\    if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
+            \\}
+            \\fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
             \\fn _lui_on_close(_w: *ui.Window, _q: ?*bool) anyerror!ui.Window.ClosingAction {
             \\    _ = _w;
             \\    if (_q) |p| p.* = true;
@@ -3208,17 +3260,23 @@ const Generator = struct {
             \\    try ui.Init(&_d);
             \\    _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
             \\    _lui_dcache = .empty;
+            \\    _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
+            \\    _lui_box_depth = 0;
             \\    var _tbuf: [256]u8 = undefined;
             \\    const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
             \\    _lui_window = try ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
             \\    ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
-            \\    _lui_vbox = try ui.Box.New(.Vertical);
-            \\    _lui_vbox.?.SetPadded(true);
+            \\    _lui_root_box = try ui.Box.New(.Vertical);
+            \\    _lui_root_box.?.SetPadded(true);
+            \\    _lui_push_box(_lui_root_box.?);
+            \\    ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
             \\    _lui_frame = 0; _lui_quit = false;
             \\}
+            \\fn _lui_poll_tick(_: ?*anyopaque) anyerror!ui.TimerAction { return .rearm; }
             \\fn _lui_deinit() void {
             \\    _lui_icache.deinit();
             \\    _lui_dcache.deinit(_allocator);
+            \\    _lui_box_icache.deinit();
             \\    ui.Uninit();
             \\}
             \\fn _lui_newframe() bool {
@@ -3228,10 +3286,11 @@ const Generator = struct {
             \\    return ui.MainStep(.blocking) == .running and !_lui_quit;
             \\}
             \\fn _lui_endframe() void {
+            \\    _lui_box_depth = 1; // reset to root box only
             \\    if (_lui_frame == 0) {
             \\        _lui_frame = 1;
             \\        if (_lui_window) |_w| {
-            \\            if (_lui_vbox) |_vb| _w.SetChild(_vb.as_control());
+            \\            if (_lui_root_box) |_vb| _w.SetChild(_vb.as_control());
             \\            _w.SetMargined(true);
             \\            _w.as_control().Show();
             \\        }
@@ -3268,7 +3327,7 @@ const Generator = struct {
             \\        const _lbl = ui.Label.New(_tz) catch return;
             \\        _r.m.lbl = _lbl;
             \\        _r.m.ctrl = _lbl.as_control();
-            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
             \\    } else {
             \\        if (_r.m.lbl) |_lb| _lb.SetText(_tz);
             \\    }
@@ -3278,7 +3337,7 @@ const Generator = struct {
             \\    if (_r.fresh) {
             \\        const _sep = ui.Separator.New(.Horizontal) catch return;
             \\        _r.m.ctrl = _sep.as_control();
-            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
             \\    }
             \\}
             \\fn _lui_noop_void() void {}
@@ -3335,7 +3394,7 @@ const Generator = struct {
             \\        const _btn = ui.Button.New(_lz) catch return false;
             \\        ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
             \\        _r.m.ctrl = _btn.as_control();
-            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
             \\    }
             \\    const _clicked = _r.m.clicked;
             \\    _r.m.clicked = false;
@@ -3354,7 +3413,7 @@ const Generator = struct {
             \\        _r.m.checked = _value;
             \\        ui.Checkbox.OnToggled(_chk, _LuiMut, _lui_chk_cb, _r.m);
             \\        _r.m.ctrl = _chk.as_control();
-            \\        if (_lui_vbox) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
             \\    }
             \\    return _r.m.checked;
             \\}
@@ -3375,7 +3434,7 @@ const Generator = struct {
             \\        ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
             \\        _r.m.ctrl = _sld.as_control();
             \\        _r.m.lbl = _sllbl;
-            \\        if (_lui_vbox) |_vb| {
+            \\        if (_lui_cur_box()) |_vb| {
             \\            ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
             \\            ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
             \\        }
@@ -3403,7 +3462,7 @@ const Generator = struct {
             \\        ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
             \\        _r.m.ctrl = _ent.as_control();
             \\        _r.m.lbl = _enlbl;
-            \\        if (_lui_vbox) |_vb| {
+            \\        if (_lui_cur_box()) |_vb| {
             \\            ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
             \\            ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
             \\        }
@@ -3431,13 +3490,35 @@ const Generator = struct {
             \\        ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
             \\        _r.m.ctrl = _mle.as_control();
             \\        _r.m.lbl = _mllbl;
-            \\        if (_lui_vbox) |_vb| {
+            \\        if (_lui_cur_box()) |_vb| {
             \\            ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
             \\            ui.Box.Append(_vb, _mle.as_control(), .stretch);
             \\        }
             \\    }
             \\    return _r.m.text_buf[0.._r.m.text_len];
             \\}
+            \\fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
+            \\    const _e = _lui_box_icache.getOrPut(_id) catch return;
+            \\    if (!_e.found_existing) {
+            \\        const _hb = ui.Box.New(.Horizontal) catch return;
+            \\        _hb.SetPadded(true);
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _hb.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+            \\        _e.value_ptr.* = _hb;
+            \\    }
+            \\    _lui_push_box(_e.value_ptr.*);
+            \\}
+            \\fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+            \\fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
+            \\    const _e = _lui_box_icache.getOrPut(_id) catch return;
+            \\    if (!_e.found_existing) {
+            \\        const _vb2 = ui.Box.New(.Vertical) catch return;
+            \\        _vb2.SetPadded(false);
+            \\        if (_lui_cur_box()) |_pvb| ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+            \\        _e.value_ptr.* = _vb2;
+            \\    }
+            \\    _lui_push_box(_e.value_ptr.*);
+            \\}
+            \\fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
             \\const _gui_lui_backend = _GuiBackend{
             \\    .initFn             = _lui_init,
             \\    .deinitFn           = _lui_deinit,
@@ -3488,6 +3569,10 @@ const Generator = struct {
             \\    .ll_getMousePosFn     = _lui_ll_get_mouse_pos,
             \\    .ll_beginGroupFn      = _lui_noop_void,
             \\    .ll_endGroupFn        = _lui_noop_void,
+            \\    .beginHBoxFn = _lui_begin_hbox,
+            \\    .endHBoxFn   = _lui_end_hbox,
+            \\    .beginVBoxFn = _lui_begin_vbox,
+            \\    .endVBoxFn   = _lui_end_vbox,
             \\};
             \\const _gui_active_backend: _GuiBackend = _gui_lui_backend;
             \\
