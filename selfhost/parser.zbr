@@ -61,6 +61,7 @@ union PNode
     stmt_allocate: ^PAllocate
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
+    stmt_in: ^PInScope
     stmt_guard: ^PGuard
     stmt_destruct: ^PDestruct
     stmt_require: List(PNode)
@@ -390,6 +391,15 @@ struct PWith
     var line: int
     cue init(target: List(PNode), stmts: List(PNode), line: int)
         .target = target
+        .stmts = stmts
+        .line = line
+
+struct PInScope
+    var expr: List(PNode)
+    var stmts: List(PNode)
+    var line: int
+    cue init(expr: List(PNode), stmts: List(PNode), line: int)
+        .expr = expr
         .stmts = stmts
         .line = line
 
@@ -1713,6 +1723,8 @@ class Parser
             return .parseAllocateStmt()
         else if .textIs("with")
             return .parseWithStmt()
+        else if .textIs("in")
+            return .parseInStmt()
         else if .textIs("guard")
             return .parseGuardStmt()
         else if .textIs("require")
@@ -1745,22 +1757,41 @@ class Parser
         if .textIs("as")
             .advance()
             capture_name = .eatId()
-        .skipEol()
-        const then_stmts = .parseBlock()
-        var else_stmts = List(PNode)()
-        if .textIs("else")
-            .advance()
-            if .textIs("if")
-                # else if → wrap: single-element else list
-                else_stmts.add(.parseIfStmt())
-            else
-                .skipEol()
-                else_stmts = .parseBlock()
-        var cond_list = List(PNode)()
-        cond_list.add(cond_expr)
-        var pif = PIf(cond_list, then_stmts, else_stmts, line)
-        pif.is_capture = capture_name
-        return PNode.stmt_if(pif)
+        if .isEol()
+            # Block form (existing)
+            .skipEol()
+            const then_stmts = .parseBlock()
+            var else_stmts = List(PNode)()
+            if .textIs("else")
+                .advance()
+                if .textIs("if")
+                    else_stmts.add(.parseIfStmt())
+                else
+                    .skipEol()
+                    else_stmts = .parseBlock()
+            var cond_list = List(PNode)()
+            cond_list.add(cond_expr)
+            var pif = PIf(cond_list, then_stmts, else_stmts, line)
+            pif.is_capture = capture_name
+            return PNode.stmt_if(pif)
+        else
+            # Inline form: `if cond: stmt` — colon required, capture not supported
+            if capture_name != nil
+                raise .errorAt("inline if does not support capture binding; use block form")
+            .expectText(":")
+            var then_stmts = List(PNode)()
+            then_stmts.add(.parseStmt())
+            var else_stmts = List(PNode)()
+            if .textIs("else")
+                .advance()
+                if .textIs("if")
+                    else_stmts.add(.parseIfStmt())
+                else
+                    .expectText(":")
+                    else_stmts.add(.parseStmt())
+            var cond_list = List(PNode)()
+            cond_list.add(cond_expr)
+            return PNode.stmt_if(PIf(cond_list, then_stmts, else_stmts, line))
 
     def parseUnlessStmt(): PNode throws
         const line = .peek().line
@@ -1865,6 +1896,16 @@ class Parser
         var target_list = List(PNode)()
         target_list.add(target_expr)
         return PNode.stmt_with(PWith(target_list, stmts, line))
+
+    def parseInStmt(): PNode throws
+        const line = .peek().line
+        .expectText("in")
+        const expr = .parseExpr()
+        .skipEol()
+        const stmts = .parseBlock()
+        var expr_list = List(PNode)()
+        expr_list.add(expr)
+        return PNode.stmt_in(PInScope(expr_list, stmts, line))
 
     def parseGuardStmt(): PNode throws
         const line = .peek().line
@@ -2406,13 +2447,6 @@ class Parser
             var ops = List(PNode)()
             ops.add(operand)
             return PNode.expr_unary(PUnary("-", ops))
-        if .textIs("try")
-            # `try expr` prefix form — semantically identical to `expr?`
-            # (both emit Expr.try_ / ExprTry). Zig backend treats them as
-            # the same Expr8 production.
-            .advance()
-            const operand = .parseUnary()
-            return PNode.expr_try(operand)
         if .isKwOld()
             # `old expr` — pre-call value in `ensure` contracts (Expr8 → kw_old Expr9).
             .advance()
@@ -2485,8 +2519,12 @@ class Parser
             else if .textIs("?")
                 .advance()
                 expr = PNode.expr_try(expr)
+            else if .textIs("!")
+                # x! force-unwrap — alias for x to!
+                .advance()
+                expr = PNode.expr_to_bang(expr)
             else if .textIs("to")
-                # to! force-unwrap
+                # to! force-unwrap (legacy syntax — kept as alias)
                 .advance()
                 .expectText("!")
                 expr = PNode.expr_to_bang(expr)

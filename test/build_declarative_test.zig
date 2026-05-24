@@ -669,6 +669,209 @@ const Calendar = struct {
     pub const Persian   = "persian";
     pub const Julian    = "julian";
 };
+
+// ── IANA Timezone support ─────────────────────────────────────────────────────
+// Common IANA zones: UTC offset in minutes (std/dst) and DST rule index.
+// DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
+//            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
+// Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
+const _tz_table = [_]_TzEntry{
+    .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/UTC",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/GMT",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "America/New_York",            .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Detroit",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Indiana/Indianapolis",.std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Kentucky/Louisville", .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Toronto",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Chicago",             .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Winnipeg",            .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Mexico_City",         .std = -360, .dst = -360, .rule = 0 },
+    .{ .name = "America/Denver",              .std = -420, .dst = -360, .rule = 1 },
+    .{ .name = "America/Phoenix",             .std = -420, .dst = -420, .rule = 0 },
+    .{ .name = "America/Los_Angeles",         .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Vancouver",           .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Anchorage",           .std = -540, .dst = -480, .rule = 1 },
+    .{ .name = "America/Adak",               .std = -600, .dst = -540, .rule = 1 },
+    .{ .name = "Pacific/Honolulu",            .std = -600, .dst = -600, .rule = 0 },
+    .{ .name = "America/Bogota",              .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Lima",                .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Sao_Paulo",           .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Argentina/Buenos_Aires",.std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Santiago",            .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "Europe/London",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Dublin",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Lisbon",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Paris",                .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Berlin",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Amsterdam",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Rome",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Madrid",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Brussels",             .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Vienna",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Warsaw",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Prague",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Stockholm",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Oslo",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Copenhagen",           .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Zurich",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Athens",               .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Helsinki",             .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Bucharest",            .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Kyiv",                 .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Istanbul",             .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Moscow",               .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Minsk",                .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Asia/Dubai",                  .std = 240,  .dst = 240,  .rule = 0 },
+    .{ .name = "Asia/Tehran",                 .std = 210,  .dst = 210,  .rule = 0 },
+    .{ .name = "Asia/Kabul",                  .std = 270,  .dst = 270,  .rule = 0 },
+    .{ .name = "Asia/Karachi",                .std = 300,  .dst = 300,  .rule = 0 },
+    .{ .name = "Asia/Kolkata",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Colombo",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Kathmandu",              .std = 345,  .dst = 345,  .rule = 0 },
+    .{ .name = "Asia/Dhaka",                  .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Almaty",                 .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Yangon",                 .std = 390,  .dst = 390,  .rule = 0 },
+    .{ .name = "Asia/Bangkok",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Ho_Chi_Minh",            .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Jakarta",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Shanghai",               .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Hong_Kong",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Singapore",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Taipei",                 .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Kuala_Lumpur",           .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Seoul",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Asia/Tokyo",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Australia/Darwin",            .std = 570,  .dst = 570,  .rule = 0 },
+    .{ .name = "Australia/Adelaide",          .std = 570,  .dst = 630,  .rule = 3 },
+    .{ .name = "Australia/Perth",             .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Australia/Brisbane",          .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Australia/Sydney",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Melbourne",         .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Hobart",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Pacific/Auckland",            .std = 720,  .dst = 780,  .rule = 4 },
+    .{ .name = "Pacific/Fiji",                .std = 720,  .dst = 720,  .rule = 0 },
+    .{ .name = "Pacific/Guam",                .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Africa/Cairo",                .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Nairobi",              .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Africa/Johannesburg",         .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Lagos",                .std = 60,   .dst = 60,   .rule = 0 },
+    .{ .name = "Atlantic/Azores",             .std = -60,  .dst = 0,    .rule = 2 },
+    .{ .name = "Atlantic/Cape_Verde",         .std = -60,  .dst = -60,  .rule = 0 },
+};
+
+// First Sunday on or after epoch_days D (Sundays: epoch_days % 7 == 3).
+fn _tz_first_sun_on_or_after(d: i64) i64 {
+    return d + @mod(3 - d, 7);
+}
+
+// Last Sunday on or before epoch_days D.
+fn _tz_last_sun_on_or_before(d: i64) i64 {
+    return d - @mod(d - 3, 7);
+}
+
+fn _tz_us_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // US DST (since 2007): 2nd Sunday March 02:00 LST → 1st Sunday November 02:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    if (g.year < 2007) return false;
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    const mar1 = @divFloor(_dt_from_gregorian(g.year, 3, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_mar = _tz_first_sun_on_or_after(mar1);
+    const sun2_mar = sun1_mar + 7;
+    // 02:00 local standard → UTC: subtract std offset (std_ms is negative for West)
+    const dst_start = sun2_mar * 86400000 + 7200000 - std_ms;
+
+    const nov1 = @divFloor(_dt_from_gregorian(g.year, 11, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_nov = _tz_first_sun_on_or_after(nov1);
+    // 02:00 local DST → UTC: subtract dst offset
+    const dst_end = sun1_nov * 86400000 + 7200000 - dst_ms;
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_eu_dst_active(epoch_ms: i64) bool {
+    // EU DST: last Sunday March 01:00 UTC → last Sunday October 01:00 UTC
+    const g = _dt_to_gregorian(epoch_ms);
+
+    const mar31 = @divFloor(_dt_from_gregorian(g.year, 3, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_mar = _tz_last_sun_on_or_before(mar31);
+    const dst_start = last_sun_mar * 86400000 + 3600000; // 01:00 UTC
+
+    const oct31 = @divFloor(_dt_from_gregorian(g.year, 10, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_oct = _tz_last_sun_on_or_before(oct31);
+    const dst_end = last_sun_oct * 86400000 + 3600000; // 01:00 UTC
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_au_east_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // AU Eastern DST: 1st Sunday October 02:00 LST → 1st Sunday April 03:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–September: always standard time
+    if (g.month >= 5 and g.month <= 9) return false;
+
+    if (g.month >= 10) {
+        const oct1 = @divFloor(_dt_from_gregorian(g.year, 10, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_oct = _tz_first_sun_on_or_after(oct1);
+        const dst_start = sun1_oct * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        // January–April: DST started last October; check if before 1st Sunday April 03:00 LDT
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms; // 03:00 LDT → UTC
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // NZ DST: last Sunday September 02:00 NZST → 1st Sunday April 03:00 NZDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–August: always standard time
+    if (g.month >= 5 and g.month <= 8) return false;
+
+    if (g.month >= 9) {
+        const sep30 = @divFloor(_dt_from_gregorian(g.year, 9, 30, 0, 0, 0).epoch_ms, 86400000);
+        const last_sun_sep = _tz_last_sun_on_or_before(sep30);
+        const dst_start = last_sun_sep * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms;
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+    for (&_tz_table) |*entry| {
+        if (std.mem.eql(u8, entry.name, zone)) {
+            const std_ms: i64 = @as(i64, entry.std) * 60000;
+            if (entry.std == entry.dst or entry.rule == 0) {
+                return .{ .epoch_ms = dt.epoch_ms + std_ms };
+            }
+            const dst_ms: i64 = @as(i64, entry.dst) * 60000;
+            const in_dst = switch (entry.rule) {
+                1 => _tz_us_dst_active(dt.epoch_ms, entry.std),
+                2 => _tz_eu_dst_active(dt.epoch_ms),
+                3 => _tz_au_east_dst_active(dt.epoch_ms, entry.std),
+                4 => _tz_nz_dst_active(dt.epoch_ms, entry.std),
+                else => false,
+            };
+            return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
+        }
+    }
+    return dt; // Unknown zone: return as-is (UTC)
+}
 const JsonValue = std.json.Value;
 fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
@@ -1988,6 +2191,22 @@ const GuiContext = struct {
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
     pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+};
+const _GuiVBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiVBox) void { self._b.beginVBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiVBox) void { self._b.endVBoxFn(); }
+};
+const _GuiHBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {

@@ -1821,6 +1821,31 @@ const TypeChecker = struct {
             .contract => |s| { for (s.exprs) |e| _ = try tc.inferExpr(e); },
             .defer_   => |s| try tc.checkStmt(s.body),
             .with        => |s| { _ = try tc.inferExpr(s.target); try tc.checkStmts(s.body); },
+            .in_scope    => |s| {
+                const scope_t = try tc.inferExpr(s.expr);
+                switch (scope_t) {
+                    .optional => |inner| try tc.emitError(s.span,
+                        "expression has optional type '{s}?' — use 'in expr!' to unwrap before 'in'",
+                        .{inner.name()}),
+                    .named => |sym| {
+                        if (sym.own_scope) |scope| {
+                            const has_begin = scope.lookupLocal("begin") != null;
+                            const has_end   = scope.lookupLocal("end")   != null;
+                            if (!has_begin or !has_end) {
+                                const missing: []const u8 =
+                                    if (!has_begin and !has_end) "begin and end"
+                                    else if (!has_begin) "begin"
+                                    else "end";
+                                try tc.emitError(s.span,
+                                    "type '{s}' used in 'in' must define 'def begin()' and 'def end()': '{s}' is missing",
+                                    .{ sym.name, missing });
+                            }
+                        }
+                    },
+                    else => {},
+                }
+                try tc.checkStmts(s.body);
+            },
             .arena_scope => |s| try tc.checkStmts(s.body),
             .allocate_   =>|s| { _ = try tc.inferExpr(s.source); try tc.checkStmts(s.body); },
             .copy_out    => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.value); },

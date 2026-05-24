@@ -49,8 +49,31 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Refinement types (parametric aliases): `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint; `Bounded(0, 100)` in type position; struct-base aliases; both backends; 119/119 smoke, bootstrap 5/5 (2026-05-18)
 - [x] WebSocket (`Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close); both backends; bootstrap 5/5 (2026-05-19)
 - [x] IANA timezone support (`DateTime.inZone("America/New_York")`) — built-in table (~75 zones), 4 DST rules (US/EU/AU/NZ), zero binary-size cost if unused, both backends, 130/130 smoke, bootstrap 5/5 (2026-05-23)
+- [x] `in EXPR` scope blocks — any object with `begin()`/`end()` works; desugars to `{ const _in_N = EXPR; _in_N.begin(); defer _in_N.end(); body }`; `g.vbox()`/`g.hbox()` factory methods on GuiContext; QUICKSTART §38; both backends, 131/131 smoke, bootstrap 5/5 (2026-05-23)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
 - [ ] CHANGELOG covering the full 0.1 → 1.0 surface
+
+**0.15 — Language syntax cleanup:**
+- [x] `x!` postfix force-unwrap — `x!` ≡ `x to!`; `x!.method()` chains cleanly; `to!` stays as alias; both compilers; 132/132 smoke, bootstrap 5/5 (2026-05-23)
+- [x] `with` desugars bare method calls — `with g` makes `text("hello")` → `g.text("hello")`; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
+- [x] Remove `try expr` prefix form — Zig syntax leak; use `expr?` instead; migration note in QUICKSTART; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
+- [x] Inline single-line if/else — `if x: y` and `if x: y else: z`; `:` required; `else if` chaining + next-line `else:` both supported; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-24)
+- [ ] `Scope` interface for `in EXPR` — TC verifies `in EXPR`'s type implements `interface Scope { begin(); end() }`; `_GuiVBox`/`_GuiHBox` updated; structural typing (no `implements` needed); both compilers
+- [x] `is not` precedence — documented in QUICKSTART; test added to is_not_precedence_test.zbr; Expr4 > Expr3(not) > Expr(or) ordering confirmed; both compilers (2026-05-23)
+
+**0.15 — Stdlib completeness (pre-1.0 push):**
+- [ ] `Http.serve(port, handler)` — Zig has `std.http.Server` since 0.11; expose for web service use cases; both backends
+- [ ] `ThreadPool(n)` — `std.Thread.Pool`; `pool.submit(lambda)` + `pool.wait()`; bounded concurrency; both backends
+- [ ] `Path.*` — `Path.join/dirname/basename/normalize/extension`; wraps `std.fs.path`; both backends
+- [ ] Complete gzip compress — `Compress.gzip(bytes)` is currently a stub (Zig 0.15 limit fixed in 0.16); both backends
+- [ ] `Tcp.serve(port, handler)` — complement to `Tcp.connect`; both backends
+- [ ] `Atomic(T)` — wraps `std.atomic.Value(T)`; lock-free int/bool counters; both backends
+- [ ] `Log` improvements — structured logging (JSON lines, level filtering, file sink); both backends
+- [ ] `Crypto` additions — AES-GCM encrypt/decrypt, curve25519 key exchange; wraps `std.crypto`; both backends
+- [ ] `SQLite` — C binding via `zig-sqlite` or direct `libsqlite3`; lower priority (requires C dep)
+
+**0.15 — libui-ng consolidation:**
+- [ ] Audit `torial/libui-ng` (wp-2025) vs `petabyt/libui-dev` (extra components) + `kojix2/libui-ng` (bug fixes); cherry-pick into `torial/libui-ng`; update `build.zig.zon` hash
 
 ---
 

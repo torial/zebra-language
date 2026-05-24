@@ -418,16 +418,16 @@ def extractConflictSide(src: str, want_ours: bool): str
 # Catches parse/resolve/build errors and reports them as diagnostic strings so the
 # caller gets a clean list regardless. Does not compile to Zig.
 def tcCheckSide(src: str, path: str, diags: List(str))
-    var pm_node = try Parser.Parser.parse(src, path)
+    var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path)
-    try resolver.resolve(pm_node)
+    resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
         for line in resolver.allErrorMessages().split("\n")
             if line.trimLeft() != ""
                 diags.add(line)
         return
     if pm_node is PNode.module_ as pm
-        var module = try ASTBuilder.build(pm, path)
+        var module = ASTBuilder.build(pm, path)?
         var tc_mt: ModuleTypes = buildModuleTypes(module)
         var tc_ctx: InferCtx = InferCtx(tc_mt, "")
         tc_ctx.enableStrict()
@@ -599,7 +599,7 @@ def main()
     if args.positional(0) as first_pos
         if first_pos == "typecheck-merge"
             if args.positional(1) as merge_file
-                try runTypecheckMerge(merge_file)
+                runTypecheckMerge(merge_file)?
                 sys.exit(0)
             else
                 sys.errln("usage: zebra typecheck-merge <file.zbr>")
@@ -612,7 +612,7 @@ def main()
     if args.positional(0) as types_pos
         if types_pos == "types"
             if args.positional(1) as types_file
-                try runTypes(types_file)
+                runTypes(types_file)?
                 sys.exit(0)
             else
                 sys.errln("usage: zebra types <file.zbr>")
@@ -628,7 +628,7 @@ def main()
             var fmt_check: bool = args.contains("--check")
             var fmt_print: bool = args.contains("--print")
             if args.positional(1) as fmt_file
-                try runFmt(fmt_file, fmt_check, fmt_print)
+                runFmt(fmt_file, fmt_check, fmt_print)?
                 sys.exit(0)
             else
                 sys.errln("usage: zebra fmt [--check|--print] <file.zbr>")
@@ -641,7 +641,7 @@ def main()
     if args.positional(0) as chk_pos
         if chk_pos == "check"
             if args.positional(1) as chk_file
-                var had_issues: bool = try runCheck(chk_file)
+                var had_issues: bool = runCheck(chk_file)?
                 if had_issues
                     sys.exit(1)
                 sys.exit(0)

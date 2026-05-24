@@ -500,6 +500,7 @@ fn refsInStmt(stmt: Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerr
         .defer_    => |s| try refsInStmt(s.body, r, o),
         .contract  => |s| { for (s.exprs) |e| try refsInExpr(e, r, o); },
         .with        => |s| { try refsInExpr(s.target, r, o); try refsInStmts(s.body, r, o); },
+        .in_scope    => |s| { try refsInExpr(s.expr, r, o);   try refsInStmts(s.body, r, o); },
         .arena_scope => |s| try refsInStmts(s.body, r, o),
         .allocate_   => |s| { try refsInExpr(s.source, r, o); try refsInStmts(s.body, r, o); },
         .copy_out    => |s| { try refsInExpr(s.target, r, o); try refsInExpr(s.value, r, o); },
@@ -2079,6 +2080,22 @@ const Generator = struct {
             \\    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
             \\    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
             \\    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+            \\    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+            \\    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+            \\};
+            \\const _GuiVBox = struct {
+            \\    _b: *const _GuiBackend,
+            \\    _id: []const u8,
+            \\    _stretch: bool,
+            \\    pub fn begin(self: _GuiVBox) void { self._b.beginVBoxFn(self._id, self._stretch); }
+            \\    pub fn end(self: _GuiVBox) void { self._b.endVBoxFn(); }
+            \\};
+            \\const _GuiHBox = struct {
+            \\    _b: *const _GuiBackend,
+            \\    _id: []const u8,
+            \\    _stretch: bool,
+            \\    pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
+            \\    pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
             \\};
             \\const Gui = GuiContext;
             \\fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
@@ -4987,6 +5004,7 @@ const Generator = struct {
             .try_catch     => |s| s.span,
             .guard         => |s| s.span,
             .destruct      => |s| s.span,
+            .in_scope      => |s| s.span,
             .arena_scope   => |s| s.span,
             .allocate_     => |s| s.span,
             .copy_out      => |s| s.span,
@@ -5135,6 +5153,7 @@ const Generator = struct {
             .defer_    => |s| try g.genDefer(s),
             .contract  => {}, // contracts not emitted (runtime verification out of scope)
             .with        => |s| try g.genWith(s),
+            .in_scope    => |s| try g.genInScope(s),
             .arena_scope => |s| try g.genArenaScope(s),
             .allocate_   => |s| try g.genAllocate(s),
             .copy_out    => |s| try g.genCopyOut(s),
@@ -10688,6 +10707,25 @@ const Generator = struct {
         try g.genExpr(s.target);
         try g.w.writeAll("\n");
         try g.indented().genStmts(s.body);
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    /// `in expr eol Block` — desugar to { const _in_N = expr; _in_N.begin(); defer _in_N.end(); body }
+    fn genInScope(g: Generator, s: *Ast.StmtIn) anyerror!void {
+        const uid = g.nextUid();
+        try g.writeIndent();
+        try g.w.writeAll("{\n");
+        const ig = g.indented();
+        try ig.writeIndent();
+        try ig.w.print("const _in_{d} = ", .{uid});
+        try ig.genExpr(s.expr);
+        try ig.w.writeAll(";\n");
+        try ig.writeIndent();
+        try ig.w.print("_in_{d}.begin();\n", .{uid});
+        try ig.writeIndent();
+        try ig.w.print("defer _in_{d}.end();\n", .{uid});
+        try ig.genStmts(s.body);
         try g.writeIndent();
         try g.w.writeAll("}\n");
     }

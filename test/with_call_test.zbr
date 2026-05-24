@@ -1,0 +1,35 @@
+# Test `with` statement desugars bare method calls.
+# `with g` makes `text("hello")` → `g.text("hello")`
+
+class Logger
+    var log: List(str)
+
+    cue init()
+        .log = List(str)()
+
+    def write(msg: str): void
+        .log.add(msg)
+
+    def count(): int
+        return .log.len
+
+def main()
+    var logger = Logger()
+
+    with logger
+        # Bare method call desugars to logger.write(...)
+        write("hello")
+        write("world")
+
+    assert logger.count() == 2, "2 calls"
+    assert logger.log.at(0) == "hello"
+    assert logger.log.at(1) == "world"
+
+    # Assignments in with still work too
+    var other = Logger()
+    with other
+        write("test")
+
+    assert other.count() == 1, "1 call"
+
+    print "with_call_test PASS"

@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -1861,6 +1861,28 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.with_ as sw2
             walkExpr(sw2.target, ctx)
             walkStmts(sw2.stmts, ctx)
+        on Stmt.in_scope as si2
+            walkExpr(si2.expr, ctx)
+            var scope_t: Type_ = inferExpr(si2.expr, ctx)
+            branch scope_t
+                on Type_.optional
+                    ctx.addErr(ctx.file, si2.span.line, si2.span.col, "expression has optional type — use 'in expr!' to unwrap before 'in'")
+                on Type_.named as cname
+                    if ctx.module_types.hasClass(cname)
+                        var has_begin: bool = ctx.module_types.methodReturn(cname, "begin") != nil
+                        var has_end: bool = ctx.module_types.methodReturn(cname, "end") != nil
+                        if not has_begin or not has_end
+                            var missing: str = ""
+                            if not has_begin and not has_end
+                                missing = "begin and end"
+                            else if not has_begin
+                                missing = "begin"
+                            else
+                                missing = "end"
+                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'in' must define 'def begin()' and 'def end()': '" + missing + "' is missing")
+                else
+                    pass
+            walkStmts(si2.stmts, ctx)
         on Stmt.raise_ as sra
             if sra.message != nil
                 walkExpr(sra.message to!, ctx)  # safe: nil checked above
@@ -2113,6 +2135,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallExpr(stmt_call, file, 0, ctx)
             on Stmt.with_ as sw
                 checkStmts(sw.stmts, file, ctx)
+            on Stmt.in_scope as si
+                checkStmts(si.stmts, file, ctx)
             on Stmt.guard_ as sg
                 checkStmts(sg.else_stmts, file, ctx)
             on Stmt.allocate_ as sal

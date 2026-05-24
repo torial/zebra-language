@@ -458,6 +458,7 @@ union Stmt
     expr: ^Expr
     defer_: ^StmtDefer
     with_: ^StmtWith
+    in_scope: ^StmtIn
     raise_: ^StmtRaise
     try_catch: ^StmtTryCatch
     guard_: ^StmtGuard
@@ -649,6 +650,16 @@ struct StmtWith
     cue init(span: Span, target: ^Expr, stmts: List(Stmt))
         .span = span
         .target = target
+        .stmts = stmts
+
+struct StmtIn
+    var span: Span
+    var expr: ^Expr
+    var stmts: List(Stmt)
+
+    cue init(span: Span, expr: ^Expr, stmts: List(Stmt))
+        .span = span
+        .expr = expr
         .stmts = stmts
 
 struct StmtRaise

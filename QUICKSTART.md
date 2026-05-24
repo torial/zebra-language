@@ -319,6 +319,14 @@ if e is not Expr.str_
     print "not a string"
 ```
 
+**Precedence of `is not`:** `is not` and `not in` are comparisons (higher precedence
+than `not`, `and`, `or`).  Compound boolean expressions parse as you'd expect:
+
+```zebra
+x is not Foo or y is not Bar   # → (x is not Foo) or (y is not Bar)
+not x is not Foo               # → not (x is not Foo)  ≡  x is Foo
+```
+
 **Style rule — `if … is … as` vs `branch`:**
 - Use `if x is Union.Variant as r` when checking a **single variant** and
   binding its payload.  Reads naturally: "if x is a member expression, bind it as m".
@@ -404,7 +412,7 @@ var y: int? = 42
 
 # Nil check + force-unwrap:
 if x != nil
-    print x to!                      # `to!` = force-unwrap (like .? in Zig)
+    print x!                         # `x!` = force-unwrap (panics if nil); alias: `x to!`
 
 # Optional-unwrap binding form:
 if y as n
@@ -421,10 +429,10 @@ var z = x ?? 0                       # use 0 if nil
 # Optional chaining:
 var n = node?.next                   # nil if node is nil
 var s = node?.toString()             # method call — nil if node is nil
-var v = node?.value to! + 1          # unwrap result of optional chain
+var v = node?.value! + 1             # unwrap result of optional chain
 ```
 
-- `x to!` is the force-unwrap operator.  Panics if nil.
+- `x!` is the force-unwrap operator.  Panics if nil.  `x to!` is a legacy alias.
 - `??` is nil-coalescing (like `orelse` in Zig).
 - `?.` is optional member/method access — propagates nil.  Result type is `T?`.
   If the accessed member is already `T?`, the result is still `T?` (flattened, not `T??`).
@@ -457,14 +465,17 @@ var r = divide(10, 0) catch 0
 # Explicit propagation with `?`:
 var r = someObj.method()?            # propagates if method throws
 
-# `try expr` prefix — propagates error upward:
-var r = try divide(10, 2)
+# `try expr` prefix was removed in 0.15 — use `expr?` instead:
+# OLD: var r = try divide(10, 2)
+# NEW: var r = divide(10, 2)?
 ```
 
 - `throws` on a `def` makes it return `anyerror!T`.
 - Inside a `throws` method, calls to other `throws` methods in the **same file**
   auto-propagate (compiler emits `try`).  For cross-module `throws` calls or
   calls on local variables, use explicit `?` suffix.
+- **Migration note**: The `try expr` prefix form was removed in 0.15.
+  Replace every `try f()` with `f()?`; the semantics are identical.
 - `raise "msg"` creates an error string; `raise "msg", obj` attaches a
   `_Stringable` details object.
 - `catch` clauses appear after the method body at the same indent as `def`;
@@ -479,13 +490,36 @@ are the primary model.
 ## 13. Control flow
 
 ```zebra
-# if / else if / else
+# if / else if / else (block form)
 if x > 0
     print "positive"
 else if x < 0
     print "negative"
 else
     print "zero"
+
+# Inline single-line if: `if cond: stmt` — colon required
+if x > 0: print "positive"
+
+# Inline with else (same line or next line)
+if x > 0: label = "pos" else: label = "non-pos"
+
+if x > 0: label = "pos"
+else: label = "non-pos"
+
+# Inline else-if chain
+if grade >= 90: letter = "A" else if grade >= 80: letter = "B" else: letter = "F"
+
+# Inline if with return (common idiom)
+def sign(n: int): String
+    if n > 0: return "pos"
+    else if n < 0: return "neg"
+    else: return "zero"
+
+# Notes:
+#   - Colon (`:`) is required before the inline body
+#   - No capture binding (`as`) in inline form — use block form for that
+#   - Control structures (while, for, branch) still require block form
 
 # while
 var i = 0
@@ -495,7 +529,7 @@ while i < 10
 
 # while with bind-and-guard:
 while line = reader.readLine() != nil
-    process(line to!)
+    process(line!)
 
 # for-in (list)
 for item in items
@@ -852,7 +886,7 @@ if obj is Dog
 
 # Force-unwrap optional:
 var x: int? = 42
-var y = x to!                         # panics if nil
+var y = x!                            # panics if nil  (`x to!` is a legacy alias)
 
 # Combined type check + binding (requires LHS to be optional):
 var maybe: Animal? = lookup()
@@ -1052,7 +1086,7 @@ are deferred.
 
 | Pattern              | Zebra                          | Notes                                    |
 |----------------------|--------------------------------|------------------------------------------|
-| Force-unwrap optional | `x to!`                       | panics if nil                            |
+| Force-unwrap optional | `x!`                          | panics if nil; `x to!` is a legacy alias |
 | Nil-coalescing       | `x ?? default`                 |                                          |
 | Optional unwrap bind | `if x as n`                    | `n: T` when `x: T?`                      |
 | Type-check + bind    | `if obj is Dog as d`           | combined `is` + `as`                     |
@@ -1079,13 +1113,15 @@ are deferred.
        pass
    ```
 
-2. **`if` single-line form — body must be on a new indented line:**
+2. **`if` inline form requires a colon — the colon is not optional:**
    ```zebra
-   # WRONG:
+   # WRONG (no colon):
    if x > 0 return x
-   # RIGHT:
+   # RIGHT (block form):
    if x > 0
        return x
+   # RIGHT (inline form — colon required):
+   if x > 0: return x
    ```
 
 3. **Multi-line `use` — all names must be on one line (no continuation):**
@@ -2188,3 +2224,87 @@ After `var score: Bounded(0, 100) = 85`, the compiler emits:
 ### --turbo
 
 `--turbo` strips all alias constraint checks, including refinement type checks.
+
+---
+
+## 38. `in EXPR` — resource scope blocks
+
+`in EXPR` executes a block with a resource that has a `begin()` / `end()` lifecycle.  Any object with both methods works — no interface declaration required.
+
+```zebra
+class CountGroup
+    var entered: int
+    var exited: int
+    cue init()
+        .entered = 0
+        .exited  = 0
+    def begin(): void
+        .entered = .entered + 1
+    def end(): void
+        .exited  = .exited + 1
+
+def main(): void
+    var g = CountGroup()
+    in g
+        print "inside"
+    # g.entered == 1, g.exited == 1 here
+```
+
+### Desugaring
+
+```
+in EXPR
+    body...
+```
+
+expands to:
+
+```zebra
+{
+    const _in_N = EXPR
+    _in_N.begin()
+    defer _in_N.end()
+    body...
+}
+```
+
+`EXPR` is evaluated exactly once.  `end()` is always called, even if `body` raises.
+
+### GUI layout groups
+
+The GUI stdlib uses `in` for layout containers:
+
+```zebra
+in g.vbox("##main", true)       # vertical box (stretch = true)
+    in g.hbox("##row", false)   # horizontal box inside
+        g.button("OK", .ok)
+        g.button("Cancel", .cancel)
+    g.text("Status: ready")
+```
+
+`g.vbox(id, stretch)` and `g.hbox(id, stretch)` return layout group objects with `begin()` / `end()`.
+
+### Rules and gotchas
+
+- The `in EXPR` header and the first body line must be on adjacent lines — no blank line between them.
+- Nesting is supported (`in outer` containing `in inner`).
+- `in` as a statement-start is unambiguous: the infix `in` operator (e.g. `"x" in list`) only appears inside expressions, never at statement position.
+
+---
+
+## 39. `with` — contextual self
+
+`with obj` makes `obj` the implicit receiver for bare-name assignments **and** bare method calls inside the block:
+
+```zebra
+with g
+    text("Status: ready")          # → g.text("Status: ready")
+    button("OK", .ok)              # → g.button("OK", .ok)
+    x = 5                          # → g.x = 5
+```
+
+Only two transformations happen inside a `with` block:
+- **Bare assignment** `field = val` → `obj.field = val`
+- **Bare method call** `method(args)` → `obj.method(args)`
+
+All other statements (if, for, nested with, etc.) are left unchanged.  Only **top-level** statements in the block are rewritten — bare calls nested inside an `if` or `for` inside the block require explicit `obj.method(...)` form.

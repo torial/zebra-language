@@ -140,6 +140,8 @@ pub const NT = enum {
     IfTail,              // zero or more else-if clauses, optional else
     ElseIfClause,
     ElseClauseOpt,
+    InlineThen,          // single inline stmt body (no trailing eol)
+    InlineElse,          // optional inline else chain (recursive)
 
     StmtWhile,
     StmtUnless,  // unless Expr eol Block — desugar to if not cond
@@ -182,6 +184,9 @@ pub const NT = enum {
 
     // ── with contextual-self block ─────────────────────────────────────────
     StmtWith,         // with Expr eol Block
+
+    // ── scope-block: in expr → expr.begin(); defer expr.end(); body ───────
+    StmtIn,           // in Expr eol Block
 
     // ── scoped arena allocation block ─────────────────────────────────────
     StmtArenaScope,   // arena eol Block
@@ -826,6 +831,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtLock) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDefer) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWith) } },
+    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtIn) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtArenaScope) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAllocate) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtCopyOut) } },
@@ -850,7 +856,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtAssertFalse, .rhs = &.{ t(.kw_assert_false), n(.Expr), t(.eol) } },
     .{ .lhs = .StmtYield,       .rhs = &.{ t(.kw_yield), n(.Expr), t(.eol) } },
 
-    // if / else if / else
+    // if / else if / else (block form)
     .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.eol), n(.Block), n(.IfTail) } },
     // `if x is Variant as r` — capture form
     .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.kw_as), t(.id), t(.eol), n(.Block), n(.IfTail) } },
@@ -862,6 +868,35 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .ElseIfClause,  .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.kw_as), t(.id), t(.eol), n(.Block) } },
     .{ .lhs = .ElseClauseOpt, .rhs = &.{} }, // ε
     .{ .lhs = .ElseClauseOpt, .rhs = &.{ t(.kw_else), t(.eol), n(.Block) } },
+
+    // if / else (inline form): `if cond: stmt` or `if cond: stmt else: stmt`
+    // Colon is required; no capture binding in inline form.
+    // eol appears at the end of the whole StmtIf so that same-line else chains work.
+    .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.colon), n(.InlineThen), n(.InlineElse), t(.eol) } },
+
+    // InlineThen — single statement body without trailing eol
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_return) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_return), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_print), n(.ExprList) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_pass) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_break) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_continue) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_assert), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_assert), n(.Expr), t(.comma), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_yield), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_var), t(.id), n(.VarTypeOpt), n(.VarInitOpt) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_const), t(.id), n(.VarTypeOpt), t(.assign), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ n(.Expr), n(.AssignOp), n(.Expr) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ n(.Expr) } },
+
+    // InlineElse — optional else/else-if chain after InlineThen
+    // Same-line forms (no leading eol):
+    .{ .lhs = .InlineElse, .rhs = &.{} }, // ε — no else
+    .{ .lhs = .InlineElse, .rhs = &.{ t(.kw_else), t(.colon), n(.InlineThen), n(.InlineElse) } },
+    .{ .lhs = .InlineElse, .rhs = &.{ t(.kw_else), t(.kw_if), n(.Expr), t(.colon), n(.InlineThen), n(.InlineElse) } },
+    // Next-line forms (else: on its own line, eol consumed here):
+    .{ .lhs = .InlineElse, .rhs = &.{ t(.eol), t(.kw_else), t(.colon), n(.InlineThen), n(.InlineElse) } },
+    .{ .lhs = .InlineElse, .rhs = &.{ t(.eol), t(.kw_else), t(.kw_if), n(.Expr), t(.colon), n(.InlineThen), n(.InlineElse) } },
 
     // while
     .{ .lhs = .StmtWhile,  .rhs = &.{ t(.kw_while),  n(.Expr), t(.eol), n(.Block) } },
@@ -973,6 +1008,8 @@ const stmt_rules: []const Rule = &.{
 
     // with obj eol Block — contextual self
     .{ .lhs = .StmtWith,       .rhs = &.{ t(.kw_with),  n(.Expr), t(.eol), n(.Block) } },
+    // in expr eol Block — scope group: expr.begin(); defer expr.end(); body
+    .{ .lhs = .StmtIn,         .rhs = &.{ t(.kw_in),    n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),    t(.eol), n(.Block) } },
     .{ .lhs = .StmtAllocate,   .rhs = &.{ t(.kw_allocate), n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtCopyOut,   .rhs = &.{ n(.Expr), t(.left_arrow), n(.Expr), t(.eol) } },
@@ -1085,8 +1122,6 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr8, .rhs = &.{ t(.tilde),   n(.Expr9) } },
     // old — refers to pre-call value in contract `ensure` clauses
     .{ .lhs = .Expr8, .rhs = &.{ t(.kw_old),  n(.Expr9) } },
-    // try expr — propagate error upward (expression form)
-    .{ .lhs = .Expr8, .rhs = &.{ t(.kw_try),  n(.Expr8) } },
     .{ .lhs = .Expr8, .rhs = &.{ n(.Expr9) } },
 
     // Expr9 → postfix: member access, chained call, index, cast
@@ -1102,6 +1137,7 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), n(.TypeRef) } },                       // expr to T
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.toq) } },                                      // expr to?
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), t(.bang) } },                          // expr to!  (non-nil assert)
+    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.bang) } },                                     // expr!  (force-unwrap — alias for expr to!)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question) } },                                 // expr?  (propagate error — sugar for try expr)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.id) } },                    // expr?.member  (optional chain — member access)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.open_call), n(.ArgList), t(.rparen) } }, // expr?.method(args)  (optional chain — method call)

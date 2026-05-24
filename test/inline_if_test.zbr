@@ -1,0 +1,39 @@
+def main()
+    # Basic inline if
+    var x = 5
+    if x > 3: print "big"
+
+    # Inline if/else same line
+    var label = ""
+    if x > 3: label = "big" else: label = "small"
+    print label
+
+    # Inline if/else next line
+    var label2 = ""
+    if x > 3: label2 = "yes"
+    else: label2 = "no"
+    print label2
+
+    # Inline else-if chain
+    var grade = 85
+    var letter = ""
+    if grade >= 90: letter = "A" else if grade >= 80: letter = "B" else if grade >= 70: letter = "C" else: letter = "F"
+    print letter
+
+    # Inline if with return (inside a helper)
+    print sign(7)
+    print sign(-3)
+    print sign(0)
+
+    # Block form regression (must still work)
+    if x > 0
+        print "positive"
+    else
+        print "nonpositive"
+
+    print "inline_if: OK"
+
+def sign(n: int): String
+    if n > 0: return "pos"
+    else if n < 0: return "neg"
+    else: return "zero"

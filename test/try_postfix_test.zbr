@@ -6,13 +6,13 @@ class Math
             return a / b
 
 def testSafeDiv()
-    var quotient = try Math.safeDiv(10, 2)
+    var quotient = Math.safeDiv(10, 2)?
     print quotient
 catch |e|
     print "unexpected error: ".concat(e.message)
 
 def testSafeDivFail()
-    var result2 = try Math.safeDiv(10, 0)
+    var result2 = Math.safeDiv(10, 0)?
     print result2
 catch |e|
     print "caught: ".concat(e.message)

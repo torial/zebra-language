@@ -378,6 +378,7 @@ pub const Stmt = union(enum) {
     arena_scope: *StmtArenaScope,   // arena eol Block — scoped sub-arena
     allocate_: *StmtAllocate,       // allocate <expr> eol Block — redirect _allocator
     copy_out: *StmtCopyOut,         // lhs <- rhs — copy rhs out of the current arena
+    in_scope: *StmtIn,              // in expr eol Block → expr.begin(); defer expr.end(); body
 };
 
 pub const StmtIf = struct {
@@ -513,6 +514,14 @@ pub const StmtDefer = struct {
 pub const StmtWith = struct {
     span: Span,
     target: *Expr,
+    body: []const Stmt,
+};
+
+/// `in expr eol Block` — calls expr.begin(), defers expr.end(), executes body.
+/// Desugars to: { const _in_N = expr; _in_N.begin(); defer _in_N.end(); body }
+pub const StmtIn = struct {
+    span: Span,
+    expr: *Expr,
     body: []const Stmt,
 };
 

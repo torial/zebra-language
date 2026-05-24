@@ -284,80 +284,63 @@ def view(g: Gui, m: Model)
             if not proc.isRunning()
                 g.send(Msg.build_done)
 
-    g.beginVBox("##root", true)
+    in g.vbox("##root", true)
+        # Toolbar — all buttons always present (libui-ng retained-mode requirement)
+        in g.hbox("##toolbar", false)
+            if g.button("Open")
+                g.send(Msg.open_file)
+            if g.button("Save")
+                g.send(Msg.save_file)
+            if g.button("Check")
+                g.send(Msg.check_requested)
+            if g.button("Run")
+                g.send(Msg.run_requested)
+            if g.button("Debug")
+                g.send(Msg.debug_start)
+            if g.button("Stop Debug")
+                g.send(Msg.debug_stop)
+            if g.button("Build")
+                g.send(Msg.build_start)
+            if g.button("Cancel Build")
+                g.send(Msg.build_cancel)
+            var pathVal = g.input("##filepath", m.filepath)
+            if pathVal != m.filepath
+                g.send(Msg.filepath_changed(pathVal))
+            var statusLine = ""
+            if m.dirty
+                statusLine = "* "
+            if m.debugPort > 0
+                statusLine = statusLine + "DAP :${m.debugPort}  "
+            if m.buildRunning
+                statusLine = statusLine + "Building..."
+            g.text(statusLine)
 
-    # Toolbar — all buttons always present (libui-ng retained-mode requirement)
-    g.beginHBox("##toolbar", false)
-    if g.button("Open")
-        g.send(Msg.open_file)
-    if g.button("Save")
-        g.send(Msg.save_file)
-    if g.button("Check")
-        g.send(Msg.check_requested)
-    if g.button("Run")
-        g.send(Msg.run_requested)
-    if g.button("Debug")
-        g.send(Msg.debug_start)
-    if g.button("Stop Debug")
-        g.send(Msg.debug_stop)
-    if g.button("Build")
-        g.send(Msg.build_start)
-    if g.button("Cancel Build")
-        g.send(Msg.build_cancel)
-    var pathVal = g.input("##filepath", m.filepath)
-    if pathVal != m.filepath
-        g.send(Msg.filepath_changed(pathVal))
-    var statusLine = ""
-    if m.dirty
-        statusLine = "* "
-    if m.debugPort > 0
-        statusLine = statusLine + "DAP :${m.debugPort}  "
-    if m.buildRunning
-        statusLine = statusLine + "Building..."
-    g.text(statusLine)
-    g.endHBox()
-
-    # Body: code editor (left, stretches) + right panel (fixed width)
-    g.beginHBox("##body", true)
-
-    g.beginVBox("##editor_col", true)
-    m.editor to!.render(g, "##code", 0, 0)
-    g.endVBox()
-
-    g.beginVBox("##right_col", false)
-    g.text("Diagnostics")
-    m.diagEditor to!.render(g, "##diags", 340, 280)
-    g.separator()
-    g.text("Build file:")
-    var bfVal = g.input("##buildfile", m.buildFile)
-    if bfVal != m.buildFile
-        g.send(Msg.buildfile_changed(bfVal))
-    if g.button("List Targets")
-        g.send(Msg.list_targets)
-    var targetsText = ""
-    for t in m.buildTargets
-        targetsText = targetsText + "  " + t + "\n"
-    g.text(targetsText)
-    g.endVBox()
-
-    g.endHBox()
-
-    # Output row — program output and build output side by side
-    g.beginHBox("##output_row", false)
-
-    g.beginVBox("##output_col", true)
-    g.text("Output")
-    m.outputEditor to!.render(g, "##output", 0, 120)
-    g.endVBox()
-
-    g.beginVBox("##buildout_col", true)
-    g.text("Build Output")
-    m.buildOutputEditor to!.render(g, "##buildout", 0, 120)
-    g.endVBox()
-
-    g.endHBox()
-
-    g.endVBox()
+        # Body: code editor (left, stretches) + right panel (fixed width)
+        in g.hbox("##body", true)
+            in g.vbox("##editor_col", true)
+                m.editor to!.render(g, "##code", 0, 0)
+            in g.vbox("##right_col", false)
+                g.text("Diagnostics")
+                m.diagEditor to!.render(g, "##diags", 340, 280)
+                g.separator()
+                g.text("Build file:")
+                var bfVal = g.input("##buildfile", m.buildFile)
+                if bfVal != m.buildFile
+                    g.send(Msg.buildfile_changed(bfVal))
+                if g.button("List Targets")
+                    g.send(Msg.list_targets)
+                var targetsText = ""
+                for t in m.buildTargets
+                    targetsText = targetsText + "  " + t + "\n"
+                g.text(targetsText)
+        # Output row — program output and build output side by side
+        in g.hbox("##output_row", false)
+            in g.vbox("##output_col", true)
+                g.text("Output")
+                m.outputEditor to!.render(g, "##output", 0, 120)
+            in g.vbox("##buildout_col", true)
+                g.text("Build Output")
+                m.buildOutputEditor to!.render(g, "##buildout", 0, 120)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

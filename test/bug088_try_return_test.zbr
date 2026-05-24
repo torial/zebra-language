@@ -1,6 +1,6 @@
 class Outer
     def getLabel(): str
-        var v: str = try compute()
+        var v: str = compute()?
         return "ok:" + v
     catch
         return "err"

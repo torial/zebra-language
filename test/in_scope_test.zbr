@@ -1,0 +1,32 @@
+# Test `in EXPR` scope-block syntax.
+# Any object with begin()/end() methods can be used.
+
+class CountGroup
+    var id      : str
+    var entered : int
+    var exited  : int
+
+    cue init(id: str)
+        .id      = id
+        .entered = 0
+        .exited  = 0
+
+    def begin(): void
+        .entered = .entered + 1
+
+    def end(): void
+        .exited = .exited + 1
+
+def main(): void
+    var outer = CountGroup("outer")
+    var inner = CountGroup("inner")
+
+    in outer
+        in inner
+            print "inside both"
+
+    assert outer.entered == 1
+    assert outer.exited  == 1
+    assert inner.entered == 1
+    assert inner.exited  == 1
+    print "in_scope_test PASS"

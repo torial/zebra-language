@@ -1294,6 +1294,7 @@ const Builder = struct {
             .StmtExpr     => .{ .expr    = try b.box(Ast.Expr,       try b.buildExpr(kids[0])) },
             .StmtDefer    => .{ .defer_    = try b.box(Ast.StmtDefer,    try b.buildStmtDefer(inner)) },
             .StmtWith       => .{ .with        = try b.box(Ast.StmtWith,       try b.buildStmtWith(inner)) },
+            .StmtIn         => .{ .in_scope    = try b.box(Ast.StmtIn,         try b.buildStmtIn(inner)) },
             .StmtArenaScope => .{ .arena_scope = try b.box(Ast.StmtArenaScope, try b.buildStmtArenaScope(inner)) },
             .StmtAllocate   => .{ .allocate_   = try b.box(Ast.StmtAllocate,   try b.buildStmtAllocate(inner)) },
             .StmtCopyOut    => .{ .copy_out    = try b.box(Ast.StmtCopyOut,    try b.buildStmtCopyOut(inner)) },
@@ -1340,6 +1341,21 @@ const Builder = struct {
                 .else_body  = else_body,
             };
         }
+        if (kids.len == 6 and isLeafKind(kids[2], .colon)) {
+            // Inline form: kw_if Expr colon InlineThen InlineElse eol
+            // [0]kw_if [1]Expr [2]colon [3]InlineThen [4]InlineElse [5]eol
+            const then_stmt = try b.buildInlineThen(kids[3]);
+            const then_slice = try b.arena.alloc(Ast.Stmt, 1);
+            then_slice[0] = then_stmt;
+            try b.collectInlineElse(kids[4], &else_ifs, &else_body);
+            return .{
+                .span      = spanOf(node, b.tokens),
+                .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+                .then_body = then_slice,
+                .else_ifs  = try else_ifs.toOwnedSlice(b.arena),
+                .else_body = else_body,
+            };
+        }
         // Standard form: kw_if Expr eol Block IfTail
         // [0]kw_if [1]Expr [2]eol [3]Block [4]IfTail
         try b.collectIfTail(kids[4], &else_ifs, &else_body);
@@ -1350,6 +1366,110 @@ const Builder = struct {
             .else_ifs  = try else_ifs.toOwnedSlice(b.arena),
             .else_body = else_body,
         };
+    }
+
+    fn buildInlineThen(b: Builder, node: TN) anyerror!Ast.Stmt {
+        // InlineThen — single inline statement body (no trailing eol)
+        const kids = ch(node);
+        const s = spanOf(node, b.tokens);
+        if (kids.len == 0) return .{ .pass = s };
+        const first = kids[0];
+        if (isLeafKind(first, .kw_return)) {
+            const val: ?*Ast.Expr = if (kids.len >= 2)
+                try b.box(Ast.Expr, try b.buildExpr(kids[1]))
+            else
+                null;
+            return .{ .return_ = try b.box(Ast.StmtReturn, .{ .span = s, .value = val }) };
+        }
+        if (isLeafKind(first, .kw_print)) return .{ .print = try b.box(Ast.StmtPrint, .{
+            .span = s,
+            .args = try b.buildExprListPtrs(kids[1]),
+        }) };
+        if (isLeafKind(first, .kw_pass))     return .{ .pass      = s };
+        if (isLeafKind(first, .kw_break))    return .{ .break_    = s };
+        if (isLeafKind(first, .kw_continue)) return .{ .continue_ = s };
+        if (isLeafKind(first, .kw_yield)) return .{ .yield = try b.box(Ast.StmtYield, .{
+            .span  = s,
+            .value = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+        }) };
+        if (isLeafKind(first, .kw_assert)) return .{ .assert = try b.box(Ast.StmtAssert, .{
+            .span    = s,
+            .cond    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            .message = if (kids.len == 4) try b.box(Ast.Expr, try b.buildExpr(kids[3])) else null,
+        }) };
+        if (isLeafKind(first, .kw_var) or isLeafKind(first, .kw_const)) {
+            // Reuse buildStmtLocalVar — works for both 4-kid (kw_var id VTO VIO) and
+            // 5-kid (kw_const id VTO assign Expr) since it uses bounds-checked idx access.
+            return .{ .var_ = try b.box(Ast.DeclVar, try b.buildStmtLocalVar(node)) };
+        }
+        // Expr AssignOp Expr  or  Expr
+        if (kids.len == 3) {
+            return .{ .assign = try b.box(Ast.StmtAssign, .{
+                .span   = s,
+                .target = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+                .op     = buildAssignOp(kids[1]),
+                .value  = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
+            }) };
+        }
+        // Expr — expression statement
+        return .{ .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])) };
+    }
+
+    fn collectInlineElse(b: Builder, node: TN, else_ifs: *std.ArrayList(Ast.ElseIf), else_body: *?[]const Ast.Stmt) anyerror!void {
+        // InlineElse → ε
+        //             | else: InlineThen InlineElse          (4 kids, same-line)
+        //             | else if Expr: InlineThen InlineElse  (6 kids, same-line)
+        //             | eol else: InlineThen InlineElse      (5 kids, next-line)
+        //             | eol else if Expr: InlineThen InlineElse (7 kids, next-line)
+        switch (node) {
+            .epsilon => return,
+            .inner => |inner| {
+                const kids = inner.children;
+                if (kids.len == 0) return; // ε production
+                if (kids.len == 4) {
+                    // same-line: else: InlineThen InlineElse
+                    // [0]kw_else [1]colon [2]InlineThen [3]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[2]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    else_body.* = body_slice;
+                    try b.collectInlineElse(kids[3], else_ifs, else_body);
+                } else if (kids.len == 5) {
+                    // next-line: eol else: InlineThen InlineElse
+                    // [0]eol [1]kw_else [2]colon [3]InlineThen [4]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[3]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    else_body.* = body_slice;
+                    try b.collectInlineElse(kids[4], else_ifs, else_body);
+                } else if (kids.len == 6) {
+                    // same-line: else if Expr: InlineThen InlineElse
+                    // [0]kw_else [1]kw_if [2]Expr [3]colon [4]InlineThen [5]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[4]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    try else_ifs.append(b.arena, .{
+                        .span = spanOf(node, b.tokens),
+                        .cond = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
+                        .body = body_slice,
+                    });
+                    try b.collectInlineElse(kids[5], else_ifs, else_body);
+                } else if (kids.len == 7) {
+                    // next-line: eol else if Expr: InlineThen InlineElse
+                    // [0]eol [1]kw_else [2]kw_if [3]Expr [4]colon [5]InlineThen [6]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[5]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    try else_ifs.append(b.arena, .{
+                        .span = spanOf(node, b.tokens),
+                        .cond = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
+                        .body = body_slice,
+                    });
+                    try b.collectInlineElse(kids[6], else_ifs, else_body);
+                }
+            },
+            .leaf => {},
+        }
     }
 
     fn collectIfTail(b: Builder, node: TN, else_ifs: *std.ArrayList(Ast.ElseIf), else_body: *?[]const Ast.Stmt) !void {
@@ -1758,7 +1878,8 @@ const Builder = struct {
         const target_expr = try b.box(Ast.Expr, try b.buildExpr(kids[1]));
         const raw_body    = try b.buildStmtList(block_kids[1]);
 
-        // Desugar bare-name assignments: `x = val` → `target.x = val`
+        // Desugar bare-name assignments and calls: `x = val` → `target.x = val`,
+        // `method(args)` → `target.method(args)`
         var body = std.ArrayList(Ast.Stmt).empty;
         for (raw_body) |stmt| {
             if (stmt == .assign) {
@@ -1780,6 +1901,27 @@ const Builder = struct {
                     continue;
                 }
             }
+            // Desugar bare-ident call statements: `method(args)` → `target.method(args)`
+            if (stmt == .expr) {
+                const e = stmt.expr;
+                if (e.* == .call and e.call.callee.* == .ident) {
+                    const call = e.call;
+                    const method_name = call.callee.ident.name;
+                    const new_callee = try b.box(Ast.Expr, .{ .member = try b.box(Ast.ExprMember, .{
+                        .span   = call.callee.ident.span,
+                        .object = target_expr,
+                        .member = method_name,
+                    }) });
+                    const new_call = try b.box(Ast.ExprCall, .{
+                        .span      = call.span,
+                        .callee    = new_callee,
+                        .type_args = call.type_args,
+                        .args      = call.args,
+                    });
+                    try body.append(b.arena, .{ .expr = try b.box(Ast.Expr, .{ .call = new_call }) });
+                    continue;
+                }
+            }
             try body.append(b.arena, stmt);
         }
 
@@ -1787,6 +1929,17 @@ const Builder = struct {
             .span   = span,
             .target = target_expr,
             .body   = try body.toOwnedSlice(b.arena),
+        };
+    }
+
+    fn buildStmtIn(b: Builder, node: TN) anyerror!Ast.StmtIn {
+        // kw_in Expr eol Block
+        const kids       = ch(node);
+        const block_kids = ch(kids[3]); // Block → indent StmtList dedent
+        return .{
+            .span = spanOf(node, b.tokens),
+            .expr = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            .body = try b.buildStmtList(block_kids[1]),
         };
     }
 
@@ -2300,7 +2453,6 @@ const Builder = struct {
                 .tilde   => .{ .unary = try b.box(Ast.ExprUnary, .{ .span=s, .op=.bit_not, .operand=opExpr }) },
                 .kw_not  => .{ .unary = try b.box(Ast.ExprUnary, .{ .span=s, .op=.not_,    .operand=opExpr }) },
                 .kw_old  => .{ .old   = try b.box(Ast.ExprOld,   .{ .span=s, .expr=opExpr }) },
-                .kw_try  => .{ .try_  = try b.box(Ast.ExprTry,   .{ .span=s, .expr=opExpr }) },
                 else => std.debug.panic("buildExprLevel unary: {s}", .{@tagName(kids[0].leaf.token)}),
             };
         }
@@ -2316,6 +2468,14 @@ const Builder = struct {
         // `expr?` postfix: 2 children, second is .question — sugar for `try expr`
         if (kids.len == 2 and isLeafKind(kids[1], .question)) {
             return .{ .try_ = try b.box(Ast.ExprTry, .{
+                .span = s,
+                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+            }) };
+        }
+
+        // `expr!` postfix: 2 children, second is .bang — force-unwrap, alias for `expr to!`
+        if (kids.len == 2 and isLeafKind(kids[1], .bang)) {
+            return .{ .to_non_nil = try b.box(Ast.ExprToNonNil, .{
                 .span = s,
                 .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
             }) };

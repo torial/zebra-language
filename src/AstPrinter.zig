@@ -334,6 +334,7 @@ const Printer = struct {
             .arena_scope => { try p.w("(arena)", .{}); },
             .allocate_   => { try p.w("(allocate)", .{}); },
             .copy_out    => { try p.w("(copy-out)", .{}); },
+            .in_scope  => { try p.w("(in-scope)", .{}); },
             .pass     => try p.w("(pass)", .{}),
             .break_   => try p.w("(break)", .{}),
             .continue_=> try p.w("(continue)", .{}),

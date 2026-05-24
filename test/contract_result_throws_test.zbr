@@ -17,7 +17,7 @@ class Main
             return n
 
         def runOne(m: Main, n: int)
-            var v: int = try Main.safeAbs(n)
+            var v: int = Main.safeAbs(n)?
             m.ok_count = m.ok_count + 1
             print "ok=${v}"
         catch

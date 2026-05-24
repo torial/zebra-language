@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
 use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -1190,6 +1190,8 @@ def stmtLine(s: Stmt): int
             return d.span.line
         on Stmt.with_ as ww
             return ww.span.line
+        on Stmt.in_scope as si_l
+            return si_l.span.line
         on Stmt.allocate_ as al
             return al.span.line
         on Stmt.copy_out as co
@@ -3244,6 +3246,8 @@ struct Generator
                     addAddrOfMutationsInExpr(co2.value, out)
                 on Stmt.with_ as ww2
                     addAddrOfMutationsInStmts(ww2.stmts, out)
+                on Stmt.in_scope as si3
+                    addAddrOfMutationsInStmts(si3.stmts, out)
                 on Stmt.guard_ as g2
                     addAddrOfMutationsInStmts(g2.else_stmts, out)
                 on Stmt.var_ as n
@@ -3439,6 +3443,8 @@ struct Generator
                 genDefer(d)
             on Stmt.with_ as ww
                 genWith(ww)
+            on Stmt.in_scope as si
+                genInScope(si)
             on Stmt.allocate_ as al
                 genAllocate(al)
             on Stmt.copy_out as co
@@ -6082,6 +6088,28 @@ struct Generator
         w.emit("{ // with\n")
         var ig = indented()
         ig.genStmts(ww.stmts)
+        writeIndent()
+        w.emit("}\n")
+
+    # ── genInScope ────────────────────────────────────────────────────────────
+    # `in EXPR eol Block` → { const _in_N = EXPR; _in_N.begin(); defer _in_N.end(); body }
+
+    def genInScope(si: StmtIn)
+        var uid = w.nextUid()
+        writeIndent()
+        w.emit("{\n")
+        var ig = indented()
+        ig.writeIndent()
+        w.emit("const _in_${uid} = ")
+        genExpr(si.expr)
+        w.emit(";\n")
+        ig.writeIndent()
+        w.emit("_in_${uid}.begin();")
+        w.emit("\n")
+        ig.writeIndent()
+        w.emit("defer _in_${uid}.end();")
+        w.emit("\n")
+        ig.genStmts(si.stmts)
         writeIndent()
         w.emit("}\n")
 

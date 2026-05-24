@@ -6,7 +6,7 @@ class App
             return x * 2
 
         def testRiskyCalc(base: int, multiplier: int)
-            var result: int = try App.risky(base)
+            var result: int = App.risky(base)?
             var total: int = result * multiplier
             print total
         catch

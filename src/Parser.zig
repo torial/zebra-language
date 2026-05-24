@@ -397,6 +397,16 @@ test "parse: to! non-nil assertion" {
     try expectAccepts("class Foo\n\tdef run\n\t\tx = foo() to!\n");
 }
 
+test "parse: postfix ! force-unwrap" {
+    // Expr9 → Expr9 bang  — alias for expr to!
+    try expectAccepts("class Foo\n\tdef run\n\t\tx = foo()!\n");
+}
+
+test "parse: postfix ! chained with member access" {
+    // x!.member — force-unwrap then access
+    try expectAccepts("class Foo\n\tdef run\n\t\tx = foo()!.value\n");
+}
+
 // ── Rejection cases ────────────────────────────────────────────────────────────
 
 // ── Acceptance: extended enum (sum types with payloads) ───────────────────────

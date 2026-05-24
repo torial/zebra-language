@@ -466,6 +466,7 @@ const Resolver = struct {
             .contract => |s| { for (s.exprs) |e| try r.walkExpr(e, scope); },
             .defer_   => |s| try r.walkStmt(s.body, scope),
             .with        => |s| { try r.walkExpr(s.target, scope); try r.walkStmts(s.body, scope); },
+            .in_scope    => |s| { try r.walkExpr(s.expr, scope);   try r.walkStmts(s.body, scope); },
             .arena_scope => |s| try r.walkStmts(s.body, scope),
             .allocate_   =>|s| { try r.walkExpr(s.source, scope); try r.walkStmts(s.body, scope); },
             .copy_out => |s| { try r.walkExpr(s.target, scope); try r.walkExpr(s.value, scope); },
@@ -1020,6 +1021,10 @@ const Resolver = struct {
             .defer_  => |s| try r.checkCaptureBoundaryStmt(s.body, lambda_local),
             .with    => |s| {
                 try r.checkCaptureBoundary(s.target, lambda_local);
+                for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
+            },
+            .in_scope => |s| {
+                try r.checkCaptureBoundary(s.expr, lambda_local);
                 for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
             },
             .arena_scope => |s| {
