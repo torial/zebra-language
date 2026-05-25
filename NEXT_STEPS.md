@@ -62,15 +62,16 @@ Everything here must ship before 1.0 stability locks in.
 - [x] `is not` precedence — documented in QUICKSTART; test added to is_not_precedence_test.zbr; Expr4 > Expr3(not) > Expr(or) ordering confirmed; both compilers (2026-05-23)
 
 **0.15 — Stdlib completeness (pre-1.0 push):**
-- [ ] `Http.serve(port, handler)` — Zig has `std.http.Server` since 0.11; expose for web service use cases; both backends
-- [ ] `ThreadPool(n)` — `std.Thread.Pool`; `pool.submit(lambda)` + `pool.wait()`; bounded concurrency; both backends
+- [x] `Http.serve(port, handler)` — Zig has `std.http.Server` since 0.11; expose for web service use cases; both backends (2026-05-25)
+- [x] `ThreadPool(n)` — erased-fn-ptr worker pool; `pool.submit(lambda)` + `pool.wait()`; bounded concurrency; both backends
 - [x] `Path.*` — `Path.join/dirname/basename/ext/extension/stem/isAbsolute/absolute`; wraps `std.fs.path`; both backends (normalize not in Zig 0.16; `extension` is alias for `ext`)
-- [ ] Complete gzip compress — `Compress.gzip(bytes)` is currently a stub (Zig 0.15 limit fixed in 0.16); both backends
-- [ ] `Tcp.serve(port, handler)` — complement to `Tcp.connect`; both backends
-- [ ] `Atomic(T)` — wraps `std.atomic.Value(T)`; lock-free int/bool counters; both backends
-- [ ] `Log` improvements — structured logging (JSON lines, level filtering, file sink); both backends
-- [ ] `Crypto` additions — AES-GCM encrypt/decrypt, curve25519 key exchange; wraps `std.crypto`; both backends
-- [ ] `SQLite` — C binding via `zig-sqlite` or direct `libsqlite3`; lower priority (requires C dep)
+- [x] Complete gzip compress — `Compress.gzip/gunzip`; both backends
+- [x] `Tcp.serve(port, handler)` — complement to `Tcp.connect`; both backends
+- [x] `Atomic(T)` — wraps `std.atomic.Value(T)`; lock-free int/bool counters; both backends
+- [x] `Log` improvements — `Log.json(level, msg, data)` JSON-lines + `Log.setFile(path)` file sink; both backends
+- [x] `Crypto` additions — AES-256-GCM `Crypto.encrypt/decrypt`; SHA-256 key derivation; both backends
+- [x] `SQLite` — direct sqlite3.c amalgamation; `Sqlite.open`, `db.exec/query/begin/commit/rollback/close`, `row.asInt/asStr/asFloat/asBool`; vendor file at `{exe_dir}/vendor/sqlite/sqlite3.c` (2026-05-25)
+- [x] `UDP` — `Udp.bind(port)/Udp.socket()`; `sock.send(host,port,data)/recv(n)/close()`; complement to TCP; both backends (2026-05-25)
 
 **0.15 — libui-ng consolidation:**
 - [ ] Audit `torial/libui-ng` (wp-2025) vs `petabyt/libui-dev` (extra components) + `kojix2/libui-ng` (bug fixes); cherry-pick into `torial/libui-ng`; update `build.zig.zon` hash

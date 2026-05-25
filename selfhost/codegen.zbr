@@ -1290,6 +1290,8 @@ struct Generator
     var list_tuple_str_pos   : StrSet   # "varname:N" where tuple position N is a string type
     var strset_locals        : StrSet   # local/param names with type StrSet
     var chan_locals          : StrSet   # local/param names with type Chan(T)
+    var atomic_locals       : StrSet   # local/param names with type Atomic(T)
+    var thread_pool_locals  : StrSet   # local/param names with type ThreadPool(n)
     var ptr_field_bindings   : StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
     var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
@@ -1370,6 +1372,8 @@ struct Generator
         .list_tuple_str_pos    = StrSet()
         .strset_locals         = StrSet()
         .chan_locals           = StrSet()
+        .atomic_locals        = StrSet()
+        .thread_pool_locals   = StrSet()
         .ptr_field_bindings    = StrSet()
         .opt_ptr_field_bindings = StrSet()
         .for_loop_deref        = StrSet()
@@ -1579,6 +1583,8 @@ struct Generator
             list_tuple_str_pos     = StrSet()
             strset_locals          = StrSet()
             chan_locals            = StrSet()
+            atomic_locals         = StrSet()
+            thread_pool_locals    = StrSet()
             dynlib_vars            = StrSet()
             caller_ptr_params = StrSet()
         return g
@@ -1642,6 +1648,9 @@ struct Generator
                     return
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
+                    return
+                if n.name == "ThreadPool"
+                    w.emit("*_ThreadPool")
                     return
                 if n.name == "WsConn"
                     w.emit("*_WsConn")
@@ -1754,11 +1763,15 @@ struct Generator
 
             on TypeRef.alias_applied as aa
                 # Transparent alias: emit base type of the alias declaration.
-                var maybe_alias = findTypeAlias(aa.name)
-                if maybe_alias != nil
-                    genType(maybe_alias to!.base)
+                # ThreadPool(n) is a value-parameterized stdlib type → always *_ThreadPool.
+                if aa.name == "ThreadPool"
+                    w.emit("*_ThreadPool")
                 else
-                    w.emit("i64")
+                    var maybe_alias = findTypeAlias(aa.name)
+                    if maybe_alias != nil
+                        genType(maybe_alias to!.base)
+                    else
+                        w.emit("i64")
 
     def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN
@@ -1807,6 +1820,17 @@ struct Generator
             else
                 w.emit("anytype")
             w.emit(")")
+            return
+        if gtr.name == "Atomic"
+            w.emit("*_Atomic(")
+            if gtr.args.count() >= 1
+                genType(gtr.args.at(0))
+            else
+                w.emit("anytype")
+            w.emit(")")
+            return
+        if gtr.name == "ThreadPool"
+            w.emit("*_ThreadPool")
             return
         w.emit(gtr.name)
         if gtr.args.count() > 0
@@ -3471,10 +3495,24 @@ struct Generator
                         w.emit("\n")
                     else
                         # Zig rejects discarding a non-void expr as a statement.
+                        # Try inferExpr first; fall back to structural checks for
+                        # types that typeFromRef maps to unknown_ (Atomic, etc.).
+                        var needs_discard = false
                         if .infer_ctx != nil
                             var stmt_t: Type_ = inferExpr(e, .infer_ctx to!)
                             if not stmt_t is Type_.void_ and not stmt_t is Type_.unknown_ and not stmt_t is Type_.unresolved and not stmt_t is Type_.context_dependent
-                                w.emit("_ = ")
+                                needs_discard = true
+                        # Atomic.add/swap/cas return the previous value (non-void).
+                        # inferExpr can't see through Atomic(T) → unknown_, so check directly.
+                        if not needs_discard
+                            if e is Expr.call as ec_at
+                                if ec_at.callee is Expr.member as mem_at
+                                    if mem_at.object is Expr.ident as recv_at
+                                        if atomic_locals.contains_(recv_at.name)
+                                            if mem_at.member == "add" or mem_at.member == "swap" or mem_at.member == "cas"
+                                                needs_discard = true
+                        if needs_discard
+                            w.emit("_ = ")
                         genExpr(e)
                         w.emit(";\n")
             on Stmt.pass_
@@ -3583,6 +3621,8 @@ struct Generator
                         str_params.add(n.name)
                     if tn.name == "StrSet"
                         strset_locals.add(n.name)
+                    if tn.name == "ThreadPool"
+                        thread_pool_locals.add(n.name)
                 on TypeRef.generic as gtn
                     if gtn.name == "List"
                         if gtn.args.count() > 0
@@ -3596,6 +3636,10 @@ struct Generator
                                     tpos = tpos + 1
                     if gtn.name == "Chan"
                         chan_locals.add(n.name)
+                    if gtn.name == "Atomic"
+                        atomic_locals.add(n.name)
+                    if gtn.name == "ThreadPool"
+                        thread_pool_locals.add(n.name)
                 else
                     pass
         # Track DynLib handle variables for instance method dispatch.
@@ -4784,6 +4828,8 @@ struct Generator
                     ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
+            else if isSqliteQueryIter(fi.iter)
+                genForInSqliteQuery(fi)
             else
                 writeIndent()
                 w.emit("for (")
@@ -4842,6 +4888,33 @@ struct Generator
             writeIndent()
             w.emit("} else {\n")
             ig.genStmts(fi.else_ to!)
+        writeIndent()
+        w.emit("}\n")
+
+    # for row in db.query(sql): capture ArrayList before iterating to avoid
+    # use-after-free on temporaries. Mirrors genForInCsvRows in src/CodeGen.zig.
+    def genForInSqliteQuery(fi: StmtForIn)
+        var vname: str = fi.vars.at(0)
+        var it_var: str = "_it_" + vname
+        writeIndent()
+        w.emit("{\n")
+        var sqi = indented()
+        sqi.for_else_label = nil
+        sqi.writeIndent()
+        sqi.w.emit("const " + it_var + " = ")
+        sqi.genExpr(fi.iter)
+        sqi.w.emit(";\n")
+        sqi.writeIndent()
+        sqi.w.emit("for (" + it_var + ".items) |" + vname + "| {\n")
+        var sqb = sqi.indented()
+        sqb.for_else_label = nil
+        # Seed infer_ctx so row.asInt/asStr/asFloat resolve via sqlite_row dispatch
+        if sqb.infer_ctx != nil
+            sqb.infer_ctx to!.bind(vname, Type_.sqlite_row)
+        sqb.emitForGuard(fi)
+        sqb.genStmts(fi.stmts)
+        sqi.writeIndent()
+        sqi.w.emit("}\n")
         writeIndent()
         w.emit("}\n")
 
@@ -4956,6 +5029,24 @@ struct Generator
         if e is Expr.call as c
             if c.callee is Expr.member as m
                 return m.member == "chars"
+        return false
+
+    # True if the iterable is db.query(...) where db has type sqlite_db.
+    # These calls return an ArrayList(_SqliteRow); we capture before iterating.
+    def isSqliteQueryIter(e: Expr): bool
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                if m.member == "query"
+                    if .infer_ctx != nil
+                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                        if recv_t is Type_.sqlite_db
+                            return true
+        # Indirect: var rows = db.query(...) — rows typed as sqlite_row_list.
+        if e is Expr.ident as id
+            if .infer_ctx != nil
+                var it: Type_ = .infer_ctx to!.localType(id.name)
+                if it is Type_.sqlite_row_list
+                    return true
         return false
 
     # Emit just the object of a chars() call: str.chars() → str
@@ -7393,7 +7484,7 @@ struct Generator
         # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
             if inner.callee is Expr.ident as id
-                if id.name == "List" or id.name == "HashMap" or id.name == "Chan"
+                if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool"
                     genGenericCtorCall(id.name, inner.args, c.args)
                     return
                 if class_names.contains_(id.name)
@@ -7433,6 +7524,14 @@ struct Generator
                 return
             if id.name == "StringBuilder" and c.args.count() == 0
                 w.emit("std.ArrayList(u8).empty")
+                return
+            if id.name == "ThreadPool"
+                w.emit("_thread_pool_create(")
+                if c.args.count() > 0
+                    genExpr(c.args.at(0).value)
+                else
+                    w.emit("4")
+                w.emit(")")
                 return
         # SIMD vector constructor: f32x8(1.0, ...) → @as(@Vector(8, f32), .{1.0, ...})
         if c.callee is Expr.ident as simd_id
@@ -7697,6 +7796,154 @@ struct Generator
                     if mname == "close"
                         w.emit("_ws_close(")
                         genExpr(m.object)
+                        w.emit(")")
+                        return
+                on Type_.tcp_conn
+                    if mname == "write"
+                        w.emit("_tcp_write(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "read"
+                        w.emit("_tcp_read(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "readLine"
+                        w.emit("_tcp_read_line(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "readBytes"
+                        w.emit("_tcp_read_bytes(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("1024")
+                        w.emit(")")
+                        return
+                    if mname == "close"
+                        w.emit("_tcp_close(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                on Type_.udp_socket
+                    if mname == "send"
+                        genExpr(m.object)
+                        w.emit(".send_(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(", ")
+                        if args.count() >= 2
+                            genExpr(args.at(1).value)
+                        else
+                            w.emit("0")
+                        w.emit(", ")
+                        if args.count() >= 3
+                            genExpr(args.at(2).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "recv"
+                        genExpr(m.object)
+                        w.emit(".recv_(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("65536")
+                        w.emit(")")
+                        return
+                    if mname == "close"
+                        genExpr(m.object)
+                        w.emit(".close_()")
+                        return
+                on Type_.sqlite_db
+                    if mname == "exec"
+                        if args.count() >= 2
+                            genExpr(m.object)
+                            w.emit(".exec_p_(")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genSqliteParams(args.at(1).value)
+                            w.emit(")")
+                        else
+                            genExpr(m.object)
+                            w.emit(".exec_(")
+                            if args.count() > 0
+                                genExpr(args.at(0).value)
+                            else
+                                w.emit("\"\"")
+                            w.emit(")")
+                        return
+                    if mname == "query"
+                        if args.count() >= 2
+                            genExpr(m.object)
+                            w.emit(".query_p_(")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genSqliteParams(args.at(1).value)
+                            w.emit(")")
+                        else
+                            genExpr(m.object)
+                            w.emit(".query_(")
+                            if args.count() > 0
+                                genExpr(args.at(0).value)
+                            else
+                                w.emit("\"\"")
+                            w.emit(")")
+                        return
+                    if mname == "begin"
+                        genExpr(m.object)
+                        w.emit(".begin_()")
+                        return
+                    if mname == "commit"
+                        genExpr(m.object)
+                        w.emit(".commit_()")
+                        return
+                    if mname == "rollback"
+                        genExpr(m.object)
+                        w.emit(".rollback_()")
+                        return
+                    if mname == "close"
+                        genExpr(m.object)
+                        w.emit(".close_()")
+                        return
+                on Type_.sqlite_row
+                    if mname == "asInt" or mname == "asBool"
+                        genExpr(m.object)
+                        w.emit(".int_(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "asStr"
+                        genExpr(m.object)
+                        w.emit(".str_(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "asFloat"
+                        genExpr(m.object)
+                        w.emit(".float_(")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
                         w.emit(")")
                         return
                 on Type_.string_builder
@@ -8273,6 +8520,32 @@ struct Generator
                     genExpr(m.object)
                     w.emit(".close()")
                     return
+        # Atomic(T) — all instance methods pass through directly to Zig
+        if chan_obj_name != nil
+            if atomic_locals.contains_(chan_obj_name to!)
+                genExpr(m.object)
+                w.emit("." + mname + "(")
+                var ai: int = 0
+                while ai < args.count()
+                    if ai > 0
+                        w.emit(", ")
+                    genExpr(args.at(ai).value)
+                    ai = ai + 1
+                w.emit(")")
+                return
+        # ThreadPool(n) — pass through to _ThreadPool struct methods (submit/wait)
+        if chan_obj_name != nil
+            if thread_pool_locals.contains_(chan_obj_name to!)
+                genExpr(m.object)
+                w.emit("." + mname + "(")
+                var tp_ai: int = 0
+                while tp_ai < args.count()
+                    if tp_ai > 0
+                        w.emit(", ")
+                    genExpr(args.at(tp_ai).value)
+                    tp_ai = tp_ai + 1
+                w.emit(")")
+                return
         # DynLib — dispatch close/lookup via dynlib_vars tracking
         if chan_obj_name != nil
             if dynlib_vars.contains_(chan_obj_name to!)
@@ -8871,6 +9144,9 @@ struct Generator
             if id.name == "Hash"
                 genHashCall(mname, args)
                 return
+            if id.name == "Crypto"
+                genCryptoCall(mname, args)
+                return
             if id.name == "Random"
                 genRandomCall(mname, args)
                 return
@@ -8909,6 +9185,9 @@ struct Generator
                 return
             if id.name == "Udp"
                 genUdpCall(mname, args)
+                return
+            if id.name == "Sqlite"
+                genSqliteCall(mname, args)
                 return
             if id.name == "Net"
                 genNetCall(mname, args)
@@ -10288,6 +10567,9 @@ struct Generator
                 w.emit("\"\"")
             w.emit(")")
             return
+        if mname == "selfExe"
+            w.emit("_sys_self_exe()")
+            return
         # Fallback: unknown sys method
         w.emit("@compileError(\"selfhost: unknown sys.")
         w.emit(mname)
@@ -10763,6 +11045,38 @@ struct Generator
         w.emit(mname)
         w.emit("\")")
 
+    # ── genCryptoCall ────────────────────────────────────────────────────────
+    def genCryptoCall(mname: str, args: List(Arg))
+        if mname == "encrypt"
+            w.emit("_crypto_encrypt(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "decrypt"
+            w.emit("_crypto_decrypt(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Crypto.")
+        w.emit(mname)
+        w.emit("\")")
+
     # ── genRandomCall ────────────────────────────────────────────────────────
     def genRandomCall(mname: str, args: List(Arg))
         if mname == "randInt"
@@ -10922,6 +11236,32 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("true")
+            w.emit(")")
+            return
+        if mname == "setFile"
+            w.emit("_log_set_file(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "json"
+            w.emit("_log_json(")
+            if args.count() >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"info\"")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.count() >= 3
+                genExpr(args.at(2).value)
+            else
+                w.emit("\"\"")
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Log.")
@@ -11105,6 +11445,19 @@ struct Generator
                 w.emit("0")
             w.emit(")")
             return
+        if mname == "serve"
+            w.emit("_tcp_serve(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("8080")
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
         w.emit("@compileError(\"selfhost: unknown Tcp.")
         w.emit(mname)
         w.emit("\")")
@@ -11114,9 +11467,61 @@ struct Generator
         if mname == "socket"
             w.emit("_udp_socket()")
             return
+        if mname == "bind"
+            w.emit("_udp_bind(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")")
+            return
         w.emit("@compileError(\"selfhost: unknown Udp.")
         w.emit(mname)
         w.emit("\")")
+
+    # ── genSqliteCall + genSqliteParams ─────────────────────────────────────
+    def genSqliteCall(mname: str, args: List(Arg))
+        if mname == "open"
+            w.emit("_sqlite_open(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
+        w.emit("@compileError(\"selfhost: unknown Sqlite.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # Emit a &[_]_SqliteParam{...} slice from a Zebra list literal.
+    # Falls back to &.{} (empty) for non-literal expressions.
+    # Determines param type from the TC when available, otherwise from expr shape.
+    def genSqliteParams(params_expr: Expr)
+        if params_expr is Expr.list_lit as lit
+            w.emit("&[_]_SqliteParam{")
+            var first: bool = true
+            for elem in lit.elems
+                if not first
+                    w.emit(", ")
+                first = false
+                var et: Type_ = Type_.unknown_
+                if .infer_ctx != nil
+                    et = inferExpr(elem, .infer_ctx to!)
+                if et is Type_.int_ or elem is Expr.int_lit
+                    w.emit(".{ .int = @as(i64, @intCast(")
+                    genExpr(elem)
+                    w.emit(")) }")
+                else if et is Type_.float_ or elem is Expr.float_lit
+                    w.emit(".{ .float = @as(f64, ")
+                    genExpr(elem)
+                    w.emit(") }")
+                else
+                    w.emit(".{ .text = ")
+                    genExpr(elem)
+                    w.emit(" }")
+            w.emit("}")
+        else
+            w.emit("&.{}")
 
     # ── genNetCall ───────────────────────────────────────────────────────────
     def genNetCall(mname: str, args: List(Arg))
@@ -11507,6 +11912,29 @@ struct Generator
                 genExpr(val_args.at(0).value)
             else
                 w.emit("0")
+            w.emit(")")
+            return
+        if name == "Atomic"
+            w.emit("_atomic_create(")
+            if type_args.count() > 0
+                genTypeFromExpr(type_args.at(0).value)
+            else
+                w.emit("anytype")
+            w.emit(", ")
+            if val_args.count() > 0
+                genExpr(val_args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")")
+            return
+        if name == "ThreadPool"
+            w.emit("_thread_pool_create(")
+            if val_args.count() > 0
+                genExpr(val_args.at(0).value)
+            else if type_args.count() > 0
+                genExpr(type_args.at(0).value)
+            else
+                w.emit("4")
             w.emit(")")
             return
         if name == "List"

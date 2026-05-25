@@ -1793,8 +1793,33 @@ Ws.serve(8765, def(ws: WsConn)
 | Call                              | Returns         | Notes                              |
 |-----------------------------------|-----------------|-------------------------------------|
 | `Tcp.connect(host, port)`         | `TcpConn?`      |                                     |
-| `Udp.socket()`                    | `UdpSocket`     |                                     |
+| `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client |
 | `Net.resolve(host)`               | `[]str`         | DNS lookup                          |
+
+#### `Udp` — datagram sockets
+
+```zebra
+# Send side: unbound socket (OS picks ephemeral port)
+var s: UdpSocket = Udp.socket()
+s.send("127.0.0.1", 9000, "hello")
+s.close()
+
+# Receive side: bind to a known port
+var r: UdpSocket = Udp.bind(9000)
+var data: str = r.recv(4096)   # returns up to 4096 bytes as str
+r.close()
+```
+
+| Call                              | Returns     | Notes                                     |
+|-----------------------------------|-------------|-------------------------------------------|
+| `Udp.socket()`                    | `UdpSocket` | Unbound; OS picks ephemeral source port   |
+| `Udp.bind(port)`                  | `UdpSocket` | Bound to `port` on all interfaces         |
+| `sock.send(host, port, data)`     | void        | `host` must be an IP literal, not a name  |
+| `sock.recv(max_bytes)`            | str         | Blocks until a datagram arrives           |
+| `sock.close()`                    | void        |                                           |
+
+- `Udp.socket()` and `Udp.bind()` both return a `UdpSocket`; the difference is whether the OS binds a listening port.
+- `send` requires an IP-address literal (`"127.0.0.1"`, `"::1"`); use `Net.resolve` first if you have a hostname.
 
 ### `Csv` — RFC 4180 CSV
 
@@ -1810,7 +1835,7 @@ Ws.serve(8765, def(ws: WsConn)
 |-----------------------------------|--------------|----------------------------------------------|
 | `Mime.lookup(filename)`           | str          | MIME type by extension                       |
 | `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
-| `Compress.gunzip(bytes)`          | `List(byte)` | gzip decompress (gzip stub: Zig 0.15 limit) |
+| `Compress.gunzip(bytes)`          | `List(byte)` | gzip decompress |
 | `Log.info(msg)` / `warn / error`  | void         | Stderr-formatted logger                      |
 | `Terminal.clearScreen()` etc.     | void         | ANSI helpers                                 |
 | `Timer.start()`                   | `Timer`      | `t.elapsedMs()` for measurement              |
@@ -2110,6 +2135,34 @@ while not done
 - `sys.go()` accepts any zero-parameter lambda (with or without captures).
 - Threads are detached — no join mechanism yet; use a channel to signal completion.
 
+### ThreadPool
+
+`ThreadPool` runs a bounded set of worker threads and distributes submitted tasks among them.
+
+```zebra
+var pool: ThreadPool = ThreadPool(4)   # 4 worker threads
+var counter: Atomic(int) = Atomic(int)(0)
+
+var i: int = 0
+while i < 8
+    pool.submit(def()
+        capture
+            var counter: Atomic(int) = counter
+        var _: int = counter.add(1)
+    )
+    i = i + 1
+
+pool.wait()              # blocks until all submitted tasks complete
+print counter.load()     # 8
+```
+
+**Notes:**
+- `ThreadPool` is a plain type (not generic); the thread count is a constructor argument.
+- `pool.submit(lambda)` accepts any zero-parameter Zebra lambda (with or without captures).
+- `pool.wait()` blocks until all in-flight tasks finish; submitting after `wait` is supported.
+- Workers are spawned at construction and run until the pool is garbage-collected.
+- `ThreadPool` uses `page_allocator`; do not use inside short-lived `allocate` blocks.
+
 ## 36. Type aliases with constraints
 
 A `type` declaration creates a named alias for a base type, optionally with a runtime constraint.
@@ -2309,3 +2362,82 @@ Only two transformations happen inside a `with` block:
 - **Bare method call** `method(args)` → `obj.method(args)`
 
 All other statements (if, for, nested with, etc.) are left unchanged.  Only **top-level** statements in the block are rewritten — bare calls nested inside an `if` or `for` inside the block require explicit `obj.method(...)` form.
+
+---
+
+## 40. SQLite — embedded relational database
+
+Zebra ships with a bundled SQLite amalgamation (`sqlite3.c`). The compiler injects it automatically when any SQLite API is used — no build flags needed.
+
+**Setup**: the `vendor/sqlite/sqlite3.c` file must be present alongside the compiler binary (`{exe_dir}/vendor/sqlite/sqlite3.c`).
+
+### Opening a database
+
+```zebra
+var db: SqliteDb? = Sqlite.open("myapp.db")   # nil on failure
+var db: SqliteDb? = Sqlite.open(":memory:")    # in-memory database
+```
+
+`Sqlite.open` returns `SqliteDb?` — always check for nil before use.
+
+### Executing statements
+
+```zebra
+d.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+d.exec("INSERT INTO users VALUES (?, ?)", [1, "alice"])   # parameterised
+d.exec("UPDATE users SET name=? WHERE id=?", ["bob", 1])
+```
+
+Parameters are bound positionally via `[...]` list literals. Supported types: `int`, `str`, `float`.
+
+### Querying rows
+
+```zebra
+var rows = d.query("SELECT * FROM users ORDER BY id")
+for row in rows
+    print row.asInt("id").toString() + " " + row.asStr("name")
+```
+
+`db.query(sql)` returns a snapshot list; `for row in rows` iterates over it.
+
+Row accessor methods:
+
+| Method | Return type | Notes |
+|---|---|---|
+| `row.asInt(col)` | `int` | Reads `INTEGER`/`REAL` as int |
+| `row.asStr(col)` | `str` | Reads `TEXT`/`BLOB` as string |
+| `row.asFloat(col)` | `float` | Reads `REAL`/`INTEGER` as float |
+| `row.asBool(col)` | `bool` | Non-zero int → `true` |
+
+`col` is the column name string.
+
+### Transactions
+
+```zebra
+d.begin()
+d.exec("INSERT INTO users VALUES (?, ?)", [3, "carol"])
+d.commit()      # or d.rollback() to discard
+```
+
+### Closing
+
+```zebra
+d.close()
+```
+
+### Typical pattern
+
+```zebra
+def main()
+    var maybe_db: SqliteDb? = Sqlite.open("app.db")
+    if maybe_db == nil
+        print "could not open database"
+        return
+    var db: SqliteDb = maybe_db to!
+    db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER, body TEXT)")
+    db.exec("INSERT INTO notes VALUES (?, ?)", [1, "hello world"])
+    var rows = db.query("SELECT * FROM notes")
+    for row in rows
+        print row.asInt("id").toString() + ": " + row.asStr("body")
+    db.close()
+```

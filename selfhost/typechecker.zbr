@@ -120,6 +120,17 @@ union Type_
     build_target
     # WebSocket connection returned by Ws.connect() or passed to Ws.serve handler.
     ws_conn
+    # TCP connection returned by Tcp.connect().
+    tcp_conn
+    # Raw UDP socket returned by Udp.socket().
+    udp_socket
+    # Open SQLite database connection.
+    sqlite_db
+    # A row returned by db.query().
+    sqlite_row
+    # The result of db.query() — an ArrayList of sqlite_row. Allows type-tracing
+    # through `var rows = db.query(...)` → `for row in rows`.
+    sqlite_row_list
     # GUI context passed to view(g: Gui, ...) in MVU programs.
     gui_context
     # Generic collections with element/key/value type info.
@@ -484,6 +495,14 @@ def typeFromName(n: str): Type_
         return Type_.allocator_ctx
     if n == "WsConn"
         return Type_.ws_conn
+    if n == "TcpConn"
+        return Type_.tcp_conn
+    if n == "UdpSocket"
+        return Type_.udp_socket
+    if n == "SqliteDb"
+        return Type_.sqlite_db
+    if n == "SqliteRow"
+        return Type_.sqlite_row
     if n == "Gui"
         return Type_.gui_context
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
@@ -1301,10 +1320,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)
                             return Type_.void_  # serve
+                        if bname == "Tcp"
+                            if mem.member == "connect"
+                                return Type_.optional(Type_.tcp_conn)
+                            return Type_.void_  # serve
+                        if bname == "Udp"
+                            if mem.member == "socket" or mem.member == "bind"
+                                return Type_.udp_socket
+                            return Type_.void_
+                        if bname == "Sqlite"
+                            if mem.member == "open"
+                                return Type_.optional(Type_.sqlite_db)
+                            return Type_.void_
                         if bname == "Path"
                             if mem.member == "isAbsolute"
                                 return Type_.bool_
                             return Type_.string_  # join/basename/dirname/ext/extension/stem/absolute
+                        if bname == "Crypto"
+                            if mem.member == "encrypt"
+                                return Type_.string_
+                            return Type_.optional(Type_.string_)  # decrypt → ?str
                     # ── Json static-method TC inference (intentionally absent) ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
@@ -1388,6 +1423,30 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                             if wsmname == "recv"
                                 return Type_.optional(Type_.string_)
+                        on Type_.tcp_conn
+                            var tcpmname: str = mem.member
+                            if tcpmname == "read" or tcpmname == "readLine" or tcpmname == "readBytes"
+                                return Type_.string_
+                            return Type_.void_  # write, close
+                        on Type_.udp_socket
+                            var udpmname: str = mem.member
+                            if udpmname == "recv"
+                                return Type_.string_
+                            return Type_.void_  # send, close
+                        on Type_.sqlite_db
+                            var sqmname: str = mem.member
+                            if sqmname == "query"
+                                return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
+                            return Type_.void_  # exec, begin, commit, rollback, close
+                        on Type_.sqlite_row
+                            var sqrmname: str = mem.member
+                            if sqrmname == "asInt" or sqrmname == "asBool"
+                                return Type_.int_
+                            if sqrmname == "asStr"
+                                return Type_.string_
+                            if sqrmname == "asFloat"
+                                return Type_.float_
+                            return Type_.unknown_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
                             if lmname == "at" or lmname == "fetch"
@@ -1695,6 +1754,25 @@ def isStrListCallExpr(e: Expr): bool
                 return true
     return false
 
+def isSqliteQueryCallExpr(e: Expr, ctx: InferCtx): bool
+    if e is Expr.call as cal
+        if cal.callee is Expr.member as mem
+            if mem.member == "query"
+                if mem.object is Expr.ident as id
+                    var ot: Type_ = ctx.localType(id.name)
+                    if ot is Type_.sqlite_db
+                        return true
+                if mem.object is Expr.call
+                    var nt: Type_ = inferExpr(mem.object, ctx)
+                    if nt is Type_.sqlite_db
+                        return true
+    # Indirect: var rows = db.query(...) — rows has type sqlite_row_list.
+    if e is Expr.ident as id2
+        var it: Type_ = ctx.localType(id2.name)
+        if it is Type_.sqlite_row_list
+            return true
+    return false
+
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -1771,6 +1849,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 loop_var_t = Type_.char_
             else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
                 loop_var_t = Type_.string_
+            else if fi.vars.count() == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
+                loop_var_t = Type_.sqlite_row
             else if fi.vars.count() == 1
                 # `for x in obj.field` where field: List(str) on a same-file/dep struct.
                 if fi.iter is Expr.member as iter_mem

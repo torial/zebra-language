@@ -112,6 +112,9 @@ pub const GenerateResult = struct {
     /// True when at least one `export fn` wrapper was emitted (lib mode only).
     /// Callers may use this to decide whether to write a `.h` header file.
     has_exports: bool,
+    /// True when the generated code calls any Sqlite.* API.
+    /// Callers must add sqlite3.c to the zig compile command when true.
+    uses_sqlite: bool,
 };
 
 /// Emit Zig source for `module` to `writer`.
@@ -159,6 +162,7 @@ pub fn generate(
 
     var uses_gui    = false;
     var has_exports = false;
+    var uses_sqlite = false;
     var box_counter: u32 = 0;
     var dynlib_vars = std.StringHashMap(void).init(alloc);
     defer dynlib_vars.deinit();
@@ -186,6 +190,7 @@ pub fn generate(
         .native_uses      = native_uses,
         .emit_exports     = emit_exports,
         .has_exports_ptr  = &has_exports,
+        .uses_sqlite_ptr  = &uses_sqlite,
         .source_file      = module.file,
         .imported_modules = imported_modules,
         .box_counter_ptr  = &box_counter,
@@ -199,7 +204,7 @@ pub fn generate(
         .type_alias_decls    = &type_alias_decls,
     };
     try g.genModule(module);
-    return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports };
+    return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports, .uses_sqlite = uses_sqlite };
 }
 
 // ── Mixin pre-pass ────────────────────────────────────────────────────────────
@@ -1618,6 +1623,8 @@ const Generator = struct {
     /// Points to the `has_exports` bool in `generate()`.  Set to true the
     /// first time an export wrapper is emitted.
     has_exports_ptr: ?*bool = null,
+    /// Set to true the first time any Sqlite.* API call is encountered.
+    uses_sqlite_ptr: ?*bool = null,
     /// Variable names that are nil-narrowed in the current if-then scope.
     /// These idents should be accessed with `.?` in Zig to unwrap the optional.
     nil_narrowed: ?*const std.StringHashMap(void) = null,
@@ -5609,6 +5616,12 @@ const Generator = struct {
                 if (std.mem.eql(u8, gtr.name, "Chan")) {
                     return g.genChanMethod(object, method, args);
                 }
+                // Atomic(T) and ThreadPool: instance methods pass through to
+                // the Zig-generated _Atomic(T)/_ThreadPool struct methods directly.
+                if (std.mem.eql(u8, gtr.name, "Atomic") or
+                    std.mem.eql(u8, gtr.name, "ThreadPool")) {
+                    return false;
+                }
             },
             .named => |n| {
                 if (isStringTypeName(n.name)) return g.genStringMethod(object, method, args);
@@ -5616,6 +5629,8 @@ const Generator = struct {
                 if (std.mem.eql(u8, n.name, "char")) return g.genCharMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "TcpConn"))    return g.genTcpMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "UdpSocket"))  return g.genUdpMethod(object, method, args);
+                if (std.mem.eql(u8, n.name, "SqliteDb"))   return g.genSqliteMethod(object, method, args);
+                if (std.mem.eql(u8, n.name, "SqliteRow"))  return g.genSqliteRowMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "Regex"))      return g.genRegexMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "Gui"))        return g.genGuiWidgetMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "CodeEditor")) return g.genCodeEditorMethod(object, method, args);
@@ -6463,6 +6478,10 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "selfExe")) {
+            try g.w.writeAll("_sys_self_exe()");
+            return true;
+        }
         return false;
     }
 
@@ -6847,6 +6866,27 @@ const Generator = struct {
         return false;
     }
 
+    // ── Crypto static calls ──────────────────────────────────────────────────
+    fn genCryptoCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "encrypt")) {
+            try g.w.writeAll("_crypto_encrypt(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "decrypt")) {
+            try g.w.writeAll("_crypto_decrypt(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        return false;
+    }
+
     // ── Random static calls ──────────────────────────────────────────────────
     fn genRandomCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "randInt")) {
@@ -7015,6 +7055,23 @@ const Generator = struct {
         if (std.mem.eql(u8, method, "timestamp")) {
             try g.w.writeAll("_log_timestamp(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("true");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "setFile")) {
+            try g.w.writeAll("_log_set_file(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "json")) {
+            // Log.json(level, msg) or Log.json(level, msg, data)
+            try g.w.writeAll("_log_json(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"info\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 3) try g.genExpr(args[2].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(")");
             return true;
         }
@@ -7498,6 +7555,14 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "serve")) {
+            try g.w.writeAll("_tcp_serve(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("8080");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("undefined");
+            try g.w.writeAll(")");
+            return true;
+        }
         return false;
     }
 
@@ -7543,8 +7608,13 @@ const Generator = struct {
 
     fn genUdpCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "socket")) {
-            _ = args;
             try g.w.writeAll("_udp_socket()");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "bind")) {
+            try g.w.writeAll("_udp_bind(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeByte(')');
             return true;
         }
         return false;
@@ -7975,9 +8045,8 @@ const Generator = struct {
 
     fn genUdpMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "send")) {
-            try g.w.writeAll("_udp_send(");
             try g.genExpr(obj);
-            try g.w.writeAll(", ");
+            try g.w.writeAll(".send_(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll(", ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("0");
@@ -7987,17 +8056,130 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "recv")) {
-            try g.w.writeAll("_udp_recv(");
             try g.genExpr(obj);
-            try g.w.writeAll(", ");
+            try g.w.writeAll(".recv_(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("4096");
             try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "close")) {
-            try g.w.writeAll("_udp_close(");
             try g.genExpr(obj);
-            try g.w.writeAll(")");
+            try g.w.writeAll(".close_()");
+            return true;
+        }
+        return false;
+    }
+
+    // ── SQLite ────────────────────────────────────────────────────────────────────
+
+    /// Emit a `&[_]_SqliteParam{...}` slice from a Zebra list literal.
+    /// Falls back to `&.{}` (empty) when the expression is not a list literal.
+    fn genSqliteParams(g: Generator, params_expr: *const Ast.Expr) anyerror!void {
+        if (params_expr.* == .list_lit) {
+            try g.w.writeAll("&[_]_SqliteParam{");
+            for (params_expr.list_lit.elems, 0..) |elem, i| {
+                if (i > 0) try g.w.writeAll(", ");
+                const elem_tc = if (g.tc) |tc| tc.expr_types.get(elem) orelse .unknown else .unknown;
+                switch (elem_tc) {
+                    .int, .char, .uint, .int_n, .uint_n => {
+                        try g.w.writeAll(".{ .int = @as(i64, @intCast(");
+                        try g.genExpr(elem);
+                        try g.w.writeAll(")) }");
+                    },
+                    .float => {
+                        try g.w.writeAll(".{ .float = @as(f64, ");
+                        try g.genExpr(elem);
+                        try g.w.writeAll(") }");
+                    },
+                    else => {
+                        try g.w.writeAll(".{ .text = ");
+                        try g.genExpr(elem);
+                        try g.w.writeAll(" }");
+                    },
+                }
+            }
+            try g.w.writeAll("}");
+        } else {
+            try g.w.writeAll("&.{}");
+        }
+    }
+
+    /// `Sqlite.open(path)` static call.
+    fn genSqliteCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "open")) {
+            if (g.uses_sqlite_ptr) |p| p.* = true;
+            try g.w.writeAll("_sqlite_open(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeByte(')');
+            return true;
+        }
+        return false;
+    }
+
+    /// Methods on a `SqliteDb` receiver.
+    fn genSqliteMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (g.uses_sqlite_ptr) |p| p.* = true;
+        if (std.mem.eql(u8, method, "exec")) {
+            if (args.len >= 2) {
+                // db.exec(sql, params)
+                try g.genExpr(obj);
+                try g.w.writeAll(".exec_p_(");
+                try g.genExpr(args[0].value);
+                try g.w.writeAll(", ");
+                try g.genSqliteParams(args[1].value);
+                try g.w.writeByte(')');
+            } else {
+                try g.genExpr(obj);
+                try g.w.writeAll(".exec_(");
+                if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+                try g.w.writeByte(')');
+            }
+            return true;
+        }
+        if (std.mem.eql(u8, method, "query")) {
+            if (args.len >= 2) {
+                try g.genExpr(obj);
+                try g.w.writeAll(".query_p_(");
+                try g.genExpr(args[0].value);
+                try g.w.writeAll(", ");
+                try g.genSqliteParams(args[1].value);
+                try g.w.writeByte(')');
+            } else {
+                try g.genExpr(obj);
+                try g.w.writeAll(".query_(");
+                if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+                try g.w.writeByte(')');
+            }
+            return true;
+        }
+        if (std.mem.eql(u8, method, "begin"))    { try g.genExpr(obj); try g.w.writeAll(".begin_()");    return true; }
+        if (std.mem.eql(u8, method, "commit"))   { try g.genExpr(obj); try g.w.writeAll(".commit_()");   return true; }
+        if (std.mem.eql(u8, method, "rollback")) { try g.genExpr(obj); try g.w.writeAll(".rollback_()"); return true; }
+        if (std.mem.eql(u8, method, "close"))    { try g.genExpr(obj); try g.w.writeAll(".close_()");    return true; }
+        return false;
+    }
+
+    /// Methods on a `SqliteRow` receiver (row.int/str/float/bool).
+    fn genSqliteRowMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "asInt") or std.mem.eql(u8, method, "asBool")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".int_(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeByte(')');
+            return true;
+        }
+        if (std.mem.eql(u8, method, "asStr")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".str_(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeByte(')');
+            return true;
+        }
+        if (std.mem.eql(u8, method, "asFloat")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".float_(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeByte(')');
             return true;
         }
         return false;
@@ -9444,6 +9626,24 @@ const Generator = struct {
             const obj_tc = if (g.tc) |tc| tc.expr_types.get(s.iter) orelse .unknown else .unknown;
             if (obj_tc == .csv_row) return g.genForInList(s);
         }
+        // for row in rows — indirect sqlite query: rows was assigned from db.query(...)
+        // Detect by tracing the ident's init expression through the resolver.
+        if (s.iter.* == .ident) {
+            if (g.resolve.exprs.get(&s.iter.ident)) |sym| {
+                if (sym.decl == .var_) {
+                    const dv = sym.decl.var_;
+                    if (dv.init) |init_expr| {
+                        if (init_expr.* == .call and init_expr.call.callee.* == .member) {
+                            const m = init_expr.call.callee.member;
+                            if (std.mem.eql(u8, m.member, "query")) {
+                                const obj_tc = if (g.tc) |tc| tc.expr_types.get(m.object) orelse .unknown else .unknown;
+                                if (obj_tc == .sqlite_db) return g.genForInCsvRows(s);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // for row in csv.rows() / csv.dataRows() / csv.header() / csv.row(n)
         // Capture the returned ArrayList before iterating — avoids use-after-free on temporaries.
         if (s.iter.* == .call) {
@@ -9457,6 +9657,10 @@ const Generator = struct {
                     std.mem.eql(u8, m.member, "row")))
                 {
                     return g.genForInCsvRows(s);
+                }
+                // for row in db.query(sql) — sqlite query result
+                if (obj_tc == .sqlite_db and std.mem.eql(u8, m.member, "query")) {
+                    return g.genForInCsvRows(s); // reuse: both return ArrayList with .items
                 }
             }
         }
@@ -12161,6 +12365,15 @@ const Generator = struct {
     }
 
     fn genCall(g: Generator, e: *Ast.ExprCall) anyerror!void {
+        // ThreadPool(n) plain constructor (no type args) → _thread_pool_create(n)
+        if (e.type_args.len == 0 and e.callee.* == .ident and
+            std.mem.eql(u8, e.callee.ident.name, "ThreadPool"))
+        {
+            try g.w.writeAll("_thread_pool_create(");
+            if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("4");
+            try g.w.writeAll(")");
+            return;
+        }
         // Generic construction: Stack(int)(42) → Stack(i64).init(42)
         // Detected by type_args.len > 0 (set by AstBuilder.buildGenericConstruct).
         if (e.type_args.len > 0 and e.callee.* == .ident) {
@@ -12171,6 +12384,24 @@ const Generator = struct {
                 try g.genType(e.type_args[0]);
                 try g.w.writeAll(", ");
                 if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("0");
+                try g.w.writeAll(")");
+                return;
+            }
+            // Atomic(T)(v) → _atomic_create(T, v)
+            if (std.mem.eql(u8, class_name, "Atomic") and e.type_args.len == 1) {
+                try g.w.writeAll("_atomic_create(");
+                try g.genType(e.type_args[0]);
+                try g.w.writeAll(", ");
+                if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("0");
+                try g.w.writeAll(")");
+                return;
+            }
+            // ThreadPool(n)(n_threads) → _thread_pool_create(n_threads)
+            if (std.mem.eql(u8, class_name, "ThreadPool")) {
+                try g.w.writeAll("_thread_pool_create(");
+                if (e.args.len > 0) try g.genExpr(e.args[0].value)
+                else if (e.type_args.len > 0) try g.genType(e.type_args[0])
+                else try g.w.writeAll("4");
                 try g.w.writeAll(")");
                 return;
             }
@@ -12592,6 +12823,13 @@ const Generator = struct {
                 if (try g.genHashCall(mem.member, e.args)) return;
             }
         }
+        // Crypto static calls: Crypto.encrypt(key, plaintext), Crypto.decrypt(key, hex).
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Crypto")) {
+                if (try g.genCryptoCall(mem.member, e.args)) return;
+            }
+        }
         // Random static calls: Random.int(min, max), Random.float(), etc.
         if (e.callee.* == .member) {
             const mem = e.callee.member;
@@ -12702,6 +12940,13 @@ const Generator = struct {
             const mem = e.callee.member;
             if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Net")) {
                 if (try g.genNetCall(mem.member, e.args)) return;
+            }
+        }
+        // Sqlite static call: Sqlite.open(path).
+        if (e.callee.* == .member) {
+            const mem = e.callee.member;
+            if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Sqlite")) {
+                if (try g.genSqliteCall(mem.member, e.args)) return;
             }
         }
         // Math static call: Math.sin(x), Math.pow(x,y), etc.
@@ -12845,6 +13090,8 @@ const Generator = struct {
                     .char       => if (try g.genCharMethod(mem.object, mem.member, e.args)) return,
                     .tcp_conn      => if (try g.genTcpMethod(mem.object, mem.member, e.args)) return,
                     .udp_socket    => if (try g.genUdpMethod(mem.object, mem.member, e.args)) return,
+                    .sqlite_db     => if (try g.genSqliteMethod(mem.object, mem.member, e.args)) return,
+                    .sqlite_row    => if (try g.genSqliteRowMethod(mem.object, mem.member, e.args)) return,
                     .regex         => if (try g.genRegexMethod(mem.object, mem.member, e.args)) return,
                     .gui_context   => if (try g.genGuiWidgetMethod(mem.object, mem.member, e.args)) return,
                     .low_level     => if (try g.genLowLevelMethod(mem.object, mem.member, e.args)) return,
@@ -13583,6 +13830,11 @@ const Generator = struct {
     fn genType(g: Generator, tr: Ast.TypeRef) anyerror!void {
         switch (tr) {
             .alias_applied => |aa| {
+                // ThreadPool(n) is a value-parameterized stdlib type — always *_ThreadPool.
+                if (std.mem.eql(u8, aa.name, "ThreadPool")) {
+                    try g.w.writeAll("*_ThreadPool");
+                    return;
+                }
                 // Value-parameterized alias: emit the base type, same as named alias.
                 if (g.type_alias_decls.get(aa.name)) |alias| {
                     try g.genType(alias.base);
@@ -13634,6 +13886,11 @@ const Generator = struct {
                 // DynLib is a heap-allocated struct; emit as pointer.
                 if (std.mem.eql(u8, n.name, "DynLib")) {
                     try g.w.writeAll("*_DynLib");
+                    return;
+                }
+                // ThreadPool (plain, no type arg) — heap-allocated worker pool.
+                if (std.mem.eql(u8, n.name, "ThreadPool")) {
+                    try g.w.writeAll("*_ThreadPool");
                     return;
                 }
                 // Build system builtins: heap-allocated, emitted as pointers.
@@ -13740,6 +13997,18 @@ const Generator = struct {
                     try g.w.writeAll("*_Chan(");
                     if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("anytype");
                     try g.w.writeAll(")");
+                    return;
+                }
+                // Atomic(T) — heap-allocated *_Atomic(T) pointer.
+                if (std.mem.eql(u8, gtr.name, "Atomic")) {
+                    try g.w.writeAll("*_Atomic(");
+                    if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("anytype");
+                    try g.w.writeAll(")");
+                    return;
+                }
+                // ThreadPool(n) — heap-allocated *_ThreadPool pointer (thread count is a runtime value, not a type param).
+                if (std.mem.eql(u8, gtr.name, "ThreadPool")) {
+                    try g.w.writeAll("*_ThreadPool");
                     return;
                 }
                 // HashMap(K, V): use StringHashMap for string keys, AutoHashMap otherwise.
@@ -13989,6 +14258,8 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .csv_table,
         .csv_writer,
         .csv_row,
+        .sqlite_db,
+        .sqlite_row,
         .arg_result,
         .uri_result,
         .timer_handle,

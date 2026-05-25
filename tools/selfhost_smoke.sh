@@ -464,6 +464,12 @@ smoke_run test/iter_collision_test.zbr "abc xyz 2 1"
 # Exhaustiveness checking: branch on enum/union covers all members without else.
 smoke_run test/enum_branch_test.zbr "north"
 
+# Tcp.serve(port, handler) — compile smoke (server blocks; don't run).
+smoke_run test/tcp_serve_test.zbr "tcp_serve_test OK"
+
+# Atomic(T) — lock-free counter/flag: load/store/add/sub/swap/cas.
+smoke_run test/atomic_test.zbr "atomic_test OK"
+
 # WebSocket API: Ws.connect/serve/WsConn.send/recv/close emit-zig smoke test.
 smoke test/ws_smoke_test.zbr
 
@@ -495,6 +501,24 @@ smoke_run test/postfix_bang_test.zbr "postfix_bang_test PASS"
 
 # `with` desugars bare method calls: `text("x")` → `g.text("x")` inside a `with g` block.
 smoke_run test/with_call_test.zbr "with_call_test PASS"
+
+# Log.json (JSON-lines format) + Log.setFile (file sink).
+smoke_run test/log_json_test.zbr "log_json_test OK"
+
+# Crypto.encrypt/decrypt — AES-256-GCM with SHA-256 key derivation.
+smoke_run test/crypto_test.zbr "crypto_test OK"
+
+# ThreadPool(n) — bounded worker pool with Atomic counter.
+smoke_run test/thread_pool_test.zbr "thread_pool_test OK"
+
+# UDP — Udp.bind(port) + Udp.socket() + send/recv/close round-trip.
+smoke_run test/udp_test.zbr "udp_test OK"
+
+# Http.serve(port, handler) — compile smoke (server blocks; don't run).
+smoke_run test/http_serve_test.zbr "http_serve_test OK"
+
+# SQLite — open/exec/query/close + transactions on :memory: database.
+smoke_run test/sqlite_test.zbr "sqlite_test OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
