@@ -64,7 +64,7 @@ Everything here must ship before 1.0 stability locks in.
 **0.15 — Stdlib completeness (pre-1.0 push):**
 - [ ] `Http.serve(port, handler)` — Zig has `std.http.Server` since 0.11; expose for web service use cases; both backends
 - [ ] `ThreadPool(n)` — `std.Thread.Pool`; `pool.submit(lambda)` + `pool.wait()`; bounded concurrency; both backends
-- [ ] `Path.*` — `Path.join/dirname/basename/normalize/extension`; wraps `std.fs.path`; both backends
+- [x] `Path.*` — `Path.join/dirname/basename/ext/extension/stem/isAbsolute/absolute`; wraps `std.fs.path`; both backends (normalize not in Zig 0.16; `extension` is alias for `ext`)
 - [ ] Complete gzip compress — `Compress.gzip(bytes)` is currently a stub (Zig 0.15 limit fixed in 0.16); both backends
 - [ ] `Tcp.serve(port, handler)` — complement to `Tcp.connect`; both backends
 - [ ] `Atomic(T)` — wraps `std.atomic.Value(T)`; lock-free int/bool counters; both backends

@@ -1301,6 +1301,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)
                             return Type_.void_  # serve
+                        if bname == "Path"
+                            if mem.member == "isAbsolute"
+                                return Type_.bool_
+                            return Type_.string_  # join/basename/dirname/ext/extension/stem/absolute
                     # ── Json static-method TC inference (intentionally absent) ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`

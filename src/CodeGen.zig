@@ -6043,12 +6043,14 @@ const Generator = struct {
 
     // ── Path static methods ───────────────────────────────────────────────────
     //
-    //   Path.join(a, b)     → str   (join two path segments)
-    //   Path.basename(path) → str   (last component, no trailing separator)
-    //   Path.dirname(path)  → str   (parent directory)
-    //   Path.ext(path)      → str   (file extension including dot, or "" if none)
-    //   Path.stem(path)     → str   (basename without extension)
+    //   Path.join(a, b)       → str   (join two path segments)
+    //   Path.basename(path)   → str   (last component, no trailing separator)
+    //   Path.dirname(path)    → str   (parent directory)
+    //   Path.ext(path)        → str   (file extension including dot, or "" if none)
+    //   Path.extension(path)  → str   (alias for ext)
+    //   Path.stem(path)       → str   (basename without extension)
     //   Path.isAbsolute(path) → bool
+    //   Path.absolute(path)   → str   (resolved absolute path)
     fn genPathCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "join")) {
             // Path.join(a, b) — use std.fs.path.join
@@ -6072,7 +6074,7 @@ const Generator = struct {
             try g.w.writeAll(") orelse \"\")");
             return true;
         }
-        if (std.mem.eql(u8, method, "ext")) {
+        if (std.mem.eql(u8, method, "ext") or std.mem.eql(u8, method, "extension")) {
             try g.w.writeAll("(std.fs.path.extension(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
             try g.w.writeAll("))");

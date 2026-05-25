@@ -2852,6 +2852,7 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "basename") or
                         std.mem.eql(u8, mem.member, "dirname") or
                         std.mem.eql(u8, mem.member, "ext") or
+                        std.mem.eql(u8, mem.member, "extension") or
                         std.mem.eql(u8, mem.member, "stem") or
                         std.mem.eql(u8, mem.member, "absolute")) return .string;
                     return .void_;

@@ -8690,6 +8690,12 @@ struct Generator
                 genExpr(a.value)
             w.emit(")")
             return
+        # Path static dispatch — must precede string/list handlers because
+        # Path.join would otherwise be intercepted by the List.join path below.
+        if m.object is Expr.ident as path_id_early
+            if path_id_early.name == "Path"
+                genPathCall(mname, args)
+                return
         # String methods
         if mname == "concat"
             w.emit("(std.mem.concat(_allocator, u8, &.{ ")
@@ -11421,7 +11427,7 @@ struct Generator
                 w.emit("\"\"")
             w.emit(") orelse \"\")")
             return
-        if mname == "ext"
+        if mname == "ext" or mname == "extension"
             w.emit("(std.fs.path.extension(")
             if args.count() > 0
                 genExpr(args.at(0).value)

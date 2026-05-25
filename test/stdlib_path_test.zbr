@@ -1,0 +1,30 @@
+def main()
+    # Path.join — joins two path segments (separator is OS-specific)
+    var p: str = Path.join("foo", "bar")
+    assert p.contains("foo")
+    assert p.contains("bar")
+
+    # Path.basename — last path component
+    assert Path.basename("/a/b/file.txt") == "file.txt"
+
+    # Path.dirname — parent directory
+    assert Path.dirname("/a/b/file.txt") == "/a/b"
+    assert Path.dirname("file.txt") == ""
+
+    # Path.ext — file extension including dot
+    assert Path.ext("file.txt") == ".txt"
+    assert Path.ext("no_ext") == ""
+
+    # Path.extension — alias for ext
+    assert Path.extension("archive.tar.gz") == ".gz"
+    assert Path.extension("Makefile") == ""
+
+    # Path.stem — basename without extension
+    assert Path.stem("file.txt") == "file"
+    assert Path.stem("/a/b/doc.md") == "doc"
+
+    # Path.isAbsolute — relative paths are never absolute
+    assert not Path.isAbsolute("rel/path")
+    assert not Path.isAbsolute(".")
+
+    print "path tests passed"
