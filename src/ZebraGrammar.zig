@@ -1008,8 +1008,8 @@ const stmt_rules: []const Rule = &.{
 
     // with obj eol Block — contextual self
     .{ .lhs = .StmtWith,       .rhs = &.{ t(.kw_with),  n(.Expr), t(.eol), n(.Block) } },
-    // in expr eol Block — scope group: expr.begin(); defer expr.end(); body
-    .{ .lhs = .StmtIn,         .rhs = &.{ t(.kw_in),    n(.Expr), t(.eol), n(.Block) } },
+    // using expr eol Block — scope group: expr.begin(); defer expr.end(); body
+    .{ .lhs = .StmtIn,         .rhs = &.{ t(.kw_using), n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),    t(.eol), n(.Block) } },
     .{ .lhs = .StmtAllocate,   .rhs = &.{ t(.kw_allocate), n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtCopyOut,   .rhs = &.{ n(.Expr), t(.left_arrow), n(.Expr), t(.eol) } },

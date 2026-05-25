@@ -275,6 +275,7 @@ pub const TokenKind = enum {
     kw_or,
     kw_not,
     kw_in,
+    kw_using,     // using EXPR — resource scope block (begin/end lifecycle)
     kw_orelse,    // expr orelse fallback — optional/error unwrap with fallback
     kw_catch,     // expr catch fallback — error union fallback (with optional binding)
     kw_true,
@@ -392,6 +393,7 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "or",          .kw_or },
     .{ "not",         .kw_not },
     .{ "in",          .kw_in },
+    .{ "using",       .kw_using },
     .{ "orelse",      .kw_orelse },
     .{ "catch",       .kw_catch },
     .{ "true",        .kw_true },

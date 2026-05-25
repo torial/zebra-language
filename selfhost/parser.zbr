@@ -1723,7 +1723,7 @@ class Parser
             return .parseAllocateStmt()
         else if .textIs("with")
             return .parseWithStmt()
-        else if .textIs("in")
+        else if .textIs("using")
             return .parseInStmt()
         else if .textIs("guard")
             return .parseGuardStmt()
@@ -1899,7 +1899,7 @@ class Parser
 
     def parseInStmt(): PNode throws
         const line = .peek().line
-        .expectText("in")
+        .expectText("using")
         const expr = .parseExpr()
         .skipEol()
         const stmts = .parseBlock()

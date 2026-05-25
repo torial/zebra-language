@@ -1866,7 +1866,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             var scope_t: Type_ = inferExpr(si2.expr, ctx)
             branch scope_t
                 on Type_.optional
-                    ctx.addErr(ctx.file, si2.span.line, si2.span.col, "expression has optional type — use 'in expr!' to unwrap before 'in'")
+                    ctx.addErr(ctx.file, si2.span.line, si2.span.col, "expression has optional type — use 'using expr!' to unwrap before 'using'")
                 on Type_.named as cname
                     if ctx.module_types.hasClass(cname)
                         var has_begin: bool = ctx.module_types.methodReturn(cname, "begin") != nil
@@ -1879,7 +1879,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                                 missing = "begin"
                             else
                                 missing = "end"
-                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'in' must define 'def begin()' and 'def end()': '" + missing + "' is missing")
+                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'using' must define 'def begin()' and 'def end()': '" + missing + "' is missing")
                 else
                     pass
             walkStmts(si2.stmts, ctx)

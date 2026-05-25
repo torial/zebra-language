@@ -1,4 +1,4 @@
-# Test `in EXPR` scope-block syntax.
+# Test `using EXPR` scope-block syntax.
 # Any object with begin()/end() methods can be used.
 
 class CountGroup
@@ -21,8 +21,8 @@ def main(): void
     var outer = CountGroup("outer")
     var inner = CountGroup("inner")
 
-    in outer
-        in inner
+    using outer
+        using inner
             print "inside both"
 
     assert outer.entered == 1

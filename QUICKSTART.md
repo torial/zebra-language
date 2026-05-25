@@ -2227,9 +2227,9 @@ After `var score: Bounded(0, 100) = 85`, the compiler emits:
 
 ---
 
-## 38. `in EXPR` — resource scope blocks
+## 38. `using EXPR` — resource scope blocks
 
-`in EXPR` executes a block with a resource that has a `begin()` / `end()` lifecycle.  Any object with both methods works — no interface declaration required.
+`using EXPR` executes a block with a resource that has a `begin()` / `end()` lifecycle.  Any object with both methods works — no interface declaration required.
 
 ```zebra
 class CountGroup
@@ -2245,7 +2245,7 @@ class CountGroup
 
 def main(): void
     var g = CountGroup()
-    in g
+    using g
         print "inside"
     # g.entered == 1, g.exited == 1 here
 ```
@@ -2253,7 +2253,7 @@ def main(): void
 ### Desugaring
 
 ```
-in EXPR
+using EXPR
     body...
 ```
 
@@ -2268,15 +2268,15 @@ expands to:
 }
 ```
 
-`EXPR` is evaluated exactly once.  `end()` is always called, even if `body` raises.
+`EXPR` is evaluated exactly once.  `end()` fires only if `begin()` completes — if `begin()` raises, `end()` is not called.
 
 ### GUI layout groups
 
-The GUI stdlib uses `in` for layout containers:
+The GUI stdlib uses `using` for layout containers:
 
 ```zebra
-in g.vbox("##main", true)       # vertical box (stretch = true)
-    in g.hbox("##row", false)   # horizontal box inside
+using g.vbox("##main", true)       # vertical box (stretch = true)
+    using g.hbox("##row", false)   # horizontal box inside
         g.button("OK", .ok)
         g.button("Cancel", .cancel)
     g.text("Status: ready")
@@ -2286,9 +2286,10 @@ in g.vbox("##main", true)       # vertical box (stretch = true)
 
 ### Rules and gotchas
 
-- The `in EXPR` header and the first body line must be on adjacent lines — no blank line between them.
-- Nesting is supported (`in outer` containing `in inner`).
-- `in` as a statement-start is unambiguous: the infix `in` operator (e.g. `"x" in list`) only appears inside expressions, never at statement position.
+- The `using EXPR` header and the first body line must be on adjacent lines — no blank line between them.
+- Nesting is supported (`using outer` containing `using inner`).
+- `using` is unambiguous: the infix `in` operator (e.g. `"x" in list`) is a separate token and unaffected.
+- The type used in `using EXPR` must define `def begin()` and `def end()` — the compiler enforces this at compile time.
 
 ---
 

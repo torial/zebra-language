@@ -1825,7 +1825,7 @@ const TypeChecker = struct {
                 const scope_t = try tc.inferExpr(s.expr);
                 switch (scope_t) {
                     .optional => |inner| try tc.emitError(s.span,
-                        "expression has optional type '{s}?' — use 'in expr!' to unwrap before 'in'",
+                        "expression has optional type '{s}?' — use 'using expr!' to unwrap before 'using'",
                         .{inner.name()}),
                     .named => |sym| {
                         if (sym.own_scope) |scope| {
@@ -1837,7 +1837,7 @@ const TypeChecker = struct {
                                     else if (!has_begin) "begin"
                                     else "end";
                                 try tc.emitError(s.span,
-                                    "type '{s}' used in 'in' must define 'def begin()' and 'def end()': '{s}' is missing",
+                                    "type '{s}' used in 'using' must define 'def begin()' and 'def end()': '{s}' is missing",
                                     .{ sym.name, missing });
                             }
                         }

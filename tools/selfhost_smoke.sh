@@ -484,7 +484,7 @@ smoke_run test/is_not_precedence_test.zbr "is_not_precedence: OK"
 # MVU Gui.run: 6-arg form Gui.run(t,w,h,init,update,view) — emits _gui_mvu_run.
 smoke examples/counter.zbr
 
-# `in EXPR` scope-block: calls expr.begin(); defer expr.end(); executes body.
+# `using EXPR` scope-block: calls expr.begin(); defer expr.end(); executes body.
 smoke_run test/in_scope_test.zbr "in_scope_test PASS"
 # TC negative: class missing begin()/end() must fail with a diagnostic.
 smoke_tc_fail test/in_scope_tc_fail_test.zbr "must define 'def begin()'"

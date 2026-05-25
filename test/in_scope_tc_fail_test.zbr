@@ -1,4 +1,4 @@
-# TC negative test: class missing begin() and end() used in `in` block.
+# TC negative test: class missing begin() and end() used in `using` block.
 # Expected: TC error mentioning "must define 'def begin()' and 'def end()'"
 
 class Ungrouped
@@ -6,5 +6,5 @@ class Ungrouped
 
 def main()
     var g: Ungrouped = Ungrouped()
-    in g
+    using g
         g.count = 1
