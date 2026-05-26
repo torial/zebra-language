@@ -3226,6 +3226,7 @@ const Generator = struct {
             \\    smin: f64 = 0,
             \\    smax: f64 = 1,
             \\};
+            \\const _LuiPanel = struct { inner: *ui.Box };
             \\var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
             \\var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
             \\var _lui_didx: usize = 0;
@@ -3238,6 +3239,7 @@ const Generator = struct {
             \\var _lui_box_stack: [32]?*ui.Box = [_]?*ui.Box{null} ** 32;
             \\var _lui_box_depth: usize = 0;
             \\var _lui_box_icache: std.StringHashMap(*ui.Box) = undefined;
+            \\var _lui_grp_cache: std.StringHashMap(_LuiPanel) = undefined;
             \\fn _lui_cur_box() ?*ui.Box {
             \\    if (_lui_box_depth == 0) return null;
             \\    return _lui_box_stack[_lui_box_depth - 1];
@@ -3285,6 +3287,7 @@ const Generator = struct {
             \\    _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
             \\    _lui_dcache = .empty;
             \\    _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
+            \\    _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
             \\    _lui_box_depth = 0;
             \\    var _tbuf: [256]u8 = undefined;
             \\    const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
@@ -3301,6 +3304,7 @@ const Generator = struct {
             \\    _lui_icache.deinit();
             \\    _lui_dcache.deinit(_allocator);
             \\    _lui_box_icache.deinit();
+            \\    _lui_grp_cache.deinit();
             \\    ui.Uninit();
             \\}
             \\fn _lui_newframe() bool {
@@ -3543,6 +3547,27 @@ const Generator = struct {
             \\    _lui_push_box(_e.value_ptr.*);
             \\}
             \\fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+            \\fn _lui_begin_panel(_label: []const u8) bool {
+            \\    if (_lui_grp_cache.get(_label)) |_p| {
+            \\        _lui_push_box(_p.inner);
+            \\        return true;
+            \\    }
+            \\    const _n = @min(_label.len, 255);
+            \\    var _lb: [256]u8 = undefined;
+            \\    @memcpy(_lb[0.._n], _label[0.._n]);
+            \\    _lb[_n] = 0;
+            \\    const _lz: [:0]u8 = _lb[0.._n :0];
+            \\    const _grp = ui.Group.New(_lz) catch return true;
+            \\    const _inner = ui.Box.New(.Vertical) catch return true;
+            \\    _inner.SetPadded(true);
+            \\    _grp.SetChild(_inner.as_control());
+            \\    _grp.SetMargined(true);
+            \\    if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
+            \\    _lui_grp_cache.put(_label, .{ .inner = _inner }) catch {};
+            \\    _lui_push_box(_inner);
+            \\    return true;
+            \\}
+            \\fn _lui_end_panel() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
             \\const _gui_lui_backend = _GuiBackend{
             \\    .initFn             = _lui_init,
             \\    .deinitFn           = _lui_deinit,
@@ -3559,8 +3584,8 @@ const Generator = struct {
             \\    .sliderFn           = _lui_slider,
             \\    .inputFn            = _lui_input,
             \\    .inputMultilineFn   = _lui_input_ml,
-            \\    .beginPanelFn       = _lui_noop_bool,
-            \\    .endPanelFn         = _lui_noop_void,
+            \\    .beginPanelFn       = _lui_begin_panel,
+            \\    .endPanelFn         = _lui_end_panel,
             \\    .beginWindowFn      = _lui_noop_bool,
             \\    .endWindowFn        = _lui_noop_void,
             \\    .selectableFn       = _lui_selectable,

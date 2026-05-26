@@ -1,0 +1,29 @@
+struct Model
+    var count: int
+
+union Msg
+    inc
+    reset
+
+def init(): Model
+    return Model(count: 0)
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.inc   return Model(count: model.count + 1)
+        on Msg.reset return Model(count: 0)
+
+def view(g: Gui, model: Model)
+    g.panel("Controls", def(g: Gui)
+        if g.button("+1")
+            g.send(Msg.inc)
+        g.sameLine()
+        if g.button("Reset")
+            g.send(Msg.reset)
+    )
+    g.panel("Status", def(g: Gui)
+        g.text("Count: " + model.count.toString())
+    )
+
+def main()
+    Gui.run("Panel Smoke", 400, 300, init, update, view)
