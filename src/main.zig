@@ -1037,11 +1037,28 @@ fn backend(
         return compileGuiProject(zig_path, mode, gui_backend, alloc);
     }
 
+    // When SQLite is used, locate vendor/sqlite/sqlite3.c relative to this
+    // executable and add it to c_sources so zig can compile the amalgamation.
+    var c_sources_ext: std.ArrayListUnmanaged([]u8) = .empty;
+    defer { for (c_sources_ext.items) |p| alloc.free(p); c_sources_ext.deinit(alloc); }
+    var final_c_sources: []const []u8 = c_sources;
+    if (result.uses_sqlite) {
+        const self_exe = std.process.executablePathAlloc(_io, alloc) catch null;
+        defer if (self_exe) |p| alloc.free(p);
+        if (self_exe) |exe| {
+            const exe_dir = std.fs.path.dirname(exe) orelse ".";
+            const sqlite_path = try std.fs.path.join(alloc, &.{ exe_dir, "vendor", "sqlite", "sqlite3.c" });
+            try c_sources_ext.appendSlice(alloc, c_sources);
+            try c_sources_ext.append(alloc, sqlite_path);
+            final_c_sources = c_sources_ext.items;
+        }
+    }
+
     return switch (mode) {
-        .compile_only => compileOnly(zig_path, c_sources, release, alloc),
-        .run          => compileAndRun(zig_path, c_sources, release, alloc),
-        .lib_static   => compileLib(false, zig_path, c_sources, release, alloc),
-        .lib_shared   => compileLib(true,  zig_path, c_sources, release, alloc),
+        .compile_only => compileOnly(zig_path, final_c_sources, release, alloc),
+        .run          => compileAndRun(zig_path, final_c_sources, release, alloc),
+        .lib_static   => compileLib(false, zig_path, final_c_sources, release, alloc),
+        .lib_shared   => compileLib(true,  zig_path, final_c_sources, release, alloc),
         .emit_zig     => unreachable, // handled before backend() is called
         .debug        => unreachable, // handled before backend() is called
         .repl         => unreachable, // handled before backend() is called
@@ -1208,8 +1225,8 @@ const gui_libui_ng_project_build_zig_zon =
     \\    .fingerprint  = 0xc96e70cfe3b36b0a,
     \\    .dependencies = .{
     \\        .zig_libui_ng = .{
-    \\            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#d99a49c7ac342b800f48d518ba1728c11684db2a",
-    \\            .hash = "bindings_libui_ng-0.1.0-p2CY9QkWGgBjeLI8hICTNlxLEjcSbkLLJCh3-CHi11Kj",
+    \\            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#4b14c1023bd44f4ff124a8f446f48005dfb24eaa",
+    \\            .hash = "bindings_libui_ng-0.1.0-p2CY9YYbGgDTtt6M7yEczXB-7lVfF3bslNAFZSxBObgg",
     \\        },
     \\    },
     \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
