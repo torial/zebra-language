@@ -675,6 +675,9 @@ var v = node?.value! + 1             # unwrap result of optional chain
   If the accessed member is already `T?`, the result is still `T?` (flattened, not `T??`).
   Chain multiple accesses: `a?.b?.c` propagates nil through each step.
 - `if x as n` (when `x: T?`) binds `n: T` in the then-branch.
+- **Boxed-optional edge case:** `if x as n` on a `^T?` (heap-indirected optional) binds
+  `n: ^T` (the pointer), not `T` (the value).  If you need the value, use
+  `if x != nil` + `x to!` — the `to!` operator unwraps *and* dereferences.
 - **`orelse` vs `catch`**: use `orelse` on optionals (`T?`), use `catch` on error
   results (`throws`).  Both can appear in the same expression for chained recovery.
 
@@ -2175,7 +2178,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.spacing()`                              | void     | Extra vertical space                       |
 | `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
 | `g.panel(label, callback)`                 | void     | Collapsible child window (ImGui only)      |
-| `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box                  |
+| `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
 | `g.window(label, callback)`                | void     | Floating sub-window (ImGui only)           |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
@@ -2200,6 +2203,20 @@ using g.hbox("row", false)
 | `g.beginHBox(id, stretch)` / `g.endHBox()` | Horizontal container           |
 | `g.beginVBox(id, stretch)` / `g.endVBox()` | Vertical container             |
 | `g.hbox(id, stretch)` / `g.vbox(id, stretch)` | Factory for `using` desugaring |
+
+### Panels / group boxes (libui-ng)
+
+`g.beginPanel(id)` / `g.endPanel(id)` draw a titled group box around their
+contents (the libui-ng `uiGroup` widget).  Unlike `g.panel(label, callback)`
+(which is callback-based and ImGui-only), the `begin`/`end` pair is
+retained-mode and works on all backends that support group boxes.
+
+```zebra
+g.beginPanel("Settings")
+    g.checkbox("Enable logging", enabled)
+    g.slider("Volume", volume, 0, 100)
+g.endPanel("Settings")   # id must match begin
+```
 
 ### File dialogs (libui-ng only; stub/TUI return nil)
 
