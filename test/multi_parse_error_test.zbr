@@ -1,0 +1,11 @@
+class Foo
+    def m()
+        ??? first error
+
+class Bar
+    def oops()
+        ??? second error
+
+class Good
+    def greet(): str
+        return "hello"

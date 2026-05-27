@@ -114,6 +114,38 @@ smoke_tc_fail() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Verify that a file with multiple parse errors reports ALL of them (not just the first).
+# Takes two expected error substrings; both must appear in the compiler's stderr.
+smoke_multi_parse_fail() {
+    local zbr="$1"
+    local expected1="$2"
+    local expected2="$3"
+    local label
+    label="$(basename "$zbr" .zbr)"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        echo "  FAIL: $label (expected parse failures, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+    else
+        local ok=1
+        if ! grep -qF "$expected1" /tmp/smoke-err; then
+            echo "  FAIL: $label (first parse error missing: $expected1)" >&2
+            ok=0
+        fi
+        if ! grep -qF "$expected2" /tmp/smoke-err; then
+            echo "  FAIL: $label (second parse error missing: $expected2)" >&2
+            ok=0
+        fi
+        if [[ $ok -eq 1 ]]; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 echo "── Selfhost smoke tests (emit-zig pipeline)"
 
 # Pure arithmetic / branching
@@ -342,6 +374,9 @@ smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 
 # `zebra test` subcommand: assert_eq/ne/true/false + test runner.
 smoke_test test/test_module_test.zbr
+
+# Multi-error parse recovery: two parse errors must both appear in the output.
+smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 
 # Run a fixture via the bootstrap compiler (not selfhost) and check its stdout
 # contains the expected substring.  Used for runtime API smoke tests where

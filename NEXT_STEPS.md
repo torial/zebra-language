@@ -35,7 +35,7 @@ Everything here must ship before 1.0 stability locks in.
 **0.13 remaining:**
 - [x] BUG-115 — visibility keywords enforcement: `private`/`public`/`internal`/`protected` parsed + enforced; TC error outside owning class; cross-module `internal` excluded from interface table; selfhost parity; 99/99 smoke, bootstrap 5/5 (2026-05-14)
 - [x] `^T` auto-boxing edge case fixes: `List(^T).add(val)` heaps-boxes struct values in both compilers; `for item in List(^T)` via Zig auto-deref; method-chain fixed (BUG-027/079); 100/100 smoke, bootstrap 5/5 (2026-05-14)
-- [ ] Book docs for `sig`, raw strings, `"""`
+- [x] Book docs for `sig`, raw strings, `"""` — all present in QUICKSTART §20, §14
 
 **0.14 remaining (entire milestone — priority cluster):**
 - [x] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks via `_zbr_deep_copy`; HashMap blocked (compile error by design); 114/114 smoke, bootstrap 5/5 (2026-05-17)
@@ -51,9 +51,11 @@ Everything here must ship before 1.0 stability locks in.
 - [x] IANA timezone support (`DateTime.inZone("America/New_York")`) — built-in table (~75 zones), 4 DST rules (US/EU/AU/NZ), zero binary-size cost if unused, both backends, 130/130 smoke, bootstrap 5/5 (2026-05-23)
 - [x] `using EXPR` scope blocks (renamed from `in EXPR`) — any object with `begin()`/`end()` works; desugars to `{ const _in_N = EXPR; _in_N.begin(); defer _in_N.end(); body }`; `g.vbox()`/`g.hbox()` factory methods on GuiContext; QUICKSTART §38; both backends, 131/131 smoke, bootstrap 5/5 (2026-05-23)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
-- [ ] CHANGELOG covering the full 0.1 → 1.0 surface
+- [x] CHANGELOG covering the full 0.1 → 1.0 surface (2026-05-26, CHANGELOG.md)
 
 **0.15 — Language syntax cleanup:**
+- [x] **Nested namespaces** — `namespace Foo.Bar` (dotted) and `namespace Outer { namespace Inner { ... } }` (nested) syntax; desugar to nested `pub const` structs; scope-chain lookup in Binder/Resolver; `symbolType` fix in TC so member-access inference works; selfhost resolver/TC/codegen parity; both backends + QUICKSTART §41, bootstrap 5/5 (2026-05-26)
+- [x] **DynLib producer side — `@export class` + `export def`** — `export def myFn(...)` emits `pub export fn myFn(...)` (already wired in both compilers); `@export("sym") class Foo implements IFoo` emits `pub export fn sym() *IFoo` module-static singleton factory; tokenizer `@export` fix (keyword-escape hatch exception); both compilers + QUICKSTART §44, bootstrap 5/5, 149/149 smoke (2026-05-26). `zebra --shared` flag already existed. `zebra build --shared` (Build stdlib) deferred.
 - [x] `x!` postfix force-unwrap — `x!` ≡ `x to!`; `x!.method()` chains cleanly; `to!` stays as alias; both compilers; 132/132 smoke, bootstrap 5/5 (2026-05-23)
 - [x] `with` desugars bare method calls — `with g` makes `text("hello")` → `g.text("hello")`; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
 - [x] Remove `try expr` prefix form — Zig syntax leak; use `expr?` instead; migration note in QUICKSTART; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
@@ -74,7 +76,13 @@ Everything here must ship before 1.0 stability locks in.
 - [x] `UDP` — `Udp.bind(port)/Udp.socket()`; `sock.send(host,port,data)/recv(n)/close()`; complement to TCP; both backends (2026-05-25)
 
 **0.15 — libui-ng consolidation:**
-- [ ] Audit `torial/libui-ng` (wp-2025) vs `petabyt/libui-dev` (extra components) + `kojix2/libui-ng` (bug fixes); cherry-pick into `torial/libui-ng`; update `build.zig.zon` hash
+- [x] Audit `torial/libui-ng` (wp-2025) vs `petabyt/libui-dev` (extra components) + `kojix2/libui-ng` (bug fixes); cherry-pick into `torial/libui-ng`; update `build.zig.zon` hash (2026-05-25, commit fed917a — wp-2025-v2: rebased onto kojix2 + our 46 C extensions; float spinbox, file dialogs, placeholder text, DrawBitmap decl; 9 new zig-libui-ng bindings)
+- [x] `beginPanel/endPanel` — `uiGroup` (titled border) + inner VBox; frame-0 creates, subsequent frames push cached inner box; `examples/panel_smoke.zbr`; 143/143 smoke, bootstrap 5/5 (2026-05-25, commit 757dfe3)
+- [x] `progressBar(label, f64)` / `combobox(label, List(str), int)→int` / `spinbox(label, int, int, int)→int` — all 5 backends wired; `_LuiMut.pb` for retained-mode progressbar; `_lui_cmb_cb` / `_lui_spn_cb` callbacks; `examples/widget_smoke.zbr`; 144/144 smoke, bootstrap 5/5 (2026-05-26)
+- [x] File dialogs — `g.openFile()→str?` / `g.saveFile()→str?` / `g.openFolder()→str?` / `g.msgBox(title,msg)` / `g.msgBoxError(title,msg)`; libui-ng backend uses `ui.Window.OpenFile/SaveFile/OpenFolder/MsgBox/MsgBoxError`; span+dupe+FreeText pattern; all 5 backends; TC returns `optional(string)` for path methods; `examples/file_dialog_smoke.zbr`; 145/145 smoke, bootstrap 5/5 (2026-05-26)
+- [ ] ~~`uiScrollingArea`~~ → **1.5** — scrollable container in libui-ng preamble
+- [ ] ~~DPI + DrawBitmap implementations~~  → **1.5** — deferred from audit
+- [ ] ~~Dark mode support in libui-ng~~ → **1.5** — deferred from audit
 
 ---
 
@@ -161,12 +169,24 @@ Two-phase approach: warm-up pre-compiled preamble once → per-input incremental
 `sys.readLine()` is done (2026-05-10); remaining work is the incremental-compile mode.
 See design notes in `SELFHOST_JOURNAL.md`.
 
-**REPL latency — resident compiler (`--watch` / compiler server) — pre-1.0:**
-Current model spawns a fresh `zig` process per REPL entry; Zig 0.16 incremental compilation
-helps mid-session (declaration-level cache hits on append-only generated source), but cold-start
-and link cost remain.  Next unlock: keep a resident Zig compiler process alive for the REPL
-session using `--watch` or the compiler server API so incremental state stays warm in memory.
-This would make per-entry latency feel near-instant for small additions.  **Target: pre-1.0.**
+**REPL latency — resident compiler — deferred to post-1.0:**
+Measured Zig 0.16 Windows behaviour: `zig run` cold=4s, warm (same file)=119ms.  The REPL
+session file changes on every entry (new declarations appended), so every entry is a cold
+compile.  `-fincremental` does NOT help on Zig 0.16 Windows — LLD and coff2 linkers both
+emit `TODO implement saving linker state`, meaning per-declaration state is not actually
+saved across invocations.  Using `-fincremental` is in fact *slower* than baseline for
+same-file warm cache (bypasses the 119ms path).
+
+**Preamble split ruled out by experiment (2026-05-26):** Split a 3389-line preamble into a
+separate importable `.zig` file; thin session file imports it and changes on each entry.
+Cold: 3.6s (preamble cached, link step still ~3.5s).  Warm same file: 136ms.  Changing only
+the thin session file: 3.5s — same as cold.  Zig re-links whenever any source file changes;
+the link step dominates and cannot be avoided without architectural changes below.
+
+Real improvement options (all deferred post-1.0):
+1. **Zig 0.17+**: when incremental linker state lands (tracked as a Zig issue), `-fincremental`
+   would give near-instant re-compilation of changed declarations only.
+2. **Native Zebra interpreter**: bypass Zig entirely for REPL evaluation.  ~2-3 week task.
 
 ### 7. Regex per-quantifier lazy/greedy (Milestone 0.11)
 Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
@@ -178,14 +198,17 @@ Scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window, TF-ID
 cosine similarity via `f32x8` dot-product.  See `concept_zebra-simd-design.md`
 for the fuzzy-match and text-analytics use-case table.
 
-**SIMD 1.0 enhancement — runtime CPU dispatch:**
+**SIMD CPU target — `--cpu` passthrough ✓ (2026-05-26):**
+`zebra --cpu=native file.zbr` and `zebra --cpu=x86_64+avx2 file.zbr` now pass
+`-mcpu=VALUE` to the underlying Zig invocation.  See QUICKSTART.md §32 for the
+SIGILL hazard (wide-target binary on narrow machine) and the `--cpu native` use case.
+
+**SIMD 1.0 enhancement — runtime CPU dispatch (deferred to post-1.0):**
 [oma](https://github.com/ATTron/oma) (One Man Array) is a Zig library for runtime SIMD
 dispatch: at startup the binary detects CPU capabilities and selects the best kernel
 (SSE2 → AVX2 → AVX-512 on x86-64; NEON → SVE2 on AArch64) without requiring separate
-builds.  By 1.0, Zebra's SIMD types should use runtime dispatch so a single
-`zebra build` binary runs optimally across CPUs without per-target compilation.
-Design spike needed: integrate `oma`-style dispatch or expose `@cpu_feature` primitives
-that map to the same pattern.  **Target: 1.0.**
+builds.  Design spike needed: integrate `oma`-style dispatch or expose `@cpu_feature`
+primitives that map to the same pattern.  **Target: post-1.0.**
 
 ### 10. Plugin system — DynLib demo ✓ (2026-05-16)
 Interface vtable construction, shim functions, DynLib stdlib, and demo files are complete.
@@ -339,7 +362,7 @@ the broader commitment is everything that landed from 0.1 onward.
 - ~~WebSocket~~ **DONE**: `Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close; both backends; bootstrap 5/5 (2026-05-19)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
-- CHANGELOG covering the full 0.1 → 1.0 surface
+- [x] CHANGELOG covering the full 0.1 → 1.0 surface (2026-05-26, CHANGELOG.md)
 
 ---
 

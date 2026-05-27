@@ -165,9 +165,23 @@ const Resolver = struct {
     // ── Namespace ─────────────────────────────────────────────────────────────
 
     fn walkNamespace(r: Resolver, n: *Ast.DeclNamespace, scope: *Scope) anyerror!void {
-        const sym = scope.lookupLocal(n.name) orelse return;
-        const inner = sym.own_scope orelse return;
-        for (n.decls) |decl| try r.walkTopDecl(decl, inner);
+        // Navigate scope chain for dotted names like "Outer.Inner".
+        var parts_buf: [16][]const u8 = undefined;
+        var n_parts: usize = 0;
+        var it = std.mem.splitScalar(u8, n.name, '.');
+        while (it.next()) |p| { if (n_parts < parts_buf.len) { parts_buf[n_parts] = p; n_parts += 1; } }
+        const parts = parts_buf[0..n_parts];
+
+        var current_scope = scope;
+        for (parts, 0..) |part, i| {
+            const sym = current_scope.lookupLocal(part) orelse return;
+            if (i == parts.len - 1) {
+                const inner = sym.own_scope orelse return;
+                for (n.decls) |decl| try r.walkTopDecl(decl, inner);
+            } else {
+                current_scope = sym.own_scope orelse return;
+            }
+        }
     }
 
     // ── Type declarations ─────────────────────────────────────────────────────

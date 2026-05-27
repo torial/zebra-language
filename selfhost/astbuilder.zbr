@@ -229,10 +229,9 @@ class ASTBuilder
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in c.invs
             inv_exprs.add(.buildExpr(inv_pn)?)
-        var mods: Modifiers = zmods()
-        if c.is_reflectable
-            mods = Modifiers(false, false, false, false, false, false, true, false, false, false, false, false, false)
-        return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs))
+        var mods = zmods()
+        mods.is_reflectable = c.is_reflectable
+        return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs, c.export_sym))
 
     # ── Interface ─────────────────────────────────────────────────────────────
 
@@ -274,9 +273,11 @@ class ASTBuilder
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in s.invs
             inv_exprs.add(.buildExpr(inv_pn)?)
-        var mods: Modifiers = zmods()
-        if s.is_reflectable or s.is_derive_debug or s.is_derive_eq or s.is_derive_hash
-            mods = Modifiers(false, false, false, false, false, false, s.is_reflectable, false, false, false, s.is_derive_debug, s.is_derive_eq, s.is_derive_hash)
+        var mods = zmods()
+        mods.is_reflectable = s.is_reflectable
+        mods.is_derive_debug = s.is_derive_debug
+        mods.is_derive_eq = s.is_derive_eq
+        mods.is_derive_hash = s.is_derive_hash
         return Decl.struct_(DeclStruct(zspan(), mods, s.name, ifaces, members, inv_exprs))
 
     # ── Union ─────────────────────────────────────────────────────────────────
@@ -320,10 +321,9 @@ class ASTBuilder
             on PNode.field_ as f
                 const type_ref = .parseTypeRef(f.type_name)
                 var fmods = zmods()
-                if f.is_static
-                    fmods = zstatic()
-                if f.is_private
-                    fmods = Modifiers(f.is_public, f.is_private, false, f.is_static, false, false, false, false, false, false, false, false, false)
+                fmods.is_public = f.is_public
+                fmods.is_private = f.is_private
+                fmods.is_static = f.is_static
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
                     return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
@@ -375,7 +375,13 @@ class ASTBuilder
                 else
                     body_stmts.add(s)
         var stmts_list: List(Stmt)? = body_stmts
-        var mods = Modifiers(m.is_public, m.is_private, false, m.is_static, false, false, false, m.is_profile, m.is_once, m.is_export, false, false, false)
+        var mods = zmods()
+        mods.is_public = m.is_public
+        mods.is_private = m.is_private
+        mods.is_static = m.is_static
+        mods.is_profile = m.is_profile
+        mods.is_once = m.is_once
+        mods.is_export = m.is_export
         return Decl.method(DeclMethod(zspan(), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────

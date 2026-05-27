@@ -3559,8 +3559,17 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "slider"))          return .float;
             if (std.mem.eql(u8, method, "input"))           return .string;
             if (std.mem.eql(u8, method, "inputMultiline"))  return .string;
+            if (std.mem.eql(u8, method, "combobox"))        return .int;
+            if (std.mem.eql(u8, method, "spinbox"))         return .int;
+            if (std.mem.eql(u8, method, "openFile") or
+                std.mem.eql(u8, method, "saveFile") or
+                std.mem.eql(u8, method, "openFolder")) {
+                const boxed = tc.map_alloc.create(Type) catch return .string;
+                boxed.* = .string;
+                return .{ .optional = boxed };
+            }
             // void-returning widgets
-            return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, …
+            return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, progressBar, msgBox, msgBoxError, …
         }
         // LowLevel sub-API methods (g.lowLevel.xxx)
         if (obj_type == .low_level) {
@@ -3825,7 +3834,7 @@ const TypeChecker = struct {
     fn symbolType(tc: TypeChecker, sym: *const Symbol) Type {
         return switch (sym.kind) {
             .class, .interface, .struct_, .mixin, .enum_ => .{ .named = sym },
-            .namespace_   => .unknown, // namespaces are not value-typed
+            .namespace_   => .{ .named = sym }, // namespaces act as named containers for member access
             .method       => .{ .fn_ref = sym }, // first-class function reference
             .var_, .local => switch (sym.decl) {
                 .var_ => |decl| {

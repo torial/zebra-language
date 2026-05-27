@@ -53,6 +53,8 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "List",          {} },
     .{ "HashMap",       {} },
     .{ "Chan",          {} },
+    .{ "Atomic",        {} },
+    .{ "ThreadPool",    {} },
     // Stdlib string builder
     .{ "StringBuilder", {} },
     // Stdlib file I/O and path utilities
@@ -98,10 +100,15 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     // Stdlib CSV
     .{ "Csv",           {} },
     .{ "CsvWriter",     {} },
+    // Stdlib SQLite
+    .{ "Sqlite",        {} },
+    .{ "SqliteDb",      {} },
+    .{ "SqliteRow",     {} },
     // Stdlib reflection
     .{ "Reflect",       {} },
     // Stdlib batteries-included (0.10)
     .{ "Hash",          {} },
+    .{ "Crypto",        {} },
     .{ "Random",        {} },
     .{ "Arg",           {} },
     .{ "ArgResult",     {} },

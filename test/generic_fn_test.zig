@@ -429,6 +429,140 @@ fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
+fn _Atomic(comptime T: type) type {
+    return struct {
+        val: std.atomic.Value(T),
+
+        pub fn load(self: *@This()) T {
+            return self.val.load(.seq_cst);
+        }
+        pub fn store(self: *@This(), v: T) void {
+            self.val.store(v, .seq_cst);
+        }
+        pub fn add(self: *@This(), delta: T) T {
+            return self.val.fetchAdd(delta, .seq_cst);
+        }
+        pub fn sub(self: *@This(), delta: T) T {
+            return self.val.fetchSub(delta, .seq_cst);
+        }
+        pub fn swap(self: *@This(), v: T) T {
+            return self.val.swap(v, .seq_cst);
+        }
+        pub fn cas(self: *@This(), expected: T, desired: T) bool {
+            return self.val.cmpxchgStrong(expected, desired, .seq_cst, .seq_cst) == null;
+        }
+    };
+}
+fn _atomic_create(comptime T: type, v: T) *_Atomic(T) {
+    const ptr = std.heap.page_allocator.create(_Atomic(T)) catch @panic("OOM");
+    ptr.* = .{ .val = std.atomic.Value(T).init(v) };
+    return ptr;
+}
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+const _ThreadTask = struct {
+    invoke:   *const fn (*anyopaque) void,
+    ctx:      *anyopaque,
+    free_ctx: *const fn (*anyopaque) void,
+    next:     ?*_ThreadTask = null,
+};
+fn _tp_noop_free(ctx: *anyopaque) void { _ = ctx; }
+const _ThreadPool = struct {
+    mutex:     std.Io.Mutex,
+    has_work:  std.Io.Condition,
+    all_done:  std.Io.Condition,
+    head:      ?*_ThreadTask,
+    in_flight: usize,
+    shutdown:  bool,
+
+    // submit accepts both plain fn()void and Zebra lambda structs (anytype dispatch).
+    pub fn submit(self: *_ThreadPool, f: anytype) void {
+        const T = @TypeOf(f);
+        const pa = std.heap.page_allocator;
+        const task = pa.create(_ThreadTask) catch @panic("OOM");
+        if (comptime @typeInfo(T) == .@"fn") {
+            const FnBox = struct { func: T };
+            const box = pa.create(FnBox) catch @panic("OOM");
+            box.* = .{ .func = f };
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*FnBox, @ptrCast(@alignCast(ctx))).func(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*FnBox, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(box), .free_ctx = Inv.free };
+        } else {
+            const cap = pa.create(T) catch @panic("OOM");
+            cap.* = f;
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*T, @ptrCast(@alignCast(ctx))).call(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*T, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(cap), .free_ctx = Inv.free };
+        }
+        self.mutex.lockUncancelable(_io);
+        if (self.head == null) {
+            self.head = task;
+        } else {
+            var t = self.head.?;
+            while (t.next) |n| t = n;
+            t.next = task;
+        }
+        self.in_flight += 1;
+        self.mutex.unlock(_io);
+        self.has_work.signal(_io);
+    }
+
+    pub fn wait(self: *_ThreadPool) void {
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        while (self.in_flight > 0) {
+            self.all_done.waitUncancelable(_io, &self.mutex);
+        }
+    }
+
+    fn worker(self: *_ThreadPool) void {
+        const pa = std.heap.page_allocator;
+        while (true) {
+            self.mutex.lockUncancelable(_io);
+            while (self.head == null and !self.shutdown) {
+                self.has_work.waitUncancelable(_io, &self.mutex);
+            }
+            if (self.head == null) {
+                self.mutex.unlock(_io);
+                return;
+            }
+            const task = self.head.?;
+            self.head = task.next;
+            self.mutex.unlock(_io);
+            task.invoke(task.ctx);
+            task.free_ctx(task.ctx);
+            pa.destroy(task);
+            self.mutex.lockUncancelable(_io);
+            self.in_flight -= 1;
+            const was_last = self.in_flight == 0;
+            self.mutex.unlock(_io);
+            if (was_last) self.all_done.broadcast(_io);
+        }
+    }
+};
+fn _thread_pool_create(n: i64) *_ThreadPool {
+    const pool = std.heap.page_allocator.create(_ThreadPool) catch @panic("OOM");
+    pool.* = .{
+        .mutex     = .init,
+        .has_work  = .init,
+        .all_done  = .init,
+        .head      = null,
+        .in_flight = 0,
+        .shutdown  = false,
+    };
+    const n_threads: usize = @intCast(@max(n, 1));
+    for (0..n_threads) |_| {
+        const t = std.Thread.spawn(.{}, _ThreadPool.worker, .{pool}) catch @panic("ThreadPool: spawn failed");
+        t.detach();
+    }
+    return pool;
+}
+
 // sys.go(lambda) — fire-and-forget thread spawn.
 // Accepts either a plain fn() void (no-capture lambda) or a struct with a
 // call(self) void method (captured lambda).  Both patterns are produced by
@@ -591,7 +725,7 @@ fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, s
     const epoch_s    = epoch_days * 86400 + hour * 3600 + minute * 60 + second;
     return .{ .epoch_ms = epoch_s * 1000 };
 }
-fn _dt_now() _DateTime { return .{ .epoch_ms = std.time.milliTimestamp() }; }
+fn _dt_now() _DateTime { return .{ .epoch_ms = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_ms)) }; }
 fn _dt_weekday(dt: _DateTime) i64 {
     // epoch_days=0 is Thursday (ISO 4); Monday=1 … Sunday=7
     const epoch_days = @divFloor(dt.epoch_ms, 86400000);
@@ -957,7 +1091,7 @@ fn _json_arr_bool(v: *JsonValue, val: bool) void {
 }
 const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
@@ -969,7 +1103,7 @@ fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, nu
 fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
 fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
 fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
@@ -990,24 +1124,24 @@ fn _http_serve(port: u16, handler: anytype) void {
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
-            defer ctx.conn.stream.close();
+            defer ctx.conn.close(_io);
             const _alloc = std.heap.page_allocator;
-            // Read request headers (scan for \r\n\r\n).
+            var _srv_rbuf: [4096]u8 = undefined;
+            var _srv_rd = ctx.conn.reader(_io, &_srv_rbuf);
+            // Read request headers byte-by-byte until \r\n\r\n.
             var _hd: [16384]u8 = undefined;
             var _hl: usize = 0;
-            while (_hl < _hd.len - 4096) {
-                const _n = std.posix.recv(ctx.conn.stream.handle, _hd[_hl..@min(_hl+4096, _hd.len)], 0) catch break;
-                if (_n == 0) break;
-                _hl += _n;
-                if (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") != null) break;
+            while (_hl < _hd.len - 1) {
+                const _b = _srv_rd.interface.takeByte() catch break;
+                _hd[_hl] = _b;
+                _hl += 1;
+                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') break;
             }
-            const _hdrs_end = (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") orelse (_hl -| 4)) + 4;
-            const _head = _hd[0.._hdrs_end];
-            var _peeked: usize = if (_hl > _hdrs_end) _hl - _hdrs_end else 0;
+            const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
@@ -1029,16 +1163,14 @@ fn _http_serve(port: u16, handler: anytype) void {
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
-                const _pre = @min(_peeked, _cl);
-                if (_pre > 0) @memcpy(_bb[0.._pre], _hd[_hdrs_end.._hdrs_end+_pre]);
-                var _bi: usize = _pre;
+                var _bi: usize = 0;
                 while (_bi < _cl) {
-                    const _rn = std.posix.recv(ctx.conn.stream.handle, _bb[_bi..], 0) catch break;
+                    var _slices: [1][]u8 = .{_bb[_bi..]};
+                    const _rn = _srv_rd.interface.readVec(&_slices) catch break;
                     if (_rn == 0) break;
                     _bi += _rn;
                 }
                 _body = _bb[0.._bi];
-                _ = &_peeked;
             }
             const _req = HttpRequest{ .method = _method, .path = _path, .content = _body };
             const _resp = ctx.handler_fn(_req);
@@ -1055,22 +1187,26 @@ fn _http_serve(port: u16, handler: anytype) void {
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
                 .{ _resp.status, _st, _resp.text.len, _xh.items, _resp.text }) catch @panic("OOM");
-            ctx.conn.stream.writeAll(_out) catch {};
+            var _srv_wbuf: [4096]u8 = undefined;
+            var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
+            _srv_wr.interface.writeAll(_out) catch {};
+            _srv_wr.interface.flush() catch {};
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _conn = _srv.accept() catch continue;
-        const _ctx = _alloc.create(_Ctx) catch { _conn.stream.close(); continue; };
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
             _alloc.destroy(_ctx);
-            _conn.stream.close();
+            _conn.close(_io);
         };
     }
 }
@@ -1085,9 +1221,9 @@ const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
 // Internal pointers: tls_client.input = &stream_reader.interface_state,
 //                   tls_client.output = &stream_writer.interface.
 const _WsTlsState = struct {
-    stream: std.net.Stream,
-    stream_reader: std.net.Stream.Reader,
-    stream_writer: std.net.Stream.Writer,
+    stream: std.Io.net.Stream,
+    stream_reader: std.Io.net.Stream.Reader,
+    stream_writer: std.Io.net.Stream.Writer,
     tls_client: std.crypto.tls.Client,
     rbuf:     [_WS_TLS_BUF]u8,
     wbuf:     [_WS_TLS_BUF]u8,
@@ -1095,9 +1231,19 @@ const _WsTlsState = struct {
     sock_wbuf: [4096]u8,
 };
 
+// Plain-socket state for WebSocket — must live at a stable heap address
+// so that the stream reader's @fieldParentPtr vtable calls remain valid.
+const _WsPlain = struct {
+    stream: std.Io.net.Stream,
+    rbuf: [4096]u8,
+    wbuf: [4096]u8,
+    rd: std.Io.net.Stream.Reader,
+    wr: std.Io.net.Stream.Writer,
+};
+
 const _WsConn = struct {
     impl: union(enum) {
-        plain: std.net.Stream,
+        plain: _WsPlain,
         tls:   *_WsTlsState,
     },
     server_side: bool,
@@ -1105,12 +1251,12 @@ const _WsConn = struct {
 
     fn readExact(self: *_WsConn, buf: []u8) !void {
         switch (self.impl) {
-            .plain => |s| {
-                var n: usize = 0;
-                while (n < buf.len) {
-                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
-                    if (r == 0) return error.ConnectionResetByPeer;
-                    n += r;
+            .plain => |*p| {
+                var remaining = buf;
+                while (remaining.len > 0) {
+                    var slices: [1][]u8 = .{remaining};
+                    const n = p.rd.interface.readVec(&slices) catch return error.ConnectionResetByPeer;
+                    remaining = remaining[n..];
                 }
             },
             .tls => |t| {
@@ -1122,7 +1268,10 @@ const _WsConn = struct {
 
     fn writeAll(self: *_WsConn, buf: []const u8) !void {
         switch (self.impl) {
-            .plain => |s| try s.writeAll(buf),
+            .plain => |*p| {
+                p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
+                p.wr.interface.flush() catch return error.BrokenPipe;
+            },
             .tls   => |t| {
                 try t.tls_client.writer.writeAll(buf);
                 try t.tls_client.writer.flush();
@@ -1132,25 +1281,25 @@ const _WsConn = struct {
 
     fn closeStream(self: *_WsConn) void {
         switch (self.impl) {
-            .plain => |s| s.close(),
+            .plain => |p| p.stream.close(_io),
             .tls   => |t| {
                 t.tls_client.end() catch {};
-                t.stream.close();
+                t.stream.close(_io);
                 std.heap.page_allocator.destroy(t);
             },
         }
     }
 };
 
-fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8) !void {
     state.stream = stream;
-    state.stream_reader = stream.reader(&state.sock_rbuf);
-    state.stream_writer = stream.writer(&state.sock_wbuf);
+    state.stream_reader = stream.reader(_io, &state.sock_rbuf);
+    state.stream_writer = stream.writer(_io, &state.sock_wbuf);
     var ca = std.crypto.Certificate.Bundle{};
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
-        state.stream_reader.interface(),
+        &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
@@ -1166,7 +1315,7 @@ fn _ws_send_close_frame(conn: *_WsConn) void {
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
             close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
         conn.writeAll(&frame) catch {};
@@ -1180,7 +1329,7 @@ fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
         conn.writeAll(&hdr) catch return;
         if (plen > 0) {
@@ -1212,20 +1361,32 @@ fn _ws_connect(url: []const u8) ?*_WsConn {
         std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
 
     // TCP connect
-    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
-    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(_io); return null; };
 
     if (is_tls) {
-        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
-        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
         conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
     } else {
-        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+        // Initialize _WsPlain at its final heap address before setting up reader/writer,
+        // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
+        conn.server_side = false;
+        conn.closed = false;
+        conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+        conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
+        conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
     }
 
     // Build WebSocket upgrade request
     var key_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&key_bytes);
+    _io.randomSecure(&key_bytes) catch @panic("entropy unavailable");
     var key_b64: [24]u8 = undefined;
     _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
 
@@ -1278,7 +1439,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     }
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
         hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
         conn.writeAll(hdr[0..h]) catch return;
@@ -1359,19 +1520,19 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: @TypeOf(handler),
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
-            // Read HTTP upgrade headers
+            // Read HTTP upgrade headers byte-by-byte
+            var hdr_rbuf: [64]u8 = undefined;
+            var hdr_rd = ctx.conn.reader(_io, &hdr_rbuf);
             var hdr_buf: [8192]u8 = undefined;
             var hdr_len: usize = 0;
             while (hdr_len + 1 < hdr_buf.len) {
-                var b: [1]u8 = undefined;
-                const n = ctx.conn.stream.read(&b) catch break;
-                if (n == 0) break;
-                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                const b = hdr_rd.interface.takeByte() catch break;
+                hdr_buf[hdr_len] = b; hdr_len += 1;
                 if (hdr_len >= 4 and
                     hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
                     hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
@@ -1379,9 +1540,9 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const headers = hdr_buf[0..hdr_len];
             // Extract Sec-WebSocket-Key
             const key_marker = "Sec-WebSocket-Key: ";
-            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
             const k1 = k0 + key_marker.len;
-            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.close(_io); return; };
             const client_key = headers[k1..k2];
             // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
             var sha = std.crypto.hash.Sha1.init(.{});
@@ -1396,12 +1557,21 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const resp = std.fmt.bufPrint(&resp_buf,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
                 .{accept_buf},
-            ) catch { ctx.conn.stream.close(); return; };
-            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            ) catch { ctx.conn.close(_io); return; };
+            {
+                var wr_wbuf: [512]u8 = undefined;
+                var wr = ctx.conn.writer(_io, &wr_wbuf);
+                wr.interface.writeAll(resp) catch { ctx.conn.close(_io); return; };
+                wr.interface.flush() catch { ctx.conn.close(_io); return; };
+            }
             // Create WsConn and call handler
-            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            ws.server_side = true;
+            ws.closed = false;
+            ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+            ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
+            ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
             if (!ws.closed) {
@@ -1412,16 +1582,17 @@ fn _ws_serve(port: u16, handler: anytype) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _c = _srv.accept() catch continue;
-        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
+        const _c = _srv.accept(_io) catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
         _ctx.* = .{ .conn = _c, .handler_fn = handler };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
 
@@ -1518,80 +1689,127 @@ fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     w.buf.appendSlice(_pa, "\r\n") catch {};
 }
 fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
-const TcpConn = struct { stream: std.net.Stream };
+const TcpConn = struct { stream: std.Io.net.Stream };
 fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
-    const s = std.net.tcpConnectToHost(_allocator, host, port) catch return null;
-    return .{ .stream = s };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    return .{ .stream = stream };
 }
 fn _tcp_write(conn: TcpConn, data: []const u8) void {
-    conn.stream.writeAll(data) catch |e| @panic(@errorName(e));
+    var _wb: [4096]u8 = undefined;
+    var _wt = conn.stream.writer(_io, &_wb);
+    _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
+    _wt.interface.flush() catch |e| @panic(@errorName(e));
 }
 fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
-    var _rd = conn.stream.reader(&_rb);
+    var _rd = conn.stream.reader(_io, &_rb);
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
-    _ = _rd.interface().streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    _ = _rd.interface.streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
     out_list = out_aw.toArrayList();
     return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
     var _buf: std.ArrayList(u8) = .empty;
+    var _rb: [1]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     while (true) {
-        var _b: [1]u8 = undefined;
-        const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
-        if (_n == 0) break;
-        if (_b[0] == '\n') break;
-        if (_b[0] != '\r') _buf.append(std.heap.page_allocator, _b[0]) catch break;
+        const _b = _rd.interface.takeByte() catch break;
+        if (_b == '\n') break;
+        if (_b != '\r') _buf.append(std.heap.page_allocator, _b) catch break;
     }
     return _buf.items;
 }
 fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     const _buf = std.heap.page_allocator.alloc(u8, n) catch @panic("OOM");
+    var _rb: [4096]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     var _total: usize = 0;
     while (_total < n) {
-        const _got = std.posix.recv(conn.stream.handle, _buf[_total..], 0) catch break;
+        var _slices: [1][]u8 = .{_buf[_total..]};
+        const _got = _rd.interface.readVec(&_slices) catch break;
         if (_got == 0) break;
         _total += _got;
     }
     return _buf[0.._total];
 }
-fn _tcp_close(conn: TcpConn) void { conn.stream.close(); }
-
-const UdpSocket = struct { handle: std.posix.socket_t };
-fn _udp_socket() UdpSocket {
-    const s = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, 0) catch |e| @panic(@errorName(e));
-    return .{ .handle = s };
-}
-fn _udp_send(sock: UdpSocket, host: []const u8, port: u16, data: []const u8) void {
-    const dest = blk: {
-        if (std.net.Address.parseIp(host, port)) |a| break :blk a else |_| {}
-        const _list = std.net.getAddressList(std.heap.page_allocator, host, port) catch |e| @panic(@errorName(e));
-        defer _list.deinit();
-        if (_list.addrs.len == 0) @panic("UDP send: hostname resolution failed");
-        break :blk _list.addrs[0];
+fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
+fn _tcp_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(TcpConn) void;
+    const _fn: _HFn = handler;
+    const _Ctx = struct {
+        conn: std.Io.net.Stream,
+        handler_fn: _HFn,
+        fn run(ctx: *@This()) void {
+            defer std.heap.page_allocator.destroy(ctx);
+            ctx.handler_fn(.{ .stream = ctx.conn });
+        }
     };
-    _ = std.posix.sendto(sock.handle, data, 0, &dest.any, dest.getOsSockLen()) catch |e| @panic(@errorName(e));
+    const _alloc = std.heap.page_allocator;
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+        std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit(_io);
+    while (true) {
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
+        _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+            _alloc.destroy(_ctx);
+            _conn.close(_io);
+        };
+    }
 }
-fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
-    const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
-    const n = std.posix.recv(sock.handle, buf, 0) catch |e| @panic(@errorName(e));
-    return buf[0..n];
+
+const _UdpSocketInner = struct {
+    inner: std.Io.net.Socket,
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+        const dest = std.Io.net.IpAddress.parse(host, port) catch {
+            std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
+            return;
+        };
+        self.inner.send(_io, &dest, data) catch |e| {
+            std.debug.print("UDP send error: {}\n", .{e});
+        };
+    }
+    pub fn recv_(self: *_UdpSocketInner, max_bytes: usize) []const u8 {
+        const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
+        const msg = self.inner.receive(_io, buf) catch return buf[0..0];
+        return msg.data;
+    }
+    pub fn close_(self: *_UdpSocketInner) void { self.inner.close(_io); }
+};
+const UdpSocket = *_UdpSocketInner;
+fn _udp_socket() UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = 0 } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
+    return s;
 }
-fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
+fn _udp_bind(port: u16) UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
+    return s;
+}
 
 fn _net_resolve(host: []const u8) []const []const u8 {
     var _result: std.ArrayList([]const u8) = .empty;
-    const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
-    defer _list.deinit();
-    for (_list.addrs) |_addr| {
-        var _buf: [64]u8 = undefined;
-        const _full = std.fmt.bufPrint(&_buf, "{f}", .{_addr}) catch continue;
-        const _col = std.mem.lastIndexOfScalar(u8, _full, ':') orelse _full.len;
-        var _ip = _full[0.._col];
-        if (_ip.len >= 2 and _ip[0] == '[') _ip = _ip[1 .. _ip.len - 1];
-        const _owned = std.heap.page_allocator.dupe(u8, _ip) catch continue;
-        _result.append(std.heap.page_allocator, _owned) catch {};
+    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return &.{};
+    switch (addr) {
+        .ip4 => |a| {
+            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return &.{};
+            _result.append(std.heap.page_allocator, _ip) catch return &.{};
+        },
+        .ip6 => {},
     }
     return _result.toOwnedSlice(std.heap.page_allocator) catch &.{};
 }
@@ -2045,6 +2263,181 @@ fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8)
     }
 }
 
+// ─── SQLite ───────────────────────────────────────────────────────────────────
+const _sqlite3      = opaque {};
+const _sqlite3_stmt = opaque {};
+const _SQLITE_OK      = 0;
+const _SQLITE_ROW     = 100;
+const _SQLITE_DONE    = 101;
+const _SQLITE_INTEGER = 1;
+const _SQLITE_FLOAT   = 2;
+const _SQLITE_TEXT    = 3;
+const _SQLITE_NULL    = 5;
+// SQLITE_TRANSIENT (-1 cast to ptr) — tells SQLite to copy strings before use
+const _SQLITE_TRANSIENT: ?*anyopaque = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
+
+extern fn sqlite3_open(filename: [*:0]const u8, ppDb: **_sqlite3) c_int;
+extern fn sqlite3_close_v2(db: *_sqlite3) c_int;
+extern fn sqlite3_errmsg(db: *_sqlite3) [*:0]const u8;
+extern fn sqlite3_prepare_v2(db: *_sqlite3, sql: [*:0]const u8, nByte: c_int, ppStmt: **_sqlite3_stmt, pzTail: ?*?[*:0]const u8) c_int;
+extern fn sqlite3_step(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_finalize(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_count(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_name(stmt: *_sqlite3_stmt, N: c_int) [*:0]const u8;
+extern fn sqlite3_column_type(stmt: *_sqlite3_stmt, iCol: c_int) c_int;
+extern fn sqlite3_column_int64(stmt: *_sqlite3_stmt, iCol: c_int) i64;
+extern fn sqlite3_column_double(stmt: *_sqlite3_stmt, iCol: c_int) f64;
+extern fn sqlite3_column_text(stmt: *_sqlite3_stmt, iCol: c_int) ?[*:0]const u8;
+extern fn sqlite3_bind_int64(stmt: *_sqlite3_stmt, idx: c_int, val: i64) c_int;
+extern fn sqlite3_bind_double(stmt: *_sqlite3_stmt, idx: c_int, val: f64) c_int;
+extern fn sqlite3_bind_text(stmt: *_sqlite3_stmt, idx: c_int, txt: [*:0]const u8, n: c_int, destructor: ?*anyopaque) c_int;
+extern fn sqlite3_bind_null(stmt: *_sqlite3_stmt, idx: c_int) c_int;
+
+const _SqliteParam = union(enum) {
+    int:   i64,
+    float: f64,
+    text:  []const u8,
+    null_: void,
+};
+const _SqliteVal = _SqliteParam;
+
+const _SqliteRow = struct {
+    names: []const []const u8,
+    vals:  []const _SqliteVal,
+    pub fn int_(self: _SqliteRow, name: []const u8) i64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .int   => |i| i,
+                .float => |f| @as(i64, @intFromFloat(f)),
+                .text  => |t| std.fmt.parseInt(i64, t, 10) catch 0,
+                .null_ => 0,
+            };
+        }
+        return 0;
+    }
+    pub fn str_(self: _SqliteRow, name: []const u8) []const u8 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .text  => |t| t,
+                .int   => |i| std.fmt.allocPrint(_allocator, "{d}", .{i})   catch "",
+                .float => |f| std.fmt.allocPrint(_allocator, "{d}", .{f})   catch "",
+                .null_ => "",
+            };
+        }
+        return "";
+    }
+    pub fn float_(self: _SqliteRow, name: []const u8) f64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .float => |f| f,
+                .int   => |i| @as(f64, @floatFromInt(i)),
+                .text  => |t| std.fmt.parseFloat(f64, t) catch 0.0,
+                .null_ => 0.0,
+            };
+        }
+        return 0.0;
+    }
+    pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
+};
+
+const _SqliteDbInner = struct {
+    db: *_sqlite3,
+
+    fn _bind(stmt: *_sqlite3_stmt, params: []const _SqliteParam) void {
+        for (params, 0..) |p, i| {
+            const idx: c_int = @as(c_int, @intCast(i)) + 1;
+            switch (p) {
+                .int   => |v| _ = sqlite3_bind_int64(stmt, idx, v),
+                .float => |v| _ = sqlite3_bind_double(stmt, idx, v),
+                .text  => |v| {
+                    const cz = _allocator.dupeZ(u8, v) catch return;
+                    defer _allocator.free(cz);
+                    _ = sqlite3_bind_text(stmt, idx, cz, -1, _SQLITE_TRANSIENT);
+                },
+                .null_ => _ = sqlite3_bind_null(stmt, idx),
+            }
+        }
+    }
+    fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
+        const csql = _allocator.dupeZ(u8, sql) catch return;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite exec error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        _ = sqlite3_step(stmt);
+    }
+    fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) {
+        var rows = std.ArrayList(_SqliteRow).empty;
+        const csql = _allocator.dupeZ(u8, sql) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite query error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const ncols = sqlite3_column_count(stmt);
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            var names = std.ArrayList([]const u8).empty;
+            var vals  = std.ArrayList(_SqliteVal).empty;
+            var ci: c_int = 0;
+            while (ci < ncols) : (ci += 1) {
+                const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                const val: _SqliteVal = switch (sqlite3_column_type(stmt, ci)) {
+                    _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+                    _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+                    _SQLITE_TEXT    => blk: {
+                        const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                        const s = std.mem.sliceTo(raw, 0);
+                        break :blk .{ .text = _allocator.dupe(u8, s) catch s };
+                    },
+                    else => .null_,
+                };
+                vals.append(_allocator, val) catch {};
+            }
+            rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+        }
+        return rows;
+    }
+    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
+    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) std.ArrayList(_SqliteRow) { return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
+    pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
+    pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
+    pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
+};
+
+const SqliteDb  = *_SqliteDbInner;
+const SqliteRow = _SqliteRow;
+
+fn _sqlite_open(path: []const u8) ?SqliteDb {
+    const cpath = _allocator.dupeZ(u8, path) catch return null;
+    defer _allocator.free(cpath);
+    var db_raw: *_sqlite3 = undefined;
+    if (sqlite3_open(cpath, &db_raw) != _SQLITE_OK) {
+        std.debug.print("Sqlite.open error: {s}\n", .{sqlite3_errmsg(db_raw)});
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    }
+    const s = _allocator.create(_SqliteDbInner) catch {
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    };
+    s.* = .{ .db = db_raw };
+    return s;
+}
+
 // === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
@@ -2458,7 +2851,7 @@ var _rng_ready: bool = false;
 fn _rng() std.Random {
     if (!_rng_ready) {
         var seed: u64 = 0;
-        std.crypto.random.bytes(std.mem.asBytes(&seed));
+        _io.randomSecure(std.mem.asBytes(&seed)) catch @panic("entropy unavailable");
         _rng_inst = std.Random.DefaultPrng.init(seed);
         _rng_ready = true;
     }
@@ -2476,6 +2869,49 @@ fn _random_bytes(n: i64) []const u8 {
 fn _random_seed(s: i64) void {
     _rng_inst = std.Random.DefaultPrng.init(@bitCast(s));
     _rng_ready = true;
+}
+// ── Crypto.encrypt / Crypto.decrypt — AES-256-GCM ────────────────────────────
+// Wire format (hex-encoded): 12-byte nonce | 16-byte tag | N-byte ciphertext
+const _AESGCM = std.crypto.aead.aes_gcm.Aes256Gcm;
+fn _crypto_key32(password: []const u8) [32]u8 {
+    var k: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(password, &k, .{});
+    return k;
+}
+fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
+    var nonce: [_AESGCM.nonce_length]u8 = undefined;
+    _io.randomSecure(&nonce) catch @panic("entropy unavailable");
+    const key = _crypto_key32(password);
+    const ct_buf = _allocator.alloc(u8, plaintext.len) catch return "";
+    defer _allocator.free(ct_buf);
+    var tag: [_AESGCM.tag_length]u8 = undefined;
+    _AESGCM.encrypt(ct_buf, &tag, plaintext, "", nonce, key);
+    // encode: nonce + tag + ciphertext → hex
+    const raw_len = nonce.len + tag.len + ct_buf.len;
+    const raw = _allocator.alloc(u8, raw_len) catch return "";
+    defer _allocator.free(raw);
+    @memcpy(raw[0..nonce.len], &nonce);
+    @memcpy(raw[nonce.len .. nonce.len + tag.len], &tag);
+    @memcpy(raw[nonce.len + tag.len ..], ct_buf);
+    return _hex_encode(raw);
+}
+fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
+    const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
+    if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;
+    const raw_len = hex_ciphertext.len / 2;
+    const raw = _allocator.alloc(u8, raw_len) catch return null;
+    defer _allocator.free(raw);
+    _ = std.fmt.hexToBytes(raw, hex_ciphertext) catch return null;
+    const nonce = raw[0.._AESGCM.nonce_length].*;
+    const tag   = raw[_AESGCM.nonce_length .. _AESGCM.nonce_length + _AESGCM.tag_length].*;
+    const ct    = raw[_AESGCM.nonce_length + _AESGCM.tag_length ..];
+    const key = _crypto_key32(password);
+    const pt_buf = _allocator.alloc(u8, ct.len) catch return null;
+    _AESGCM.decrypt(pt_buf, ct, tag, "", nonce, key) catch {
+        _allocator.free(pt_buf);
+        return null;
+    };
+    return pt_buf;
 }
 const ArgResult = struct {
     _raw: []const []const u8,
@@ -2557,7 +2993,7 @@ var _log_level: u8 = 1;        // default: info
 var _log_timestamps: bool = true;
 var _log_to_stderr: bool = true;
 fn _log_ts() []const u8 {
-    const sec = @divFloor(std.time.milliTimestamp(), 1000);
+    const sec: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
     const s = sec - 62135596800; // offset from Unix epoch to .NET epoch (unused here)
     _ = s;
     return std.fmt.allocPrint(_allocator, "{d}", .{sec}) catch "?";
@@ -2582,6 +3018,46 @@ fn _log_err(msg: []const u8) void   { _log_emit("ERR",   3, msg); }
 fn _log_set_level(l: u8) void { _log_level = l; }
 fn _log_set_output_stderr(v: bool) void { _log_to_stderr = v; }
 fn _log_timestamp(v: bool) void { _log_timestamps = v; }
+// Log.setFile / Log.json — file sink + JSON lines format
+var _log_file_opt: ?std.Io.File = null;
+fn _log_set_file(path: []const u8) void {
+    if (_log_file_opt) |old| { old.close(_io); _log_file_opt = null; }
+    if (path.len == 0) return;
+    _log_file_opt = std.Io.Dir.cwd().createFile(_io, path, .{ .truncate = false }) catch return;
+}
+fn _log_json_esc(s: []const u8, out: *std.ArrayList(u8)) void {
+    for (s) |c| switch (c) {
+        '"'  => out.appendSlice(_allocator, "\\\"") catch {},
+        '\\' => out.appendSlice(_allocator, "\\\\") catch {},
+        '\n' => out.appendSlice(_allocator, "\\n")  catch {},
+        '\r' => out.appendSlice(_allocator, "\\r")  catch {},
+        '\t' => out.appendSlice(_allocator, "\\t")  catch {},
+        else => out.append(_allocator, c)            catch {},
+    };
+}
+fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(_allocator);
+    const ts_s = std.fmt.allocPrint(_allocator, "{d}", .{ts}) catch return;
+    defer _allocator.free(ts_s);
+    buf.appendSlice(_allocator, "{\"ts\":") catch return;
+    buf.appendSlice(_allocator, ts_s) catch return;
+    buf.appendSlice(_allocator, ",\"level\":\"") catch return;
+    buf.appendSlice(_allocator, level) catch return;
+    buf.appendSlice(_allocator, "\",\"msg\":\"") catch return;
+    _log_json_esc(msg, &buf);
+    if (data.len > 0) {
+        buf.appendSlice(_allocator, "\",\"data\":\"") catch return;
+        _log_json_esc(data, &buf);
+    }
+    buf.appendSlice(_allocator, "\"}\n") catch return;
+    if (_log_file_opt) |f| {
+        const st = f.stat(_io) catch return;
+        f.writePositionalAll(_io, buf.items, st.size) catch {};
+    }
+    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+}
 const UriResult = struct {
     scheme: []const u8,
     host:   []const u8,
@@ -2699,18 +3175,18 @@ fn _mime_to_ext(mime: []const u8) []const u8 {
 const TimerHandle = struct {
     _start_ns: i128,
     pub fn elapsed(self: *const TimerHandle) f64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @as(f64, @floatFromInt(_ns)) / 1_000_000.0;
     }
     pub fn elapsedMicros(self: *const TimerHandle) i64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @intCast(@divFloor(_ns, 1000));
     }
     pub fn reset(self: *TimerHandle) void {
-        self._start_ns = std.time.nanoTimestamp();
+        self._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds;
     }
 };
-fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds }; }
 // ── Progress stdlib ──────────────────────────────────────────────────────────
 var _progress_root_started: bool = false;
 var _progress_root: std.Progress.Node = undefined;
@@ -2734,11 +3210,11 @@ var _profile_name_stack: std.ArrayList([]const u8) = .empty;
 var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
-    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .monotonic).nanoseconds) catch @panic("OOM");
 }
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
-    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
+    const elapsed_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - start_ns;
     var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
@@ -2885,6 +3361,9 @@ fn _sys_getenv(key: []const u8) ?[]const u8 {
     } else {
         return std.posix.getenv(key);
     }
+}
+fn _sys_self_exe() []const u8 {
+    return std.process.executablePathAlloc(_io, _allocator) catch "";
 }
 
 pub fn identity(comptime T: type, x: T) T {

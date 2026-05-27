@@ -79,10 +79,11 @@ const Builder = struct {
         var pending_derive_eq = false;
         var pending_derive_hash = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags);
+        var pending_export_sym: ?[]const u8 = null;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags, &pending_export_sym);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -90,20 +91,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -122,6 +123,9 @@ const Builder = struct {
             } else if (std.mem.eql(u8, name, "derive")) {
                 // @derive(Debug, Eq, Hash) — extract identifier names from ArgList
                 if (at_kids.len > 2) try b.extractDeriveIdents(at_kids[2], pending_derive_debug, pending_derive_eq, pending_derive_hash);
+            } else if (std.mem.eql(u8, name, "export")) {
+                // @export("sym") — extract symbol name string literal from ArgList
+                if (at_kids.len > 2) try b.extractExportSym(at_kids[2], pending_export_sym);
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -169,6 +173,15 @@ const Builder = struct {
             pending_derive_debug.* = false;
             pending_derive_eq.* = false;
             pending_derive_hash.* = false;
+        }
+        if (pending_export_sym.*) |sym| {
+            applyExportSym(&d, sym) catch |err| switch (err) {
+                error.ExportSymOnNonClass => std.debug.panic(
+                    "@export can only precede `class` declarations",
+                    .{},
+                ),
+            };
+            pending_export_sym.* = null;
         }
         try out.append(b.arena, d);
     }
@@ -281,6 +294,27 @@ const Builder = struct {
                 if (hash) s.mods.derive_hash  = true;
             },
             else => return error.DeriveOnNonStruct,
+        }
+    }
+
+    fn extractExportSym(b: Builder, args_node: TN, out: *?[]const u8) !void {
+        const args = try b.buildArgListNode(args_node);
+        for (args) |arg| {
+            switch (arg.value.*) {
+                .string_lit => |s| {
+                    const raw = s.text;
+                    out.* = if (raw.len >= 2 and raw[0] == '"') raw[1 .. raw.len - 1] else raw;
+                },
+                else => {},
+            }
+            break;
+        }
+    }
+
+    fn applyExportSym(d: *Ast.Decl, sym: []const u8) error{ExportSymOnNonClass}!void {
+        switch (d.*) {
+            .class => |c| c.export_sym = sym,
+            else   => return error.ExportSymOnNonClass,
         }
     }
 

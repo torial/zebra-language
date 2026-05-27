@@ -257,7 +257,8 @@ struct PClass
     var is_derive_debug: bool
     var is_derive_eq: bool
     var is_derive_hash: bool
-    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false)
+    var export_sym: str?
+    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, export_sym: str? = nil)
         .name = name
         .type_params = type_params
         .ifaces = ifaces
@@ -268,6 +269,7 @@ struct PClass
         .is_derive_debug = is_derive_debug
         .is_derive_eq = is_derive_eq
         .is_derive_hash = is_derive_hash
+        .export_sym = export_sym
 
 struct PExtend
     var target_name: str
@@ -631,11 +633,15 @@ class Parser
     var tokens: List(Token.Token)
     var pos: int
     var file_name: str
+    var parse_errors: List(str)
+    var collected_decls: List(PNode)
 
     cue init(tokens: List(Token.Token), file_name: str)
         .tokens = tokens
         .pos = 0
         .file_name = file_name
+        .parse_errors = List(str)()
+        .collected_decls = List(PNode)()
 
     # -- Cursor ----------------------------------------------------------------
 
@@ -692,6 +698,64 @@ class Parser
                 return true
             else
                 return false
+
+    # -- Error recovery --------------------------------------------------------
+
+    def isRecoveryStarter(kind: Token.TokenKind): bool
+        branch kind
+            on TokenKind.kw_use
+                return true
+            on TokenKind.kw_namespace
+                return true
+            on TokenKind.kw_class
+                return true
+            on TokenKind.kw_interface
+                return true
+            on TokenKind.kw_struct
+                return true
+            on TokenKind.kw_def
+                return true
+            on TokenKind.kw_extend
+                return true
+            on TokenKind.at_id
+                return true
+            on TokenKind.kw_sig
+                return true
+            on TokenKind.kw_type
+                return true
+            on TokenKind.kw_public
+                return true
+            on TokenKind.kw_private
+                return true
+            on TokenKind.kw_protected
+                return true
+            on TokenKind.kw_internal
+                return true
+            on TokenKind.kw_abstract
+                return true
+            on TokenKind.kw_export
+                return true
+            on TokenKind.kw_static
+                return true
+            on TokenKind.kw_readonly
+                return true
+            on TokenKind.kw_extern
+                return true
+            else
+                return false
+
+    def skipToTopLevelBoundary()
+        while not .isEof()
+            const t = .peek()
+            if t.col == 1 and .isRecoveryStarter(t.kind)
+                return
+            .advance()
+
+    def tryParseTopDeclInto()
+        .collected_decls.add(.parseTopDecl()?)
+    catch |e|
+        .parse_errors.add(zig"_error_ctx.message")
+        .skipToTopLevelBoundary()
 
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
@@ -1032,12 +1096,18 @@ class Parser
     # -- Module ----------------------------------------------------------------
 
     def parseModule(): PNode throws
-        var decls = List(PNode)()
         .skipEol()
         while not .isEof()
-            decls.add(.parseTopDecl())
+            .tryParseTopDeclInto()
             .skipEol()
-        return PNode.module_(PModule(decls))
+        if .parse_errors.len > 0
+            var msg: str = .parse_errors.at(0)
+            var i: int = 1
+            while i < .parse_errors.len
+                msg = msg + "\n" + .parse_errors.at(i)
+                i = i + 1
+            raise msg
+        return PNode.module_(PModule(.collected_decls))
 
     # -- Top-level declarations ------------------------------------------------
 
@@ -1051,6 +1121,7 @@ class Parser
         var pending_derive_eq: bool = false
         var pending_derive_hash: bool = false
         var pending_tags: List(str) = List(str)()
+        var pending_export_sym: str? = nil
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -1103,6 +1174,19 @@ class Parser
                                         sys.errln("warning: unknown @derive trait '" + trait_name + "'; ignored")
                             .expectText(")")
                         .skipEol()
+                    else if dtext == "@export"
+                        var export_raw: str = ""
+                        if .textIs("(")
+                            .advance()
+                            if not .textIs(")")
+                                export_raw = .peek().text
+                                .advance()
+                                if export_raw.len >= 2
+                                    export_raw = export_raw.substring(1, export_raw.len - 1)
+                            .expectText(")")
+                        .skipEol()
+                        if export_raw != ""
+                            pending_export_sym = export_raw
                     else
                         .skipEol()
                         sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
@@ -1114,7 +1198,7 @@ class Parser
         else if .textIs("namespace")
             return .parseNamespaceDecl()
         else if .textIs("class")
-            return .parseClassDecl(pending_reflectable)
+            return .parseClassDecl(pending_reflectable, pending_export_sym)
         else if .textIs("struct")
             return .parseStructDecl(pending_reflectable, pending_derive_debug, pending_derive_eq, pending_derive_hash)
         else if .textIs("interface")
@@ -1179,7 +1263,7 @@ class Parser
         .skipEol()
         return PNode.use_(PUse(path, exposed))
 
-    def parseClassDecl(is_reflectable: bool): PNode throws
+    def parseClassDecl(is_reflectable: bool, export_sym: str? = nil): PNode throws
         .expectText("class")
         var name: str = ""
         var type_params = List(str)()
@@ -1251,7 +1335,7 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 .advance()
-        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false))
+        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")

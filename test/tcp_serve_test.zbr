@@ -1,0 +1,11 @@
+def handleConn(conn: TcpConn)
+    var data = conn.read()
+    conn.write("ECHO:" + data)
+    conn.close()
+
+def startServer()
+    Tcp.serve(19876, handleConn)
+
+def main()
+    # Compile smoke: exercises Tcp.serve codegen path without binding
+    print "tcp_serve_test OK"

@@ -4,9 +4,143 @@ This file is the **agent-facing quick reference** for the Zebra language (.zbr f
 It covers syntax, semantics, and idioms needed to read and write Zebra without
 scanning the full compiler source. For the compiler's own implementation see `src/`.
 
-> **Reading order:** §1–§14 cover everyday syntax.  §15–§23 are reference for
-> specialised features.  §24–§25 cover contracts and reflection (Zebra's identity
-> features).  §26 is idioms; §27 is gotchas.  §28–§31 are memory/build/GUI/stdlib.
+> **Reading order:** New to Zebra? Start with the **Getting Started** section
+> below, then §1–§14 for everyday syntax.  §15–§23 are reference for specialised
+> features.  §24–§25 cover contracts and reflection.  §26 is idioms; §27 is
+> gotchas.  §28–§31 are memory/build/GUI/stdlib.  §32–§40 cover advanced and
+> newer features (SIMD, Test, tuples, channels, type aliases, refinements,
+> `using`, `with`, SQLite).  §41–§44 cover `namespace`, `extend`, `@derive`,
+> and `DynLib` (dynamic library plugins).
+
+---
+
+## Getting Started
+
+### What is Zebra?
+
+Zebra is a statically-typed, compiled programming language in the Python / Cobra / Eiffel
+family. The name is a portmanteau of **Zig** and **Cobra** — `.zbr` source files compile
+to native executables via a Zig backend.
+
+**Design goals:**
+
+- **Safe by default.** Nil tracking, optional types, and Design-by-Contract (`require`,
+  `ensure`, `invariant`) make precondition violations visible at compile time rather than
+  as runtime crashes.
+- **Readable.** Python-style indentation, no semicolons, no boilerplate class scaffolding,
+  `print "hello"` without import.
+- **Fast native output.** The Zig backend gives C-level performance and a simple,
+  deterministic memory model (arena allocator by default).
+- **Self-hosting.** The compiler is being progressively rewritten in Zebra itself
+  (see `selfhost/`).
+
+Zebra is not a scripting language — programs are compiled ahead of time. It is also not
+a Zig wrapper; Zig is an implementation detail you can usually ignore unless you need to
+call C libraries via `zig"..."` escape hatches (§23).
+
+---
+
+### Installation
+
+**Requirements:** Zig 0.15.0 or newer. The recommended way to install Zig on Windows or
+Linux is [zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
+
+```bash
+# Install zvm (follow instructions at https://github.com/tristanisham/zvm)
+# Then install Zig 0.15.0 or the latest stable:
+zvm install 0.15.0
+zvm use 0.15.0
+```
+
+**Clone and build:**
+
+```bash
+git clone https://github.com/torial/zebra-language.git
+cd zebra-language
+zig build
+```
+
+This produces `zig-out/bin/zebra` (or `zebra.exe` on Windows).
+
+**Add to PATH** so you can invoke `zebra` from anywhere:
+
+```bash
+# Bash / Git Bash (Windows):
+export PATH="$PWD/zig-out/bin:$PATH"
+
+# Or add to your shell profile (~/.bashrc, ~/.zshrc, etc.) permanently.
+```
+
+**Verify:**
+
+```bash
+zebra --version        # prints the compiler version
+zig build test         # runs the test suite (~150 tests)
+```
+
+> **Note:** The Zig compiler itself must also be on your PATH. If you used zvm, run
+> `export PATH="$HOME/.zvm/bin:$PATH"` (or the Windows equivalent) before building.
+
+---
+
+### Hello, World
+
+Save the following as `hello.zbr`:
+
+```zebra
+def main
+    print "Hello, Zebra!"
+```
+
+Compile and run:
+
+```bash
+zebra hello.zbr
+```
+
+Output:
+
+```
+Hello, Zebra!
+```
+
+**What just happened?**
+
+- `def main` declares a top-level function named `main`. No class required.
+- `print` is a built-in statement (not a function call) — parentheses are optional.
+- Indentation defines blocks — no braces or `begin`/`end`.
+
+**A slightly larger example** — reading command-line arguments:
+
+```zebra
+use sys
+
+def main
+    var args = Arg.all()
+    if args.len == 0
+        print "Usage: hello <name>"
+    else
+        print "Hello, ${args[0]}!"
+```
+
+```bash
+zebra hello.zbr World
+# → Hello, World!
+```
+
+**Compiler subcommands:**
+
+| Command | What it does |
+|---------|-------------|
+| `zebra file.zbr` | Compile and run (default backend) |
+| `zebra repl` | Interactive REPL (`:help` for commands) |
+| `zebra test file.zbr` | Run test suite (§33) |
+| `zebra build` | Project build system (§29) |
+| `zebra check file.zbr` | Dead-code analysis |
+| `zebra debug file.zbr` | Launch with LLDB-DAP debugger |
+| `zebra --emit-zig file.zbr` | Emit Zig source without running |
+| `zebra --turbo file.zbr` | Strip contract checks (§24) |
+| `zebra --gui-backend=libui_ng f.zbr` | GUI with native OS controls (§30) |
 
 ---
 
@@ -77,6 +211,24 @@ Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 `@as(fNN, val)` directly.
 
+### §3.1 Operator precedence (highest → lowest)
+
+| Level | Operators | Notes |
+|-------|-----------|-------|
+| 1 — postfix | `x!`  `x?`  `.method()`  `[i]`  `?.` | Force-unwrap, optional-chain |
+| 2 — unary | `not`  `-x` | Logical not; arithmetic negation |
+| 3 — multiplicative | `*`  `/`  `%` | |
+| 4 — additive | `+`  `-` | String concat is also `+` |
+| 5 — comparison | `<`  `<=`  `>`  `>=`  `is`  `in` | `is`: type check; `in`: containment |
+| 6 — equality | `==`  `!=` | |
+| 7 — logical and | `and` | Short-circuits |
+| 8 — logical or | `or` | Short-circuits |
+| 9 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
+| 10 — pipeline | `->` | Left-to-right chaining |
+
+`orelse` and `catch` have the same precedence (level 9); they associate left-to-right.
+`->`  (pipeline) is the lowest non-assignment operator, so `a + b -> f` means `f(a + b)`.
+
 ---
 
 ## 4. Functions (top-level `def`)
@@ -112,9 +264,26 @@ open("data.txt", buffered: false)       # skip mode (uses default)
 open(path: "data.txt", mode: "w")       # all named
 ```
 
+**Rules:**
+
 - Defaults appear after the type annotation: `name: T = expr`.
-- Call sites mix positional and named args; named args may appear in any order
-  *after* the last positional arg.
+- Any parameter with a default can be skipped at the call site, regardless of position.
+  Non-contiguous skipping is allowed — `open("f.txt", buffered: false)` skips `mode`.
+- At a call site, all positional arguments must come before the first named argument:
+  `open("data.txt", mode: "w")` is fine; `open(mode: "w", "data.txt")` is a parse error.
+- Named args after the last positional may appear in **any order**:
+  `open("f.txt", buffered: false, mode: "w")` is the same as `open("f.txt", mode: "w", buffered: false)`.
+- Default expressions are evaluated at the **call site** (not at definition time).  You can
+  use runtime values as defaults:
+  ```zebra
+  def log(msg: str, level: int = Log.defaultLevel())
+      ...
+  ```
+- Type annotation on the default is required — `name = "r"` without `: str` is a
+  parser error.
+- Methods on classes use the same syntax; `cue init` constructors also support
+  named/default args.
+- **Struct construction** uses named arg syntax too: `Point(x: 1, y: 2)` — see §6.
 
 ---
 
@@ -153,6 +322,67 @@ class Counter
   shadow-resilient default.  External: `obj.count`.  See §26 for the idiom
   table.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
+
+### Static members (`static def` / `static var`)
+
+`static def` and `static var` declare members that belong to the **type**, not to
+any particular instance.  They are accessed via `ClassName.member`, never via an object.
+
+```zebra
+class Registry
+    static var count: int         # class-level variable; shared across all instances
+    static var instances: List(Registry)
+
+    cue init
+        Registry.count += 1       # access static vars with ClassName.
+        Registry.instances.append(this)
+
+    static
+        def total(): int          # group form: multiple statics under one `static` block
+            return Registry.count
+
+        def reset()
+            Registry.count = 0
+            Registry.instances = List(Registry)()
+
+    def id(): int
+        return Registry.count     # instance method can read static var
+
+# Usage:
+var r1 = Registry()
+var r2 = Registry()
+print Registry.total()            # → 2
+```
+
+**Two forms of static declaration:**
+
+```zebra
+class Foo
+    # Inline form — one member at a time:
+    static def hello()
+        print "hello from Foo"
+
+    static var greeting: str = "hi"
+
+    # Group form — preferred when there are multiple statics:
+    static
+        def bye()
+            print "bye"
+        var farewell: str = "goodbye"
+```
+
+**Key points:**
+
+- `static var` is initialized **once**, at program start (Zig `const` or `var` at module
+  scope).  There is no per-instance copy.
+- `static def` has no `this` / no leading-dot access — it cannot read or write instance
+  fields.  If you need `this`, the method is not static.
+- `static var` with a `List` or `HashMap` default must be initialized in `cue init`
+  or a static `def` — direct default expressions are evaluated at compile time.
+- Static and instance members share the same namespace; you cannot have a static `def foo`
+  and an instance `def foo` in the same class.
+- `static` members are accessed cross-module as `Module.ClassName.member` (note the two
+  dots of qualification).
 
 ### Method modifiers (`@once`, `@profile`, `@tag`)
 
@@ -423,8 +653,8 @@ var maybeUser: User? = lookup()
 if maybeUser is User as u            # binds u: User (non-optional)
     print u.name
 
-# Nil-coalescing:
-var z = x ?? 0                       # use 0 if nil
+# Nil-coalescing with orelse:
+var z = x orelse 0                   # use 0 if nil (also works on error unions)
 
 # Optional chaining:
 var n = node?.next                   # nil if node is nil
@@ -433,10 +663,15 @@ var v = node?.value! + 1             # unwrap result of optional chain
 ```
 
 - `x!` is the force-unwrap operator.  Panics if nil.  `x to!` is a legacy alias.
-- `??` is nil-coalescing (like `orelse` in Zig).
+- `x orelse fallback` — evaluates `fallback` when `x` is nil (for `T?`) or an error
+  (for `anyerror!T`).  This is the Zebra equivalent of Zig's `orelse`.  There is no
+  `??` operator in Zebra.
 - `?.` is optional member/method access — propagates nil.  Result type is `T?`.
   If the accessed member is already `T?`, the result is still `T?` (flattened, not `T??`).
+  Chain multiple accesses: `a?.b?.c` propagates nil through each step.
 - `if x as n` (when `x: T?`) binds `n: T` in the then-branch.
+- **`orelse` vs `catch`**: use `orelse` on optionals (`T?`), use `catch` on error
+  results (`throws`).  Both can appear in the same expression for chained recovery.
 
 ---
 
@@ -481,9 +716,6 @@ var r = someObj.method()?            # propagates if method throws
 - `catch` clauses appear after the method body at the same indent as `def`;
   they wrap the entire body.  Multiple `catch` clauses are allowed; each has an
   optional `|binding|` and typed variant `|e: ErrorType|`.
-
-`Result(T)` is available as a secondary error-as-value type, but exceptions
-are the primary model.
 
 ---
 
@@ -643,34 +875,175 @@ var result = sb.build()              # str (drains the builder)
   `-` fill.
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 
-### Raw strings
+### String method reference
 
-Prefix `r` disables escape processing and interpolation.  Useful for regex and
-Windows paths:
+**Returns `str`:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `upper()` | `(): str` | All characters uppercased |
+| `lower()` | `(): str` | All characters lowercased |
+| `trim()` | `(): str` | Strip leading and trailing whitespace |
+| `trimLeft()` | `(): str` | Strip leading whitespace |
+| `trimRight()` | `(): str` | Strip trailing whitespace |
+| `reverse()` | `(): str` | Reverse the string |
+| `replace(from, to)` | `(str, str): str` | Replace all occurrences of `from` with `to` |
+| `repeat(n)` | `(int): str` | Repeat the string `n` times |
+| `padLeft(width, fill)` | `(int, str): str` | Pad on the left to `width` characters with `fill` |
+| `padRight(width, fill)` | `(int, str): str` | Pad on the right to `width` characters |
+| `center(width, fill)` | `(int, str): str` | Center within `width` characters |
+| `concat(other)` | `(str): str` | Append `other` (same as `+`) |
+| `format(args...)` | variadic | `std.fmt.allocPrint`-style format |
+| `join(sep)` | `(str): str` | Join list elements — called on `List(str)`, not a single `str` |
+| `substring(start, end)` | `(int, int): str` | Slice from `start` to `end` (same as `s[start..end]`) |
+| `toHex()` | `(): str` | Hex-encode bytes |
+| `fromHex()` | `(): str` | Decode hex string to bytes |
+| `encodeBase64()` | `(): str` | Base64-encode |
+| `decodeBase64()` | `(): str` | Base64-decode |
+| `lines()` | `(): List(str)` | Split on newlines |
+
+**Returns `int`:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `len` | (field) | Byte length |
+| `indexOf(sub)` | `(str): int?` | First occurrence index; `nil` if not found |
+| `lastIndexOf(sub)` | `(str): int?` | Last occurrence index |
+| `indexOfFrom(sub, from)` | `(str, int): int?` | Search starting at `from` |
+| `indexOfIgnoreCase(sub)` | `(str): int?` | Case-insensitive `indexOf` |
+| `count(sub)` | `(str): int` | Number of non-overlapping occurrences |
+| `toInt()` | `(): int` | Parse as decimal integer (panics on bad input) |
+| `toIntBase(base)` | `(int): int` | Parse with given base (2, 8, 10, 16) |
+| `codePointCount()` | `(): int` | Count Unicode codepoints (not bytes) |
+
+**Returns `bool`:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `contains(sub)` | `(str): bool` | Substring presence check |
+| `startsWith(pre)` | `(str): bool` | Prefix check |
+| `endsWith(suf)` | `(str): bool` | Suffix check |
+| `isEmpty()` | `(): bool` | True when `len == 0` |
+| `isAlpha()` | `(): bool` | All codepoints are Unicode letters |
+| `isNumeric()` | `(): bool` | All codepoints are decimal digits |
+| `isAlphanumeric()` | `(): bool` | All codepoints are letters or digits |
+| `isPrintable()` | `(): bool` | All codepoints are printable |
+| `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence |
+| `eqlIgnoreCase(other)` | `(str): bool` | Case-insensitive equality |
+| `startsWithIgnoreCase(pre)` | `(str): bool` | Case-insensitive prefix |
+| `endsWithIgnoreCase(suf)` | `(str): bool` | Case-insensitive suffix |
+| `containsIgnoreCase(sub)` | `(str): bool` | Case-insensitive contains |
+
+**Returns sequence:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `split(sep)` | `(str): List(str)` | Split on `sep` string |
+| `chars()` | `(): List(char)` | Sequence of Unicode codepoints (`u21`) |
+| `bytes()` | `(): List(int)` | Sequence of bytes (`u8` as `int`) |
+
+### Raw strings (`r'…'` / `r"…"`)
+
+The `r` prefix makes backslashes literal and disables `${…}` interpolation.
+Two quote forms are available — pick the one whose quote character is not in
+your content:
 
 ```zebra
-var pattern = r"\d+\.\d+"            # backslashes literal
-var path    = r"C:\Users\Sean"
+var re   = r"\d+\.\d+"              # r"…" — backslash literal; no ${} expansion
+var path = r"C:\Users\Sean\docs"    # Windows path — four literal backslashes
+
+# Use r'…' when your content contains double quotes:
+var json_tmpl = r'{"key": "value"}'   # double-quotes inside single-quoted raw
+
+# Use r"…" when your content contains single quotes:
+var sql_frag  = r"WHERE name = 'Alice'"
 ```
 
-Both `r'…'` and `r"…"` forms are accepted.
+**What raw strings do and don't do:**
+
+| Feature | `r"…"` / `r'…'` |
+|---------|-----------------|
+| Backslashes are literal (`\` stays `\`) | ✅ |
+| `${…}` interpolation | ✗ disabled |
+| Escape sequences (`\n`, `\t`, etc.) | ✗ not processed |
+| Spans multiple lines | ✗ single line only |
+| Can contain `"` (double-quote) | only in `r'…'` form |
+| Can contain `'` (single-quote) | only in `r"…"` form |
+
+The closing quote terminates the string — there is no way to escape it inside a
+raw string.  If you need both quote types in one string, use triple-quoted
+(`"""…"""`) or a regular string with `\'` / `\"` escapes.
 
 ### Triple-quoted strings (`"""…"""`)
 
-Multi-line literals without escape processing:
+Multi-line literals.  No `${…}` interpolation; backslashes are literal.
+
+**Single-line form** — content between the `"""` delimiters on the same line:
+
+```zebra
+var sql = """SELECT * FROM users WHERE name = 'Alice' AND status = "active" """
+# Result: SELECT * FROM users WHERE name = 'Alice' AND status = "active"
+# (trailing space before """ is stripped)
+```
+
+**Multiline form** — `"""` on its own line, content indented, closing `"""` on
+its own line:
 
 ```zebra
 var html = """
     <html>
         <body>Hello</body>
     </html>
-"""
-
-var sql = """SELECT * FROM users WHERE name = 'Alice'"""   # inline form
+    """
+# Result (exact bytes):
+# "    <html>\n        <body>Hello</body>\n    </html>\n"
+#  ^^^^ 4 spaces preserved — content indentation is NOT dedented
 ```
 
-Leading/trailing whitespace is stripped.  No `${…}` interpolation inside
-triple-quoted strings.
+**Stripping rules** (applied in this order):
+1. Strip the opening `"""` and closing `"""` delimiters.
+2. Strip exactly one leading `\n` (the newline immediately after the opening `"""`).
+3. Strip trailing spaces and tabs only — the whitespace before the closing `"""`.
+   A trailing newline is NOT stripped (only the indent-spaces after it).
+
+**What this means in practice:**
+
+```zebra
+var a = """
+    line one
+    line two
+"""
+# → "    line one\n    line two\n"
+#   Leading 4-space indent preserved; trailing \n kept; no spaces after \n
+
+var b = """
+    line one
+    line two
+    """
+# → "    line one\n    line two\n"
+#   Same result — trailing "    " (the indent of closing """) is stripped
+
+var c = """line one"""
+# → "line one"
+```
+
+**What triple-quoted strings can contain:**
+
+| | `"""…"""` |
+|---|---|
+| Single quotes `'` | ✅ freely |
+| Double quotes `"` or `""` | ✅ freely |
+| Three consecutive `"""` | ✗ terminates the string |
+| `${…}` interpolation | ✗ not available |
+| Backslash sequences | treated as literal (e.g. `\n` stays two chars) |
+| Multi-line content | ✅ |
+
+> **To get both interpolation and multi-line**, build the string with `+` and
+> a regular `"…"` string:
+> ```zebra
+> var name = "Alice"
+> var body = "    <p>Hello, ${name}</p>\n    <p>Welcome.</p>\n"
+> ```
 
 ---
 
@@ -789,18 +1162,14 @@ var top = s.pop()
 
 ## 18. Properties
 
-There is no special property / getter syntax in current Zebra.  The
-`prop` / `get` / `set` / `body` / `post` keywords were removed 2026-04-19.
+There is no special property / getter syntax in Zebra.  The
+`prop` / `get` / `set` / `body` / `post` keywords were removed.
 
-Use ordinary methods for computed state.  Always declare with explicit
-parentheses (`def name(): T`) — callers always write parens too:
+Use ordinary methods for computed state:
 
 ```zebra
 class Circle
     var radius: float
-
-    cue init(r: float)
-        radius = r
 
     def diameter(): float
         return .radius * 2.0
@@ -811,18 +1180,22 @@ class Circle
 # Use:
 var c = Circle(5.0)
 print c.radius                    # field access — no parens
-print c.area()                    # method call — parens
+print c.area()                    # method call — parens required
 ```
 
-Field privacy: there are no `private` / `internal` keywords today.  A
-leading underscore on a field name (`_radius`) is purely social convention
-and has zero compiler enforcement — see BUG-115.  Style guide stance:
-**don't add new `_` prefixes**, but leave existing ones as-is until
-BUG-115 resolves (avoids churn-then-rewrite if real privacy keywords
-land in 0.14).
+**Field visibility** — use `public`, `private`, `internal`, or `protected` on
+fields and methods.  `private` restricts to the owning class; `internal`
+excludes the member from cross-module interface tables; `protected` limits
+to the class and subclasses.  Default (no keyword) is equivalent to `public`.
 
-For direct field exposure, declare the field public and access `c._radius`
-directly.  No "computed property" sugar is provided.
+```zebra
+class Wallet
+    private var balance: float     # only Wallet methods can access this
+    public def deposit(n: float)
+        .balance = .balance + n
+    public def getBalance(): float
+        return .balance
+```
 
 ---
 
@@ -846,19 +1219,79 @@ var bump = def()
 - Free variables are auto-captured (no explicit `capture` block needed for
   read-only access in most cases).
 - An explicit `capture` block at the top of a lambda body declares persistent
-  per-instance state — see §30 for a GUI example.
+  per-instance state — see §19.1 below.
+
+### §19.1 `capture` blocks — persistent per-closure state
+
+A `capture` block declares variables that are **private to one closure instance** and
+persist across calls.
+
+**Without `capture`:** a lambda is emitted as a plain function pointer (no wrapper struct).
+It can reference module-level variables, but has no private persistent state of its own.
+
+**With `capture`:** the lambda is wrapped in an anonymous struct.  Each creation of the
+lambda allocates a fresh instance of that struct with its own independent fields.
+
+```zebra
+# Factory that returns a fresh counter each time:
+var make_counter = def(): def(): int
+    return def(): int
+        capture
+            var count: int = 0
+        count += 1
+        return count
+
+var c1 = make_counter()
+var c2 = make_counter()
+print c1()   # → 1
+print c1()   # → 2
+print c2()   # → 1  (independent from c1)
+print c1()   # → 3
+```
+
+**How it works:** The `capture` block's variables become fields of an anonymous Zig
+struct.  Each call to the factory allocates a fresh instance.  The struct's `call` method
+is invoked on each call to the closure.
+
+**Mutation detection:** The compiler inspects the lambda body and emits
+`self: *@This()` (mutable self) when any capture field is directly assigned or passed to a
+known-mutating method (`append`, `add`, `remove`, `set`, etc.).  For class-type captures
+(which are already pointers), `self: @This()` is sufficient even when you call methods on
+them — mutation goes through the pointer, not the field.
+
+**Rules:**
+
+- `capture` must be the first statement in the lambda body (before any other code).
+- Declarations inside `capture` use the same `var name: Type = init` syntax as regular
+  variables.  The initializer runs **once**, when the closure is created.
+- Captured variables are mutable: `count += 1` in the example above works.
+- Closures with a `capture` block are passed around as values of any `sig` type whose
+  signature matches — the struct satisfies the `sig` via a `.call` method.
+- **GUI use case**: `capture` is the idiomatic way to hold per-widget state in GUI
+  callbacks without a global variable:
+
+```zebra
+def view(g: Gui, model: Model)
+    var click_count = def(): void
+        capture
+            var clicks: int = 0
+        clicks += 1
+        print "Clicked ${clicks} times"
+    if g.button("Click me")
+        click_count()
+```
 
 ---
 
 ## 20. `sig` — function type aliases
 
 `sig` declares a named function-pointer type.  Use it to pass functions as
-arguments without wrapping them in closures:
+arguments or store them in variables:
 
 ```zebra
 sig Comparator(a: int, b: int): int
 sig Predicate(item: str): bool
-sig Callback()                       # void return
+sig Callback()                       # void return — no return type needed
 
 def sort(items: List(int), cmp: Comparator)
     pass
@@ -871,9 +1304,57 @@ def main
     sort(nums, ascending)
 ```
 
-- `sig` resolves to a `*const fn(T1, T2) R` pointer in Zig.
-- Any `static def` at module scope with a matching signature is
-  assignment-compatible.
+### How sigs work
+
+- `sig` resolves to `*const fn(T1, T2, ...) R` in Zig.
+- **Structural typing:** any `static def` or lambda with a matching parameter list and
+  return type is compatible — no explicit `implements` required.
+- **Calling through a `sig` variable:**
+
+```zebra
+sig Transform(x: int): int
+
+static def double(x: int): int
+    return x * 2
+
+static def negate(x: int): int
+    return -x
+
+def applyAll(items: List(int), fn: Transform): List(int)
+    var out = List(int)()
+    for v in items
+        out.add(fn(v))    # call through the sig — plain call syntax
+    return out
+
+def main
+    var ns = @[1, 2, 3]
+    var doubled = applyAll(ns, double)
+    var negated = applyAll(ns, negate)
+```
+
+- **Lambda assignment:** a lambda whose signature matches is assignment-compatible with a
+  `sig` variable:
+
+```zebra
+sig Callback()
+
+var cb: Callback = def()
+    print "called"
+
+cb()    # invoke the stored callback
+```
+
+- **`sig` in `class` fields:** you can store callbacks as fields — useful for
+  event-driven patterns:
+
+```zebra
+class Button
+    var onClick: Callback? = nil
+
+    def click()
+        if .onClick as cb
+            cb()
+```
 
 ---
 
@@ -911,7 +1392,7 @@ a cast in another language:
 
 ## 22. `^T` heap-indirection (recursive types only)
 
-Used to break recursive struct cycles:
+Used to break recursive struct/union cycles — the **only** reason to reach for `^T`.
 
 ```zebra
 struct Node
@@ -924,13 +1405,61 @@ var b = Node(2, nil)
 a.next = b                            # auto-boxes: allocates *Node, copies b in
 ```
 
-- `^T` in a field type → `*T` in Zig.
-- `^T?` → `?*T`.
-- Assignment to a `^T` field auto-boxes: allocates a heap copy.
-- Inside a `branch` on a union with `^T` payload, the binding has type `T`
-  (pointer is transparent).
-- `^ClassName` is a **compile error** — classes already have reference
-  semantics; double-boxing is rejected.
+### Rules
+
+- `^T` in a field type → `*T` in Zig; `^T?` → `?*T`.
+- **Auto-boxing:** assigning a value of type `T` to a `^T` field allocates a heap copy
+  automatically.  No explicit `new` or `box(…)` call is needed.
+- **Transparent in `branch`:** inside a `branch` arm that binds a `^T` union payload, the
+  binding has type `T` — the pointer indirection is stripped for you.
+- **`^ClassName` is a compile error** — classes already have reference semantics;
+  double-boxing is rejected.
+
+### `^T?` fields and nil
+
+```zebra
+struct TreeNode
+    var value: int
+    var left:  ^TreeNode?
+    var right: ^TreeNode?
+
+# Inserting a child — auto-boxes:
+var root = TreeNode(value: 5, left: nil, right: nil)
+var child = TreeNode(value: 3, left: nil, right: nil)
+root.left = child                     # allocates *TreeNode, copies child into it
+
+# Nil check:
+if root.left as n
+    print n.value                     # n: TreeNode (deref'd — pointer transparent)
+```
+
+### Union with `^T` payload
+
+```zebra
+union Expr
+    num(value: int)
+    add(left: ^Expr, right: ^Expr)
+
+var e = Expr.add(left: Expr.num(1), right: Expr.num(2))
+branch e
+    on Expr.add as a
+        # a.left: Expr (transparent — ^Expr auto-deref'd)
+        print a.left
+    on Expr.num as n
+        print n.value
+```
+
+### Iterating `List(^T)`
+
+When a `List` holds `^T` elements, the for-in binding has type `T` (the pointer is
+stripped):
+
+```zebra
+var nodes: List(^Node) = List(^Node)()
+# ... populate
+for n in nodes
+    print n.value    # n: Node (not ^Node)
+```
 
 ---
 
@@ -1061,7 +1590,13 @@ class Main
                 print "parse failed"
 ```
 
-Strict semantics:
+**Why `@reflectable` is required:** The annotation is an explicit opt-in signal to the
+codegen to emit per-field lookup tables (`_reflect_<T>_field_names`,
+`_reflect_<T>_field_types`).  Without it the tables are not emitted, keeping binary size
+minimal.  A call to `Json.parseStrict(NonAnnotatedClass, …)` is a hard compile-time error
+that names the missing annotation.
+
+**Strict semantics:**
 - Missing required key → `nil`.
 - Type mismatch (`{"age":"30"}`) → `nil`.
 - Extra key (`{…,"surprise":1}`) → `nil`.
@@ -1077,8 +1612,8 @@ Strict semantics:
   `field 'tags' has unsupported type 'List(int)' (only int/float/bool/str supported in 0.9)`.
 
 **Scope-1 (current):** only `int` / `float` / `bool` / `str` (and `String` alias)
-fields.  Sized numerics, `T?`, `List(T)`, and nested `@reflectable` classes
-are deferred.
+fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are deferred
+— attempting to use them gives the hard-error above at compile time.
 
 ---
 
@@ -1087,7 +1622,7 @@ are deferred.
 | Pattern              | Zebra                          | Notes                                    |
 |----------------------|--------------------------------|------------------------------------------|
 | Force-unwrap optional | `x!`                          | panics if nil; `x to!` is a legacy alias |
-| Nil-coalescing       | `x ?? default`                 |                                          |
+| Nil-coalescing       | `x orelse default`             | also works on error unions               |
 | Optional unwrap bind | `if x as n`                    | `n: T` when `x: T?`                      |
 | Type-check + bind    | `if obj is Dog as d`           | combined `is` + `as`                     |
 | Substring test       | `"needle" in str`              | preferred over `.contains`               |
@@ -1330,6 +1865,22 @@ correct, safe mechanism for bounded reclaim.
 
 ## 29. Build and run
 
+### Compiler subcommands
+
+```bash
+zebra file.zbr                        # compile and run (default backend)
+zebra repl                            # interactive REPL
+zebra test file.zbr                   # run test suite (see §33)
+zebra build                           # project build system (see below)
+zebra check file.zbr                  # dead-code analysis
+zebra debug file.zbr                  # launch with LLDB-DAP debugger
+zebra --emit-zig file.zbr             # emit Zig source without running
+zebra --turbo file.zbr                # strip contract checks (faster)
+zebra --gui-backend=libui_ng f.zbr    # GUI with native OS controls
+```
+
+### From the repository
+
 ```bash
 # From repo root:
 zig build run -- path/to/file.zbr            # compile and run
@@ -1402,43 +1953,116 @@ b.exe("app", "src/main.zbr").platform("aarch64-linux").option("optimize", "Relea
 | `target.linkLib(other)` | Record a lib dependency edge |
 | `b.dependency(name, ver)` | Stub for future package manager |
 
+### `zebra repl` — interactive REPL
+
+Launch with `zebra repl`.  Enter Zebra statements and expressions one at a time.
+Multi-line input is supported.
+
+```
+$ zebra repl
+Zebra REPL 0.15 — type :help for commands
+>>> var x = 10 + 5
+>>> print x
+15
+>>> def double(n: int): int
+...     return n * 2
+>>> double(x)
+30
+```
+
+**REPL commands** (prefix with `:`):
+
+| Command | Action |
+|---------|--------|
+| `:help` | Print list of REPL commands |
+| `:clear` | Clear the accumulated history (start fresh) |
+| `:history` | Show all statements entered in this session |
+| `:load <file>` | Load and run a `.zbr` file into the REPL environment |
+| `:save <file>` | Save the current session history to a file |
+| `:exit` / Ctrl-D | Exit the REPL |
+
+**Multi-line input:** If a line ends with an indent (i.e. starts a block), the REPL
+shows `...` and waits for the block body.  Complete the block with a blank line or
+a dedented line to execute.
+
+**Accumulation model:** Each input is appended to the session. Redefining a function
+or variable runs the re-defined version but does not remove the old one from history
+(`:clear` resets everything).
+
+### `zebra check` — dead-code analysis
+
+`zebra check file.zbr` reports:
+- **Unused union arms** — union variants never matched in any `branch` expression.
+- **Unreachable functions** — top-level `def` declarations never called anywhere in
+  the module graph.
+
+```bash
+zebra check selfhost/codegen.zbr
+# → warning: union arm 'Type_.str_slice' never matched
+# → warning: def 'genDebugPrint' never called
+```
+
+Output goes to stdout, one warning per line.  Exit code 0 = no warnings.
+
+### `zebra debug` — DAP integration
+
+`zebra debug file.zbr` compiles the program and launches it under `lldb-dap`, exposing
+the Debug Adapter Protocol on a local socket.  IDE clients (VS Code, ZebraIDE) connect
+to this socket for breakpoints, stepping, and variable inspection.
+
+See `docs/DEBUGGING.md` for:
+- VS Code launch configuration
+- ZebraIDE's built-in Debug button
+- `--listen PORT` mode for custom integrations
+- LLDB-DAP discovery / `LLDB_DISABLE_PYTHON` workarounds
+
+### Compiler flags reference
+
+| Flag | Effect |
+|------|--------|
+| `--emit-zig` | Write Zig source to stdout instead of compiling |
+| `--output-dir DIR` | Write generated Zig files to `DIR/` |
+| `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
+| `--gui-backend=libui_ng` | Use native OS controls (default: stub) |
+| `--gui-backend=imgui` | Use Dear ImGui backend |
+| `--gui-backend=tui` | Use terminal UI backend |
+| `--zig-backend file.zbr` | Delegate to `zebra-bootstrap.exe` (Zig compiler) |
+| `--listen PORT` | (debug mode) expose DAP on `PORT` instead of launching IDE |
+
 ---
 
 ## 30. GUI programming
 
-Zebra has a built-in immediate-mode GUI API backed by Dear ImGui (via the
-[zgui](https://github.com/zig-gamedev/zgui) bindings).
+Zebra has a built-in GUI API with an **MVU (Model-View-Update)** architecture.
+Three backends are available: native OS controls via **libui-ng**, a terminal
+UI via **ZigZag TUI**, and Dear ImGui (OpenGL/GLFW) for GPU-accelerated rendering.
 
 ### Running a GUI program
 
 ```bash
-zebra --gui-backend=glfw myapp.zbr   # Dear ImGui (OpenGL/GLFW)
-zebra --gui-backend=tui  myapp.zbr   # Terminal UI (ZigZag — no GPU required)
+zebra --gui-backend=libui_ng myapp.zbr  # Native OS controls (Win32/GTK3/Cocoa) — recommended
+zebra --gui-backend=tui      myapp.zbr  # Terminal UI (ZigZag — no GPU, no dependencies)
+zebra --gui-backend=glfw     myapp.zbr  # Dear ImGui (OpenGL/GLFW)
+zebra myapp.zbr                         # Default: stub backend (prints to stderr, for tests)
 ```
 
-The compiler auto-scaffolds a `zig build` project (e.g. `myapp_gui/`) next to
-the generated `.zig` file, writes a pinned `build.zig.zon`, and invokes
+The compiler auto-scaffolds a `zig build` project next to the generated `.zig`
+file (e.g. `myapp_gui_libui_ng/`, `myapp_gui_tui/`, `myapp_gui/`) and invokes
 `zig build run`.  The project directory is reused on subsequent runs.
 
-**TUI backend notes:**
-- Renders entirely in the terminal using ANSI escape codes (alternate screen).
-- Press `q`, `Q`, or `Escape` to quit.
-- Left-click to activate buttons, checkboxes, and selectables.
-- `sameLine()` has no visual effect in TUI mode (widgets always stack vertically).
+**libui-ng backend notes:**
+- Native controls: Win32 on Windows, GTK3 on Linux, Cocoa on macOS.
+- Retained-mode internally: Zebra's immediate-mode API is translated to a widget
+  tree on frame 0 and updated on subsequent events. Widget order must be stable.
+- `sameLine()`, `treeNode()`, table/tree APIs are no-ops (use `beginHBox` for
+  horizontal layout).
 - Low-level draw calls (`ll.*`) are no-ops.
 
-### Minimal example
-
-```zebra
-class Main
-    static
-        def main
-            Gui.run("Hello", 400, 300, def(g: Gui)
-                g.text("Hello, Zebra!")
-                if g.button("Click me")
-                    g.text("Clicked!")
-            )
-```
+**TUI backend notes:**
+- Renders in the terminal using ANSI escape codes (alternate screen).
+- Press `q`, `Q`, or `Escape` to quit.
+- `sameLine()` has no visual effect (widgets stack vertically).
+- Low-level draw calls (`ll.*`) are no-ops.
 
 ### `Gui.run` — MVU form (recommended)
 
@@ -1446,8 +2070,7 @@ class Main
 Gui.run(title: str, width: int, height: int, init, update, view)
 ```
 
-**MVU (Model-View-Update)** is the recommended architecture. State is explicit,
-transitions are testable, and the view is a pure function of the model.
+**MVU (Model-View-Update)** keeps state explicit and transitions testable.
 
 ```zebra
 struct Counter
@@ -1458,7 +2081,7 @@ union Msg
     dec
     reset
 
-def counterInit(): Counter
+def makeCounter(): Counter
     return Counter(count: 0)
 
 def update(model: Counter, msg: Msg): Counter
@@ -1471,50 +2094,117 @@ def view(g: Gui, model: Counter)
     g.text("Count: " + model.count.toString())
     g.separator()
     if g.button("+"):  g.send(Msg.inc)
-    g.sameLine()
     if g.button("-"):  g.send(Msg.dec)
-    g.sameLine()
     if g.button("Reset"):  g.send(Msg.reset)
 
 def main()
-    Gui.run("Counter", 400, 200, counterInit, update, view)
+    Gui.run("Counter", 400, 200, makeCounter, update, view)
 ```
 
 - `init` — called once, returns the initial model value
-- `update(model, msg)` — pure function: given old model + message, returns new model
-- `view(g, model)` — renders widgets; call `g.send(msg)` to dispatch messages
-- Messages are queued during `view` and processed after it returns (multiple per frame supported)
+- `update(model, msg)` — pure function: old model + message → new model
+- `view(g, model)` — renders widgets; call `g.send(msg)` to queue messages
+- Messages are queued during `view` and processed after it returns
 
-> **Note:** Do not name the init function `init` — the generated Zig `main` has a
-> parameter named `init` that will shadow it (BUG-123). Use a qualified name like
-> `counterInit`, `makeModel`, etc.
-
-### `Gui.run` — frame-callback form (legacy)
+### `Gui.run` — frame-callback form (ImGui/TUI only)
 
 ```zebra
 Gui.run(title: str, width: int, height: int, frame: def(g: Gui))
 ```
 
-Calls `frame` once per rendered frame until the window is closed.  Use a
-`capture` block inside the lambda to keep state alive across frames.
+Calls `frame` once per rendered frame.  Use a `capture` block to keep state
+across frames.
+
+**Not supported** in the libui-ng retained-mode backend — libui-ng events are
+callback-driven, not frame-polled.  For portable code, prefer MVU.
+
+### MVU vs frame-callback — when to use each
+
+| | MVU | Frame-callback |
+|---|---|---|
+| **State model** | Explicit typed struct — immutable transitions | Anything (mutable via `capture`) |
+| **Testability** | High — `update` is a pure function | Low — state lives in closure |
+| **Backend support** | All backends | ImGui + TUI only |
+| **Best for** | Production apps, anything you want to test | Quick prototypes, IDE-style tools |
+| **State that spans frames** | In the model struct | In a `capture` block |
+
+**Use MVU when:**
+- You want testable UI logic (test `update` without a GUI).
+- You need libui-ng (native OS controls) or cross-backend portability.
+- The app has clear, discrete state transitions.
+
+**Use frame-callback when:**
+- You're building a dev tool or ImGui-style editor where state is naturally mutable.
+- You need the `CodeEditor` widget or low-level draw calls (`g.ll.*`), which are
+  ImGui-only.
+- You want minimal boilerplate for a quick prototype.
 
 ### Widget reference
 
-| Call                                     | Returns | Notes                              |
-|------------------------------------------|---------|-------------------------------------|
-| `g.text(s)`                              | void    | Text label                          |
-| `g.button(label)`                        | bool    | True on click                       |
-| `g.checkbox(label, value)`               | bool    | New checked state                   |
-| `g.slider(label, value, min, max)`       | float   | Drag slider                         |
-| `g.input(label, value)`                  | str     | Single-line text input              |
-| `g.inputMultiline(label, value, w, h)`   | str     | Multi-line text area                |
-| `g.separator()`                          | void    | Horizontal rule                     |
-| `g.sameLine()`                           | void    | Next widget on same line            |
-| `g.spacing()`                            | void    | Extra vertical space                |
-| `g.indent()` / `g.unindent()`            | void    | Indentation level                   |
-| `g.panel(label, callback)`               | void    | Collapsible child window            |
-| `g.window(label, callback)`              | void    | Floating sub-window                 |
-| `g.send(msg)`                            | void    | Dispatch a message (MVU form only)  |
+| Call                                       | Returns  | Notes                                      |
+|--------------------------------------------|----------|--------------------------------------------|
+| `g.text(s)`                                | void     | Text label                                 |
+| `g.button(label)`                          | bool     | True on click                              |
+| `g.checkbox(label, value)`                 | bool     | New checked state                          |
+| `g.slider(label, value, min, max)`         | float    | Drag slider (float range)                  |
+| `g.input(label, value)`                    | str      | Single-line text input                     |
+| `g.inputMultiline(label, value, w, h)`     | str      | Multi-line text area                       |
+| `g.progressBar(label, value)`              | void     | Progress bar; `value` is 0.0–1.0           |
+| `g.combobox(label, items, selected)`       | int      | Drop-down; `items: List(str)`, returns new index |
+| `g.spinbox(label, value, min, max)`        | int      | Integer spinner with bounds                |
+| `g.separator()`                            | void     | Horizontal rule                            |
+| `g.sameLine()`                             | void     | Next widget on same line (ImGui/TUI only)  |
+| `g.spacing()`                              | void     | Extra vertical space                       |
+| `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
+| `g.panel(label, callback)`                 | void     | Collapsible child window (ImGui only)      |
+| `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box                  |
+| `g.window(label, callback)`                | void     | Floating sub-window (ImGui only)           |
+| `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
+| `g.selectable(label, selected)`            | bool     | Selectable list item                       |
+| `g.send(msg)`                              | void     | Dispatch a message (MVU only)              |
+
+### Layout boxes (libui-ng / stub / TUI)
+
+```zebra
+g.beginHBox("row", stretch: false)
+    g.button("Left")
+    g.button("Right")
+g.endHBox()
+
+# With `using` desugaring:
+using g.hbox("row", false)
+    g.button("Left")
+    g.button("Right")
+```
+
+| Call                                | Notes                                  |
+|-------------------------------------|----------------------------------------|
+| `g.beginHBox(id, stretch)` / `g.endHBox()` | Horizontal container           |
+| `g.beginVBox(id, stretch)` / `g.endVBox()` | Vertical container             |
+| `g.hbox(id, stretch)` / `g.vbox(id, stretch)` | Factory for `using` desugaring |
+
+### File dialogs (libui-ng only; stub/TUI return nil)
+
+```zebra
+if g.button("Open…")
+    var p = g.openFile()
+    if p as path
+        g.send(Msg.opened(path))
+
+if g.button("Alert")
+    g.msgBox("Info", "Operation complete.")
+```
+
+| Call                               | Returns | Notes                                  |
+|------------------------------------|---------|----------------------------------------|
+| `g.openFile()`                     | `str?`  | System open-file dialog; nil on cancel |
+| `g.saveFile()`                     | `str?`  | System save-file dialog; nil on cancel |
+| `g.openFolder()`                   | `str?`  | System open-folder dialog              |
+| `g.msgBox(title, msg)`             | void    | Modal informational dialog             |
+| `g.msgBoxError(title, msg)`        | void    | Modal error dialog                     |
+
+File dialogs must be **button-gated** — call them only when a button press has
+been detected, never unconditionally from `view()`.
 
 ### `CodeEditor` widget
 
@@ -1523,18 +2213,17 @@ var editor = CodeEditor.forZebra()        # factory — Zebra syntax preset
 editor.setText(File.read("main.zbr"))
 editor.setReadOnly(false)
 
-# Inside frame lambda:
+# Inside view():
 editor.render(g, "##editor", 700, 500)
 var src = editor.getText()
 editor.setErrorMarkers(diags)             # diags: List(IDEDiagnostic)
 ```
 
-### Persistent frame state with `capture`
+### Persistent frame state with `capture` (frame-callback form)
 
 ```zebra
 Gui.run("IDE", 1000, 750, def(g: Gui)
     capture
-        var state = IDEState()
         var editor = CodeEditor.forZebra()
         var inited: bool = false
     if not inited
@@ -1544,17 +2233,14 @@ Gui.run("IDE", 1000, 750, def(g: Gui)
 )
 ```
 
-The `capture` block is allocated once when the lambda struct is first created
-and reused every frame.
-
 ### Backend isolation
 
 The GUI layer uses a `_GuiBackend` fn-pointer struct internally.  Swap the
 backend by implementing the fn-ptr slots and changing `_gui_active_backend`
 — no changes to user Zebra code required.
 
-Available backends: `stub` (no-op, for tests), `glfw`/`sdl2`/`dx12` (Dear ImGui),
-`tui` (ZigZag terminal — zero dependencies, works anywhere).
+Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
+`glfw`/`sdl2`/`dx12` (Dear ImGui), `tui` (ZigZag terminal).
 
 ---
 
@@ -1829,16 +2515,125 @@ r.close()
 | `t.row(i).field(name)`            | str          | By column name                     |
 | `CsvWriter()`                     | `CsvWriter`  | Builder for output                 |
 
-### `Mime`, `Uri`, `Compress`, `Log`, `Terminal`, `Timer`
+### `Mime`, `Uri`, `Terminal`, `Timer`
 
 | Call                              | Returns      | Notes                                       |
 |-----------------------------------|--------------|----------------------------------------------|
 | `Mime.lookup(filename)`           | str          | MIME type by extension                       |
 | `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
-| `Compress.gunzip(bytes)`          | `List(byte)` | gzip decompress |
-| `Log.info(msg)` / `warn / error`  | void         | Stderr-formatted logger                      |
 | `Terminal.clearScreen()` etc.     | void         | ANSI helpers                                 |
 | `Timer.start()`                   | `Timer`      | `t.elapsedMs()` for measurement              |
+
+### `Compress` — gzip compression
+
+| Call                    | Returns      | Notes                              |
+|-------------------------|--------------|------------------------------------|
+| `Compress.gzip(data)`   | `List(byte)` | gzip compress a string             |
+| `Compress.gunzip(data)` | `List(byte)` | gzip decompress                    |
+
+### `Log` — structured logging
+
+| Call                              | Returns | Notes                                        |
+|-----------------------------------|---------|----------------------------------------------|
+| `Log.info(msg)`                   | void    | Timestamped info line to stderr              |
+| `Log.warn(msg)`                   | void    |                                              |
+| `Log.error(msg)`                  | void    |                                              |
+| `Log.json(level, msg, data)`      | void    | JSON-lines format: `{"level":…,"msg":…,…}`   |
+| `Log.setFile(path)`               | void    | Redirect subsequent log output to a file     |
+
+### `Crypto` — cryptographic primitives
+
+| Call                                      | Returns | Notes                             |
+|-------------------------------------------|---------|-----------------------------------|
+| `Crypto.encrypt(plaintext, key)`          | str     | AES-256-GCM; base64-encoded output |
+| `Crypto.decrypt(ciphertext, key)`         | `str?`  | Returns nil on auth failure        |
+| `Crypto.deriveKey(password, salt)`        | str     | HKDF-SHA256; 32-byte hex output   |
+
+### `Atomic(T)` — lock-free atomic cells
+
+```zebra
+var counter = Atomic(int)(0)
+counter.add(1)
+var v = counter.load()
+```
+
+| Call                   | Returns | Notes                           |
+|------------------------|---------|---------------------------------|
+| `Atomic(T)(init)`      | `Atomic(T)` | Create cell with initial value |
+| `a.load()`             | T       | Atomic read (seq-cst)           |
+| `a.store(v)`           | void    | Atomic write (seq-cst)          |
+| `a.add(n)` / `sub(n)`  | T       | Fetch-and-add; returns **old** value |
+| `a.swap(v)`            | T       | Atomic exchange; returns old    |
+
+Supported types: `int`, `bool`.
+
+All operations use **sequentially-consistent** memory ordering (Zig
+`.seq_cst`).  This is the safest and least surprising choice; for
+high-throughput scenarios where relaxed ordering would suffice, use `zig"…"`
+to call Zig's `@atomicRmw` directly.
+
+**`Atomic` vs `Chan`:**
+
+| | `Atomic(T)` | `Chan(T)` |
+|---|---|---|
+| Best for | Shared counters, flags, one-shot signals | Producer/consumer pipelines |
+| Blocking | Never | `send` blocks when full; `recv` blocks when empty |
+| Ordering | Implicit seq-cst | Message order preserved |
+
+```zebra
+# Shared counter across threads:
+var total = Atomic(int)(0)
+sys.go(lambda  var _ = total.add(1) )
+sys.go(lambda  var _ = total.add(1) )
+sys.sleep(50)
+print total.load()   # 2 (both increments visible)
+
+# One-shot "done" flag:
+var done = Atomic(bool)(false)
+sys.go(lambda
+    doWork()
+    done.store(true)
+)
+while not done.load()
+    sys.sleep(10)
+```
+
+### `ThreadPool(n)` — bounded worker pool
+
+```zebra
+var pool = ThreadPool(4)
+pool.submit(def() doWork())
+pool.wait()                    # blocks until all submitted tasks complete
+```
+
+| Call                    | Notes                                         |
+|-------------------------|-----------------------------------------------|
+| `ThreadPool(n)`         | Create pool with `n` worker threads           |
+| `pool.submit(lambda)`   | Queue a zero-arg lambda for async execution   |
+| `pool.wait()`           | Block until all queued tasks finish           |
+
+### `Path` — path utilities
+
+| Call                          | Returns | Notes                              |
+|-------------------------------|---------|-------------------------------------|
+| `Path.join(a, b)`             | str     | Join path segments (OS separator)   |
+| `Path.dirname(p)`             | str     | Parent directory component          |
+| `Path.basename(p)`            | str     | Filename without directory          |
+| `Path.ext(p)` / `extension(p)` | str   | Extension including dot (e.g. `.zig`) |
+| `Path.stem(p)`                | str     | Basename without extension          |
+| `Path.isAbsolute(p)`          | bool    |                                     |
+| `Path.absolute(p)`            | str     | Resolve relative path to absolute   |
+
+### `Http.serve` — HTTP server
+
+```zebra
+Http.serve(8080, def(req: HttpRequest, res: HttpResponse)
+    if req.path == "/hello"
+        res.text("Hello, Zebra!")
+    else
+        res.notFound("not found")
+)
+```
 
 ### `Progress` — terminal progress bars
 
@@ -1923,6 +2718,31 @@ var isum: int32 = iv.sum()
 - Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise.
 - Comparison and logical operators on SIMD vectors are not yet supported.
 - Selfhost parity (for `selfhost/*.zbr` round-trip) is tracked as a future sprint.
+
+### CPU target and SIMD width
+
+By default Zebra compiles for the SSE2 baseline (`x86_64` generic target), which
+runs on any x86-64 machine but limits SIMD operations to 128-bit (`f32x4`, `i32x4`).
+Wider types like `f32x8` or `f32x16` compile and run at baseline, but LLVM
+decomposes them into multiple narrower instructions — correct, but not optimal.
+
+Use `--cpu` to control the target CPU:
+
+```bash
+zebra file.zbr                       # SSE2 baseline — always correct
+zebra --cpu=native file.zbr          # host CPU features — fastest, but host-only binary
+zebra --cpu=x86_64+avx2 file.zbr     # explicit AVX2 — optimal f32x8; runs on any AVX2 machine
+zebra --cpu=x86_64+avx512f file.zbr  # AVX-512 — SIGILL on AVX2/SSE2 machines
+```
+
+**SIGILL hazard**: compiling with a wide CPU target (`+avx512f`) and running on a
+narrower machine (AVX2 or SSE2) produces `SIGILL` at runtime — Zig/LLVM bakes the
+instruction set into the binary at compile time.  `--cpu native` is safe only when
+the binary will run on the same machine (or an identical micro-architecture) that
+compiled it.
+
+Runtime CPU dispatch (detect features at startup, select best kernel) is a post-1.0
+item tracked in `NEXT_STEPS.md §9`.
 
 ## 33. Test module — `zebra test`
 
@@ -2159,9 +2979,49 @@ print counter.load()     # 8
 **Notes:**
 - `ThreadPool` is a plain type (not generic); the thread count is a constructor argument.
 - `pool.submit(lambda)` accepts any zero-parameter Zebra lambda (with or without captures).
-- `pool.wait()` blocks until all in-flight tasks finish; submitting after `wait` is supported.
-- Workers are spawned at construction and run until the pool is garbage-collected.
+- `pool.wait()` blocks until all in-flight tasks finish.
+- **Submit after `wait` is supported** — calling `submit` after `wait` returns queues more
+  work; a subsequent `wait` blocks on those new tasks.  The pool is reusable.
+- Workers are spawned at construction; they run until the pool is garbage-collected.
 - `ThreadPool` uses `page_allocator`; do not use inside short-lived `allocate` blocks.
+- **Task panics are not caught** — if a submitted lambda panics, the worker thread
+  terminates.  Design tasks to not panic (validate inputs before submitting).
+
+**`ThreadPool` vs `sys.go()`:**
+
+| | `ThreadPool(n)` | `sys.go(lambda)` |
+|---|---|---|
+| Worker count | Fixed `n` | Unbounded (new thread per call) |
+| Backpressure | Natural — submit blocks when all workers are busy | None — each call spawns immediately |
+| Result collection | Via `Atomic` or `Chan` | Via `Chan` |
+| Best for | CPU-bound parallel work | Fire-and-forget I/O tasks |
+
+```zebra
+# Pattern: ThreadPool + Chan to collect results
+var ch: Chan(int) = Chan(int)(8)
+var pool: ThreadPool = ThreadPool(4)
+
+for i in 0..8
+    pool.submit(def()
+        capture
+            var idx: int = i
+            var ch: Chan(int) = ch
+        ch.send(idx * idx)
+    )
+
+pool.wait()
+ch.close()
+
+var sum = 0
+var done = false
+while not done
+    var v: int? = ch.recv()
+    if v as n
+        sum = sum + n
+    else
+        done = true
+print sum    # 0+1+4+9+16+25+36+49 = 140
+```
 
 ## 36. Type aliases with constraints
 
@@ -2348,7 +3208,8 @@ using g.vbox("##main", true)       # vertical box (stretch = true)
 
 ## 39. `with` — contextual self
 
-`with obj` makes `obj` the implicit receiver for bare-name assignments **and** bare method calls inside the block:
+`with obj` makes `obj` the implicit receiver for bare-name assignments and bare method
+calls inside the block.  It is a compile-time textual rewrite — no runtime cost.
 
 ```zebra
 with g
@@ -2357,11 +3218,54 @@ with g
     x = 5                          # → g.x = 5
 ```
 
-Only two transformations happen inside a `with` block:
-- **Bare assignment** `field = val` → `obj.field = val`
-- **Bare method call** `method(args)` → `obj.method(args)`
+**What is rewritten (top-level statements only):**
 
-All other statements (if, for, nested with, etc.) are left unchanged.  Only **top-level** statements in the block are rewritten — bare calls nested inside an `if` or `for` inside the block require explicit `obj.method(...)` form.
+| Source | After rewrite |
+|--------|--------------|
+| `method(args)` | `obj.method(args)` |
+| `field = val` | `obj.field = val` |
+
+**What is NOT rewritten:**
+
+- Statements nested inside `if`, `for`, `while`, `branch`, etc. inside the `with` block.
+  Those require the full `obj.method(...)` form.
+- Expressions (the rewrite only targets statement positions).
+- `return`, `var`, and other statement forms that aren't bare calls or assignments.
+
+**Nested `with`:**
+
+```zebra
+with builder
+    begin("container")         # → builder.begin("container")
+    with inner_builder
+        text("hello")          # → inner_builder.text("hello")
+    end()                      # → builder.end()  (outer with is still active)
+```
+
+The inner `with` takes precedence for its own block.  The outer `with` resumes when the
+inner block closes.
+
+**Interaction with captures:**
+
+Inside a `with` block, captured variables and local variables take precedence over
+bare-name rewriting.  If `text` is a local variable, `text = val` assigns the local, not
+`obj.text = val`.
+
+**Top-level-only rule:**
+
+The rewrite applies only to statements directly inside the `with` block:
+
+```zebra
+with g
+    text("hello")                   # rewritten → g.text("hello")
+    if someCondition
+        text("inside if")           # NOT rewritten (nested) — use g.text(...)
+    for item in items
+        button(item.name, item.id)  # NOT rewritten (nested) — use g.button(...)
+```
+
+**Primary use case:** GUI `view()` functions with many widget calls — avoids repeating
+the `g.` prefix on every call.  See §30 for GUI examples.
 
 ---
 
@@ -2441,3 +3345,300 @@ def main()
         print row.asInt("id").toString() + ": " + row.asStr("body")
     db.close()
 ```
+
+---
+
+## 41. `namespace` — grouping declarations
+
+`namespace` wraps a block of top-level declarations (classes, structs, enums, functions,
+variables) under a named scope.  It is the Zebra equivalent of a Zig `const Foo = struct { ... }`.
+
+```zebra
+namespace Colors
+    struct Rgb
+        var r: int
+        var g: int
+        var b: int
+
+    def fromHex(hex: int): Rgb
+        return Rgb(r: (hex >> 16) & 0xFF, g: (hex >> 8) & 0xFF, b: hex & 0xFF)
+
+# Usage:
+var red = Colors.Rgb(r: 255, g: 0, b: 0)
+var blue = Colors.fromHex(0x0000FF)
+```
+
+- All declarations inside the `namespace` block are accessed with `Name.Member` syntax.
+- Methods inside a namespace can call each other without the namespace prefix.
+- `namespace` bodies use the same indentation rules as `class` bodies.
+- `namespace` supports: `def`, `var`, `class`, `struct`, `enum` declarations.
+
+**Practical use:** namespaces group related helpers that don't belong in a class —
+utility functions, type collections, constants.
+
+```zebra
+namespace MathUtils
+    var PI: float = 3.14159265358979
+
+    def circleArea(r: float): float
+        return PI * r * r
+
+    def clamp(x: int, lo: int, hi: int): int
+        if x < lo: return lo
+        if x > hi: return hi
+        return x
+```
+
+### Nested namespaces
+
+Two equivalent syntaxes for nested namespaces are supported:
+
+**Dotted path** — `namespace Outer.Inner { ... }`:
+```zebra
+namespace Outer.Inner
+    static def greet(): str
+        return "hi"
+
+def main()
+    print Outer.Inner.greet()   # prints "hi"
+```
+
+**Nested body** — `namespace Outer { namespace Inner { ... } }`:
+```zebra
+namespace Outer
+    namespace Inner
+        static def greet(): str
+            return "hi"
+
+def main()
+    print Outer.Inner.greet()   # prints "hi"
+```
+
+Both emit identical Zig — nested `pub const` structs:
+```zig
+pub const Outer = struct {
+    pub const Inner = struct {
+        pub fn greet() []const u8 { ... }
+    };
+};
+```
+
+**Practical use:** dotted syntax is concise for a single leaf; nested syntax is
+better when the outer namespace also has direct members:
+```zebra
+namespace Sql
+    static def version(): str
+        return "1.0"
+
+    namespace Sqlite
+        static def open(path: str): int
+            pass
+
+    namespace Postgres
+        static def connect(url: str): int
+            pass
+
+# Usage:
+print Sql.version()
+var db = Sql.Sqlite.open("mydb.db")
+var pg = Sql.Postgres.connect("postgresql://localhost/mydb")
+```
+
+---
+
+## 42. `extend` — adding methods to existing types
+
+`extend` adds new methods to a type that is already defined — including built-in types
+like `str` and `int`.  The added methods are called with the same `.method()` syntax as
+built-in ones.
+
+```zebra
+extend str
+    def shout(): str
+        return this.toUpper() + "!"
+
+    def wordCount(): int
+        return this.split(" ").len
+
+# Usage (after the extend block):
+var s = "hello world"
+print s.shout()       # → HELLO WORLD!
+print s.wordCount()   # → 2
+```
+
+- `this` inside an `extend` body refers to the receiver value.
+- The extended type can be a built-in (`str`, `int`, `float`, `bool`, `char`) or a
+  user-defined `class` or `struct`.
+- Extension methods are resolved at compile time — the compiler emits a standalone
+  function `_ext_TypeName_methodName(self, ...)` and rewrites call sites.
+- `extend` can also implement an interface or include a mixin:
+  ```zebra
+  extend str is Printable
+      def show(): str
+          return this
+  ```
+- Extensions are scoped to the file where they appear.  They are not exported across
+  module boundaries.
+
+**Common use cases:**
+
+```zebra
+extend int
+    def isEven(): bool
+        return this % 2 == 0
+
+    def abs(): int
+        if this < 0: return -this
+        return this
+
+extend List(str)
+    def joinWith(sep: str): str
+        return this.join(sep)
+```
+
+---
+
+## 43. `@derive(Debug, Eq, Hash)` — auto-generated methods
+
+`@derive` placed on a `struct` declaration instructs the compiler to auto-generate
+implementations of `toString`, `eql`, and/or `hash` based on the struct's fields.
+
+```zebra
+@derive(Debug, Eq, Hash)
+struct Point
+    var x: float
+    var y: float
+
+# Generated automatically — no need to write these:
+#   def toString(): str    → "Point(x=1.0, y=2.0)"
+#   def eql(other: Point): bool
+#   def hash(): int
+```
+
+**What each trait generates:**
+
+| Trait | Method generated | Behavior |
+|-------|-----------------|----------|
+| `Debug` | `toString(): str` | `"TypeName(field1=val1, field2=val2)"` format |
+| `Eq` | `eql(other: Self): bool` | Field-by-field equality; also enables `==` on the struct |
+| `Hash` | `hash(): int` | FNV-1a over all fields; required for use as a `HashMap` key |
+
+**Usage:**
+
+```zebra
+@derive(Debug, Eq, Hash)
+struct Color
+    var r: int
+    var g: int
+    var b: int
+
+def main()
+    var red   = Color(r: 255, g: 0,   b: 0)
+    var red2  = Color(r: 255, g: 0,   b: 0)
+    var green = Color(r: 0,   g: 255, b: 0)
+
+    print red.toString()          # → Color(r=255, g=0, b=0)
+    print red.eql(red2)           # → true
+    print red.eql(green)          # → false
+
+    var seen = HashMap(Color, bool)()
+    seen.set(red, true)
+    print seen.get(red)           # → true  (uses derived hash + eql)
+```
+
+**Notes:**
+
+- Any subset of `(Debug, Eq, Hash)` may be specified.
+- If you write your own `toString` / `eql` / `hash`, the `@derive` version for that
+  trait is suppressed — user methods take precedence.
+- `Eq` also rewires the `==` operator on the struct so `a == b` calls `a.eql(b)`.
+- `Hash` requires all fields to have a hash-able type.  Fields that are themselves
+  structs must also carry `@derive(Hash)`.
+- `@derive` applies only to `struct` — not `class`, `enum`, or `union`.
+
+---
+
+## 44. `DynLib` — dynamic library plugins
+
+`DynLib` loads shared libraries (`.dll` / `.so` / `.dylib`) at runtime and calls their
+functions through a Zebra interface.  This is the plugin/extension point for code that
+lives outside the main binary.
+
+### Opening and closing
+
+```zebra
+var lib = DynLib.open("myplugin.dll")   # returns *_DynLib (panics if not found)
+lib.close()                             # unloads the library
+```
+
+### Calling functions via an interface
+
+Define an `interface` matching the plugin's methods, then call `.lookup`:
+
+```zebra
+interface IGreeter
+    def greet(name: str): str
+    def version(): int
+
+var lib = DynLib.open("greeter.dll")
+var g = lib.lookup(IGreeter, "greeter")   # "greeter" = factory symbol name
+print g.greet("World")
+print g.version()
+lib.close()
+```
+
+`lib.lookup(IFace, "sym")` looks up `sym` in the DLL as a **factory function**
+`fn() *IFace`.  It calls the factory to get the fat-pointer, then returns it.
+The returned value satisfies the `interface` type — call its methods with
+normal `.method()` syntax.
+
+### Writing a plugin in Zebra — `@export class`
+
+Use `@export("sym") class Foo implements IFace` to make Zebra emit the factory
+function automatically.  The compiler generates `pub export fn sym() *IFace` that
+wraps a module-static singleton of `Foo` in the interface fat-pointer:
+
+```zebra
+# greeter.zbr — compile with: zebra --shared greeter.zbr
+interface IGreeter
+    def greet(name: str): str
+
+@export("greeter")
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name
+```
+
+Compile the producer with `zebra --shared greeter.zbr` to produce a shared
+library.  The consumer loads it with `DynLib.open` + `lib.lookup(IGreeter, "greeter")`.
+
+**Requirements:**
+- The class must implement at least one interface.  The factory wraps the **first**
+  listed interface.
+- The class init must take no arguments (the factory calls `ClassName.init()` internally).
+- Both compilers emit identical output.
+
+### Simple C-callable exports — `export def`
+
+For individual functions with C-compatible types, use `export def`:
+
+```zebra
+export def addOne(x: int): int
+    return x + 1
+```
+
+Emits `pub export fn addOne(x: i64) i64` — callable from C or any language with
+FFI support.  Types must be C-compatible (primitives only — `str` is a Zig slice,
+not a C pointer, so `str` parameters are not directly C-callable).
+
+### Notes
+
+- `DynLib` is a class; `DynLib.open` returns `*_DynLib`.  Assign to a typed `var` for
+  clarity: `var lib: *_DynLib = DynLib.open(...)`.
+- The compiler tracks `DynLib.open` result variables and rewrites `.close()` and
+  `.lookup()` calls to the correct Zig intrinsics.
+- Load-time failure (library not found) panics at runtime — no error return.  Wrap in
+  `try`/`catch` via a `throws` wrapper if you need graceful failure.
+- Platform note: the library path follows the OS convention.  On Windows, `.dll`; on
+  Linux, `lib*.so`; on macOS, `*.dylib`.  Use `sys.getenv("PLUGIN_PATH")` to resolve
+  paths at runtime.

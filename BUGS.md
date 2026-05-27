@@ -885,4 +885,4 @@ _bp.* = _bv;  // _bp is *Val, then break gives ?*Val
 
 ---
 
-*Last updated: 2026-05-26 — BUG-122 fixed (opt_ptr_field_bindings seeded for local vars); BUG-124 filed (bootstrap ^T? boxing for value types)*
+*Last updated: 2026-05-26 — BUG-122 fixed (opt_ptr_field_bindings seeded for local vars); BUG-124 fixed (^T? boxing uses payload not inner); multi-error parse recovery added to both src/ and selfhost/ compilers*

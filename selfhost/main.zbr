@@ -58,6 +58,7 @@ class MultiCompiler
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
+    var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -71,6 +72,7 @@ class MultiCompiler
         .test_mode = false
         .tag_filter = nil
         .warn_non_exhaustive = false
+        .uses_sqlite = false
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -152,6 +154,9 @@ class MultiCompiler
                         zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, tag_filter)?
                     else
                         zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
+                    # Detect SQLite usage in generated root Zig
+                    if zig_src.contains("_sqlite_open")
+                        uses_sqlite = true
                 else
                     zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
 
@@ -362,7 +367,7 @@ class MultiCompiler
                         while mi < extra_members.count()
                             new_members.add(extra_members.at(mi))
                             mi = mi + 1
-                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable, false, false, false)))
+                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable, false, false, false, nil)))
                 else
                     merged_decls.add(rdecl)
             ri = ri + 1
@@ -594,6 +599,8 @@ def main()
         sys.errln("zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)")
         sys.exit(0)
 
+    var cpu_flag: str = args.option("--cpu", "")
+
     # -- typecheck-merge subcommand ----------------------------------------
 
     if args.positional(0) as first_pos
@@ -691,6 +698,8 @@ def main()
                     if listen_val != ""
                         dbg_argv.add("--listen")
                         dbg_argv.add(listen_val)
+                if cpu_flag != ""
+                    dbg_argv.add("--cpu=" + cpu_flag)
                 dbg_argv.add(debug_file)
                 var dbg_rc: int = sys.exec_inherit(dbg_argv)
                 sys.exit(dbg_rc)
@@ -712,6 +721,8 @@ def main()
                 bld_argv.add("--build-file=" + bld_file_opt)
             if args.contains("--list-targets")
                 bld_argv.add("--list-targets")
+            if cpu_flag != ""
+                bld_argv.add("--cpu=" + cpu_flag)
             var bld_rc: int = sys.exec_inherit(bld_argv)
             sys.exit(bld_rc)
 
@@ -835,6 +846,18 @@ def main()
         while idi < mc.c_i_dirs.count()
             argv2.add("-I" + mc.c_i_dirs.at(idi))
             idi = idi + 1
+        # Append sqlite3.c when the program calls Sqlite.open/query
+        if mc.uses_sqlite
+            var self_exe_path: str = sys.selfExe()
+            var exe_dir: str = Path.dirname(self_exe_path)
+            if exe_dir == ""
+                exe_dir = "."
+            var sqlite_c: str = exe_dir + "/vendor/sqlite/sqlite3.c"
+            if File.exists(sqlite_c)
+                argv2.add(sqlite_c)
+        # CPU target: pass -mcpu=VALUE when --cpu was specified
+        if cpu_flag != ""
+            argv2.add("-mcpu=" + cpu_flag)
         # Always link libc — the stdlib preamble requires it
         argv2.add("-lc")
 

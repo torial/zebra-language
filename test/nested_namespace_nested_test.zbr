@@ -1,0 +1,7 @@
+namespace Outer
+    namespace Inner
+        static def greet(): str
+            return "hi"
+
+def main()
+    print Outer.Inner.greet()

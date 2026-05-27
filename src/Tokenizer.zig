@@ -420,15 +420,7 @@ const Tokenizer = struct {
             self.pos += 1;  // consume @
             const id_start = self.pos;
             while (self.pos < self.src.len and isIdentContinue(self.src[self.pos])) : (self.pos += 1) {}
-            const word = self.src[id_start..self.pos];
-            // @keyword escape hatch: @body, @init, @class, etc.
-            // If the word after @ is a reserved keyword, emit it as a plain identifier
-            // so it can be used as a field name, variable name, or parameter name.
-            if (tk.keyword_map.get(word) != null) {
-                try self.emit(.id, word, ln, cl);
-                return;
-            }
-            // Otherwise emit as at_id (e.g. @TypeName for future attributes).
+            // Emit as at_id (@TypeName, @export, @reflectable, any future attribute).
             try self.emit(.at_id, self.src[id_start - 1 .. self.pos], ln, cl);
             return;
         }

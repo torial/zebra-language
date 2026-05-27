@@ -165,6 +165,9 @@ pub const DeclClass = struct {
     /// `invariant` block (contract).
     invariants: []const *Expr,
     members: []const Decl,
+    /// `@export("sym") class Foo is IFoo` — symbol name for the factory function.
+    /// When set, emits `pub export fn sym() *IFoo` that returns a module-static singleton.
+    export_sym: ?[]const u8 = null,
 };
 
 pub const DeclInterface = struct {

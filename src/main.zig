@@ -97,6 +97,7 @@ pub fn main(init: std.process.Init) void {
     var tag_filter: ?[]const u8 = null;
     var source_path: ?[]const u8 = null;
     var listen_port: ?u16 = null;
+    var cpu: ?[]const u8 = null;
     var module_paths = std.ArrayListUnmanaged([]const u8).empty;
     defer module_paths.deinit(alloc);
 
@@ -178,6 +179,15 @@ pub fn main(init: std.process.Init) void {
             build_file = arg["--build-file=".len..];
         } else if (std.mem.eql(u8, arg, "--list-targets")) {
             list_targets_mode = true;
+        } else if (std.mem.startsWith(u8, arg, "--cpu=")) {
+            cpu = arg["--cpu=".len..];
+        } else if (std.mem.eql(u8, arg, "--cpu")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("zebra: --cpu requires a value\n", .{});
+                std.process.exit(1);
+            }
+            cpu = args[i];
         } else if (std.mem.startsWith(u8, arg, "-")) {
             std.debug.print("zebra: unknown flag '{s}'\n", .{arg});
             std.process.exit(1);
@@ -225,6 +235,7 @@ pub fn main(init: std.process.Init) void {
             \\  zebra --turbo <source-file>                strip require/ensure/invariant checks
             \\  zebra --gui-backend=stub|glfw|tui <source> select GUI backend (default: stub)
             \\  zebra --module-path DIR <source>           add DIR to module search path
+            \\  zebra --cpu=CPU <source>                   pass -mcpu=CPU to Zig (e.g. native, x86_64+avx2)
             \\  zebra --version                            print version and exit
             \\
         , .{});
@@ -241,7 +252,7 @@ pub fn main(init: std.process.Init) void {
     };
     defer alloc.free(src);
 
-    const exit_code = run(src, path, mode, gui_backend, release, turbo, warn_non_exhaustive, test_mode, build_mode, list_targets_mode, tag_filter, listen_port, module_paths.items, alloc) catch |err| {
+    const exit_code = run(src, path, mode, gui_backend, release, turbo, warn_non_exhaustive, test_mode, build_mode, list_targets_mode, tag_filter, listen_port, module_paths.items, cpu, alloc) catch |err| {
         std.debug.print("internal compiler error: {}\n", .{err});
         std.process.exit(2);
     };
@@ -253,7 +264,7 @@ pub fn main(init: std.process.Init) void {
 /// Run the full pipeline on `src`.  Returns 0 on success, 1 on user-visible
 /// errors, 2 on backend (Zig compiler) errors.
 /// Internal (OOM etc.) errors propagate as Zig errors.
-fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, warn_non_exhaustive: bool, test_mode: bool, build_mode: bool, list_targets_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, module_paths: []const []const u8, alloc: std.mem.Allocator) !u8 {
+fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, warn_non_exhaustive: bool, test_mode: bool, build_mode: bool, list_targets_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, module_paths: []const []const u8, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
     var tok_diag: Tokenizer.Diag = .{};
     const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
@@ -288,19 +299,18 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
     defer alloc.free(tokens);
 
     // ── 2. Parse ──────────────────────────────────────────────────────────────
-    var parse_result = try Parser.parse(tokens, alloc);
+    var parse_result = try Parser.parseWithRecovery(tokens, alloc);
     defer parse_result.deinit();
 
-    const ok = switch (parse_result) {
-        .ok  => |*s| s,
-        .err => |e| {
-            const bad = if (e.error_pos < tokens.len) tokens[e.error_pos] else tokens[tokens.len - 1];
-            std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
-                path, bad.line, bad.col, bad.text,
-            });
-            return 1;
-        },
-    };
+    for (parse_result.errors) |e| {
+        const ep  = if (e.error_pos < tokens.len) e.error_pos else @as(u32, @intCast(tokens.len - 1));
+        const bad = tokens[ep];
+        std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
+            path, bad.line, bad.col, bad.text,
+        });
+    }
+    if (parse_result.hasErrors()) return 1;
+    const ok = &parse_result.trees[0];
 
     // ── 3. Build AST ──────────────────────────────────────────────────────────
     var sym_arena = std.heap.ArenaAllocator.init(alloc);
@@ -439,7 +449,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         return Debugger.runDebugSession(path, zig_path, c_sources.items, _io, alloc);
     }
 
-    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, tag_filter, alloc, &imported_modules);
+    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, tag_filter, cpu, alloc, &imported_modules);
 }
 
 // ── Partial class merging ─────────────────────────────────────────────────────
@@ -514,19 +524,18 @@ fn mergePartials(
         const ptokens = try Tokenizer.tokenize(partial_src, alloc);
         defer alloc.free(ptokens);
 
-        var presult = try Parser.parse(ptokens, alloc);
+        var presult = try Parser.parseWithRecovery(ptokens, alloc);
         defer presult.deinit();
 
-        const pok = switch (presult) {
-            .ok  => |*s| s,
-            .err => |e| {
-                const bad = if (e.error_pos < ptokens.len) ptokens[e.error_pos] else ptokens[ptokens.len - 1];
-                std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
-                    partial_path, bad.line, bad.col, bad.text,
-                });
-                continue;
-            },
-        };
+        for (presult.errors) |e| {
+            const ep  = if (e.error_pos < ptokens.len) e.error_pos else @as(u32, @intCast(ptokens.len - 1));
+            const bad = ptokens[ep];
+            std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
+                partial_path, bad.line, bad.col, bad.text,
+            });
+        }
+        if (presult.hasErrors()) continue;
+        const pok = &presult.trees[0];
 
         var partial_module = try AstBuilder.build(pok, arena);
         // Dupe the path into the arena so it outlives the partial_paths list.
@@ -878,19 +887,18 @@ fn compileZbrToZig(
     const tokens = try Tokenizer.tokenize(src, alloc);
     defer alloc.free(tokens);
 
-    var parse_result = try Parser.parse(tokens, alloc);
+    var parse_result = try Parser.parseWithRecovery(tokens, alloc);
     defer parse_result.deinit();
 
-    const ok = switch (parse_result) {
-        .ok  => |*s| s,
-        .err => |e| {
-            const bad = if (e.error_pos < tokens.len) tokens[e.error_pos] else tokens[tokens.len - 1];
-            std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
-                zbr_path, bad.line, bad.col, bad.text,
-            });
-            return null;
-        },
-    };
+    for (parse_result.errors) |e| {
+        const ep  = if (e.error_pos < tokens.len) e.error_pos else @as(u32, @intCast(tokens.len - 1));
+        const bad = tokens[ep];
+        std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
+            zbr_path, bad.line, bad.col, bad.text,
+        });
+    }
+    if (parse_result.hasErrors()) return null;
+    const ok = &parse_result.trees[0];
 
     // ── 3. Build AST ─────────────────────────────────────────────────────────
     var sym_arena = std.heap.ArenaAllocator.init(alloc);
@@ -1001,6 +1009,7 @@ fn backend(
     build_mode:          bool,
     list_targets_mode:   bool,
     tag_filter:          ?[]const u8,
+    cpu:                 ?[]const u8,
     alloc:               std.mem.Allocator,
     imported_modules:    ?*const std.StringHashMap(TypeChecker.ModuleInterface),
 ) !u8 {
@@ -1055,10 +1064,10 @@ fn backend(
     }
 
     return switch (mode) {
-        .compile_only => compileOnly(zig_path, final_c_sources, release, alloc),
-        .run          => compileAndRun(zig_path, final_c_sources, release, alloc),
-        .lib_static   => compileLib(false, zig_path, final_c_sources, release, alloc),
-        .lib_shared   => compileLib(true,  zig_path, final_c_sources, release, alloc),
+        .compile_only => compileOnly(zig_path, final_c_sources, release, cpu, alloc),
+        .run          => compileAndRun(zig_path, final_c_sources, release, cpu, alloc),
+        .lib_static   => compileLib(false, zig_path, final_c_sources, release, cpu, alloc),
+        .lib_shared   => compileLib(true,  zig_path, final_c_sources, release, cpu, alloc),
         .emit_zig     => unreachable, // handled before backend() is called
         .debug        => unreachable, // handled before backend() is called
         .repl         => unreachable, // handled before backend() is called
@@ -1236,6 +1245,7 @@ const gui_libui_ng_project_build_zig_zon =
 
 /// Create a `zig build` project next to `zig_path`, fetch GUI deps, then build/run.
 /// Project dir: `<stem>_gui/` (e.g. `test/gui_test_gui/`).
+// TODO: --cpu is not forwarded to GUI projects; they use zig build with standardTargetOptions.
 fn compileGuiProject(zig_path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, alloc: std.mem.Allocator) !u8 {
     const stem    = pathStem(zig_path);
     const _bsuffix: []const u8 = switch (gui_backend) {
@@ -1311,18 +1321,18 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, gui_backend: CodeGen.GuiB
 /// args — Zig recognises `.c` extensions and compiles them as C translation units.
 /// `zig build-exe <file.zig> [c_sources...] -lc`
 /// For each C source file, adds `-I <parent_dir>` so `@cInclude("Foo.h")` resolves.
-fn compileOnly(zig_path: []const u8, c_sources: []const []u8, release: bool, alloc: std.mem.Allocator) !u8 {
-    return runZigCmd("build-exe", zig_path, c_sources, release, alloc);
+fn compileOnly(zig_path: []const u8, c_sources: []const []u8, release: bool, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+    return runZigCmd("build-exe", zig_path, c_sources, release, cpu, alloc);
 }
 
 /// `zig run <file.zig> [c_sources...] -lc` — compile and immediately execute.
-fn compileAndRun(zig_path: []const u8, c_sources: []const []u8, release: bool, alloc: std.mem.Allocator) !u8 {
-    return runZigCmd("run", zig_path, c_sources, release, alloc);
+fn compileAndRun(zig_path: []const u8, c_sources: []const []u8, release: bool, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+    return runZigCmd("run", zig_path, c_sources, release, cpu, alloc);
 }
 
 /// `zig build-lib [--dynamic] <file.zig> [c_sources...] -lc`
 /// Produces a static `.a` / `.lib` or shared `.so` / `.dll`.
-fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, release: bool, alloc: std.mem.Allocator) !u8 {
+fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, release: bool, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
     var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     defer argv.deinit(alloc);
     var i_flags: std.ArrayListUnmanaged([]u8) = .empty;
@@ -1331,6 +1341,11 @@ fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, relea
     try argv.appendSlice(alloc, &.{ "zig", "build-lib", zig_path });
     if (shared) try argv.append(alloc, "--dynamic");
     if (release) try argv.append(alloc, "-OReleaseFast");
+    if (cpu) |c| {
+        const flag = try std.fmt.allocPrint(alloc, "-mcpu={s}", .{c});
+        try i_flags.append(alloc, flag);
+        try argv.append(alloc, flag);
+    }
 
     var seen_dirs = std.StringHashMap(void).init(alloc);
     defer seen_dirs.deinit();
@@ -1353,9 +1368,10 @@ fn runZigCmd(
     zig_path:  []const u8,
     c_sources: []const []u8,
     release:   bool,
+    cpu:       ?[]const u8,
     alloc:     std.mem.Allocator,
 ) !u8 {
-    // Collect argv + any allocated -I flags (freed after child exits).
+    // Collect argv + any allocated -I/-mcpu flags (freed after child exits).
     var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     defer argv.deinit(alloc);
     var i_flags: std.ArrayListUnmanaged([]u8) = .empty;
@@ -1363,6 +1379,11 @@ fn runZigCmd(
 
     try argv.appendSlice(alloc, &.{ "zig", cmd, zig_path });
     if (release) try argv.append(alloc, "-OReleaseFast");
+    if (cpu) |c| {
+        const flag = try std.fmt.allocPrint(alloc, "-mcpu={s}", .{c});
+        try i_flags.append(alloc, flag);
+        try argv.append(alloc, flag);
+    }
 
     // For each C source: append the file path, then deduplicate -I <dir> flags.
     var seen_dirs = std.StringHashMap(void).init(alloc);

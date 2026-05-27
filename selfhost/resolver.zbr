@@ -118,6 +118,11 @@ class Resolver
                 .module_scope.put(u.path, 5)
                 for name in u.exposed
                     .module_scope.put(name, 5)
+            on PNode.namespace_decl as ns
+                # Register the root component in module scope.
+                var ns_root_parts: List(str) = ns.name.split(".")
+                .module_scope.put(ns_root_parts.at(0), 0)
+                .symbol_count = .symbol_count + 1
             else
                 pass
 
@@ -135,6 +140,18 @@ class Resolver
                 .enterClass(s.name, s.members, s.type_params)
             on PNode.method_ as m
                 .enterMethod(m.params, m.stmts)
+            on PNode.namespace_decl as ns
+                # Resolve method bodies inside the namespace (all levels).
+                for ns_d in ns.decls
+                    branch ns_d
+                        on PNode.method_ as nm
+                            .enterMethod(nm.params, nm.stmts)
+                        on PNode.namespace_decl as inner_ns
+                            for inner_d in inner_ns.decls
+                                if inner_d is PNode.method_ as im
+                                    .enterMethod(im.params, im.stmts)
+                        else
+                            pass
             else
                 pass
 
@@ -347,6 +364,8 @@ class Resolver
         # Standard library entry points
         if name == "List" or name == "HashMap" or name == "StringBuilder" or name == "Chan"
             return true
+        if name == "Atomic" or name == "ThreadPool"
+            return true
         if name == "DynLib"
             return true
         # Stdlib globals (no `use` required)
@@ -356,13 +375,15 @@ class Resolver
             return true
         if name == "Ws" or name == "WsConn"
             return true
-        if name == "Hash" or name == "Random" or name == "Arg" or name == "Terminal"
+        if name == "Hash" or name == "Random" or name == "Arg" or name == "Terminal" or name == "Crypto"
             return true
         if name == "Log" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Timer"
             return true
         if name == "Regex" or name == "Gui" or name == "DateTime" or name == "Reflect"
             return true
         if name == "Csv" or name == "CsvWriter" or name == "Calendar"
+            return true
+        if name == "Sqlite" or name == "SqliteDb" or name == "SqliteRow"
             return true
         if name == "Dir" or name == "Path" or name == "HttpResponse"
             return true

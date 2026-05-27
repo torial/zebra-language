@@ -790,6 +790,38 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.count() > 0
                     mt.addGenericFn(topfn.name)
+            on Decl.namespace_ as ns_decl
+                # Register namespace types so member-access inference works.
+                # Dotted name "Outer.Inner" → create ClassTypes for each path
+                # prefix; set each component as a named field of its parent.
+                var ns_parts: List(str) = ns_decl.name.split(".")
+                var ns_cur: str = ""
+                var ns_pi: int = 0
+                while ns_pi < ns_parts.count()
+                    var ns_part: str = ns_parts.at(ns_pi)
+                    var ns_prev: str = ns_cur
+                    if ns_cur == ""
+                        ns_cur = ns_part
+                    else
+                        ns_cur = ns_cur + "." + ns_part
+                    if mt.classOf(ns_cur) == nil
+                        mt.addClass(ClassTypes(ns_cur))
+                    if ns_prev != ""
+                        var ns_par: ClassTypes = mt.classOf(ns_prev) to!
+                        ns_par.setField(ns_part, Type_.named(ns_cur))
+                    ns_pi += 1
+                # Register methods from the leaf namespace.
+                var ns_leaf: ClassTypes = mt.classOf(ns_cur) to!
+                addClassMembers(mt, ns_leaf, ns_decl.decls)
+                # Handle directly nested namespace decls (nested syntax).
+                for ns_d2 in ns_decl.decls
+                    if ns_d2 is Decl.namespace_ as inner_ns
+                        var inner_path: str = ns_cur + "." + inner_ns.name
+                        if mt.classOf(inner_path) == nil
+                            mt.addClass(ClassTypes(inner_path))
+                        ns_leaf.setField(inner_ns.name, Type_.named(inner_path))
+                        var inner_ct: ClassTypes = mt.classOf(inner_path) to!
+                        addClassMembers(mt, inner_ct, inner_ns.decls)
             else
                 pass
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.

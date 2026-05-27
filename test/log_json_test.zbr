@@ -1,0 +1,5 @@
+def main()
+    Log.json("info", "hello world", "")
+    Log.json("warn", "with data", "key=value")
+    Log.setFile("")
+    print "log_json_test OK"

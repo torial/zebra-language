@@ -119,6 +119,111 @@ pub fn parse(tokens: []const Token, alloc: Allocator) !ParseResult {
     return .{ .ok = .{ .tree = tree, .tokens = tokens } };
 }
 
+// ── Recovery parsing ──────────────────────────────────────────────────────────
+
+/// A recovery-mode parse that accumulates multiple errors instead of stopping
+/// at the first.  On each parse failure the scanner advances to the next
+/// top-level declaration boundary (col==1 + decl-starter keyword) and retries.
+///
+/// Ownership:
+/// - On success (no errors) `trees[0]` owns its ParseTree; caller frees via `deinit`.
+/// - On error all `trees` (partial fragments) and `errors` are freed by `deinit`.
+pub const MultiParseResult = struct {
+    /// Successfully-parsed fragments.  Typically 1 on full success, 0 or more
+    /// on partial success after recovery.  Not used for compilation — only
+    /// present so that `deinit` can free their ParseTrees.
+    trees:  []ParseSuccess,
+    /// All parse errors encountered, in order.  `error_pos` indexes `tokens`.
+    errors: []ParseError,
+    /// The original full token array (non-owning pointer for error reporting).
+    tokens: []const Token,
+    alloc:  Allocator,
+
+    pub fn deinit(self: *MultiParseResult) void {
+        for (self.trees) |*t| t.deinit();
+        self.alloc.free(self.trees);
+        self.alloc.free(self.errors);
+    }
+
+    pub fn hasErrors(self: MultiParseResult) bool {
+        return self.errors.len > 0;
+    }
+};
+
+/// Token kinds that can start a top-level declaration at col==1.
+/// These are the recovery sync points.
+const RECOVERY_STARTERS = [_]TokenKind{
+    .kw_use, .kw_namespace,
+    .kw_class, .kw_interface, .kw_struct,
+    .kw_def, .kw_extend, .at_id, .kw_sig, .kw_type,
+    // visibility / storage modifiers that can precede a decl
+    .kw_public, .kw_private, .kw_protected, .kw_internal,
+    .kw_abstract, .kw_export, .kw_static, .kw_readonly, .kw_extern,
+};
+
+fn isRecoveryStarter(kind: TokenKind) bool {
+    for (RECOVERY_STARTERS) |k| if (k == kind) return true;
+    return false;
+}
+
+/// Scan `tokens[from..]` for the next col==1 decl-starter.
+/// Returns the absolute index in `tokens`, or null if none found before eof.
+fn findRecoveryBoundary(tokens: []const Token, from: usize) ?usize {
+    var i = from;
+    while (i < tokens.len) : (i += 1) {
+        const t = tokens[i];
+        if (t.kind == .eof) break;
+        if (t.col == 1 and isRecoveryStarter(t.kind)) return i;
+    }
+    return null;
+}
+
+/// Parse with boundary-restart error recovery.
+///
+/// Tries to parse `tokens` as a whole program.  On failure, records the error,
+/// advances to the next top-level declaration boundary, and retries.  All
+/// accumulated errors are available in `result.errors`.
+///
+/// Returns a `MultiParseResult`; caller must call `deinit` when done.
+pub fn parseWithRecovery(tokens: []const Token, alloc: Allocator) !MultiParseResult {
+    var trees  = std.ArrayListUnmanaged(ParseSuccess).empty;
+    errdefer { for (trees.items) |*t| t.deinit(); trees.deinit(alloc); }
+    var errors = std.ArrayListUnmanaged(ParseError).empty;
+    errdefer errors.deinit(alloc);
+
+    var pos: usize = 0;
+
+    while (pos < tokens.len) {
+        var pr = try parse(tokens[pos..], alloc);
+        switch (pr) {
+            .ok => |s| {
+                // Transfer ownership of the ParseSuccess to `trees`.
+                // Do NOT call pr.deinit() — ownership has moved.
+                try trees.append(alloc, s);
+                break;
+            },
+            .err => |e| {
+                pr.deinit(); // no-op for .err; keeps symmetry
+                // Normalise error_pos to be absolute in the original `tokens`.
+                const abs_pos: u32 = @intCast(pos + e.error_pos);
+                try errors.append(alloc, .{
+                    .error_pos = abs_pos,
+                    .tokens    = tokens, // full array; abs_pos indexes into it
+                });
+                // Advance to next recovery boundary.
+                pos = findRecoveryBoundary(tokens, pos + e.error_pos + 1) orelse break;
+            },
+        }
+    }
+
+    return .{
+        .trees  = try trees.toOwnedSlice(alloc),
+        .errors = try errors.toOwnedSlice(alloc),
+        .tokens = tokens,
+        .alloc  = alloc,
+    };
+}
+
 // ── Error location heuristic ──────────────────────────────────────────────────
 
 /// Return the index of the last Earley set that contained at least one item.
@@ -575,4 +680,37 @@ test "parse: error position is past the valid prefix" {
     try testing.expect(!result.isOk());
     // Must have advanced past position 0 (the start of the class)
     try testing.expect(result.err.error_pos > 0);
+}
+
+test "parse: recovery boundary — slice from second class parses ok" {
+    // Validates the core recovery assumption: after a parse error in the first
+    // top-level decl, a slice starting at the second decl (col==1, kw_class)
+    // parses successfully.  If this fails, recovery would produce cascading
+    // errors from orphaned indent/dedent tokens.
+    const src =
+        "class Foo\n\tdef m()\n\t\tbad syntax here!!!\n\nclass Bar\n\tdef greet(): str\n\t\treturn \"hello\"\n";
+    const tokens = try Tokenizer.tokenize(src, testing.allocator);
+    defer testing.allocator.free(tokens);
+
+    // Find the second kw_class at col==1
+    var bar_pos: usize = 0;
+    var class_count: usize = 0;
+    for (tokens, 0..) |t, i| {
+        if (t.kind == .kw_class and t.col == 1) {
+            class_count += 1;
+            if (class_count == 2) { bar_pos = i; break; }
+        }
+    }
+    try testing.expect(class_count >= 2); // sanity: two classes found
+
+    // The slice from bar_pos should parse cleanly (no orphaned dedents).
+    var result = try parse(tokens[bar_pos..], testing.allocator);
+    defer result.deinit();
+    if (!result.isOk()) {
+        const e = result.err;
+        const ep = if (e.error_pos < e.tokens.len) e.error_pos else e.tokens.len - 1;
+        std.debug.print("recovery slice parse FAILED at pos {d} kind={s}\n",
+            .{ e.error_pos, @tagName(e.tokens[ep].kind) });
+    }
+    try testing.expect(result.isOk());
 }

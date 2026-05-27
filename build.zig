@@ -57,6 +57,14 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    // Install sqlite3.c alongside zebra.exe so programs using Sqlite can compile.
+    // zebra.exe looks for vendor/sqlite/sqlite3.c relative to its own directory.
+    const install_sqlite = b.addInstallFile(
+        b.path("vendor/sqlite/sqlite3.c"),
+        "bin/vendor/sqlite/sqlite3.c",
+    );
+    b.getInstallStep().dependOn(&install_sqlite.step);
+
     const run = b.addRunArtifact(exe);
     run.addArgs(b.args orelse &.{});
     const run_step = b.step("run", "Run the Zebra compiler");

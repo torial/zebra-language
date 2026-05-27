@@ -1,0 +1,15 @@
+def main()
+    var key: str = "secret-key"
+    var plaintext: str = "Hello, Zebra!"
+    var ciphertext: str = Crypto.encrypt(key, plaintext)
+    var decrypted: str? = Crypto.decrypt(key, ciphertext)
+    if decrypted as d
+        print d
+    else
+        print "decrypt failed"
+    var bad: str? = Crypto.decrypt(key, "deadbeef00112233445566778899aabb")
+    if bad as _
+        print "should not decrypt"
+    else
+        print "bad ciphertext rejected"
+    print "crypto_test OK"

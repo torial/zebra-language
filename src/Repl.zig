@@ -405,19 +405,18 @@ fn runPipeline(src: []const u8, path: []const u8, alloc: std.mem.Allocator) !?[]
     };
     defer alloc.free(tokens);
 
-    // Parse
-    var parse_result = try Parser.parse(tokens, alloc);
+    // Parse (recovery mode — show all syntax errors in a cell, not just the first)
+    var parse_result = try Parser.parseWithRecovery(tokens, alloc);
     defer parse_result.deinit();
-    const ok = switch (parse_result) {
-        .ok  => |*s| s,
-        .err => |e| {
-            const bad = if (e.error_pos < tokens.len) tokens[e.error_pos] else tokens[tokens.len - 1];
-            std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
-                path, bad.line, bad.col, bad.text,
-            });
-            return null;
-        },
-    };
+    for (parse_result.errors) |e| {
+        const ep  = if (e.error_pos < tokens.len) e.error_pos else @as(u32, @intCast(tokens.len - 1));
+        const bad = tokens[ep];
+        std.debug.print("{s}:{}:{}: syntax error near '{s}'\n", .{
+            path, bad.line, bad.col, bad.text,
+        });
+    }
+    if (parse_result.hasErrors()) return null;
+    const ok = &parse_result.trees[0];
 
     // Build AST
     var sym_arena = std.heap.ArenaAllocator.init(alloc);
