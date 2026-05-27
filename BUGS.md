@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-121. Next new bug: BUG-122.**
+**Last bug number generated: BUG-124. Next new bug: BUG-125.**
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -757,7 +757,7 @@ Bootstrap verified: `zig build update-selfhost` + smoke 117/117 passing + bootst
 ### BUG-122: Selfhost codegen — `opt_ptr_field_bindings` not seeded for local variables with inferred types
 
 - **Severity:** Low (workaround exists; only hits when a local var holds a struct with `^T?` fields and those fields are accessed via `to!`)
-- **Status:** Open — sub-problem 1 (explicit annotation) easy; sub-problem 2 (inferred type) deferred
+- **Status:** Fixed (2026-05-26) — both sub-problems resolved via `infer_ctx` in `genLocalVar`
 
 #### Background
 
@@ -844,4 +844,45 @@ Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_dec
 
 ---
 
-*Last updated: 2026-05-22 — ZebraIDE.zbr rewritten to MVU 6-arg form; SysProcess Zig 0.16 fixes (kill()→void, NtWaitForSingleObject); escape_hatches baseline bumped to 69*
+### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
+
+- **Severity:** Low (only affects bootstrap compiler for value-typed union/struct `^T?` constructor args; selfhost is correct)
+- **Status:** Open
+
+#### Symptom
+
+When the bootstrap compiler (`zebra-bootstrap.exe`, the Zig-implemented compiler) generates a constructor call where a `^T?` parameter receives a value-typed union or struct (not a class), it wraps it as `*?T` instead of `?*T`.
+
+Example: `Container(v)` where `Container.opt_val: ^Val?` and `Val` is a union type emits something like:
+
+```zig
+// Bootstrap (wrong)
+const _bp = _allocator.create(?Val) catch @panic("OOM");
+_bp.* = v;  // _bp is *?Val but Container wants ?*Val
+```
+
+instead of the correct selfhost output:
+
+```zig
+// Selfhost (correct)
+const _bv = v;
+const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM");
+_bp.* = _bv;  // _bp is *Val, then break gives ?*Val
+```
+
+#### Root cause
+
+`src/CodeGen.zig` boxing logic for `^T?` arguments. When T is a value type (union, struct, primitive), the bootstrap compiler wraps the whole optional type instead of just T, producing `*?T`. The selfhost `_bx0:` labeled-block approach avoids this by creating a pointer to the concrete value first.
+
+#### Files to change when fixing
+
+- `src/CodeGen.zig` — fix boxing for `^T?` arguments when T is value-typed; use `@TypeOf(value)` or strip the `?` before `create()`
+- `src/TypeChecker.zig` — may need `isValueType()` helper to distinguish class (heap-allocated) from value-typed (union/struct/primitive)
+
+#### Discovered
+
+2026-05-26 during BUG-122 testing: `val_test.zbr` (`val_lib.Val` union in `Container.opt_val: ^Val?`) compiled incorrectly through bootstrap.
+
+---
+
+*Last updated: 2026-05-26 — BUG-122 fixed (opt_ptr_field_bindings seeded for local vars); BUG-124 filed (bootstrap ^T? boxing for value types)*

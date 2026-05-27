@@ -2531,6 +2531,40 @@ struct Generator
         # Tier-3 reflection: emit per-class strict JSON parser when @reflectable.
         if n.mods.is_reflectable
             genJsonParseStrictFn(n)
+        # @export("sym") class Foo is IFoo → module-static singleton factory.
+        if n.export_sym != nil
+            var sym: str = n.export_sym to!
+            if n.ifaces.count() > 0
+                var iface_tr: TypeRef = n.ifaces.at(0)
+                if iface_tr is TypeRef.named as nr
+                    var iface_name: str = nr.name
+                    w.emit("var _zbr_export_")
+                    w.emit(sym)
+                    w.emit("_iface: ?")
+                    w.emit(iface_name)
+                    w.emit(" = null;\n")
+                    w.emit("pub export fn ")
+                    w.emit(sym)
+                    w.emit("() *")
+                    w.emit(iface_name)
+                    w.emit(" {\n")
+                    w.emit("    if (_zbr_export_")
+                    w.emit(sym)
+                    w.emit("_iface == null) {\n")
+                    w.emit("        _zbr_export_")
+                    w.emit(sym)
+                    w.emit("_iface = .{ .ptr = ")
+                    w.emit(n.name)
+                    w.emit(".init(), .vtable = &_vtable_")
+                    w.emit(n.name)
+                    w.emit("_")
+                    w.emit(iface_name)
+                    w.emit(" };\n")
+                    w.emit("    }\n")
+                    w.emit("    return &_zbr_export_")
+                    w.emit(sym)
+                    w.emit("_iface.?;\n")
+                    w.emit("}\n\n")
 
     # Map a primitive TypeRef to a kind tag for the strict JSON parser.
     # Returns "" for unsupported types.
@@ -3002,11 +3036,27 @@ struct Generator
     # ── genNamespace ─────────────────────────────────────────────────────────
     # namespace Foo → pub const Foo = struct { ... };
     def genNamespace(ns: DeclNamespace)
-        writeIndent()
-        w.emit("pub const ")
-        w.emit(ns.name)
-        w.emit(" = struct {\n")
+        # Split dotted names ("Outer.Inner") into nested struct layers.
+        # Emit indent manually (spaces) to avoid needing const-unsafe generators.
+        var parts: List(str) = ns.name.split(".")
+        var depth: int = 0
+        while depth < parts.count()
+            var part: str = parts.at(depth)
+            var oi: int = 0
+            while oi < indent + depth
+                w.emit("    ")
+                oi += 1
+            w.emit("pub const ")
+            w.emit(part)
+            w.emit(" = struct {\n")
+            depth += 1
+        # Get a generator at the body indent level via chained indented() calls.
+        # The assignment `ig = ig.indented()` marks ig as mutated → var ig in Zig.
         var ig = indented()
+        var body_depth: int = 1
+        while body_depth < depth
+            ig = ig.indented()
+            body_depth += 1
         for d in ns.decls
             branch d
                 on Decl.method as mth
@@ -3019,10 +3069,20 @@ struct Generator
                     ig.genStruct(s)
                 on Decl.enum_ as e
                     ig.genEnum(e)
+                on Decl.namespace_ as inner_ns
+                    ig.genNamespace(inner_ns)
                 else
                     pass
-        writeIndent()
-        w.emit("};\n\n")
+        # Close in reverse order (innermost first), emitting spaces manually.
+        var close_depth: int = parts.count() - 1
+        while close_depth >= 0
+            var ci: int = 0
+            while ci < indent + close_depth
+                w.emit("    ")
+                ci += 1
+            w.emit("};\n")
+            close_depth -= 1
+        w.emit("\n")
 
     # ── genInterface ─────────────────────────────────────────────────────────
     # interface IFoo → fat-pointer vtable struct:
@@ -3534,6 +3594,7 @@ struct Generator
         # in the same method body can resolve it via inferExpr(Expr.ident(n.name)).
         # This covers generic class instances (Box(int)(42) → Type_.named("Box"))
         # and other locally-declared class vars with no explicit annotation.
+        var lv_struct_name: str = ""
         if .infer_ctx != nil
             var ic_lv = .infer_ctx to!
             var var_t: Type_ = Type_.unknown_
@@ -3543,6 +3604,31 @@ struct Generator
                 var_t = inferExpr(n.init_expr to!, ic_lv)
             if not (var_t is Type_.unknown_) and not (var_t is Type_.unresolved)
                 ic_lv.bind(n.name, var_t)
+            if var_t is Type_.named as lv_vtn
+                lv_struct_name = lv_vtn
+            if var_t is Type_.cross_module as lv_cm
+                lv_struct_name = lv_cm.type_name
+        if lv_struct_name == "" and n.type_ != nil
+            if n.type_ to! is TypeRef.named as lv_tn
+                lv_struct_name = lv_tn.name
+        # BUG-122: seed opt_ptr_field_bindings / ptr_field_bindings for ^T? / ^T fields
+        # of named-type local vars — mirrors parameter seeding at genMethod ~line 2861.
+        if lv_struct_name != ""
+            var lv_dot = lv_struct_name + "."
+            var orf_lv = opt_ref_fields.items()
+            var orf_lvi = 0
+            while orf_lvi < orf_lv.count()
+                var orf_lve: str = orf_lv.at(orf_lvi)
+                if orf_lve.startsWith(lv_dot)
+                    opt_ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(orf_lve)))
+                orf_lvi += 1
+            var rf_lv = ref_fields.items()
+            var rf_lvi = 0
+            while rf_lvi < rf_lv.count()
+                var rf_lve: str = rf_lv.at(rf_lvi)
+                if rf_lve.startsWith(lv_dot)
+                    ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(rf_lve)))
+                rf_lvi += 1
         # BUG-079: auto-hoist method chains on call temporaries.
         # If init_expr is `someCall().method(args)`, materialize someCall() first.
         var mc_recv = ""
@@ -3818,9 +3904,6 @@ struct Generator
                         genTypeAliasConstraint(alias_decl to!, alias_lookup_name, n.name, alias_value_args)
 
     # Emits the constraint-check block for a type alias local variable.
-    # alias_decl must be a named-type PARAMETER (not a local var) so the selfhost compiler
-    # seeds opt_ptr_field_bindings for alias_decl.constraint (a ^Expr? field), ensuring the
-    # required `.*` deref is emitted at `alias_decl.constraint to!` call sites.
     # value_args: the literal args from TypeRef.alias_applied (empty for non-parametric aliases).
     def genTypeAliasConstraint(alias_decl: DeclTypeAlias, alias_name: str, var_name: str, value_args: List(Expr))
         if alias_decl.constraint == nil

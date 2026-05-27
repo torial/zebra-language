@@ -499,6 +499,14 @@ smoke_tc_fail test/in_scope_tc_fail_test.zbr "must define 'def begin()'"
 # `x!` postfix force-unwrap: alias for `x to!`; enables x!.method() chaining.
 smoke_run test/postfix_bang_test.zbr "postfix_bang_test PASS"
 
+# BUG-122: opt_ptr_field_bindings seeded for local var declarations (not just parameters).
+# opt_ptr_local_var_test: regression sentinel only — same-module class ^T? (Node.next)
+#   passes trivially (class types are heap pointers; no .* needed).
+# val_test: the real BUG-122 test — cross-module union ^Val? accessed via local var,
+#   exercises the .?.* deref path that was missing before the fix.
+smoke_run test/opt_ptr_local_var_test.zbr "opt_ptr_local_var: OK"
+smoke_run test/val_test.zbr "val_test: OK"
+
 # `with` desugars bare method calls: `text("x")` → `g.text("x")` inside a `with g` block.
 smoke_run test/with_call_test.zbr "with_call_test PASS"
 
@@ -519,6 +527,20 @@ smoke_run test/http_serve_test.zbr "http_serve_test OK"
 
 # SQLite — open/exec/query/close + transactions on :memory: database.
 smoke_run test/sqlite_test.zbr "sqlite_test OK"
+
+# GUI widgets: progressBar(label,f64) + combobox(label,List(str),int) + spinbox(label,int,int,int).
+smoke examples/widget_smoke.zbr
+
+# GUI file dialogs: openFile/saveFile/openFolder/?[]const u8 + msgBox/msgBoxError.
+smoke examples/file_dialog_smoke.zbr
+
+# Nested namespaces: dotted syntax (Outer.Inner) and nested syntax.
+smoke_run test/nested_namespace_dotted_test.zbr "hi"
+smoke_run test/nested_namespace_nested_test.zbr "hi"
+
+# DynLib producer side: export def + @export class factory.
+smoke_run test/dynlib_export_def_test.zbr "42"
+smoke_run test/dynlib_export_class_test.zbr "dynlib_export_class OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
