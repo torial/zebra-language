@@ -847,7 +847,7 @@ Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_dec
 ### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
 
 - **Severity:** Low (only affects bootstrap compiler for value-typed union/struct `^T?` constructor args; selfhost is correct)
-- **Status:** Open
+- **Status:** Fixed (2026-05-26) — `genBoxedArgExpr` uses `payload` (nilable-stripped) instead of `inner` for `create()` type; same for same-module union-variant boxing path
 
 #### Symptom
 

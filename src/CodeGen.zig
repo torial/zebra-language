@@ -1990,6 +1990,14 @@ const Generator = struct {
             \\    endHBoxFn:   *const fn () void,
             \\    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
             \\    endVBoxFn:   *const fn () void,
+            \\    progressBarFn: *const fn (label: []const u8, value: f64) void,
+            \\    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
+            \\    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
+            \\    openFileFn:    *const fn () ?[]const u8,
+            \\    saveFileFn:    *const fn () ?[]const u8,
+            \\    openFolderFn:  *const fn () ?[]const u8,
+            \\    msgBoxFn:      *const fn (title: []const u8, description: []const u8) void,
+            \\    msgBoxErrorFn: *const fn (title: []const u8, description: []const u8) void,
             \\};
             \\const _LowLevel = struct {
             \\    _b: *const _GuiBackend,
@@ -2089,6 +2097,14 @@ const Generator = struct {
             \\    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
             \\    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
             \\    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+            \\    pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
+            \\    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
+            \\    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+            \\    pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
+            \\    pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
+            \\    pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
+            \\    pub fn msgBox(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxFn(title, description); }
+            \\    pub fn msgBoxError(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxErrorFn(title, description); }
             \\};
             \\const _GuiVBox = struct {
             \\    _b: *const _GuiBackend,
@@ -2176,6 +2192,14 @@ const Generator = struct {
                 \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
                 \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
                 \\// ─── Stub backend (single frame, prints to stderr) ───────────────────────────
+                \\fn _stub_progressbar(_l: []const u8, _v: f64) void { std.debug.print("[gui] progressBar: {s} {d:.1}%\n", .{_l, _v * 100.0}); }
+                \\fn _stub_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { std.debug.print("[gui] combobox: {s} sel={d}/{d}\n", .{_l, _sel, _items.len}); return _sel; }
+                \\fn _stub_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { std.debug.print("[gui] spinbox: {s} val={d} [{d},{d}]\n", .{_l, _v, _min, _max}); return _v; }
+                \\fn _stub_open_file() ?[]const u8 { std.debug.print("[gui] openFile (no window)\n", .{}); return null; }
+                \\fn _stub_save_file() ?[]const u8 { std.debug.print("[gui] saveFile (no window)\n", .{}); return null; }
+                \\fn _stub_open_folder() ?[]const u8 { std.debug.print("[gui] openFolder (no window)\n", .{}); return null; }
+                \\fn _stub_msg_box(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBox: {s}: {s}\n", .{_t, _m}); }
+                \\fn _stub_msg_box_error(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBoxError: {s}: {s}\n", .{_t, _m}); }
                 \\fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
                 \\    _ = title; _ = width; _ = height;
                 \\}
@@ -2311,6 +2335,14 @@ const Generator = struct {
                 \\    .endHBoxFn   = _stub_end_hbox,
                 \\    .beginVBoxFn = _stub_begin_vbox,
                 \\    .endVBoxFn   = _stub_end_vbox,
+                \\    .progressBarFn = _stub_progressbar,
+                \\    .comboboxFn    = _stub_combobox,
+                \\    .spinboxFn     = _stub_spinbox,
+                \\    .openFileFn    = _stub_open_file,
+                \\    .saveFileFn    = _stub_save_file,
+                \\    .openFolderFn  = _stub_open_folder,
+                \\    .msgBoxFn      = _stub_msg_box,
+                \\    .msgBoxErrorFn = _stub_msg_box_error,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -2666,6 +2698,14 @@ const Generator = struct {
                 \\fn _imgui_end_hbox() void {}
                 \\fn _imgui_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
                 \\fn _imgui_end_vbox() void {}
+                \\fn _imgui_progressbar(_l: []const u8, _v: f64) void { _ = _l; _ = _v; }
+                \\fn _imgui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { _ = _l; _ = _items; return _sel; }
+                \\fn _imgui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { _ = _l; _ = _min; _ = _max; return _v; }
+                \\fn _imgui_open_file() ?[]const u8 { return null; }
+                \\fn _imgui_save_file() ?[]const u8 { return null; }
+                \\fn _imgui_open_folder() ?[]const u8 { return null; }
+                \\fn _imgui_msg_box(_t: []const u8, _m: []const u8) void { _ = _t; _ = _m; }
+                \\fn _imgui_msg_box_error(_t: []const u8, _m: []const u8) void { _ = _t; _ = _m; }
                 \\const _gui_imgui_backend = _GuiBackend{
                 \\    .initFn             = _imgui_init,
                 \\    .deinitFn           = _imgui_deinit,
@@ -2720,6 +2760,14 @@ const Generator = struct {
                 \\    .endHBoxFn   = _imgui_end_hbox,
                 \\    .beginVBoxFn = _imgui_begin_vbox,
                 \\    .endVBoxFn   = _imgui_end_vbox,
+                \\    .progressBarFn = _imgui_progressbar,
+                \\    .comboboxFn    = _imgui_combobox,
+                \\    .spinboxFn     = _imgui_spinbox,
+                \\    .openFileFn    = _imgui_open_file,
+                \\    .saveFileFn    = _imgui_save_file,
+                \\    .openFolderFn  = _imgui_open_folder,
+                \\    .msgBoxFn      = _imgui_msg_box,
+                \\    .msgBoxErrorFn = _imgui_msg_box_error,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_imgui_backend;
                 \\
@@ -2745,6 +2793,14 @@ const Generator = struct {
                 \\fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
                 \\fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
                 \\fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+                \\fn _stub_progressbar(_l: []const u8, _v: f64) void { std.debug.print("[gui] progressBar: {s} {d:.1}%\n", .{_l, _v * 100.0}); }
+                \\fn _stub_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { std.debug.print("[gui] combobox: {s} sel={d}/{d}\n", .{_l, _sel, _items.len}); return _sel; }
+                \\fn _stub_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { std.debug.print("[gui] spinbox: {s} val={d} [{d},{d}]\n", .{_l, _v, _min, _max}); return _v; }
+                \\fn _stub_open_file() ?[]const u8 { std.debug.print("[gui] openFile (no window)\n", .{}); return null; }
+                \\fn _stub_save_file() ?[]const u8 { std.debug.print("[gui] saveFile (no window)\n", .{}); return null; }
+                \\fn _stub_open_folder() ?[]const u8 { std.debug.print("[gui] openFolder (no window)\n", .{}); return null; }
+                \\fn _stub_msg_box(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBox: {s}: {s}\n", .{_t, _m}); }
+                \\fn _stub_msg_box_error(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBoxError: {s}: {s}\n", .{_t, _m}); }
                 \\fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
                 \\    _ = title; _ = width; _ = height;
                 \\}
@@ -2880,6 +2936,14 @@ const Generator = struct {
                 \\    .endHBoxFn   = _stub_end_hbox,
                 \\    .beginVBoxFn = _stub_begin_vbox,
                 \\    .endVBoxFn   = _stub_end_vbox,
+                \\    .progressBarFn = _stub_progressbar,
+                \\    .comboboxFn    = _stub_combobox,
+                \\    .spinboxFn     = _stub_spinbox,
+                \\    .openFileFn    = _stub_open_file,
+                \\    .saveFileFn    = _stub_save_file,
+                \\    .openFolderFn  = _stub_open_folder,
+                \\    .msgBoxFn      = _stub_msg_box,
+                \\    .msgBoxErrorFn = _stub_msg_box_error,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_stub_backend;
                 \\
@@ -3089,6 +3153,14 @@ const Generator = struct {
                 \\fn _tui_end_hbox() void {}
                 \\fn _tui_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
                 \\fn _tui_end_vbox() void {}
+                \\fn _tui_progressbar(_l: []const u8, _v: f64) void { _ = _l; _ = _v; }
+                \\fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { _ = _l; _ = _items; return _sel; }
+                \\fn _tui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { _ = _l; _ = _min; _ = _max; return _v; }
+                \\fn _tui_open_file() ?[]const u8 { return null; }
+                \\fn _tui_save_file() ?[]const u8 { return null; }
+                \\fn _tui_open_folder() ?[]const u8 { return null; }
+                \\fn _tui_msg_box(_t: []const u8, _m: []const u8) void { _ = _t; _ = _m; }
+                \\fn _tui_msg_box_error(_t: []const u8, _m: []const u8) void { _ = _t; _ = _m; }
                 \\const _gui_tui_backend = _GuiBackend{
                 \\    .initFn             = _tui_init,
                 \\    .deinitFn           = _tui_deinit,
@@ -3139,10 +3211,18 @@ const Generator = struct {
                 \\    .ll_getMousePosFn     = _tui_ll_get_mouse_pos,
                 \\    .ll_beginGroupFn      = _tui_ll_begin_group,
                 \\    .ll_endGroupFn        = _tui_ll_end_group,
-                \\    .beginHBoxFn = _tui_begin_hbox,
-                \\    .endHBoxFn   = _tui_end_hbox,
-                \\    .beginVBoxFn = _tui_begin_vbox,
-                \\    .endVBoxFn   = _tui_end_vbox,
+                \\    .beginHBoxFn   = _tui_begin_hbox,
+                \\    .endHBoxFn     = _tui_end_hbox,
+                \\    .beginVBoxFn   = _tui_begin_vbox,
+                \\    .endVBoxFn     = _tui_end_vbox,
+                \\    .progressBarFn = _tui_progressbar,
+                \\    .comboboxFn    = _tui_combobox,
+                \\    .spinboxFn     = _tui_spinbox,
+                \\    .openFileFn    = _tui_open_file,
+                \\    .saveFileFn    = _tui_save_file,
+                \\    .openFolderFn  = _tui_open_folder,
+                \\    .msgBoxFn      = _tui_msg_box,
+                \\    .msgBoxErrorFn = _tui_msg_box_error,
                 \\};
                 \\const _gui_active_backend: _GuiBackend = _gui_tui_backend;
                 \\
@@ -3225,6 +3305,7 @@ const Generator = struct {
             \\    sval: c_int = 0,
             \\    smin: f64 = 0,
             \\    smax: f64 = 1,
+            \\    pb: ?*ui.ProgressBar = null,
             \\};
             \\const _LuiPanel = struct { inner: *ui.Box };
             \\var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
@@ -3279,6 +3360,12 @@ const Generator = struct {
             \\}
             \\fn _lui_slider_cb(_sld: *ui.Slider, _m: ?*_LuiMut) anyerror!void {
             \\    if (_m) |p| p.sval = _sld.Value();
+            \\}
+            \\fn _lui_cmb_cb(_c: *ui.Combobox, _m: ?*_LuiMut) void {
+            \\    if (_m) |p| p.sval = _c.Selected();
+            \\}
+            \\fn _lui_spn_cb(_s: *ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
+            \\    if (_m) |p| p.sval = _s.Value();
             \\}
             \\fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
             \\    _lui_win_w = _width; _lui_win_h = _height;
@@ -3568,6 +3655,81 @@ const Generator = struct {
             \\    return true;
             \\}
             \\fn _lui_end_panel() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+            \\fn _lui_progressbar(_label: []const u8, _value: f64) void {
+            \\    _ = _label;
+            \\    const _r = _lui_dget();
+            \\    const _pct: c_int = @intFromFloat(_value * 100.0);
+            \\    const _clamped: c_int = if (_pct < 0) 0 else if (_pct > 100) 100 else _pct;
+            \\    if (_r.fresh) {
+            \\        const _pb = ui.ProgressBar.New() catch return;
+            \\        _pb.SetValue(_clamped);
+            \\        _r.m.pb = _pb;
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _pb.as_control(), .dont_stretch);
+            \\    } else {
+            \\        if (_r.m.pb) |_pb| _pb.SetValue(_clamped);
+            \\    }
+            \\}
+            \\fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _cmb = ui.Combobox.New() catch return _sel;
+            \\        for (_items) |_it| {
+            \\            const _n = @min(_it.len, 255);
+            \\            var _lb: [256]u8 = undefined;
+            \\            @memcpy(_lb[0.._n], _it[0.._n]);
+            \\            _lb[_n] = 0;
+            \\            const _lz: [:0]u8 = _lb[0.._n :0];
+            \\            ui.Combobox.Append(_cmb, _lz);
+            \\        }
+            \\        const _init: c_int = @intCast(_sel);
+            \\        _cmb.SetSelected(_init);
+            \\        _r.m.sval = _init;
+            \\        ui.Combobox.OnSelected(_cmb, _LuiMut, _lui_cmb_cb, _r.m);
+            \\        _r.m.ctrl = _cmb.as_control();
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
+            \\    }
+            \\    return @as(i64, @intCast(_r.m.sval));
+            \\}
+            \\fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
+            \\    const _r = _lui_iget(_label);
+            \\    if (_r.fresh) {
+            \\        const _spn = ui.Spinbox.New(@intCast(_min), @intCast(_max)) catch return _value;
+            \\        _spn.SetValue(@intCast(_value));
+            \\        _r.m.sval = @intCast(_value);
+            \\        ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);
+            \\        _r.m.ctrl = _spn.as_control();
+            \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _spn.as_control(), .dont_stretch);
+            \\    }
+            \\    return @as(i64, @intCast(_r.m.sval));
+            \\}
+            \\fn _lui_open_file() ?[]const u8 {
+            \\    const _cpath = ui.Window.OpenFile(_lui_window.?) orelse return null;
+            \\    defer ui.FreeText(_cpath);
+            \\    const _s = std.mem.span(_cpath);
+            \\    return _allocator.dupe(u8, _s) catch null;
+            \\}
+            \\fn _lui_save_file() ?[]const u8 {
+            \\    const _cpath = ui.Window.SaveFile(_lui_window.?) orelse return null;
+            \\    defer ui.FreeText(_cpath);
+            \\    const _s = std.mem.span(_cpath);
+            \\    return _allocator.dupe(u8, _s) catch null;
+            \\}
+            \\fn _lui_open_folder() ?[]const u8 {
+            \\    const _cpath = ui.Window.OpenFolder(_lui_window.?) orelse return null;
+            \\    defer ui.FreeText(_cpath);
+            \\    const _s = std.mem.span(_cpath);
+            \\    return _allocator.dupe(u8, _s) catch null;
+            \\}
+            \\fn _lui_msg_box(_title: []const u8, _desc: []const u8) void {
+            \\    const _tz = _allocator.dupeZ(u8, _title) catch return;
+            \\    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+            \\    ui.Window.MsgBox(_lui_window.?, _tz, _mz);
+            \\}
+            \\fn _lui_msg_box_error(_title: []const u8, _desc: []const u8) void {
+            \\    const _tz = _allocator.dupeZ(u8, _title) catch return;
+            \\    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+            \\    ui.Window.MsgBoxError(_lui_window.?, _tz, _mz);
+            \\}
             \\const _gui_lui_backend = _GuiBackend{
             \\    .initFn             = _lui_init,
             \\    .deinitFn           = _lui_deinit,
@@ -3620,8 +3782,16 @@ const Generator = struct {
             \\    .ll_endGroupFn        = _lui_noop_void,
             \\    .beginHBoxFn = _lui_begin_hbox,
             \\    .endHBoxFn   = _lui_end_hbox,
-            \\    .beginVBoxFn = _lui_begin_vbox,
-            \\    .endVBoxFn   = _lui_end_vbox,
+            \\    .beginVBoxFn   = _lui_begin_vbox,
+            \\    .endVBoxFn     = _lui_end_vbox,
+            \\    .progressBarFn = _lui_progressbar,
+            \\    .comboboxFn    = _lui_combobox,
+            \\    .spinboxFn     = _lui_spinbox,
+            \\    .openFileFn    = _lui_open_file,
+            \\    .saveFileFn    = _lui_save_file,
+            \\    .openFolderFn  = _lui_open_folder,
+            \\    .msgBoxFn      = _lui_msg_box,
+            \\    .msgBoxErrorFn = _lui_msg_box_error,
             \\};
             \\const _gui_active_backend: _GuiBackend = _gui_lui_backend;
             \\
@@ -3837,12 +4007,32 @@ const Generator = struct {
     // ── namespace ─────────────────────────────────────────────────────────────
 
     fn genNamespace(g: Generator, n: *Ast.DeclNamespace) anyerror!void {
-        try g.writeIndent();
-        try g.w.print("pub const {s} = struct {{\n", .{n.name});
-        const ig = g.indented();
+        // Split dotted names ("Outer.Inner") into nested struct layers.
+        var parts_buf: [16][]const u8 = undefined;
+        var n_parts: usize = 0;
+        var it = std.mem.splitScalar(u8, n.name, '.');
+        while (it.next()) |p| { if (n_parts < parts_buf.len) { parts_buf[n_parts] = p; n_parts += 1; } }
+        const parts = parts_buf[0..n_parts];
+
+        // Open one struct layer per path component.
+        var depth: u32 = 0;
+        for (parts) |part| {
+            var og = g; og.indent += depth;
+            try og.writeIndent();
+            try og.w.print("pub const {s} = struct {{\n", .{part});
+            depth += 1;
+        }
+        // Emit body at the innermost indent level.
+        var ig = g; ig.indent += depth;
         for (n.decls) |decl| try ig.genTopDecl(decl);
-        try g.writeIndent();
-        try g.w.writeAll("};\n\n");
+        // Close in reverse order (innermost first).
+        while (depth > 0) {
+            depth -= 1;
+            var cg = g; cg.indent += depth;
+            try cg.writeIndent();
+            try cg.w.writeAll("};\n");
+        }
+        try g.w.writeAll("\n");
     }
 
     // ── class ─────────────────────────────────────────────────────────────────
@@ -4137,6 +4327,25 @@ const Generator = struct {
         }
 
         try g.genExportWrappers(n.name, n.members);
+
+        // @export("sym") class Foo is IFoo → emit module-static singleton factory.
+        if (n.export_sym) |sym| {
+            if (n.implements.len > 0) {
+                if (typeRefSimpleName(n.implements[0])) |iname| {
+                    try g.genExportFactory(n.name, sym, iname);
+                }
+            }
+        }
+    }
+
+    fn genExportFactory(g: Generator, class_name: []const u8, sym: []const u8, iface_name: []const u8) anyerror!void {
+        try g.w.print("var _zbr_export_{s}_iface: ?{s} = null;\n", .{ sym, iface_name });
+        try g.w.print("pub export fn {s}() *{s} {{\n", .{ sym, iface_name });
+        try g.w.print("    if (_zbr_export_{s}_iface == null) {{\n", .{sym});
+        try g.w.print("        _zbr_export_{s}_iface = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ sym, class_name, class_name, iface_name });
+        try g.w.print("    }}\n", .{});
+        try g.w.print("    return &_zbr_export_{s}_iface.?;\n", .{sym});
+        try g.w.writeAll("}\n\n");
     }
 
     // ── Member dispatch ───────────────────────────────────────────────────────
@@ -7887,6 +8096,9 @@ const Generator = struct {
             .{ "tableNextColumn",  {} }, .{ "endTable",        {} },
             .{ "childWindow",      {} },
             .{ "treeNode",         {} }, .{ "treePop",         {} },
+            .{ "progressBar",      {} }, .{ "combobox",        {} }, .{ "spinbox", {} },
+            .{ "openFile",         {} }, .{ "saveFile",         {} }, .{ "openFolder", {} },
+            .{ "msgBox",           {} }, .{ "msgBoxError",      {} },
         });
         if (known.get(method) == null) return false;
         try g.genExpr(obj);
@@ -7921,6 +8133,7 @@ const Generator = struct {
             .{ "tableSetupColumn", {} }, .{ "tableHeadersRow", {} },
             .{ "tableNextRow",     {} }, .{ "tableNextColumn", {} },
             .{ "endTable",         {} }, .{ "childWindow",     {} }, .{ "treePop", {} },
+            .{ "progressBar",      {} }, .{ "msgBox",          {} }, .{ "msgBoxError", {} },
         });
         if (void_methods.get(mem.member) == null) return false;
         // Check if any arg is allocating.
@@ -12247,7 +12460,7 @@ const Generator = struct {
         const lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
         defer g.alloc.free(lbl);
         try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ lbl, uid });
-        try g.genType(inner);
+        try g.genType(payload);
         try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
         try g.genArgExpr(expr);
         try g.w.print("; break :{s} _bp_{x}; }}", .{ lbl, uid });
@@ -12559,8 +12772,9 @@ const Generator = struct {
                             const uid = g.nextUid();
                             const box_lbl = try std.fmt.allocPrint(g.alloc, "_box_{x}", .{uid});
                             defer g.alloc.free(box_lbl);
+                            const create_type = if (inner.* == .nilable) inner.nilable.* else inner.*;
                             try g.w.print("{s}: {{ const _bp_{x} = _allocator.create(", .{ box_lbl, uid });
-                            try g.genType(inner.*);
+                            try g.genType(create_type);
                             try g.w.print(") catch @panic(\"OOM\"); _bp_{x}.* = ", .{uid});
                             try g.genExpr(e.args[0].value);
                             try g.w.print("; break :{s} _bp_{x}; }}", .{ box_lbl, uid });
