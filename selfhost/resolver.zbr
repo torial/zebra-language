@@ -225,8 +225,8 @@ class Resolver
             on PNode.stmt_if as i
                 for expr in i.cond
                     .resolveExpr(expr)
-                if i.is_capture != nil
-                    .method_scope.put(i.is_capture to!, 4)
+                if i.is_capture as ic
+                    .method_scope.put(ic, 4)
                     .symbol_count = .symbol_count + 1
                 .resolveStmts(i.then_stmts)
                 .resolveStmts(i.else_stmts)

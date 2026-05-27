@@ -528,18 +528,18 @@ def runTypes(path: str) throws
         for decl in module.decls
             branch decl
                 on Decl.method as dm
-                    if dm.stmts != nil
-                        dumpMethodVars("", dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                    if dm.stmts as dm_stmts
+                        dumpMethodVars("", dm.name, dm_stmts, dm.params, mt, path, dep_mt)
                 on Decl.class_ as dc
                     for mem in dc.members
                         if mem is Decl.method as dm
-                            if dm.stmts != nil
-                                dumpMethodVars(dc.name, dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                            if dm.stmts as dm_stmts
+                                dumpMethodVars(dc.name, dm.name, dm_stmts, dm.params, mt, path, dep_mt)
                 on Decl.struct_ as ds
                     for mem in ds.members
                         if mem is Decl.method as dm
-                            if dm.stmts != nil
-                                dumpMethodVars(ds.name, dm.name, dm.stmts to!, dm.params, mt, path, dep_mt)
+                            if dm.stmts as dm_stmts
+                                dumpMethodVars(ds.name, dm.name, dm_stmts, dm.params, mt, path, dep_mt)
                 else
                     pass
 

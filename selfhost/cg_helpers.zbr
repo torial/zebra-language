@@ -279,8 +279,8 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                         return true
                     if bodyHasRaise(ei.stmts)
                         return true
-                if si.else_stmts != nil
-                    if bodyHasRaise(si.else_stmts to!)
+                if si.else_stmts as se
+                    if bodyHasRaise(se)
                         return true
             on Stmt.while_ as w
                 if exprHasTry(w.cond)
@@ -303,8 +303,8 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                 for c in b.cases
                     if bodyHasRaise(c.stmts)
                         return true
-                if b.else_ != nil
-                    if bodyHasRaise(b.else_ to!)
+                if b.else_ as be
+                    if bodyHasRaise(be)
                         return true
             on Stmt.with_ as w
                 if bodyHasRaise(w.stmts)
@@ -398,10 +398,12 @@ def nameUsedInExpr(name: str, expr: Expr): bool
         on Expr.slice as sl
             if nameUsedInExpr(name, sl.object)
                 return true
-            if sl.start != nil and nameUsedInExpr(name, sl.start to!)
-                return true
-            if sl.stop_ != nil and nameUsedInExpr(name, sl.stop_ to!)
-                return true
+            if sl.start != nil
+                if nameUsedInExpr(name, sl.start to!)
+                    return true
+            if sl.stop_ != nil
+                if nameUsedInExpr(name, sl.stop_ to!)
+                    return true
             return false
         on Expr.try_ as t
             return nameUsedInExpr(name, t.expr)
@@ -510,8 +512,8 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
                     return true
                 if nameUsedInStmts(name, ei.stmts)
                     return true
-            if si.else_stmts != nil
-                return nameUsedInStmts(name, si.else_stmts to!)
+            if si.else_stmts as se
+                return nameUsedInStmts(name, se)
             return false
         on Stmt.while_ as w
             if nameUsedInExpr(name, w.cond)
@@ -549,8 +551,8 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
                         return true
                 if nameUsedInStmts(name, c.stmts)
                     return true
-            if b.else_ != nil
-                return nameUsedInStmts(name, b.else_ to!)
+            if b.else_ as be
+                return nameUsedInStmts(name, be)
             return false
         on Stmt.try_catch as tc
             if nameUsedInStmts(name, tc.stmts)
@@ -643,8 +645,8 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
                 seedEscapedFromReturns(si.then_stmts, out)
                 for ei in si.else_ifs
                     seedEscapedFromReturns(ei.stmts, out)
-                if si.else_stmts != nil
-                    seedEscapedFromReturns(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    seedEscapedFromReturns(se, out)
             on Stmt.while_ as w
                 seedEscapedFromReturns(w.stmts, out)
             on Stmt.for_in as f
@@ -654,8 +656,8 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
             on Stmt.branch_ as b
                 for c in b.cases
                     seedEscapedFromReturns(c.stmts, out)
-                if b.else_ != nil
-                    seedEscapedFromReturns(b.else_ to!, out)
+                if b.else_ as be
+                    seedEscapedFromReturns(be, out)
             on Stmt.with_ as w
                 seedEscapedFromReturns(w.stmts, out)
             on Stmt.in_scope as si_s
@@ -700,8 +702,8 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 for ei in si.else_ifs
                     if propagateEscapesOnce(ei.stmts, out)
                         grew = true
-                if si.else_stmts != nil
-                    if propagateEscapesOnce(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    if propagateEscapesOnce(se, out)
                         grew = true
             on Stmt.while_ as w
                 if propagateEscapesOnce(w.stmts, out)
@@ -716,8 +718,8 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 for c in b.cases
                     if propagateEscapesOnce(c.stmts, out)
                         grew = true
-                if b.else_ != nil
-                    if propagateEscapesOnce(b.else_ to!, out)
+                if b.else_ as be
+                    if propagateEscapesOnce(be, out)
                         grew = true
             on Stmt.with_ as ww
                 if propagateEscapesOnce(ww.stmts, out)
@@ -878,21 +880,21 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 scanMutationsInto(si.then_stmts, out)
                 for ei in si.else_ifs
                     scanMutationsInto(ei.stmts, out)
-                if si.else_stmts != nil
-                    scanMutationsInto(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    scanMutationsInto(se, out)
             on Stmt.while_ as w
                 scanMutationsInto(w.stmts, out)
             on Stmt.for_in as f
                 scanMutationsInto(f.stmts, out)
-                if f.else_ != nil
-                    scanMutationsInto(f.else_ to!, out)
+                if f.else_ as fe
+                    scanMutationsInto(fe, out)
             on Stmt.for_num as fnum
                 scanMutationsInto(fnum.stmts, out)
             on Stmt.branch_ as b
                 for c in b.cases
                     scanMutationsInto(c.stmts, out)
-                if b.else_ != nil
-                    scanMutationsInto(b.else_ to!, out)
+                if b.else_ as be
+                    scanMutationsInto(be, out)
             on Stmt.var_ as n
                 if n.init_expr != nil
                     scanMutationsInExpr(n.init_expr to!, out)
@@ -972,11 +974,9 @@ def isContainerTypeRef(tr: TypeRef): bool
 # memoise per-method by adding a HashMap(str, StrSet) on Generator keyed by
 # "Class.method" (the same key shape used by lookupFnParams/lookupFnBody).
 def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
-    if p.type_ == nil
-        return false
-    if not isContainerTypeRef(p.type_ to!)
-        return false
-    if body == nil
-        return false
-    var ms: StrSet = scanMutations(body to!)
-    return ms.contains_(p.name)
+    if p.type_ == nil: return false
+    if not isContainerTypeRef(p.type_ to!): return false
+    if body as b
+        var ms: StrSet = scanMutations(b)
+        return ms.contains_(p.name)
+    return false

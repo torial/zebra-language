@@ -3695,8 +3695,8 @@ pub const Resolver = struct {
                     try self.resolveExpr(expr);
                 }
 // zbr:selfhost/Resolver.zbr:228
-                if ((i.is_capture != null)) {
-                    self.method_scope.put(_intern(i.is_capture.?), 4) catch @panic("OOM");
+                if (i.is_capture) |ic| {
+                    self.method_scope.put(_intern(ic), 4) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:230
                     self.symbol_count = (self.symbol_count + 1);
                 }

@@ -823,8 +823,8 @@ class ASTBuilder
                         on Expr.member as em
                             # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
                             var obj_name = getObjectIdentName(em.object)
-                            if obj_name != nil
-                                var tc = ExprTypeCheck(zspan(), left_expr, obj_name to!)
+                            if obj_name as obj_n
+                                var tc = ExprTypeCheck(zspan(), left_expr, obj_n)
                                 tc.variant_name = em.member
                                 return Expr.type_check(tc)
                             else
@@ -1209,9 +1209,9 @@ class ASTBuilder
 
     def parseTypeRefRequired(s: str): TypeRef
         const tr = .parseTypeRef(s)
-        if tr == nil
-            return TypeRef.void_()
-        return tr to!
+        if tr as tref
+            return tref
+        return TypeRef.void_()
 
 def main()
     print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"

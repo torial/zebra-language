@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-20 (Zig 0.16 fully complete: bootstrap 5/5, 122/122 smoke; _Chan→std.Io.Mutex/Condition, _build_new .empty; bamos + oma tracked; _initIo gap noted)
+**Last updated:** 2026-05-27 (§19a boundary-restart complete: 152/152 smoke, bootstrap 5/5; enum tracking fix in selfhost TC inferExpr; regex per-quantifier explicitly post-1.0)
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -188,9 +188,10 @@ Real improvement options (all deferred post-1.0):
    would give near-instant re-compilation of changed declarations only.
 2. **Native Zebra interpreter**: bypass Zig entirely for REPL evaluation.  ~2-3 week task.
 
-### 7. Regex per-quantifier lazy/greedy (Milestone 0.11)
-Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
-to track per-node shortest/longest flags, not a global flag.
+### 7. Regex per-quantifier lazy/greedy — **post-1.0** (BUG-014)
+Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA to track per-node
+shortest/longest flags, not a global flag. Architectural fix; see BUG-014.
+Workaround: split the pattern or restructure. Explicitly deferred post-1.0.
 
 ### 9. Greek NT n-gram port — **SIMD now landed; deferred wait is over**
 SIMD types shipped 2026-05-08 — the reason for deferring this port is gone.
@@ -244,14 +245,16 @@ See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`, `STYLE_GUIDE.md
 ### 19. Error recovery — remaining gaps
 
 **Done:** Bootstrap collect-and-continue (5 error classes), selfhost TC primitive
-mismatch diagnostics, `zebra typecheck-merge` subcommand, source-mapped errors.
+mismatch diagnostics, `zebra typecheck-merge` subcommand, source-mapped errors,
+boundary-restart multi-error parse recovery (both compilers; 2026-05-27).
 See completed table for details.
 
 **Still open:**
-- **Enum type checking** — enum variants not tracked in `ModuleTypes`; false-positive
-  risk prevents adding them without a full enum registry first.
+- **Enum type checking** ✅ (2026-05-27) — `ModuleTypes` already held enum member
+  registry; `inferExpr` now uses it via `hasEnumAny` for `Expr.ident` and
+  `Expr.member`. Both compilers. Cross-module via `dep_types.hasEnum`.
 - **Multi-error fixture parity** — selfhost catches resolver + TC primitive errors;
-  bootstrap catches 5 classes; delta closes further once enum tracking lands.
+  bootstrap catches 5 classes; delta now minimal (enum gap closed).
 
 ### 19.5. TC reliability cluster — remaining item
 
@@ -262,13 +265,14 @@ See completed table for details.
 
 Items a, b, c, e all complete — see completed table.
 
-### 19a. Boundary-restart parser recovery (deferred)
-After a parse error, scan forward to the next top-decl-starter (`class` / `struct` /
-`def` / `use` / `static` / blank-then-`@`) at column 0, restart the parse from there,
-accumulate errors across restarts.  Most syntax errors cascade from one root cause, so
-full multi-error Earley recovery is disproportionate — but this catches "missing paren
-in method A + bad expression in method B" cheaply.
-**Effort:** session-sized. **Target:** 1.0-era.
+### 19a. Boundary-restart parser recovery ✅ (complete 2026-05-27)
+Both compilers accumulate all parse errors in a file via boundary-restart.
+On each failure, the scanner advances to the next `col==1` decl-starter keyword
+and retries. All errors are joined and surfaced together.
+Bootstrap: `parseWithRecovery()` in `src/Parser.zig`.
+Selfhost: `collected_decls`/`parse_errors` fields + `tryParseTopDeclInto()` in
+`selfhost/parser.zbr`; uses `zig"_error_ctx.message"` (not `e.message`) to avoid
+dep-mode `_zbr_error_msg` limitation. 152/152 smoke, bootstrap 5/5.
 
 ### 21. Milestone 0.11 — remaining items
 
@@ -350,7 +354,7 @@ the broader commitment is everything that landed from 0.1 onward.
   Gui, Reflect, Json.parseStrict, Progress, Base64, Path, Profile, SIMD
 - ✅ Self-hosting + bootstrap round-trip (Phase 22, 2026-04-21)
 - ✅ Source-mapped errors (delivered 0.5)
-- 0.11 deliverables: REPL, Gui stack (ImGui superseded by ZigZag+libui-ng redesign — see §14), regex per-quantifier, JSON auto-inference, gzip, debugger/DAP, build system
+- 0.11 deliverables: REPL, Gui stack (ImGui superseded by ZigZag+libui-ng redesign — see §14), ~~regex per-quantifier~~ (post-1.0; see §7), JSON auto-inference, gzip, debugger/DAP, build system
 - 0.13 deliverables: BUG-115 resolved, remaining sweeps, `^T` fixes
 - 0.14 deliverables: full `<-` deep-copy, `Chan(T)`, allocator context
 

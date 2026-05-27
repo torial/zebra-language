@@ -318,8 +318,7 @@ class Lexer
             if word == "result"
                 kw = TokenKind.kw_result()
 
-        if kw <> nil
-            var resolvedKw = kw to!
+        if kw as resolvedKw
             emit(resolvedKw, word, ln, cl)
             branch resolvedKw
                 on TokenKind.kw_ensure

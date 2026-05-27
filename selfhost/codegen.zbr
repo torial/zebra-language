@@ -186,8 +186,8 @@ def bitCastType(spec: str, ex_type: Type_): str
 def getVariantKey(e: Expr): str?
     if e is Expr.member as m
         var obj_name = getIdentName(m.object)
-        if obj_name != nil
-            return makeDottedKey(obj_name to!, m.member)
+        if obj_name as obj_n
+            return makeDottedKey(obj_n, m.member)
     return nil
 
 def isKnownListField(name: str): bool
@@ -426,8 +426,8 @@ def isCrossModuleCtorCall(callee: Expr): bool
     # Check if call is Module.ClassName() where module == class name
     if callee is Expr.member as m
         var obj_name = getIdentName(m.object)
-        if obj_name != nil
-            return obj_name to! == m.member
+        if obj_name as obj_n
+            return obj_n == m.member
     return false
 
 def getMemberObjectIdent(callee: Expr): str?
@@ -450,12 +450,13 @@ def getXmUnionParts(callee: Expr): List(str)?
     if callee is Expr.member as outer_m
         var inner_union = getMemberName(outer_m.object)
         var inner_mod = getMemberObjectIdent(outer_m.object)
-        if inner_union != nil and inner_mod != nil
-            var parts = List(str)()
-            parts.add(inner_mod to!)
-            parts.add(inner_union to!)
-            parts.add(outer_m.member)
-            return parts
+        if inner_union as iu
+            if inner_mod as im
+                var parts = List(str)()
+                parts.add(im)
+                parts.add(iu)
+                parts.add(outer_m.member)
+                return parts
     return nil
 
 # ── bodyMentionsThis ─────────────────────────────────────────────────────────
@@ -552,8 +553,8 @@ def stmtMentionsThis(s: Stmt): bool
                         return true
                 if bodyMentionsThis(c.stmts)
                     return true
-            if b.else_ != nil
-                return bodyMentionsThis(b.else_ to!)
+            if b.else_ as be
+                return bodyMentionsThis(be)
             return false
         on Stmt.try_catch as tc
             if bodyMentionsThis(tc.stmts)
@@ -2481,8 +2482,8 @@ struct Generator
         for tr in n.ifaces
             if tr is TypeRef.named as nt
                 var ifc = findInterfaceDecl(nt.name)
-                if ifc != nil
-                    genIfaceVtable(n.name, ifc to!)
+                if ifc as ifc_decl
+                    genIfaceVtable(n.name, ifc_decl)
         w.emit("const _ttag_")
         w.emit(n.name)
         w.emit(": u64 = _zbr_hash(\"")
@@ -2532,8 +2533,7 @@ struct Generator
         if n.mods.is_reflectable
             genJsonParseStrictFn(n)
         # @export("sym") class Foo is IFoo → module-static singleton factory.
-        if n.export_sym != nil
-            var sym: str = n.export_sym to!
+        if n.export_sym as sym
             if n.ifaces.count() > 0
                 var iface_tr: TypeRef = n.ifaces.at(0)
                 if iface_tr is TypeRef.named as nr
@@ -2765,15 +2765,15 @@ struct Generator
             genType(m.return_type to!)
         else
             w.emit("void")
-        if m.stmts != nil
-            var mstmts = m.stmts to!
+        if m.stmts as mstmts
             var rs = analyzeEscapes(mstmts)
             var ps = StrSet()
             var sp = StrSet()
             for p in m.params
                 ps.add(p.name)
                 if p.type_ != nil
-                    if p.type_ to! is TypeRef.named as nt
+                    var ptype = p.type_ to!
+                    if ptype is TypeRef.named as nt
                         if nt.name == "str" or nt.name == "String"
                             sp.add(p.name)
             w.emit(" {\n")
@@ -2843,7 +2843,8 @@ struct Generator
             # Track List-tuple and StrSet params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
-                    branch p2.type_ to!
+                    var p2t = p2.type_ to!
+                    branch p2t
                         on TypeRef.generic as gt
                             if gt.name == "List"
                                 if gt.args.count() > 0
@@ -2946,8 +2947,7 @@ struct Generator
             ig.w.emit("var _self: ")
             ig.w.emit(owner)
             ig.w.emit(" = undefined;\n")
-        if ini.stmts != nil
-            var istmts = ini.stmts to!
+        if ini.stmts as istmts
             var rs = analyzeEscapes(istmts)
             var ps = StrSet()
             for p in ini.params
@@ -3252,10 +3252,10 @@ struct Generator
             genType(mth.return_type to!)
         else
             w.emit("void")
-        if mth.stmts != nil
+        if mth.stmts as mstmts
             w.emit(" {\n")
             var ig = indented()
-            ig.genStmts(mth.stmts to!)
+            ig.genStmts(mstmts)
             writeIndent()
             w.emit("}\n")
         else
@@ -3304,21 +3304,21 @@ struct Generator
                     addAddrOfMutationsInStmts(si.then_stmts, out)
                     for ei in si.else_ifs
                         addAddrOfMutationsInStmts(ei.stmts, out)
-                    if si.else_stmts != nil
-                        addAddrOfMutationsInStmts(si.else_stmts to!, out)
+                    if si.else_stmts as se
+                        addAddrOfMutationsInStmts(se, out)
                 on Stmt.while_ as ww
                     addAddrOfMutationsInStmts(ww.stmts, out)
                 on Stmt.for_in as fi
                     addAddrOfMutationsInStmts(fi.stmts, out)
-                    if fi.else_ != nil
-                        addAddrOfMutationsInStmts(fi.else_ to!, out)
+                    if fi.else_ as fe
+                        addAddrOfMutationsInStmts(fe, out)
                 on Stmt.for_num as fnum
                     addAddrOfMutationsInStmts(fnum.stmts, out)
                 on Stmt.branch_ as br
                     for cc in br.cases
                         addAddrOfMutationsInStmts(cc.stmts, out)
-                    if br.else_ != nil
-                        addAddrOfMutationsInStmts(br.else_ to!, out)
+                    if br.else_ as bre
+                        addAddrOfMutationsInStmts(bre, out)
                 on Stmt.try_catch as tc
                     addAddrOfMutationsInStmts(tc.stmts, out)
                     for cl in tc.clauses
@@ -3595,22 +3595,24 @@ struct Generator
         # This covers generic class instances (Box(int)(42) → Type_.named("Box"))
         # and other locally-declared class vars with no explicit annotation.
         var lv_struct_name: str = ""
-        if .infer_ctx != nil
-            var ic_lv = .infer_ctx to!
+        if .infer_ctx as ic_lv
             var var_t: Type_ = Type_.unknown_
             if n.type_ != nil
                 var_t = typeFromRef(n.type_ to!)
-            else if n.init_expr != nil
-                var_t = inferExpr(n.init_expr to!, ic_lv)
+            else
+                if n.init_expr != nil
+                    var_t = inferExpr(n.init_expr to!, ic_lv)
             if not (var_t is Type_.unknown_) and not (var_t is Type_.unresolved)
                 ic_lv.bind(n.name, var_t)
             if var_t is Type_.named as lv_vtn
                 lv_struct_name = lv_vtn
             if var_t is Type_.cross_module as lv_cm
                 lv_struct_name = lv_cm.type_name
-        if lv_struct_name == "" and n.type_ != nil
-            if n.type_ to! is TypeRef.named as lv_tn
-                lv_struct_name = lv_tn.name
+        if lv_struct_name == ""
+            if n.type_ != nil
+                var nvt2 = n.type_ to!
+                if nvt2 is TypeRef.named as lv_tn
+                    lv_struct_name = lv_tn.name
         # BUG-122: seed opt_ptr_field_bindings / ptr_field_bindings for ^T? / ^T fields
         # of named-type local vars — mirrors parameter seeding at genMethod ~line 2861.
         if lv_struct_name != ""

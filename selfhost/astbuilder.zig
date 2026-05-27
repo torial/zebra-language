@@ -4958,9 +4958,9 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:825
                             const obj_name = getObjectIdentName(em.object.*);
 // zbr:selfhost/astbuilder.zbr:826
-                            if ((obj_name != null)) {
+                            if (obj_name) |obj_n| {
 // zbr:selfhost/astbuilder.zbr:827
-                                var tc = ExprTypeCheck.init(zspan(), _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, obj_name.?);
+                                var tc = ExprTypeCheck.init(zspan(), _bx0: { const _bv = left_expr; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, obj_n);
 // zbr:selfhost/astbuilder.zbr:828
                                 tc.variant_name = em.member;
 // zbr:selfhost/astbuilder.zbr:829
@@ -5714,12 +5714,12 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/astbuilder.zbr:1211
         const tr = self.parseTypeRef(s);
 // zbr:selfhost/astbuilder.zbr:1212
-        if ((tr == null)) {
+        if (tr) |tref| {
 // zbr:selfhost/astbuilder.zbr:1213
-            return TypeRef{ .void_ = {} };
+            return tref;
         }
 // zbr:selfhost/astbuilder.zbr:1214
-        return tr.?;
+        return TypeRef{ .void_ = {} };
     }
 
 };

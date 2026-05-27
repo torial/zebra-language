@@ -496,6 +496,11 @@ enum Status(int)              # backed by int
 
 Usage: `Color.red`, `Status.ok`.
 
+**Type inference:** The type checker recognises enum names as types, so
+`Color.red` infers as `Color` and exhaustiveness checking works without an
+explicit type annotation.  Cross-module enums (imported via `use`) are
+tracked the same way.
+
 ---
 
 ## 9. Unions (tagged unions)
@@ -2016,6 +2021,18 @@ See `docs/DEBUGGING.md` for:
 - `--listen PORT` mode for custom integrations
 - LLDB-DAP discovery / `LLDB_DISABLE_PYTHON` workarounds
 
+### Error reporting
+
+The compiler reports **all parse errors** in a file, not just the first.
+After a parse failure it advances to the next top-level declaration (at
+column 0: `class`, `struct`, `def`, `use`, `namespace`, etc.) and
+continues parsing.  All accumulated errors are printed together so you
+can fix a whole file in one pass.
+
+Type-checker and resolver errors are also collected across the file.
+`zebra typecheck-merge` (the merge-safety subcommand) surfaces TC errors
+from both compilers in a structured format.
+
 ### Compiler flags reference
 
 | Flag | Effect |
@@ -2023,6 +2040,7 @@ See `docs/DEBUGGING.md` for:
 | `--emit-zig` | Write Zig source to stdout instead of compiling |
 | `--output-dir DIR` | Write generated Zig files to `DIR/` |
 | `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
+| `--cpu=VALUE` | Pass `-mcpu=VALUE` to Zig (e.g. `native`, `x86_64+avx2`) — see §32 |
 | `--gui-backend=libui_ng` | Use native OS controls (default: stub) |
 | `--gui-backend=imgui` | Use Dear ImGui backend |
 | `--gui-backend=tui` | Use terminal UI backend |

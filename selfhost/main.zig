@@ -4292,8 +4292,8 @@ pub fn runTypes(path: []const u8) anyerror!void {
                 .method => |_ptr_dm| {
                     const dm = _ptr_dm.*;
 // zbr:selfhost/main.zbr:531
-                    if ((dm.stmts != null)) {
-                        dumpMethodVars("", dm.name, dm.stmts.?, dm.params, mt, path, dep_mt);
+                    if (dm.stmts) |dm_stmts| {
+                        dumpMethodVars("", dm.name, dm_stmts, dm.params, mt, path, dep_mt);
                     }
                 },
                 .class_ => |_ptr_dc| {
@@ -4305,8 +4305,8 @@ pub fn runTypes(path: []const u8) anyerror!void {
                             const dm_ptr = mem.method;
                             const dm = dm_ptr.*;
 // zbr:selfhost/main.zbr:536
-                            if ((dm.stmts != null)) {
-                                dumpMethodVars(dc.name, dm.name, dm.stmts.?, dm.params, mt, path, dep_mt);
+                            if (dm.stmts) |dm_stmts| {
+                                dumpMethodVars(dc.name, dm.name, dm_stmts, dm.params, mt, path, dep_mt);
                             }
                         }
                     }
@@ -4320,8 +4320,8 @@ pub fn runTypes(path: []const u8) anyerror!void {
                             const dm_ptr = mem.method;
                             const dm = dm_ptr.*;
 // zbr:selfhost/main.zbr:541
-                            if ((dm.stmts != null)) {
-                                dumpMethodVars(ds.name, dm.name, dm.stmts.?, dm.params, mt, path, dep_mt);
+                            if (dm.stmts) |dm_stmts| {
+                                dumpMethodVars(ds.name, dm.name, dm_stmts, dm.params, mt, path, dep_mt);
                             }
                         }
                     }
