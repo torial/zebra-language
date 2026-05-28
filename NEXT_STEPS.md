@@ -367,6 +367,7 @@ the broader commitment is everything that landed from 0.1 onward.
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
 - [x] CHANGELOG covering the full 0.1 → 1.0 surface (2026-05-26, CHANGELOG.md)
+- `--target node-addon` — Node.js native addon codegen via N-API; `@node_export` annotation auto-generates type marshaling (primitives, str, List, HashMap, struct), opaque class handles with GC finalizers, TypeScript declarations, and `napi_register_module_v1` module registration; sync-only for 1.0 (async + JS→Zebra callbacks post-1.0); Zig cross-compilation produces all platform `.node` binaries from a single machine; reference implementation: Zebra SQLite as a Node addon. Full 10-phase plan: `wiki/pages/concepts/concept_zebra-node-addon-impl-plan.md`; vision: `wiki/pages/concepts/concept_zebra-node-addon.md`
 
 ---
 

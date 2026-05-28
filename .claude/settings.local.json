@@ -16,7 +16,9 @@
       "Bash(grep -E --line-buffered \"error:|warning:|Build Summary|steps succeeded|FAILED|^\\\\s*$\")",
       "PowerShell(choco uninstall *)",
       "PowerShell(zig version *)",
-      "PowerShell(cmd /c \"where zig\" 2>&1)"
+      "PowerShell(cmd /c \"where zig\" 2>&1)",
+      "PowerShell(Start-Process -FilePath \"C:\\\\Projects\\\\zebra-language\\\\IDE\\\\ZebraIDE_gui_tui\\\\zig-out\\\\bin\\\\app.exe\" -Wait -NoNewWindow -PassThru | Select-Object -ExpandProperty ExitCode)",
+      "PowerShell(git *)"
     ]
   }
 }
