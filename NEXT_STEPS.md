@@ -163,7 +163,7 @@ handles all their known methods and returns; unhandled methods fall through to M
 a safe fallback.  Additive strategy — Mode 2 kept for `infer_ctx == nil` paths (field
 defaults) and TC gaps.  Bootstrap 5/5, 112/112 smoke.  See commit 6c1c072.
 
-### 25. Block comment syntax `/#  #/` (Milestone 0.15 / any sprint)
+### 25. Block comment syntax `/#  #/` ✓ (2026-06-03)
 
 Multi-line block comment analogous to `/* */` in C.  Pairs naturally with the `#` line-comment syntax.
 
@@ -179,7 +179,7 @@ Multi-line block comment analogous to `/* */` in C.  Pairs naturally with the `#
 - EOF with open `/#`: clean error "unterminated block comment starting at line N".
 - No interaction with `#` line comments — inside `/#  #/`, `#` is inert.
 
-**Effort:** ~1 day (tokenizer + lexer; no AST/parser changes needed since comments are whitespace to the parser).
+**Status:** Implemented in `src/Tokenizer.zig` (`scanBlockComment`, `block_depth`) and `selfhost/Lexer.zbr` (parity). 4 Parser.zig test cases + QUICKSTART §1 documentation added 2026-06-03.
 
 ---
 

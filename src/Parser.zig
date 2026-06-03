@@ -692,6 +692,25 @@ test "parse: tuple index access .0 .1" {
     try expectAccepts("def main()\n\tvar t = foo()\n\tvar x = t.0\n\tvar y = t.1\n");
 }
 
+// ── Acceptance: block comments ───────────────────────────────────────────────
+
+test "parse: block comment /# #/ at top level" {
+    try expectAccepts("/# this is a block comment #/\ndef foo(): int\n\treturn 1\n");
+}
+
+test "parse: block comment /# #/ inline after expression" {
+    try expectAccepts("def main()\n\tvar x = 1 /# plus two #/ + 2\n");
+}
+
+test "parse: nested block comments /# /# #/ #/" {
+    // Inner /# #/ pair is consumed first; outer pair closes after.
+    try expectAccepts("def main()\n\t/# outer /# inner #/ still outer #/\n\tvar x = 1\n");
+}
+
+test "parse: block comment spanning multiple lines" {
+    try expectAccepts("def main()\n\t/#\n\t  multi-line block comment\n\t  spanning three lines\n\t#/\n\tvar x = 1\n");
+}
+
 // ── Rejection cases ────────────────────────────────────────────────────────────
 
 test "parse: error position is past the valid prefix" {

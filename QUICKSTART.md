@@ -147,7 +147,16 @@ zebra hello.zbr World
 ## 1. File structure
 
 ```zebra
-# comment
+# line comment — extends to end of line
+
+/# block comment — may span multiple lines #/
+
+/#
+   Block comments support nesting:
+   /# inner comment #/
+   still inside outer comment
+#/
+
 use ast exposing Decl, TypeRef        # import from module, expose names into scope
 use codegen                            # import module (access via codegen.Name)
 

@@ -230,6 +230,17 @@ const Tokenizer = struct {
                         at_line_start = true;
                         continue;
                     },
+                    .block_comment_only => {
+                        // Block comment occupies the whole line (possibly spanning multiple lines).
+                        // Consume indentation without emitting indent/dedent, scan the comment,
+                        // then advance past the newline without emitting eol.
+                        while (self.pos < self.src.len and (self.src[self.pos] == ' ' or self.src[self.pos] == '\t')) : (self.pos += 1) {}
+                        try self.scanBlockComment();
+                        while (self.pos < self.src.len and self.src[self.pos] != '\n') : (self.pos += 1) {}
+                        if (self.pos < self.src.len) self.advanceNewline();
+                        at_line_start = true;
+                        continue;
+                    },
                     .has_content => {
                         try self.processIndentation();
                     },
@@ -289,7 +300,7 @@ const Tokenizer = struct {
         try self.emit(.eof, "", eof_ln, eof_col);
     }
 
-    const LineKind = enum { empty, whitespace_only, comment_only, has_content };
+    const LineKind = enum { empty, whitespace_only, comment_only, block_comment_only, has_content };
 
     /// Peek at the current line to decide how to handle it without advancing.
     fn classifyLine(self: *const Tokenizer) LineKind {
@@ -303,6 +314,31 @@ const Tokenizer = struct {
             return if (has_ws) .whitespace_only else .empty;
         }
         if (self.src[i] == '#') return .comment_only;
+        // Block comment starting the line: scan ahead to decide if it covers the whole line.
+        // If yes (comment-only line), suppress indent/dedent/eol for the line.
+        // If no (code follows after #/), fall through to has_content.
+        if (self.src[i] == '/' and i + 1 < self.src.len and self.src[i + 1] == '#') {
+            var depth: u32 = 0;
+            var j = i;
+            while (j < self.src.len and self.src[j] != '\n') {
+                if (self.src[j] == '/' and j + 1 < self.src.len and self.src[j + 1] == '#') {
+                    depth += 1; j += 2;
+                } else if (self.src[j] == '#' and j + 1 < self.src.len and self.src[j + 1] == '/') {
+                    if (depth > 0) depth -= 1;
+                    j += 2;
+                    if (depth == 0) {
+                        // Block comment closed on this line — check for content after.
+                        while (j < self.src.len and (self.src[j] == ' ' or self.src[j] == '\t')) j += 1;
+                        if (j >= self.src.len or self.src[j] == '\n' or self.src[j] == '#') return .block_comment_only;
+                        return .has_content;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            // Block comment did not close on this line — spans multiple lines.
+            return .block_comment_only;
+        }
         return .has_content;
     }
 

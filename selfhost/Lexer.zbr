@@ -57,6 +57,7 @@ union LineKind
     empty
     whitespace_only
     comment_only
+    block_comment_only
     has_content
 
 class Lexer
@@ -159,6 +160,29 @@ class Lexer
             return LineKind.empty()
         if src[i] == c'#'
             return LineKind.comment_only()
+        # Block comment at start of line: scan ahead to decide if comment-only.
+        if src[i] == c'/' and i + 1 < src.len and src[i + 1] == c'#'
+            var depth = 0
+            var j = i
+            while j < src.len and src[j] <> c'\n'
+                if src[j] == c'/' and j + 1 < src.len and src[j + 1] == c'#'
+                    depth = depth + 1
+                    j = j + 2
+                else if src[j] == c'#' and j + 1 < src.len and src[j + 1] == c'/'
+                    if depth > 0
+                        depth = depth - 1
+                    j = j + 2
+                    if depth == 0
+                        # Block comment closed: check for content after it.
+                        while j < src.len and (src[j] == c' ' or src[j] == c'\t')
+                            j = j + 1
+                        if j >= src.len or src[j] == c'\n' or src[j] == c'#'
+                            return LineKind.block_comment_only()
+                        return LineKind.has_content()
+                else
+                    j = j + 1
+            # Block comment did not close on this line — spans multiple lines.
+            return LineKind.block_comment_only()
         return LineKind.has_content()
 
     # -- Indentation ---------------------------------------------------------
@@ -844,6 +868,19 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.comment_only
+                        while pos < src.len and src[pos] <> c'\n'
+                            pos = pos + 1
+                        if pos < src.len
+                            advanceNewline()
+                        atLineStart = true
+                        continue
+                    on LineKind.block_comment_only
+                        # Block comment occupies the whole line (possibly spanning multiple lines).
+                        # Consume indentation without emitting indent/dedent, scan the comment,
+                        # then advance past the newline without emitting eol.
+                        while pos < src.len and (src[pos] == c' ' or src[pos] == c'\t')
+                            pos = pos + 1
+                        scanBlockComment()?
                         while pos < src.len and src[pos] <> c'\n'
                             pos = pos + 1
                         if pos < src.len
