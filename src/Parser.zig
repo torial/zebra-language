@@ -646,6 +646,30 @@ test "parse: old expression in ensure clause" {
     try expectAccepts("class Foo\n\tdef push(x: int)\n\t\tensure\n\t\t\tcount == old count + 1\n");
 }
 
+// ── Acceptance: lambda-in-call argument patterns ──────────────────────────────
+
+test "parse: lambda-in-call with for loop body" {
+    // f(def()  \n  indent  for x in items  eol  indent  pass  eol  dedent  dedent  )
+    // This is the minimal lambda-in-call-arg with a nested block statement.
+    try expectAccepts("def main()\n\tvar items = List()\n\tf(def()\n\t\tfor x in items\n\t\t\tpass\n\t)\n");
+}
+
+test "parse: nested lambda-in-call (two levels)" {
+    // f(def()  \n  INDENT  g(def()  \n  INDENT  pass  eol  DEDENT  )  eol  DEDENT  )
+    // Two levels of lambda-in-call argument, stacked vertically.
+    // Token structure: open_call(f) def lparen rparen eol
+    //   INDENT  open_call(g) def lparen rparen eol
+    //     INDENT  pass eol  DEDENT  rparen eol
+    //   DEDENT  rparen eol
+    try expectAccepts("def main()\n\tf(def()\n\t\tg(def()\n\t\t\tpass\n\t\t)\n\t)\n");
+}
+
+test "parse: lambda-in-call with for loop containing nested lambda call" {
+    // f(def() for x in items g(def() pass ) )
+    // Three levels: outer lambda body → for body → inner lambda call
+    try expectAccepts("def main()\n\tvar items = List()\n\tf(def()\n\t\tfor x in items\n\t\t\tg(def()\n\t\t\t\tpass\n\t\t\t)\n\t)\n");
+}
+
 // ── Acceptance: tuple types and destructuring ─────────────────────────────────
 
 test "parse: tuple return type (int, int)" {

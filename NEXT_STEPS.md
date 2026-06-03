@@ -163,6 +163,26 @@ handles all their known methods and returns; unhandled methods fall through to M
 a safe fallback.  Additive strategy — Mode 2 kept for `infer_ctx == nil` paths (field
 defaults) and TC gaps.  Bootstrap 5/5, 112/112 smoke.  See commit 6c1c072.
 
+### 25. Block comment syntax `/#  #/` (Milestone 0.15 / any sprint)
+
+Multi-line block comment analogous to `/* */` in C.  Pairs naturally with the `#` line-comment syntax.
+
+**Syntax:**
+```zebra
+/# This is a
+   multi-line comment #/
+```
+
+**Design decisions:**
+- **Nested `/#  #/` supported** — one nesting counter in the tokenizer; prevents the classic "can't comment out code that already contains a block comment" problem.
+- Close token: `#/`; tokenizer scans forward until `#/` counting `/#`/`#/` pairs.
+- EOF with open `/#`: clean error "unterminated block comment starting at line N".
+- No interaction with `#` line comments — inside `/#  #/`, `#` is inert.
+
+**Effort:** ~1 day (tokenizer + lexer; no AST/parser changes needed since comments are whitespace to the parser).
+
+---
+
 ### 6. REPL (Milestone 0.11)
 Two-phase approach: warm-up pre-compiled preamble once → per-input incremental compile.
 "Accumulate and rerun" state model (all previous cells stay in scope).
@@ -451,6 +471,78 @@ Swerver's zero-copy header parser works because Zig can express `[]const u8` sli
 `Pool(T)()` already exists as an allocator wrapper.  What swerver adds on top: a LIFO free-index stack (O(1) acquire/release) and an acquired bitmap for double-release detection in debug mode (`BoundedPool(T, N, .debug)`).  Useful beyond HTTP: any program managing fixed pools of buffers (audio, video, network I/O) benefits from the correctness guarantee with zero overhead on the success path.
 
 See: `wiki/pages/concepts/concept_zebra-http-design.md`
+
+### 26. 1.5 — Zig built-in function access
+
+Expose Zig's ~100 `@builtins` in idiomatic Zebra for engine-level and systems code.
+Removes a primary impediment to writing GameEngine / systems code directly in Zebra rather than dropping to raw Zig.
+
+**Three-tier design:**
+
+**Tier 1 — Native Zebra promotions** (codegen emits the Zig builtin directly; no namespace):
+```zebra
+sizeof(T)      # → @sizeOf(T)
+alignof(T)     # → @alignOf(T)
+typeof(expr)   # → @TypeOf(expr)
+bitcast(T, x)  # → @bitCast(x)  (T in type position, Zig ≥ 0.12)
+```
+These appear constantly in low-level code; wrapping them in a namespace is friction.
+**Stability contract:** Tier 1 names are part of the Zebra stability commitment.
+The underlying Zig builtin names are a hidden implementation detail — if Zig ever renames
+one (rare), only the codegen mapping changes; the Zebra surface stays stable. Document in
+QUICKSTART §§ accordingly.
+
+**Tier 2 — Semantic namespaces** for coherent clusters:
+```zebra
+# Thread-safety primitives
+Atomic.load(ptr, order)
+Atomic.store(ptr, val, order)
+Atomic.rmw(op, ptr, val, order)      # @atomicRmw
+Atomic.cmpxchg(ptr, exp, new, succ, fail)  # covers both strong/weak variants
+Atomic.fence(order)
+
+# Pointer manipulation
+Ptr.cast(T, ptr)            # @ptrCast
+Ptr.alignCast(T, ptr)       # @alignCast
+Ptr.fromInt(T, n)           # @ptrFromInt
+Ptr.toInt(ptr)              # @intFromPtr
+Ptr.fieldParent(T, f, ptr)  # @fieldParentPtr
+
+# Integer overflow + bit ops
+Int.addWrap(a, b)    # @addWithOverflow → struct {value, overflow: bool}
+Int.subWrap(a, b)    # @subWithOverflow
+Int.mulWrap(a, b)    # @mulWithOverflow
+Int.clz(x)           # @clz
+Int.ctz(x)           # @ctz
+Int.popcount(x)      # @popcount
+Int.bitReverse(x)    # @bitReverse
+Int.reverseBytes(x)  # @reverseBytes
+
+# SIMD (complement to existing Zebra SIMD types)
+Simd.shuffle(T, a, b, mask)  # @shuffle
+Simd.splat(T, scalar)        # @splat
+Simd.reduce(op, vec)         # @reduce
+Simd.select(mask, a, b)      # @select
+```
+Cluster rationale: `Atomic` groups by semantics (all thread-safety), not by first-argument type — demonstrates why a "cluster by first arg type" scheme fails (atomics span `anytype`, `*anytype`, and zero-arg `@fence`).
+
+**Tier 3 — Transparent `@name(args)` pass-through** for the remaining ~60 builtins:
+```zebra
+@compileError("message")   # direct emit to Zig — zero Zebra changes needed
+@typeInfo(T)
+@hasField(T, "name")
+@hasDecl(T, "name")
+@memcpy(dest, src)
+@memset(dest, val, len)
+@trap()
+@breakpoint()
+```
+`@` prefix is unambiguous in Zebra expression position (nothing else starts with `@`).
+Codegen emits verbatim.  Any future Zig builtin works on day-zero with no Zebra compiler changes — this is the deliberate escape hatch for keeping up with Zig's evolving stdlib.
+
+**Effort:** Tier 1 promotions: ~1 day. Tier 2 namespaces: ~3 days. Tier 3 `@name` pass-through: ~1 day. Total: ~1 week.
+
+---
 
 ### 22. 2.0 — Kernel track (Zebra for OS-writing)
 2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no

@@ -133,6 +133,8 @@ union Type_
     sqlite_row_list
     # GUI context passed to view(g: Gui, ...) in MVU programs.
     gui_context
+    # JSON dynamic value (std.json.Value) returned by Json.parse/object/array.
+    json_value
     # Generic collections with element/key/value type info.
     # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
     list_: ^Type_
@@ -1403,7 +1405,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "encrypt"
                                 return Type_.string_
                             return Type_.optional(Type_.string_)  # decrypt → ?str
-                    # ── Json static-method TC inference (intentionally absent) ──
+                        if bname == "Json"
+                            if mem.member == "object" or mem.member == "array"
+                                return Type_.json_value
+                            if mem.member == "parse"
+                                return Type_.optional(Type_.json_value)
+                            if mem.member == "stringify"
+                                return Type_.string_
+                            return Type_.unresolved
+                    # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
                     # are dispatched by codegen.zbr::genJsonCall (~line 6848);
@@ -1530,6 +1540,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(chan_elem)
                             if cmname == "send" or cmname == "close"
                                 return Type_.void_
+                        on Type_.json_value
+                            var jmname: str = mem.member
+                            if jmname == "getStr" or jmname == "getObj"
+                                return Type_.string_
+                            if jmname == "getInt"
+                                return Type_.int_
+                            if jmname == "getFloat"
+                                return Type_.float_
+                            if jmname == "getBool"
+                                return Type_.bool_
+                            if jmname == "getList"
+                                return Type_.list_(Type_.json_value)
+                            if jmname == "put" or jmname == "putInt" or jmname == "putFloat" or jmname == "putBool"
+                                return Type_.void_
+                            if jmname == "append" or jmname == "appendInt" or jmname == "appendFloat" or jmname == "appendBool"
+                                return Type_.void_
+                            if jmname == "isNull" or jmname == "isObject" or jmname == "isArray"
+                                return Type_.bool_
+                            if jmname == "stringify"
+                                return Type_.string_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
                             if hmname == "fetch"

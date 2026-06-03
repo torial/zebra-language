@@ -1014,7 +1014,7 @@ fn _json_parse(src: []const u8) ?JsonValue {
 fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }
-fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) }; }
+fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
 fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
 fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .string => |s| return s, else => {} }, else => {} }
@@ -1035,7 +1035,7 @@ fn _json_get_bool(v: JsonValue, key: []const u8) bool {
 }
 fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
-    return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) };
+    return .{ .object = std.json.ObjectMap.empty };
 }
 fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
@@ -1046,19 +1046,19 @@ fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, el
 fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
 fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
 }
 fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
 }
 fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
 }
 fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
 }
 fn _json_arr_str(v: *JsonValue, val: []const u8) void {
     if (v.* != .array) return;

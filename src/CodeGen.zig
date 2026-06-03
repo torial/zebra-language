@@ -3361,7 +3361,7 @@ const Generator = struct {
             \\fn _lui_slider_cb(_sld: *ui.Slider, _m: ?*_LuiMut) anyerror!void {
             \\    if (_m) |p| p.sval = _sld.Value();
             \\}
-            \\fn _lui_cmb_cb(_c: *ui.Combobox, _m: ?*_LuiMut) void {
+            \\fn _lui_cmb_cb(_c: *ui.Combobox, _m: ?*_LuiMut) anyerror!void {
             \\    if (_m) |p| p.sval = _c.Selected();
             \\}
             \\fn _lui_spn_cb(_s: *ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
@@ -3684,7 +3684,7 @@ const Generator = struct {
             \\        const _init: c_int = @intCast(_sel);
             \\        _cmb.SetSelected(_init);
             \\        _r.m.sval = _init;
-            \\        ui.Combobox.OnSelected(_cmb, _LuiMut, _lui_cmb_cb, _r.m);
+            \\        ui.Combobox.OnSelected(_cmb, _LuiMut, anyerror, _lui_cmb_cb, _r.m);
             \\        _r.m.ctrl = _cmb.as_control();
             \\        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
             \\    }
@@ -3693,7 +3693,7 @@ const Generator = struct {
             \\fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
             \\    const _r = _lui_iget(_label);
             \\    if (_r.fresh) {
-            \\        const _spn = ui.Spinbox.New(@intCast(_min), @intCast(_max)) catch return _value;
+            \\        const _spn = ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
             \\        _spn.SetValue(@intCast(_value));
             \\        _r.m.sval = @intCast(_value);
             \\        ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);

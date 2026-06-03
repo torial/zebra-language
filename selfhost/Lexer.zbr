@@ -72,8 +72,7 @@ class Lexer
     var inLambdaParams   : bool
     var lambdaParamDepth : int
     var afterLambdaParams: bool
-    var lambdaBodyActive : bool
-    var lambdaIndentLevel: int
+    var lambdaStack      : List(int)   # one entry per active lambda body (its start indent depth)
     # Ensure-block context-sensitive keyword tracking
     var afterEnsureEol  : bool
     var ensureBaseDepth : int
@@ -90,8 +89,7 @@ class Lexer
         inLambdaParams    = false
         lambdaParamDepth  = 0
         afterLambdaParams = false
-        lambdaBodyActive  = false
-        lambdaIndentLevel = 0
+        lambdaStack       = List()
         afterEnsureEol    = false
         ensureBaseDepth   = 0
 
@@ -201,8 +199,8 @@ class Lexer
             afterEnsureEol = false
         if ensureBaseDepth > 0 and level < ensureBaseDepth
             ensureBaseDepth = 0
-        if lambdaBodyActive and indentDepth <= lambdaIndentLevel
-            lambdaBodyActive = false
+        while lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
+            lambdaStack.remove(lambdaStack.len - 1)
 
     # -- Block comment  /# ... #/ --------------------------------------------
 
@@ -831,12 +829,11 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
+                        if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
                             emit(TokenKind.eol(), "\n", ln, cl)
                             if afterLambdaParams
                                 afterLambdaParams = false
-                                lambdaBodyActive  = true
-                                lambdaIndentLevel = indentDepth
+                                lambdaStack.add(indentDepth)
                         atLineStart = true
                         continue
                     on LineKind.whitespace_only
@@ -854,7 +851,7 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.has_content
-                        if parenDepth == 0 or lambdaBodyActive
+                        if parenDepth == 0 or lambdaStack.len > 0
                             processIndentation()?
 
             var c = src[pos]
@@ -867,12 +864,11 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
+                if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
                     emit(TokenKind.eol(), "\n", ln, cl)
                     if afterLambdaParams
                         afterLambdaParams = false
-                        lambdaBodyActive  = true
-                        lambdaIndentLevel = indentDepth
+                        lambdaStack.add(indentDepth)
                 atLineStart = true
                 continue
 

@@ -8031,6 +8031,72 @@ struct Generator
                             w.emit("\"\"")
                         w.emit(")")
                         return
+                on Type_.json_value
+                    # read-only get methods
+                    var jget_fn = ""
+                    if mname == "getStr": jget_fn = "_json_get_str"
+                    else if mname == "getInt": jget_fn = "_json_get_int"
+                    else if mname == "getFloat": jget_fn = "_json_get_float"
+                    else if mname == "getBool": jget_fn = "_json_get_bool"
+                    else if mname == "getObj": jget_fn = "_json_get_obj"
+                    else if mname == "getList": jget_fn = "_json_get_list"
+                    if jget_fn != ""
+                        w.emit(jget_fn)
+                        w.emit("(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.count() > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    # predicate methods
+                    var jpred_fn = ""
+                    if mname == "isNull": jpred_fn = "_json_is_null"
+                    else if mname == "isObject": jpred_fn = "_json_is_object"
+                    else if mname == "isArray": jpred_fn = "_json_is_array"
+                    if jpred_fn != ""
+                        w.emit(jpred_fn)
+                        w.emit("(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "stringify"
+                        w.emit("_json_stringify(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    # mutating put methods
+                    var jput_fn = ""
+                    if mname == "put": jput_fn = "_json_put_str"
+                    else if mname == "putInt": jput_fn = "_json_put_int"
+                    else if mname == "putFloat": jput_fn = "_json_put_float"
+                    else if mname == "putBool": jput_fn = "_json_put_bool"
+                    if jput_fn != ""
+                        w.emit(jput_fn)
+                        w.emit("(&")
+                        genExpr(m.object)
+                        for a in args
+                            w.emit(", ")
+                            genExpr(a.value)
+                        w.emit(")")
+                        return
+                    # array append methods
+                    var jarr_fn = ""
+                    if mname == "append": jarr_fn = "_json_arr_str"
+                    else if mname == "appendInt": jarr_fn = "_json_arr_int"
+                    else if mname == "appendFloat": jarr_fn = "_json_arr_float"
+                    else if mname == "appendBool": jarr_fn = "_json_arr_bool"
+                    if jarr_fn != ""
+                        w.emit(jarr_fn)
+                        w.emit("(&")
+                        genExpr(m.object)
+                        for a in args
+                            w.emit(", ")
+                            genExpr(a.value)
+                        w.emit(")")
+                        return
                 on Type_.string_builder
                     if mname == "append"
                         genExpr(m.object)
