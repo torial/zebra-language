@@ -103,6 +103,7 @@ union PNode
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
     expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
     expr_opt_chain: ^POptChain         # expr?.member / expr?.method(args)
+    expr_if_expr: ^PIfExpr             # if cond: val else: other  (inline ternary)
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -617,6 +618,15 @@ struct POptChain
         .member = member
         .has_args = has_args
         .args = args
+
+struct PIfExpr
+    var cond: List(PNode)       # single element: condition expression
+    var then_expr: List(PNode)  # single element: then-branch expression
+    var else_expr: List(PNode)  # single element: else-branch expression
+    cue init(cond: List(PNode), then_expr: List(PNode), else_expr: List(PNode))
+        .cond = cond
+        .then_expr = then_expr
+        .else_expr = else_expr
 
 struct PExprId
     var name: str
@@ -2797,6 +2807,19 @@ class Parser
             return PNode.expr_id(PExprId(name, id_line, id_col))
         else if .textIs("def") and .peekAt(1).text == "("
             return .parseLambdaExpr()
+        else if .textIs("if")
+            # Inline ternary: if cond: then_val else: else_val
+            .advance()
+            var cond_nodes = List(PNode)()
+            cond_nodes.add(.parseExpr())
+            .expectText(":")
+            var then_nodes = List(PNode)()
+            then_nodes.add(.parseExpr())
+            .expectText("else")
+            .expectText(":")
+            var else_nodes = List(PNode)()
+            else_nodes.add(.parseExpr())
+            return PNode.expr_if_expr(PIfExpr(cond_nodes, then_nodes, else_nodes))
         raise .errorAt("unexpected expression token: '" + .peek().text + "'")
 
     def parseLambdaExpr(): PNode throws

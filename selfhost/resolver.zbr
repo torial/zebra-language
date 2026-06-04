@@ -22,7 +22,7 @@
 #   - Recursive tree walking: resolveStmt - resolveExpr
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
-use Parser exposing PNode, PParam, POptChain
+use Parser exposing PNode, PParam, POptChain, PIfExpr
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
 # 0 = class / union
@@ -335,6 +335,13 @@ class Resolver
                 for e in poc.base
                     .resolveExpr(e)
                 for e in poc.args
+                    .resolveExpr(e)
+            on PNode.expr_if_expr as pie
+                for e in pie.cond
+                    .resolveExpr(e)
+                for e in pie.then_expr
+                    .resolveExpr(e)
+                for e in pie.else_expr
                     .resolveExpr(e)
             else
                 # Literals (int, float, bool, str, nil, this) need no resolution
