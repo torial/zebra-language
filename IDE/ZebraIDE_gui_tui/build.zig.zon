@@ -1,0 +1,13 @@
+.{
+    .name                 = .app,
+    .version              = "0.0.1",
+    .minimum_zig_version  = "0.16.0",
+    .fingerprint          = 0xc96e70cf4d3a38ad,
+    .dependencies = .{
+        .zigzag = .{
+            .url  = "git+https://github.com/meszmate/zigzag#v0.1.5",
+            .hash = "zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

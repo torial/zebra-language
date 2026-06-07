@@ -3014,7 +3014,7 @@ struct Generator
 
     def genSig(sd: DeclSig)
         writeIndent()
-        w.emit("const ")
+        w.emit("pub const ")
         w.emit(sd.name)
         w.emit(" = *const fn(")
         var first = true

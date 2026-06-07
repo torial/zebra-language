@@ -8577,7 +8577,7 @@ pub const Generator = struct {
     pub fn genSig(self: *Generator, sd: DeclSig) void {
         defer self._check_invariant();
         self.writeIndent();
-        self.w.emit("const ");
+        self.w.emit("pub const ");
         self.w.emit(sd.name);
         self.w.emit(" = *const fn(");
 // zbr:selfhost/codegen.zbr:3020
@@ -23571,4 +23571,12 @@ fn _reflect_lookup_fields(tag: u64) _ReflectStrSlice {
 fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
     if (tag == _ttag_Writer) return .{ .items = _reflect_Writer_field_types };
     return .{ .items = &.{} };
+}
+
+fn _zbr_error_msg() []const u8 {
+    if (_error_ctx.message.len > 0) return _error_ctx.message;
+    if (@import("ast.zig")._error_ctx.message.len > 0) return @import("ast.zig")._error_ctx.message;
+    if (@import("cg_helpers.zig")._error_ctx.message.len > 0) return @import("cg_helpers.zig")._error_ctx.message;
+    if (@import("typechecker.zig")._error_ctx.message.len > 0) return @import("typechecker.zig")._error_ctx.message;
+    return "";
 }

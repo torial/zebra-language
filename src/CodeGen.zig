@@ -3905,10 +3905,10 @@ const Generator = struct {
     // ── sig ───────────────────────────────────────────────────────────────────
 
     fn genSig(g: Generator, n: *Ast.DeclSig) anyerror!void {
-        // Emit: `const Name = *const fn(T1, T2) R;`
-        // This makes `Name` a usable Zig type alias for the function pointer type.
+        // Emit: `pub const Name = *const fn(T1, T2) R;`
+        // pub is required so cross-module `use mod exposing SigType` can resolve the type.
         try g.writeIndent();
-        try g.w.print("const {s} = *const fn(", .{n.name});
+        try g.w.print("pub const {s} = *const fn(", .{n.name});
         for (n.params, 0..) |p, i| {
             if (i > 0) try g.w.writeAll(", ");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
