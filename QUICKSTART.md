@@ -771,10 +771,12 @@ def sign(n: int): String
 #   - Control structures (while, for, branch) still require block form
 
 # Inline if as an expression — use in var init, function args, or any expression position:
-var label = if score >= 90: "A" else if score >= 80: "B" else: "C"
-var clamped = if x < 0: 0 else if x > 100: 100 else: x
+var label = if score >= 60: "pass" else: "fail"
 print(if ready: "yes" else: "no")
-var abs = if n >= 0: n else: -n
+var abs_n: int = if n >= 0: n else: -n
+# Only simple if/else — chained else-if is NOT supported in expression position.
+# For grades/ranges, use the statement form instead:
+#   if score >= 90: letter = "A" else if score >= 80: letter = "B" else: letter = "C"
 ```
 
 - **Expression if** requires an `else:` branch (both branches must be present for the
@@ -1326,10 +1328,9 @@ sort(items, def(a: int, b: int): int
     return a - b
 )
 
-# Lambda with multiple statements:
-items.forEach(def(x: int)
-    var doubled = x * 2
-    print "${x} → ${doubled}"
+# Lambda with multiple statements — sort descending:
+items.sortBy(def(a: int, b: int): bool
+    return a > b
 )
 
 # Nested lambdas as call arguments are supported:
