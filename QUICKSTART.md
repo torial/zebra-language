@@ -770,6 +770,22 @@ def sign(n: int): String
 #   - No capture binding (`as`) in inline form — use block form for that
 #   - Control structures (while, for, branch) still require block form
 
+# Inline if as an expression — use in var init, function args, or any expression position:
+var label = if score >= 90: "A" else if score >= 80: "B" else: "C"
+var clamped = if x < 0: 0 else if x > 100: 100 else: x
+print(if ready: "yes" else: "no")
+var abs = if n >= 0: n else: -n
+```
+
+- **Expression if** requires an `else:` branch (both branches must be present for the
+  compiler to infer a type).  The two branch values must be the same type.
+- The `else:` must appear on the same line as `if`.  Block-body branches are not
+  supported in expression position — use a block-form `if` and a temporary variable.
+- `if cond: stmt` (no `else`) is a **statement** form only; when used as an expression
+  the `else:` is mandatory.
+
+```zebra
+
 # while
 var i = 0
 while i < 10
@@ -1298,6 +1314,38 @@ def view(g: Gui, model: Model)
         click_count()
 ```
 
+### §19.2 Lambda as a call argument
+
+A statement-body lambda can be passed **directly as a call argument** without first
+assigning it to a variable.  The indentation of the lambda body is relative to the
+`def` keyword, and the closing `)` of the call sits at the outer indent level:
+
+```zebra
+# Single lambda argument — inline sort comparator:
+sort(items, def(a: int, b: int): int
+    return a - b
+)
+
+# Lambda with multiple statements:
+items.forEach(def(x: int)
+    var doubled = x * 2
+    print "${x} → ${doubled}"
+)
+
+# Nested lambdas as call arguments are supported:
+result = outer(def()
+    inner(def()
+        pass
+    )
+)
+```
+
+**Rules:**
+- The `def(params)` keyword starts the lambda; its body is the indented block that follows.
+- The call's closing `)` must be dedented to the level of the **call site** (not the lambda body).
+- Nesting is unlimited — each inner `def(` starts its own indented body.
+- Named keyword arguments work the same way: `f(key: def() body )`.
+
 ---
 
 ## 20. `sig` — function type aliases
@@ -1323,7 +1371,23 @@ def main
 
 ### How sigs work
 
-- `sig` resolves to `*const fn(T1, T2, ...) R` in Zig.
+- `sig` resolves to `pub const Name = *const fn(T1, T2, ...) R` in Zig (exported as
+  `pub` so it can be imported from other modules).
+- **Cross-module export:** `sig` types declared at module scope are importable with
+  `use module exposing SigType`.  A module that consumes a callback type from another
+  module does not need to redeclare it:
+
+```zebra
+# callbacks.zbr
+sig OnReady()
+sig OnError(msg: str)
+
+# main.zbr
+use callbacks exposing OnReady, OnError
+def run(cb: OnReady)
+    cb()
+```
+
 - **Structural typing:** any `static def` or lambda with a matching parameter list and
   return type is compatible — no explicit `implements` required.
 - **Calling through a `sig` variable:**

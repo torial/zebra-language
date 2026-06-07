@@ -34,7 +34,7 @@ Update status and check the box as each item is addressed.
 | [x] | 2.3 | Operators and expressions (precedence table) | ✅ good | §3.1 added 2026-05-26: 10-level precedence table (postfix → pipeline) |
 | [x] | 2.4 | String operations and interpolation | ✅ good | §14 |
 | [x] | 2.5 | Raw strings (`r"…"`), triple-quoted strings (`"""…"""`) | ✅ good | §14 expanded 2026-05-26: r'/r" distinction, single-line vs multiline """, exact 3-step stripping rules, content-indent preservation, what each form can contain |
-| [x] | 2.6 | Control flow — if/else, inline if, while, for, for-else | ✅ good | §13 |
+| [x] | 2.6 | Control flow — if/else, inline if, while, for, for-else | ✅ good | §13; inline if-expression (expression-position `if cond: val else: other`) added 2026-06-06 |
 | [x] | 2.7 | Pattern matching — `branch`/`on`, multi-pattern, guard | ✅ good | §9 (within unions) |
 | [x] | 2.8 | Functions — def, parameters, named/default args, return types | ✅ good | §4 expanded 2026-05-26: mixing order, non-contiguous skipping, runtime defaults, type annotation rule |
 | [x] | 2.9 | Error handling — `throws`, `raise`, `?`, `catch` | ✅ good | §12 covers throws/raise/catch/?; Result(T) was removed (BUG-074, 2026-04-19) — stale note purged (2026-05-26) |
@@ -77,7 +77,8 @@ Update status and check the box as each item is addressed.
 |------|---|-------|--------|-------|
 | [x] | 5.1 | Lambda / closures — syntax, capture semantics, lifetime | ✅ good | §19.1 expanded 2026-05-26: mutation detection (`*@This()` vs `@This()`), class-ptr vs value-type captures, factory pattern |
 | [x] | 5.2 | `capture` blocks — persistent per-instance state | ✅ good | §19.1 added 2026-05-26: full semantics, factory pattern, GUI example |
-| [x] | 5.3 | `sig` — function type aliases | ✅ good | §20 expanded 2026-05-26: structural typing, calling through sig var, lambda assignment, field pattern |
+| [x] | 5.3 | `sig` — function type aliases | ✅ good | §20 expanded 2026-05-26: structural typing, calling through sig var, lambda assignment, field pattern; cross-module export (`pub const`) added 2026-06-06 |
+| [x] | 5.6 | Lambda-in-call — statement-body lambdas as call arguments, nested form | ✅ good | §19.2 added 2026-06-06: indent rules, nested lambda example, closing `)` rule |
 | [x] | 5.4 | `with` — contextual self | ✅ good | §39 expanded 2026-05-26: rewrite table, nested with, captures, top-level-only rule |
 | [x] | 5.5 | `orelse` operator | ✅ good | §11 updated 2026-05-26: `??` error corrected to `orelse`, vs-catch distinction, clear semantics |
 
@@ -222,21 +223,26 @@ Items in rough priority order for the next documentation sprint:
 
 ### P6 — All resolved
 
-All 81 items now ✅ good.
+All 83 items now ✅ good.
 
 ---
 
-## Stats snapshot (2026-05-26, sprint 2 final)
+## Stats snapshot (2026-06-06, post-sprint additions)
 
 | Status | Count |
 |--------|-------|
-| ✅ good | 81 |
+| ✅ good | 83 |
 | ⚠️ thin | 0 |
 | ❌ missing | 0 |
 | 🔴 stale | 0 |
-| **Total tracked** | **81** |
+| **Total tracked** | **83** |
 
-_Sprint 2 complete: all 81 items ✅ good._
+_Sprint 2 complete: all 81 items ✅ good (2026-05-26)._
+
+_Post-sprint additions (2026-06-06) from compiler features landed in feat/zig-0.16-upgrade-wip:_
+- _2.6 extended: inline if-expression in expression position — §13 (nested lambda-in-call commit + if-expr commit)_
+- _5.3 extended: `sig` cross-module export via `pub const` — §20 (sig pub export commit)_
+- _5.6 new: Lambda-in-call / nested lambda-as-argument — §19.2_
 
 _New items captured as pre-1.0 (added to NEXT_STEPS.md 0.15 cluster):_
 - _Nested namespace syntax (`namespace Foo.Bar` / `struct`-inside-namespace workaround documented)_
