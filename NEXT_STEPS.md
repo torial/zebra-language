@@ -2,7 +2,14 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-27 (§19a boundary-restart complete: 152/152 smoke, bootstrap 5/5; enum tracking fix in selfhost TC inferExpr; regex per-quantifier explicitly post-1.0)
+**Last updated:** 2026-06-07 (audit pass: §12 closed against BUG-115 fix; §21 REPL framing clarified; book Ch12/Ch13/Ch15/Appendix A reworked for current `throws`/`catch`/pipeline/`sig` syntax)
+
+> **Sections:**
+> - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
+> - **Open Bugs** — known issues without an open milestone slot.
+> - **Medium Term** — §12, §19, §19.5, §21, §24, §25 — feature clusters with their own histories.
+> - **Longer Term (pre-1.0)** — §23 memory model, §15 1.0 stabilization.
+> - **Post-1.0 deferred** — items explicitly punted; see grep for "post-1.0" / "deferred".
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -238,18 +245,15 @@ Interface vtable construction, shim functions, DynLib stdlib, and demo files are
 Full DLL round-trip (build plugin → load from host) requires platform build steps — not in CI.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 12. Syntax and ergonomics cleanup (Milestone 0.13)
+### 12. Syntax and ergonomics cleanup (Milestone 0.13) — ✅ ALL DONE
 
-**Open compiler work:**
-- **BUG-115** — Real `private` / `internal` visibility keywords (language proposal;
-  `_` prefix has zero compiler enforcement today). Decision needed before 1.0.
-
-**Open sweeps (pending BUG-115 decision):**
-- `_underscore` private prefix → drop (blocked on BUG-115 outcome)
-
-**Open docs:**
-- Book documentation for `sig`, raw strings, `"""`
-- `^T` auto-boxing ✅ — done 2026-05-14 (see 0.13 remaining above)
+- **BUG-115** ✅ FIXED 2026-05-14 — `private` / `public` / `internal` / `protected`
+  keywords parsed + enforced in both backends; TC error outside owning class;
+  cross-module `internal` excluded from interface table; 99/99 smoke, bootstrap 5/5.
+- `_underscore` private prefix — **retained only for compiler-emitted internals**
+  (no user-facing sweep needed; the visibility keywords cover user code).
+- Book documentation for `sig`, raw strings, `"""` ✅ — present in QUICKSTART §20, §14.
+- `^T` auto-boxing ✅ — done 2026-05-14 (see 0.13 remaining above).
 
 **Done (reference):**
 - BUG-111 ✅ — compound assign already works (closed not-a-bug 2026-05-05)
@@ -295,6 +299,11 @@ Selfhost: `collected_decls`/`parse_errors` fields + `tryParseTopDeclInto()` in
 dep-mode `_zbr_error_msg` limitation. 152/152 smoke, bootstrap 5/5.
 
 ### 21. Milestone 0.11 — remaining items
+
+> All originally-tracked 0.11 items now ship. The REPL (`zebra repl`)
+> shipped at the 0.11 milestone (2026-05-13, commit 18bccac); any
+> incremental-compile / latency-optimization work is post-1.0 and gated
+> on Zig 0.17 incremental linker.
 
 - **gzip compress** ✅ — `std.compress.flate.Compress.init` + round-trip test; 124/124 smoke, bootstrap 5/5 (2026-05-20).
 - **JSON auto-inference** — `Json.parse(T, str)` without a separate `as T` annotation.
