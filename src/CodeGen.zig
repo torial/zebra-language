@@ -143,6 +143,7 @@ pub fn generate(
     build_mode:           bool,
     list_targets_mode:    bool,
     tag_filter:           ?[]const u8,
+    library_mode:         bool,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -199,6 +200,7 @@ pub fn generate(
         .build_mode          = build_mode,
         .list_targets_mode   = list_targets_mode,
         .tag_filter          = tag_filter,
+        .library_mode        = library_mode,
         .module              = module,
         .dynlib_vars         = &dynlib_vars,
         .type_alias_decls    = &type_alias_decls,
@@ -1720,6 +1722,14 @@ const Generator = struct {
     /// When true, inject `_list_targets_mode = true;` at the start of `main()` so
     /// `_build_run()` outputs a JSON target graph instead of invoking the compiler.
     list_targets_mode: bool = false,
+    /// When true, omit `defer _arena.deinit();` from the generated `main()`.
+    /// Used when the .zig output is linked into a host program (e.g. the
+    /// GameEngine's script-binding layer) where `main()` returns to the host
+    /// instead of exiting the process — the script's arena needs to outlive
+    /// the call so that other modules that captured it (via _initAllocator)
+    /// keep working.  Standalone Zebra programs leave this false so the
+    /// arena gets cleaned at program exit.
+    library_mode: bool = false,
     /// When non-null, only run tests whose effective tags include this value.
     tag_filter: ?[]const u8 = null,
     /// Return type of the current method; null outside a method or for void methods.
@@ -3839,13 +3849,17 @@ const Generator = struct {
 
             const auto_run_line       = if (g.build_mode) "    _build_auto_run();\n" else "";
             const list_targets_prefix = if (g.list_targets_mode) "    _list_targets_mode = true;\n" else "";
+            // library_mode skips `defer _arena.deinit()` so the arena outlives
+            // main() — useful when the emitted .zig is linked into a host
+            // program (script-binding layer).  See GameEngine docs/CONCERNS.md #1.
+            const arena_deinit_line = if (g.library_mode) "" else "    defer _arena.deinit();\n";
             if (main_throws) {
                 try g.w.print(
                     "pub fn main(_zinit: std.process.Init) void {{\n" ++
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
-                    "    defer _arena.deinit();\n" ++
+                    "{s}" ++
                     "{s}" ++
                     "{s}" ++
                     "    {s}.main() catch |_err| {{\n" ++
@@ -3858,7 +3872,7 @@ const Generator = struct {
                     "    }};\n" ++
                     "{s}" ++
                     "}}\n",
-                    .{ alloc_init, list_targets_prefix, class_name, auto_run_line },
+                    .{ arena_deinit_line, alloc_init, list_targets_prefix, class_name, auto_run_line },
                 );
             } else {
                 try g.w.print(
@@ -3866,13 +3880,13 @@ const Generator = struct {
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
-                    "    defer _arena.deinit();\n" ++
+                    "{s}" ++
                     "{s}" ++
                     "{s}" ++
                     "    {s}.main();\n" ++
                     "{s}" ++
                     "}}\n",
-                    .{ alloc_init, list_targets_prefix, class_name, auto_run_line },
+                    .{ arena_deinit_line, alloc_init, list_targets_prefix, class_name, auto_run_line },
                 );
             }
         }
@@ -5009,7 +5023,9 @@ const Generator = struct {
                 try _eg.writeIndent(); try _eg.w.writeAll("_io = _zinit.io;\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("_args = _zinit.minimal.args;\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("_allocator = _arena.allocator();\n");
-                try _eg.writeIndent(); try _eg.w.writeAll("defer _arena.deinit();\n");
+                if (!g.library_mode) {
+                    try _eg.writeIndent(); try _eg.w.writeAll("defer _arena.deinit();\n");
+                }
                 if (g.gui_backend == .tui) {
                     try _eg.writeIndent(); try _eg.w.writeAll("_tui_env = _zinit.environ_map;\n");
                 }

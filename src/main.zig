@@ -93,6 +93,7 @@ pub fn main(init: std.process.Init) void {
     var test_mode: bool = false;
     var build_mode: bool = false;
     var list_targets_mode: bool = false;
+    var library_mode: bool = false;
     var build_file: ?[]const u8 = null;  // --build-file=FILE override
     var tag_filter: ?[]const u8 = null;
     var source_path: ?[]const u8 = null;
@@ -137,6 +138,13 @@ pub fn main(init: std.process.Init) void {
             release = true;
         } else if (std.mem.eql(u8, arg, "--turbo")) {
             turbo = true;
+        } else if (std.mem.eql(u8, arg, "--library-mode")) {
+            // Omit `defer _arena.deinit()` from the generated main().  Use when
+            // the .zig output will be linked into a host program that calls
+            // main() and continues — the script's arena must outlive the call
+            // so any modules that captured _allocator via _initAllocator keep
+            // working.  GameEngine script-binding layer uses this.
+            library_mode = true;
         } else if (std.mem.eql(u8, arg, "--warn-non-exhaustive")) {
             warn_non_exhaustive = true;
         } else if (std.mem.startsWith(u8, arg, "--gui-backend=")) {
@@ -252,7 +260,7 @@ pub fn main(init: std.process.Init) void {
     };
     defer alloc.free(src);
 
-    const exit_code = run(src, path, mode, gui_backend, release, turbo, warn_non_exhaustive, test_mode, build_mode, list_targets_mode, tag_filter, listen_port, module_paths.items, cpu, alloc) catch |err| {
+    const exit_code = run(src, path, mode, gui_backend, release, turbo, warn_non_exhaustive, test_mode, build_mode, list_targets_mode, library_mode, tag_filter, listen_port, module_paths.items, cpu, alloc) catch |err| {
         std.debug.print("internal compiler error: {}\n", .{err});
         std.process.exit(2);
     };
@@ -264,7 +272,7 @@ pub fn main(init: std.process.Init) void {
 /// Run the full pipeline on `src`.  Returns 0 on success, 1 on user-visible
 /// errors, 2 on backend (Zig compiler) errors.
 /// Internal (OOM etc.) errors propagate as Zig errors.
-fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, warn_non_exhaustive: bool, test_mode: bool, build_mode: bool, list_targets_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, module_paths: []const []const u8, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBackend, release: bool, turbo: bool, warn_non_exhaustive: bool, test_mode: bool, build_mode: bool, list_targets_mode: bool, library_mode: bool, tag_filter: ?[]const u8, listen_port: ?u16, module_paths: []const []const u8, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
     // ── 1. Tokenize ───────────────────────────────────────────────────────────
     var tok_diag: Tokenizer.Diag = .{};
     const tokens = Tokenizer.tokenizeWithDiag(src, alloc, &tok_diag) catch |err| {
@@ -422,7 +430,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
         buf = aw.toArrayList();
         try std.Io.File.stdout().writeStreamingAll(_io, buf.items);
         return 0;
@@ -438,7 +446,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
         buf = aw.toArrayList();
         const zf = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer zf.close(_io);
@@ -449,7 +457,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         return Debugger.runDebugSession(path, zig_path, c_sources.items, _io, alloc);
     }
 
-    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, tag_filter, cpu, alloc, &imported_modules);
+    return backend(module, &resolve, &tc, zig_path, mode, gui_backend, &native_uses, c_sources.items, emit_exports, release, turbo, test_mode, build_mode, list_targets_mode, library_mode, tag_filter, cpu, alloc, &imported_modules);
 }
 
 // ── Partial class merging ─────────────────────────────────────────────────────
@@ -981,7 +989,10 @@ fn compileZbrToZig(
     var buf = std.ArrayList(u8).empty;
     defer buf.deinit(alloc);
     var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-    _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null);
+    // Dep modules never get library_mode — only the top-level main entry point
+    // should skip the arena deinit.  Deps are library-shaped already; they only
+    // expose pub fns and don't emit main().
+    _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null, false);
     buf = aw.toArrayList();
 
     const f = try std.Io.Dir.cwd().createFile(_io, zig, .{});
@@ -1008,6 +1019,7 @@ fn backend(
     test_mode:           bool,
     build_mode:          bool,
     list_targets_mode:   bool,
+    library_mode:        bool,
     tag_filter:          ?[]const u8,
     cpu:                 ?[]const u8,
     alloc:               std.mem.Allocator,
@@ -1018,7 +1030,7 @@ fn backend(
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter);
+        const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
         buf = aw.toArrayList();
         const f = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer f.close(_io);

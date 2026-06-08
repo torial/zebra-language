@@ -452,7 +452,7 @@ fn runPipeline(src: []const u8, path: []const u8, alloc: std.mem.Allocator) !?[]
     var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
     _ = try CodeGen.generate(
         module, &resolve, &tc, alloc, &aw.writer,
-        .stub, &native_uses, false, &empty_imports, false, false, false, false, null,
+        .stub, &native_uses, false, &empty_imports, false, false, false, false, null, false,
     );
     buf = aw.toArrayList();
     return try buf.toOwnedSlice(alloc);
