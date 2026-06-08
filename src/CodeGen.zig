@@ -1538,6 +1538,24 @@ fn nameUsedInExpr(name: []const u8, expr: *const Ast.Expr) bool {
             for (e.parts) |p| if (p == .expr and nameUsedInExpr(name, p.expr)) break :blk true;
             break :blk false;
         },
+        // BUG-FIX: previously fell through to the `else => false` arm, so
+        // names used in a lambda's capture-init or body were treated as
+        // unused at the outer scope — causing spurious `_ = name;` cleanup
+        // emit that conflicted with later use at the capture construction
+        // site.
+        .lambda    => |e| blk: {
+            // 1) Capture init expressions always reference outer scope.
+            for (e.capture) |cv| {
+                if (cv.init) |ie| if (nameUsedInExpr(name, ie)) break :blk true;
+            }
+            // 2) Body — recurse unless a param or capture-field shadows `name`.
+            for (e.params) |p| if (std.mem.eql(u8, p.name, name)) break :blk false;
+            for (e.capture) |cv| if (std.mem.eql(u8, cv.name, name)) break :blk false;
+            switch (e.body) {
+                .expr  => |ex| break :blk nameUsedInExpr(name, ex),
+                .stmts => |ss| break :blk nameUsedInStmts(name, ss),
+            }
+        },
         else       => false,
     };
 }

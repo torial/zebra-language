@@ -3392,7 +3392,7 @@ fn _sys_self_exe() []const u8 {
 }
 const Token = @import("Token.zig");
 const TokenKind = Token.TokenKind;
-const CharPred = *const fn(u21) bool;
+pub const CharPred = *const fn(u21) bool;
 pub fn isDigit(c: u21) bool {
 // zbr:selfhost\Lexer.zbr:22
     switch (c) {

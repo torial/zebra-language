@@ -10383,8 +10383,11 @@ struct Generator
                 if cv.type_ != nil
                     fg.genType(cv.type_ to!)
                 else if cv.init_expr != nil
+                    # BUG-FIX: previously emitted @TypeOf(cv.name) here, but cv.name
+                    # is the field name — not in scope at struct definition time.
+                    # Use @TypeOf(<init expression>) instead so Zig can infer.
                     fg.w.emit("@TypeOf(")
-                    fg.w.emit(cv.name)
+                    fg.genExpr(cv.init_expr to!)
                     fg.w.emit(")")
                 else
                     fg.w.emit("anytype")
@@ -10447,7 +10450,11 @@ struct Generator
                 w.emit(cv.name)
                 w.emit(" = ")
                 if cv.init_expr != nil
-                    w.emit(cv.name)
+                    # BUG-FIX: previously emitted cv.name here, which only worked
+                    # when the capture decl's name happened to match an outer-scope
+                    # var of the same name.  Emit the actual init expression instead
+                    # (matches the bootstrap codegen at src/CodeGen.zig:9205).
+                    genExpr(cv.init_expr to!)
                 else
                     w.emit("undefined")
                 w.emit(", ")

@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param
+use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -468,6 +468,34 @@ def nameUsedInExpr(name: str, expr: Expr): bool
                 if nameUsedInExpr(name, arg.value)
                     return true
             return false
+        on Expr.lambda as lam
+            # BUG-FIX: previously the lambda case fell into the else branch
+            # and returned false, so names used inside a lambda's capture-init
+            # or body were treated as unused at the outer scope — leading to
+            # spurious `_ = name;` cleanup emit that conflicted with later use.
+            #
+            # Walk:
+            #   1. capture init expressions (these always reference outer scope)
+            #   2. lambda body, UNLESS a lambda param or capture-field with the
+            #      same name shadows the outer ident
+            for cap in lam.captures
+                if cap.init_expr != nil
+                    if nameUsedInExpr(name, cap.init_expr to!)
+                        return true
+            # Shadowing check: does a lambda param shadow `name`?
+            for p in lam.params
+                if p.name == name
+                    return false
+            # Shadowing check: does a capture field shadow `name`?
+            for cap2 in lam.captures
+                if cap2.name == name
+                    return false
+            # Body refs are not shadowed; recurse.
+            branch lam.body_
+                on LambdaBody.expr_ as ex
+                    return nameUsedInExpr(name, ex)
+                on LambdaBody.stmts as ss
+                    return nameUsedInStmts(name, ss)
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit -- no user idents
             return false
