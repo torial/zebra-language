@@ -4971,11 +4971,15 @@ const Generator = struct {
             scanTco(body, n.name, g.owner, n.mods.static_) else false;
 
         if (has_self) {
+            // `@pure` opts the method into `self: *const Owner` so callers can
+            // invoke it on by-value/const receivers (e.g. Vector3.len() on a
+            // `Vector3` by-value param).  Default: `*Owner` (current behavior).
+            const self_qual: []const u8 = if (n.mods.pure) "*const " else "*";
             // Generic class methods use *@This() (the struct is anonymous inside the comptime fn).
             if (g.is_generic) {
-                try g.w.writeAll("self: *@This()");
+                try g.w.print("self: {s}@This()", .{self_qual});
             } else {
-                try g.w.print("self: *{s}", .{g.owner});
+                try g.w.print("self: {s}{s}", .{ self_qual, g.owner });
             }
             if (n.params.len > 0) try g.w.writeAll(", ");
         }

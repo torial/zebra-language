@@ -246,6 +246,13 @@ const Builder = struct {
         }
     }
 
+    fn applyPure(d: *Ast.Decl) error{PureOnNonMethod}!void {
+        switch (d.*) {
+            .method => |m| m.mods.pure = true,
+            else    => return error.PureOnNonMethod,
+        }
+    }
+
     fn applyTags(d: *Ast.Decl, tags: []const []const u8) void {
         switch (d.*) {
             .method => |m| m.tags = tags,
@@ -647,12 +654,13 @@ const Builder = struct {
         var out = std.ArrayList(Ast.Decl).empty;
         var pending_profile = false;
         var pending_once = false;
+        var pending_pure = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
-        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_tags);
+        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_pure: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -662,7 +670,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_tags);
+                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_pure, pending_tags);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -682,6 +690,8 @@ const Builder = struct {
                             pending_profile.* = true;
                         } else if (std.mem.eql(u8, name, "once")) {
                             pending_once.* = true;
+                        } else if (std.mem.eql(u8, name, "pure")) {
+                            pending_pure.* = true;
                         } else if (std.mem.eql(u8, name, "tag")) {
                             if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
                         } else {
@@ -712,6 +722,15 @@ const Builder = struct {
                             };
                             pending_once.* = false;
                         }
+                        if (pending_pure.*) {
+                            applyPure(&d) catch |err| switch (err) {
+                                error.PureOnNonMethod => std.debug.print(
+                                    "warning: @pure can only precede a method declaration; ignored\n",
+                                    .{},
+                                ),
+                            };
+                            pending_pure.* = false;
+                        }
                         try out.append(b.arena, d);
                     },
                 }
@@ -727,8 +746,9 @@ const Builder = struct {
         const start = out.items.len;
         var pending_profile = false;
         var pending_once = false;
+        var pending_pure = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
-        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_tags);
+        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
         for (out.items[start..]) |*d| setShared(d);
     }
 

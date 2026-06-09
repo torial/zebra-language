@@ -140,6 +140,11 @@ pub const Modifiers = packed struct {
     derive_eq: bool = false,
     /// `@derive(Hash)` — auto-generates `hash()` for use as a HashMap key.
     derive_hash: bool = false,
+    /// `@pure` annotation — method does not mutate `this`.  Emits
+    /// `self: *const Owner` so the method can be called on by-value
+    /// or const receivers (e.g. function params declared by value).
+    /// Opt-in; default behavior unchanged.
+    pure: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────

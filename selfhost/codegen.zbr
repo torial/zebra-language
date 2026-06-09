@@ -2743,10 +2743,18 @@ struct Generator
             if has_self or m.params.count() > 0
                 w.emit(", ")
         if has_self
+            # @pure: emit `self: *const Owner` so the method can be called
+            # on by-value/const receivers.  Opt-in; default = `*Owner`.
             if is_generic
-                w.emit("self: *@This()")
+                if m.mods.is_pure
+                    w.emit("self: *const @This()")
+                else
+                    w.emit("self: *@This()")
             else
-                w.emit("self: *")
+                if m.mods.is_pure
+                    w.emit("self: *const ")
+                else
+                    w.emit("self: *")
                 w.emit(owner)
             if m.params.count() > 0
                 w.emit(", ")
