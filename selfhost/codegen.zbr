@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef
+use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -753,6 +753,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.genExtend(ext)
             else
                 pass
+    # ── Gap 1: emit module-level closure-thunk infrastructure for every
+    # call site that passed a capture-block lambda to a sig-typed param.
+    g.flushPendingThunks()
     # Emit Reflect runtime lookup functions
     var reflect_classes = List(str)()
     for decl in m.decls
@@ -1330,6 +1333,14 @@ struct Generator
     var dynlib_vars          : StrSet
     var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .eql()
     var datetime_vars        : StrSet   # local var names holding _DateTime instances
+    # Gap 1 (sig-takes-closure): per-module list of thunk specs collected by
+    # genCall; emitted at module end by flushPendingThunks.  See cg_helpers
+    # ClosureThunk doc + bootstrap src/CodeGen.zig.
+    var pending_thunks       : ThunkList
+    # Gap 1: maps local-var name → its capture-lambda init (parallel to
+    # closure_vars).  Populated when `var x = def(...) capture {...} ...` is
+    # emitted; queried by emitCallWithClosureThunks for ident-case detection.
+    var closure_lambdas      : HashMap(str, ExprLambda)
 
     invariant
         indent >= 0
@@ -1401,6 +1412,8 @@ struct Generator
         .dynlib_vars           = StrSet()
         .derive_eq_structs     = StrSet()
         .datetime_vars         = StrSet()
+        .pending_thunks        = ThunkList()
+        .closure_lambdas       = HashMap(str, ExprLambda)()
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -3759,10 +3772,12 @@ struct Generator
             if .isStringBoth(n.init_expr to!, "var_decl")
                 str_params.add(n.name)
         # Track capture-lambda vars for .call() dispatch at call sites
+        # AND for Gap 1 closure-to-sig thunking.
         if n.init_expr != nil
             if n.init_expr to! is Expr.lambda as lam
                 if lam.captures.count() > 0
                     closure_vars.add(n.name)
+                    closure_lambdas.set(n.name, lam)
         # Special-case: StringBuilder() constructor
         if n.init_expr != nil
             var ie = n.init_expr to!
@@ -7418,9 +7433,187 @@ struct Generator
         else
             genExpr(e)
 
+    # ── Gap 1: emit a call whose args include capture-block lambdas ──────────
+
+    def emitCallWithClosureThunks(c: ExprCall)
+        # Pre-assign thunk IDs per closure arg.  Parallel list keeps the same
+        # order as c.args; entry is -1 for non-closure args.  Also parallel
+        # list of the lambda nodes for emit (resolved from inline or from
+        # closure_lambdas map for the ident case).
+        var thunk_ids = List(int)()
+        var thunk_lams = List(ExprLambda?)()
+        for a in c.args
+            var av = a.value
+            var tid = -1
+            var resolved: ExprLambda? = nil
+            if av is Expr.lambda as lam0
+                if lam0.captures.count() > 0
+                    resolved = lam0
+            else if av is Expr.ident as id0
+                if closure_vars.contains_(id0.name)
+                    if closure_lambdas.get(id0.name) as lam_id
+                        resolved = lam_id
+            if resolved as r
+                tid = w.nextUid()
+                pending_thunks.add(ClosureThunk(tid, r))
+            thunk_ids.add(tid)
+            thunk_lams.add(resolved)
+        # Wrap call in `({ setup; target(thunk) })` so it stays an expression
+        # in the surrounding Stmt.expr context (Zig 0.16 rejects bare `};`).
+        w.emit("({\n")
+        var bg = indented()
+        var i = 0
+        for a in c.args
+            var tid = thunk_ids.at(i)
+            var lam_opt = thunk_lams.at(i)
+            i = i + 1
+            if tid < 0
+                continue
+            if lam_opt as lam
+                var tid_s = "${tid}"
+                bg.writeIndent()
+                bg.w.emit("const _zbr_cls_" + tid_s + " = _allocator.create(@TypeOf(")
+                bg.genExpr(a.value)
+                bg.w.emit(")) catch @panic(\"OOM\");")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("_zbr_cls_" + tid_s + ".* = ")
+                bg.genExpr(a.value)
+                bg.w.emit(";")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("_zbr_state_" + tid_s + " = @ptrCast(_zbr_cls_" + tid_s + ");")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("_zbr_dispatch_" + tid_s + " = (struct {")
+                bg.w.emit("\n")
+                var dg = bg.indented()
+                dg.writeIndent()
+                dg.w.emit("fn dispatch(ctx: *anyopaque")
+                for p in lam.params
+                    dg.w.emit(", ")
+                    dg.w.emit(p.name)
+                    dg.w.emit(": ")
+                    if p.type_ != nil
+                        dg.genType(p.type_ to!)
+                    else
+                        dg.w.emit("anytype")
+                dg.w.emit(") ")
+                if lam.return_type != nil
+                    dg.genType(lam.return_type to!)
+                else
+                    dg.w.emit("void")
+                dg.w.emit(" {\n")
+                var ig = dg.indented()
+                ig.writeIndent()
+                ig.w.emit("const cc: *@TypeOf(")
+                ig.genExpr(a.value)
+                ig.w.emit(") = @ptrCast(@alignCast(ctx));\n")
+                ig.writeIndent()
+                ig.w.emit("cc.call(")
+                var pi = 0
+                for p2 in lam.params
+                    if pi > 0
+                        ig.w.emit(", ")
+                    ig.w.emit(p2.name)
+                    pi = pi + 1
+                ig.w.emit(");\n")
+                dg.writeIndent()
+                dg.w.emit("}\n")
+                bg.writeIndent()
+                bg.w.emit("}).dispatch;\n")
+        # Emit actual call with thunk fn pointers in place of closure args.
+        bg.writeIndent()
+        bg.genExpr(c.callee)
+        bg.w.emit("(")
+        var j = 0
+        for a2 in c.args
+            if j > 0
+                bg.w.emit(", ")
+            var tid2 = thunk_ids.at(j)
+            if tid2 >= 0
+                bg.w.emit("_zbr_thunk_" + "${tid2}")
+            else
+                bg.genExpr(a2.value)
+            j = j + 1
+        bg.w.emit(");\n")
+        writeIndent()
+        w.emit("})")
+
+    def flushPendingThunks()
+        var i = 0
+        while i < pending_thunks.count()
+            var t = pending_thunks.at(i)
+            var id_s = "${t.id}"
+            w.emit("\n")
+            w.emit("var _zbr_state_" + id_s + ": ?*anyopaque = null;")
+            w.emit("\n")
+            w.emit("var _zbr_dispatch_" + id_s + ": ?*const fn(*anyopaque")
+            for p in t.lambda.params
+                w.emit(", ")
+                w.emit(p.name)
+                w.emit(": ")
+                if p.type_ != nil
+                    genType(p.type_ to!)
+                else
+                    w.emit("anytype")
+            w.emit(") ")
+            if t.lambda.return_type != nil
+                genType(t.lambda.return_type to!)
+            else
+                w.emit("void")
+            w.emit(" = null;")
+            w.emit("\n")
+            w.emit("fn _zbr_thunk_" + id_s + "(")
+            var pj = 0
+            while pj < t.lambda.params.count()
+                if pj > 0
+                    w.emit(", ")
+                var pp = t.lambda.params.at(pj)
+                w.emit(pp.name)
+                w.emit(": ")
+                if pp.type_ != nil
+                    genType(pp.type_ to!)
+                else
+                    w.emit("anytype")
+                pj = pj + 1
+            w.emit(") ")
+            if t.lambda.return_type != nil
+                genType(t.lambda.return_type to!)
+            else
+                w.emit("void")
+            w.emit(" {")
+            w.emit("\n")
+            w.emit("    if (_zbr_state_" + id_s + ") |s| _zbr_dispatch_" + id_s + ".?(s")
+            for p2 in t.lambda.params
+                w.emit(", ")
+                w.emit(p2.name)
+            w.emit(");")
+            w.emit("\n")
+            w.emit("}")
+            w.emit("\n")
+            i = i + 1
+
     # ── genCall ───────────────────────────────────────────────────────────────
 
     def genCall(c: ExprCall)
+        # ── Gap 1: closure-via-sig thunking ───────────────────────────────────
+        # When any arg is a closure — either an inline capture-block lambda,
+        # OR an ident bound to one (tracked in closure_vars) — wrap the call
+        # in `({ setup; target(thunk_fn) })` and register a module-level
+        # thunk per closure arg.  See bootstrap src/CodeGen.zig.
+        var has_closure_arg = false
+        for a in c.args
+            if a.value is Expr.lambda as lam_chk
+                if lam_chk.captures.count() > 0
+                    has_closure_arg = true
+            else if a.value is Expr.ident as id_chk
+                if closure_vars.contains_(id_chk.name)
+                    has_closure_arg = true
+        if has_closure_arg
+            emitCallWithClosureThunks(c)
+            return
+
         # Generic function call: identity(int)(42) → identity(i64, 42).
         # Detected as outer call where callee is a call of a known generic fn name.
         if c.callee is Expr.call as gf_inner

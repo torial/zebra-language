@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody
+use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -72,6 +72,36 @@ class StrSet
 
     def items(): List(str)
         return _items
+
+# ── ThunkList — Gap 1 (closure-to-sig) per-module pending list ───────────────
+#
+# When a call passes a capture-block lambda to a sig-typed parameter, the
+# codegen registers a ClosureThunk here.  At module end the codegen emits a
+# state slot + dispatcher slot + public thunk fn for each registered entry.
+# See genCall + flushPendingThunks in codegen.zbr.
+
+struct ClosureThunk
+    var id: int
+    var lambda: ExprLambda
+
+    cue init(id: int, lambda: ExprLambda)
+        .id = id
+        .lambda = lambda
+
+class ThunkList
+    var _items: List(ClosureThunk)
+
+    cue init()
+        _items = List(ClosureThunk)()
+
+    def add(t: ClosureThunk)
+        _items.add(t)
+
+    def count(): int
+        return _items.count()
+
+    def at(i: int): ClosureThunk
+        return _items.at(i)
 
 # ── assignOpStr ───────────────────────────────────────────────────────────────
 
