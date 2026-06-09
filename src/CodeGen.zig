@@ -169,6 +169,8 @@ pub fn generate(
     defer dynlib_vars.deinit();
     var type_alias_decls = try collectTypeAliases(module, alloc);
     defer type_alias_decls.deinit();
+    var pending_thunks = std.ArrayList(ClosureThunk).empty;
+    defer pending_thunks.deinit(alloc);
     const g = Generator{
         .resolve     = resolve,
         .tc          = tc,
@@ -204,6 +206,7 @@ pub fn generate(
         .module              = module,
         .dynlib_vars         = &dynlib_vars,
         .type_alias_decls    = &type_alias_decls,
+        .pending_thunks      = &pending_thunks,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports, .uses_sqlite = uses_sqlite };
@@ -1560,6 +1563,34 @@ fn nameUsedInExpr(name: []const u8, expr: *const Ast.Expr) bool {
     };
 }
 
+/// Gap 1 (sig-takes-closure): one entry per call site where a capture-block
+/// lambda is passed to a sig-typed param.  The codegen emits at module end:
+///   var _zbr_state_N: ?*anyopaque = null;
+///   var _zbr_dispatch_N: ?*const fn(*anyopaque, <args>) <ret> = null;
+///   fn _zbr_thunk_N(<args>) <ret> {
+///       if (_zbr_state_N) |s| _zbr_dispatch_N.?(s, <args>);
+///   }
+/// The call site (replaces `target.connect(closure_expr)`) emits:
+///   {
+///     const _c = _allocator.create(@TypeOf(<closure>)) catch @panic("OOM");
+///     _c.* = <closure>;
+///     _zbr_state_N = @ptrCast(_c);
+///     _zbr_dispatch_N = (struct {
+///         fn dispatch(ctx: *anyopaque, <args>) <ret> {
+///             const cc: *@TypeOf(<closure>) = @ptrCast(@alignCast(ctx));
+///             cc.call(<args>);
+///         }
+///     }).dispatch;
+///     target.connect(_zbr_thunk_N);
+///   }
+const ClosureThunk = struct {
+    id: u32,
+    /// The lambda whose captures are bound here.  Used at module-end to emit
+    /// the public thunk signature (param + return types) and at the call
+    /// site to construct the closure value.
+    lambda: *const Ast.ExprLambda,
+};
+
 // ── Generator ─────────────────────────────────────────────────────────────────
 
 const Generator = struct {
@@ -1763,6 +1794,12 @@ const Generator = struct {
     /// Used by genType to emit the base Zig type and by genLocalVar to
     /// emit constraint checks at variable-declaration sites.
     type_alias_decls: *const std.StringHashMap(*const Ast.DeclTypeAlias),
+    /// Gap 1 (sig-takes-closure): when a capture-block lambda is passed as a
+    /// call argument where the param type is a `sig`, the codegen hoists a
+    /// module-level state slot + dispatcher + public thunk fn so the
+    /// closure can satisfy the fn-pointer-typed sig.  Entries are added at
+    /// call-site emit and flushed at module-end.  See ClosureThunk.
+    pending_thunks: *std.ArrayList(ClosureThunk),
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -3828,6 +3865,10 @@ const Generator = struct {
 
         try g.w.writeAll(build_options.stdlib_preamble_post_gui);
         for (module.decls) |decl| try g.genTopDecl(decl);
+
+        // ── Gap 1: emit module-level thunk infrastructure for any closure
+        // arguments collected during genCall (see emitCallWithClosureThunks).
+        try g.flushPendingThunks();
 
         // Test runner: discover all top-level `def test_*()` and emit a main that
         // calls each, catches failures, and prints a summary.
@@ -12640,7 +12681,188 @@ const Generator = struct {
         try g.genExpr(expr);
     }
 
+    /// Gap 1: if `expr` is (or refers to) a capture-block lambda, return its
+    /// ExprLambda node so the call site can build a thunk.  Returns null for
+    /// non-closure expressions.  Handles:
+    ///   - inline lambda:  `connect(def(dt) capture {...} body)`
+    ///   - ident:          `var lam = def(...) capture {...} ...; connect(lam)`
+    fn closureLambdaFor(g: Generator, expr: *const Ast.Expr) ?*const Ast.ExprLambda {
+        if (expr.* == .lambda) {
+            if (expr.lambda.capture.len > 0) return expr.lambda;
+            return null;
+        }
+        if (expr.* == .ident) {
+            const sym = g.resolve.exprs.get(&expr.ident) orelse return null;
+            // Local var declarations: check if init was a capture-block lambda
+            if (sym.kind == .local or sym.kind == .var_) {
+                switch (sym.decl) {
+                    .var_ => |dv| {
+                        if (dv.init) |init_expr| {
+                            if (init_expr.* == .lambda and init_expr.lambda.capture.len > 0)
+                                return init_expr.lambda;
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+        return null;
+    }
+
+    /// Gap 1: emit module-level state slot + dispatcher slot + public thunk
+    /// fn for every ClosureThunk collected during call-site emit.  See the
+    /// ClosureThunk doc-comment for the runtime shape.
+    fn flushPendingThunks(g: Generator) anyerror!void {
+        for (g.pending_thunks.items) |t| {
+            try g.w.print("\nvar _zbr_state_{d}: ?*anyopaque = null;\n", .{t.id});
+            try g.w.print("var _zbr_dispatch_{d}: ?*const fn(*anyopaque", .{t.id});
+            for (t.lambda.params) |p| {
+                try g.w.writeAll(", ");
+                try g.w.writeAll(p.name);
+                try g.w.writeAll(": ");
+                if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
+            }
+            try g.w.writeAll(") ");
+            if (t.lambda.return_type) |rt| {
+                try g.genType(rt);
+            } else {
+                try g.w.writeAll("void");
+            }
+            try g.w.writeAll(" = null;\n");
+            try g.w.print("fn _zbr_thunk_{d}(", .{t.id});
+            for (t.lambda.params, 0..) |p, pi| {
+                if (pi > 0) try g.w.writeAll(", ");
+                try g.w.writeAll(p.name);
+                try g.w.writeAll(": ");
+                if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
+            }
+            try g.w.writeAll(") ");
+            if (t.lambda.return_type) |rt| {
+                try g.genType(rt);
+            } else {
+                try g.w.writeAll("void");
+            }
+            try g.w.print(" {{\n    if (_zbr_state_{d}) |s| _zbr_dispatch_{d}.?(s", .{ t.id, t.id });
+            for (t.lambda.params) |p| {
+                try g.w.writeAll(", ");
+                try g.w.writeAll(p.name);
+            }
+            try g.w.writeAll(");\n}\n");
+        }
+    }
+
+    /// Emit a call with one or more closure-typed args wrapped in a labeled
+    /// block that registers a module-level thunk per closure arg.  See
+    /// genCall's Gap 1 dispatch + flushPendingThunks.
+    fn emitCallWithClosureThunks(g: Generator, e: *Ast.ExprCall) anyerror!void {
+        // Pre-assign thunk IDs and stash specs so the call body can refer to
+        // them, and so flushPendingThunks can emit the dispatchers at module
+        // end.  Use the existing box_counter for uniqueness across the module.
+        const arg_thunk_ids = try g.alloc.alloc(?u32, e.args.len);
+        defer g.alloc.free(arg_thunk_ids);
+        for (e.args, 0..) |a, i| {
+            if (g.closureLambdaFor(a.value)) |lam| {
+                const id = g.nextUid();
+                try g.pending_thunks.append(g.alloc, .{ .id = id, .lambda = lam });
+                arg_thunk_ids[i] = id;
+            } else {
+                arg_thunk_ids[i] = null;
+            }
+        }
+        // Wrap in `({ ... })` so the block is in expression context — needed
+        // because the surrounding Stmt.expr emit follows the call with `;`,
+        // and a bare `{ ... };` is a parse error in Zig 0.16 (block as
+        // statement doesn't take a trailing `;`).  The parenthesized form
+        // makes the block an expression that yields void; `void;` is a
+        // valid statement.
+        try g.w.writeAll("({\n");
+        const bg = g.indented();
+        for (e.args, 0..) |a, i| {
+            const tid = arg_thunk_ids[i] orelse continue;
+            // Use the resolved lambda for sig types; the arg expression (which
+            // may be an ident bound to the lambda) is what we instantiate.
+            const lam = g.closureLambdaFor(a.value).?;
+            // Heap-allocate the closure value and stash a type-erased pointer
+            // plus a typed dispatcher into the module-level slots.
+            try bg.writeIndent();
+            try bg.w.print("const _zbr_cls_{d} = _allocator.create(@TypeOf(", .{tid});
+            try bg.genExpr(a.value);
+            try bg.w.writeAll(")) catch @panic(\"OOM\");\n");
+            try bg.writeIndent();
+            try bg.w.print("_zbr_cls_{d}.* = ", .{tid});
+            try bg.genExpr(a.value);
+            try bg.w.writeAll(";\n");
+            try bg.writeIndent();
+            try bg.w.print("_zbr_state_{d} = @ptrCast(_zbr_cls_{d});\n", .{ tid, tid });
+            try bg.writeIndent();
+            try bg.w.print("_zbr_dispatch_{d} = (struct {{\n", .{tid});
+            const dg = bg.indented();
+            try dg.writeIndent();
+            try dg.w.writeAll("fn dispatch(ctx: *anyopaque");
+            for (lam.params) |p| {
+                try dg.w.writeAll(", ");
+                try dg.w.writeAll(p.name);
+                try dg.w.writeAll(": ");
+                if (p.type_) |tr| try dg.genType(tr) else try dg.w.writeAll("anytype");
+            }
+            try dg.w.writeAll(") ");
+            if (lam.return_type) |rt| {
+                try dg.genType(rt);
+            } else {
+                try dg.w.writeAll("void");
+            }
+            try dg.w.writeAll(" {\n");
+            const ig = dg.indented();
+            try ig.writeIndent();
+            try ig.w.print("const cc: *@TypeOf(", .{});
+            try ig.genExpr(a.value);
+            try ig.w.writeAll(") = @ptrCast(@alignCast(ctx));\n");
+            try ig.writeIndent();
+            try ig.w.writeAll("cc.call(");
+            for (lam.params, 0..) |p, pi| {
+                if (pi > 0) try ig.w.writeAll(", ");
+                try ig.w.writeAll(p.name);
+            }
+            try ig.w.writeAll(");\n");
+            try dg.writeIndent();
+            try dg.w.writeAll("}\n");
+            try bg.writeIndent();
+            try bg.w.writeAll("}).dispatch;\n");
+        }
+        // Emit the actual call with thunk fn pointers in place of closure args.
+        try bg.writeIndent();
+        try bg.genExpr(e.callee);
+        try bg.w.writeAll("(");
+        for (e.args, 0..) |a, i| {
+            if (i > 0) try bg.w.writeAll(", ");
+            if (arg_thunk_ids[i]) |tid| {
+                try bg.w.print("_zbr_thunk_{d}", .{tid});
+            } else {
+                try bg.genArgExpr(a.value);
+            }
+        }
+        try bg.w.writeAll(");\n");
+        try g.writeIndent();
+        try g.w.writeAll("})");
+    }
+
     fn genCall(g: Generator, e: *Ast.ExprCall) anyerror!void {
+        // ── Gap 1: closure-via-sig thunking ───────────────────────────────────
+        // When any call arg is a closure (either inline capture-block lambda
+        // OR an ident bound to such a lambda), hoist a module-level thunk +
+        // state slot, then emit the call inside a labeled block that
+        // (a) constructs the closure on the heap, (b) stashes pointer +
+        // dispatch fn into the slots, (c) calls the target with the public
+        // thunk fn pointer in place of the closure.
+        // See QUICKSTART §19.1 + docs/CONCERNS.md #3 Gap 1.
+        var closure_arg_count: usize = 0;
+        for (e.args) |a| {
+            if (g.closureLambdaFor(a.value) != null) closure_arg_count += 1;
+        }
+        if (closure_arg_count > 0) {
+            try g.emitCallWithClosureThunks(e);
+            return;
+        }
         // ThreadPool(n) plain constructor (no type args) → _thread_pool_create(n)
         if (e.type_args.len == 0 and e.callee.* == .ident and
             std.mem.eql(u8, e.callee.ident.name, "ThreadPool"))
