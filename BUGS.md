@@ -7,7 +7,16 @@
 ## BUG-125: selfhost --emit-zig user-script mode emits cross-module union ctors as tag-calls
 
 **Severity:** medium (blocks user scripts from constructing ECS Components directly)
-**Status:** open — workaround documented
+**Status:** FIXED 2026-06-09 — selfhost now honors `--module-path`; deps found
+there are parsed for types only (not emitted), so exposed cross-module unions
+classify correctly.  Root cause: `compileDep_use` only searched the source's
+own directory, so `use ecs` from `game/scripts/` never parsed `zbra/ecs.zbr`
+and `dep_types` never learned `Component` is a union.  Fix: `MultiCompiler`
+gained a `module_path` field + `scanDepForTypes` (parse + `populateModuleTypes`,
+no emit), wired through `--module-path`.  The bootstrap already handled this;
+this brought the selfhost to parity.  `tools/wire_script.py` now passes
+`--module-path <engine>/zbra`.  Verified: `Component.anchored(true)` →
+`Component{ .anchored = true }`.
 
 **Symptom:** In a `.zbr` file under `game/scripts/` compiled via `zebra.exe --emit-zig`, calls of the form `Component.transform(cf)` (where `Component` is a cross-module union imported via `use ecs exposing Component`) emit literally as `Component.transform(cf)` in Zig — which the Zig compiler rejects with:
 
@@ -53,7 +62,11 @@ Failure persists across: nested call args, ident-bound vars, staged locals, and 
 ## BUG-127: selfhost emits negative-literal `var` initializer without type annotation
 
 **Severity:** low (annotation workaround is trivial)
-**Status:** open
+**Status:** FIXED 2026-06-09 — `genLocalVar`'s literal-shape annotation branch
+now handles `Expr.unary` (neg of int/float literal), emitting `: i64`/`: f64`
+like the bare-literal case.  Used `branch un.operand` (not `is`) so the `^Expr`
+deref round-trips identically under bootstrap and selfhost.  Verified:
+`var a = -6.0` → `var a: f64 = (-6.0);`.
 
 **Symptom:**
 ```zebra

@@ -59,6 +59,8 @@ class MultiCompiler
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
     var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
+    var module_path: str       # --module-path DIR: extra search dir for `use` deps
+    var type_scanned: List(str)  # deps scanned for types only (not emitted)
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -73,6 +75,8 @@ class MultiCompiler
         .tag_filter = nil
         .warn_non_exhaustive = false
         .uses_sqlite = false
+        .module_path = ""
+        .type_scanned = List(str)()
 
     def alreadyVisited(p: str): bool
         var i: int = 0
@@ -185,6 +189,17 @@ class MultiCompiler
         if File.exists(dep_path)
             .compileDep(dep_path, false)?
             return
+        # BUG-125: dep not adjacent to the source.  Try the --module-path dir.
+        # A dep found there (e.g. an engine's zbra/ecs.zbr next to a game
+        # script under game/scripts/) is parsed for TYPES ONLY — its decls
+        # populate dep_types so the codegen can classify exposed unions/
+        # enums/classes correctly (Component.X(v) → Component{ .X = v }).
+        # It is NOT emitted: the host build provides the dep's .zig module.
+        if module_path != ""
+            var mp_path: str = module_path + "/" + dep_name + ".zbr"
+            if File.exists(mp_path)
+                .scanDepForTypes(mp_path)?
+                return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"
         if src_dir != ""
@@ -206,6 +221,57 @@ class MultiCompiler
                     dchk = dchk + 1
                 if not already_added
                     c_i_dirs.add(c_dir)
+
+    def alreadyTypeScanned(p: str): bool
+        var i: int = 0
+        while i < type_scanned.len
+            if type_scanned.at(i) == p
+                return true
+            i = i + 1
+        return false
+
+    # BUG-125: parse a module-path dep for its type declarations only.
+    # Populates dep_types (union/enum/class names + variant/field shapes)
+    # so the root's codegen can classify exposed cross-module symbols.
+    # Does NOT emit a .zig file — the host build provides the dep module.
+    # Resolution errors are tolerated: we only need the declaration shapes,
+    # not fully-resolved cross-module references (the dep's own transitive
+    # `use` targets may not be reachable, which is fine for type extraction).
+    def scanDepForTypes(zbr_path: str) throws
+        if .alreadyTypeScanned(zbr_path)
+            return
+        type_scanned.add(zbr_path)
+
+        var src: str = File.read(zbr_path)
+        const pm_node = Parser.Parser.parse(src, zbr_path)?
+        branch pm_node
+            on PNode.module_ as pm
+                # Scan this dep's own module-path uses first so its field
+                # types (e.g. ecs's `use math exposing Vector3`) are known.
+                for decl in pm.decls
+                    branch decl
+                        on PNode.use_ as sub_use
+                            var sub_name: str = sub_use.path
+                            var sub_dir: str = .dirOf(zbr_path)
+                            var sub_adj: str = sub_name + ".zbr"
+                            if sub_dir != ""
+                                sub_adj = sub_dir + "/" + sub_name + ".zbr"
+                            if File.exists(sub_adj)
+                                .scanDepForTypes(sub_adj)?
+                            else if module_path != ""
+                                var sub_mp: str = module_path + "/" + sub_name + ".zbr"
+                                if File.exists(sub_mp)
+                                    .scanDepForTypes(sub_mp)?
+                        else
+                            pass
+                # Resolve for name annotations; ignore recorded errors.
+                var resolver = Resolver.Resolver(zbr_path)
+                resolver.resolve(pm_node)?
+                var merged_pm = .mergePartials_pmodule(pm, zbr_path)?
+                const module = ASTBuilder.build(merged_pm, zbr_path)?
+                populateModuleTypes(dep_types, module)
+            else
+                pass
 
     def zbrToZig(zbr_path: str): str
         # Replace ".zbr" extension with ".zig"
@@ -803,6 +869,10 @@ def main()
     const preamble_path      = "selfhost/stdlib_preamble.zig"
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
+    # --module-path DIR: extra search dir for `use` deps not adjacent to the
+    # source (e.g. an engine's zbra/ next to game/scripts/).  Found deps are
+    # parsed for types only, not emitted — BUG-125.
+    var module_path: str   = args.option("--module-path", "")
 
     if not mode_zig
         # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
@@ -813,6 +883,7 @@ def main()
         mc.test_mode = run_test_mode
         mc.tag_filter = run_tag_filter
         mc.warn_non_exhaustive = warn_ne
+        mc.module_path = module_path
         mc.compileDep(path, true)?
 
         if mode_emit

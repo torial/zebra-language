@@ -3883,6 +3883,22 @@ struct Generator
                     w.emit(": f64")
                 on Expr.string_lit
                     w.emit(": []const u8")
+                on Expr.unary as un
+                    # BUG-127: `var x = -6.0` wraps the literal in a neg-unary,
+                    # so the literal-shape checks above miss it.  A `var`
+                    # bound to a bare `(-6.0)` stays comptime_float and Zig
+                    # rejects it.  Recurse into the operand for neg of a
+                    # numeric literal and emit the same annotation.  Use
+                    # `branch` (not `is`) on the ^Expr operand so the deref
+                    # round-trips identically under bootstrap and selfhost.
+                    if un.op == UnaryOp.neg
+                        branch un.operand
+                            on Expr.int_lit
+                                w.emit(": i64")
+                            on Expr.float_lit
+                                w.emit(": f64")
+                            else
+                                pass
                 else
                     pass
         w.emit(" = ")
@@ -4956,6 +4972,26 @@ struct Generator
                         str_params.add(vname)
                 # Mark this variable: a for-loop var to suppress stale branch deref
                 for_loop_vars.add(vname)
+                # Seed opt-ptr field bindings for the loop var's optional ref
+                # (^T?) fields, derived from the iterable's element struct type.
+                # Without this, `loopvar.optRefField to!` (e.g. a capture's
+                # `cap.init_expr to!`, ^Expr?) emits `.?` without the `.*`
+                # deref in the selfhost — diverging from the bootstrap, which
+                # auto-derefs.  Mirrors the branch-binding seeding (see the
+                # `on Expr.is_capture`/branch path).  Round-trip fix.
+                if .infer_ctx as ic_for
+                    var iter_t: Type_ = inferExpr(fi.iter, ic_for)
+                    if iter_t is Type_.list_ as for_elem_t
+                        var for_sname = structNameFromType(for_elem_t)
+                        if for_sname != nil
+                            var for_st_dot = for_sname to! + "."
+                            var for_orf = opt_ref_fields.items()
+                            var for_oi: int = 0
+                            while for_oi < for_orf.count()
+                                var for_orf_e: str = for_orf.at(for_oi)
+                                if for_orf_e.startsWith(for_st_dot)
+                                    ig.opt_ptr_field_bindings.add(makeDottedKey(vname, extractAfterDot(for_orf_e)))
+                                for_oi += 1
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -7435,29 +7471,35 @@ struct Generator
 
     # ── Gap 1: emit a call whose args include capture-block lambdas ──────────
 
+    # Resolve the capture-block lambda backing a sig-typed call arg, if any.
+    # Returns the lambda for an inline `def(...) capture {...}` or for an
+    # ident bound to such a lambda; nil otherwise.  Mirrors the bootstrap's
+    # closureLambdaFor — used in BOTH passes of emitCallWithClosureThunks so
+    # we avoid a parallel `List(ExprLambda?)` (the optional-in-generic-arg
+    # type mis-round-trips through the selfhost parser — emits `try ExprLambda`).
+    def resolveClosureLambda(av: Expr): ExprLambda?
+        if av is Expr.lambda as lam0
+            if lam0.captures.count() > 0
+                return lam0
+        else if av is Expr.ident as id0
+            if closure_vars.contains_(id0.name)
+                if closure_lambdas.get(id0.name) as lam_id
+                    return lam_id
+        return nil
+
     def emitCallWithClosureThunks(c: ExprCall)
         # Pre-assign thunk IDs per closure arg.  Parallel list keeps the same
-        # order as c.args; entry is -1 for non-closure args.  Also parallel
-        # list of the lambda nodes for emit (resolved from inline or from
-        # closure_lambdas map for the ident case).
+        # order as c.args; entry is -1 for non-closure args.  The lambda nodes
+        # are re-resolved in the emit loop via resolveClosureLambda rather than
+        # stored in a parallel optional list.
         var thunk_ids = List(int)()
-        var thunk_lams = List(ExprLambda?)()
         for a in c.args
             var av = a.value
             var tid = -1
-            var resolved: ExprLambda? = nil
-            if av is Expr.lambda as lam0
-                if lam0.captures.count() > 0
-                    resolved = lam0
-            else if av is Expr.ident as id0
-                if closure_vars.contains_(id0.name)
-                    if closure_lambdas.get(id0.name) as lam_id
-                        resolved = lam_id
-            if resolved as r
+            if .resolveClosureLambda(av) as r
                 tid = w.nextUid()
                 pending_thunks.add(ClosureThunk(tid, r))
             thunk_ids.add(tid)
-            thunk_lams.add(resolved)
         # Wrap call in `({ setup; target(thunk) })` so it stays an expression
         # in the surrounding Stmt.expr context (Zig 0.16 rejects bare `};`).
         w.emit("({\n")
@@ -7465,11 +7507,10 @@ struct Generator
         var i = 0
         for a in c.args
             var tid = thunk_ids.at(i)
-            var lam_opt = thunk_lams.at(i)
             i = i + 1
             if tid < 0
                 continue
-            if lam_opt as lam
+            if .resolveClosureLambda(a.value) as lam
                 var tid_s = "${tid}"
                 bg.writeIndent()
                 bg.w.emit("const _zbr_cls_" + tid_s + " = _allocator.create(@TypeOf(")
@@ -12054,12 +12095,12 @@ struct Generator
     # ── genDirCall ───────────────────────────────────────────────────────────
     def genDirCall(mname: str, args: List(Arg))
         if mname == "create"
-            w.emit("(std.Io.Dir.cwd().makeDir(_io, ")
+            w.emit("(std.Io.Dir.cwd().createDirPath(_io, ")
             if args.count() > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(") catch |_dc_err| { if (_dc_err != error.PathAlreadyExists) @panic(\"Dir.create error\"); })")
+            w.emit(") catch @panic(\"Dir.create error\"))")
             return
         if mname == "createAll"
             w.emit("(std.Io.Dir.cwd().createDirPath(_io, ")
@@ -12067,7 +12108,7 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(", .{}) catch @panic(\"Dir.createAll error\"))")
+            w.emit(") catch @panic(\"Dir.createAll error\"))")
             return
         if mname == "delete"
             w.emit("(std.Io.Dir.cwd().deleteDir(_io, ")
