@@ -1351,7 +1351,26 @@ fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, relea
     defer { for (i_flags.items) |f| alloc.free(f); i_flags.deinit(alloc); }
 
     try argv.appendSlice(alloc, &.{ "zig", "build-lib", zig_path });
-    if (shared) try argv.append(alloc, "--dynamic");
+    // Zig 0.16 removed the `--dynamic` flag; the link mode (static vs shared)
+    // is now selected by the output file extension.  Emit <stem>.dll/.so/.dylib
+    // for a shared library, <stem>.lib/.a for a static one.
+    {
+        const stem = if (std.mem.endsWith(u8, zig_path, ".zig"))
+            zig_path[0 .. zig_path.len - ".zig".len]
+        else
+            zig_path;
+        const ext = if (shared) switch (builtin.os.tag) {
+            .windows => ".dll",
+            .macos => ".dylib",
+            else => ".so",
+        } else switch (builtin.os.tag) {
+            .windows => ".lib",
+            else => ".a",
+        };
+        const emit = try std.fmt.allocPrint(alloc, "-femit-bin={s}{s}", .{ stem, ext });
+        try i_flags.append(alloc, emit);
+        try argv.append(alloc, emit);
+    }
     if (release) try argv.append(alloc, "-OReleaseFast");
     if (cpu) |c| {
         const flag = try std.fmt.allocPrint(alloc, "-mcpu={s}", .{c});
