@@ -1,6 +1,73 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-124. Next new bug: BUG-125.**
+**Last bug number generated: BUG-127. Next new bug: BUG-128.**
+
+---
+
+## BUG-125: selfhost --emit-zig user-script mode emits cross-module union ctors as tag-calls
+
+**Severity:** medium (blocks user scripts from constructing ECS Components directly)
+**Status:** open — workaround documented
+
+**Symptom:** In a `.zbr` file under `game/scripts/` compiled via `zebra.exe --emit-zig`, calls of the form `Component.transform(cf)` (where `Component` is a cross-module union imported via `use ecs exposing Component`) emit literally as `Component.transform(cf)` in Zig — which the Zig compiler rejects with:
+
+```
+error: type '@typeInfo(ecs.Component).@"union".tag_type.?' not a function
+```
+
+The correct emit, observed for the SAME pattern in stdlib `.zbr` files (`zbra/physics.zbr`, `zbra/humanoid.zbr` — both `use ecs exposing World, Component`), is `Component{ .transform = cf }`.
+
+**Repro (in `C:\Projects\GameEngine`):**
+```zebra
+# game/scripts/repro.zbr
+use ecs exposing Component, World
+
+def main(world: World)
+    var cf = ...
+    world.addComponent(eid, Component.transform(cf))   # → broken Zig in --emit-zig
+```
+
+Failure persists across: nested call args, ident-bound vars, staged locals, and helper-wrapped return statements. The discriminator is *where the .zbr lives* (script vs stdlib), not the syntactic shape.
+
+**Workaround:** Hide the union ctor behind a stdlib method. See `zbra/workspace.zbr`'s `spawnBox` / `setEntityPosition` (and `zbra/workspace.zig` hand-impl) for the pattern used by `game/scripts/orbit_follower.zbr`.
+
+**Discovered:** OrbitFollower case study (4th hand-ported script), 2026-06-09.
+
+---
+
+## BUG-126: Gap 1 closure-via-sig thunk uses per-call-site state slot (last-wins)
+
+**Severity:** medium (blocks two scene instances of the same script that share a `connect()` call site)
+**Status:** open — documented, workaround = unique connect call sites per instance
+
+**Symptom:** Each call site that connects a closure to a `sig`-typed signal handler synthesizes a single module-level state cell (`_zbr_state_N: ?*anyopaque`). When the same `connect()` call is reached twice in one program execution (e.g. two scene instances of the same script), the second call overwrites the cell. The first closure is orphaned — its `Heartbeat`/`RenderStepped` handler never fires again, even though the connection appears successful.
+
+**Repro (in `C:\Projects\GameEngine`):** `game/scripts/orbit_follower.zbr` loaded twice as `Follower1` and `Follower2` in `demo_scripts.zbr-scene`. Both `[orbit_follower:FollowerN] connected` messages print; only Follower2's tick lines appear thereafter. Confirmed visually: Follower1's spawned cube sits stationary at its initial position; Follower2's cube orbits.
+
+**Fix direction:** Have `signal.connect(handler)` return a connection ID and have the thunk store a *map* of state cells keyed by ID, rather than a single slot per call site. Existing single-subscriber Roblox-style code stays correct; multi-subscriber works.
+
+**Discovered:** OrbitFollower case study, 2026-06-09. Flagged as unverified concern in the TimerTest case study (`docs/TIMER_TEST_CASE_STUDY.md`); empirically falsified by the OrbitFollower two-instance scene.
+
+---
+
+## BUG-127: selfhost emits negative-literal `var` initializer without type annotation
+
+**Severity:** low (annotation workaround is trivial)
+**Status:** open
+
+**Symptom:**
+```zebra
+var x = -6.0   # emits: var x = (-6.0);  → Zig: comptime_float not const/comptime
+var y = 0.0    # emits: var y: f64 = 0.0; (correct)
+```
+
+Positive literal initializers widen to `f64`; negative literals (unary minus) emit as a bare comptime expression that Zig rejects when the binding is `var` rather than `const`.
+
+**Workaround:** Annotate explicitly: `var x: float = -6.0`.
+
+**Discovered:** OrbitFollower case study, 2026-06-09.
+
+---
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
