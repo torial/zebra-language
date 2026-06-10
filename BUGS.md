@@ -18,6 +18,16 @@ this brought the selfhost to parity.  `tools/wire_script.py` now passes
 `--module-path <engine>/zbra`.  Verified: `Component.anchored(true)` →
 `Component{ .anchored = true }`.
 
+**Follow-up 2026-06-09:** `scanDepForTypes` also now registers the dep's
+class names in `dep_class_names`, so a script that stores a cross-module
+class instance in a field or capture (e.g. `var t: Vector3Tween`) emits the
+field/param as `*T` (reference type) instead of by-value — without this,
+storing the constructor result (`*Vector3Tween`) into a value-typed field is
+a `*T`-vs-`T` mismatch.  Consequence: scripts compiled with `--module-path`
+now take their class-typed `main(...)` params by pointer (`*Instance`,
+`*RunService`), so the host dispatch passes `inst`/`run` directly rather than
+`inst.*`/`run.*`.  Pre-`--module-path` scripts (value params) are unaffected.
+
 **Symptom:** In a `.zbr` file under `game/scripts/` compiled via `zebra.exe --emit-zig`, calls of the form `Component.transform(cf)` (where `Component` is a cross-module union imported via `use ecs exposing Component`) emit literally as `Component.transform(cf)` in Zig — which the Zig compiler rejects with:
 
 ```

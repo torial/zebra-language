@@ -264,6 +264,15 @@ class MultiCompiler
                                     .scanDepForTypes(sub_mp)?
                         else
                             pass
+                # Register the dep's class names so the codegen emits class-
+                # typed fields/params as `*T` (reference types) rather than
+                # by-value.  compileDep does this for adjacent deps; a
+                # module-path dep needs it too, else a script that stores a
+                # cross-module class instance in a field (e.g. a Vector3Tween)
+                # gets a value-typed field and a *T-vs-T assignment mismatch.
+                for decl2 in pm.decls
+                    if decl2 is PNode.class_ as cls2
+                        dep_class_names.add(cls2.name)
                 # Resolve for name annotations; ignore recorded errors.
                 var resolver = Resolver.Resolver(zbr_path)
                 resolver.resolve(pm_node)?
