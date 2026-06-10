@@ -6076,7 +6076,7 @@ const Generator = struct {
             if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
             try bg.w.writeAll(";\n");
             try bg.writeIndent();
-            try bg.w.writeAll("const _fw_f = std.Io.Dir.cwd().createFile(_io, _fw_path, .{}) catch @panic(\"File.write error\");\n");
+            try bg.w.writeAll("const _fw_f = std.Io.Dir.cwd().createFile(_io, _zbr_norm_path(_fw_path), .{}) catch @panic(\"File.write error\");\n");
             try bg.writeIndent();
             try bg.w.writeAll("defer _fw_f.close(_io);\n");
             try bg.writeIndent();
@@ -6131,9 +6131,9 @@ const Generator = struct {
             if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
             try bg.w.writeAll(";\n");
             try bg.writeIndent();
-            try bg.w.writeAll("const _fa_file = std.Io.Dir.cwd().openFile(_io, _fa_path, .{ .mode = .read_write })\n");
+            try bg.w.writeAll("const _fa_file = std.Io.Dir.cwd().openFile(_io, _zbr_norm_path(_fa_path), .{ .mode = .read_write })\n");
             try bg.indented().writeIndent();
-            try bg.indented().w.writeAll("catch std.Io.Dir.cwd().createFile(_io, _fa_path, .{}) catch @panic(\"File.append error\");\n");
+            try bg.indented().w.writeAll("catch std.Io.Dir.cwd().createFile(_io, _zbr_norm_path(_fa_path), .{}) catch @panic(\"File.append error\");\n");
             try bg.writeIndent();
             try bg.w.writeAll("defer _fa_file.close(_io);\n");
             try bg.writeIndent();

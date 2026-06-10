@@ -291,13 +291,21 @@ class MultiCompiler
                 stem = s
                 break
         if output_dir != ""
-            # Extract just the filename part (after last /)
+            # Extract just the filename part (after the last path separator).
+            # Handle both '/' and Windows '\' so a backslash source path
+            # (e.g. C:\dir\file.zbr) doesn't leave the whole path as the
+            # basename — which produced a garbage "out/C:\dir\file.zig".
             var base: str = stem
-            if stem.contains("/")
+            if base.contains("/")
                 var parts: List(str) = List(str)()
-                for p in stem.split("/")
+                for p in base.split("/")
                     parts.add(p)
                 base = parts.at(parts.len - 1)
+            if base.contains("\\")
+                var bparts: List(str) = List(str)()
+                for bp in base.split("\\")
+                    bparts.add(bp)
+                base = bparts.at(bparts.len - 1)
             return output_dir + "/" + base + ".zig"
         return stem + ".zig"
 

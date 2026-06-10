@@ -36,6 +36,19 @@ fn _intern(s: []const u8) []const u8 {
     return owned;
 }
 
+// Normalize a filesystem path for the host OS.  On Windows, std.Io.Dir's
+// createFile rejects an absolute path containing backslashes mixed with
+// forward slashes (OBJECT_NAME_INVALID) — e.g. an output dir like
+// "C:\dir" joined with "/name.zig".  Forward-slash absolute paths work
+// everywhere, so collapse backslashes to forward slashes.  Returns the
+// input unchanged when there is nothing to normalize.
+fn _zbr_norm_path(p: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, p, '\\') == null) return p;
+    const buf = _allocator.alloc(u8, p.len) catch return p;
+    for (p, 0..) |c, i| buf[i] = if (c == '\\') '/' else c;
+    return buf;
+}
+
 const _Stringable = struct {
     ptr:         *anyopaque,
     toString_fn: *const fn (*anyopaque) []const u8,
