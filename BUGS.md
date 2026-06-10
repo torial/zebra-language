@@ -47,7 +47,22 @@ Failure persists across: nested call args, ident-bound vars, staged locals, and 
 ## BUG-126: Gap 1 closure-via-sig thunk uses per-call-site state slot (last-wins)
 
 **Severity:** medium (blocks two scene instances of the same script that share a `connect()` call site)
-**Status:** open — documented, workaround = unique connect call sites per instance
+**Status:** FIXED 2026-06-09 — replaced the single module-level state slot per
+call site with a **trampoline pool** of K=64 (state slot, thunk fn) pairs.
+Each connection reached at a call site grabs the next free slot via a
+monotonic `_zbr_next_N` counter and is handed a distinct `_zbr_thunks_N[slot]`
+fn-pointer bound to its own `_zbr_state_N[slot]`.  A bare Zig fn-pointer
+carries no context, so K distinct code addresses are fundamentally required;
+the pool bounds concurrent connections at one call site.  Overflow (>K live
+connections through one source line) panics with a clear message rather than
+silently dropping earlier connections (the old last-wins behaviour).  Fixed in
+both `src/CodeGen.zig` (flushPendingThunks + emitCallWithClosureThunks) and
+`selfhost/codegen.zbr`; round-trip clean.  Verified: the OrbitFollower
+two-instance scene now ticks Follower1 AND Follower2 independently (was
+Follower2 only).  **Remaining limitation:** `_zbr_next_N` is monotonic, so
+connect/disconnect churn leaks slots; and K is a hard ceiling.  A truly
+unbounded fix needs the `sig` ABI to carry a context pointer (fat pointer) —
+deferred until a use case needs >64 live connections or dynamic disconnect.
 
 **Symptom:** Each call site that connects a closure to a `sig`-typed signal handler synthesizes a single module-level state cell (`_zbr_state_N: ?*anyopaque`). When the same `connect()` call is reached twice in one program execution (e.g. two scene instances of the same script), the second call overwrites the cell. The first closure is orphaned — its `Heartbeat`/`RenderStepped` handler never fires again, even though the connection appears successful.
 

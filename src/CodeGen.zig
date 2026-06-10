@@ -1,4 +1,4 @@
-//! CodeGen: emit Zig source from a Zebra AST.
+//! CodeGen: emit Zig source from a Zebra AST. (rev2)
 //!
 //! Pass 4 of the compiler: consumes the AST and Resolver's name-resolution
 //! tables, and emits a Zig source file to `writer`.
@@ -6272,15 +6272,15 @@ const Generator = struct {
     //   Dir.walk(path)          → List(str)  (all file paths recursively, root-prefixed, '/' separators)
     fn genDirCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "create")) {
-            try g.w.writeAll("(std.Io.Dir.cwd().makeDir(_io, ");
+            try g.w.writeAll("(std.Io.Dir.cwd().createDirPath(_io, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(") catch |_dc_err| { if (_dc_err != error.PathAlreadyExists) @panic(\"Dir.create error\"); })");
+            try g.w.writeAll(") catch @panic(\"Dir.create error\"))");
             return true;
         }
         if (std.mem.eql(u8, method, "createAll")) {
             try g.w.writeAll("(std.Io.Dir.cwd().createDirPath(_io, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(", .{}) catch @panic(\"Dir.createAll error\"))");
+            try g.w.writeAll(") catch @panic(\"Dir.createAll error\"))");
             return true;
         }
         if (std.mem.eql(u8, method, "delete")) {
@@ -12712,9 +12712,23 @@ const Generator = struct {
     /// Gap 1: emit module-level state slot + dispatcher slot + public thunk
     /// fn for every ClosureThunk collected during call-site emit.  See the
     /// ClosureThunk doc-comment for the runtime shape.
+    /// Pool size: how many distinct connections one closure-via-sig call site
+    /// supports.  Each needs its own (state slot, thunk fn) pair because a bare
+    /// Zig fn-pointer carries no context — so K distinct code addresses are
+    /// required (BUG-126).  When a single call site is reached more than K
+    /// times in one run (e.g. K+1 scene instances of the same script connecting
+    /// to the same signal), the call site panics with a clear message rather
+    /// than silently overwriting an earlier connection's state (the old
+    /// single-slot behaviour, which dropped all but the last connection).
+    const closure_thunk_pool_size = 64;
+
     fn flushPendingThunks(g: Generator) anyerror!void {
+        const K = closure_thunk_pool_size;
         for (g.pending_thunks.items) |t| {
-            try g.w.print("\nvar _zbr_state_{d}: ?*anyopaque = null;\n", .{t.id});
+            // Per-call-site pool: K state slots, one shared dispatcher (the
+            // closure type is fixed per call site), a monotonic slot counter,
+            // and K distinct thunk functions each bound to its own slot.
+            try g.w.print("\nvar _zbr_state_{d}: [{d}]?*anyopaque = .{{null}} ** {d};\n", .{ t.id, K, K });
             try g.w.print("var _zbr_dispatch_{d}: ?*const fn(*anyopaque", .{t.id});
             for (t.lambda.params) |p| {
                 try g.w.writeAll(", ");
@@ -12729,25 +12743,38 @@ const Generator = struct {
                 try g.w.writeAll("void");
             }
             try g.w.writeAll(" = null;\n");
-            try g.w.print("fn _zbr_thunk_{d}(", .{t.id});
-            for (t.lambda.params, 0..) |p, pi| {
-                if (pi > 0) try g.w.writeAll(", ");
-                try g.w.writeAll(p.name);
-                try g.w.writeAll(": ");
-                if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
+            try g.w.print("var _zbr_next_{d}: usize = 0;\n", .{t.id});
+            // K thunk functions, each closing over a fixed slot index.
+            var slot: usize = 0;
+            while (slot < K) : (slot += 1) {
+                try g.w.print("fn _zbr_thunk_{d}_{d}(", .{ t.id, slot });
+                for (t.lambda.params, 0..) |p, pi| {
+                    if (pi > 0) try g.w.writeAll(", ");
+                    try g.w.writeAll(p.name);
+                    try g.w.writeAll(": ");
+                    if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
+                }
+                try g.w.writeAll(") ");
+                if (t.lambda.return_type) |rt| {
+                    try g.genType(rt);
+                } else {
+                    try g.w.writeAll("void");
+                }
+                try g.w.print(" {{\n    if (_zbr_state_{d}[{d}]) |s| _zbr_dispatch_{d}.?(s", .{ t.id, slot, t.id });
+                for (t.lambda.params) |p| {
+                    try g.w.writeAll(", ");
+                    try g.w.writeAll(p.name);
+                }
+                try g.w.writeAll(");\n}\n");
             }
-            try g.w.writeAll(") ");
-            if (t.lambda.return_type) |rt| {
-                try g.genType(rt);
-            } else {
-                try g.w.writeAll("void");
+            // Lookup table of the K thunk fn pointers, indexed by slot.
+            try g.w.print("const _zbr_thunks_{d} = [_]*const @TypeOf(_zbr_thunk_{d}_0){{", .{ t.id, t.id });
+            slot = 0;
+            while (slot < K) : (slot += 1) {
+                if (slot > 0) try g.w.writeAll(", ");
+                try g.w.print("&_zbr_thunk_{d}_{d}", .{ t.id, slot });
             }
-            try g.w.print(" {{\n    if (_zbr_state_{d}) |s| _zbr_dispatch_{d}.?(s", .{ t.id, t.id });
-            for (t.lambda.params) |p| {
-                try g.w.writeAll(", ");
-                try g.w.writeAll(p.name);
-            }
-            try g.w.writeAll(");\n}\n");
+            try g.w.writeAll("};\n");
         }
     }
 
@@ -12792,8 +12819,14 @@ const Generator = struct {
             try bg.w.print("_zbr_cls_{d}.* = ", .{tid});
             try bg.genExpr(a.value);
             try bg.w.writeAll(";\n");
+            // Grab the next pool slot for this connection (BUG-126: per-call
+            // state, not a single shared slot).  Overflow → loud panic.
             try bg.writeIndent();
-            try bg.w.print("_zbr_state_{d} = @ptrCast(_zbr_cls_{d});\n", .{ tid, tid });
+            try bg.w.print("if (_zbr_next_{d} >= {d}) @panic(\"closure-via-sig pool exhausted (>{d} live connections at one call site)\");\n", .{ tid, closure_thunk_pool_size, closure_thunk_pool_size });
+            try bg.writeIndent();
+            try bg.w.print("const _zbr_slot_{d} = _zbr_next_{d}; _zbr_next_{d} += 1;\n", .{ tid, tid, tid });
+            try bg.writeIndent();
+            try bg.w.print("_zbr_state_{d}[_zbr_slot_{d}] = @ptrCast(_zbr_cls_{d});\n", .{ tid, tid, tid });
             try bg.writeIndent();
             try bg.w.print("_zbr_dispatch_{d} = (struct {{\n", .{tid});
             const dg = bg.indented();
@@ -12836,7 +12869,7 @@ const Generator = struct {
         for (e.args, 0..) |a, i| {
             if (i > 0) try bg.w.writeAll(", ");
             if (arg_thunk_ids[i]) |tid| {
-                try bg.w.print("_zbr_thunk_{d}", .{tid});
+                try bg.w.print("_zbr_thunks_{d}[_zbr_slot_{d}]", .{ tid, tid });
             } else {
                 try bg.genArgExpr(a.value);
             }

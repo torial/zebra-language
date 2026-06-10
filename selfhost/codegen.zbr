@@ -7522,8 +7522,15 @@ struct Generator
                 bg.genExpr(a.value)
                 bg.w.emit(";")
                 bg.w.emit("\n")
+                # Grab the next pool slot for this connection (BUG-126).
                 bg.writeIndent()
-                bg.w.emit("_zbr_state_" + tid_s + " = @ptrCast(_zbr_cls_" + tid_s + ");")
+                bg.w.emit("if (_zbr_next_" + tid_s + " >= 64) @panic(\"closure-via-sig pool exhausted (>64 live connections at one call site)\");")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("const _zbr_slot_" + tid_s + " = _zbr_next_" + tid_s + "; _zbr_next_" + tid_s + " += 1;")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("_zbr_state_" + tid_s + "[_zbr_slot_" + tid_s + "] = @ptrCast(_zbr_cls_" + tid_s + ");")
                 bg.w.emit("\n")
                 bg.writeIndent()
                 bg.w.emit("_zbr_dispatch_" + tid_s + " = (struct {")
@@ -7573,7 +7580,8 @@ struct Generator
                 bg.w.emit(", ")
             var tid2 = thunk_ids.at(j)
             if tid2 >= 0
-                bg.w.emit("_zbr_thunk_" + "${tid2}")
+                var tid2_s = "${tid2}"
+                bg.w.emit("_zbr_thunks_" + tid2_s + "[_zbr_slot_" + tid2_s + "]")
             else
                 bg.genExpr(a2.value)
             j = j + 1
@@ -7581,13 +7589,21 @@ struct Generator
         writeIndent()
         w.emit("})")
 
+    # BUG-126: per-call-site trampoline pool.  Each connection needs its own
+    # (state slot, thunk fn) pair because a bare Zig fn-pointer carries no
+    # context — so K distinct code addresses are required.  When one call site
+    # is reached more than K times in a run (e.g. K+1 scene instances of the
+    # same script connecting to the same signal), the call site panics rather
+    # than silently overwriting earlier connections (the old single-slot
+    # behaviour, which dropped all but the last).
     def flushPendingThunks()
         var i = 0
         while i < pending_thunks.count()
             var t = pending_thunks.at(i)
             var id_s = "${t.id}"
+            # State pool + shared dispatcher + monotonic slot counter.
             w.emit("\n")
-            w.emit("var _zbr_state_" + id_s + ": ?*anyopaque = null;")
+            w.emit("var _zbr_state_" + id_s + ": [64]?*anyopaque = .{null} ** 64;")
             w.emit("\n")
             w.emit("var _zbr_dispatch_" + id_s + ": ?*const fn(*anyopaque")
             for p in t.lambda.params
@@ -7605,33 +7621,50 @@ struct Generator
                 w.emit("void")
             w.emit(" = null;")
             w.emit("\n")
-            w.emit("fn _zbr_thunk_" + id_s + "(")
-            var pj = 0
-            while pj < t.lambda.params.count()
-                if pj > 0
-                    w.emit(", ")
-                var pp = t.lambda.params.at(pj)
-                w.emit(pp.name)
-                w.emit(": ")
-                if pp.type_ != nil
-                    genType(pp.type_ to!)
+            w.emit("var _zbr_next_" + id_s + ": usize = 0;")
+            w.emit("\n")
+            # K thunk functions, each bound to a fixed slot index.
+            var slot = 0
+            while slot < 64
+                var slot_s = "${slot}"
+                w.emit("fn _zbr_thunk_" + id_s + "_" + slot_s + "(")
+                var pj = 0
+                while pj < t.lambda.params.count()
+                    if pj > 0
+                        w.emit(", ")
+                    var pp = t.lambda.params.at(pj)
+                    w.emit(pp.name)
+                    w.emit(": ")
+                    if pp.type_ != nil
+                        genType(pp.type_ to!)
+                    else
+                        w.emit("anytype")
+                    pj = pj + 1
+                w.emit(") ")
+                if t.lambda.return_type != nil
+                    genType(t.lambda.return_type to!)
                 else
-                    w.emit("anytype")
-                pj = pj + 1
-            w.emit(") ")
-            if t.lambda.return_type != nil
-                genType(t.lambda.return_type to!)
-            else
-                w.emit("void")
-            w.emit(" {")
-            w.emit("\n")
-            w.emit("    if (_zbr_state_" + id_s + ") |s| _zbr_dispatch_" + id_s + ".?(s")
-            for p2 in t.lambda.params
-                w.emit(", ")
-                w.emit(p2.name)
-            w.emit(");")
-            w.emit("\n")
-            w.emit("}")
+                    w.emit("void")
+                w.emit(" {")
+                w.emit("\n")
+                w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| _zbr_dispatch_" + id_s + ".?(s")
+                for p2 in t.lambda.params
+                    w.emit(", ")
+                    w.emit(p2.name)
+                w.emit(");")
+                w.emit("\n")
+                w.emit("}")
+                w.emit("\n")
+                slot = slot + 1
+            # Lookup table of the K thunk fn pointers, indexed by slot.
+            w.emit("const _zbr_thunks_" + id_s + " = [_]*const @TypeOf(_zbr_thunk_" + id_s + "_0){")
+            var slot2 = 0
+            while slot2 < 64
+                if slot2 > 0
+                    w.emit(", ")
+                w.emit("&_zbr_thunk_" + id_s + "_" + "${slot2}")
+                slot2 = slot2 + 1
+            w.emit("};")
             w.emit("\n")
             i = i + 1
 
