@@ -10536,6 +10536,24 @@ struct Generator
                         var init_key2: str = sname + ".init"
                         if init_key2 == key
                             return di2.params
+        # Cross-module fallback (§27b): dep ctor/fn Param lists (with default
+        # exprs), so genArgListFull can fill defaulted args for cross-module
+        # calls. Key is "Class.method"/"Class.init"; a bare key → free fn ("").
+        var cm_parts: List(str) = key.split(".")
+        var cm_class: str = ""
+        var cm_method: str = key
+        if cm_parts.count() >= 2
+            cm_class = cm_parts.at(0)
+            cm_method = cm_parts.at(1)
+        # No type annotation + `!= nil` + `to!` (mirrors the variantPayload
+        # consumption pattern): classOf/fnParamList are cross-module methods
+        # returning optionals, and the bootstrap strips the `?T` (BUG-133), so
+        # `if … as …` / a `ClassTypes` annotation won't type-check there.
+        var cm_ct_opt = .dep_types.classOf(cm_class)
+        if cm_ct_opt != nil
+            var cm_ps_opt = (cm_ct_opt to!).fnParamList(cm_method)
+            if cm_ps_opt != nil
+                return cm_ps_opt to!
         return nil
 
     # Given a ctor name and an arg (possibly named), return the matching param's TypeRef.

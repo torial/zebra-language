@@ -172,6 +172,9 @@ class ClassTypes
     var method_params: HashMap(str, str)
     var method_param_types: HashMap(str, str)  # method_name → "|"-joined typeTag per param
     var ctor_params: List(Type_)
+    # Full Param list (incl. default exprs) per method/ctor ("init" for the
+    # constructor), so cross-module callers can fill defaulted args (§27b).
+    var fn_param_lists: HashMap(str, List(Param))
 
     cue init(name: str)
         .name = internString(name)
@@ -180,6 +183,7 @@ class ClassTypes
         method_params = HashMap()
         method_param_types = HashMap()
         ctor_params = List(Type_)()
+        fn_param_lists = HashMap()
 
     def setField(field_name: str, t: Type_)
         .field_types.put(internString(field_name), t)
@@ -192,6 +196,14 @@ class ClassTypes
 
     def setMethodParamTypes(method_name: str, types_pipe: str)
         .method_param_types.put(internString(method_name), internString(types_pipe))
+
+    def setFnParamList(method_name: str, ps: List(Param))
+        .fn_param_lists.put(internString(method_name), ps)
+
+    def fnParamList(method_name: str): List(Param)?
+        if .fn_param_lists.contains(method_name)
+            return .fn_param_lists.fetch(method_name)
+        return nil
 
     def methodParamTypeAt(method_name: str, idx: int): Type_?
         if not .method_param_types.contains(method_name)
@@ -677,6 +689,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     pti += 1
                 if ptypes_pipe != ""
                     ct.setMethodParamTypes(m.name, ptypes_pipe)
+                # Full Param list (incl. default exprs) for cross-module default-fill (§27b).
+                ct.setFnParamList(m.name, m.params)
             on Decl.init as ini
                 # Ctor params — first init wins (Zebra supports only one cue init per class).
                 if ct.ctorParamCount() == 0
@@ -685,6 +699,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                             ct.addCtorParam(typeFromRef(p.type_ to!))
                         else
                             ct.addCtorParam(Type_.unknown_)
+                ct.setFnParamList("init", ini.params)
             else
                 pass
 
@@ -790,6 +805,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     tl_pti += 1
                 if tl_ptypes != ""
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
+                # Full Param list (incl. defaults) for cross-module default-fill (§27b).
+                module_fns.setFnParamList(topfn.name, topfn.params)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.count() > 0
                     mt.addGenericFn(topfn.name)
