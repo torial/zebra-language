@@ -6850,7 +6850,20 @@ struct Generator
                     w.emit(").empty; ")
                 else if ll.elems.count() > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx to!)
-                    elem_zig = zigTypeForListElem(et)
+                    # User class/struct elements: render *Class for classes
+                    # (cross-module user types are reference types → *T; local
+                    # classes via class_names), value for structs.
+                    # zigTypeForListElem is a free fn without the class registry,
+                    # so it can't do this — hence the inline check here (§27a).
+                    if et is Type_.cross_module as et_cm
+                        elem_zig = "*" + et_cm.type_name
+                    else if structNameFromType(et) as et_snm
+                        if class_names.contains_(et_snm)
+                            elem_zig = "*" + et_snm
+                        else
+                            elem_zig = et_snm
+                    else
+                        elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 else
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
