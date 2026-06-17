@@ -52,12 +52,20 @@ chosen.
 
 ---
 
-## BUG-130: methodMutatesSelf marks some non-mutating methods `*self` not `*const self`
+## BUG-130: ~~methodMutatesSelf marks some non-mutating methods `*self`~~ NOT-A-BUG
 
-**Severity:** low (forces callers to copy a const-bound receiver to a mutable
-local before calling; no incorrect behavior, just an ergonomic + const-safety
-gap)
-**Status:** OPEN — discovered 2026-06-16 (GameEngine property-reflection work).
+**Status:** CLOSED — NOT-A-BUG 2026-06-16.  Misfiled.  The compiler does **not**
+auto-analyze mutation; `genMethod` gates `self: *const Owner` purely on the
+explicit `@pure` modifier (`src/CodeGen.zig` ~5018: `if (n.mods.pure) "*const "
+else "*"`).  The observed inconsistency was a **source** gap: GameEngine's
+`Vector3.lerp` was marked `@pure` while the identical `Color3.lerp` /
+`Vector2.lerp` were not.  Resolved by adding `@pure` to those methods in the
+GameEngine `zbra/math.zbr` (engine commit 935f0de); the `lerpProperty`
+mutable-local workaround was dropped.  No compiler change.
+
+(Original misfiling retained below for context.)
+
+**Severity:** low — discovered 2026-06-16 (GameEngine property-reflection work).
 
 `Color3.lerp` and `Vector2.lerp` emit `pub fn lerp(self: *Color3, ...)` while
 `Vector3.lerp` — with a structurally **identical**, non-mutating body (returns a
