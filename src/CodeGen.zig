@@ -12857,14 +12857,23 @@ const Generator = struct {
             const lam = g.closureLambdaFor(a.value).?;
             // Heap-allocate the closure value and stash a type-erased pointer
             // plus a typed dispatcher into the module-level slots.
+            // Emit the closure value ONCE into a local, then derive its type
+            // from that local so the create's `@TypeOf` and the assignment use
+            // the *same* type.  Re-emitting the `(struct{...}{...})` literal in
+            // both places yields two distinct anonymous types and a "expected
+            // main__struct_N, found main__struct_M" mismatch for inline
+            // capture-lambdas (BUG-131).  (The dispatcher below re-derives the
+            // type independently — it's a nested fn that can't see this local —
+            // but it only reinterprets the type-erased pointer, and the structs
+            // are layout-identical, so that round-trip is sound.)
             try bg.writeIndent();
-            try bg.w.print("const _zbr_cls_{d} = _allocator.create(@TypeOf(", .{tid});
-            try bg.genExpr(a.value);
-            try bg.w.writeAll(")) catch @panic(\"OOM\");\n");
-            try bg.writeIndent();
-            try bg.w.print("_zbr_cls_{d}.* = ", .{tid});
+            try bg.w.print("const _zbr_val_{d} = ", .{tid});
             try bg.genExpr(a.value);
             try bg.w.writeAll(";\n");
+            try bg.writeIndent();
+            try bg.w.print("const _zbr_cls_{d} = _allocator.create(@TypeOf(_zbr_val_{d})) catch @panic(\"OOM\");\n", .{ tid, tid });
+            try bg.writeIndent();
+            try bg.w.print("_zbr_cls_{d}.* = _zbr_val_{d};\n", .{ tid, tid });
             // Grab the next pool slot for this connection (BUG-126: per-call
             // state, not a single shared slot).  Overflow → loud panic.
             try bg.writeIndent();

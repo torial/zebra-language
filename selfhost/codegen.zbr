@@ -7548,15 +7548,21 @@ struct Generator
                 continue
             if .resolveClosureLambda(a.value) as lam
                 var tid_s = "${tid}"
+                # BUG-131: emit the closure value ONCE into _zbr_val_N, then
+                # derive its type from that local so the create's @TypeOf and
+                # the assignment use the same type.  Re-emitting the inline
+                # (struct{...}{...}) literal twice yields two distinct anon
+                # types and a "expected main__struct_N, found _M" mismatch.
                 bg.writeIndent()
-                bg.w.emit("const _zbr_cls_" + tid_s + " = _allocator.create(@TypeOf(")
-                bg.genExpr(a.value)
-                bg.w.emit(")) catch @panic(\"OOM\");")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("_zbr_cls_" + tid_s + ".* = ")
+                bg.w.emit("const _zbr_val_" + tid_s + " = ")
                 bg.genExpr(a.value)
                 bg.w.emit(";")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("const _zbr_cls_" + tid_s + " = _allocator.create(@TypeOf(_zbr_val_" + tid_s + ")) catch @panic(\"OOM\");")
+                bg.w.emit("\n")
+                bg.writeIndent()
+                bg.w.emit("_zbr_cls_" + tid_s + ".* = _zbr_val_" + tid_s + ";")
                 bg.w.emit("\n")
                 # Grab the next pool slot for this connection (BUG-126).
                 bg.writeIndent()

@@ -6,10 +6,15 @@
 
 ## BUG-131: inline capture-lambda to a `sig` param triple-emits the anon struct
 
-**Severity:** medium (blocks the natural inline `signal.connect(def() capture
-… )` idiom — the common Roblox `:Connect(function() … end)` shape; the
-ident-bound form is a working workaround)
-**Status:** OPEN — discovered 2026-06-16 (GameEngine TweenService.Completed).
+**Severity:** medium (blocked the natural inline `signal.connect(def() capture
+… )` idiom — the common Roblox `:Connect(function() … end)` shape)
+**Status:** FIXED 2026-06-16 — both compilers now emit the closure value ONCE
+into `_zbr_val_N` and derive the create's `@TypeOf` + the assignment from that
+local, so they share one type.  (The dispatcher still re-derives its type — it's
+a nested fn that can't see the local — but it only reinterprets a type-erased
+pointer between layout-identical structs, which is sound.)  Round-trip
+byte-identical, smoke 152/152.  Verified: inline `signal.connect(def() capture
+…)` compiles and runs.  Discovered 2026-06-16 (GameEngine TweenService.Completed).
 
 `emitCallWithClosureThunks` (the Gap-1 closure-via-sig path) emits the closure
 value `genExpr(a.value)` **three times** — inside `@TypeOf(...)` for the
@@ -35,12 +40,15 @@ thunking `submit` at all.)
 **Repro:** `signal.connect(def() capture { var x = x }; …)` — any inline
 capture-lambda passed to a `sig`-typed parameter.
 
-**Fix:** in both `src/CodeGen.zig` and `selfhost/codegen.zbr`
-`emitCallWithClosureThunks`, emit the closure struct as a **named type** once
-(`const _ZbrClsN = struct {…};`), then reference `_ZbrClsN` in the create, the
-assignment value, and the dispatcher — so all three share one type.  (The
-dispatcher is a separate inline struct; a container-scope `const` type decl is
-visible to its `fn`, so a named type works where a `_zbr_val` local would not.)
+**Fix applied:** bind the closure value to a local `const _zbr_val_N = <closure>`
+once, then `create(@TypeOf(_zbr_val_N))` + `_zbr_cls_N.* = _zbr_val_N`.  This is
+the minimal change that fixes the create-vs-assignment type clash (the two
+checked, same-scope emissions).  The dispatcher keeps its independent
+`@TypeOf(<re-emit>)` — it can't see the local — but it only `@ptrCast`s the
+type-erased pool pointer and the structs are layout-identical, so the round-trip
+is sound.  A fuller fix (a container-scope named type shared by all three) was
+considered but not needed for correctness; the stability-minimal change was
+chosen.
 
 ---
 
