@@ -1,0 +1,19 @@
+use crossmod_optret_geom exposing Vec3
+use crossmod_optret_lib exposing World
+
+# BUG-133: `as` on a cross-module method returning Vec3? must type-check.
+# BUG-134: returning the unwrapped Vec3 (labeled with World's module) where the
+#          declared return is geom.Vec3 must be accepted (same re-exported type).
+def sizeOrDefault(wld: World, found: bool): Vec3
+    if wld.getSize(found) as s
+        return s
+    return Vec3(9, 9, 9)
+
+def main()
+    var wld: World = World(5)
+    var hit: Vec3 = sizeOrDefault(wld, true)
+    assert hit.x == 1
+    assert hit.z == 3
+    var miss: Vec3 = sizeOrDefault(wld, false)
+    assert miss.x == 9
+    print("crossmod_optret: OK")

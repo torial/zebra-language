@@ -1,0 +1,10 @@
+# The module where Vec3 actually lives. World re-exports it via a method return,
+# and the test re-imports it directly - a 3-module re-export chain (BUG-134).
+class Vec3
+    var x: int
+    var y: int
+    var z: int
+    cue init(px: int, py: int, pz: int)
+        x = px
+        y = py
+        z = pz

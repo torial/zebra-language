@@ -1,0 +1,12 @@
+use crossmod_optret_geom exposing Vec3
+
+class World
+    var w: int
+    cue init(width: int)
+        w = width
+
+    # Returns an optional of a type defined in a THIRD module (geom), not here.
+    def getSize(found: bool): Vec3?
+        if found
+            return Vec3(1, 2, 3)
+        return nil

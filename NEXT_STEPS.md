@@ -119,7 +119,7 @@ queued for the 0.13 syntax-cleanup window. See §12 below.
 
 ## Medium Term (Milestone Features)
 
-### 27. Complete + reconcile cross-module type resolution ★ (scoped 2026-06-17)
+### 27. Complete + reconcile cross-module type resolution ★ (scoped 2026-06-17) — ✅ COMPLETE 2026-06-17 (27a/27b/27c done; 27d folded into 27b)
 
 **Motivation:** GameEngine script porting repeatedly hits the same root — the
 front-end doesn't fully resolve a `use`d module's type signatures, so inference
@@ -162,7 +162,8 @@ falls back to defaults. Four distinct symptoms, one cause:
   implicitly (via a goalX return) still needs the script to `use tween exposing
   TweenGoal` so the bare `*TweenGoal` resolves — so the translator must add the
   goal type + builders to the import list (see "remaining" below). Two bootstrap
-  bugs surfaced + filed: BUG-132 (genIf else-if-as panic), BUG-133 (= 27c).
+  bugs surfaced + filed: BUG-132 (genIf else-if-as panic) ✅ FIXED 2026-06-17,
+  BUG-133 (= 27c) ✅ FIXED 2026-06-17.
 - **27b — cross-module param defaults / default-fill (selfhost). ✅ DONE
   2026-06-17.** (Subsumes 27d.) `ModuleTypes`/`ClassTypes` now stores each
   ctor/fn's full `Param` list (with default exprs), populated in
@@ -176,11 +177,17 @@ falls back to defaults. Four distinct symptoms, one cause:
   `if … as …`, because the bootstrap strips `?T` — 27c/BUG-133.) **Caveat (= 27a):**
   a 1-arg `TweenInfo(t)` fills `EasingStyle.Quad`/`EasingDirection.Out`, which
   resolve only if the script imports those enums; 3-arg+ calls are clean.
-- **27c — optional-return reconciliation.** Bootstrap must preserve `?T` on
-  cross-module method returns (parity with selfhost). = BUG-133. Now the main
-  remaining §27 item: it forced both the `instance.zbr`-on-bootstrap break and
-  the `!= nil`/`to!` workarounds in 27a/27b. Fixing it lets those use `if … as …`
-  and unblocks compiling GameEngine `instance.zbr` under the bootstrap.
+- **27c — optional-return reconciliation. ✅ DONE 2026-06-17.** = BUG-133.
+  `src/TypeChecker.zig` `ModuleInterface` gained an `optional_method_returns`
+  set (parallel to `optional_ref_fields`); the three cross-module method-return
+  consumption sites now re-wrap the result in `.optional` via the new
+  `crossModuleMethodReturnType` helper when the dep declared the return `T?`.
+  `src/main.zig` `cloneInterface` + the empty/cycle interface mirror the field.
+  Bootstrap now matches the selfhost (which never had the bug — it stores the
+  full `Type_`). Regression: `test/crossmod_optret_test.zbr` (+`_lib`). Unblocks
+  GameEngine `instance.zbr` under the bootstrap. (The `!= nil`/`to!` workarounds
+  in 27a/27b can now be reverted to clean `if … as …` — left as cosmetic
+  follow-up to avoid churn; they remain correct.)
 - **27d — param defaults** ✅ folded into 27b. (Originally: lets `TweenInfo` carry its full
   6-arg signature; undo the GameEngine translator truncation).
 

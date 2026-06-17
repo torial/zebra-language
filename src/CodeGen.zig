@@ -9602,17 +9602,27 @@ const Generator = struct {
         }
     }
 
-    fn genIf(g: Generator, s: *Ast.StmtIf) anyerror!void {
-        try g.writeIndent();
-        // `if x is Union.variant |r|` — emit tag check + payload binding.
-        if (s.is_capture) |cap| {
-            const is_union_check = s.cond.* == .type_check and s.cond.type_check.variant_name != null;
+    /// Emit one clause of an if/else-if chain that may carry a capture binding.
+    /// Each clause independently decides whether it is a union-variant check
+    /// (`x is U.v as r`), an optional unwrap (`x as n` / `x is T as n`), or a
+    /// plain condition — clauses in the same chain need not share a form
+    /// (BUG-132: a `... as ...` head with a union-check else-if, or vice versa,
+    /// previously panicked by assuming `ei.cond.type_check`).
+    /// `lead` is the leading keyword fragment ("if (" or " else if (").
+    fn genIfCaptureClause(
+        g:       Generator,
+        lead:    []const u8,
+        cond:    *const Ast.Expr,
+        cap_opt: ?[]const u8,
+        body:    []const Ast.Stmt,
+    ) anyerror!void {
+        const is_union_check = cond.* == .type_check and cond.type_check.variant_name != null;
+        if (cap_opt) |cap| {
             if (is_union_check) {
-                // `if x is Union.variant as r` — emit tag check + payload binding.
-                const tc_node = s.cond.type_check;
+                const tc_node = cond.type_check;
                 const variant = tc_node.variant_name orelse tc_node.type_name;
-                const union_nm = if (tc_node.variant_name != null) tc_node.type_name else "";
-                try g.w.writeAll("if (");
+                const union_nm = tc_node.type_name;
+                try g.w.writeAll(lead);
                 try g.genExpr(tc_node.expr);
                 try g.w.print(" == .{s}) {{\n", .{variant});
                 const pk = if (union_nm.len > 0)
@@ -9632,81 +9642,41 @@ const Generator = struct {
                     try bg.genExpr(tc_node.expr);
                     try bg.w.print(".{s};\n", .{variant});
                 }
-                try bg.genStmts(s.then_body);
+                try bg.genStmts(body);
                 try g.writeIndent();
                 try g.w.writeAll("}");
-                for (s.else_ifs) |ei| {
-                    if (ei.is_capture) |ei_cap| {
-                        const ei_tc = ei.cond.type_check;
-                        const ei_variant = ei_tc.variant_name orelse ei_tc.type_name;
-                        const ei_union = if (ei_tc.variant_name != null) ei_tc.type_name else "";
-                        try g.w.writeAll(" else if (");
-                        try g.genExpr(ei_tc.expr);
-                        try g.w.print(" == .{s}) {{\n", .{ei_variant});
-                        const ei_pk = if (ei_union.len > 0)
-                            g.unionPayloadKind(ei_union, ei_variant)
-                        else
-                            PayloadKind.other;
-                        const ei_bg = g.indented();
-                        try ei_bg.writeIndent();
-                        if (ei_pk == .ref_payload) {
-                            try ei_bg.w.print("const {s}_ptr = ", .{ei_cap});
-                            try ei_bg.genExpr(ei_tc.expr);
-                            try ei_bg.w.print(".{s};\n", .{ei_variant});
-                            try ei_bg.writeIndent();
-                            try ei_bg.w.print("const {s} = {s}_ptr.*;\n", .{ ei_cap, ei_cap });
-                        } else {
-                            try ei_bg.w.print("const {s} = ", .{ei_cap});
-                            try ei_bg.genExpr(ei_tc.expr);
-                            try ei_bg.w.print(".{s};\n", .{ei_variant});
-                        }
-                        try ei_bg.genStmts(ei.body);
-                        try g.writeIndent();
-                        try g.w.writeAll("}");
-                    } else {
-                        try g.w.writeAll(" else if (");
-                        try g.genExpr(ei.cond);
-                        try g.w.writeAll(") {\n");
-                        try g.indented().genStmts(ei.body);
-                        try g.writeIndent();
-                        try g.w.writeAll("}");
-                    }
-                }
             } else {
-                // Optional-unwrap: `if x as n` or `if x is T as n` — emit Zig optional capture.
-                // For the `is T` form the inner expression is the subject; for bare `as` it's cond.
-                const inner: *const Ast.Expr = if (s.cond.* == .type_check)
-                    s.cond.type_check.expr
+                // Optional-unwrap: `if x as n` or `if x is T as n`.
+                const inner: *const Ast.Expr = if (cond.* == .type_check)
+                    cond.type_check.expr
                 else
-                    s.cond;
-                try g.w.writeAll("if (");
+                    cond;
+                try g.w.writeAll(lead);
                 try g.genExpr(inner);
                 try g.w.print(") |{s}| {{\n", .{cap});
-                try g.indented().genStmts(s.then_body);
+                try g.indented().genStmts(body);
                 try g.writeIndent();
                 try g.w.writeAll("}");
-                for (s.else_ifs) |ei| {
-                    if (ei.is_capture) |ei_cap| {
-                        const ei_inner: *const Ast.Expr = if (ei.cond.* == .type_check)
-                            ei.cond.type_check.expr
-                        else
-                            ei.cond;
-                        try g.w.writeAll(" else if (");
-                        try g.genExpr(ei_inner);
-                        try g.w.print(") |{s}| {{\n", .{ei_cap});
-                        try g.indented().genStmts(ei.body);
-                        try g.writeIndent();
-                        try g.w.writeAll("}");
-                    } else {
-                        try g.w.writeAll(" else if (");
-                        try g.genExpr(ei.cond);
-                        try g.w.writeAll(") {\n");
-                        try g.indented().genStmts(ei.body);
-                        try g.writeIndent();
-                        try g.w.writeAll("}");
-                    }
-                }
             }
+        } else {
+            try g.w.writeAll(lead);
+            try g.genExpr(cond);
+            try g.w.writeAll(") {\n");
+            try g.indented().genStmts(body);
+            try g.writeIndent();
+            try g.w.writeAll("}");
+        }
+    }
+
+    fn genIf(g: Generator, s: *Ast.StmtIf) anyerror!void {
+        try g.writeIndent();
+        // `if x is Union.variant |r|` — emit tag check + payload binding.
+        if (s.is_capture != null) {
+            // Each clause decides its own form (union check / optional unwrap /
+            // plain) so a chain may mix forms without panicking (BUG-132).
+            try g.genIfCaptureClause("if (", s.cond, s.is_capture, s.then_body);
+            for (s.else_ifs) |ei|
+                try g.genIfCaptureClause(" else if (", ei.cond, ei.is_capture, ei.body);
             if (s.else_body) |eb| {
                 try g.w.writeAll(" else {\n");
                 try g.indented().genStmts(eb);
@@ -9730,12 +9700,10 @@ const Generator = struct {
         try g.writeIndent();
         try g.w.writeAll("}");
         for (s.else_ifs) |ei| {
-            try g.w.writeAll(" else if (");
-            try g.genExpr(ei.cond);
-            try g.w.writeAll(") {\n");
-            try g.indented().genStmts(ei.body);
-            try g.writeIndent();
-            try g.w.writeAll("}");
+            // A plain-headed if-chain may still have capture-bearing else-ifs
+            // (`if c {} else if x as n {}`); route through the capture-aware
+            // clause emitter so the binding is honored (BUG-132).
+            try g.genIfCaptureClause(" else if (", ei.cond, ei.is_capture, ei.body);
         }
         if (s.else_body) |eb| {
             try g.w.writeAll(" else {\n");

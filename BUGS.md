@@ -1,6 +1,33 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-133. Next new bug: BUG-134.**
+**Last bug number generated: BUG-134. Next new bug: BUG-135.**
+
+---
+
+## BUG-134: bootstrap rejects re-exported cross-module type identity
+
+**Severity:** medium (a type defined in module C, surfaced through module B's
+method return, and re-imported in module A, fails A's return/assign check with
+`type mismatch: expected 'T', got 'T'`; selfhost accepts it, so the compilers
+diverge)
+**Status:** FIXED 2026-06-17. `src/TypeChecker.zig` `isAssignable` now treats two
+`cross_module` types as assignable when their `type_name` matches, regardless of
+the `.module` label — cross-module type identity is by name (the type is the same
+re-exported Zig declaration at every hop), with Zig as the backstop. This mirrors
+the selfhost's `typesCompatible`, which returns `true` for any non-primitive pair.
+`Type.eql` is left unchanged (it still requires module+name for cross_module
+identity, so generic-arg/identity comparisons elsewhere keep their strictness);
+only the assignment/return-check path is loosened.
+
+Surfaced by GameEngine `instance.zbr`: `World.getSize(): Vector3?` (World in the
+`ecs` module, `Vector3` re-exported there from `math`) returns a value the
+bootstrap labeled `ecs.Vector3`, while `instance.zbr`'s declared return `Vector3`
+resolved to `math.Vector3` — same Zig type, different `.module` label, so
+`Type.eql` rejected `return s`. This was only *reachable* after BUG-133 stopped
+stripping the optional. Regression: `test/crossmod_optret_*` is a 3-module
+re-export chain (geom defines Vec3 → lib's `World.getSize(): Vec3?` → test
+re-imports Vec3 and returns the unwrapped binding). With both fixes,
+`instance.zbr` compiles under the bootstrap and the selfhost.
 
 ---
 
@@ -8,16 +35,22 @@
 
 **Severity:** low (codegen crash on a specific else-if shape; workaround =
 nested `else { if … as … }`)
-**Status:** OPEN — discovered 2026-06-17 (§27a).
+**Status:** FIXED 2026-06-17 — `src/CodeGen.zig` `genIf` now routes every clause
+(head + each else-if, in both the capture-headed and plain-headed paths) through
+a new `genIfCaptureClause` helper that decides the clause form (union-variant
+check / optional unwrap / plain) from *its own* condition. Clauses in one chain
+may now mix forms freely. This brings the bootstrap up to the **selfhost**, which
+already factored this into `genIsCaptureThen` (so this was a bootstrap-only
+divergence — no selfhost change needed). Regression: `test/if_unwrap_test.zbr`
+extended with three mixed-chain cases (union-head+optional-elseif,
+optional-head+union-elseif, plain-head+optional-elseif).
 
-`src/CodeGen.zig` `genIf` (~9640) reads `ei.cond.type_check` for an `else if`
+`src/CodeGen.zig` `genIf` (~9640) read `ei.cond.type_check` for an `else if`
 condition, assuming the `is X as y` form — but an else-if whose condition is an
 **optional-unwrap on a call** (`else if structNameFromType(et) as snm`) has an
-active `.call` union field, so it panics: `access of union field 'type_check'
-while field 'call' is active`. The first `if … as …` (non-else) handles this
-correctly; only the `else if` path assumes type_check. Fix: in `genIf`'s
-else-if handling, dispatch on the actual condition variant (call/type_check/…)
-as the primary `if` path already does.
+active `.call` union field, so it panicked: `access of union field 'type_check'
+while field 'call' is active`. The first `if … as …` (non-else) handled this
+correctly; only the `else if` path assumed type_check.
 
 ---
 
@@ -26,15 +59,24 @@ as the primary `if` path already does.
 **Severity:** medium (a cross-module method declared `: T?` is inferred as `T`
 by the bootstrap TC, so `if x as n` on its result errors; selfhost handles it,
 so the two compilers diverge — this is §27c)
-**Status:** OPEN — discovered 2026-06-17 (GameEngine `instance.zbr`).
+**Status:** FIXED 2026-06-17 (§27c). `src/TypeChecker.zig` now records an
+`optional_method_returns` set on `ModuleInterface` (parallel to the existing
+`optional_ref_fields`): when a public method's declared return is `T?` for a
+user-defined `T`, its `"Type.method"` key is recorded. The three cross-module
+method-return consumption sites build the result via a new
+`crossModuleMethodReturnType` helper that re-wraps the `cross_module` type in
+`.optional` when the key is present. `src/main.zig`'s `cloneInterface` and the
+empty/cycle interface mirror the new field. Regression:
+`test/crossmod_optret_test.zbr` (+`_lib`) exercises `if w.getSize() as s` across
+a module boundary.
 
-GameEngine `instance.zbr` calls `w.getSize(.entityId)` / `w.getTransform(...)`
-(cross-module `World` methods returning `Vector3?` / `CFrame?`). The **selfhost**
-compiles the `if … as …` unwrap fine; the **bootstrap** TC infers the return as
-non-optional (`Vector3` / `CFrame`) and errors `if x as n requires an optional
-type, got 'Vector3'`. So `instance.zbr` builds under selfhost but not bootstrap.
-Fix: preserve the `?T` wrapper on cross-module method-return inference in the
-bootstrap (parity with selfhost). Tracked as §27c in NEXT_STEPS.
+Root cause: `simpleTypeFromRef` collapses `nilable(<user-type>)` to `.unknown`
+(since user types don't cross the arena boundary), and `instance_method_return_types`
+only stored the bare type *name* (`namedTypeStr` unwraps the nilable), so the
+optionality was lost. The **selfhost** stores the full `Type_` (via `typeFromRef`,
+which maps `nilable → optional`), so it never had the bug — this was bootstrap
+catch-up. GameEngine `instance.zbr` (cross-module `World.getSize(): Vector3?`,
+`getTransform(): CFrame?`) now compiles under both compilers.
 
 ---
 

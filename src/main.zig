@@ -811,6 +811,12 @@ fn cloneInterface(src: *const TypeChecker.ModuleInterface, alloc: std.mem.Alloca
         var it = src.optional_ref_fields.keyIterator();
         while (it.next()) |k| try optional_ref_fields.put(try alloc.dupe(u8, k.*), {});
     }
+    var optional_method_returns = std.StringHashMap(void).init(alloc);
+    errdefer optional_method_returns.deinit();
+    {
+        var it = src.optional_method_returns.keyIterator();
+        while (it.next()) |k| try optional_method_returns.put(try alloc.dupe(u8, k.*), {});
+    }
     var struct_init_ref_params = std.StringHashMap([]bool).init(alloc);
     errdefer struct_init_ref_params.deinit();
     {
@@ -833,7 +839,7 @@ fn cloneInterface(src: *const TypeChecker.ModuleInterface, alloc: std.mem.Alloca
             try list_field_elem_types.put(k, v);
         }
     }
-    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
+    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
 }
 
 /// Compile a .zbr file to the corresponding .zig file, first recursively
@@ -879,6 +885,7 @@ fn compileZbrToZig(
             .fn_return_types              = std.StringHashMap([]const u8).init(alloc),
             .ref_fields                   = std.StringHashMap(void).init(alloc),
             .optional_ref_fields          = std.StringHashMap(void).init(alloc),
+            .optional_method_returns      = std.StringHashMap(void).init(alloc),
             .struct_init_ref_params       = std.StringHashMap([]bool).init(alloc),
             .list_field_elem_types        = std.StringHashMap([]const u8).init(alloc),
         };

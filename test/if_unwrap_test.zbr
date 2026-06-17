@@ -18,6 +18,15 @@ def tryWrap(s: str): Wrapper?
         return Wrapper(99)
     return nil
 
+union Tag
+    hot: int
+    cold: int
+
+def makeTag(b: bool): Tag
+    if b
+        return Tag.hot(1)
+    return Tag.cold(0)
+
 def main()
     var v1 = tryParse("42")
     if v1 as n
@@ -52,4 +61,25 @@ def main()
         print "wrap: " + w.value.toString()
     else
         print "no wrap"
+    # BUG-132: mixed if-chains - clauses in one chain need not share a form.
+    # union-variant-check head + optional-unwrap else-if:
+    var t1 = makeTag(true)
+    if t1 is Tag.hot as h
+        print "hot: " + h.toString()
+    else if tryParse("42") as n
+        print "n: " + n.toString()
+    else
+        print "none-mixed"
+    # optional-unwrap head + union-variant-check else-if:
+    if tryParse("bad") as n
+        print "n: " + n.toString()
+    else if t1 is Tag.hot as h
+        print "hot2: " + h.toString()
+    else
+        print "none-mixed2"
+    # plain head + optional-unwrap else-if:
+    if false
+        print "never"
+    else if tryParse("42") as n
+        print "plain-elseif: " + n.toString()
     print "ok"

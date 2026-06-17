@@ -471,6 +471,13 @@ pub const ModuleInterface = struct {
     /// Key: "TypeName.fieldName" — present iff the field is `^T?`.
     /// Used by CodeGen to emit `field.?.*` in `expr to!` unwrap operations.
     optional_ref_fields: std.StringHashMap(void),
+    /// Set of methods whose declared return type is `T?` (nilable) for a
+    /// user-defined `T`.  Key: "TypeName.methodName".  `simpleTypeFromRef`
+    /// collapses such returns to `.unknown` and `instance_method_return_types`
+    /// only records the bare name, so this map preserves the optionality for
+    /// cross-module call sites — letting `if w.getSize() as s` type-check
+    /// (BUG-133 / §27c).
+    optional_method_returns: std.StringHashMap(void),
     /// Per-struct `cue init` parameter boxing flags.
     /// Key: struct name (e.g. "ExprBinary").
     /// Value: owned bool slice — one entry per param, true iff that param is `^T`.
@@ -527,6 +534,9 @@ pub const ModuleInterface = struct {
         var orfk = self.optional_ref_fields.keyIterator();
         while (orfk.next()) |k| alloc.free(k.*);
         self.optional_ref_fields.deinit();
+        var omrk = self.optional_method_returns.keyIterator();
+        while (omrk.next()) |k| alloc.free(k.*);
+        self.optional_method_returns.deinit();
         var sirpk = self.struct_init_ref_params.keyIterator();
         while (sirpk.next()) |k| alloc.free(k.*);
         var sirpv = self.struct_init_ref_params.valueIterator();
@@ -572,13 +582,15 @@ pub fn extractModuleInterface(
     errdefer ref_fields.deinit();
     var optional_ref_fields = std.StringHashMap(void).init(alloc);
     errdefer optional_ref_fields.deinit();
+    var optional_method_returns = std.StringHashMap(void).init(alloc);
+    errdefer optional_method_returns.deinit();
     var struct_init_ref_params = std.StringHashMap([]bool).init(alloc);
     errdefer struct_init_ref_params.deinit();
     var list_field_elem_types = std.StringHashMap([]const u8).init(alloc);
     errdefer list_field_elem_types.deinit();
 
-    try extractFromDecls(module.decls, resolve, alloc, &methods, &fields, &types, &throws_methods, &boxed_variants, &variant_payload_types, &instance_field_types, &instance_method_return_types, &fn_return_types, &ref_fields, &optional_ref_fields, &struct_init_ref_params, &list_field_elem_types);
-    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
+    try extractFromDecls(module.decls, resolve, alloc, &methods, &fields, &types, &throws_methods, &boxed_variants, &variant_payload_types, &instance_field_types, &instance_method_return_types, &fn_return_types, &ref_fields, &optional_ref_fields, &optional_method_returns, &struct_init_ref_params, &list_field_elem_types);
+    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
 }
 
 fn extractFromDecls(
@@ -596,6 +608,7 @@ fn extractFromDecls(
     fn_return_types:              *std.StringHashMap([]const u8),
     ref_fields:                   *std.StringHashMap(void),
     optional_ref_fields:          *std.StringHashMap(void),
+    optional_method_returns:      *std.StringHashMap(void),
     struct_init_ref_params:       *std.StringHashMap([]bool),
     list_field_elem_types:        *std.StringHashMap([]const u8),
 ) !void {
@@ -603,12 +616,12 @@ fn extractFromDecls(
         .class  => |c| {
             const key = try alloc.dupe(u8, c.name);
             try types.put(key, .class);
-            try extractFromMembers(c.name, c.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(c.name, c.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .struct_ => |s| {
             const key = try alloc.dupe(u8, s.name);
             try types.put(key, .struct_);
-            try extractFromMembers(s.name, s.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(s.name, s.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .enum_ => |e| {
             const key = try alloc.dupe(u8, e.name);
@@ -648,7 +661,7 @@ fn extractFromDecls(
                 }
             }
         },
-        .namespace => |ns| try extractFromDecls(ns.decls, resolve, alloc, methods, fields, types, throws_methods, boxed_variants, variant_payload_types, instance_field_types, instance_method_return_types, fn_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types),
+        .namespace => |ns| try extractFromDecls(ns.decls, resolve, alloc, methods, fields, types, throws_methods, boxed_variants, variant_payload_types, instance_field_types, instance_method_return_types, fn_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types),
         // Top-level functions: record return type name in fn_return_types when it is a
         // user-defined type.  Key = function name only (no class prefix) so there is no
         // ambiguity with the "ClassName.methodName" keys in instance_method_return_types.
@@ -666,7 +679,7 @@ fn extractFromDecls(
         .interface => |i| {
             const key = try alloc.dupe(u8, i.name);
             try types.put(key, .class);
-            try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .mixin      => {},  // mixin members not extracted today
         .extend     => {},  // extension methods collected by collectExtMethodsInDecls
@@ -689,6 +702,7 @@ fn extractFromMembers(
     instance_method_return_types: *std.StringHashMap([]const u8),
     ref_fields:                   *std.StringHashMap(void),
     optional_ref_fields:          *std.StringHashMap(void),
+    optional_method_returns:      *std.StringHashMap(void),
     struct_init_ref_params:       *std.StringHashMap([]bool),
     list_field_elem_types:        *std.StringHashMap([]const u8),
 ) !void {
@@ -716,6 +730,13 @@ fn extractFromMembers(
                         const imrt_key = try alloc.dupe(u8, key);
                         const imrt_val = try alloc.dupe(u8, tname);
                         try instance_method_return_types.put(imrt_key, imrt_val);
+                        // Preserve `T?` optionality (BUG-133 / §27c): namedTypeStr
+                        // unwraps the nilable, so record it separately for the
+                        // cross-module consumption sites to re-wrap.
+                        if (rt.* == .nilable) {
+                            const omr_key = try alloc.dupe(u8, key);
+                            try optional_method_returns.put(omr_key, {});
+                        }
                     }
                 }
             }
@@ -860,6 +881,27 @@ fn simpleTypeFromRef(
         // Parametric alias applied — treat as same as the named alias at TC time.
         .alias_applied => .unknown,
     };
+}
+
+/// Build the cross_module `Type` for a method return, wrapping it in `.optional`
+/// when the dep declared the return as `T?` (recorded in `optional_method_returns`).
+/// `simpleTypeFromRef` collapses such returns to `.unknown` and the bare name is
+/// stored in `instance_method_return_types`, so this re-applies the optionality at
+/// the consumption sites — letting `if w.getSize() as s` type-check (BUG-133 / §27c).
+fn crossModuleMethodReturnType(
+    map_alloc:               Allocator,
+    optional_method_returns: *const std.StringHashMap(void),
+    key:                     []const u8,
+    module:                  []const u8,
+    tname:                   []const u8,
+) Type {
+    const base = Type{ .cross_module = .{ .module = module, .type_name = tname } };
+    if (optional_method_returns.contains(key)) {
+        const boxed = map_alloc.create(Type) catch return base;
+        boxed.* = base;
+        return Type{ .optional = boxed };
+    }
+    return base;
 }
 
 // ── Result ────────────────────────────────────────────────────────────────────
@@ -1239,6 +1281,15 @@ const TypeChecker = struct {
         if (from == .generic_named and to == .named and to.named.kind == .interface) {
             return tc.symbolImplements(from.generic_named.sym, to.named.name, 16);
         }
+        // Cross-module type identity is by name. A type re-exported through several
+        // modules (e.g. `math.Vector3` surfaced as the return of `ecs.World.getSize`)
+        // carries different `.module` labels at each hop but is the SAME Zig
+        // declaration. `Type.eql` requires module+name to match for two cross_module
+        // types, which rejects this; match on type_name and let Zig verify the
+        // re-export. (BUG-134; mirrors the selfhost's non-primitive leniency. The
+        // cross_module↔named cases already match by name in `Type.eql`.)
+        if (from == .cross_module and to == .cross_module)
+            return std.mem.eql(u8, from.cross_module.type_name, to.cross_module.type_name);
         return Type.eql(from, to);
     }
 
@@ -2515,7 +2566,7 @@ const TypeChecker = struct {
                         return base;
                     }
                     if (iface.instance_method_return_types.get(key)) |tname|
-                        return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
+                        return crossModuleMethodReturnType(tc.map_alloc, &iface.optional_method_returns, key, cm.module, tname);
                 }
             }
         }
@@ -3378,7 +3429,7 @@ const TypeChecker = struct {
                             if (iface.fields.get(key))  |ret| if (!ret.isAbstract()) return ret;
                             // For user-defined return types: return a typed cross_module value.
                             if (iface.instance_method_return_types.get(key)) |tname|
-                                return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
+                                return crossModuleMethodReturnType(tc.map_alloc, &iface.optional_method_returns, key, cm.module, tname);
                             if (iface.instance_field_types.get(key)) |tname|
                                 return Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
                         }
@@ -3418,7 +3469,7 @@ const TypeChecker = struct {
                                 defer tc.map_alloc.free(key);
                                 if (iface.methods.get(key)) |ret| if (!ret.isAbstract()) return ret;
                                 if (iface.instance_method_return_types.get(key)) |tname|
-                                    return Type{ .cross_module = .{ .module = mod_alias, .type_name = tname } };
+                                    return crossModuleMethodReturnType(tc.map_alloc, &iface.optional_method_returns, key, mod_alias, tname);
                             }
                         }
                     }
