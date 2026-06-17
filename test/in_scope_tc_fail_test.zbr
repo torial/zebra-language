@@ -1,0 +1,10 @@
+# TC negative test: class missing begin() and end() used in `using` block.
+# Expected: TC error mentioning "must define 'def begin()' and 'def end()'"
+
+class Ungrouped
+    var count: int = 0
+
+def main()
+    var g: Ungrouped = Ungrouped()
+    using g
+        g.count = 1

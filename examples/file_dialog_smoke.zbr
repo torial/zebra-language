@@ -1,0 +1,45 @@
+struct Model
+    var path: str
+    var status: str
+
+union Msg
+    opened: str
+    saved: str
+    foldered: str
+
+def init(): Model
+    return Model(path: "", status: "No dialog opened yet")
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.opened as p
+            return Model(path: p, status: "Opened: " + p)
+        on Msg.saved as p
+            return Model(path: p, status: "Saved: " + p)
+        on Msg.foldered as p
+            return Model(path: p, status: "Folder: " + p)
+
+def view(g: Gui, model: Model)
+    g.text("File Dialog Smoke Test")
+    g.text("Status: " + model.status)
+    g.separator()
+    if g.button("Open File")
+        var p = g.openFile()
+        if p as path
+            g.send(Msg.opened(path))
+    if g.button("Save File")
+        var p = g.saveFile()
+        if p as path
+            g.send(Msg.saved(path))
+    if g.button("Open Folder")
+        var p = g.openFolder()
+        if p as path
+            g.send(Msg.foldered(path))
+    g.separator()
+    if g.button("Show Alert")
+        g.msgBox("File Dialogs", "All three dialog types are working.")
+    if g.button("Show Error")
+        g.msgBoxError("Error", "This is an error message box.")
+
+def main()
+    Gui.run("File Dialog Smoke", 400, 300, init, update, view)

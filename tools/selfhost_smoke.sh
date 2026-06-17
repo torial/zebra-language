@@ -114,6 +114,38 @@ smoke_tc_fail() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Verify that a file with multiple parse errors reports ALL of them (not just the first).
+# Takes two expected error substrings; both must appear in the compiler's stderr.
+smoke_multi_parse_fail() {
+    local zbr="$1"
+    local expected1="$2"
+    local expected2="$3"
+    local label
+    label="$(basename "$zbr" .zbr)"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        echo "  FAIL: $label (expected parse failures, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+    else
+        local ok=1
+        if ! grep -qF "$expected1" /tmp/smoke-err; then
+            echo "  FAIL: $label (first parse error missing: $expected1)" >&2
+            ok=0
+        fi
+        if ! grep -qF "$expected2" /tmp/smoke-err; then
+            echo "  FAIL: $label (second parse error missing: $expected2)" >&2
+            ok=0
+        fi
+        if [[ $ok -eq 1 ]]; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 echo "── Selfhost smoke tests (emit-zig pipeline)"
 
 # Pure arithmetic / branching
@@ -181,6 +213,10 @@ smoke test/interface_test.zbr
 
 # BUG-083 fix: genGenericClass now emits comptime { IFoo.check(@This()); }.
 smoke test/generic_iface_test.zbr
+
+# Generic toString() dispatch: user-defined toString() on Box(T)/Pair(A,B) should
+# call the method directly, not fall back to std.fmt.allocPrint("{}", .{obj}).
+smoke test/generic_tostring_test.zbr
 
 # @[...] array literal in expression + `in @[...]` membership test.
 smoke test/array_in_test.zbr
@@ -286,6 +322,8 @@ smoke test/stdlib_str_test.zbr
 smoke test/stdlib_hash_test.zbr
 smoke test/stdlib_file_test.zbr
 smoke test/stdlib_misc_test.zbr
+smoke test/stdlib_path_test.zbr
+smoke test/datetime_inzone_test.zbr
 # Combined integration test: all stdlib additions together.
 smoke test/stdlib_additions_test.zbr
 
@@ -336,6 +374,9 @@ smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 
 # `zebra test` subcommand: assert_eq/ne/true/false + test runner.
 smoke_test test/test_module_test.zbr
+
+# Multi-error parse recovery: two parse errors must both appear in the output.
+smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 
 # Run a fixture via the bootstrap compiler (not selfhost) and check its stdout
 # contains the expected substring.  Used for runtime API smoke tests where
@@ -458,8 +499,83 @@ smoke_run test/iter_collision_test.zbr "abc xyz 2 1"
 # Exhaustiveness checking: branch on enum/union covers all members without else.
 smoke_run test/enum_branch_test.zbr "north"
 
+# Tcp.serve(port, handler) — compile smoke (server blocks; don't run).
+smoke_run test/tcp_serve_test.zbr "tcp_serve_test OK"
+
+# Atomic(T) — lock-free counter/flag: load/store/add/sub/swap/cas.
+smoke_run test/atomic_test.zbr "atomic_test OK"
+
 # WebSocket API: Ws.connect/serve/WsConn.send/recv/close emit-zig smoke test.
 smoke test/ws_smoke_test.zbr
+
+# gzip compress + gunzip round-trip: unblocked by Zig 0.16 (flate.Compress.init).
+smoke test/compress_test.zbr
+
+# Generic functions: def identity(T)(x: T): T — comptime type params, multi-type-arg calls.
+smoke_run test/generic_fn_test.zbr "generic functions: OK"
+
+# `is not` operator: x is not Union.variant — negated type/variant check.
+smoke_run test/is_not_test.zbr "is_not: OK"
+
+# `is not` on class type-tag: x is not ClassName — emits !(x._type_tag == _ttag_C).
+smoke_run test/is_not_class_test.zbr "is_not_class: OK"
+
+# `not x is not V` precedence: not binds looser than is not → not (x is not V).
+smoke_run test/is_not_precedence_test.zbr "is_not_precedence: OK"
+
+# MVU Gui.run: 6-arg form Gui.run(t,w,h,init,update,view) — emits _gui_mvu_run.
+smoke examples/counter.zbr
+
+# `using EXPR` scope-block: calls expr.begin(); defer expr.end(); executes body.
+smoke_run test/in_scope_test.zbr "in_scope_test PASS"
+# TC negative: class missing begin()/end() must fail with a diagnostic.
+smoke_tc_fail test/in_scope_tc_fail_test.zbr "must define 'def begin()'"
+
+# `x!` postfix force-unwrap: alias for `x to!`; enables x!.method() chaining.
+smoke_run test/postfix_bang_test.zbr "postfix_bang_test PASS"
+
+# BUG-122: opt_ptr_field_bindings seeded for local var declarations (not just parameters).
+# opt_ptr_local_var_test: regression sentinel only — same-module class ^T? (Node.next)
+#   passes trivially (class types are heap pointers; no .* needed).
+# val_test: the real BUG-122 test — cross-module union ^Val? accessed via local var,
+#   exercises the .?.* deref path that was missing before the fix.
+smoke_run test/opt_ptr_local_var_test.zbr "opt_ptr_local_var: OK"
+smoke_run test/val_test.zbr "val_test: OK"
+
+# `with` desugars bare method calls: `text("x")` → `g.text("x")` inside a `with g` block.
+smoke_run test/with_call_test.zbr "with_call_test PASS"
+
+# Log.json (JSON-lines format) + Log.setFile (file sink).
+smoke_run test/log_json_test.zbr "log_json_test OK"
+
+# Crypto.encrypt/decrypt — AES-256-GCM with SHA-256 key derivation.
+smoke_run test/crypto_test.zbr "crypto_test OK"
+
+# ThreadPool(n) — bounded worker pool with Atomic counter.
+smoke_run test/thread_pool_test.zbr "thread_pool_test OK"
+
+# UDP — Udp.bind(port) + Udp.socket() + send/recv/close round-trip.
+smoke_run test/udp_test.zbr "udp_test OK"
+
+# Http.serve(port, handler) — compile smoke (server blocks; don't run).
+smoke_run test/http_serve_test.zbr "http_serve_test OK"
+
+# SQLite — open/exec/query/close + transactions on :memory: database.
+smoke_run test/sqlite_test.zbr "sqlite_test OK"
+
+# GUI widgets: progressBar(label,f64) + combobox(label,List(str),int) + spinbox(label,int,int,int).
+smoke examples/widget_smoke.zbr
+
+# GUI file dialogs: openFile/saveFile/openFolder/?[]const u8 + msgBox/msgBoxError.
+smoke examples/file_dialog_smoke.zbr
+
+# Nested namespaces: dotted syntax (Outer.Inner) and nested syntax.
+smoke_run test/nested_namespace_dotted_test.zbr "hi"
+smoke_run test/nested_namespace_nested_test.zbr "hi"
+
+# DynLib producer side: export def + @export class factory.
+smoke_run test/dynlib_export_def_test.zbr "42"
+smoke_run test/dynlib_export_class_test.zbr "dynlib_export_class OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

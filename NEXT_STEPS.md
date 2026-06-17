@@ -2,7 +2,14 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-05-18 (type aliases with constraints complete: transparent emit, constraint after var init, --turbo strips, both backends, QUICKSTART §36, bootstrap 5/5)
+**Last updated:** 2026-06-07 (audit pass: §12 closed against BUG-115 fix; §21 REPL framing clarified; book Ch12/Ch13/Ch15/Appendix A reworked for current `throws`/`catch`/pipeline/`sig` syntax)
+
+> **Sections:**
+> - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
+> - **Open Bugs** — known issues without an open milestone slot.
+> - **Medium Term** — §12, §19, §19.5, §21, §24, §25 — feature clusters with their own histories.
+> - **Longer Term (pre-1.0)** — §23 memory model, §15 1.0 stabilization.
+> - **Post-1.0 deferred** — items explicitly punted; see grep for "post-1.0" / "deferred".
 
 > **Milestone cumulative semantics:** each milestone listed below is
 > *additive*.  A feature labeled for 0.14 lands at 0.14 and is then
@@ -25,15 +32,17 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Real ImGui backend completion (`LowLevel` sub-API) — `g.lowLevel.addLine/addRect/addRectFilled/addCircle/addCircleFilled/addText` (DrawList), `getWindowPos/Size/getCursorPos/getMousePos` → `(float,float)` tuple, `beginGroup/endGroup/sameLine`; stub + ImGui backends; 94/94 smoke (2026-05-13)
 - [x] JSON auto-inference — `Json.parse(T, src)` typed overload routes to `parseStrict` machinery; `@reflectable` required; both backends; bootstrap 5/5 (2026-05-13)
 - [x] Tuple/multi-return — `(T1, T2)` type, `(a, b)` literal, `var (x, y) = f()` destructure, `.0`/`.1` index; TC element-type registration; 93/93 smoke; bootstrap 5/5 (2026-05-13)
-- [ ] gzip compress — **blocked on Zig 0.16 upgrade** (see below)
-- [ ] Zig 0.16 upgrade — unblocks gzip; compile-performance improvements help REPL latency
+- [x] gzip compress — `std.compress.flate.Compress.init` + round-trip test; 124/124 smoke, bootstrap 5/5 (2026-05-20)
+- [x] Generic functions — `def identity(T)(x: T): T` syntax; `comptime T: type` Zig emission; call-site flattening `identity(int)(42)` → `identity(i64, 42)`; TC inference for format specs; 125/125 smoke, bootstrap 5/5 (2026-05-20)
+- [x] Zig 0.16 upgrade (core) — `ArrayList.empty`, `init: std.process.Init`, `_initIo` chain, selfhost `genMethod` fix; bootstrap 5/5 (2026-05-20)
+- [x] Zig 0.16 compat — `_Chan` updated to `std.Io.Mutex`/`Condition` + `std.Options.debug_io`; `_build_new` `.targets = .empty`; 122/122 smoke, bootstrap 5/5 (2026-05-20)
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
 - [x] Build system in Zebra — `zebra build` + `Build` stdlib module; selfhost TC/codegen parity; --build-file/--list-targets/b.target(); 96/96 smoke, bootstrap 5/5 (2026-05-14)
 
 **0.13 remaining:**
 - [x] BUG-115 — visibility keywords enforcement: `private`/`public`/`internal`/`protected` parsed + enforced; TC error outside owning class; cross-module `internal` excluded from interface table; selfhost parity; 99/99 smoke, bootstrap 5/5 (2026-05-14)
 - [x] `^T` auto-boxing edge case fixes: `List(^T).add(val)` heaps-boxes struct values in both compilers; `for item in List(^T)` via Zig auto-deref; method-chain fixed (BUG-027/079); 100/100 smoke, bootstrap 5/5 (2026-05-14)
-- [ ] Book docs for `sig`, raw strings, `"""`
+- [x] Book docs for `sig`, raw strings, `"""` — all present in QUICKSTART §20, §14
 
 **0.14 remaining (entire milestone — priority cluster):**
 - [x] `<-` copy-out: full deep-copy for `List` / classes inside `allocate` blocks via `_zbr_deep_copy`; HashMap blocked (compile error by design); 114/114 smoke, bootstrap 5/5 (2026-05-17)
@@ -46,13 +55,53 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Type aliases with constraints (`type Name = BaseType where value > expr`); transparent emit; constraint check injected after var init; --turbo strips checks; both backends; bootstrap 5/5 (2026-05-18)
 - [x] Refinement types (parametric aliases): `type Bounded(lo: int, hi: int) = int where value >= lo and value <= hi`; value params bound into constraint; `Bounded(0, 100)` in type position; struct-base aliases; both backends; 119/119 smoke, bootstrap 5/5 (2026-05-18)
 - [x] WebSocket (`Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close); both backends; bootstrap 5/5 (2026-05-19)
-- [ ] IANA timezone support (`zdt` — `DateTime.inZone("America/New_York")`)
+- [x] IANA timezone support (`DateTime.inZone("America/New_York")`) — built-in table (~75 zones), 4 DST rules (US/EU/AU/NZ), zero binary-size cost if unused, both backends, 130/130 smoke, bootstrap 5/5 (2026-05-23)
+- [x] `using EXPR` scope blocks (renamed from `in EXPR`) — any object with `begin()`/`end()` works; desugars to `{ const _in_N = EXPR; _in_N.begin(); defer _in_N.end(); body }`; `g.vbox()`/`g.hbox()` factory methods on GuiContext; QUICKSTART §38; both backends, 131/131 smoke, bootstrap 5/5 (2026-05-23)
 - [x] General for-loop destructuring (`for a, b in list_of_pairs` — `List((T1, T2))` declared-type locals/params; where clause; arity error; 97/97 smoke, bootstrap 5/5) (2026-05-14)
-- [ ] CHANGELOG covering the full 0.1 → 1.0 surface
+- [x] CHANGELOG covering the full 0.1 → 1.0 surface (2026-05-26, CHANGELOG.md)
+
+**0.15 — Language syntax cleanup:**
+- [x] **Nested namespaces** — `namespace Foo.Bar` (dotted) and `namespace Outer { namespace Inner { ... } }` (nested) syntax; desugar to nested `pub const` structs; scope-chain lookup in Binder/Resolver; `symbolType` fix in TC so member-access inference works; selfhost resolver/TC/codegen parity; both backends + QUICKSTART §41, bootstrap 5/5 (2026-05-26)
+- [x] **DynLib producer side — `@export class` + `export def`** — `export def myFn(...)` emits `pub export fn myFn(...)` (already wired in both compilers); `@export("sym") class Foo implements IFoo` emits `pub export fn sym() *IFoo` module-static singleton factory; tokenizer `@export` fix (keyword-escape hatch exception); both compilers + QUICKSTART §44, bootstrap 5/5, 149/149 smoke (2026-05-26). `zebra --shared` flag already existed. `zebra build --shared` (Build stdlib) deferred.
+- [x] `x!` postfix force-unwrap — `x!` ≡ `x to!`; `x!.method()` chains cleanly; `to!` stays as alias; both compilers; 132/132 smoke, bootstrap 5/5 (2026-05-23)
+- [x] `with` desugars bare method calls — `with g` makes `text("hello")` → `g.text("hello")`; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
+- [x] Remove `try expr` prefix form — Zig syntax leak; use `expr?` instead; migration note in QUICKSTART; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-23)
+- [x] Inline single-line if/else — `if x: y` and `if x: y else: z`; `:` required; `else if` chaining + next-line `else:` both supported; both compilers; 133/133 smoke, bootstrap 5/5 (2026-05-24)
+- [x] `Scope` interface for `using EXPR` — TC verifies type has `def begin()` and `def end()`; structural typing; error names the missing method(s); both compilers; 134/134 smoke, bootstrap 5/5 (2026-05-24)
+- [x] `is not` precedence — documented in QUICKSTART; test added to is_not_precedence_test.zbr; Expr4 > Expr3(not) > Expr(or) ordering confirmed; both compilers (2026-05-23)
+
+**0.15 — Stdlib completeness (pre-1.0 push):**
+- [x] `Http.serve(port, handler)` — Zig has `std.http.Server` since 0.11; expose for web service use cases; both backends (2026-05-25)
+- [x] `ThreadPool(n)` — erased-fn-ptr worker pool; `pool.submit(lambda)` + `pool.wait()`; bounded concurrency; both backends
+- [x] `Path.*` — `Path.join/dirname/basename/ext/extension/stem/isAbsolute/absolute`; wraps `std.fs.path`; both backends (normalize not in Zig 0.16; `extension` is alias for `ext`)
+- [x] Complete gzip compress — `Compress.gzip/gunzip`; both backends
+- [x] `Tcp.serve(port, handler)` — complement to `Tcp.connect`; both backends
+- [x] `Atomic(T)` — wraps `std.atomic.Value(T)`; lock-free int/bool counters; both backends
+- [x] `Log` improvements — `Log.json(level, msg, data)` JSON-lines + `Log.setFile(path)` file sink; both backends
+- [x] `Crypto` additions — AES-256-GCM `Crypto.encrypt/decrypt`; SHA-256 key derivation; both backends
+- [x] `SQLite` — direct sqlite3.c amalgamation; `Sqlite.open`, `db.exec/query/begin/commit/rollback/close`, `row.asInt/asStr/asFloat/asBool`; vendor file at `{exe_dir}/vendor/sqlite/sqlite3.c` (2026-05-25)
+- [x] `UDP` — `Udp.bind(port)/Udp.socket()`; `sock.send(host,port,data)/recv(n)/close()`; complement to TCP; both backends (2026-05-25)
+
+**0.15 — libui-ng consolidation:**
+- [x] Audit `torial/libui-ng` (wp-2025) vs `petabyt/libui-dev` (extra components) + `kojix2/libui-ng` (bug fixes); cherry-pick into `torial/libui-ng`; update `build.zig.zon` hash (2026-05-25, commit fed917a — wp-2025-v2: rebased onto kojix2 + our 46 C extensions; float spinbox, file dialogs, placeholder text, DrawBitmap decl; 9 new zig-libui-ng bindings)
+- [x] `beginPanel/endPanel` — `uiGroup` (titled border) + inner VBox; frame-0 creates, subsequent frames push cached inner box; `examples/panel_smoke.zbr`; 143/143 smoke, bootstrap 5/5 (2026-05-25, commit 757dfe3)
+- [x] `progressBar(label, f64)` / `combobox(label, List(str), int)→int` / `spinbox(label, int, int, int)→int` — all 5 backends wired; `_LuiMut.pb` for retained-mode progressbar; `_lui_cmb_cb` / `_lui_spn_cb` callbacks; `examples/widget_smoke.zbr`; 144/144 smoke, bootstrap 5/5 (2026-05-26)
+- [x] File dialogs — `g.openFile()→str?` / `g.saveFile()→str?` / `g.openFolder()→str?` / `g.msgBox(title,msg)` / `g.msgBoxError(title,msg)`; libui-ng backend uses `ui.Window.OpenFile/SaveFile/OpenFolder/MsgBox/MsgBoxError`; span+dupe+FreeText pattern; all 5 backends; TC returns `optional(string)` for path methods; `examples/file_dialog_smoke.zbr`; 145/145 smoke, bootstrap 5/5 (2026-05-26)
+- [ ] ~~`uiScrollingArea`~~ → **1.5** — scrollable container in libui-ng preamble
+- [ ] ~~DPI + DrawBitmap implementations~~  → **1.5** — deferred from audit
+- [ ] ~~Dark mode support in libui-ng~~ → **1.5** — deferred from audit
 
 ---
 
 ## Open Bugs
+
+**Selfhost `_initIo` propagation gap** —
+Selfhost-emitted dep modules get a simple `_initIo` from the preamble (sets local `_io` only);
+bootstrap-emitted dep modules get a propagating version that chains to their own transitive deps.
+Currently harmless: `ast.zbr`/`cg_helpers.zbr`/`typechecker.zbr` don't call any `_io`-dependent
+operations directly.  If a transitive dep gains file I/O calls in future, it will silently use
+undefined `_io`.  Long-term fix: emit a propagating `_initIo` in `generateModuleWith` (mirroring
+`src/CodeGen.zig` `genModule` lines 1896–1907).  **Deferred** — harmless now; track for 1.0 pre-flight.
 
 **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains
 Not manifesting in practice — `scanMutationsInExpr` conservatively marks cross-module calls as mutated.
@@ -121,21 +170,73 @@ handles all their known methods and returns; unhandled methods fall through to M
 a safe fallback.  Additive strategy — Mode 2 kept for `infer_ctx == nil` paths (field
 defaults) and TC gaps.  Bootstrap 5/5, 112/112 smoke.  See commit 6c1c072.
 
+### 25. Block comment syntax `/#  #/` ✓ (2026-06-03)
+
+Multi-line block comment analogous to `/* */` in C.  Pairs naturally with the `#` line-comment syntax.
+
+**Syntax:**
+```zebra
+/# This is a
+   multi-line comment #/
+```
+
+**Design decisions:**
+- **Nested `/#  #/` supported** — one nesting counter in the tokenizer; prevents the classic "can't comment out code that already contains a block comment" problem.
+- Close token: `#/`; tokenizer scans forward until `#/` counting `/#`/`#/` pairs.
+- EOF with open `/#`: clean error "unterminated block comment starting at line N".
+- No interaction with `#` line comments — inside `/#  #/`, `#` is inert.
+
+**Status:** Implemented in `src/Tokenizer.zig` (`scanBlockComment`, `block_depth`) and `selfhost/Lexer.zbr` (parity). 4 Parser.zig test cases + QUICKSTART §1 documentation added 2026-06-03.
+
+---
+
 ### 6. REPL (Milestone 0.11)
 Two-phase approach: warm-up pre-compiled preamble once → per-input incremental compile.
 "Accumulate and rerun" state model (all previous cells stay in scope).
 `sys.readLine()` is done (2026-05-10); remaining work is the incremental-compile mode.
 See design notes in `SELFHOST_JOURNAL.md`.
 
-### 7. Regex per-quantifier lazy/greedy (Milestone 0.11)
-Unblocked by BUG-014 fix. Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA
-to track per-node shortest/longest flags, not a global flag.
+**REPL latency — resident compiler — deferred to post-1.0:**
+Measured Zig 0.16 Windows behaviour: `zig run` cold=4s, warm (same file)=119ms.  The REPL
+session file changes on every entry (new declarations appended), so every entry is a cold
+compile.  `-fincremental` does NOT help on Zig 0.16 Windows — LLD and coff2 linkers both
+emit `TODO implement saving linker state`, meaning per-declaration state is not actually
+saved across invocations.  Using `-fincremental` is in fact *slower* than baseline for
+same-file warm cache (bypasses the 119ms path).
+
+**Preamble split ruled out by experiment (2026-05-26):** Split a 3389-line preamble into a
+separate importable `.zig` file; thin session file imports it and changes on each entry.
+Cold: 3.6s (preamble cached, link step still ~3.5s).  Warm same file: 136ms.  Changing only
+the thin session file: 3.5s — same as cold.  Zig re-links whenever any source file changes;
+the link step dominates and cannot be avoided without architectural changes below.
+
+Real improvement options (all deferred post-1.0):
+1. **Zig 0.17+**: when incremental linker state lands (tracked as a Zig issue), `-fincremental`
+   would give near-instant re-compilation of changed declarations only.
+2. **Native Zebra interpreter**: bypass Zig entirely for REPL evaluation.  ~2-3 week task.
+
+### 7. Regex per-quantifier lazy/greedy — **post-1.0** (BUG-014)
+Mixed lazy/greedy patterns (`<.*?>STUFF.*>`) require the NFA to track per-node
+shortest/longest flags, not a global flag. Architectural fix; see BUG-014.
+Workaround: split the pattern or restructure. Explicitly deferred post-1.0.
 
 ### 9. Greek NT n-gram port — **SIMD now landed; deferred wait is over**
 SIMD types shipped 2026-05-08 — the reason for deferring this port is gone.
 Scope: file I/O, `HashMap` with Unicode keys, sort, sliding n-gram window, TF-IDF /
 cosine similarity via `f32x8` dot-product.  See `concept_zebra-simd-design.md`
 for the fuzzy-match and text-analytics use-case table.
+
+**SIMD CPU target — `--cpu` passthrough ✓ (2026-05-26):**
+`zebra --cpu=native file.zbr` and `zebra --cpu=x86_64+avx2 file.zbr` now pass
+`-mcpu=VALUE` to the underlying Zig invocation.  See QUICKSTART.md §32 for the
+SIGILL hazard (wide-target binary on narrow machine) and the `--cpu native` use case.
+
+**SIMD 1.0 enhancement — runtime CPU dispatch (deferred to post-1.0):**
+[oma](https://github.com/ATTron/oma) (One Man Array) is a Zig library for runtime SIMD
+dispatch: at startup the binary detects CPU capabilities and selects the best kernel
+(SSE2 → AVX2 → AVX-512 on x86-64; NEON → SVE2 on AArch64) without requiring separate
+builds.  Design spike needed: integrate `oma`-style dispatch or expose `@cpu_feature`
+primitives that map to the same pattern.  **Target: post-1.0.**
 
 ### 10. Plugin system — DynLib demo ✓ (2026-05-16)
 Interface vtable construction, shim functions, DynLib stdlib, and demo files are complete.
@@ -144,18 +245,15 @@ Interface vtable construction, shim functions, DynLib stdlib, and demo files are
 Full DLL round-trip (build plugin → load from host) requires platform build steps — not in CI.
 See: `wiki/pages/concepts/concept_zebra-plugin-system.md`
 
-### 12. Syntax and ergonomics cleanup (Milestone 0.13)
+### 12. Syntax and ergonomics cleanup (Milestone 0.13) — ✅ ALL DONE
 
-**Open compiler work:**
-- **BUG-115** — Real `private` / `internal` visibility keywords (language proposal;
-  `_` prefix has zero compiler enforcement today). Decision needed before 1.0.
-
-**Open sweeps (pending BUG-115 decision):**
-- `_underscore` private prefix → drop (blocked on BUG-115 outcome)
-
-**Open docs:**
-- Book documentation for `sig`, raw strings, `"""`
-- `^T` auto-boxing ✅ — done 2026-05-14 (see 0.13 remaining above)
+- **BUG-115** ✅ FIXED 2026-05-14 — `private` / `public` / `internal` / `protected`
+  keywords parsed + enforced in both backends; TC error outside owning class;
+  cross-module `internal` excluded from interface table; 99/99 smoke, bootstrap 5/5.
+- `_underscore` private prefix — **retained only for compiler-emitted internals**
+  (no user-facing sweep needed; the visibility keywords cover user code).
+- Book documentation for `sig`, raw strings, `"""` ✅ — present in QUICKSTART §20, §14.
+- `^T` auto-boxing ✅ — done 2026-05-14 (see 0.13 remaining above).
 
 **Done (reference):**
 - BUG-111 ✅ — compound assign already works (closed not-a-bug 2026-05-05)
@@ -171,14 +269,16 @@ See: `wiki/pages/concepts/concept_zebra-0.12-syntax-cleanup.md`, `STYLE_GUIDE.md
 ### 19. Error recovery — remaining gaps
 
 **Done:** Bootstrap collect-and-continue (5 error classes), selfhost TC primitive
-mismatch diagnostics, `zebra typecheck-merge` subcommand, source-mapped errors.
+mismatch diagnostics, `zebra typecheck-merge` subcommand, source-mapped errors,
+boundary-restart multi-error parse recovery (both compilers; 2026-05-27).
 See completed table for details.
 
 **Still open:**
-- **Enum type checking** — enum variants not tracked in `ModuleTypes`; false-positive
-  risk prevents adding them without a full enum registry first.
+- **Enum type checking** ✅ (2026-05-27) — `ModuleTypes` already held enum member
+  registry; `inferExpr` now uses it via `hasEnumAny` for `Expr.ident` and
+  `Expr.member`. Both compilers. Cross-module via `dep_types.hasEnum`.
 - **Multi-error fixture parity** — selfhost catches resolver + TC primitive errors;
-  bootstrap catches 5 classes; delta closes further once enum tracking lands.
+  bootstrap catches 5 classes; delta now minimal (enum gap closed).
 
 ### 19.5. TC reliability cluster — remaining item
 
@@ -189,19 +289,23 @@ See completed table for details.
 
 Items a, b, c, e all complete — see completed table.
 
-### 19a. Boundary-restart parser recovery (deferred)
-After a parse error, scan forward to the next top-decl-starter (`class` / `struct` /
-`def` / `use` / `static` / blank-then-`@`) at column 0, restart the parse from there,
-accumulate errors across restarts.  Most syntax errors cascade from one root cause, so
-full multi-error Earley recovery is disproportionate — but this catches "missing paren
-in method A + bad expression in method B" cheaply.
-**Effort:** session-sized. **Target:** 1.0-era.
+### 19a. Boundary-restart parser recovery ✅ (complete 2026-05-27)
+Both compilers accumulate all parse errors in a file via boundary-restart.
+On each failure, the scanner advances to the next `col==1` decl-starter keyword
+and retries. All errors are joined and surfaced together.
+Bootstrap: `parseWithRecovery()` in `src/Parser.zig`.
+Selfhost: `collected_decls`/`parse_errors` fields + `tryParseTopDeclInto()` in
+`selfhost/parser.zbr`; uses `zig"_error_ctx.message"` (not `e.message`) to avoid
+dep-mode `_zbr_error_msg` limitation. 152/152 smoke, bootstrap 5/5.
 
 ### 21. Milestone 0.11 — remaining items
 
-- **gzip compress** — `std.compress.flate.Compress` was `@panic("TODO")` in Zig 0.15.2.
-  **Zig 0.16 now released** — unblocked, but migration to 0.16 may bring its own
-  headaches.  Revisit once the Zig upgrade is done.
+> All originally-tracked 0.11 items now ship. The REPL (`zebra repl`)
+> shipped at the 0.11 milestone (2026-05-13, commit 18bccac); any
+> incremental-compile / latency-optimization work is post-1.0 and gated
+> on Zig 0.17 incremental linker.
+
+- **gzip compress** ✅ — `std.compress.flate.Compress.init` + round-trip test; 124/124 smoke, bootstrap 5/5 (2026-05-20).
 - **JSON auto-inference** — `Json.parse(T, str)` without a separate `as T` annotation.
 - **Gui stack** — ImGui GLFW backend is superseded by the MVU + ZigZag TUI + libui-ng redesign
   (decided 2026-05-18; see §14 and `wiki/pages/concepts/concept_zebra-gui-redesign.md`).
@@ -279,7 +383,7 @@ the broader commitment is everything that landed from 0.1 onward.
   Gui, Reflect, Json.parseStrict, Progress, Base64, Path, Profile, SIMD
 - ✅ Self-hosting + bootstrap round-trip (Phase 22, 2026-04-21)
 - ✅ Source-mapped errors (delivered 0.5)
-- 0.11 deliverables: REPL, Gui stack (ImGui superseded by ZigZag+libui-ng redesign — see §14), regex per-quantifier, JSON auto-inference, gzip, debugger/DAP, build system
+- 0.11 deliverables: REPL, Gui stack (ImGui superseded by ZigZag+libui-ng redesign — see §14), ~~regex per-quantifier~~ (post-1.0; see §7), JSON auto-inference, gzip, debugger/DAP, build system
 - 0.13 deliverables: BUG-115 resolved, remaining sweeps, `^T` fixes
 - 0.14 deliverables: full `<-` deep-copy, `Chan(T)`, allocator context
 
@@ -291,7 +395,8 @@ the broader commitment is everything that landed from 0.1 onward.
 - ~~WebSocket~~ **DONE**: `Ws.connect/send/recv/close` + `Ws.serve` + `wss://` TLS + blocking `recv` + graceful close; both backends; bootstrap 5/5 (2026-05-19)
 - IANA timezone support (`zdt`) — `DateTime.inZone("America/New_York")`; see `concept_zebra-datetime-design.md`
 - [x] General for-loop destructuring — `for a, b in list_of_pairs` tuple unpacking (2026-05-14)
-- CHANGELOG covering the full 0.1 → 1.0 surface
+- [x] CHANGELOG covering the full 0.1 → 1.0 surface (2026-05-26, CHANGELOG.md)
+- `--target node-addon` — Node.js native addon codegen via N-API; `@node_export` annotation auto-generates type marshaling (primitives, str, List, HashMap, struct), opaque class handles with GC finalizers, TypeScript declarations, and `napi_register_module_v1` module registration; sync-only for 1.0 (async + JS→Zebra callbacks post-1.0); Zig cross-compilation produces all platform `.node` binaries from a single machine; reference implementation: Zebra SQLite as a Node addon. Full 10-phase plan: `wiki/pages/concepts/concept_zebra-node-addon-impl-plan.md`; vision: `wiki/pages/concepts/concept_zebra-node-addon.md`
 
 ---
 
@@ -319,10 +424,10 @@ teaching artifact.  See `wiki/pages/concepts/concept_zebra-vcs-architecture.md`.
 - **Layout:** `.fill` / `.fraction(n)` / `.fixed(n)` semantic values — each backend maps its own density.
 
 **Implementation sequence:**
-1. Validate `desttinghim/zig-libui-ng` against Zig 0.15.2
-2. Design MVU Gui API in QUICKSTART.md + toy programs (no code yet)
-3. ZigZag TUI backend (canonical reference)
-4. libui-ng adapter (~200-300 lines widget-cache reconciliation)
+1. ~~Validate `desttinghim/zig-libui-ng` against Zig 0.15.2~~ — done (broken, ~30 min fix deferred)
+2. ~~Design MVU Gui API in QUICKSTART.md + toy programs~~ — done (see §30 in QUICKSTART.md)
+3. ~~ZigZag TUI backend (canonical reference)~~ — **done 2026-05-21** (`--gui-backend=tui`; counter example works end-to-end; see `docs/gui_mvu_design.md`)
+4. libui-ng adapter (~200-300 lines widget-cache reconciliation + two `build.zig` Zig 0.16 fixes)
 
 See: `wiki/pages/concepts/concept_zebra-gui-redesign.md`
 
@@ -376,6 +481,78 @@ Swerver's zero-copy header parser works because Zig can express `[]const u8` sli
 
 See: `wiki/pages/concepts/concept_zebra-http-design.md`
 
+### 26. 1.5 — Zig built-in function access
+
+Expose Zig's ~100 `@builtins` in idiomatic Zebra for engine-level and systems code.
+Removes a primary impediment to writing GameEngine / systems code directly in Zebra rather than dropping to raw Zig.
+
+**Three-tier design:**
+
+**Tier 1 — Native Zebra promotions** (codegen emits the Zig builtin directly; no namespace):
+```zebra
+sizeof(T)      # → @sizeOf(T)
+alignof(T)     # → @alignOf(T)
+typeof(expr)   # → @TypeOf(expr)
+bitcast(T, x)  # → @bitCast(x)  (T in type position, Zig ≥ 0.12)
+```
+These appear constantly in low-level code; wrapping them in a namespace is friction.
+**Stability contract:** Tier 1 names are part of the Zebra stability commitment.
+The underlying Zig builtin names are a hidden implementation detail — if Zig ever renames
+one (rare), only the codegen mapping changes; the Zebra surface stays stable. Document in
+QUICKSTART §§ accordingly.
+
+**Tier 2 — Semantic namespaces** for coherent clusters:
+```zebra
+# Thread-safety primitives
+Atomic.load(ptr, order)
+Atomic.store(ptr, val, order)
+Atomic.rmw(op, ptr, val, order)      # @atomicRmw
+Atomic.cmpxchg(ptr, exp, new, succ, fail)  # covers both strong/weak variants
+Atomic.fence(order)
+
+# Pointer manipulation
+Ptr.cast(T, ptr)            # @ptrCast
+Ptr.alignCast(T, ptr)       # @alignCast
+Ptr.fromInt(T, n)           # @ptrFromInt
+Ptr.toInt(ptr)              # @intFromPtr
+Ptr.fieldParent(T, f, ptr)  # @fieldParentPtr
+
+# Integer overflow + bit ops
+Int.addWrap(a, b)    # @addWithOverflow → struct {value, overflow: bool}
+Int.subWrap(a, b)    # @subWithOverflow
+Int.mulWrap(a, b)    # @mulWithOverflow
+Int.clz(x)           # @clz
+Int.ctz(x)           # @ctz
+Int.popcount(x)      # @popcount
+Int.bitReverse(x)    # @bitReverse
+Int.reverseBytes(x)  # @reverseBytes
+
+# SIMD (complement to existing Zebra SIMD types)
+Simd.shuffle(T, a, b, mask)  # @shuffle
+Simd.splat(T, scalar)        # @splat
+Simd.reduce(op, vec)         # @reduce
+Simd.select(mask, a, b)      # @select
+```
+Cluster rationale: `Atomic` groups by semantics (all thread-safety), not by first-argument type — demonstrates why a "cluster by first arg type" scheme fails (atomics span `anytype`, `*anytype`, and zero-arg `@fence`).
+
+**Tier 3 — Transparent `@name(args)` pass-through** for the remaining ~60 builtins:
+```zebra
+@compileError("message")   # direct emit to Zig — zero Zebra changes needed
+@typeInfo(T)
+@hasField(T, "name")
+@hasDecl(T, "name")
+@memcpy(dest, src)
+@memset(dest, val, len)
+@trap()
+@breakpoint()
+```
+`@` prefix is unambiguous in Zebra expression position (nothing else starts with `@`).
+Codegen emits verbatim.  Any future Zig builtin works on day-zero with no Zebra compiler changes — this is the deliberate escape hatch for keeping up with Zig's evolving stdlib.
+
+**Effort:** Tier 1 promotions: ~1 day. Tier 2 namespaces: ~3 days. Tier 3 `@name` pass-through: ~1 day. Total: ~1 week.
+
+---
+
 ### 22. 2.0 — Kernel track (Zebra for OS-writing)
 2.0 deliverable: bring Zebra to kernel-class capability — bare-metal code with no
 runtime underneath.  Motivated by the expressiveness multiplier observation
@@ -403,6 +580,11 @@ Contracts, generics, interface vtables, `^T`, throws, nil tracking all survive.
 
 See: `wiki/pages/concepts/concept_zebra-os-additions.md`
 Sister page: `concept_zebra-systems-additions.md` (browser-class additions; subset of this).
+
+**Reference project:** [BamOS](https://github.com/bagggage/bamos) — Zig-native OS kernel with
+multi-ABI support (GNU/Linux + Windows NT) and a pure-Zig build pipeline.  Use as a concrete
+test target / compatibility reference when designing `.zeb` freestanding mode and `@freestanding`
+ABI conventions.  Bootstrappable with `zig build` alone — no external toolchain needed.
 
 **WASM track (builds on §17 1.5 foundations):**
 The `@freestanding` mode and module blacklist built for the kernel track are shared with

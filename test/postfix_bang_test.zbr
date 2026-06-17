@@ -1,0 +1,41 @@
+# Test `x!` postfix force-unwrap — alias for `x to!`.
+
+def maybeInt(x: int): int?
+    if x > 0
+        return x
+    return nil
+
+class Counter
+    var count: int
+
+    cue init(start: int)
+        .count = start
+
+    def doubled(): int
+        return .count * 2
+
+def maybeCounter(x: int): Counter?
+    if x > 0
+        return Counter(x)
+    return nil
+
+def main()
+    # Basic x! force-unwrap on a local optional
+    var a: int? = 42
+    var v1: int = a!
+    print v1  # 42
+
+    # x! on a function return value
+    var v2: int = maybeInt(7)!
+    print v2  # 7
+
+    # x!.method() — force-unwrap then chain
+    var v3: int = maybeCounter(5)!.doubled()
+    print v3  # 10
+
+    # to! legacy syntax still works
+    var b: int? = 99
+    var v4: int = b to!
+    print v4  # 99
+
+    print "postfix_bang_test PASS"

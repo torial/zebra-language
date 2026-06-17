@@ -14,6 +14,8 @@
 
 const std     = @import("std");
 const builtin = @import("builtin");
+var _io: std.Io = undefined;
+var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
@@ -23,12 +25,28 @@ var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
+pub fn _initIo(io: std.Io) void {
+    _io = io;
+}
 // === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
     return owned;
+}
+
+// Normalize a filesystem path for the host OS.  On Windows, std.Io.Dir's
+// createFile rejects an absolute path containing backslashes mixed with
+// forward slashes (OBJECT_NAME_INVALID) — e.g. an output dir like
+// "C:\dir" joined with "/name.zig".  Forward-slash absolute paths work
+// everywhere, so collapse backslashes to forward slashes.  Returns the
+// input unchanged when there is nothing to normalize.
+fn _zbr_norm_path(p: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, p, '\\') == null) return p;
+    const buf = _allocator.alloc(u8, p.len) catch return p;
+    for (p, 0..) |c, i| buf[i] = if (c == '\\') '/' else c;
+    return buf;
 }
 
 const _Stringable = struct {
@@ -256,25 +274,41 @@ fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T 
 }
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    const _r = std.process.Child.run(.{
-        .allocator = _allocator,
-        .argv = argv.items,
-        .max_output_bytes = 16 * 1024 * 1024,
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
     }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    const _ec: i64 = switch (_r.term) {
-        .Exited => |code| @intCast(code),
+    var stdout_bytes: []const u8 = "";
+    var stderr_bytes: []const u8 = "";
+    if (child.stdout) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    if (child.stderr) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
+    const _ec: i64 = switch (term) {
+        .exited => |code| @intCast(code),
         else    => -1,
     };
-    return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
+    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
 }
 fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
-    var child = std.process.Child.init(argv.items, _allocator);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    const term = child.spawnAndWait() catch return -1;
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch return -1;
+    const term = child.wait(_io) catch return -1;
     return switch (term) {
-        .Exited => |code| @intCast(code),
+        .exited => |code| @intCast(code),
         else    => -1,
     };
 }
@@ -285,46 +319,55 @@ const _SysProcess = struct {
 };
 fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
-    p.* = .{ .child = std.process.Child.init(argv.items, _allocator), .alive = false, .pid = -1 };
-    p.child.stdin_behavior  = .Ignore;
-    p.child.stdout_behavior = .Ignore;
-    p.child.stderr_behavior = .Inherit;
-    p.child.spawn() catch return p;
+    p.* = .{ .child = undefined, .alive = false, .pid = -1 };
+    p.child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .ignore,
+        .stderr = .inherit,
+    }) catch return p;
     p.alive = true;
-    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig 0.15 std so we leave -1.
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
     if (comptime builtin.os.tag != .windows) {
-        p.pid = @intCast(p.child.id);
+        if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
 }
 fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
-    _ = p.child.kill() catch {};
+    p.child.kill(_io);
     p.alive = false;
 }
 fn _sys_process_is_running(p: *_SysProcess) bool {
     if (!p.alive) return false;
     if (comptime builtin.os.tag == .windows) {
-        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
-        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
-        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
-        return true;
+        const handle = p.child.id orelse { p.alive = false; return false; };
+        var timeout: std.os.windows.LARGE_INTEGER = 0;
+        const status = std.os.windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &timeout);
+        if (status == .TIMEOUT) return true;
+        p.alive = false;
+        return false;
     } else {
-        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        const pid = p.child.id orelse { p.alive = false; return false; };
+        const r = std.posix.waitpid(pid, std.posix.W.NOHANG);
         if (r.pid != 0) { p.alive = false; return false; }
         return true;
     }
 }
 fn _sys_readline() ?[]const u8 {
-    const stdin = std.fs.File.stdin();
-    var buf: [4096]u8 = undefined;
-    const n = stdin.read(&buf) catch return null;
-    if (n == 0) return null;
-    const line = buf[0..n];
-    const trimmed = if (line.len > 0 and line[line.len - 1] == '\n')
-        if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
-    else line;
-    return _allocator.dupe(u8, trimmed) catch return null;
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var line: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    while (true) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
+        if (n == 0) return if (line.items.len > 0) line.items else null;
+        const b = byte_buf[0];
+        if (b == '\n') break;
+        if (b != '\r') line.append(_allocator, b) catch return null;
+    }
+    return line.items;
 }
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
 const _DynLib = struct {
@@ -342,55 +385,55 @@ fn _dynlib_close(dl: *_DynLib) void {
 // ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
 fn _Chan(comptime T: type) type {
     return struct {
-        mutex:     std.Thread.Mutex = .{},
-        not_empty: std.Thread.Condition = .{},
-        not_full:  std.Thread.Condition = .{},
+        mutex:     std.Io.Mutex = .init,
+        not_empty: std.Io.Condition = .init,
+        not_full:  std.Io.Condition = .init,
         buf:       std.ArrayList(T),
         capacity:  usize,
         closed:    bool = false,
 
         const Self = @This();
-        // Zig 0.15: std.ArrayList is unmanaged — allocator passed per operation.
         const _alloc = std.heap.page_allocator;
+        const _dio = std.Options.debug_io;
 
         pub fn init(cap: usize) Self {
-            return .{ .buf = .{}, .capacity = cap };
+            return .{ .buf = .empty, .capacity = cap };
         }
 
         pub fn send(self: *Self, val: T) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             if (self.closed) @panic("send on closed channel");
             const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
             while (self.buf.items.len >= eff_cap and !self.closed)
-                self.not_full.wait(&self.mutex);
+                self.not_full.waitUncancelable(_dio, &self.mutex);
             if (self.closed) return;
             self.buf.append(_alloc, val) catch @panic("OOM");
-            self.not_empty.signal();
+            self.not_empty.signal(_dio);
             // Rendezvous (cap=0): sender blocks until receiver drains the slot.
             if (self.capacity == 0) {
                 while (self.buf.items.len > 0 and !self.closed)
-                    self.not_full.wait(&self.mutex);
+                    self.not_full.waitUncancelable(_dio, &self.mutex);
             }
         }
 
         pub fn recv(self: *Self) ?T {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             while (self.buf.items.len == 0 and !self.closed)
-                self.not_empty.wait(&self.mutex);
+                self.not_empty.waitUncancelable(_dio, &self.mutex);
             if (self.buf.items.len == 0) return null;
             const val = self.buf.orderedRemove(0);
-            self.not_full.signal();
+            self.not_full.signal(_dio);
             return val;
         }
 
         pub fn close(self: *Self) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             self.closed = true;
-            self.not_empty.broadcast();
-            self.not_full.broadcast();
+            self.not_empty.broadcast(_dio);
+            self.not_full.broadcast(_dio);
         }
     };
 }
@@ -399,6 +442,140 @@ fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
+fn _Atomic(comptime T: type) type {
+    return struct {
+        val: std.atomic.Value(T),
+
+        pub fn load(self: *@This()) T {
+            return self.val.load(.seq_cst);
+        }
+        pub fn store(self: *@This(), v: T) void {
+            self.val.store(v, .seq_cst);
+        }
+        pub fn add(self: *@This(), delta: T) T {
+            return self.val.fetchAdd(delta, .seq_cst);
+        }
+        pub fn sub(self: *@This(), delta: T) T {
+            return self.val.fetchSub(delta, .seq_cst);
+        }
+        pub fn swap(self: *@This(), v: T) T {
+            return self.val.swap(v, .seq_cst);
+        }
+        pub fn cas(self: *@This(), expected: T, desired: T) bool {
+            return self.val.cmpxchgStrong(expected, desired, .seq_cst, .seq_cst) == null;
+        }
+    };
+}
+fn _atomic_create(comptime T: type, v: T) *_Atomic(T) {
+    const ptr = std.heap.page_allocator.create(_Atomic(T)) catch @panic("OOM");
+    ptr.* = .{ .val = std.atomic.Value(T).init(v) };
+    return ptr;
+}
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+const _ThreadTask = struct {
+    invoke:   *const fn (*anyopaque) void,
+    ctx:      *anyopaque,
+    free_ctx: *const fn (*anyopaque) void,
+    next:     ?*_ThreadTask = null,
+};
+fn _tp_noop_free(ctx: *anyopaque) void { _ = ctx; }
+const _ThreadPool = struct {
+    mutex:     std.Io.Mutex,
+    has_work:  std.Io.Condition,
+    all_done:  std.Io.Condition,
+    head:      ?*_ThreadTask,
+    in_flight: usize,
+    shutdown:  bool,
+
+    // submit accepts both plain fn()void and Zebra lambda structs (anytype dispatch).
+    pub fn submit(self: *_ThreadPool, f: anytype) void {
+        const T = @TypeOf(f);
+        const pa = std.heap.page_allocator;
+        const task = pa.create(_ThreadTask) catch @panic("OOM");
+        if (comptime @typeInfo(T) == .@"fn") {
+            const FnBox = struct { func: T };
+            const box = pa.create(FnBox) catch @panic("OOM");
+            box.* = .{ .func = f };
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*FnBox, @ptrCast(@alignCast(ctx))).func(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*FnBox, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(box), .free_ctx = Inv.free };
+        } else {
+            const cap = pa.create(T) catch @panic("OOM");
+            cap.* = f;
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*T, @ptrCast(@alignCast(ctx))).call(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*T, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(cap), .free_ctx = Inv.free };
+        }
+        self.mutex.lockUncancelable(_io);
+        if (self.head == null) {
+            self.head = task;
+        } else {
+            var t = self.head.?;
+            while (t.next) |n| t = n;
+            t.next = task;
+        }
+        self.in_flight += 1;
+        self.mutex.unlock(_io);
+        self.has_work.signal(_io);
+    }
+
+    pub fn wait(self: *_ThreadPool) void {
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        while (self.in_flight > 0) {
+            self.all_done.waitUncancelable(_io, &self.mutex);
+        }
+    }
+
+    fn worker(self: *_ThreadPool) void {
+        const pa = std.heap.page_allocator;
+        while (true) {
+            self.mutex.lockUncancelable(_io);
+            while (self.head == null and !self.shutdown) {
+                self.has_work.waitUncancelable(_io, &self.mutex);
+            }
+            if (self.head == null) {
+                self.mutex.unlock(_io);
+                return;
+            }
+            const task = self.head.?;
+            self.head = task.next;
+            self.mutex.unlock(_io);
+            task.invoke(task.ctx);
+            task.free_ctx(task.ctx);
+            pa.destroy(task);
+            self.mutex.lockUncancelable(_io);
+            self.in_flight -= 1;
+            const was_last = self.in_flight == 0;
+            self.mutex.unlock(_io);
+            if (was_last) self.all_done.broadcast(_io);
+        }
+    }
+};
+fn _thread_pool_create(n: i64) *_ThreadPool {
+    const pool = std.heap.page_allocator.create(_ThreadPool) catch @panic("OOM");
+    pool.* = .{
+        .mutex     = .init,
+        .has_work  = .init,
+        .all_done  = .init,
+        .head      = null,
+        .in_flight = 0,
+        .shutdown  = false,
+    };
+    const n_threads: usize = @intCast(@max(n, 1));
+    for (0..n_threads) |_| {
+        const t = std.Thread.spawn(.{}, _ThreadPool.worker, .{pool}) catch @panic("ThreadPool: spawn failed");
+        t.detach();
+    }
+    return pool;
+}
+
 // sys.go(lambda) — fire-and-forget thread spawn.
 // Accepts either a plain fn() void (no-capture lambda) or a struct with a
 // call(self) void method (captured lambda).  Both patterns are produced by
@@ -427,7 +604,7 @@ var _build_ran: bool = false;
 var _list_targets_mode: bool = false;
 fn _build_new(alloc: std.mem.Allocator) *_Build {
     const b = alloc.create(_Build) catch @panic("OOM");
-    b.* = .{ .targets = .{} };
+    b.* = .{ .targets = .empty };
     _global_build = b;
     return b;
 }
@@ -455,18 +632,20 @@ fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     std.process.exit(1);
 }
 fn _build_list_targets(b: *_Build) void {
-    const _out = std.fs.File.stdout().deprecatedWriter();
-    _out.writeAll("{\"targets\":[") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
-        if (i > 0) _out.writeAll(",") catch {};
+        if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
         const kind_str: []const u8 = switch (t.kind) {
             .exe   => "exe",
             .lib   => "lib",
             .test_ => "test",
         };
-        _out.print("{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
-    _out.writeAll("]}\n") catch {};
+    _stdout.writeStreamingAll(_io, "]}\n") catch {};
 }
 fn _build_auto_run() void {
     if (!_build_ran) {
@@ -478,8 +657,8 @@ fn _build_run(b: *_Build) void {
     if (_list_targets_mode) { _build_list_targets(b); return; }
     const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
     defer _allocator.free(self_exe);
-    std.fs.cwd().makePath(".zig-cache/zbr") catch {};
-    std.fs.cwd().makePath("zig-out/bin")    catch {};
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin",    .{}) catch {};
     for (b.targets.items) |t| {
         switch (t.kind) {
             .exe => {
@@ -493,18 +672,16 @@ fn _build_run(b: *_Build) void {
                 std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
                 {
                     const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Ignore;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .ignore, .stderr = .inherit }) catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: emit-zig wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
                 {
                     const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Inherit;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: zig build-exe wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
             },
@@ -561,7 +738,7 @@ fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, s
     const epoch_s    = epoch_days * 86400 + hour * 3600 + minute * 60 + second;
     return .{ .epoch_ms = epoch_s * 1000 };
 }
-fn _dt_now() _DateTime { return .{ .epoch_ms = std.time.milliTimestamp() }; }
+fn _dt_now() _DateTime { return .{ .epoch_ms = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_ms)) }; }
 fn _dt_weekday(dt: _DateTime) i64 {
     // epoch_days=0 is Thursday (ISO 4); Monday=1 … Sunday=7
     const epoch_days = @divFloor(dt.epoch_ms, 86400000);
@@ -652,6 +829,209 @@ const Calendar = struct {
     pub const Persian   = "persian";
     pub const Julian    = "julian";
 };
+
+// ── IANA Timezone support ─────────────────────────────────────────────────────
+// Common IANA zones: UTC offset in minutes (std/dst) and DST rule index.
+// DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
+//            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
+// Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
+const _tz_table = [_]_TzEntry{
+    .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/UTC",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/GMT",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "America/New_York",            .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Detroit",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Indiana/Indianapolis",.std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Kentucky/Louisville", .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Toronto",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Chicago",             .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Winnipeg",            .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Mexico_City",         .std = -360, .dst = -360, .rule = 0 },
+    .{ .name = "America/Denver",              .std = -420, .dst = -360, .rule = 1 },
+    .{ .name = "America/Phoenix",             .std = -420, .dst = -420, .rule = 0 },
+    .{ .name = "America/Los_Angeles",         .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Vancouver",           .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Anchorage",           .std = -540, .dst = -480, .rule = 1 },
+    .{ .name = "America/Adak",               .std = -600, .dst = -540, .rule = 1 },
+    .{ .name = "Pacific/Honolulu",            .std = -600, .dst = -600, .rule = 0 },
+    .{ .name = "America/Bogota",              .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Lima",                .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Sao_Paulo",           .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Argentina/Buenos_Aires",.std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Santiago",            .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "Europe/London",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Dublin",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Lisbon",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Paris",                .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Berlin",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Amsterdam",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Rome",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Madrid",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Brussels",             .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Vienna",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Warsaw",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Prague",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Stockholm",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Oslo",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Copenhagen",           .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Zurich",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Athens",               .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Helsinki",             .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Bucharest",            .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Kyiv",                 .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Istanbul",             .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Moscow",               .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Minsk",                .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Asia/Dubai",                  .std = 240,  .dst = 240,  .rule = 0 },
+    .{ .name = "Asia/Tehran",                 .std = 210,  .dst = 210,  .rule = 0 },
+    .{ .name = "Asia/Kabul",                  .std = 270,  .dst = 270,  .rule = 0 },
+    .{ .name = "Asia/Karachi",                .std = 300,  .dst = 300,  .rule = 0 },
+    .{ .name = "Asia/Kolkata",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Colombo",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Kathmandu",              .std = 345,  .dst = 345,  .rule = 0 },
+    .{ .name = "Asia/Dhaka",                  .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Almaty",                 .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Yangon",                 .std = 390,  .dst = 390,  .rule = 0 },
+    .{ .name = "Asia/Bangkok",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Ho_Chi_Minh",            .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Jakarta",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Shanghai",               .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Hong_Kong",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Singapore",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Taipei",                 .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Kuala_Lumpur",           .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Seoul",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Asia/Tokyo",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Australia/Darwin",            .std = 570,  .dst = 570,  .rule = 0 },
+    .{ .name = "Australia/Adelaide",          .std = 570,  .dst = 630,  .rule = 3 },
+    .{ .name = "Australia/Perth",             .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Australia/Brisbane",          .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Australia/Sydney",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Melbourne",         .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Hobart",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Pacific/Auckland",            .std = 720,  .dst = 780,  .rule = 4 },
+    .{ .name = "Pacific/Fiji",                .std = 720,  .dst = 720,  .rule = 0 },
+    .{ .name = "Pacific/Guam",                .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Africa/Cairo",                .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Nairobi",              .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Africa/Johannesburg",         .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Lagos",                .std = 60,   .dst = 60,   .rule = 0 },
+    .{ .name = "Atlantic/Azores",             .std = -60,  .dst = 0,    .rule = 2 },
+    .{ .name = "Atlantic/Cape_Verde",         .std = -60,  .dst = -60,  .rule = 0 },
+};
+
+// First Sunday on or after epoch_days D (Sundays: epoch_days % 7 == 3).
+fn _tz_first_sun_on_or_after(d: i64) i64 {
+    return d + @mod(3 - d, 7);
+}
+
+// Last Sunday on or before epoch_days D.
+fn _tz_last_sun_on_or_before(d: i64) i64 {
+    return d - @mod(d - 3, 7);
+}
+
+fn _tz_us_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // US DST (since 2007): 2nd Sunday March 02:00 LST → 1st Sunday November 02:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    if (g.year < 2007) return false;
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    const mar1 = @divFloor(_dt_from_gregorian(g.year, 3, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_mar = _tz_first_sun_on_or_after(mar1);
+    const sun2_mar = sun1_mar + 7;
+    // 02:00 local standard → UTC: subtract std offset (std_ms is negative for West)
+    const dst_start = sun2_mar * 86400000 + 7200000 - std_ms;
+
+    const nov1 = @divFloor(_dt_from_gregorian(g.year, 11, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_nov = _tz_first_sun_on_or_after(nov1);
+    // 02:00 local DST → UTC: subtract dst offset
+    const dst_end = sun1_nov * 86400000 + 7200000 - dst_ms;
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_eu_dst_active(epoch_ms: i64) bool {
+    // EU DST: last Sunday March 01:00 UTC → last Sunday October 01:00 UTC
+    const g = _dt_to_gregorian(epoch_ms);
+
+    const mar31 = @divFloor(_dt_from_gregorian(g.year, 3, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_mar = _tz_last_sun_on_or_before(mar31);
+    const dst_start = last_sun_mar * 86400000 + 3600000; // 01:00 UTC
+
+    const oct31 = @divFloor(_dt_from_gregorian(g.year, 10, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_oct = _tz_last_sun_on_or_before(oct31);
+    const dst_end = last_sun_oct * 86400000 + 3600000; // 01:00 UTC
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_au_east_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // AU Eastern DST: 1st Sunday October 02:00 LST → 1st Sunday April 03:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–September: always standard time
+    if (g.month >= 5 and g.month <= 9) return false;
+
+    if (g.month >= 10) {
+        const oct1 = @divFloor(_dt_from_gregorian(g.year, 10, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_oct = _tz_first_sun_on_or_after(oct1);
+        const dst_start = sun1_oct * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        // January–April: DST started last October; check if before 1st Sunday April 03:00 LDT
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms; // 03:00 LDT → UTC
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // NZ DST: last Sunday September 02:00 NZST → 1st Sunday April 03:00 NZDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–August: always standard time
+    if (g.month >= 5 and g.month <= 8) return false;
+
+    if (g.month >= 9) {
+        const sep30 = @divFloor(_dt_from_gregorian(g.year, 9, 30, 0, 0, 0).epoch_ms, 86400000);
+        const last_sun_sep = _tz_last_sun_on_or_before(sep30);
+        const dst_start = last_sun_sep * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms;
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+    for (&_tz_table) |*entry| {
+        if (std.mem.eql(u8, entry.name, zone)) {
+            const std_ms: i64 = @as(i64, entry.std) * 60000;
+            if (entry.std == entry.dst or entry.rule == 0) {
+                return .{ .epoch_ms = dt.epoch_ms + std_ms };
+            }
+            const dst_ms: i64 = @as(i64, entry.dst) * 60000;
+            const in_dst = switch (entry.rule) {
+                1 => _tz_us_dst_active(dt.epoch_ms, entry.std),
+                2 => _tz_eu_dst_active(dt.epoch_ms),
+                3 => _tz_au_east_dst_active(dt.epoch_ms, entry.std),
+                4 => _tz_nz_dst_active(dt.epoch_ms, entry.std),
+                else => false,
+            };
+            return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
+        }
+    }
+    return dt; // Unknown zone: return as-is (UTC)
+}
 const JsonValue = std.json.Value;
 fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
@@ -660,7 +1040,7 @@ fn _json_parse(src: []const u8) ?JsonValue {
 fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }
-fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) }; }
+fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
 fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
 fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .string => |s| return s, else => {} }, else => {} }
@@ -681,7 +1061,7 @@ fn _json_get_bool(v: JsonValue, key: []const u8) bool {
 }
 fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
-    return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) };
+    return .{ .object = std.json.ObjectMap.empty };
 }
 fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
@@ -692,19 +1072,19 @@ fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, el
 fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
 fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
 }
 fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
 }
 fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
 }
 fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
 }
 fn _json_arr_str(v: *JsonValue, val: []const u8) void {
     if (v.* != .array) return;
@@ -724,23 +1104,27 @@ fn _json_arr_bool(v: *JsonValue, val: bool) void {
 }
 const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &_hb.writer }) catch return null;
-    return .{ .status = @intFromEnum(_hr.status), .text = _hb.written() };
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
 fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
 fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
 fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
 fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
     _ = _hc.fetch(.{ .location = .{ .url = url }, .method = .POST, .payload = body,
         .extra_headers = &.{ .{ .name = "Content-Type", .value = "application/json" } },
-        .response_writer = &_hb.writer }) catch return null;
-    return _json_parse(_hb.written());
+        .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return _json_parse(out_list.items);
 }
 fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
     var _new = std.heap.page_allocator.alloc([2][]const u8, resp.headers.len + 1) catch return resp;
@@ -753,24 +1137,24 @@ fn _http_serve(port: u16, handler: anytype) void {
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
-            defer ctx.conn.stream.close();
+            defer ctx.conn.close(_io);
             const _alloc = std.heap.page_allocator;
-            // Read request headers (scan for \r\n\r\n).
+            var _srv_rbuf: [4096]u8 = undefined;
+            var _srv_rd = ctx.conn.reader(_io, &_srv_rbuf);
+            // Read request headers byte-by-byte until \r\n\r\n.
             var _hd: [16384]u8 = undefined;
             var _hl: usize = 0;
-            while (_hl < _hd.len - 4096) {
-                const _n = std.posix.recv(ctx.conn.stream.handle, _hd[_hl..@min(_hl+4096, _hd.len)], 0) catch break;
-                if (_n == 0) break;
-                _hl += _n;
-                if (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") != null) break;
+            while (_hl < _hd.len - 1) {
+                const _b = _srv_rd.interface.takeByte() catch break;
+                _hd[_hl] = _b;
+                _hl += 1;
+                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') break;
             }
-            const _hdrs_end = (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") orelse (_hl -| 4)) + 4;
-            const _head = _hd[0.._hdrs_end];
-            var _peeked: usize = if (_hl > _hdrs_end) _hl - _hdrs_end else 0;
+            const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
@@ -792,16 +1176,14 @@ fn _http_serve(port: u16, handler: anytype) void {
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
-                const _pre = @min(_peeked, _cl);
-                if (_pre > 0) @memcpy(_bb[0.._pre], _hd[_hdrs_end.._hdrs_end+_pre]);
-                var _bi: usize = _pre;
+                var _bi: usize = 0;
                 while (_bi < _cl) {
-                    const _rn = std.posix.recv(ctx.conn.stream.handle, _bb[_bi..], 0) catch break;
+                    var _slices: [1][]u8 = .{_bb[_bi..]};
+                    const _rn = _srv_rd.interface.readVec(&_slices) catch break;
                     if (_rn == 0) break;
                     _bi += _rn;
                 }
                 _body = _bb[0.._bi];
-                _ = &_peeked;
             }
             const _req = HttpRequest{ .method = _method, .path = _path, .content = _body };
             const _resp = ctx.handler_fn(_req);
@@ -813,27 +1195,31 @@ fn _http_serve(port: u16, handler: anytype) void {
                 500 => "Internal Server Error",
                 else => "Unknown",
             };
-            var _xh: std.ArrayList(u8) = .{};
+            var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
                 .{ _resp.status, _st, _resp.text.len, _xh.items, _resp.text }) catch @panic("OOM");
-            ctx.conn.stream.writeAll(_out) catch {};
+            var _srv_wbuf: [4096]u8 = undefined;
+            var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
+            _srv_wr.interface.writeAll(_out) catch {};
+            _srv_wr.interface.flush() catch {};
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _conn = _srv.accept() catch continue;
-        const _ctx = _alloc.create(_Ctx) catch { _conn.stream.close(); continue; };
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
             _alloc.destroy(_ctx);
-            _conn.stream.close();
+            _conn.close(_io);
         };
     }
 }
@@ -848,9 +1234,9 @@ const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
 // Internal pointers: tls_client.input = &stream_reader.interface_state,
 //                   tls_client.output = &stream_writer.interface.
 const _WsTlsState = struct {
-    stream: std.net.Stream,
-    stream_reader: std.net.Stream.Reader,
-    stream_writer: std.net.Stream.Writer,
+    stream: std.Io.net.Stream,
+    stream_reader: std.Io.net.Stream.Reader,
+    stream_writer: std.Io.net.Stream.Writer,
     tls_client: std.crypto.tls.Client,
     rbuf:     [_WS_TLS_BUF]u8,
     wbuf:     [_WS_TLS_BUF]u8,
@@ -858,9 +1244,19 @@ const _WsTlsState = struct {
     sock_wbuf: [4096]u8,
 };
 
+// Plain-socket state for WebSocket — must live at a stable heap address
+// so that the stream reader's @fieldParentPtr vtable calls remain valid.
+const _WsPlain = struct {
+    stream: std.Io.net.Stream,
+    rbuf: [4096]u8,
+    wbuf: [4096]u8,
+    rd: std.Io.net.Stream.Reader,
+    wr: std.Io.net.Stream.Writer,
+};
+
 const _WsConn = struct {
     impl: union(enum) {
-        plain: std.net.Stream,
+        plain: _WsPlain,
         tls:   *_WsTlsState,
     },
     server_side: bool,
@@ -868,12 +1264,12 @@ const _WsConn = struct {
 
     fn readExact(self: *_WsConn, buf: []u8) !void {
         switch (self.impl) {
-            .plain => |s| {
-                var n: usize = 0;
-                while (n < buf.len) {
-                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
-                    if (r == 0) return error.ConnectionResetByPeer;
-                    n += r;
+            .plain => |*p| {
+                var remaining = buf;
+                while (remaining.len > 0) {
+                    var slices: [1][]u8 = .{remaining};
+                    const n = p.rd.interface.readVec(&slices) catch return error.ConnectionResetByPeer;
+                    remaining = remaining[n..];
                 }
             },
             .tls => |t| {
@@ -885,7 +1281,10 @@ const _WsConn = struct {
 
     fn writeAll(self: *_WsConn, buf: []const u8) !void {
         switch (self.impl) {
-            .plain => |s| try s.writeAll(buf),
+            .plain => |*p| {
+                p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
+                p.wr.interface.flush() catch return error.BrokenPipe;
+            },
             .tls   => |t| {
                 try t.tls_client.writer.writeAll(buf);
                 try t.tls_client.writer.flush();
@@ -895,25 +1294,25 @@ const _WsConn = struct {
 
     fn closeStream(self: *_WsConn) void {
         switch (self.impl) {
-            .plain => |s| s.close(),
+            .plain => |p| p.stream.close(_io),
             .tls   => |t| {
                 t.tls_client.end() catch {};
-                t.stream.close();
+                t.stream.close(_io);
                 std.heap.page_allocator.destroy(t);
             },
         }
     }
 };
 
-fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8) !void {
     state.stream = stream;
-    state.stream_reader = stream.reader(&state.sock_rbuf);
-    state.stream_writer = stream.writer(&state.sock_wbuf);
+    state.stream_reader = stream.reader(_io, &state.sock_rbuf);
+    state.stream_writer = stream.writer(_io, &state.sock_wbuf);
     var ca = std.crypto.Certificate.Bundle{};
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
-        state.stream_reader.interface(),
+        &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
@@ -929,7 +1328,7 @@ fn _ws_send_close_frame(conn: *_WsConn) void {
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
             close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
         conn.writeAll(&frame) catch {};
@@ -943,7 +1342,7 @@ fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
         conn.writeAll(&hdr) catch return;
         if (plen > 0) {
@@ -975,20 +1374,32 @@ fn _ws_connect(url: []const u8) ?*_WsConn {
         std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
 
     // TCP connect
-    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
-    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(_io); return null; };
 
     if (is_tls) {
-        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
-        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
         conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
     } else {
-        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+        // Initialize _WsPlain at its final heap address before setting up reader/writer,
+        // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
+        conn.server_side = false;
+        conn.closed = false;
+        conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+        conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
+        conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
     }
 
     // Build WebSocket upgrade request
     var key_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&key_bytes);
+    _io.randomSecure(&key_bytes) catch @panic("entropy unavailable");
     var key_b64: [24]u8 = undefined;
     _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
 
@@ -1041,7 +1452,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     }
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
         hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
         conn.writeAll(hdr[0..h]) catch return;
@@ -1061,7 +1472,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
 }
 
 fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
-    var msg: std.ArrayList(u8) = .{};
+    var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
@@ -1122,19 +1533,19 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: @TypeOf(handler),
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
-            // Read HTTP upgrade headers
+            // Read HTTP upgrade headers byte-by-byte
+            var hdr_rbuf: [64]u8 = undefined;
+            var hdr_rd = ctx.conn.reader(_io, &hdr_rbuf);
             var hdr_buf: [8192]u8 = undefined;
             var hdr_len: usize = 0;
             while (hdr_len + 1 < hdr_buf.len) {
-                var b: [1]u8 = undefined;
-                const n = ctx.conn.stream.read(&b) catch break;
-                if (n == 0) break;
-                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                const b = hdr_rd.interface.takeByte() catch break;
+                hdr_buf[hdr_len] = b; hdr_len += 1;
                 if (hdr_len >= 4 and
                     hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
                     hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
@@ -1142,9 +1553,9 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const headers = hdr_buf[0..hdr_len];
             // Extract Sec-WebSocket-Key
             const key_marker = "Sec-WebSocket-Key: ";
-            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
             const k1 = k0 + key_marker.len;
-            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.close(_io); return; };
             const client_key = headers[k1..k2];
             // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
             var sha = std.crypto.hash.Sha1.init(.{});
@@ -1159,12 +1570,21 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const resp = std.fmt.bufPrint(&resp_buf,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
                 .{accept_buf},
-            ) catch { ctx.conn.stream.close(); return; };
-            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            ) catch { ctx.conn.close(_io); return; };
+            {
+                var wr_wbuf: [512]u8 = undefined;
+                var wr = ctx.conn.writer(_io, &wr_wbuf);
+                wr.interface.writeAll(resp) catch { ctx.conn.close(_io); return; };
+                wr.interface.flush() catch { ctx.conn.close(_io); return; };
+            }
             // Create WsConn and call handler
-            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            ws.server_side = true;
+            ws.closed = false;
+            ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+            ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
+            ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
             if (!ws.closed) {
@@ -1175,25 +1595,26 @@ fn _ws_serve(port: u16, handler: anytype) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _c = _srv.accept() catch continue;
-        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
+        const _c = _srv.accept(_io) catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
         _ctx.* = .{ .conn = _c, .handler_fn = handler };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
 
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
-    var _rows: std.ArrayList([]const []const u8) = .{};
-    var _row:  std.ArrayList([]const u8) = .{};
-    var _f:    std.ArrayList(u8) = .{};
+    var _rows: std.ArrayList([]const []const u8) = .empty;
+    var _row:  std.ArrayList([]const u8) = .empty;
+    var _f:    std.ArrayList(u8) = .empty;
     const _St = enum { s, fld, q, aq };
     var _st: _St = .s;
     for (src) |c| {
@@ -1233,31 +1654,31 @@ fn _csv_parse(src: []const u8) _CsvTable {
     return .{ .rows = _rows.toOwnedSlice(_pa) catch &.{} };
 }
 fn _csv_parse_file(path: []const u8) _CsvTable {
-    const src = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return .{ .rows = &.{} };
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, path, std.heap.page_allocator, .unlimited) catch return .{ .rows = &.{} };
     return _csv_parse(src);
 }
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
 fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
@@ -1281,78 +1702,127 @@ fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     w.buf.appendSlice(_pa, "\r\n") catch {};
 }
 fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
-const TcpConn = struct { stream: std.net.Stream };
+const TcpConn = struct { stream: std.Io.net.Stream };
 fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
-    const s = std.net.tcpConnectToHost(_allocator, host, port) catch return null;
-    return .{ .stream = s };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    return .{ .stream = stream };
 }
 fn _tcp_write(conn: TcpConn, data: []const u8) void {
-    conn.stream.writeAll(data) catch |e| @panic(@errorName(e));
+    var _wb: [4096]u8 = undefined;
+    var _wt = conn.stream.writer(_io, &_wb);
+    _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
+    _wt.interface.flush() catch |e| @panic(@errorName(e));
 }
 fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
-    var _rd = conn.stream.reader(&_rb);
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    _ = _rd.interface().streamRemaining(&_hb.writer) catch |e| @panic(@errorName(e));
-    return _hb.written();
+    var _rd = conn.stream.reader(_io, &_rb);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    _ = _rd.interface.streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    out_list = out_aw.toArrayList();
+    return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
-    var _buf: std.ArrayList(u8) = .{};
+    var _buf: std.ArrayList(u8) = .empty;
+    var _rb: [1]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     while (true) {
-        var _b: [1]u8 = undefined;
-        const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
-        if (_n == 0) break;
-        if (_b[0] == '\n') break;
-        if (_b[0] != '\r') _buf.append(std.heap.page_allocator, _b[0]) catch break;
+        const _b = _rd.interface.takeByte() catch break;
+        if (_b == '\n') break;
+        if (_b != '\r') _buf.append(std.heap.page_allocator, _b) catch break;
     }
     return _buf.items;
 }
 fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     const _buf = std.heap.page_allocator.alloc(u8, n) catch @panic("OOM");
+    var _rb: [4096]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     var _total: usize = 0;
     while (_total < n) {
-        const _got = std.posix.recv(conn.stream.handle, _buf[_total..], 0) catch break;
+        var _slices: [1][]u8 = .{_buf[_total..]};
+        const _got = _rd.interface.readVec(&_slices) catch break;
         if (_got == 0) break;
         _total += _got;
     }
     return _buf[0.._total];
 }
-fn _tcp_close(conn: TcpConn) void { conn.stream.close(); }
-
-const UdpSocket = struct { handle: std.posix.socket_t };
-fn _udp_socket() UdpSocket {
-    const s = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, 0) catch |e| @panic(@errorName(e));
-    return .{ .handle = s };
-}
-fn _udp_send(sock: UdpSocket, host: []const u8, port: u16, data: []const u8) void {
-    const dest = blk: {
-        if (std.net.Address.parseIp(host, port)) |a| break :blk a else |_| {}
-        const _list = std.net.getAddressList(std.heap.page_allocator, host, port) catch |e| @panic(@errorName(e));
-        defer _list.deinit();
-        if (_list.addrs.len == 0) @panic("UDP send: hostname resolution failed");
-        break :blk _list.addrs[0];
+fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
+fn _tcp_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(TcpConn) void;
+    const _fn: _HFn = handler;
+    const _Ctx = struct {
+        conn: std.Io.net.Stream,
+        handler_fn: _HFn,
+        fn run(ctx: *@This()) void {
+            defer std.heap.page_allocator.destroy(ctx);
+            ctx.handler_fn(.{ .stream = ctx.conn });
+        }
     };
-    _ = std.posix.sendto(sock.handle, data, 0, &dest.any, dest.getOsSockLen()) catch |e| @panic(@errorName(e));
+    const _alloc = std.heap.page_allocator;
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+        std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit(_io);
+    while (true) {
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
+        _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+            _alloc.destroy(_ctx);
+            _conn.close(_io);
+        };
+    }
 }
-fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
-    const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
-    const n = std.posix.recv(sock.handle, buf, 0) catch |e| @panic(@errorName(e));
-    return buf[0..n];
+
+const _UdpSocketInner = struct {
+    inner: std.Io.net.Socket,
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+        const dest = std.Io.net.IpAddress.parse(host, port) catch {
+            std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
+            return;
+        };
+        self.inner.send(_io, &dest, data) catch |e| {
+            std.debug.print("UDP send error: {}\n", .{e});
+        };
+    }
+    pub fn recv_(self: *_UdpSocketInner, max_bytes: usize) []const u8 {
+        const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
+        const msg = self.inner.receive(_io, buf) catch return buf[0..0];
+        return msg.data;
+    }
+    pub fn close_(self: *_UdpSocketInner) void { self.inner.close(_io); }
+};
+const UdpSocket = *_UdpSocketInner;
+fn _udp_socket() UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = 0 } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
+    return s;
 }
-fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
+fn _udp_bind(port: u16) UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
+    return s;
+}
 
 fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .{};
-    const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
-    defer _list.deinit();
-    for (_list.addrs) |_addr| {
-        var _buf: [64]u8 = undefined;
-        const _full = std.fmt.bufPrint(&_buf, "{f}", .{_addr}) catch continue;
-        const _col = std.mem.lastIndexOfScalar(u8, _full, ':') orelse _full.len;
-        var _ip = _full[0.._col];
-        if (_ip.len >= 2 and _ip[0] == '[') _ip = _ip[1 .. _ip.len - 1];
-        const _owned = std.heap.page_allocator.dupe(u8, _ip) catch continue;
-        _result.append(std.heap.page_allocator, _owned) catch {};
+    var _result: std.ArrayList([]const u8) = .empty;
+    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return &.{};
+    switch (addr) {
+        .ip4 => |a| {
+            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return &.{};
+            _result.append(std.heap.page_allocator, _ip) catch return &.{};
+        },
+        .ip6 => {},
     }
     return _result.toOwnedSlice(std.heap.page_allocator) catch &.{};
 }
@@ -1379,7 +1849,7 @@ const _RFrag = struct {
 };
 const _RC = struct {
     pat: []const u8, pos: usize = 0,
-    nodes: std.ArrayListUnmanaged(_RNode) = .{}, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
+    nodes: std.ArrayListUnmanaged(_RNode) = .{ .items = &.{}, .capacity = 0 }, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
     fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
@@ -1580,7 +2050,7 @@ const Regex = struct {
     }
     fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
-        var cur: std.ArrayListUnmanaged(u32) = .{}; var nxt: std.ArrayListUnmanaged(u32) = .{};
+        var cur: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 }; var nxt: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 };
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
@@ -1714,9 +2184,9 @@ fn _re_eclosure_s(
 fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
     const empty: [_MAX_SAVE_SLOTS]usize = [_]usize{0xFFFF_FFFF_FFFF_FFFF} ** _MAX_SAVE_SLOTS;
-    var cur: std.ArrayListUnmanaged(_RegThread) = .{};
+    var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer cur.deinit(alloc);
-    var nxt: std.ArrayListUnmanaged(_RegThread) = .{};
+    var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer nxt.deinit(alloc);
     const vis = alloc.alloc(bool, re.nodes.len) catch return null;
     defer alloc.free(vis);
@@ -1747,7 +2217,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayListUnmanaged([]const u8) = .{};
+            var out: std.ArrayListUnmanaged([]const u8) = .{ .items = &.{}, .capacity = 0 };
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
@@ -1806,6 +2276,181 @@ fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8)
     }
 }
 
+// ─── SQLite ───────────────────────────────────────────────────────────────────
+const _sqlite3      = opaque {};
+const _sqlite3_stmt = opaque {};
+const _SQLITE_OK      = 0;
+const _SQLITE_ROW     = 100;
+const _SQLITE_DONE    = 101;
+const _SQLITE_INTEGER = 1;
+const _SQLITE_FLOAT   = 2;
+const _SQLITE_TEXT    = 3;
+const _SQLITE_NULL    = 5;
+// SQLITE_TRANSIENT (-1 cast to ptr) — tells SQLite to copy strings before use
+const _SQLITE_TRANSIENT: ?*anyopaque = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
+
+extern fn sqlite3_open(filename: [*:0]const u8, ppDb: **_sqlite3) c_int;
+extern fn sqlite3_close_v2(db: *_sqlite3) c_int;
+extern fn sqlite3_errmsg(db: *_sqlite3) [*:0]const u8;
+extern fn sqlite3_prepare_v2(db: *_sqlite3, sql: [*:0]const u8, nByte: c_int, ppStmt: **_sqlite3_stmt, pzTail: ?*?[*:0]const u8) c_int;
+extern fn sqlite3_step(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_finalize(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_count(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_name(stmt: *_sqlite3_stmt, N: c_int) [*:0]const u8;
+extern fn sqlite3_column_type(stmt: *_sqlite3_stmt, iCol: c_int) c_int;
+extern fn sqlite3_column_int64(stmt: *_sqlite3_stmt, iCol: c_int) i64;
+extern fn sqlite3_column_double(stmt: *_sqlite3_stmt, iCol: c_int) f64;
+extern fn sqlite3_column_text(stmt: *_sqlite3_stmt, iCol: c_int) ?[*:0]const u8;
+extern fn sqlite3_bind_int64(stmt: *_sqlite3_stmt, idx: c_int, val: i64) c_int;
+extern fn sqlite3_bind_double(stmt: *_sqlite3_stmt, idx: c_int, val: f64) c_int;
+extern fn sqlite3_bind_text(stmt: *_sqlite3_stmt, idx: c_int, txt: [*:0]const u8, n: c_int, destructor: ?*anyopaque) c_int;
+extern fn sqlite3_bind_null(stmt: *_sqlite3_stmt, idx: c_int) c_int;
+
+const _SqliteParam = union(enum) {
+    int:   i64,
+    float: f64,
+    text:  []const u8,
+    null_: void,
+};
+const _SqliteVal = _SqliteParam;
+
+const _SqliteRow = struct {
+    names: []const []const u8,
+    vals:  []const _SqliteVal,
+    pub fn int_(self: _SqliteRow, name: []const u8) i64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .int   => |i| i,
+                .float => |f| @as(i64, @intFromFloat(f)),
+                .text  => |t| std.fmt.parseInt(i64, t, 10) catch 0,
+                .null_ => 0,
+            };
+        }
+        return 0;
+    }
+    pub fn str_(self: _SqliteRow, name: []const u8) []const u8 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .text  => |t| t,
+                .int   => |i| std.fmt.allocPrint(_allocator, "{d}", .{i})   catch "",
+                .float => |f| std.fmt.allocPrint(_allocator, "{d}", .{f})   catch "",
+                .null_ => "",
+            };
+        }
+        return "";
+    }
+    pub fn float_(self: _SqliteRow, name: []const u8) f64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .float => |f| f,
+                .int   => |i| @as(f64, @floatFromInt(i)),
+                .text  => |t| std.fmt.parseFloat(f64, t) catch 0.0,
+                .null_ => 0.0,
+            };
+        }
+        return 0.0;
+    }
+    pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
+};
+
+const _SqliteDbInner = struct {
+    db: *_sqlite3,
+
+    fn _bind(stmt: *_sqlite3_stmt, params: []const _SqliteParam) void {
+        for (params, 0..) |p, i| {
+            const idx: c_int = @as(c_int, @intCast(i)) + 1;
+            switch (p) {
+                .int   => |v| _ = sqlite3_bind_int64(stmt, idx, v),
+                .float => |v| _ = sqlite3_bind_double(stmt, idx, v),
+                .text  => |v| {
+                    const cz = _allocator.dupeZ(u8, v) catch return;
+                    defer _allocator.free(cz);
+                    _ = sqlite3_bind_text(stmt, idx, cz, -1, _SQLITE_TRANSIENT);
+                },
+                .null_ => _ = sqlite3_bind_null(stmt, idx),
+            }
+        }
+    }
+    fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
+        const csql = _allocator.dupeZ(u8, sql) catch return;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite exec error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        _ = sqlite3_step(stmt);
+    }
+    fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) {
+        var rows = std.ArrayList(_SqliteRow).empty;
+        const csql = _allocator.dupeZ(u8, sql) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite query error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const ncols = sqlite3_column_count(stmt);
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            var names = std.ArrayList([]const u8).empty;
+            var vals  = std.ArrayList(_SqliteVal).empty;
+            var ci: c_int = 0;
+            while (ci < ncols) : (ci += 1) {
+                const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                const val: _SqliteVal = switch (sqlite3_column_type(stmt, ci)) {
+                    _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+                    _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+                    _SQLITE_TEXT    => blk: {
+                        const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                        const s = std.mem.sliceTo(raw, 0);
+                        break :blk .{ .text = _allocator.dupe(u8, s) catch s };
+                    },
+                    else => .null_,
+                };
+                vals.append(_allocator, val) catch {};
+            }
+            rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+        }
+        return rows;
+    }
+    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
+    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) std.ArrayList(_SqliteRow) { return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
+    pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
+    pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
+    pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
+};
+
+const SqliteDb  = *_SqliteDbInner;
+const SqliteRow = _SqliteRow;
+
+fn _sqlite_open(path: []const u8) ?SqliteDb {
+    const cpath = _allocator.dupeZ(u8, path) catch return null;
+    defer _allocator.free(cpath);
+    var db_raw: *_sqlite3 = undefined;
+    if (sqlite3_open(cpath, &db_raw) != _SQLITE_OK) {
+        std.debug.print("Sqlite.open error: {s}\n", .{sqlite3_errmsg(db_raw)});
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    }
+    const s = _allocator.create(_SqliteDbInner) catch {
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    };
+    s.* = .{ .db = db_raw };
+    return s;
+}
+
 // === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
@@ -1861,6 +2506,10 @@ const _GuiBackend = struct {
     ll_getMousePosFn:     *const fn () _GuiVec2,
     ll_beginGroupFn:      *const fn () void,
     ll_endGroupFn:        *const fn () void,
+    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endHBoxFn:   *const fn () void,
+    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endVBoxFn:   *const fn () void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -1893,6 +2542,11 @@ const _LowLevel = struct {
 const GuiContext = struct {
     _b: *const _GuiBackend,
     lowLevel: _LowLevel,
+    _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
+    _send_ptr: ?*anyopaque = null,
+    pub fn send(self: GuiContext, msg: anytype) void {
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+    }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1949,6 +2603,26 @@ const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+};
+const _GuiVBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiVBox) void { self._b.beginVBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiVBox) void { self._b.endVBoxFn(); }
+};
+const _GuiHBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
@@ -1965,6 +2639,36 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
             _mframe.call(_g);
             _gui_active_backend.endFrameFn();
         }
+    }
+}
+fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
+    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
+    defer _gui_active_backend.deinitFn();
+    const MsgType = comptime blk: {
+        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+        else
+            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+    };
+    const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
+    var _pq = _MvuQueue{};
+    const _sfn = struct {
+        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+            const q: *_MvuQueue = @ptrCast(@alignCast(ctx));
+            if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
+        }
+    }.send;
+    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+    while (_gui_active_backend.newFrameFn()) {
+        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+        for (_pq.buf[0.._pq.len]) |msg| {
+            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+                _model = _mvu_update(_model, msg)
+            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+        }
+        _pq.len = 0;
+        _gui_active_backend.endFrameFn();
     }
 }
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
@@ -2063,6 +2767,10 @@ fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_begin_group() void {}
 fn _stub_ll_end_group() void {}
+fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_hbox() void {}
+fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_vbox() void {}
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -2113,6 +2821,10 @@ const _gui_stub_backend = _GuiBackend{
     .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
     .ll_beginGroupFn      = _stub_ll_begin_group,
     .ll_endGroupFn        = _stub_ll_end_group,
+    .beginHBoxFn = _stub_begin_hbox,
+    .endHBoxFn   = _stub_end_hbox,
+    .beginVBoxFn = _stub_begin_vbox,
+    .endVBoxFn   = _stub_end_vbox,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -2152,7 +2864,7 @@ var _rng_ready: bool = false;
 fn _rng() std.Random {
     if (!_rng_ready) {
         var seed: u64 = 0;
-        std.crypto.random.bytes(std.mem.asBytes(&seed));
+        _io.randomSecure(std.mem.asBytes(&seed)) catch @panic("entropy unavailable");
         _rng_inst = std.Random.DefaultPrng.init(seed);
         _rng_ready = true;
     }
@@ -2171,6 +2883,49 @@ fn _random_seed(s: i64) void {
     _rng_inst = std.Random.DefaultPrng.init(@bitCast(s));
     _rng_ready = true;
 }
+// ── Crypto.encrypt / Crypto.decrypt — AES-256-GCM ────────────────────────────
+// Wire format (hex-encoded): 12-byte nonce | 16-byte tag | N-byte ciphertext
+const _AESGCM = std.crypto.aead.aes_gcm.Aes256Gcm;
+fn _crypto_key32(password: []const u8) [32]u8 {
+    var k: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(password, &k, .{});
+    return k;
+}
+fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
+    var nonce: [_AESGCM.nonce_length]u8 = undefined;
+    _io.randomSecure(&nonce) catch @panic("entropy unavailable");
+    const key = _crypto_key32(password);
+    const ct_buf = _allocator.alloc(u8, plaintext.len) catch return "";
+    defer _allocator.free(ct_buf);
+    var tag: [_AESGCM.tag_length]u8 = undefined;
+    _AESGCM.encrypt(ct_buf, &tag, plaintext, "", nonce, key);
+    // encode: nonce + tag + ciphertext → hex
+    const raw_len = nonce.len + tag.len + ct_buf.len;
+    const raw = _allocator.alloc(u8, raw_len) catch return "";
+    defer _allocator.free(raw);
+    @memcpy(raw[0..nonce.len], &nonce);
+    @memcpy(raw[nonce.len .. nonce.len + tag.len], &tag);
+    @memcpy(raw[nonce.len + tag.len ..], ct_buf);
+    return _hex_encode(raw);
+}
+fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
+    const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
+    if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;
+    const raw_len = hex_ciphertext.len / 2;
+    const raw = _allocator.alloc(u8, raw_len) catch return null;
+    defer _allocator.free(raw);
+    _ = std.fmt.hexToBytes(raw, hex_ciphertext) catch return null;
+    const nonce = raw[0.._AESGCM.nonce_length].*;
+    const tag   = raw[_AESGCM.nonce_length .. _AESGCM.nonce_length + _AESGCM.tag_length].*;
+    const ct    = raw[_AESGCM.nonce_length + _AESGCM.tag_length ..];
+    const key = _crypto_key32(password);
+    const pt_buf = _allocator.alloc(u8, ct.len) catch return null;
+    _AESGCM.decrypt(pt_buf, ct, tag, "", nonce, key) catch {
+        _allocator.free(pt_buf);
+        return null;
+    };
+    return pt_buf;
+}
 const ArgResult = struct {
     _raw: []const []const u8,
     pub fn flag(self: ArgResult, long: []const u8, short: []const u8) bool {
@@ -2182,6 +2937,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];
@@ -2206,15 +2968,14 @@ const ArgResult = struct {
     pub fn usage(_: ArgResult) []const u8 { return "Usage: program [options]"; }
 };
 fn _arg_parse() ArgResult {
-    const _argv = std.process.argsAlloc(_allocator) catch return ArgResult{ ._raw = &.{} };
+    const _argv = _args.toSlice(_allocator) catch return ArgResult{ ._raw = &.{} };
     const _raw_slice = if (_argv.len > 1) _argv[1..] else _argv[0..0];
     var _out = _allocator.alloc([]const u8, _raw_slice.len) catch return ArgResult{ ._raw = &.{} };
     for (_raw_slice, 0..) |a, i| _out[i] = a;
     return ArgResult{ ._raw = _out };
 }
 fn _term_is_tty() bool {
-    const cfg = std.io.tty.detectConfig(std.fs.File.stdout());
-    return cfg != .no_color;
+    return std.Io.File.stdout().isTty(_io) catch false;
 }
 fn _term_width() i64 { return 80; }
 fn _term_height() i64 { return 24; }
@@ -2231,30 +2992,36 @@ fn _term_ansi(color: []const u8) []const u8 {
     return "";
 }
 fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.fs.File.stdout();
+    const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
-        _f.deprecatedWriter().print("{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _f.deprecatedWriter().writeAll(msg) catch {};
+        _f.writeStreamingAll(_io, msg) catch {};
     }
-    if (newline) _f.deprecatedWriter().writeByte('\n') catch {};
+    if (newline) _f.writeStreamingAll(_io, "\n") catch {};
 }
 var _log_level: u8 = 1;        // default: info
 var _log_timestamps: bool = true;
 var _log_to_stderr: bool = true;
 fn _log_ts() []const u8 {
-    const sec = @divFloor(std.time.milliTimestamp(), 1000);
+    const sec: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
     const s = sec - 62135596800; // offset from Unix epoch to .NET epoch (unused here)
     _ = s;
     return std.fmt.allocPrint(_allocator, "{d}", .{sec}) catch "?";
 }
 fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _lw = if (_log_to_stderr) std.fs.File.stderr().deprecatedWriter() else std.fs.File.stdout().deprecatedWriter();
+    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
     if (_log_timestamps) {
-        _lw.print("[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _lw.print("[{s:<5}] {s}\n", .{ level_str, msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5}] {s}\n", .{ level_str, msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
@@ -2264,6 +3031,46 @@ fn _log_err(msg: []const u8) void   { _log_emit("ERR",   3, msg); }
 fn _log_set_level(l: u8) void { _log_level = l; }
 fn _log_set_output_stderr(v: bool) void { _log_to_stderr = v; }
 fn _log_timestamp(v: bool) void { _log_timestamps = v; }
+// Log.setFile / Log.json — file sink + JSON lines format
+var _log_file_opt: ?std.Io.File = null;
+fn _log_set_file(path: []const u8) void {
+    if (_log_file_opt) |old| { old.close(_io); _log_file_opt = null; }
+    if (path.len == 0) return;
+    _log_file_opt = std.Io.Dir.cwd().createFile(_io, path, .{ .truncate = false }) catch return;
+}
+fn _log_json_esc(s: []const u8, out: *std.ArrayList(u8)) void {
+    for (s) |c| switch (c) {
+        '"'  => out.appendSlice(_allocator, "\\\"") catch {},
+        '\\' => out.appendSlice(_allocator, "\\\\") catch {},
+        '\n' => out.appendSlice(_allocator, "\\n")  catch {},
+        '\r' => out.appendSlice(_allocator, "\\r")  catch {},
+        '\t' => out.appendSlice(_allocator, "\\t")  catch {},
+        else => out.append(_allocator, c)            catch {},
+    };
+}
+fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(_allocator);
+    const ts_s = std.fmt.allocPrint(_allocator, "{d}", .{ts}) catch return;
+    defer _allocator.free(ts_s);
+    buf.appendSlice(_allocator, "{\"ts\":") catch return;
+    buf.appendSlice(_allocator, ts_s) catch return;
+    buf.appendSlice(_allocator, ",\"level\":\"") catch return;
+    buf.appendSlice(_allocator, level) catch return;
+    buf.appendSlice(_allocator, "\",\"msg\":\"") catch return;
+    _log_json_esc(msg, &buf);
+    if (data.len > 0) {
+        buf.appendSlice(_allocator, "\",\"data\":\"") catch return;
+        _log_json_esc(data, &buf);
+    }
+    buf.appendSlice(_allocator, "\"}\n") catch return;
+    if (_log_file_opt) |f| {
+        const st = f.stat(_io) catch return;
+        f.writePositionalAll(_io, buf.items, st.size) catch {};
+    }
+    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+}
 const UriResult = struct {
     scheme: []const u8,
     host:   []const u8,
@@ -2290,7 +3097,28 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(_: []const u8) []const u8 { return ""; }
+fn _compress_gzip(data: []const u8) []const u8 {
+    // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
+    const out_capacity = data.len + data.len / 100 + 100;
+    const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
+    var flate_w: std.Io.Writer = .fixed(out_buf);
+    var deflate_buf: [std.compress.flate.max_window_len * 2]u8 = undefined;
+    var comp = std.compress.flate.Compress.init(&flate_w, &deflate_buf, .gzip, .default) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.writer.writeAll(data) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.finish() catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    const written = flate_w.end;
+    const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
+    return result;
+}
 fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -2360,18 +3188,18 @@ fn _mime_to_ext(mime: []const u8) []const u8 {
 const TimerHandle = struct {
     _start_ns: i128,
     pub fn elapsed(self: *const TimerHandle) f64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @as(f64, @floatFromInt(_ns)) / 1_000_000.0;
     }
     pub fn elapsedMicros(self: *const TimerHandle) i64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @intCast(@divFloor(_ns, 1000));
     }
     pub fn reset(self: *TimerHandle) void {
-        self._start_ns = std.time.nanoTimestamp();
+        self._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds;
     }
 };
-fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds }; }
 // ── Progress stdlib ──────────────────────────────────────────────────────────
 var _progress_root_started: bool = false;
 var _progress_root: std.Progress.Node = undefined;
@@ -2391,16 +3219,16 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
 // ── Profile stdlib ────────────────────────────────────────────────────────────
 const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
 var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
-var _profile_name_stack: std.ArrayList([]const u8) = .{};
-var _profile_time_stack: std.ArrayList(i128) = .{};
+var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
-    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .monotonic).nanoseconds) catch @panic("OOM");
 }
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
-    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
-    var key_buf: std.ArrayList(u8) = .{};
+    const elapsed_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - start_ns;
+    var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
         if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
@@ -2417,7 +3245,7 @@ fn _profile_end() void {
 }
 fn _profile_report() void {
     const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
-    var list: std.ArrayList(_ProfEntry) = .{};
+    var list: std.ArrayList(_ProfEntry) = .empty;
     defer list.deinit(std.heap.page_allocator);
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
@@ -2427,19 +3255,23 @@ fn _profile_report() void {
         fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
     };
     std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
-    const _w = std.fs.File.stdout().deprecatedWriter();
-    _w.writeAll("── Profile report ───────────────────────────────────────────────\n") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
     for (list.items) |e| {
         const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
-        _w.print("  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_dump_folded() void {
-    const _w = std.fs.File.stdout().deprecatedWriter();
+    const _stdout = std.Io.File.stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
         const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
-        _w.print("{s} {d}\n", .{ e.key_ptr.*, us }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{s} {d}\n", .{ e.key_ptr.*, us }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_reset() void {
@@ -2514,13 +3346,15 @@ fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64
 }
 // ── File extended ─────────────────────────────────────────────────────────────
 fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
-    var content = std.ArrayList(u8){};
+    var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {
         content.appendSlice(_allocator, line) catch return;
         content.append(_allocator, '\n') catch return;
     }
-    std.fs.cwd().writeFile(.{ .sub_path = path, .data = content.items }) catch {};
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, content.items) catch {};
 }
 // ── sys extended ──────────────────────────────────────────────────────────────
 fn _sys_setenv(key: []const u8, val: []const u8) void {
@@ -2536,10 +3370,14 @@ fn _sys_setenv(key: []const u8, val: []const u8) void {
 }
 fn _sys_getenv(key: []const u8) ?[]const u8 {
     if (comptime builtin.os.tag == .windows) {
-        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+        const environ: std.process.Environ = .{ .block = .global };
+        return environ.getAlloc(_allocator, key) catch null;
     } else {
         return std.posix.getenv(key);
     }
+}
+fn _sys_self_exe() []const u8 {
+    return std.process.executablePathAlloc(_io, _allocator) catch "";
 }
 
 pub const Span = struct {
@@ -2607,34 +3445,37 @@ pub const Modifiers = struct {
     is_derive_debug: bool,
     is_derive_eq: bool,
     is_derive_hash: bool,
-    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool, is_export: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool) Modifiers {
+    is_pure: bool,
+    pub fn init(is_public: bool, is_private: bool, is_abstract: bool, is_static: bool, is_readonly: bool, is_extern: bool, is_reflectable: bool, is_profile: bool, is_once: bool, is_export: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool, is_pure: bool) Modifiers {
         var _self: Modifiers = undefined;
-// zbr:selfhost/ast.zbr:73
-            _self.is_public = is_public;
-// zbr:selfhost/ast.zbr:74
-            _self.is_private = is_private;
-// zbr:selfhost/ast.zbr:75
-            _self.is_abstract = is_abstract;
-// zbr:selfhost/ast.zbr:76
-            _self.is_static = is_static;
 // zbr:selfhost/ast.zbr:77
-            _self.is_readonly = is_readonly;
+            _self.is_public = is_public;
 // zbr:selfhost/ast.zbr:78
-            _self.is_extern = is_extern;
+            _self.is_private = is_private;
 // zbr:selfhost/ast.zbr:79
-            _self.is_reflectable = is_reflectable;
+            _self.is_abstract = is_abstract;
 // zbr:selfhost/ast.zbr:80
-            _self.is_profile = is_profile;
+            _self.is_static = is_static;
 // zbr:selfhost/ast.zbr:81
-            _self.is_once = is_once;
+            _self.is_readonly = is_readonly;
 // zbr:selfhost/ast.zbr:82
-            _self.is_export = is_export;
+            _self.is_extern = is_extern;
 // zbr:selfhost/ast.zbr:83
-            _self.is_derive_debug = is_derive_debug;
+            _self.is_reflectable = is_reflectable;
 // zbr:selfhost/ast.zbr:84
-            _self.is_derive_eq = is_derive_eq;
+            _self.is_profile = is_profile;
 // zbr:selfhost/ast.zbr:85
+            _self.is_once = is_once;
+// zbr:selfhost/ast.zbr:86
+            _self.is_export = is_export;
+// zbr:selfhost/ast.zbr:87
+            _self.is_derive_debug = is_derive_debug;
+// zbr:selfhost/ast.zbr:88
+            _self.is_derive_eq = is_derive_eq;
+// zbr:selfhost/ast.zbr:89
             _self.is_derive_hash = is_derive_hash;
+// zbr:selfhost/ast.zbr:90
+            _self.is_pure = is_pure;
         return _self;
     }
 
@@ -2645,9 +3486,9 @@ pub const TypeParam = struct {
     constraint: ?[]const u8,
     pub fn init(name: []const u8, constraint: ?[]const u8) TypeParam {
         var _self: TypeParam = undefined;
-// zbr:selfhost/ast.zbr:94
+// zbr:selfhost/ast.zbr:99
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:95
+// zbr:selfhost/ast.zbr:100
             _self.constraint = constraint;
         return _self;
     }
@@ -2660,11 +3501,11 @@ pub const DeclUse = struct {
     exposed: std.ArrayList([]const u8),
     pub fn init(span: Span, path: []const u8, exposed: std.ArrayList([]const u8)) DeclUse {
         var _self: DeclUse = undefined;
-// zbr:selfhost/ast.zbr:105
+// zbr:selfhost/ast.zbr:110
             _self.span = span;
-// zbr:selfhost/ast.zbr:106
+// zbr:selfhost/ast.zbr:111
             _self.path = _intern(path);
-// zbr:selfhost/ast.zbr:107
+// zbr:selfhost/ast.zbr:112
             _self.exposed = exposed;
         return _self;
     }
@@ -2677,11 +3518,11 @@ pub const DeclNamespace = struct {
     decls: std.ArrayList(Decl),
     pub fn init(span: Span, name: []const u8, decls: std.ArrayList(Decl)) DeclNamespace {
         var _self: DeclNamespace = undefined;
-// zbr:selfhost/ast.zbr:117
+// zbr:selfhost/ast.zbr:122
             _self.span = span;
-// zbr:selfhost/ast.zbr:118
+// zbr:selfhost/ast.zbr:123
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:119
+// zbr:selfhost/ast.zbr:124
             _self.decls = decls;
         return _self;
     }
@@ -2697,24 +3538,27 @@ pub const DeclClass = struct {
     mixins: std.ArrayList(TypeRef),
     members: std.ArrayList(Decl),
     invariants: std.ArrayList(Expr),
-    pub fn init(span: Span, mods: Modifiers, name: []const u8, type_params: std.ArrayList(TypeParam), ifaces: std.ArrayList(TypeRef), mixins: std.ArrayList(TypeRef), members: std.ArrayList(Decl), inv_exprs: std.ArrayList(Expr)) DeclClass {
+    export_sym: ?[]const u8,
+    pub fn init(span: Span, mods: Modifiers, name: []const u8, type_params: std.ArrayList(TypeParam), ifaces: std.ArrayList(TypeRef), mixins: std.ArrayList(TypeRef), members: std.ArrayList(Decl), inv_exprs: std.ArrayList(Expr), export_sym: ?[]const u8) DeclClass {
         var _self: DeclClass = undefined;
-// zbr:selfhost/ast.zbr:134
-            _self.span = span;
-// zbr:selfhost/ast.zbr:135
-            _self.mods = mods;
-// zbr:selfhost/ast.zbr:136
-            _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:137
-            _self.type_params = type_params;
-// zbr:selfhost/ast.zbr:138
-            _self.ifaces = ifaces;
-// zbr:selfhost/ast.zbr:139
-            _self.mixins = mixins;
 // zbr:selfhost/ast.zbr:140
-            _self.members = members;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:141
+            _self.mods = mods;
+// zbr:selfhost/ast.zbr:142
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:143
+            _self.type_params = type_params;
+// zbr:selfhost/ast.zbr:144
+            _self.ifaces = ifaces;
+// zbr:selfhost/ast.zbr:145
+            _self.mixins = mixins;
+// zbr:selfhost/ast.zbr:146
+            _self.members = members;
+// zbr:selfhost/ast.zbr:147
             _self.invariants = inv_exprs;
+// zbr:selfhost/ast.zbr:148
+            _self.export_sym = export_sym;
         return _self;
     }
 
@@ -2728,15 +3572,15 @@ pub const DeclInterface = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, ifaces: std.ArrayList(TypeRef), members: std.ArrayList(Decl)) DeclInterface {
         var _self: DeclInterface = undefined;
-// zbr:selfhost/ast.zbr:153
+// zbr:selfhost/ast.zbr:160
             _self.span = span;
-// zbr:selfhost/ast.zbr:154
+// zbr:selfhost/ast.zbr:161
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:155
+// zbr:selfhost/ast.zbr:162
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:156
+// zbr:selfhost/ast.zbr:163
             _self.ifaces = ifaces;
-// zbr:selfhost/ast.zbr:157
+// zbr:selfhost/ast.zbr:164
             _self.members = members;
         return _self;
     }
@@ -2752,17 +3596,17 @@ pub const DeclStruct = struct {
     invariants: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, ifaces: std.ArrayList(TypeRef), members: std.ArrayList(Decl), inv_exprs: std.ArrayList(Expr)) DeclStruct {
         var _self: DeclStruct = undefined;
-// zbr:selfhost/ast.zbr:170
+// zbr:selfhost/ast.zbr:177
             _self.span = span;
-// zbr:selfhost/ast.zbr:171
+// zbr:selfhost/ast.zbr:178
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:172
+// zbr:selfhost/ast.zbr:179
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:173
+// zbr:selfhost/ast.zbr:180
             _self.ifaces = ifaces;
-// zbr:selfhost/ast.zbr:174
+// zbr:selfhost/ast.zbr:181
             _self.members = members;
-// zbr:selfhost/ast.zbr:175
+// zbr:selfhost/ast.zbr:182
             _self.invariants = inv_exprs;
         return _self;
     }
@@ -2776,13 +3620,13 @@ pub const DeclMixin = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, members: std.ArrayList(Decl)) DeclMixin {
         var _self: DeclMixin = undefined;
-// zbr:selfhost/ast.zbr:186
+// zbr:selfhost/ast.zbr:193
             _self.span = span;
-// zbr:selfhost/ast.zbr:187
+// zbr:selfhost/ast.zbr:194
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:188
+// zbr:selfhost/ast.zbr:195
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:189
+// zbr:selfhost/ast.zbr:196
             _self.members = members;
         return _self;
     }
@@ -2795,11 +3639,11 @@ pub const EnumMember = struct {
     value: ?*Expr,
     pub fn init(span: Span, name: []const u8, value: ?*Expr) EnumMember {
         var _self: EnumMember = undefined;
-// zbr:selfhost/ast.zbr:199
+// zbr:selfhost/ast.zbr:206
             _self.span = span;
-// zbr:selfhost/ast.zbr:200
+// zbr:selfhost/ast.zbr:207
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:201
+// zbr:selfhost/ast.zbr:208
             _self.value = value;
         return _self;
     }
@@ -2814,15 +3658,15 @@ pub const DeclEnum = struct {
     members: std.ArrayList(EnumMember),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, base: ?TypeRef, members: std.ArrayList(EnumMember)) DeclEnum {
         var _self: DeclEnum = undefined;
-// zbr:selfhost/ast.zbr:211
+// zbr:selfhost/ast.zbr:218
             _self.span = span;
-// zbr:selfhost/ast.zbr:212
+// zbr:selfhost/ast.zbr:219
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:213
+// zbr:selfhost/ast.zbr:220
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:214
+// zbr:selfhost/ast.zbr:221
             _self.base = base;
-// zbr:selfhost/ast.zbr:215
+// zbr:selfhost/ast.zbr:222
             _self.members = members;
         return _self;
     }
@@ -2835,11 +3679,11 @@ pub const DeclExtend = struct {
     members: std.ArrayList(Decl),
     pub fn init(span: Span, target: TypeRef, members: std.ArrayList(Decl)) DeclExtend {
         var _self: DeclExtend = undefined;
-// zbr:selfhost/ast.zbr:225
+// zbr:selfhost/ast.zbr:232
             _self.span = span;
-// zbr:selfhost/ast.zbr:226
+// zbr:selfhost/ast.zbr:233
             _self.target = target;
-// zbr:selfhost/ast.zbr:227
+// zbr:selfhost/ast.zbr:234
             _self.members = members;
         return _self;
     }
@@ -2852,11 +3696,11 @@ pub const UnionVariant = struct {
     payload: ?TypeRef,
     pub fn init(span: Span, name: []const u8, payload: ?TypeRef) UnionVariant {
         var _self: UnionVariant = undefined;
-// zbr:selfhost/ast.zbr:237
+// zbr:selfhost/ast.zbr:244
             _self.span = span;
-// zbr:selfhost/ast.zbr:238
+// zbr:selfhost/ast.zbr:245
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:239
+// zbr:selfhost/ast.zbr:246
             _self.payload = payload;
         return _self;
     }
@@ -2870,13 +3714,13 @@ pub const DeclUnion = struct {
     variants: std.ArrayList(UnionVariant),
     pub fn init(span: Span, mods: Modifiers, name: []const u8, variants: std.ArrayList(UnionVariant)) DeclUnion {
         var _self: DeclUnion = undefined;
-// zbr:selfhost/ast.zbr:248
+// zbr:selfhost/ast.zbr:255
             _self.span = span;
-// zbr:selfhost/ast.zbr:249
+// zbr:selfhost/ast.zbr:256
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:250
+// zbr:selfhost/ast.zbr:257
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:251
+// zbr:selfhost/ast.zbr:258
             _self.variants = variants;
         return _self;
     }
@@ -2891,15 +3735,15 @@ pub const DeclTypeAlias = struct {
     constraint: ?*Expr,
     pub fn init(span: Span, name: []const u8, params: std.ArrayList(Param), base: TypeRef, constraint: ?*Expr) DeclTypeAlias {
         var _self: DeclTypeAlias = undefined;
-// zbr:selfhost/ast.zbr:263
+// zbr:selfhost/ast.zbr:270
             _self.span = span;
-// zbr:selfhost/ast.zbr:264
+// zbr:selfhost/ast.zbr:271
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:265
+// zbr:selfhost/ast.zbr:272
             _self.params = params;
-// zbr:selfhost/ast.zbr:266
+// zbr:selfhost/ast.zbr:273
             _self.base = base;
-// zbr:selfhost/ast.zbr:267
+// zbr:selfhost/ast.zbr:274
             _self.constraint = constraint;
         return _self;
     }
@@ -2913,13 +3757,13 @@ pub const DeclSig = struct {
     return_type: ?TypeRef,
     pub fn init(span: Span, name: []const u8, params: std.ArrayList(Param), return_type: ?TypeRef) DeclSig {
         var _self: DeclSig = undefined;
-// zbr:selfhost/ast.zbr:278
+// zbr:selfhost/ast.zbr:285
             _self.span = span;
-// zbr:selfhost/ast.zbr:279
+// zbr:selfhost/ast.zbr:286
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:280
+// zbr:selfhost/ast.zbr:287
             _self.params = params;
-// zbr:selfhost/ast.zbr:281
+// zbr:selfhost/ast.zbr:288
             _self.return_type = return_type;
         return _self;
     }
@@ -2930,6 +3774,7 @@ pub const DeclMethod = struct {
     span: Span,
     mods: Modifiers,
     name: []const u8,
+    type_params: std.ArrayList([]const u8),
     params: std.ArrayList(Param),
     return_type: ?TypeRef,
     stmts: ?std.ArrayList(Stmt),
@@ -2938,29 +3783,31 @@ pub const DeclMethod = struct {
     require_: std.ArrayList(Expr),
     ensure_: std.ArrayList(Expr),
     tags: std.ArrayList([]const u8),
-    pub fn init(span: Span, mods: Modifiers, name: []const u8, params: std.ArrayList(Param), return_type: ?TypeRef, stmts: ?std.ArrayList(Stmt), is_test: bool, throws_: bool, require_: std.ArrayList(Expr), ensure_: std.ArrayList(Expr), tags: std.ArrayList([]const u8)) DeclMethod {
+    pub fn init(span: Span, mods: Modifiers, name: []const u8, type_params: std.ArrayList([]const u8), params: std.ArrayList(Param), return_type: ?TypeRef, stmts: ?std.ArrayList(Stmt), is_test: bool, throws_: bool, require_: std.ArrayList(Expr), ensure_: std.ArrayList(Expr), tags: std.ArrayList([]const u8)) DeclMethod {
         var _self: DeclMethod = undefined;
-// zbr:selfhost/ast.zbr:299
-            _self.span = span;
-// zbr:selfhost/ast.zbr:300
-            _self.mods = mods;
-// zbr:selfhost/ast.zbr:301
-            _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:302
-            _self.params = params;
-// zbr:selfhost/ast.zbr:303
-            _self.return_type = return_type;
-// zbr:selfhost/ast.zbr:304
-            _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:305
-            _self.is_test = is_test;
-// zbr:selfhost/ast.zbr:306
-            _self.throws_ = throws_;
 // zbr:selfhost/ast.zbr:307
-            _self.require_ = require_;
+            _self.span = span;
 // zbr:selfhost/ast.zbr:308
-            _self.ensure_ = ensure_;
+            _self.mods = mods;
 // zbr:selfhost/ast.zbr:309
+            _self.name = _intern(name);
+// zbr:selfhost/ast.zbr:310
+            _self.type_params = type_params;
+// zbr:selfhost/ast.zbr:311
+            _self.params = params;
+// zbr:selfhost/ast.zbr:312
+            _self.return_type = return_type;
+// zbr:selfhost/ast.zbr:313
+            _self.stmts = stmts;
+// zbr:selfhost/ast.zbr:314
+            _self.is_test = is_test;
+// zbr:selfhost/ast.zbr:315
+            _self.throws_ = throws_;
+// zbr:selfhost/ast.zbr:316
+            _self.require_ = require_;
+// zbr:selfhost/ast.zbr:317
+            _self.ensure_ = ensure_;
+// zbr:selfhost/ast.zbr:318
             _self.tags = tags;
         return _self;
     }
@@ -2976,17 +3823,17 @@ pub const DeclVar = struct {
     is_const: bool,
     pub fn init(span: Span, mods: Modifiers, name: []const u8, type_: ?TypeRef, init_expr: ?*Expr, is_const: bool) DeclVar {
         var _self: DeclVar = undefined;
-// zbr:selfhost/ast.zbr:322
+// zbr:selfhost/ast.zbr:331
             _self.span = span;
-// zbr:selfhost/ast.zbr:323
+// zbr:selfhost/ast.zbr:332
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:324
+// zbr:selfhost/ast.zbr:333
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:325
+// zbr:selfhost/ast.zbr:334
             _self.type_ = type_;
-// zbr:selfhost/ast.zbr:326
+// zbr:selfhost/ast.zbr:335
             _self.init_expr = init_expr;
-// zbr:selfhost/ast.zbr:327
+// zbr:selfhost/ast.zbr:336
             _self.is_const = is_const;
         return _self;
     }
@@ -3002,17 +3849,17 @@ pub const DeclInit = struct {
     ensure_: std.ArrayList(Expr),
     pub fn init(span: Span, mods: Modifiers, params: std.ArrayList(Param), stmts: ?std.ArrayList(Stmt), require_: std.ArrayList(Expr), ensure_: std.ArrayList(Expr)) DeclInit {
         var _self: DeclInit = undefined;
-// zbr:selfhost/ast.zbr:340
+// zbr:selfhost/ast.zbr:349
             _self.span = span;
-// zbr:selfhost/ast.zbr:341
+// zbr:selfhost/ast.zbr:350
             _self.mods = mods;
-// zbr:selfhost/ast.zbr:342
+// zbr:selfhost/ast.zbr:351
             _self.params = params;
-// zbr:selfhost/ast.zbr:343
+// zbr:selfhost/ast.zbr:352
             _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:344
+// zbr:selfhost/ast.zbr:353
             _self.require_ = require_;
-// zbr:selfhost/ast.zbr:345
+// zbr:selfhost/ast.zbr:354
             _self.ensure_ = ensure_;
         return _self;
     }
@@ -3032,15 +3879,15 @@ pub const Param = struct {
     default_: ?*Expr,
     pub fn init(span: Span, mode: ParamMode, name: []const u8, type_: ?TypeRef, default_: ?*Expr) Param {
         var _self: Param = undefined;
-// zbr:selfhost/ast.zbr:361
+// zbr:selfhost/ast.zbr:370
             _self.span = span;
-// zbr:selfhost/ast.zbr:362
+// zbr:selfhost/ast.zbr:371
             _self.mode = mode;
-// zbr:selfhost/ast.zbr:363
+// zbr:selfhost/ast.zbr:372
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:364
+// zbr:selfhost/ast.zbr:373
             _self.type_ = type_;
-// zbr:selfhost/ast.zbr:365
+// zbr:selfhost/ast.zbr:374
             _self.default_ = default_;
         return _self;
     }
@@ -3065,9 +3912,9 @@ pub const NamedTypeRef = struct {
     name: []const u8,
     pub fn init(span: Span, name: []const u8) NamedTypeRef {
         var _self: NamedTypeRef = undefined;
-// zbr:selfhost/ast.zbr:388
+// zbr:selfhost/ast.zbr:397
             _self.span = span;
-// zbr:selfhost/ast.zbr:389
+// zbr:selfhost/ast.zbr:398
             _self.name = _intern(name);
         return _self;
     }
@@ -3080,11 +3927,11 @@ pub const GenericTypeRef = struct {
     args: std.ArrayList(TypeRef),
     pub fn init(span: Span, name: []const u8, args: std.ArrayList(TypeRef)) GenericTypeRef {
         var _self: GenericTypeRef = undefined;
-// zbr:selfhost/ast.zbr:397
+// zbr:selfhost/ast.zbr:406
             _self.span = span;
-// zbr:selfhost/ast.zbr:398
+// zbr:selfhost/ast.zbr:407
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:399
+// zbr:selfhost/ast.zbr:408
             _self.args = args;
         return _self;
     }
@@ -3096,9 +3943,9 @@ pub const TupleTypeRef = struct {
     elems: std.ArrayList(TypeRef),
     pub fn init(span: Span, elems: std.ArrayList(TypeRef)) TupleTypeRef {
         var _self: TupleTypeRef = undefined;
-// zbr:selfhost/ast.zbr:406
+// zbr:selfhost/ast.zbr:415
             _self.span = span;
-// zbr:selfhost/ast.zbr:407
+// zbr:selfhost/ast.zbr:416
             _self.elems = elems;
         return _self;
     }
@@ -3111,11 +3958,11 @@ pub const AliasAppliedTypeRef = struct {
     args: std.ArrayList(Expr),
     pub fn init(span: Span, name: []const u8, args: std.ArrayList(Expr)) AliasAppliedTypeRef {
         var _self: AliasAppliedTypeRef = undefined;
-// zbr:selfhost/ast.zbr:415
+// zbr:selfhost/ast.zbr:424
             _self.span = span;
-// zbr:selfhost/ast.zbr:416
+// zbr:selfhost/ast.zbr:425
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:417
+// zbr:selfhost/ast.zbr:426
             _self.args = args;
         return _self;
     }
@@ -3158,6 +4005,7 @@ pub const Stmt = union(enum) {
     expr: *Expr,
     defer_: *StmtDefer,
     with_: *StmtWith,
+    in_scope: *StmtIn,
     raise_: *StmtRaise,
     try_catch: *StmtTryCatch,
     guard_: *StmtGuard,
@@ -3175,13 +4023,13 @@ pub const ElseIf = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: Expr, stmts: std.ArrayList(Stmt)) ElseIf {
         var _self: ElseIf = undefined;
-// zbr:selfhost/ast.zbr:475
+// zbr:selfhost/ast.zbr:485
             _self.span = span;
-// zbr:selfhost/ast.zbr:476
+// zbr:selfhost/ast.zbr:486
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:477
+// zbr:selfhost/ast.zbr:487
             _self.is_capture = null;
-// zbr:selfhost/ast.zbr:478
+// zbr:selfhost/ast.zbr:488
             _self.stmts = stmts;
         return _self;
     }
@@ -3197,17 +4045,17 @@ pub const StmtIf = struct {
     else_stmts: ?std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, then_stmts: std.ArrayList(Stmt), else_ifs: std.ArrayList(ElseIf), else_stmts: ?std.ArrayList(Stmt)) StmtIf {
         var _self: StmtIf = undefined;
-// zbr:selfhost/ast.zbr:489
+// zbr:selfhost/ast.zbr:499
             _self.span = span;
-// zbr:selfhost/ast.zbr:490
+// zbr:selfhost/ast.zbr:500
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:491
+// zbr:selfhost/ast.zbr:501
             _self.is_capture = null;
-// zbr:selfhost/ast.zbr:492
+// zbr:selfhost/ast.zbr:502
             _self.then_stmts = then_stmts;
-// zbr:selfhost/ast.zbr:493
+// zbr:selfhost/ast.zbr:503
             _self.else_ifs = else_ifs;
-// zbr:selfhost/ast.zbr:494
+// zbr:selfhost/ast.zbr:504
             _self.else_stmts = else_stmts;
         return _self;
     }
@@ -3220,11 +4068,11 @@ pub const StmtWhile = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, stmts: std.ArrayList(Stmt)) StmtWhile {
         var _self: StmtWhile = undefined;
-// zbr:selfhost/ast.zbr:502
+// zbr:selfhost/ast.zbr:512
             _self.span = span;
-// zbr:selfhost/ast.zbr:503
+// zbr:selfhost/ast.zbr:513
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:504
+// zbr:selfhost/ast.zbr:514
             _self.stmts = stmts;
         return _self;
     }
@@ -3240,17 +4088,17 @@ pub const StmtForIn = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, vars: std.ArrayList([]const u8), iter: *Expr, filter: ?*Expr, stmts: std.ArrayList(Stmt), else_: ?std.ArrayList(Stmt)) StmtForIn {
         var _self: StmtForIn = undefined;
-// zbr:selfhost/ast.zbr:515
+// zbr:selfhost/ast.zbr:525
             _self.span = span;
-// zbr:selfhost/ast.zbr:516
+// zbr:selfhost/ast.zbr:526
             _self.vars = vars;
-// zbr:selfhost/ast.zbr:517
+// zbr:selfhost/ast.zbr:527
             _self.iter = iter;
-// zbr:selfhost/ast.zbr:518
+// zbr:selfhost/ast.zbr:528
             _self.filter = filter;
-// zbr:selfhost/ast.zbr:519
+// zbr:selfhost/ast.zbr:529
             _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:520
+// zbr:selfhost/ast.zbr:530
             _self.else_ = else_;
         return _self;
     }
@@ -3267,19 +4115,19 @@ pub const StmtForNum = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, var_: []const u8, start: *Expr, stop_: *Expr, step: ?*Expr, stmts: std.ArrayList(Stmt), else_: ?std.ArrayList(Stmt)) StmtForNum {
         var _self: StmtForNum = undefined;
-// zbr:selfhost/ast.zbr:532
+// zbr:selfhost/ast.zbr:542
             _self.span = span;
-// zbr:selfhost/ast.zbr:533
+// zbr:selfhost/ast.zbr:543
             _self.var_ = _intern(var_);
-// zbr:selfhost/ast.zbr:534
+// zbr:selfhost/ast.zbr:544
             _self.start = start;
-// zbr:selfhost/ast.zbr:535
+// zbr:selfhost/ast.zbr:545
             _self.stop_ = stop_;
-// zbr:selfhost/ast.zbr:536
+// zbr:selfhost/ast.zbr:546
             _self.step = step;
-// zbr:selfhost/ast.zbr:537
+// zbr:selfhost/ast.zbr:547
             _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:538
+// zbr:selfhost/ast.zbr:548
             _self.else_ = else_;
         return _self;
     }
@@ -3291,9 +4139,9 @@ pub const StructFieldPat = struct {
     value: Expr,
     pub fn init(name: []const u8, value: Expr) StructFieldPat {
         var _self: StructFieldPat = undefined;
-// zbr:selfhost/ast.zbr:545
+// zbr:selfhost/ast.zbr:555
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:546
+// zbr:selfhost/ast.zbr:556
             _self.value = value;
         return _self;
     }
@@ -3305,9 +4153,9 @@ pub const StructPat = struct {
     fields: std.ArrayList(StructFieldPat),
     pub fn init(type_name: []const u8, fields: std.ArrayList(StructFieldPat)) StructPat {
         var _self: StructPat = undefined;
-// zbr:selfhost/ast.zbr:553
+// zbr:selfhost/ast.zbr:563
             _self.type_name = _intern(type_name);
-// zbr:selfhost/ast.zbr:554
+// zbr:selfhost/ast.zbr:564
             _self.fields = fields;
         return _self;
     }
@@ -3323,17 +4171,17 @@ pub const BranchOn = struct {
     struct_pat: ?StructPat,
     pub fn init(span: Span, values: std.ArrayList(Expr), stmts: std.ArrayList(Stmt), binding: ?[]const u8, guard_expr: std.ArrayList(Expr)) BranchOn {
         var _self: BranchOn = undefined;
-// zbr:selfhost/ast.zbr:565
+// zbr:selfhost/ast.zbr:575
             _self.span = span;
-// zbr:selfhost/ast.zbr:566
+// zbr:selfhost/ast.zbr:576
             _self.values = values;
-// zbr:selfhost/ast.zbr:567
+// zbr:selfhost/ast.zbr:577
             _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:568
+// zbr:selfhost/ast.zbr:578
             _self.binding = binding;
-// zbr:selfhost/ast.zbr:569
+// zbr:selfhost/ast.zbr:579
             _self.guard_expr = guard_expr;
-// zbr:selfhost/ast.zbr:570
+// zbr:selfhost/ast.zbr:580
             _self.struct_pat = null;
         return _self;
     }
@@ -3347,13 +4195,13 @@ pub const StmtBranch = struct {
     else_: ?std.ArrayList(Stmt),
     pub fn init(span: Span, expr: *Expr, cases: std.ArrayList(BranchOn), else_: ?std.ArrayList(Stmt)) StmtBranch {
         var _self: StmtBranch = undefined;
-// zbr:selfhost/ast.zbr:579
+// zbr:selfhost/ast.zbr:589
             _self.span = span;
-// zbr:selfhost/ast.zbr:580
+// zbr:selfhost/ast.zbr:590
             _self.expr = expr;
-// zbr:selfhost/ast.zbr:581
+// zbr:selfhost/ast.zbr:591
             _self.cases = cases;
-// zbr:selfhost/ast.zbr:582
+// zbr:selfhost/ast.zbr:592
             _self.else_ = else_;
         return _self;
     }
@@ -3365,9 +4213,9 @@ pub const StmtReturn = struct {
     value: ?*Expr,
     pub fn init(span: Span, value: ?*Expr) StmtReturn {
         var _self: StmtReturn = undefined;
-// zbr:selfhost/ast.zbr:589
+// zbr:selfhost/ast.zbr:599
             _self.span = span;
-// zbr:selfhost/ast.zbr:590
+// zbr:selfhost/ast.zbr:600
             _self.value = value;
         return _self;
     }
@@ -3380,11 +4228,11 @@ pub const StmtAssert = struct {
     message: ?*Expr,
     pub fn init(span: Span, cond: *Expr, message: ?*Expr) StmtAssert {
         var _self: StmtAssert = undefined;
-// zbr:selfhost/ast.zbr:598
+// zbr:selfhost/ast.zbr:608
             _self.span = span;
-// zbr:selfhost/ast.zbr:599
+// zbr:selfhost/ast.zbr:609
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:600
+// zbr:selfhost/ast.zbr:610
             _self.message = message;
         return _self;
     }
@@ -3397,11 +4245,11 @@ pub const StmtAssertCmp = struct {
     rhs: *Expr,
     pub fn init(span: Span, lhs: *Expr, rhs: *Expr) StmtAssertCmp {
         var _self: StmtAssertCmp = undefined;
-// zbr:selfhost/ast.zbr:608
+// zbr:selfhost/ast.zbr:618
             _self.span = span;
-// zbr:selfhost/ast.zbr:609
+// zbr:selfhost/ast.zbr:619
             _self.lhs = lhs;
-// zbr:selfhost/ast.zbr:610
+// zbr:selfhost/ast.zbr:620
             _self.rhs = rhs;
         return _self;
     }
@@ -3413,9 +4261,9 @@ pub const StmtAssertUnary = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) StmtAssertUnary {
         var _self: StmtAssertUnary = undefined;
-// zbr:selfhost/ast.zbr:617
+// zbr:selfhost/ast.zbr:627
             _self.span = span;
-// zbr:selfhost/ast.zbr:618
+// zbr:selfhost/ast.zbr:628
             _self.expr = expr;
         return _self;
     }
@@ -3429,13 +4277,13 @@ pub const StmtAssign = struct {
     value: *Expr,
     pub fn init(span: Span, target: *Expr, op: AssignOp, value: *Expr) StmtAssign {
         var _self: StmtAssign = undefined;
-// zbr:selfhost/ast.zbr:627
+// zbr:selfhost/ast.zbr:637
             _self.span = span;
-// zbr:selfhost/ast.zbr:628
+// zbr:selfhost/ast.zbr:638
             _self.target = target;
-// zbr:selfhost/ast.zbr:629
+// zbr:selfhost/ast.zbr:639
             _self.op = op;
-// zbr:selfhost/ast.zbr:630
+// zbr:selfhost/ast.zbr:640
             _self.value = value;
         return _self;
     }
@@ -3448,11 +4296,11 @@ pub const StmtDefer = struct {
     stmt: *Stmt,
     pub fn init(span: Span, is_err: bool, stmt: *Stmt) StmtDefer {
         var _self: StmtDefer = undefined;
-// zbr:selfhost/ast.zbr:638
+// zbr:selfhost/ast.zbr:648
             _self.span = span;
-// zbr:selfhost/ast.zbr:639
+// zbr:selfhost/ast.zbr:649
             _self.is_err = is_err;
-// zbr:selfhost/ast.zbr:640
+// zbr:selfhost/ast.zbr:650
             _self.stmt = stmt;
         return _self;
     }
@@ -3465,11 +4313,28 @@ pub const StmtWith = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, target: *Expr, stmts: std.ArrayList(Stmt)) StmtWith {
         var _self: StmtWith = undefined;
-// zbr:selfhost/ast.zbr:648
+// zbr:selfhost/ast.zbr:658
             _self.span = span;
-// zbr:selfhost/ast.zbr:649
+// zbr:selfhost/ast.zbr:659
             _self.target = target;
-// zbr:selfhost/ast.zbr:650
+// zbr:selfhost/ast.zbr:660
+            _self.stmts = stmts;
+        return _self;
+    }
+
+};
+
+pub const StmtIn = struct {
+    span: Span,
+    expr: *Expr,
+    stmts: std.ArrayList(Stmt),
+    pub fn init(span: Span, expr: *Expr, stmts: std.ArrayList(Stmt)) StmtIn {
+        var _self: StmtIn = undefined;
+// zbr:selfhost/ast.zbr:668
+            _self.span = span;
+// zbr:selfhost/ast.zbr:669
+            _self.expr = expr;
+// zbr:selfhost/ast.zbr:670
             _self.stmts = stmts;
         return _self;
     }
@@ -3482,11 +4347,11 @@ pub const StmtRaise = struct {
     details: ?*Expr,
     pub fn init(span: Span, message: ?*Expr, details: ?*Expr) StmtRaise {
         var _self: StmtRaise = undefined;
-// zbr:selfhost/ast.zbr:658
+// zbr:selfhost/ast.zbr:678
             _self.span = span;
-// zbr:selfhost/ast.zbr:659
+// zbr:selfhost/ast.zbr:679
             _self.message = message;
-// zbr:selfhost/ast.zbr:660
+// zbr:selfhost/ast.zbr:680
             _self.details = details;
         return _self;
     }
@@ -3500,13 +4365,13 @@ pub const CatchClause = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, binding: ?[]const u8, type_: ?TypeRef, stmts: std.ArrayList(Stmt)) CatchClause {
         var _self: CatchClause = undefined;
-// zbr:selfhost/ast.zbr:669
+// zbr:selfhost/ast.zbr:689
             _self.span = span;
-// zbr:selfhost/ast.zbr:670
+// zbr:selfhost/ast.zbr:690
             _self.binding = binding;
-// zbr:selfhost/ast.zbr:671
+// zbr:selfhost/ast.zbr:691
             _self.type_ = type_;
-// zbr:selfhost/ast.zbr:672
+// zbr:selfhost/ast.zbr:692
             _self.stmts = stmts;
         return _self;
     }
@@ -3519,11 +4384,11 @@ pub const StmtTryCatch = struct {
     clauses: std.ArrayList(CatchClause),
     pub fn init(span: Span, stmts: std.ArrayList(Stmt), clauses: std.ArrayList(CatchClause)) StmtTryCatch {
         var _self: StmtTryCatch = undefined;
-// zbr:selfhost/ast.zbr:680
+// zbr:selfhost/ast.zbr:700
             _self.span = span;
-// zbr:selfhost/ast.zbr:681
+// zbr:selfhost/ast.zbr:701
             _self.stmts = stmts;
-// zbr:selfhost/ast.zbr:682
+// zbr:selfhost/ast.zbr:702
             _self.clauses = clauses;
         return _self;
     }
@@ -3536,11 +4401,11 @@ pub const StmtGuard = struct {
     else_stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, cond: *Expr, else_stmts: std.ArrayList(Stmt)) StmtGuard {
         var _self: StmtGuard = undefined;
-// zbr:selfhost/ast.zbr:690
+// zbr:selfhost/ast.zbr:710
             _self.span = span;
-// zbr:selfhost/ast.zbr:691
+// zbr:selfhost/ast.zbr:711
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:692
+// zbr:selfhost/ast.zbr:712
             _self.else_stmts = else_stmts;
         return _self;
     }
@@ -3554,13 +4419,13 @@ pub const StmtDestruct = struct {
     is_struct: bool,
     pub fn init(span: Span, names: std.ArrayList([]const u8), init_expr: *Expr, is_struct: bool) StmtDestruct {
         var _self: StmtDestruct = undefined;
-// zbr:selfhost/ast.zbr:701
+// zbr:selfhost/ast.zbr:721
             _self.span = span;
-// zbr:selfhost/ast.zbr:702
+// zbr:selfhost/ast.zbr:722
             _self.names = names;
-// zbr:selfhost/ast.zbr:703
+// zbr:selfhost/ast.zbr:723
             _self.init_expr = init_expr;
-// zbr:selfhost/ast.zbr:704
+// zbr:selfhost/ast.zbr:724
             _self.is_struct = is_struct;
         return _self;
     }
@@ -3574,13 +4439,13 @@ pub const StmtAllocate = struct {
     stmts: std.ArrayList(Stmt),
     pub fn init(span: Span, source: Expr, is_scoped: bool, stmts: std.ArrayList(Stmt)) StmtAllocate {
         var _self: StmtAllocate = undefined;
-// zbr:selfhost/ast.zbr:713
+// zbr:selfhost/ast.zbr:733
             _self.span = span;
-// zbr:selfhost/ast.zbr:714
+// zbr:selfhost/ast.zbr:734
             _self.source = source;
-// zbr:selfhost/ast.zbr:715
+// zbr:selfhost/ast.zbr:735
             _self.is_scoped = is_scoped;
-// zbr:selfhost/ast.zbr:716
+// zbr:selfhost/ast.zbr:736
             _self.stmts = stmts;
         return _self;
     }
@@ -3593,11 +4458,11 @@ pub const StmtCopyOut = struct {
     value: Expr,
     pub fn init(span: Span, target: Expr, value: Expr) StmtCopyOut {
         var _self: StmtCopyOut = undefined;
-// zbr:selfhost/ast.zbr:724
+// zbr:selfhost/ast.zbr:744
             _self.span = span;
-// zbr:selfhost/ast.zbr:725
+// zbr:selfhost/ast.zbr:745
             _self.target = target;
-// zbr:selfhost/ast.zbr:726
+// zbr:selfhost/ast.zbr:746
             _self.value = value;
         return _self;
     }
@@ -3616,11 +4481,11 @@ pub const StmtContract = struct {
     exprs: std.ArrayList(Expr),
     pub fn init(span: Span, kind: ContractKind, exprs: std.ArrayList(Expr)) StmtContract {
         var _self: StmtContract = undefined;
-// zbr:selfhost/ast.zbr:739
+// zbr:selfhost/ast.zbr:759
             _self.span = span;
-// zbr:selfhost/ast.zbr:740
+// zbr:selfhost/ast.zbr:760
             _self.kind = kind;
-// zbr:selfhost/ast.zbr:741
+// zbr:selfhost/ast.zbr:761
             _self.exprs = exprs;
         return _self;
     }
@@ -3633,11 +4498,11 @@ pub const StmtPrint = struct {
     newline: bool,
     pub fn init(span: Span, args: std.ArrayList(Expr), newline: bool) StmtPrint {
         var _self: StmtPrint = undefined;
-// zbr:selfhost/ast.zbr:749
+// zbr:selfhost/ast.zbr:769
             _self.span = span;
-// zbr:selfhost/ast.zbr:750
+// zbr:selfhost/ast.zbr:770
             _self.args = args;
-// zbr:selfhost/ast.zbr:751
+// zbr:selfhost/ast.zbr:771
             _self.newline = newline;
         return _self;
     }
@@ -3693,11 +4558,11 @@ pub const ExprIntLit = struct {
     base: IntBase,
     pub fn init(span: Span, text: []const u8, base: IntBase) ExprIntLit {
         var _self: ExprIntLit = undefined;
-// zbr:selfhost/ast.zbr:808
+// zbr:selfhost/ast.zbr:828
             _self.span = span;
-// zbr:selfhost/ast.zbr:809
+// zbr:selfhost/ast.zbr:829
             _self.text = _intern(text);
-// zbr:selfhost/ast.zbr:810
+// zbr:selfhost/ast.zbr:830
             _self.base = base;
         return _self;
     }
@@ -3709,9 +4574,9 @@ pub const ExprFloatLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprFloatLit {
         var _self: ExprFloatLit = undefined;
-// zbr:selfhost/ast.zbr:819
+// zbr:selfhost/ast.zbr:839
             _self.span = span;
-// zbr:selfhost/ast.zbr:820
+// zbr:selfhost/ast.zbr:840
             _self.text = _intern(text);
         return _self;
     }
@@ -3723,9 +4588,9 @@ pub const ExprBoolLit = struct {
     value: bool,
     pub fn init(span: Span, value: bool) ExprBoolLit {
         var _self: ExprBoolLit = undefined;
-// zbr:selfhost/ast.zbr:829
+// zbr:selfhost/ast.zbr:849
             _self.span = span;
-// zbr:selfhost/ast.zbr:830
+// zbr:selfhost/ast.zbr:850
             _self.value = value;
         return _self;
     }
@@ -3737,9 +4602,9 @@ pub const ExprCharLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprCharLit {
         var _self: ExprCharLit = undefined;
-// zbr:selfhost/ast.zbr:839
+// zbr:selfhost/ast.zbr:859
             _self.span = span;
-// zbr:selfhost/ast.zbr:840
+// zbr:selfhost/ast.zbr:860
             _self.text = _intern(text);
         return _self;
     }
@@ -3759,11 +4624,11 @@ pub const ExprStringLit = struct {
     text: []const u8,
     pub fn init(span: Span, kind: StringKind, text: []const u8) ExprStringLit {
         var _self: ExprStringLit = undefined;
-// zbr:selfhost/ast.zbr:856
+// zbr:selfhost/ast.zbr:876
             _self.span = span;
-// zbr:selfhost/ast.zbr:857
+// zbr:selfhost/ast.zbr:877
             _self.kind = kind;
-// zbr:selfhost/ast.zbr:858
+// zbr:selfhost/ast.zbr:878
             _self.text = _intern(text);
         return _self;
     }
@@ -3781,9 +4646,9 @@ pub const ExprStringInterp = struct {
     parts: std.ArrayList(StringPart),
     pub fn init(span: Span, parts: std.ArrayList(StringPart)) ExprStringInterp {
         var _self: ExprStringInterp = undefined;
-// zbr:selfhost/ast.zbr:872
+// zbr:selfhost/ast.zbr:892
             _self.span = span;
-// zbr:selfhost/ast.zbr:873
+// zbr:selfhost/ast.zbr:893
             _self.parts = parts;
         return _self;
     }
@@ -3795,9 +4660,9 @@ pub const ExceptField = struct {
     value: Expr,
     pub fn init(name: []const u8, value: Expr) ExceptField {
         var _self: ExceptField = undefined;
-// zbr:selfhost/ast.zbr:882
+// zbr:selfhost/ast.zbr:902
             _self.name = _intern(name);
-// zbr:selfhost/ast.zbr:883
+// zbr:selfhost/ast.zbr:903
             _self.value = value;
         return _self;
     }
@@ -3810,11 +4675,11 @@ pub const ExprExcept = struct {
     fields: std.ArrayList(ExceptField),
     pub fn init(span: Span, base: Expr, fields: std.ArrayList(ExceptField)) ExprExcept {
         var _self: ExprExcept = undefined;
-// zbr:selfhost/ast.zbr:891
+// zbr:selfhost/ast.zbr:911
             _self.span = span;
-// zbr:selfhost/ast.zbr:892
+// zbr:selfhost/ast.zbr:912
             _self.base = base;
-// zbr:selfhost/ast.zbr:893
+// zbr:selfhost/ast.zbr:913
             _self.fields = fields;
         return _self;
     }
@@ -3826,9 +4691,9 @@ pub const ExprIdent = struct {
     name: []const u8,
     pub fn init(span: Span, name: []const u8) ExprIdent {
         var _self: ExprIdent = undefined;
-// zbr:selfhost/ast.zbr:902
+// zbr:selfhost/ast.zbr:922
             _self.span = span;
-// zbr:selfhost/ast.zbr:903
+// zbr:selfhost/ast.zbr:923
             _self.name = _intern(name);
         return _self;
     }
@@ -3841,11 +4706,11 @@ pub const ExprMember = struct {
     member: []const u8,
     pub fn init(span: Span, object: *Expr, member: []const u8) ExprMember {
         var _self: ExprMember = undefined;
-// zbr:selfhost/ast.zbr:913
+// zbr:selfhost/ast.zbr:933
             _self.span = span;
-// zbr:selfhost/ast.zbr:914
+// zbr:selfhost/ast.zbr:934
             _self.object = object;
-// zbr:selfhost/ast.zbr:915
+// zbr:selfhost/ast.zbr:935
             _self.member = _intern(member);
         return _self;
     }
@@ -3858,11 +4723,11 @@ pub const Arg = struct {
     value: Expr,
     pub fn init(span: Span, name: ?[]const u8, value: Expr) Arg {
         var _self: Arg = undefined;
-// zbr:selfhost/ast.zbr:925
+// zbr:selfhost/ast.zbr:945
             _self.span = span;
-// zbr:selfhost/ast.zbr:926
+// zbr:selfhost/ast.zbr:946
             _self.name = name;
-// zbr:selfhost/ast.zbr:927
+// zbr:selfhost/ast.zbr:947
             _self.value = value;
         return _self;
     }
@@ -3875,11 +4740,11 @@ pub const ExprCall = struct {
     args: std.ArrayList(Arg),
     pub fn init(span: Span, callee: Expr, args: std.ArrayList(Arg)) ExprCall {
         var _self: ExprCall = undefined;
-// zbr:selfhost/ast.zbr:935
+// zbr:selfhost/ast.zbr:955
             _self.span = span;
-// zbr:selfhost/ast.zbr:936
+// zbr:selfhost/ast.zbr:956
             _self.callee = callee;
-// zbr:selfhost/ast.zbr:937
+// zbr:selfhost/ast.zbr:957
             _self.args = args;
         return _self;
     }
@@ -3892,11 +4757,11 @@ pub const ExprIndex = struct {
     index: *Expr,
     pub fn init(span: Span, object: *Expr, index: *Expr) ExprIndex {
         var _self: ExprIndex = undefined;
-// zbr:selfhost/ast.zbr:947
+// zbr:selfhost/ast.zbr:967
             _self.span = span;
-// zbr:selfhost/ast.zbr:948
+// zbr:selfhost/ast.zbr:968
             _self.object = object;
-// zbr:selfhost/ast.zbr:949
+// zbr:selfhost/ast.zbr:969
             _self.index = index;
         return _self;
     }
@@ -3910,13 +4775,13 @@ pub const ExprSlice = struct {
     stop_: ?*Expr,
     pub fn init(span: Span, object: *Expr, start: ?*Expr, stop_: ?*Expr) ExprSlice {
         var _self: ExprSlice = undefined;
-// zbr:selfhost/ast.zbr:960
+// zbr:selfhost/ast.zbr:980
             _self.span = span;
-// zbr:selfhost/ast.zbr:961
+// zbr:selfhost/ast.zbr:981
             _self.object = object;
-// zbr:selfhost/ast.zbr:962
+// zbr:selfhost/ast.zbr:982
             _self.start = start;
-// zbr:selfhost/ast.zbr:963
+// zbr:selfhost/ast.zbr:983
             _self.stop_ = stop_;
         return _self;
     }
@@ -3955,13 +4820,13 @@ pub const ExprBinary = struct {
     right: *Expr,
     pub fn init(span: Span, op: BinaryOp, left: *Expr, right: *Expr) ExprBinary {
         var _self: ExprBinary = undefined;
-// zbr:selfhost/ast.zbr:998
+// zbr:selfhost/ast.zbr:1018
             _self.span = span;
-// zbr:selfhost/ast.zbr:999
+// zbr:selfhost/ast.zbr:1019
             _self.op = op;
-// zbr:selfhost/ast.zbr:1000
+// zbr:selfhost/ast.zbr:1020
             _self.left = left;
-// zbr:selfhost/ast.zbr:1001
+// zbr:selfhost/ast.zbr:1021
             _self.right = right;
         return _self;
     }
@@ -3980,11 +4845,11 @@ pub const ExprUnary = struct {
     operand: *Expr,
     pub fn init(span: Span, op: UnaryOp, operand: *Expr) ExprUnary {
         var _self: ExprUnary = undefined;
-// zbr:selfhost/ast.zbr:1016
+// zbr:selfhost/ast.zbr:1036
             _self.span = span;
-// zbr:selfhost/ast.zbr:1017
+// zbr:selfhost/ast.zbr:1037
             _self.op = op;
-// zbr:selfhost/ast.zbr:1018
+// zbr:selfhost/ast.zbr:1038
             _self.operand = operand;
         return _self;
     }
@@ -3997,11 +4862,11 @@ pub const ExprOld = struct {
     operand: *Expr,
     pub fn init(span: Span, uid: i64, operand: *Expr) ExprOld {
         var _self: ExprOld = undefined;
-// zbr:selfhost/ast.zbr:1028
+// zbr:selfhost/ast.zbr:1048
             _self.span = span;
-// zbr:selfhost/ast.zbr:1029
+// zbr:selfhost/ast.zbr:1049
             _self.uid = uid;
-// zbr:selfhost/ast.zbr:1030
+// zbr:selfhost/ast.zbr:1050
             _self.operand = operand;
         return _self;
     }
@@ -4014,11 +4879,11 @@ pub const ExprCast = struct {
     target: TypeRef,
     pub fn init(span: Span, expr: *Expr, target: TypeRef) ExprCast {
         var _self: ExprCast = undefined;
-// zbr:selfhost/ast.zbr:1040
+// zbr:selfhost/ast.zbr:1060
             _self.span = span;
-// zbr:selfhost/ast.zbr:1041
+// zbr:selfhost/ast.zbr:1061
             _self.expr = expr;
-// zbr:selfhost/ast.zbr:1042
+// zbr:selfhost/ast.zbr:1062
             _self.target = target;
         return _self;
     }
@@ -4032,13 +4897,13 @@ pub const ExprTypeCheck = struct {
     variant_name: ?[]const u8,
     pub fn init(span: Span, expr: *Expr, type_name: []const u8) ExprTypeCheck {
         var _self: ExprTypeCheck = undefined;
-// zbr:selfhost/ast.zbr:1054
+// zbr:selfhost/ast.zbr:1074
             _self.span = span;
-// zbr:selfhost/ast.zbr:1055
+// zbr:selfhost/ast.zbr:1075
             _self.expr = expr;
-// zbr:selfhost/ast.zbr:1056
+// zbr:selfhost/ast.zbr:1076
             _self.type_name = _intern(type_name);
-// zbr:selfhost/ast.zbr:1057
+// zbr:selfhost/ast.zbr:1077
             _self.variant_name = null;
         return _self;
     }
@@ -4051,11 +4916,11 @@ pub const ExprChainedCmp = struct {
     operands: std.ArrayList(Expr),
     pub fn init(span: Span, ops: std.ArrayList([]const u8), operands: std.ArrayList(Expr)) ExprChainedCmp {
         var _self: ExprChainedCmp = undefined;
-// zbr:selfhost/ast.zbr:1067
+// zbr:selfhost/ast.zbr:1087
             _self.span = span;
-// zbr:selfhost/ast.zbr:1068
+// zbr:selfhost/ast.zbr:1088
             _self.ops = ops;
-// zbr:selfhost/ast.zbr:1069
+// zbr:selfhost/ast.zbr:1089
             _self.operands = operands;
         return _self;
     }
@@ -4070,15 +4935,15 @@ pub const ExprOptChain = struct {
     args: std.ArrayList(Arg),
     pub fn init(span: Span, base: *Expr, member: []const u8, has_args: bool, args: std.ArrayList(Arg)) ExprOptChain {
         var _self: ExprOptChain = undefined;
-// zbr:selfhost/ast.zbr:1079
+// zbr:selfhost/ast.zbr:1099
             _self.span = span;
-// zbr:selfhost/ast.zbr:1080
+// zbr:selfhost/ast.zbr:1100
             _self.base = base;
-// zbr:selfhost/ast.zbr:1081
+// zbr:selfhost/ast.zbr:1101
             _self.member = _intern(member);
-// zbr:selfhost/ast.zbr:1082
+// zbr:selfhost/ast.zbr:1102
             _self.has_args = has_args;
-// zbr:selfhost/ast.zbr:1083
+// zbr:selfhost/ast.zbr:1103
             _self.args = args;
         return _self;
     }
@@ -4090,9 +4955,9 @@ pub const ExprToNilable = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprToNilable {
         var _self: ExprToNilable = undefined;
-// zbr:selfhost/ast.zbr:1092
+// zbr:selfhost/ast.zbr:1112
             _self.span = span;
-// zbr:selfhost/ast.zbr:1093
+// zbr:selfhost/ast.zbr:1113
             _self.expr = expr;
         return _self;
     }
@@ -4104,9 +4969,9 @@ pub const ExprToNonNil = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprToNonNil {
         var _self: ExprToNonNil = undefined;
-// zbr:selfhost/ast.zbr:1100
+// zbr:selfhost/ast.zbr:1120
             _self.span = span;
-// zbr:selfhost/ast.zbr:1101
+// zbr:selfhost/ast.zbr:1121
             _self.expr = expr;
         return _self;
     }
@@ -4118,9 +4983,9 @@ pub const ExprIsNil = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprIsNil {
         var _self: ExprIsNil = undefined;
-// zbr:selfhost/ast.zbr:1108
+// zbr:selfhost/ast.zbr:1128
             _self.span = span;
-// zbr:selfhost/ast.zbr:1109
+// zbr:selfhost/ast.zbr:1129
             _self.expr = expr;
         return _self;
     }
@@ -4133,11 +4998,11 @@ pub const ExprOrelse = struct {
     fallback: *Expr,
     pub fn init(span: Span, expr: *Expr, fallback: *Expr) ExprOrelse {
         var _self: ExprOrelse = undefined;
-// zbr:selfhost/ast.zbr:1119
+// zbr:selfhost/ast.zbr:1139
             _self.span = span;
-// zbr:selfhost/ast.zbr:1120
+// zbr:selfhost/ast.zbr:1140
             _self.expr = expr;
-// zbr:selfhost/ast.zbr:1121
+// zbr:selfhost/ast.zbr:1141
             _self.fallback = fallback;
         return _self;
     }
@@ -4151,13 +5016,13 @@ pub const ExprCatch = struct {
     fallback: *Expr,
     pub fn init(span: Span, expr: *Expr, err_var: ?[]const u8, fallback: *Expr) ExprCatch {
         var _self: ExprCatch = undefined;
-// zbr:selfhost/ast.zbr:1130
+// zbr:selfhost/ast.zbr:1150
             _self.span = span;
-// zbr:selfhost/ast.zbr:1131
+// zbr:selfhost/ast.zbr:1151
             _self.expr = expr;
-// zbr:selfhost/ast.zbr:1132
+// zbr:selfhost/ast.zbr:1152
             _self.err_var = err_var;
-// zbr:selfhost/ast.zbr:1133
+// zbr:selfhost/ast.zbr:1153
             _self.fallback = fallback;
         return _self;
     }
@@ -4171,13 +5036,13 @@ pub const ExprIf = struct {
     else_expr: *Expr,
     pub fn init(span: Span, cond: *Expr, then_expr: *Expr, else_expr: *Expr) ExprIf {
         var _self: ExprIf = undefined;
-// zbr:selfhost/ast.zbr:1144
+// zbr:selfhost/ast.zbr:1164
             _self.span = span;
-// zbr:selfhost/ast.zbr:1145
+// zbr:selfhost/ast.zbr:1165
             _self.cond = cond;
-// zbr:selfhost/ast.zbr:1146
+// zbr:selfhost/ast.zbr:1166
             _self.then_expr = then_expr;
-// zbr:selfhost/ast.zbr:1147
+// zbr:selfhost/ast.zbr:1167
             _self.else_expr = else_expr;
         return _self;
     }
@@ -4197,15 +5062,15 @@ pub const ExprLambda = struct {
     captures: std.ArrayList(DeclVar),
     pub fn init(span: Span, params: std.ArrayList(Param), return_type: ?TypeRef, body_: LambdaBody, captures: std.ArrayList(DeclVar)) ExprLambda {
         var _self: ExprLambda = undefined;
-// zbr:selfhost/ast.zbr:1164
+// zbr:selfhost/ast.zbr:1184
             _self.span = span;
-// zbr:selfhost/ast.zbr:1165
+// zbr:selfhost/ast.zbr:1185
             _self.params = params;
-// zbr:selfhost/ast.zbr:1166
+// zbr:selfhost/ast.zbr:1186
             _self.return_type = return_type;
-// zbr:selfhost/ast.zbr:1167
+// zbr:selfhost/ast.zbr:1187
             _self.body_ = body_;
-// zbr:selfhost/ast.zbr:1168
+// zbr:selfhost/ast.zbr:1188
             _self.captures = captures;
         return _self;
     }
@@ -4218,11 +5083,11 @@ pub const ExprListLit = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elem_type: ?TypeRef, elems: std.ArrayList(Expr)) ExprListLit {
         var _self: ExprListLit = undefined;
-// zbr:selfhost/ast.zbr:1178
+// zbr:selfhost/ast.zbr:1198
             _self.span = span;
-// zbr:selfhost/ast.zbr:1179
+// zbr:selfhost/ast.zbr:1199
             _self.elem_type = elem_type;
-// zbr:selfhost/ast.zbr:1180
+// zbr:selfhost/ast.zbr:1200
             _self.elems = elems;
         return _self;
     }
@@ -4234,9 +5099,9 @@ pub const DictEntry = struct {
     value: *Expr,
     pub fn init(key: *Expr, value: *Expr) DictEntry {
         var _self: DictEntry = undefined;
-// zbr:selfhost/ast.zbr:1187
+// zbr:selfhost/ast.zbr:1207
             _self.key = key;
-// zbr:selfhost/ast.zbr:1188
+// zbr:selfhost/ast.zbr:1208
             _self.value = value;
         return _self;
     }
@@ -4248,9 +5113,9 @@ pub const ExprDictLit = struct {
     entries: std.ArrayList(DictEntry),
     pub fn init(span: Span, entries: std.ArrayList(DictEntry)) ExprDictLit {
         var _self: ExprDictLit = undefined;
-// zbr:selfhost/ast.zbr:1195
+// zbr:selfhost/ast.zbr:1215
             _self.span = span;
-// zbr:selfhost/ast.zbr:1196
+// zbr:selfhost/ast.zbr:1216
             _self.entries = entries;
         return _self;
     }
@@ -4262,9 +5127,9 @@ pub const ExprArrayLit = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elems: std.ArrayList(Expr)) ExprArrayLit {
         var _self: ExprArrayLit = undefined;
-// zbr:selfhost/ast.zbr:1203
+// zbr:selfhost/ast.zbr:1223
             _self.span = span;
-// zbr:selfhost/ast.zbr:1204
+// zbr:selfhost/ast.zbr:1224
             _self.elems = elems;
         return _self;
     }
@@ -4276,9 +5141,9 @@ pub const ExprZigLit = struct {
     text: []const u8,
     pub fn init(span: Span, text: []const u8) ExprZigLit {
         var _self: ExprZigLit = undefined;
-// zbr:selfhost/ast.zbr:1213
+// zbr:selfhost/ast.zbr:1233
             _self.span = span;
-// zbr:selfhost/ast.zbr:1214
+// zbr:selfhost/ast.zbr:1234
             _self.text = _intern(text);
         return _self;
     }
@@ -4290,9 +5155,9 @@ pub const ExprTry = struct {
     expr: *Expr,
     pub fn init(span: Span, expr: *Expr) ExprTry {
         var _self: ExprTry = undefined;
-// zbr:selfhost/ast.zbr:1221
+// zbr:selfhost/ast.zbr:1241
             _self.span = span;
-// zbr:selfhost/ast.zbr:1222
+// zbr:selfhost/ast.zbr:1242
             _self.expr = expr;
         return _self;
     }
@@ -4304,9 +5169,9 @@ pub const ExprTuple = struct {
     elems: std.ArrayList(Expr),
     pub fn init(span: Span, elems: std.ArrayList(Expr)) ExprTuple {
         var _self: ExprTuple = undefined;
-// zbr:selfhost/ast.zbr:1229
+// zbr:selfhost/ast.zbr:1249
             _self.span = span;
-// zbr:selfhost/ast.zbr:1230
+// zbr:selfhost/ast.zbr:1250
             _self.elems = elems;
         return _self;
     }

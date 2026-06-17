@@ -61,7 +61,7 @@ const Builder = struct {
     fn buildModule(b: Builder, root: TN) anyerror!Ast.Module {
         // Program → TopDeclList eof
         const tdl_node = ch(root)[0];
-        var decls = std.ArrayList(Ast.Decl){};
+        var decls = std.ArrayList(Ast.Decl).empty;
         try b.collectTopDecls(tdl_node, &decls);
         return .{
             .file  = "",
@@ -78,11 +78,12 @@ const Builder = struct {
         var pending_derive_debug = false;
         var pending_derive_eq = false;
         var pending_derive_hash = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags);
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
+        var pending_export_sym: ?[]const u8 = null;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags, &pending_export_sym);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -90,20 +91,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -122,6 +123,9 @@ const Builder = struct {
             } else if (std.mem.eql(u8, name, "derive")) {
                 // @derive(Debug, Eq, Hash) — extract identifier names from ArgList
                 if (at_kids.len > 2) try b.extractDeriveIdents(at_kids[2], pending_derive_debug, pending_derive_eq, pending_derive_hash);
+            } else if (std.mem.eql(u8, name, "export")) {
+                // @export("sym") — extract symbol name string literal from ArgList
+                if (at_kids.len > 2) try b.extractExportSym(at_kids[2], pending_export_sym);
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -169,6 +173,15 @@ const Builder = struct {
             pending_derive_debug.* = false;
             pending_derive_eq.* = false;
             pending_derive_hash.* = false;
+        }
+        if (pending_export_sym.*) |sym| {
+            applyExportSym(&d, sym) catch |err| switch (err) {
+                error.ExportSymOnNonClass => std.debug.panic(
+                    "@export can only precede `class` declarations",
+                    .{},
+                ),
+            };
+            pending_export_sym.* = null;
         }
         try out.append(b.arena, d);
     }
@@ -233,6 +246,13 @@ const Builder = struct {
         }
     }
 
+    fn applyPure(d: *Ast.Decl) error{PureOnNonMethod}!void {
+        switch (d.*) {
+            .method => |m| m.mods.pure = true,
+            else    => return error.PureOnNonMethod,
+        }
+    }
+
     fn applyTags(d: *Ast.Decl, tags: []const []const u8) void {
         switch (d.*) {
             .method => |m| m.tags = tags,
@@ -284,13 +304,34 @@ const Builder = struct {
         }
     }
 
+    fn extractExportSym(b: Builder, args_node: TN, out: *?[]const u8) !void {
+        const args = try b.buildArgListNode(args_node);
+        for (args) |arg| {
+            switch (arg.value.*) {
+                .string_lit => |s| {
+                    const raw = s.text;
+                    out.* = if (raw.len >= 2 and raw[0] == '"') raw[1 .. raw.len - 1] else raw;
+                },
+                else => {},
+            }
+            break;
+        }
+    }
+
+    fn applyExportSym(d: *Ast.Decl, sym: []const u8) error{ExportSymOnNonClass}!void {
+        switch (d.*) {
+            .class => |c| c.export_sym = sym,
+            else   => return error.ExportSymOnNonClass,
+        }
+    }
+
     // ── Use directive ─────────────────────────────────────────────────────────
 
     fn buildUseDecl(b: Builder, node: TN) anyerror!Ast.DeclUse {
         const kids = ch(node);
         if (kids.len == 5) {
             // use UsePath kw_exposing IdListNE eol
-            var names = std.ArrayList([]const u8){};
+            var names = std.ArrayList([]const u8).empty;
             try b.collectIdListNE(kids[3], &names);
             return .{
                 .span     = spanOf(node, b.tokens),
@@ -311,7 +352,7 @@ const Builder = struct {
     fn buildNamespaceDecl(b: Builder, node: TN) anyerror!Ast.DeclNamespace {
         // kw_namespace UsePath eol indent TopDeclList dedent
         const kids = ch(node);
-        var decls = std.ArrayList(Ast.Decl){};
+        var decls = std.ArrayList(Ast.Decl).empty;
         try b.collectTopDecls(kids[4], &decls);
         return .{
             .span  = spanOf(node, b.tokens),
@@ -372,14 +413,14 @@ const Builder = struct {
         const kids = ch(node);
         const is_generic = isLeafKind(kids[2], .open_call);
 
-        var type_params = std.ArrayList(Ast.TypeParam){};
-        var implements  = std.ArrayList(Ast.TypeRef){};
-        var adds        = std.ArrayList(Ast.TypeRef){};
+        var type_params = std.ArrayList(Ast.TypeParam).empty;
+        var implements  = std.ArrayList(Ast.TypeRef).empty;
+        var adds        = std.ArrayList(Ast.TypeRef).empty;
 
         if (is_generic) {
             try b.collectTypeParamListNE(kids[3], &type_params);
             try b.collectClassHeader(kids[5], &implements, &adds);
-            var invs = std.ArrayList(*Ast.Expr){};
+            var invs = std.ArrayList(*Ast.Expr).empty;
             try b.collectClassInvariants(kids[11], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
@@ -393,7 +434,7 @@ const Builder = struct {
             };
         } else {
             try b.collectClassHeader(kids[3], &implements, &adds);
-            var invs = std.ArrayList(*Ast.Expr){};
+            var invs = std.ArrayList(*Ast.Expr).empty;
             try b.collectClassInvariants(kids[9], &invs);
             return .{
                 .span        = spanOf(node, b.tokens),
@@ -478,7 +519,7 @@ const Builder = struct {
 
     fn buildInterfaceDecl(b: Builder, node: TN) anyerror!Ast.DeclInterface {
         const kids = ch(node);
-        var implements = std.ArrayList(Ast.TypeRef){};
+        var implements = std.ArrayList(Ast.TypeRef).empty;
         switch (kids[3]) {
             .inner => |inner| {
                 if (inner.children.len >= 2)
@@ -503,7 +544,7 @@ const Builder = struct {
 
     fn buildStructDecl(b: Builder, node: TN) anyerror!Ast.DeclStruct {
         const kids = ch(node);
-        var implements = std.ArrayList(Ast.TypeRef){};
+        var implements = std.ArrayList(Ast.TypeRef).empty;
         switch (kids[3]) {
             .inner => |inner| {
                 if (inner.children.len >= 2)
@@ -511,7 +552,7 @@ const Builder = struct {
             },
             else => {},
         }
-        var invs = std.ArrayList(*Ast.Expr){};
+        var invs = std.ArrayList(*Ast.Expr).empty;
         try b.collectClassInvariants(kids[9], &invs);
         return .{
             .span       = spanOf(node, b.tokens),
@@ -546,7 +587,7 @@ const Builder = struct {
 
     fn buildEnumDecl(b: Builder, node: TN) anyerror!Ast.DeclEnum {
         const kids = ch(node);
-        var members = std.ArrayList(Ast.EnumMember){};
+        var members = std.ArrayList(Ast.EnumMember).empty;
         try b.collectEnumMembers(kids[5], &members);
         return .{
             .span    = spanOf(node, b.tokens),
@@ -610,15 +651,16 @@ const Builder = struct {
     // ── Member declaration list ───────────────────────────────────────────────
 
     fn buildMemberDeclList(b: Builder, node: TN) anyerror![]const Ast.Decl {
-        var out = std.ArrayList(Ast.Decl){};
+        var out = std.ArrayList(Ast.Decl).empty;
         var pending_profile = false;
         var pending_once = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
-        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_tags);
+        var pending_pure = false;
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
+        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_pure: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -628,7 +670,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_tags);
+                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_pure, pending_tags);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -648,6 +690,8 @@ const Builder = struct {
                             pending_profile.* = true;
                         } else if (std.mem.eql(u8, name, "once")) {
                             pending_once.* = true;
+                        } else if (std.mem.eql(u8, name, "pure")) {
+                            pending_pure.* = true;
                         } else if (std.mem.eql(u8, name, "tag")) {
                             if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
                         } else {
@@ -678,6 +722,15 @@ const Builder = struct {
                             };
                             pending_once.* = false;
                         }
+                        if (pending_pure.*) {
+                            applyPure(&d) catch |err| switch (err) {
+                                error.PureOnNonMethod => std.debug.print(
+                                    "warning: @pure can only precede a method declaration; ignored\n",
+                                    .{},
+                                ),
+                            };
+                            pending_pure.* = false;
+                        }
                         try out.append(b.arena, d);
                     },
                 }
@@ -693,8 +746,9 @@ const Builder = struct {
         const start = out.items.len;
         var pending_profile = false;
         var pending_once = false;
-        var pending_tags: std.ArrayListUnmanaged([]const u8) = .{};
-        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_tags);
+        var pending_pure = false;
+        var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
+        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
         for (out.items[start..]) |*d| setShared(d);
     }
 
@@ -755,9 +809,9 @@ const Builder = struct {
                 .Block         => {
                     const all_stmts = try b.buildBlock(kid);
                     // Partition require/ensure contract stmts out of the body.
-                    var req_exprs  = std.ArrayList(*Ast.Expr){};
-                    var ens_exprs  = std.ArrayList(*Ast.Expr){};
-                    var body_stmts = std.ArrayList(Ast.Stmt){};
+                    var req_exprs  = std.ArrayList(*Ast.Expr).empty;
+                    var ens_exprs  = std.ArrayList(*Ast.Expr).empty;
+                    var body_stmts = std.ArrayList(Ast.Stmt).empty;
                     for (all_stmts) |s| {
                         if (s == .contract) {
                             switch (s.contract.kind) {
@@ -781,7 +835,7 @@ const Builder = struct {
                 },
                 .CatchClauseList => {
                     // Method-level catch: wrap body in a StmtTryCatch node.
-                    var clauses = std.ArrayList(Ast.CatchClause){};
+                    var clauses = std.ArrayList(Ast.CatchClause).empty;
                     try b.collectCatchClauses(kid, &clauses);
                     const tc = try b.box(Ast.StmtTryCatch, .{
                         .span    = spanOf(kid, b.tokens),
@@ -881,11 +935,11 @@ const Builder = struct {
 
     fn buildContractBlock(b: Builder, node: TN) anyerror!ContractResult {
         const clause_list = ch(node)[1];
-        var require = std.ArrayList(*Ast.Expr){};
-        var ensure  = std.ArrayList(*Ast.Expr){};
+        var require = std.ArrayList(*Ast.Expr).empty;
+        var ensure  = std.ArrayList(*Ast.Expr).empty;
         const body: ?[]const Ast.Stmt = null;
 
-        var clauses = std.ArrayList(TN){};
+        var clauses = std.ArrayList(TN).empty;
         defer clauses.deinit(b.arena);
         try b.flattenContractClauses(clause_list, &clauses);
 
@@ -932,7 +986,7 @@ const Builder = struct {
             .epsilon => return &.{},
             .inner   => |inner| {
                 if (inner.children.len == 0) return &.{};
-                var out = std.ArrayList(Ast.Param){};
+                var out = std.ArrayList(Ast.Param).empty;
                 try b.flattenParamListNE(inner.children[0], &out);
                 return out.toOwnedSlice(b.arena);
             },
@@ -1061,7 +1115,7 @@ const Builder = struct {
                     const name = leafText(kids[0], b.tokens);
                     if (kids[1] == .inner and ntOf(kids[1]) == .ValueArgListNE) {
                         // open_call ValueArgListNE rparen — value-parameterized alias e.g. Bounded(0, 100)
-                        var args = std.ArrayList(Ast.Expr){};
+                        var args = std.ArrayList(Ast.Expr).empty;
                         try b.collectValueArgListNE(kids[1], &args);
                         break :blk .{ .alias_applied = .{
                             .span = spanOf(node, b.tokens),
@@ -1100,7 +1154,7 @@ const Builder = struct {
             5 => blk: {
                 // ( TypeRef , TypeRefListNE )  — tuple type
                 // lparen TypeRef comma TypeRefListNE rparen
-                var elems = std.ArrayList(Ast.TypeRef){};
+                var elems = std.ArrayList(Ast.TypeRef).empty;
                 try elems.append(b.arena, try b.buildTypeRef(kids[1]));
                 const rest = try b.buildTypeRefListNE(kids[3]);
                 try elems.appendSlice(b.arena, rest);
@@ -1155,7 +1209,7 @@ const Builder = struct {
     }
 
     fn buildTypeRefListNE(b: Builder, node: TN) anyerror![]const Ast.TypeRef {
-        var out = std.ArrayList(Ast.TypeRef){};
+        var out = std.ArrayList(Ast.TypeRef).empty;
         try b.collectTypeRefs(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -1192,7 +1246,7 @@ const Builder = struct {
     }
 
     fn buildStmtList(b: Builder, node: TN) anyerror![]const Ast.Stmt {
-        var out = std.ArrayList(Ast.Stmt){};
+        var out = std.ArrayList(Ast.Stmt).empty;
         try b.collectStmts(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -1270,7 +1324,7 @@ const Builder = struct {
             .StmtLocalVarLambda => try b.buildStmtLocalVarLambda(inner),
             .StmtDestruct       => blk: {
                 // kw_var lparen IdListNE rparen assign Expr eol
-                var names = std.ArrayList([]const u8){};
+                var names = std.ArrayList([]const u8).empty;
                 try b.collectIdListNE(kids[2], &names);
                 break :blk .{ .destruct = try b.box(Ast.StmtDestruct, .{
                     .span  = s,
@@ -1281,7 +1335,7 @@ const Builder = struct {
             },
             .StmtDestructStruct => blk: {
                 // kw_var lcurly IdListNE rcurly assign Expr eol
-                var names = std.ArrayList([]const u8){};
+                var names = std.ArrayList([]const u8).empty;
                 try b.collectIdListNE(kids[2], &names);
                 break :blk .{ .destruct = try b.box(Ast.StmtDestruct, .{
                     .span  = s,
@@ -1294,6 +1348,7 @@ const Builder = struct {
             .StmtExpr     => .{ .expr    = try b.box(Ast.Expr,       try b.buildExpr(kids[0])) },
             .StmtDefer    => .{ .defer_    = try b.box(Ast.StmtDefer,    try b.buildStmtDefer(inner)) },
             .StmtWith       => .{ .with        = try b.box(Ast.StmtWith,       try b.buildStmtWith(inner)) },
+            .StmtIn         => .{ .in_scope    = try b.box(Ast.StmtIn,         try b.buildStmtIn(inner)) },
             .StmtArenaScope => .{ .arena_scope = try b.box(Ast.StmtArenaScope, try b.buildStmtArenaScope(inner)) },
             .StmtAllocate   => .{ .allocate_   = try b.box(Ast.StmtAllocate,   try b.buildStmtAllocate(inner)) },
             .StmtCopyOut    => .{ .copy_out    = try b.box(Ast.StmtCopyOut,    try b.buildStmtCopyOut(inner)) },
@@ -1325,7 +1380,7 @@ const Builder = struct {
 
     fn buildStmtIf(b: Builder, node: TN) anyerror!Ast.StmtIf {
         const kids = ch(node);
-        var else_ifs  = std.ArrayList(Ast.ElseIf){};
+        var else_ifs  = std.ArrayList(Ast.ElseIf).empty;
         var else_body: ?[]const Ast.Stmt = null;
         if (kids.len == 7) {
             // Capture form: kw_if Expr kw_as id eol Block IfTail
@@ -1340,6 +1395,21 @@ const Builder = struct {
                 .else_body  = else_body,
             };
         }
+        if (kids.len == 6 and isLeafKind(kids[2], .colon)) {
+            // Inline form: kw_if Expr colon InlineThen InlineElse eol
+            // [0]kw_if [1]Expr [2]colon [3]InlineThen [4]InlineElse [5]eol
+            const then_stmt = try b.buildInlineThen(kids[3]);
+            const then_slice = try b.arena.alloc(Ast.Stmt, 1);
+            then_slice[0] = then_stmt;
+            try b.collectInlineElse(kids[4], &else_ifs, &else_body);
+            return .{
+                .span      = spanOf(node, b.tokens),
+                .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+                .then_body = then_slice,
+                .else_ifs  = try else_ifs.toOwnedSlice(b.arena),
+                .else_body = else_body,
+            };
+        }
         // Standard form: kw_if Expr eol Block IfTail
         // [0]kw_if [1]Expr [2]eol [3]Block [4]IfTail
         try b.collectIfTail(kids[4], &else_ifs, &else_body);
@@ -1350,6 +1420,110 @@ const Builder = struct {
             .else_ifs  = try else_ifs.toOwnedSlice(b.arena),
             .else_body = else_body,
         };
+    }
+
+    fn buildInlineThen(b: Builder, node: TN) anyerror!Ast.Stmt {
+        // InlineThen — single inline statement body (no trailing eol)
+        const kids = ch(node);
+        const s = spanOf(node, b.tokens);
+        if (kids.len == 0) return .{ .pass = s };
+        const first = kids[0];
+        if (isLeafKind(first, .kw_return)) {
+            const val: ?*Ast.Expr = if (kids.len >= 2)
+                try b.box(Ast.Expr, try b.buildExpr(kids[1]))
+            else
+                null;
+            return .{ .return_ = try b.box(Ast.StmtReturn, .{ .span = s, .value = val }) };
+        }
+        if (isLeafKind(first, .kw_print)) return .{ .print = try b.box(Ast.StmtPrint, .{
+            .span = s,
+            .args = try b.buildExprListPtrs(kids[1]),
+        }) };
+        if (isLeafKind(first, .kw_pass))     return .{ .pass      = s };
+        if (isLeafKind(first, .kw_break))    return .{ .break_    = s };
+        if (isLeafKind(first, .kw_continue)) return .{ .continue_ = s };
+        if (isLeafKind(first, .kw_yield)) return .{ .yield = try b.box(Ast.StmtYield, .{
+            .span  = s,
+            .value = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+        }) };
+        if (isLeafKind(first, .kw_assert)) return .{ .assert = try b.box(Ast.StmtAssert, .{
+            .span    = s,
+            .cond    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            .message = if (kids.len == 4) try b.box(Ast.Expr, try b.buildExpr(kids[3])) else null,
+        }) };
+        if (isLeafKind(first, .kw_var) or isLeafKind(first, .kw_const)) {
+            // Reuse buildStmtLocalVar — works for both 4-kid (kw_var id VTO VIO) and
+            // 5-kid (kw_const id VTO assign Expr) since it uses bounds-checked idx access.
+            return .{ .var_ = try b.box(Ast.DeclVar, try b.buildStmtLocalVar(node)) };
+        }
+        // Expr AssignOp Expr  or  Expr
+        if (kids.len == 3) {
+            return .{ .assign = try b.box(Ast.StmtAssign, .{
+                .span   = s,
+                .target = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+                .op     = buildAssignOp(kids[1]),
+                .value  = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
+            }) };
+        }
+        // Expr — expression statement
+        return .{ .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])) };
+    }
+
+    fn collectInlineElse(b: Builder, node: TN, else_ifs: *std.ArrayList(Ast.ElseIf), else_body: *?[]const Ast.Stmt) anyerror!void {
+        // InlineElse → ε
+        //             | else: InlineThen InlineElse          (4 kids, same-line)
+        //             | else if Expr: InlineThen InlineElse  (6 kids, same-line)
+        //             | eol else: InlineThen InlineElse      (5 kids, next-line)
+        //             | eol else if Expr: InlineThen InlineElse (7 kids, next-line)
+        switch (node) {
+            .epsilon => return,
+            .inner => |inner| {
+                const kids = inner.children;
+                if (kids.len == 0) return; // ε production
+                if (kids.len == 4) {
+                    // same-line: else: InlineThen InlineElse
+                    // [0]kw_else [1]colon [2]InlineThen [3]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[2]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    else_body.* = body_slice;
+                    try b.collectInlineElse(kids[3], else_ifs, else_body);
+                } else if (kids.len == 5) {
+                    // next-line: eol else: InlineThen InlineElse
+                    // [0]eol [1]kw_else [2]colon [3]InlineThen [4]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[3]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    else_body.* = body_slice;
+                    try b.collectInlineElse(kids[4], else_ifs, else_body);
+                } else if (kids.len == 6) {
+                    // same-line: else if Expr: InlineThen InlineElse
+                    // [0]kw_else [1]kw_if [2]Expr [3]colon [4]InlineThen [5]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[4]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    try else_ifs.append(b.arena, .{
+                        .span = spanOf(node, b.tokens),
+                        .cond = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
+                        .body = body_slice,
+                    });
+                    try b.collectInlineElse(kids[5], else_ifs, else_body);
+                } else if (kids.len == 7) {
+                    // next-line: eol else if Expr: InlineThen InlineElse
+                    // [0]eol [1]kw_else [2]kw_if [3]Expr [4]colon [5]InlineThen [6]InlineElse
+                    const body_stmt = try b.buildInlineThen(kids[5]);
+                    const body_slice = try b.arena.alloc(Ast.Stmt, 1);
+                    body_slice[0] = body_stmt;
+                    try else_ifs.append(b.arena, .{
+                        .span = spanOf(node, b.tokens),
+                        .cond = try b.box(Ast.Expr, try b.buildExpr(kids[3])),
+                        .body = body_slice,
+                    });
+                    try b.collectInlineElse(kids[6], else_ifs, else_body);
+                }
+            },
+            .leaf => {},
+        }
     }
 
     fn collectIfTail(b: Builder, node: TN, else_ifs: *std.ArrayList(Ast.ElseIf), else_body: *?[]const Ast.Stmt) !void {
@@ -1462,7 +1636,7 @@ const Builder = struct {
         // 7-child: kw_for ForVarList kw_in Expr eol Block ForElseOpt
         // 9-child: kw_for ForVarList kw_in Expr kw_if Expr eol Block ForElseOpt
         const kids = ch(node);
-        var vars = std.ArrayList([]const u8){};
+        var vars = std.ArrayList([]const u8).empty;
         try b.collectForVarList(kids[1], &vars);
         const guarded = kids.len == 9;
         return .{
@@ -1513,7 +1687,7 @@ const Builder = struct {
     fn buildStmtBranch(b: Builder, node: TN) anyerror!Ast.StmtBranch {
         // kw_branch Expr eol indent BranchOnList BranchElseOpt dedent
         const kids = ch(node);
-        var ons = std.ArrayList(Ast.BranchOn){};
+        var ons = std.ArrayList(Ast.BranchOn).empty;
         try b.collectBranchOnList(kids[4], &ons);
         var else_: ?[]const Ast.Stmt = null;
         try b.collectBranchElse(kids[5], &else_);
@@ -1758,8 +1932,9 @@ const Builder = struct {
         const target_expr = try b.box(Ast.Expr, try b.buildExpr(kids[1]));
         const raw_body    = try b.buildStmtList(block_kids[1]);
 
-        // Desugar bare-name assignments: `x = val` → `target.x = val`
-        var body = std.ArrayList(Ast.Stmt){};
+        // Desugar bare-name assignments and calls: `x = val` → `target.x = val`,
+        // `method(args)` → `target.method(args)`
+        var body = std.ArrayList(Ast.Stmt).empty;
         for (raw_body) |stmt| {
             if (stmt == .assign) {
                 const sa = stmt.assign;
@@ -1780,6 +1955,27 @@ const Builder = struct {
                     continue;
                 }
             }
+            // Desugar bare-ident call statements: `method(args)` → `target.method(args)`
+            if (stmt == .expr) {
+                const e = stmt.expr;
+                if (e.* == .call and e.call.callee.* == .ident) {
+                    const call = e.call;
+                    const method_name = call.callee.ident.name;
+                    const new_callee = try b.box(Ast.Expr, .{ .member = try b.box(Ast.ExprMember, .{
+                        .span   = call.callee.ident.span,
+                        .object = target_expr,
+                        .member = method_name,
+                    }) });
+                    const new_call = try b.box(Ast.ExprCall, .{
+                        .span      = call.span,
+                        .callee    = new_callee,
+                        .type_args = call.type_args,
+                        .args      = call.args,
+                    });
+                    try body.append(b.arena, .{ .expr = try b.box(Ast.Expr, .{ .call = new_call }) });
+                    continue;
+                }
+            }
             try body.append(b.arena, stmt);
         }
 
@@ -1787,6 +1983,17 @@ const Builder = struct {
             .span   = span,
             .target = target_expr,
             .body   = try body.toOwnedSlice(b.arena),
+        };
+    }
+
+    fn buildStmtIn(b: Builder, node: TN) anyerror!Ast.StmtIn {
+        // kw_in Expr eol Block
+        const kids       = ch(node);
+        const block_kids = ch(kids[3]); // Block → indent StmtList dedent
+        return .{
+            .span = spanOf(node, b.tokens),
+            .expr = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
+            .body = try b.buildStmtList(block_kids[1]),
         };
     }
 
@@ -1836,7 +2043,7 @@ const Builder = struct {
         // Extract each expression-statement from the block as a condition.
         const kids  = ch(node);
         const stmts = try b.buildBlock(kids[2]);
-        var exprs   = std.ArrayList(*Ast.Expr){};
+        var exprs   = std.ArrayList(*Ast.Expr).empty;
         for (stmts) |s| {
             if (s == .expr) try exprs.append(b.arena, s.expr);
         }
@@ -1851,7 +2058,7 @@ const Builder = struct {
     /// InvariantDecl → kw_invariant eol indent StmtList dedent
     fn buildInvariantExprs(b: Builder, node: TN) anyerror![]const *Ast.Expr {
         const stmts = try b.buildStmtList(ch(node)[3]);
-        var exprs = std.ArrayList(*Ast.Expr){};
+        var exprs = std.ArrayList(*Ast.Expr).empty;
         for (stmts) |s| {
             if (s == .expr) try exprs.append(b.arena, s.expr);
         }
@@ -1917,7 +2124,7 @@ const Builder = struct {
     fn buildStmtTryCatch(b: Builder, node: TN) anyerror!Ast.StmtTryCatch {
         // kw_try eol Block CatchClauseList
         const kids = ch(node);
-        var clauses = std.ArrayList(Ast.CatchClause){};
+        var clauses = std.ArrayList(Ast.CatchClause).empty;
         try b.collectCatchClauses(kids[3], &clauses);
         return .{
             .span    = spanOf(node, b.tokens),
@@ -1982,7 +2189,7 @@ const Builder = struct {
         const base = try b.buildTypeRef(kids[type_ref_ki]);
 
         const params: ?[]Ast.Param = if (is_parametric) blk: {
-            var ps = std.ArrayList(Ast.Param){};
+            var ps = std.ArrayList(Ast.Param).empty;
             try b.collectAliasParams(kids[2], &ps);
             break :blk try ps.toOwnedSlice(b.arena);
         } else null;
@@ -2042,7 +2249,7 @@ const Builder = struct {
     fn buildDeclUnion(b: Builder, node: TN) anyerror!Ast.DeclUnion {
         // ModList kw_union id eol indent UnionVariantList dedent
         const kids = ch(node);
-        var variants = std.ArrayList(Ast.UnionVariant){};
+        var variants = std.ArrayList(Ast.UnionVariant).empty;
         try b.collectUnionVariants(kids[5], &variants);
         return .{
             .span     = spanOf(node, b.tokens),
@@ -2168,7 +2375,7 @@ const Builder = struct {
     }
 
     fn buildExceptFieldList(b: Builder, node: TN) anyerror![]const Ast.ExceptField {
-        var out = std.ArrayList(Ast.ExceptField){};
+        var out = std.ArrayList(Ast.ExceptField).empty;
         try b.collectExceptFields(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2219,7 +2426,7 @@ const Builder = struct {
     }
 
     fn buildCaptureVarList(b: Builder, node: TN) anyerror![]const *Ast.DeclVar {
-        var out = std.ArrayList(*Ast.DeclVar){};
+        var out = std.ArrayList(*Ast.DeclVar).empty;
         try b.collectCaptureVars(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2300,7 +2507,6 @@ const Builder = struct {
                 .tilde   => .{ .unary = try b.box(Ast.ExprUnary, .{ .span=s, .op=.bit_not, .operand=opExpr }) },
                 .kw_not  => .{ .unary = try b.box(Ast.ExprUnary, .{ .span=s, .op=.not_,    .operand=opExpr }) },
                 .kw_old  => .{ .old   = try b.box(Ast.ExprOld,   .{ .span=s, .expr=opExpr }) },
-                .kw_try  => .{ .try_  = try b.box(Ast.ExprTry,   .{ .span=s, .expr=opExpr }) },
                 else => std.debug.panic("buildExprLevel unary: {s}", .{@tagName(kids[0].leaf.token)}),
             };
         }
@@ -2316,6 +2522,14 @@ const Builder = struct {
         // `expr?` postfix: 2 children, second is .question — sugar for `try expr`
         if (kids.len == 2 and isLeafKind(kids[1], .question)) {
             return .{ .try_ = try b.box(Ast.ExprTry, .{
+                .span = s,
+                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
+            }) };
+        }
+
+        // `expr!` postfix: 2 children, second is .bang — force-unwrap, alias for `expr to!`
+        if (kids.len == 2 and isLeafKind(kids[1], .bang)) {
+            return .{ .to_non_nil = try b.box(Ast.ExprToNonNil, .{
                 .span = s,
                 .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
             }) };
@@ -2447,6 +2661,29 @@ const Builder = struct {
                 },
                 else => std.debug.panic("buildExprLevel binary: {s}", .{@tagName(op_tok)}),
             };
+        }
+
+        // `is not` — 4 children: Expr kw_is kw_not Expr  →  not (expr is TypeName)
+        if (kids.len == 4 and isLeafKind(kids[1], .kw_is) and isLeafKind(kids[2], .kw_not)) {
+            const left  = try b.box(Ast.Expr, try b.buildExpr(kids[0]));
+            const right = try b.box(Ast.Expr, try b.buildExpr(kids[3]));
+            const tc: Ast.Expr = if (right.* == .ident)
+                .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
+                    .span = s, .expr = left, .type_name = right.ident.name,
+                }) }
+            else if (right.* == .member and right.member.object.* == .ident)
+                .{ .type_check = try b.box(Ast.ExprTypeCheck, .{
+                    .span = s, .expr = left,
+                    .type_name    = right.member.object.ident.name,
+                    .variant_name = right.member.member,
+                }) }
+            else
+                std.debug.panic("is not: RHS must be a type name or Union.variant", .{});
+            return .{ .unary = try b.box(Ast.ExprUnary, .{
+                .span    = s,
+                .op      = .not_,
+                .operand = try b.box(Ast.Expr, tc),
+            }) };
         }
 
         // `not in` — 4 children: Expr kw_not kw_in Expr
@@ -2605,7 +2842,7 @@ const Builder = struct {
 
         // (Expr, ExprListNE)  — tuple literal (5 children)
         if (kids.len == 5 and isLeafKind(kids[0], .lparen) and isLeafKind(kids[2], .comma)) {
-            var elems = std.ArrayList(*Ast.Expr){};
+            var elems = std.ArrayList(*Ast.Expr).empty;
             try elems.append(b.arena, try b.box(Ast.Expr, try b.buildExpr(kids[1])));
             const rest = try b.buildExprListNE(kids[3]);
             try elems.appendSlice(b.arena, rest);
@@ -2685,7 +2922,7 @@ const Builder = struct {
     /// no closing quote).
     fn buildStringInterp(b: Builder, s: Ast.Span, kids: []const TN) anyerror!Ast.Expr {
         // kids: [string_start_X, InterpBodyX, string_stop_X]
-        var parts = std.ArrayList(Ast.StringPart){};
+        var parts = std.ArrayList(Ast.StringPart).empty;
 
         // Leading literal (strip opening quote character).
         const start_text = leafText(kids[0], b.tokens);
@@ -2759,7 +2996,7 @@ const Builder = struct {
         const callee = try b.box(Ast.Expr, .{ .ident = .{ .span = s, .name = class_name } });
 
         // kids[1] = TypeRefListNE
-        var type_args = std.ArrayList(Ast.TypeRef){};
+        var type_args = std.ArrayList(Ast.TypeRef).empty;
         try b.collectTypeRefListNE(kids[1], &type_args);
 
         // kids.len == 5: open_call TypeRefListNE rparen lparen rparen  (no value args)
@@ -2793,7 +3030,7 @@ const Builder = struct {
             const fname = leafText(p_kids[0], b.tokens); // open_call text has no `(`
             const rest  = try b.buildArgListNode(p_kids[1]);
             // Prepend piped value
-            var args = std.ArrayList(Ast.Arg){};
+            var args = std.ArrayList(Ast.Arg).empty;
             try args.append(b.arena, .{ .span = s, .name = null, .value = piped });
             try args.appendSlice(b.arena, rest);
             return .{ .call = try b.box(Ast.ExprCall, .{
@@ -2812,7 +3049,7 @@ const Builder = struct {
                 .span = s, .object = obj, .member = mname,
             }) });
             const rest  = try b.buildArgListNode(p_kids[3]);
-            var args = std.ArrayList(Ast.Arg){};
+            var args = std.ArrayList(Ast.Arg).empty;
             try args.append(b.arena, .{ .span = s, .name = null, .value = piped });
             try args.appendSlice(b.arena, rest);
             return .{ .call = try b.box(Ast.ExprCall, .{
@@ -2880,7 +3117,7 @@ const Builder = struct {
     }
 
     fn collectArgListNE(b: Builder, node: TN) anyerror![]const Ast.Arg {
-        var out = std.ArrayList(Ast.Arg){};
+        var out = std.ArrayList(Ast.Arg).empty;
         try b.flattenArgListNE(node, &out);
         return out.toOwnedSlice(b.arena);
     }
@@ -2944,7 +3181,7 @@ const Builder = struct {
     }
 
     fn buildExprListNE(b: Builder, node: TN) anyerror![]const *Ast.Expr {
-        var out = std.ArrayList(*Ast.Expr){};
+        var out = std.ArrayList(*Ast.Expr).empty;
         try b.flattenExprListNE(node, &out);
         return out.toOwnedSlice(b.arena);
     }

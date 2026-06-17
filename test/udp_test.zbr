@@ -1,8 +1,10 @@
 def main()
-    # ── UDP send ─────────────────────────────────────────────────────
-    # Send a datagram to a local echo server (if available).
-    # We just verify the socket opens and send returns without error.
-    var sock: UdpSocket = Udp.socket()
-    sock.send("127.0.0.1", 9999, "hello udp")
-    sock.close()
-    print "ok"
+    # UDP self-loopback: bind a recv socket, send to it, verify round-trip.
+    var recv_sock: UdpSocket = Udp.bind(19878)
+    var send_sock: UdpSocket = Udp.socket()
+    send_sock.send("127.0.0.1", 19878, "hello udp")
+    send_sock.close()
+    var data: str = recv_sock.recv(1024)
+    recv_sock.close()
+    print data
+    print "udp_test OK"

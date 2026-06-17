@@ -84,7 +84,7 @@ pub const BindResult = struct {
 /// - `diag_alloc` — owns the `diags` slice and message strings in `BindResult`.
 pub fn bindPass1(module: Ast.Module, sym_arena: Allocator, diag_alloc: Allocator) anyerror!BindResult {
     var table = try SymbolTable.init(sym_arena);
-    var diags = std.ArrayList(Diagnostic){};
+    var diags = std.ArrayList(Diagnostic).empty;
     const b = Binder{ .table = &table, .diag_alloc = diag_alloc, .diags = &diags };
     try b.declareModule(module, table.root);
     return .{
@@ -131,20 +131,46 @@ const Binder = struct {
     // ── Namespace ─────────────────────────────────────────────────────────────
 
     fn declareNamespace(b: Binder, n: *Ast.DeclNamespace, scope: *Scope) anyerror!void {
-        const sym = try b.table.newSymbol(n.name, .namespace_, .{ .namespace_ = n });
-        // If the namespace already exists (split across files), reuse its scope.
-        if (try scope.define(n.name, sym)) |existing| {
-            if (existing.kind == .namespace_ and existing.own_scope != null) {
-                // Merge into the existing namespace scope.
-                for (n.decls) |decl| try b.declareTopDecl(decl, existing.own_scope.?);
-                return;
+        // Support dotted names ("Outer.Inner") by creating a scope chain.
+        var parts_buf: [16][]const u8 = undefined;
+        var n_parts: usize = 0;
+        var it = std.mem.splitScalar(u8, n.name, '.');
+        while (it.next()) |p| { if (n_parts < parts_buf.len) { parts_buf[n_parts] = p; n_parts += 1; } }
+        const parts = parts_buf[0..n_parts];
+
+        var current_scope = scope;
+        for (parts, 0..) |part, i| {
+            const is_leaf = (i == parts.len - 1);
+            if (is_leaf) {
+                // Leaf component: register with the actual decls.
+                const sym = try b.table.newSymbol(part, .namespace_, .{ .namespace_ = n });
+                if (try current_scope.define(part, sym)) |existing| {
+                    if (existing.kind == .namespace_ and existing.own_scope != null) {
+                        for (n.decls) |decl| try b.declareTopDecl(decl, existing.own_scope.?);
+                        return;
+                    }
+                    try b.emitDuplicateError(n.span, n.name);
+                    return;
+                }
+                const ns_scope = try b.table.newScope(.namespace_, current_scope);
+                sym.own_scope = ns_scope;
+                for (n.decls) |decl| try b.declareTopDecl(decl, ns_scope);
+            } else {
+                // Intermediate component: create or reuse a container namespace.
+                const sym = try b.table.newSymbol(part, .namespace_, .{ .namespace_ = n });
+                if (try current_scope.define(part, sym)) |existing| {
+                    if (existing.kind == .namespace_ and existing.own_scope != null) {
+                        current_scope = existing.own_scope.?;
+                        continue;
+                    }
+                    try b.emitDuplicateError(n.span, part);
+                    return;
+                }
+                const ns_scope = try b.table.newScope(.namespace_, current_scope);
+                sym.own_scope = ns_scope;
+                current_scope = ns_scope;
             }
-            try b.emitDuplicateError(n.span, n.name);
-            return;
         }
-        const ns_scope = try b.table.newScope(.namespace_, scope);
-        sym.own_scope = ns_scope;
-        for (n.decls) |decl| try b.declareTopDecl(decl, ns_scope);
     }
 
     // ── Type declarations ─────────────────────────────────────────────────────

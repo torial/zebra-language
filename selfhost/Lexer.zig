@@ -14,6 +14,8 @@
 
 const std     = @import("std");
 const builtin = @import("builtin");
+var _io: std.Io = undefined;
+var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var _allocator: std.mem.Allocator = _arena.allocator();
@@ -23,12 +25,28 @@ var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
+pub fn _initIo(io: std.Io) void {
+    _io = io;
+}
 // === STDLIB_PREAMBLE_HELPERS_START ===
 fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
     return owned;
+}
+
+// Normalize a filesystem path for the host OS.  On Windows, std.Io.Dir's
+// createFile rejects an absolute path containing backslashes mixed with
+// forward slashes (OBJECT_NAME_INVALID) — e.g. an output dir like
+// "C:\dir" joined with "/name.zig".  Forward-slash absolute paths work
+// everywhere, so collapse backslashes to forward slashes.  Returns the
+// input unchanged when there is nothing to normalize.
+fn _zbr_norm_path(p: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, p, '\\') == null) return p;
+    const buf = _allocator.alloc(u8, p.len) catch return p;
+    for (p, 0..) |c, i| buf[i] = if (c == '\\') '/' else c;
+    return buf;
 }
 
 const _Stringable = struct {
@@ -256,25 +274,41 @@ fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T 
 }
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    const _r = std.process.Child.run(.{
-        .allocator = _allocator,
-        .argv = argv.items,
-        .max_output_bytes = 16 * 1024 * 1024,
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
     }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    const _ec: i64 = switch (_r.term) {
-        .Exited => |code| @intCast(code),
+    var stdout_bytes: []const u8 = "";
+    var stderr_bytes: []const u8 = "";
+    if (child.stdout) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    if (child.stderr) |f| {
+        var buf: [65536]u8 = undefined;
+        var rdr = f.readerStreaming(_io, &buf);
+        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
+    }
+    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
+    const _ec: i64 = switch (term) {
+        .exited => |code| @intCast(code),
         else    => -1,
     };
-    return .{ .exit_code = _ec, .stdout = _r.stdout, .stderr = _r.stderr };
+    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
 }
 fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
-    var child = std.process.Child.init(argv.items, _allocator);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    const term = child.spawnAndWait() catch return -1;
+    var child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch return -1;
+    const term = child.wait(_io) catch return -1;
     return switch (term) {
-        .Exited => |code| @intCast(code),
+        .exited => |code| @intCast(code),
         else    => -1,
     };
 }
@@ -285,46 +319,55 @@ const _SysProcess = struct {
 };
 fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
-    p.* = .{ .child = std.process.Child.init(argv.items, _allocator), .alive = false, .pid = -1 };
-    p.child.stdin_behavior  = .Ignore;
-    p.child.stdout_behavior = .Ignore;
-    p.child.stderr_behavior = .Inherit;
-    p.child.spawn() catch return p;
+    p.* = .{ .child = undefined, .alive = false, .pid = -1 };
+    p.child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .ignore,
+        .stdout = .ignore,
+        .stderr = .inherit,
+    }) catch return p;
     p.alive = true;
-    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig 0.15 std so we leave -1.
+    // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
     if (comptime builtin.os.tag != .windows) {
-        p.pid = @intCast(p.child.id);
+        if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
 }
 fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
-    _ = p.child.kill() catch {};
+    p.child.kill(_io);
     p.alive = false;
 }
 fn _sys_process_is_running(p: *_SysProcess) bool {
     if (!p.alive) return false;
     if (comptime builtin.os.tag == .windows) {
-        const WAIT_TIMEOUT: std.os.windows.DWORD = 258;
-        const res = std.os.windows.kernel32.WaitForSingleObject(p.child.id, 0);
-        if (res != WAIT_TIMEOUT) { p.alive = false; return false; }
-        return true;
+        const handle = p.child.id orelse { p.alive = false; return false; };
+        var timeout: std.os.windows.LARGE_INTEGER = 0;
+        const status = std.os.windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &timeout);
+        if (status == .TIMEOUT) return true;
+        p.alive = false;
+        return false;
     } else {
-        const r = std.posix.waitpid(p.child.id, std.posix.W.NOHANG);
+        const pid = p.child.id orelse { p.alive = false; return false; };
+        const r = std.posix.waitpid(pid, std.posix.W.NOHANG);
         if (r.pid != 0) { p.alive = false; return false; }
         return true;
     }
 }
 fn _sys_readline() ?[]const u8 {
-    const stdin = std.fs.File.stdin();
-    var buf: [4096]u8 = undefined;
-    const n = stdin.read(&buf) catch return null;
-    if (n == 0) return null;
-    const line = buf[0..n];
-    const trimmed = if (line.len > 0 and line[line.len - 1] == '\n')
-        if (line.len > 1 and line[line.len - 2] == '\r') line[0 .. line.len - 2] else line[0 .. line.len - 1]
-    else line;
-    return _allocator.dupe(u8, trimmed) catch return null;
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var line: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    while (true) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
+        if (n == 0) return if (line.items.len > 0) line.items else null;
+        const b = byte_buf[0];
+        if (b == '\n') break;
+        if (b != '\r') line.append(_allocator, b) catch return null;
+    }
+    return line.items;
 }
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
 const _DynLib = struct {
@@ -342,55 +385,55 @@ fn _dynlib_close(dl: *_DynLib) void {
 // ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
 fn _Chan(comptime T: type) type {
     return struct {
-        mutex:     std.Thread.Mutex = .{},
-        not_empty: std.Thread.Condition = .{},
-        not_full:  std.Thread.Condition = .{},
+        mutex:     std.Io.Mutex = .init,
+        not_empty: std.Io.Condition = .init,
+        not_full:  std.Io.Condition = .init,
         buf:       std.ArrayList(T),
         capacity:  usize,
         closed:    bool = false,
 
         const Self = @This();
-        // Zig 0.15: std.ArrayList is unmanaged — allocator passed per operation.
         const _alloc = std.heap.page_allocator;
+        const _dio = std.Options.debug_io;
 
         pub fn init(cap: usize) Self {
-            return .{ .buf = .{}, .capacity = cap };
+            return .{ .buf = .empty, .capacity = cap };
         }
 
         pub fn send(self: *Self, val: T) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             if (self.closed) @panic("send on closed channel");
             const eff_cap: usize = if (self.capacity == 0) 1 else self.capacity;
             while (self.buf.items.len >= eff_cap and !self.closed)
-                self.not_full.wait(&self.mutex);
+                self.not_full.waitUncancelable(_dio, &self.mutex);
             if (self.closed) return;
             self.buf.append(_alloc, val) catch @panic("OOM");
-            self.not_empty.signal();
+            self.not_empty.signal(_dio);
             // Rendezvous (cap=0): sender blocks until receiver drains the slot.
             if (self.capacity == 0) {
                 while (self.buf.items.len > 0 and !self.closed)
-                    self.not_full.wait(&self.mutex);
+                    self.not_full.waitUncancelable(_dio, &self.mutex);
             }
         }
 
         pub fn recv(self: *Self) ?T {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             while (self.buf.items.len == 0 and !self.closed)
-                self.not_empty.wait(&self.mutex);
+                self.not_empty.waitUncancelable(_dio, &self.mutex);
             if (self.buf.items.len == 0) return null;
             const val = self.buf.orderedRemove(0);
-            self.not_full.signal();
+            self.not_full.signal(_dio);
             return val;
         }
 
         pub fn close(self: *Self) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
             self.closed = true;
-            self.not_empty.broadcast();
-            self.not_full.broadcast();
+            self.not_empty.broadcast(_dio);
+            self.not_full.broadcast(_dio);
         }
     };
 }
@@ -399,6 +442,140 @@ fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
+fn _Atomic(comptime T: type) type {
+    return struct {
+        val: std.atomic.Value(T),
+
+        pub fn load(self: *@This()) T {
+            return self.val.load(.seq_cst);
+        }
+        pub fn store(self: *@This(), v: T) void {
+            self.val.store(v, .seq_cst);
+        }
+        pub fn add(self: *@This(), delta: T) T {
+            return self.val.fetchAdd(delta, .seq_cst);
+        }
+        pub fn sub(self: *@This(), delta: T) T {
+            return self.val.fetchSub(delta, .seq_cst);
+        }
+        pub fn swap(self: *@This(), v: T) T {
+            return self.val.swap(v, .seq_cst);
+        }
+        pub fn cas(self: *@This(), expected: T, desired: T) bool {
+            return self.val.cmpxchgStrong(expected, desired, .seq_cst, .seq_cst) == null;
+        }
+    };
+}
+fn _atomic_create(comptime T: type, v: T) *_Atomic(T) {
+    const ptr = std.heap.page_allocator.create(_Atomic(T)) catch @panic("OOM");
+    ptr.* = .{ .val = std.atomic.Value(T).init(v) };
+    return ptr;
+}
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+const _ThreadTask = struct {
+    invoke:   *const fn (*anyopaque) void,
+    ctx:      *anyopaque,
+    free_ctx: *const fn (*anyopaque) void,
+    next:     ?*_ThreadTask = null,
+};
+fn _tp_noop_free(ctx: *anyopaque) void { _ = ctx; }
+const _ThreadPool = struct {
+    mutex:     std.Io.Mutex,
+    has_work:  std.Io.Condition,
+    all_done:  std.Io.Condition,
+    head:      ?*_ThreadTask,
+    in_flight: usize,
+    shutdown:  bool,
+
+    // submit accepts both plain fn()void and Zebra lambda structs (anytype dispatch).
+    pub fn submit(self: *_ThreadPool, f: anytype) void {
+        const T = @TypeOf(f);
+        const pa = std.heap.page_allocator;
+        const task = pa.create(_ThreadTask) catch @panic("OOM");
+        if (comptime @typeInfo(T) == .@"fn") {
+            const FnBox = struct { func: T };
+            const box = pa.create(FnBox) catch @panic("OOM");
+            box.* = .{ .func = f };
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*FnBox, @ptrCast(@alignCast(ctx))).func(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*FnBox, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(box), .free_ctx = Inv.free };
+        } else {
+            const cap = pa.create(T) catch @panic("OOM");
+            cap.* = f;
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*T, @ptrCast(@alignCast(ctx))).call(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*T, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(cap), .free_ctx = Inv.free };
+        }
+        self.mutex.lockUncancelable(_io);
+        if (self.head == null) {
+            self.head = task;
+        } else {
+            var t = self.head.?;
+            while (t.next) |n| t = n;
+            t.next = task;
+        }
+        self.in_flight += 1;
+        self.mutex.unlock(_io);
+        self.has_work.signal(_io);
+    }
+
+    pub fn wait(self: *_ThreadPool) void {
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        while (self.in_flight > 0) {
+            self.all_done.waitUncancelable(_io, &self.mutex);
+        }
+    }
+
+    fn worker(self: *_ThreadPool) void {
+        const pa = std.heap.page_allocator;
+        while (true) {
+            self.mutex.lockUncancelable(_io);
+            while (self.head == null and !self.shutdown) {
+                self.has_work.waitUncancelable(_io, &self.mutex);
+            }
+            if (self.head == null) {
+                self.mutex.unlock(_io);
+                return;
+            }
+            const task = self.head.?;
+            self.head = task.next;
+            self.mutex.unlock(_io);
+            task.invoke(task.ctx);
+            task.free_ctx(task.ctx);
+            pa.destroy(task);
+            self.mutex.lockUncancelable(_io);
+            self.in_flight -= 1;
+            const was_last = self.in_flight == 0;
+            self.mutex.unlock(_io);
+            if (was_last) self.all_done.broadcast(_io);
+        }
+    }
+};
+fn _thread_pool_create(n: i64) *_ThreadPool {
+    const pool = std.heap.page_allocator.create(_ThreadPool) catch @panic("OOM");
+    pool.* = .{
+        .mutex     = .init,
+        .has_work  = .init,
+        .all_done  = .init,
+        .head      = null,
+        .in_flight = 0,
+        .shutdown  = false,
+    };
+    const n_threads: usize = @intCast(@max(n, 1));
+    for (0..n_threads) |_| {
+        const t = std.Thread.spawn(.{}, _ThreadPool.worker, .{pool}) catch @panic("ThreadPool: spawn failed");
+        t.detach();
+    }
+    return pool;
+}
+
 // sys.go(lambda) — fire-and-forget thread spawn.
 // Accepts either a plain fn() void (no-capture lambda) or a struct with a
 // call(self) void method (captured lambda).  Both patterns are produced by
@@ -427,7 +604,7 @@ var _build_ran: bool = false;
 var _list_targets_mode: bool = false;
 fn _build_new(alloc: std.mem.Allocator) *_Build {
     const b = alloc.create(_Build) catch @panic("OOM");
-    b.* = .{ .targets = .{} };
+    b.* = .{ .targets = .empty };
     _global_build = b;
     return b;
 }
@@ -455,18 +632,20 @@ fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     std.process.exit(1);
 }
 fn _build_list_targets(b: *_Build) void {
-    const _out = std.fs.File.stdout().deprecatedWriter();
-    _out.writeAll("{\"targets\":[") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
-        if (i > 0) _out.writeAll(",") catch {};
+        if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
         const kind_str: []const u8 = switch (t.kind) {
             .exe   => "exe",
             .lib   => "lib",
             .test_ => "test",
         };
-        _out.print("{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{{\"name\":\"{s}\",\"kind\":\"{s}\",\"entry\":\"{s}\"}}", .{ t.name, kind_str, t.entry }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
-    _out.writeAll("]}\n") catch {};
+    _stdout.writeStreamingAll(_io, "]}\n") catch {};
 }
 fn _build_auto_run() void {
     if (!_build_ran) {
@@ -478,8 +657,8 @@ fn _build_run(b: *_Build) void {
     if (_list_targets_mode) { _build_list_targets(b); return; }
     const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
     defer _allocator.free(self_exe);
-    std.fs.cwd().makePath(".zig-cache/zbr") catch {};
-    std.fs.cwd().makePath("zig-out/bin")    catch {};
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin",    .{}) catch {};
     for (b.targets.items) |t| {
         switch (t.kind) {
             .exe => {
@@ -493,18 +672,16 @@ fn _build_run(b: *_Build) void {
                 std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
                 {
                     const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Ignore;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .ignore, .stderr = .inherit }) catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: emit-zig wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
                 {
                     const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
-                    var ch = std.process.Child.init(&argv, _allocator);
-                    ch.stderr_behavior = .Inherit; ch.stdout_behavior = .Inherit;
-                    const term = ch.spawnAndWait() catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .Exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: zig build-exe wait failed\n", .{}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
             },
@@ -561,7 +738,7 @@ fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, s
     const epoch_s    = epoch_days * 86400 + hour * 3600 + minute * 60 + second;
     return .{ .epoch_ms = epoch_s * 1000 };
 }
-fn _dt_now() _DateTime { return .{ .epoch_ms = std.time.milliTimestamp() }; }
+fn _dt_now() _DateTime { return .{ .epoch_ms = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_ms)) }; }
 fn _dt_weekday(dt: _DateTime) i64 {
     // epoch_days=0 is Thursday (ISO 4); Monday=1 … Sunday=7
     const epoch_days = @divFloor(dt.epoch_ms, 86400000);
@@ -652,6 +829,209 @@ const Calendar = struct {
     pub const Persian   = "persian";
     pub const Julian    = "julian";
 };
+
+// ── IANA Timezone support ─────────────────────────────────────────────────────
+// Common IANA zones: UTC offset in minutes (std/dst) and DST rule index.
+// DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
+//            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
+// Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
+const _tz_table = [_]_TzEntry{
+    .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/UTC",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/GMT",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "America/New_York",            .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Detroit",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Indiana/Indianapolis",.std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Kentucky/Louisville", .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Toronto",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Chicago",             .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Winnipeg",            .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Mexico_City",         .std = -360, .dst = -360, .rule = 0 },
+    .{ .name = "America/Denver",              .std = -420, .dst = -360, .rule = 1 },
+    .{ .name = "America/Phoenix",             .std = -420, .dst = -420, .rule = 0 },
+    .{ .name = "America/Los_Angeles",         .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Vancouver",           .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Anchorage",           .std = -540, .dst = -480, .rule = 1 },
+    .{ .name = "America/Adak",               .std = -600, .dst = -540, .rule = 1 },
+    .{ .name = "Pacific/Honolulu",            .std = -600, .dst = -600, .rule = 0 },
+    .{ .name = "America/Bogota",              .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Lima",                .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Sao_Paulo",           .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Argentina/Buenos_Aires",.std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Santiago",            .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "Europe/London",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Dublin",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Lisbon",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Paris",                .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Berlin",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Amsterdam",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Rome",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Madrid",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Brussels",             .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Vienna",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Warsaw",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Prague",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Stockholm",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Oslo",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Copenhagen",           .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Zurich",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Athens",               .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Helsinki",             .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Bucharest",            .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Kyiv",                 .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Istanbul",             .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Moscow",               .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Minsk",                .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Asia/Dubai",                  .std = 240,  .dst = 240,  .rule = 0 },
+    .{ .name = "Asia/Tehran",                 .std = 210,  .dst = 210,  .rule = 0 },
+    .{ .name = "Asia/Kabul",                  .std = 270,  .dst = 270,  .rule = 0 },
+    .{ .name = "Asia/Karachi",                .std = 300,  .dst = 300,  .rule = 0 },
+    .{ .name = "Asia/Kolkata",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Colombo",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Kathmandu",              .std = 345,  .dst = 345,  .rule = 0 },
+    .{ .name = "Asia/Dhaka",                  .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Almaty",                 .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Yangon",                 .std = 390,  .dst = 390,  .rule = 0 },
+    .{ .name = "Asia/Bangkok",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Ho_Chi_Minh",            .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Jakarta",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Shanghai",               .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Hong_Kong",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Singapore",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Taipei",                 .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Kuala_Lumpur",           .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Seoul",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Asia/Tokyo",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Australia/Darwin",            .std = 570,  .dst = 570,  .rule = 0 },
+    .{ .name = "Australia/Adelaide",          .std = 570,  .dst = 630,  .rule = 3 },
+    .{ .name = "Australia/Perth",             .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Australia/Brisbane",          .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Australia/Sydney",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Melbourne",         .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Hobart",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Pacific/Auckland",            .std = 720,  .dst = 780,  .rule = 4 },
+    .{ .name = "Pacific/Fiji",                .std = 720,  .dst = 720,  .rule = 0 },
+    .{ .name = "Pacific/Guam",                .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Africa/Cairo",                .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Nairobi",              .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Africa/Johannesburg",         .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Lagos",                .std = 60,   .dst = 60,   .rule = 0 },
+    .{ .name = "Atlantic/Azores",             .std = -60,  .dst = 0,    .rule = 2 },
+    .{ .name = "Atlantic/Cape_Verde",         .std = -60,  .dst = -60,  .rule = 0 },
+};
+
+// First Sunday on or after epoch_days D (Sundays: epoch_days % 7 == 3).
+fn _tz_first_sun_on_or_after(d: i64) i64 {
+    return d + @mod(3 - d, 7);
+}
+
+// Last Sunday on or before epoch_days D.
+fn _tz_last_sun_on_or_before(d: i64) i64 {
+    return d - @mod(d - 3, 7);
+}
+
+fn _tz_us_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // US DST (since 2007): 2nd Sunday March 02:00 LST → 1st Sunday November 02:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    if (g.year < 2007) return false;
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    const mar1 = @divFloor(_dt_from_gregorian(g.year, 3, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_mar = _tz_first_sun_on_or_after(mar1);
+    const sun2_mar = sun1_mar + 7;
+    // 02:00 local standard → UTC: subtract std offset (std_ms is negative for West)
+    const dst_start = sun2_mar * 86400000 + 7200000 - std_ms;
+
+    const nov1 = @divFloor(_dt_from_gregorian(g.year, 11, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_nov = _tz_first_sun_on_or_after(nov1);
+    // 02:00 local DST → UTC: subtract dst offset
+    const dst_end = sun1_nov * 86400000 + 7200000 - dst_ms;
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_eu_dst_active(epoch_ms: i64) bool {
+    // EU DST: last Sunday March 01:00 UTC → last Sunday October 01:00 UTC
+    const g = _dt_to_gregorian(epoch_ms);
+
+    const mar31 = @divFloor(_dt_from_gregorian(g.year, 3, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_mar = _tz_last_sun_on_or_before(mar31);
+    const dst_start = last_sun_mar * 86400000 + 3600000; // 01:00 UTC
+
+    const oct31 = @divFloor(_dt_from_gregorian(g.year, 10, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_oct = _tz_last_sun_on_or_before(oct31);
+    const dst_end = last_sun_oct * 86400000 + 3600000; // 01:00 UTC
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+fn _tz_au_east_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // AU Eastern DST: 1st Sunday October 02:00 LST → 1st Sunday April 03:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–September: always standard time
+    if (g.month >= 5 and g.month <= 9) return false;
+
+    if (g.month >= 10) {
+        const oct1 = @divFloor(_dt_from_gregorian(g.year, 10, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_oct = _tz_first_sun_on_or_after(oct1);
+        const dst_start = sun1_oct * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        // January–April: DST started last October; check if before 1st Sunday April 03:00 LDT
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms; // 03:00 LDT → UTC
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // NZ DST: last Sunday September 02:00 NZST → 1st Sunday April 03:00 NZDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–August: always standard time
+    if (g.month >= 5 and g.month <= 8) return false;
+
+    if (g.month >= 9) {
+        const sep30 = @divFloor(_dt_from_gregorian(g.year, 9, 30, 0, 0, 0).epoch_ms, 86400000);
+        const last_sun_sep = _tz_last_sun_on_or_before(sep30);
+        const dst_start = last_sun_sep * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms;
+        return epoch_ms < dst_end;
+    }
+}
+
+fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+    for (&_tz_table) |*entry| {
+        if (std.mem.eql(u8, entry.name, zone)) {
+            const std_ms: i64 = @as(i64, entry.std) * 60000;
+            if (entry.std == entry.dst or entry.rule == 0) {
+                return .{ .epoch_ms = dt.epoch_ms + std_ms };
+            }
+            const dst_ms: i64 = @as(i64, entry.dst) * 60000;
+            const in_dst = switch (entry.rule) {
+                1 => _tz_us_dst_active(dt.epoch_ms, entry.std),
+                2 => _tz_eu_dst_active(dt.epoch_ms),
+                3 => _tz_au_east_dst_active(dt.epoch_ms, entry.std),
+                4 => _tz_nz_dst_active(dt.epoch_ms, entry.std),
+                else => false,
+            };
+            return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
+        }
+    }
+    return dt; // Unknown zone: return as-is (UTC)
+}
 const JsonValue = std.json.Value;
 fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
@@ -660,7 +1040,7 @@ fn _json_parse(src: []const u8) ?JsonValue {
 fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }
-fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) }; }
+fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
 fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
 fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .string => |s| return s, else => {} }, else => {} }
@@ -681,7 +1061,7 @@ fn _json_get_bool(v: JsonValue, key: []const u8) bool {
 }
 fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
-    return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) };
+    return .{ .object = std.json.ObjectMap.empty };
 }
 fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
@@ -692,19 +1072,19 @@ fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, el
 fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
 fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
 }
 fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
 }
 fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
 }
 fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
 }
 fn _json_arr_str(v: *JsonValue, val: []const u8) void {
     if (v.* != .array) return;
@@ -724,23 +1104,27 @@ fn _json_arr_bool(v: *JsonValue, val: bool) void {
 }
 const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &_hb.writer }) catch return null;
-    return .{ .status = @intFromEnum(_hr.status), .text = _hb.written() };
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
 fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
 fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
 fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
 fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
-    var _hc = std.http.Client{ .allocator = _allocator };
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
     _ = _hc.fetch(.{ .location = .{ .url = url }, .method = .POST, .payload = body,
         .extra_headers = &.{ .{ .name = "Content-Type", .value = "application/json" } },
-        .response_writer = &_hb.writer }) catch return null;
-    return _json_parse(_hb.written());
+        .response_writer = &out_aw.writer }) catch return null;
+    out_list = out_aw.toArrayList();
+    return _json_parse(out_list.items);
 }
 fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
     var _new = std.heap.page_allocator.alloc([2][]const u8, resp.headers.len + 1) catch return resp;
@@ -753,24 +1137,24 @@ fn _http_serve(port: u16, handler: anytype) void {
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
-            defer ctx.conn.stream.close();
+            defer ctx.conn.close(_io);
             const _alloc = std.heap.page_allocator;
-            // Read request headers (scan for \r\n\r\n).
+            var _srv_rbuf: [4096]u8 = undefined;
+            var _srv_rd = ctx.conn.reader(_io, &_srv_rbuf);
+            // Read request headers byte-by-byte until \r\n\r\n.
             var _hd: [16384]u8 = undefined;
             var _hl: usize = 0;
-            while (_hl < _hd.len - 4096) {
-                const _n = std.posix.recv(ctx.conn.stream.handle, _hd[_hl..@min(_hl+4096, _hd.len)], 0) catch break;
-                if (_n == 0) break;
-                _hl += _n;
-                if (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") != null) break;
+            while (_hl < _hd.len - 1) {
+                const _b = _srv_rd.interface.takeByte() catch break;
+                _hd[_hl] = _b;
+                _hl += 1;
+                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') break;
             }
-            const _hdrs_end = (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") orelse (_hl -| 4)) + 4;
-            const _head = _hd[0.._hdrs_end];
-            var _peeked: usize = if (_hl > _hdrs_end) _hl - _hdrs_end else 0;
+            const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
@@ -792,16 +1176,14 @@ fn _http_serve(port: u16, handler: anytype) void {
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
-                const _pre = @min(_peeked, _cl);
-                if (_pre > 0) @memcpy(_bb[0.._pre], _hd[_hdrs_end.._hdrs_end+_pre]);
-                var _bi: usize = _pre;
+                var _bi: usize = 0;
                 while (_bi < _cl) {
-                    const _rn = std.posix.recv(ctx.conn.stream.handle, _bb[_bi..], 0) catch break;
+                    var _slices: [1][]u8 = .{_bb[_bi..]};
+                    const _rn = _srv_rd.interface.readVec(&_slices) catch break;
                     if (_rn == 0) break;
                     _bi += _rn;
                 }
                 _body = _bb[0.._bi];
-                _ = &_peeked;
             }
             const _req = HttpRequest{ .method = _method, .path = _path, .content = _body };
             const _resp = ctx.handler_fn(_req);
@@ -813,27 +1195,31 @@ fn _http_serve(port: u16, handler: anytype) void {
                 500 => "Internal Server Error",
                 else => "Unknown",
             };
-            var _xh: std.ArrayList(u8) = .{};
+            var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
                 .{ _resp.status, _st, _resp.text.len, _xh.items, _resp.text }) catch @panic("OOM");
-            ctx.conn.stream.writeAll(_out) catch {};
+            var _srv_wbuf: [4096]u8 = undefined;
+            var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
+            _srv_wr.interface.writeAll(_out) catch {};
+            _srv_wr.interface.flush() catch {};
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _conn = _srv.accept() catch continue;
-        const _ctx = _alloc.create(_Ctx) catch { _conn.stream.close(); continue; };
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
             _alloc.destroy(_ctx);
-            _conn.stream.close();
+            _conn.close(_io);
         };
     }
 }
@@ -848,9 +1234,9 @@ const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
 // Internal pointers: tls_client.input = &stream_reader.interface_state,
 //                   tls_client.output = &stream_writer.interface.
 const _WsTlsState = struct {
-    stream: std.net.Stream,
-    stream_reader: std.net.Stream.Reader,
-    stream_writer: std.net.Stream.Writer,
+    stream: std.Io.net.Stream,
+    stream_reader: std.Io.net.Stream.Reader,
+    stream_writer: std.Io.net.Stream.Writer,
     tls_client: std.crypto.tls.Client,
     rbuf:     [_WS_TLS_BUF]u8,
     wbuf:     [_WS_TLS_BUF]u8,
@@ -858,9 +1244,19 @@ const _WsTlsState = struct {
     sock_wbuf: [4096]u8,
 };
 
+// Plain-socket state for WebSocket — must live at a stable heap address
+// so that the stream reader's @fieldParentPtr vtable calls remain valid.
+const _WsPlain = struct {
+    stream: std.Io.net.Stream,
+    rbuf: [4096]u8,
+    wbuf: [4096]u8,
+    rd: std.Io.net.Stream.Reader,
+    wr: std.Io.net.Stream.Writer,
+};
+
 const _WsConn = struct {
     impl: union(enum) {
-        plain: std.net.Stream,
+        plain: _WsPlain,
         tls:   *_WsTlsState,
     },
     server_side: bool,
@@ -868,12 +1264,12 @@ const _WsConn = struct {
 
     fn readExact(self: *_WsConn, buf: []u8) !void {
         switch (self.impl) {
-            .plain => |s| {
-                var n: usize = 0;
-                while (n < buf.len) {
-                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
-                    if (r == 0) return error.ConnectionResetByPeer;
-                    n += r;
+            .plain => |*p| {
+                var remaining = buf;
+                while (remaining.len > 0) {
+                    var slices: [1][]u8 = .{remaining};
+                    const n = p.rd.interface.readVec(&slices) catch return error.ConnectionResetByPeer;
+                    remaining = remaining[n..];
                 }
             },
             .tls => |t| {
@@ -885,7 +1281,10 @@ const _WsConn = struct {
 
     fn writeAll(self: *_WsConn, buf: []const u8) !void {
         switch (self.impl) {
-            .plain => |s| try s.writeAll(buf),
+            .plain => |*p| {
+                p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
+                p.wr.interface.flush() catch return error.BrokenPipe;
+            },
             .tls   => |t| {
                 try t.tls_client.writer.writeAll(buf);
                 try t.tls_client.writer.flush();
@@ -895,25 +1294,25 @@ const _WsConn = struct {
 
     fn closeStream(self: *_WsConn) void {
         switch (self.impl) {
-            .plain => |s| s.close(),
+            .plain => |p| p.stream.close(_io),
             .tls   => |t| {
                 t.tls_client.end() catch {};
-                t.stream.close();
+                t.stream.close(_io);
                 std.heap.page_allocator.destroy(t);
             },
         }
     }
 };
 
-fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8) !void {
     state.stream = stream;
-    state.stream_reader = stream.reader(&state.sock_rbuf);
-    state.stream_writer = stream.writer(&state.sock_wbuf);
+    state.stream_reader = stream.reader(_io, &state.sock_rbuf);
+    state.stream_writer = stream.writer(_io, &state.sock_wbuf);
     var ca = std.crypto.Certificate.Bundle{};
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
-        state.stream_reader.interface(),
+        &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
@@ -929,7 +1328,7 @@ fn _ws_send_close_frame(conn: *_WsConn) void {
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
             close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
         conn.writeAll(&frame) catch {};
@@ -943,7 +1342,7 @@ fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
         conn.writeAll(&hdr) catch return;
         if (plen > 0) {
@@ -975,20 +1374,32 @@ fn _ws_connect(url: []const u8) ?*_WsConn {
         std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
 
     // TCP connect
-    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
-    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(_io); return null; };
 
     if (is_tls) {
-        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
-        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
         conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
     } else {
-        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+        // Initialize _WsPlain at its final heap address before setting up reader/writer,
+        // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
+        conn.server_side = false;
+        conn.closed = false;
+        conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+        conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
+        conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
     }
 
     // Build WebSocket upgrade request
     var key_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&key_bytes);
+    _io.randomSecure(&key_bytes) catch @panic("entropy unavailable");
     var key_b64: [24]u8 = undefined;
     _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
 
@@ -1041,7 +1452,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     }
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
         hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
         conn.writeAll(hdr[0..h]) catch return;
@@ -1061,7 +1472,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
 }
 
 fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
-    var msg: std.ArrayList(u8) = .{};
+    var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
@@ -1122,19 +1533,19 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: @TypeOf(handler),
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
-            // Read HTTP upgrade headers
+            // Read HTTP upgrade headers byte-by-byte
+            var hdr_rbuf: [64]u8 = undefined;
+            var hdr_rd = ctx.conn.reader(_io, &hdr_rbuf);
             var hdr_buf: [8192]u8 = undefined;
             var hdr_len: usize = 0;
             while (hdr_len + 1 < hdr_buf.len) {
-                var b: [1]u8 = undefined;
-                const n = ctx.conn.stream.read(&b) catch break;
-                if (n == 0) break;
-                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                const b = hdr_rd.interface.takeByte() catch break;
+                hdr_buf[hdr_len] = b; hdr_len += 1;
                 if (hdr_len >= 4 and
                     hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
                     hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
@@ -1142,9 +1553,9 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const headers = hdr_buf[0..hdr_len];
             // Extract Sec-WebSocket-Key
             const key_marker = "Sec-WebSocket-Key: ";
-            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
             const k1 = k0 + key_marker.len;
-            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.close(_io); return; };
             const client_key = headers[k1..k2];
             // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
             var sha = std.crypto.hash.Sha1.init(.{});
@@ -1159,12 +1570,21 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const resp = std.fmt.bufPrint(&resp_buf,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
                 .{accept_buf},
-            ) catch { ctx.conn.stream.close(); return; };
-            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            ) catch { ctx.conn.close(_io); return; };
+            {
+                var wr_wbuf: [512]u8 = undefined;
+                var wr = ctx.conn.writer(_io, &wr_wbuf);
+                wr.interface.writeAll(resp) catch { ctx.conn.close(_io); return; };
+                wr.interface.flush() catch { ctx.conn.close(_io); return; };
+            }
             // Create WsConn and call handler
-            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            ws.server_side = true;
+            ws.closed = false;
+            ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+            ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
+            ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
             if (!ws.closed) {
@@ -1175,25 +1595,26 @@ fn _ws_serve(port: u16, handler: anytype) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _c = _srv.accept() catch continue;
-        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
+        const _c = _srv.accept(_io) catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
         _ctx.* = .{ .conn = _c, .handler_fn = handler };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
 
 const _CsvTable = struct { rows: []const []const []const u8 };
 fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
-    var _rows: std.ArrayList([]const []const u8) = .{};
-    var _row:  std.ArrayList([]const u8) = .{};
-    var _f:    std.ArrayList(u8) = .{};
+    var _rows: std.ArrayList([]const []const u8) = .empty;
+    var _row:  std.ArrayList([]const u8) = .empty;
+    var _f:    std.ArrayList(u8) = .empty;
     const _St = enum { s, fld, q, aq };
     var _st: _St = .s;
     for (src) |c| {
@@ -1233,31 +1654,31 @@ fn _csv_parse(src: []const u8) _CsvTable {
     return .{ .rows = _rows.toOwnedSlice(_pa) catch &.{} };
 }
 fn _csv_parse_file(path: []const u8) _CsvTable {
-    const src = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return .{ .rows = &.{} };
+    const src = std.Io.Dir.cwd().readFileAlloc(_io, path, std.heap.page_allocator, .unlimited) catch return .{ .rows = &.{} };
     return _csv_parse(src);
 }
 fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
 fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .{};
+    var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
 fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .{};
+    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .{}; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
 fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
@@ -1281,78 +1702,127 @@ fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     w.buf.appendSlice(_pa, "\r\n") catch {};
 }
 fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
-const TcpConn = struct { stream: std.net.Stream };
+const TcpConn = struct { stream: std.Io.net.Stream };
 fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
-    const s = std.net.tcpConnectToHost(_allocator, host, port) catch return null;
-    return .{ .stream = s };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    return .{ .stream = stream };
 }
 fn _tcp_write(conn: TcpConn, data: []const u8) void {
-    conn.stream.writeAll(data) catch |e| @panic(@errorName(e));
+    var _wb: [4096]u8 = undefined;
+    var _wt = conn.stream.writer(_io, &_wb);
+    _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
+    _wt.interface.flush() catch |e| @panic(@errorName(e));
 }
 fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
-    var _rd = conn.stream.reader(&_rb);
-    var _hb = std.io.Writer.Allocating.init(std.heap.page_allocator);
-    _ = _rd.interface().streamRemaining(&_hb.writer) catch |e| @panic(@errorName(e));
-    return _hb.written();
+    var _rd = conn.stream.reader(_io, &_rb);
+    var out_list: std.ArrayList(u8) = .empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
+    _ = _rd.interface.streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    out_list = out_aw.toArrayList();
+    return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
 fn _tcp_read_line(conn: TcpConn) []const u8 {
-    var _buf: std.ArrayList(u8) = .{};
+    var _buf: std.ArrayList(u8) = .empty;
+    var _rb: [1]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     while (true) {
-        var _b: [1]u8 = undefined;
-        const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
-        if (_n == 0) break;
-        if (_b[0] == '\n') break;
-        if (_b[0] != '\r') _buf.append(std.heap.page_allocator, _b[0]) catch break;
+        const _b = _rd.interface.takeByte() catch break;
+        if (_b == '\n') break;
+        if (_b != '\r') _buf.append(std.heap.page_allocator, _b) catch break;
     }
     return _buf.items;
 }
 fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     const _buf = std.heap.page_allocator.alloc(u8, n) catch @panic("OOM");
+    var _rb: [4096]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     var _total: usize = 0;
     while (_total < n) {
-        const _got = std.posix.recv(conn.stream.handle, _buf[_total..], 0) catch break;
+        var _slices: [1][]u8 = .{_buf[_total..]};
+        const _got = _rd.interface.readVec(&_slices) catch break;
         if (_got == 0) break;
         _total += _got;
     }
     return _buf[0.._total];
 }
-fn _tcp_close(conn: TcpConn) void { conn.stream.close(); }
-
-const UdpSocket = struct { handle: std.posix.socket_t };
-fn _udp_socket() UdpSocket {
-    const s = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, 0) catch |e| @panic(@errorName(e));
-    return .{ .handle = s };
-}
-fn _udp_send(sock: UdpSocket, host: []const u8, port: u16, data: []const u8) void {
-    const dest = blk: {
-        if (std.net.Address.parseIp(host, port)) |a| break :blk a else |_| {}
-        const _list = std.net.getAddressList(std.heap.page_allocator, host, port) catch |e| @panic(@errorName(e));
-        defer _list.deinit();
-        if (_list.addrs.len == 0) @panic("UDP send: hostname resolution failed");
-        break :blk _list.addrs[0];
+fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
+fn _tcp_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(TcpConn) void;
+    const _fn: _HFn = handler;
+    const _Ctx = struct {
+        conn: std.Io.net.Stream,
+        handler_fn: _HFn,
+        fn run(ctx: *@This()) void {
+            defer std.heap.page_allocator.destroy(ctx);
+            ctx.handler_fn(.{ .stream = ctx.conn });
+        }
     };
-    _ = std.posix.sendto(sock.handle, data, 0, &dest.any, dest.getOsSockLen()) catch |e| @panic(@errorName(e));
+    const _alloc = std.heap.page_allocator;
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+        std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit(_io);
+    while (true) {
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
+        _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+            _alloc.destroy(_ctx);
+            _conn.close(_io);
+        };
+    }
 }
-fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
-    const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
-    const n = std.posix.recv(sock.handle, buf, 0) catch |e| @panic(@errorName(e));
-    return buf[0..n];
+
+const _UdpSocketInner = struct {
+    inner: std.Io.net.Socket,
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+        const dest = std.Io.net.IpAddress.parse(host, port) catch {
+            std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
+            return;
+        };
+        self.inner.send(_io, &dest, data) catch |e| {
+            std.debug.print("UDP send error: {}\n", .{e});
+        };
+    }
+    pub fn recv_(self: *_UdpSocketInner, max_bytes: usize) []const u8 {
+        const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
+        const msg = self.inner.receive(_io, buf) catch return buf[0..0];
+        return msg.data;
+    }
+    pub fn close_(self: *_UdpSocketInner) void { self.inner.close(_io); }
+};
+const UdpSocket = *_UdpSocketInner;
+fn _udp_socket() UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = 0 } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
+    return s;
 }
-fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
+fn _udp_bind(port: u16) UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
+    return s;
+}
 
 fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .{};
-    const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
-    defer _list.deinit();
-    for (_list.addrs) |_addr| {
-        var _buf: [64]u8 = undefined;
-        const _full = std.fmt.bufPrint(&_buf, "{f}", .{_addr}) catch continue;
-        const _col = std.mem.lastIndexOfScalar(u8, _full, ':') orelse _full.len;
-        var _ip = _full[0.._col];
-        if (_ip.len >= 2 and _ip[0] == '[') _ip = _ip[1 .. _ip.len - 1];
-        const _owned = std.heap.page_allocator.dupe(u8, _ip) catch continue;
-        _result.append(std.heap.page_allocator, _owned) catch {};
+    var _result: std.ArrayList([]const u8) = .empty;
+    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return &.{};
+    switch (addr) {
+        .ip4 => |a| {
+            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return &.{};
+            _result.append(std.heap.page_allocator, _ip) catch return &.{};
+        },
+        .ip6 => {},
     }
     return _result.toOwnedSlice(std.heap.page_allocator) catch &.{};
 }
@@ -1379,7 +1849,7 @@ const _RFrag = struct {
 };
 const _RC = struct {
     pat: []const u8, pos: usize = 0,
-    nodes: std.ArrayListUnmanaged(_RNode) = .{}, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
+    nodes: std.ArrayListUnmanaged(_RNode) = .{ .items = &.{}, .capacity = 0 }, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
     fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
@@ -1580,7 +2050,7 @@ const Regex = struct {
     }
     fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
-        var cur: std.ArrayListUnmanaged(u32) = .{}; var nxt: std.ArrayListUnmanaged(u32) = .{};
+        var cur: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 }; var nxt: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 };
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
@@ -1714,9 +2184,9 @@ fn _re_eclosure_s(
 fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
     const empty: [_MAX_SAVE_SLOTS]usize = [_]usize{0xFFFF_FFFF_FFFF_FFFF} ** _MAX_SAVE_SLOTS;
-    var cur: std.ArrayListUnmanaged(_RegThread) = .{};
+    var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer cur.deinit(alloc);
-    var nxt: std.ArrayListUnmanaged(_RegThread) = .{};
+    var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer nxt.deinit(alloc);
     const vis = alloc.alloc(bool, re.nodes.len) catch return null;
     defer alloc.free(vis);
@@ -1747,7 +2217,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayListUnmanaged([]const u8) = .{};
+            var out: std.ArrayListUnmanaged([]const u8) = .{ .items = &.{}, .capacity = 0 };
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
@@ -1806,6 +2276,181 @@ fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8)
     }
 }
 
+// ─── SQLite ───────────────────────────────────────────────────────────────────
+const _sqlite3      = opaque {};
+const _sqlite3_stmt = opaque {};
+const _SQLITE_OK      = 0;
+const _SQLITE_ROW     = 100;
+const _SQLITE_DONE    = 101;
+const _SQLITE_INTEGER = 1;
+const _SQLITE_FLOAT   = 2;
+const _SQLITE_TEXT    = 3;
+const _SQLITE_NULL    = 5;
+// SQLITE_TRANSIENT (-1 cast to ptr) — tells SQLite to copy strings before use
+const _SQLITE_TRANSIENT: ?*anyopaque = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
+
+extern fn sqlite3_open(filename: [*:0]const u8, ppDb: **_sqlite3) c_int;
+extern fn sqlite3_close_v2(db: *_sqlite3) c_int;
+extern fn sqlite3_errmsg(db: *_sqlite3) [*:0]const u8;
+extern fn sqlite3_prepare_v2(db: *_sqlite3, sql: [*:0]const u8, nByte: c_int, ppStmt: **_sqlite3_stmt, pzTail: ?*?[*:0]const u8) c_int;
+extern fn sqlite3_step(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_finalize(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_count(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_name(stmt: *_sqlite3_stmt, N: c_int) [*:0]const u8;
+extern fn sqlite3_column_type(stmt: *_sqlite3_stmt, iCol: c_int) c_int;
+extern fn sqlite3_column_int64(stmt: *_sqlite3_stmt, iCol: c_int) i64;
+extern fn sqlite3_column_double(stmt: *_sqlite3_stmt, iCol: c_int) f64;
+extern fn sqlite3_column_text(stmt: *_sqlite3_stmt, iCol: c_int) ?[*:0]const u8;
+extern fn sqlite3_bind_int64(stmt: *_sqlite3_stmt, idx: c_int, val: i64) c_int;
+extern fn sqlite3_bind_double(stmt: *_sqlite3_stmt, idx: c_int, val: f64) c_int;
+extern fn sqlite3_bind_text(stmt: *_sqlite3_stmt, idx: c_int, txt: [*:0]const u8, n: c_int, destructor: ?*anyopaque) c_int;
+extern fn sqlite3_bind_null(stmt: *_sqlite3_stmt, idx: c_int) c_int;
+
+const _SqliteParam = union(enum) {
+    int:   i64,
+    float: f64,
+    text:  []const u8,
+    null_: void,
+};
+const _SqliteVal = _SqliteParam;
+
+const _SqliteRow = struct {
+    names: []const []const u8,
+    vals:  []const _SqliteVal,
+    pub fn int_(self: _SqliteRow, name: []const u8) i64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .int   => |i| i,
+                .float => |f| @as(i64, @intFromFloat(f)),
+                .text  => |t| std.fmt.parseInt(i64, t, 10) catch 0,
+                .null_ => 0,
+            };
+        }
+        return 0;
+    }
+    pub fn str_(self: _SqliteRow, name: []const u8) []const u8 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .text  => |t| t,
+                .int   => |i| std.fmt.allocPrint(_allocator, "{d}", .{i})   catch "",
+                .float => |f| std.fmt.allocPrint(_allocator, "{d}", .{f})   catch "",
+                .null_ => "",
+            };
+        }
+        return "";
+    }
+    pub fn float_(self: _SqliteRow, name: []const u8) f64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .float => |f| f,
+                .int   => |i| @as(f64, @floatFromInt(i)),
+                .text  => |t| std.fmt.parseFloat(f64, t) catch 0.0,
+                .null_ => 0.0,
+            };
+        }
+        return 0.0;
+    }
+    pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
+};
+
+const _SqliteDbInner = struct {
+    db: *_sqlite3,
+
+    fn _bind(stmt: *_sqlite3_stmt, params: []const _SqliteParam) void {
+        for (params, 0..) |p, i| {
+            const idx: c_int = @as(c_int, @intCast(i)) + 1;
+            switch (p) {
+                .int   => |v| _ = sqlite3_bind_int64(stmt, idx, v),
+                .float => |v| _ = sqlite3_bind_double(stmt, idx, v),
+                .text  => |v| {
+                    const cz = _allocator.dupeZ(u8, v) catch return;
+                    defer _allocator.free(cz);
+                    _ = sqlite3_bind_text(stmt, idx, cz, -1, _SQLITE_TRANSIENT);
+                },
+                .null_ => _ = sqlite3_bind_null(stmt, idx),
+            }
+        }
+    }
+    fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
+        const csql = _allocator.dupeZ(u8, sql) catch return;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite exec error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        _ = sqlite3_step(stmt);
+    }
+    fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) {
+        var rows = std.ArrayList(_SqliteRow).empty;
+        const csql = _allocator.dupeZ(u8, sql) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite query error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const ncols = sqlite3_column_count(stmt);
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            var names = std.ArrayList([]const u8).empty;
+            var vals  = std.ArrayList(_SqliteVal).empty;
+            var ci: c_int = 0;
+            while (ci < ncols) : (ci += 1) {
+                const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                const val: _SqliteVal = switch (sqlite3_column_type(stmt, ci)) {
+                    _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+                    _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+                    _SQLITE_TEXT    => blk: {
+                        const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                        const s = std.mem.sliceTo(raw, 0);
+                        break :blk .{ .text = _allocator.dupe(u8, s) catch s };
+                    },
+                    else => .null_,
+                };
+                vals.append(_allocator, val) catch {};
+            }
+            rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+        }
+        return rows;
+    }
+    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
+    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) std.ArrayList(_SqliteRow) { return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
+    pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
+    pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
+    pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
+};
+
+const SqliteDb  = *_SqliteDbInner;
+const SqliteRow = _SqliteRow;
+
+fn _sqlite_open(path: []const u8) ?SqliteDb {
+    const cpath = _allocator.dupeZ(u8, path) catch return null;
+    defer _allocator.free(cpath);
+    var db_raw: *_sqlite3 = undefined;
+    if (sqlite3_open(cpath, &db_raw) != _SQLITE_OK) {
+        std.debug.print("Sqlite.open error: {s}\n", .{sqlite3_errmsg(db_raw)});
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    }
+    const s = _allocator.create(_SqliteDbInner) catch {
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    };
+    s.* = .{ .db = db_raw };
+    return s;
+}
+
 // === STDLIB_PREAMBLE_GUI_START ===
 // ─── GUI: backend isolation ──────────────────────────────────────────────────
 // _GuiBackend is an fn-ptr struct.  Swap `_gui_active_backend` to change
@@ -1861,6 +2506,10 @@ const _GuiBackend = struct {
     ll_getMousePosFn:     *const fn () _GuiVec2,
     ll_beginGroupFn:      *const fn () void,
     ll_endGroupFn:        *const fn () void,
+    beginHBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endHBoxFn:   *const fn () void,
+    beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
+    endVBoxFn:   *const fn () void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -1893,6 +2542,11 @@ const _LowLevel = struct {
 const GuiContext = struct {
     _b: *const _GuiBackend,
     lowLevel: _LowLevel,
+    _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
+    _send_ptr: ?*anyopaque = null,
+    pub fn send(self: GuiContext, msg: anytype) void {
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+    }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -1949,6 +2603,26 @@ const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
+    pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
+    pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
+    pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+};
+const _GuiVBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiVBox) void { self._b.beginVBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiVBox) void { self._b.endVBoxFn(); }
+};
+const _GuiHBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
@@ -1965,6 +2639,36 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
             _mframe.call(_g);
             _gui_active_backend.endFrameFn();
         }
+    }
+}
+fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
+    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
+    defer _gui_active_backend.deinitFn();
+    const MsgType = comptime blk: {
+        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+        else
+            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+    };
+    const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
+    var _pq = _MvuQueue{};
+    const _sfn = struct {
+        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+            const q: *_MvuQueue = @ptrCast(@alignCast(ctx));
+            if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
+        }
+    }.send;
+    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+    while (_gui_active_backend.newFrameFn()) {
+        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+        for (_pq.buf[0.._pq.len]) |msg| {
+            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+                _model = _mvu_update(_model, msg)
+            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+        }
+        _pq.len = 0;
+        _gui_active_backend.endFrameFn();
     }
 }
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
@@ -2063,6 +2767,10 @@ fn _stub_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_get_mouse_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _stub_ll_begin_group() void {}
 fn _stub_ll_end_group() void {}
+fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_hbox() void {}
+fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
+fn _stub_end_vbox() void {}
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -2113,6 +2821,10 @@ const _gui_stub_backend = _GuiBackend{
     .ll_getMousePosFn     = _stub_ll_get_mouse_pos,
     .ll_beginGroupFn      = _stub_ll_begin_group,
     .ll_endGroupFn        = _stub_ll_end_group,
+    .beginHBoxFn = _stub_begin_hbox,
+    .endHBoxFn   = _stub_end_hbox,
+    .beginVBoxFn = _stub_begin_vbox,
+    .endVBoxFn   = _stub_end_vbox,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -2152,7 +2864,7 @@ var _rng_ready: bool = false;
 fn _rng() std.Random {
     if (!_rng_ready) {
         var seed: u64 = 0;
-        std.crypto.random.bytes(std.mem.asBytes(&seed));
+        _io.randomSecure(std.mem.asBytes(&seed)) catch @panic("entropy unavailable");
         _rng_inst = std.Random.DefaultPrng.init(seed);
         _rng_ready = true;
     }
@@ -2171,6 +2883,49 @@ fn _random_seed(s: i64) void {
     _rng_inst = std.Random.DefaultPrng.init(@bitCast(s));
     _rng_ready = true;
 }
+// ── Crypto.encrypt / Crypto.decrypt — AES-256-GCM ────────────────────────────
+// Wire format (hex-encoded): 12-byte nonce | 16-byte tag | N-byte ciphertext
+const _AESGCM = std.crypto.aead.aes_gcm.Aes256Gcm;
+fn _crypto_key32(password: []const u8) [32]u8 {
+    var k: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(password, &k, .{});
+    return k;
+}
+fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
+    var nonce: [_AESGCM.nonce_length]u8 = undefined;
+    _io.randomSecure(&nonce) catch @panic("entropy unavailable");
+    const key = _crypto_key32(password);
+    const ct_buf = _allocator.alloc(u8, plaintext.len) catch return "";
+    defer _allocator.free(ct_buf);
+    var tag: [_AESGCM.tag_length]u8 = undefined;
+    _AESGCM.encrypt(ct_buf, &tag, plaintext, "", nonce, key);
+    // encode: nonce + tag + ciphertext → hex
+    const raw_len = nonce.len + tag.len + ct_buf.len;
+    const raw = _allocator.alloc(u8, raw_len) catch return "";
+    defer _allocator.free(raw);
+    @memcpy(raw[0..nonce.len], &nonce);
+    @memcpy(raw[nonce.len .. nonce.len + tag.len], &tag);
+    @memcpy(raw[nonce.len + tag.len ..], ct_buf);
+    return _hex_encode(raw);
+}
+fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
+    const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
+    if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;
+    const raw_len = hex_ciphertext.len / 2;
+    const raw = _allocator.alloc(u8, raw_len) catch return null;
+    defer _allocator.free(raw);
+    _ = std.fmt.hexToBytes(raw, hex_ciphertext) catch return null;
+    const nonce = raw[0.._AESGCM.nonce_length].*;
+    const tag   = raw[_AESGCM.nonce_length .. _AESGCM.nonce_length + _AESGCM.tag_length].*;
+    const ct    = raw[_AESGCM.nonce_length + _AESGCM.tag_length ..];
+    const key = _crypto_key32(password);
+    const pt_buf = _allocator.alloc(u8, ct.len) catch return null;
+    _AESGCM.decrypt(pt_buf, ct, tag, "", nonce, key) catch {
+        _allocator.free(pt_buf);
+        return null;
+    };
+    return pt_buf;
+}
 const ArgResult = struct {
     _raw: []const []const u8,
     pub fn flag(self: ArgResult, long: []const u8, short: []const u8) bool {
@@ -2182,6 +2937,13 @@ const ArgResult = struct {
         return false;
     }
     pub fn option(self: ArgResult, name_: []const u8, default_val: []const u8) []const u8 {
+        // --flag=value form
+        for (self._raw) |a| {
+            if (std.mem.startsWith(u8, a, name_) and a.len > name_.len and a[name_.len] == '=') {
+                return a[name_.len + 1..];
+            }
+        }
+        // --flag value form (space-separated)
         var i: usize = 0;
         while (i + 1 < self._raw.len) : (i += 1) {
             if (std.mem.eql(u8, self._raw[i], name_)) return self._raw[i + 1];
@@ -2206,15 +2968,14 @@ const ArgResult = struct {
     pub fn usage(_: ArgResult) []const u8 { return "Usage: program [options]"; }
 };
 fn _arg_parse() ArgResult {
-    const _argv = std.process.argsAlloc(_allocator) catch return ArgResult{ ._raw = &.{} };
+    const _argv = _args.toSlice(_allocator) catch return ArgResult{ ._raw = &.{} };
     const _raw_slice = if (_argv.len > 1) _argv[1..] else _argv[0..0];
     var _out = _allocator.alloc([]const u8, _raw_slice.len) catch return ArgResult{ ._raw = &.{} };
     for (_raw_slice, 0..) |a, i| _out[i] = a;
     return ArgResult{ ._raw = _out };
 }
 fn _term_is_tty() bool {
-    const cfg = std.io.tty.detectConfig(std.fs.File.stdout());
-    return cfg != .no_color;
+    return std.Io.File.stdout().isTty(_io) catch false;
 }
 fn _term_width() i64 { return 80; }
 fn _term_height() i64 { return 24; }
@@ -2231,30 +2992,36 @@ fn _term_ansi(color: []const u8) []const u8 {
     return "";
 }
 fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.fs.File.stdout();
+    const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
-        _f.deprecatedWriter().print("{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _f.deprecatedWriter().writeAll(msg) catch {};
+        _f.writeStreamingAll(_io, msg) catch {};
     }
-    if (newline) _f.deprecatedWriter().writeByte('\n') catch {};
+    if (newline) _f.writeStreamingAll(_io, "\n") catch {};
 }
 var _log_level: u8 = 1;        // default: info
 var _log_timestamps: bool = true;
 var _log_to_stderr: bool = true;
 fn _log_ts() []const u8 {
-    const sec = @divFloor(std.time.milliTimestamp(), 1000);
+    const sec: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
     const s = sec - 62135596800; // offset from Unix epoch to .NET epoch (unused here)
     _ = s;
     return std.fmt.allocPrint(_allocator, "{d}", .{sec}) catch "?";
 }
 fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _lw = if (_log_to_stderr) std.fs.File.stderr().deprecatedWriter() else std.fs.File.stdout().deprecatedWriter();
+    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
     if (_log_timestamps) {
-        _lw.print("[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     } else {
-        _lw.print("[{s:<5}] {s}\n", .{ level_str, msg }) catch {};
+        const _s = std.fmt.allocPrint(_allocator, "[{s:<5}] {s}\n", .{ level_str, msg }) catch return;
+        defer _allocator.free(_s);
+        _f.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
@@ -2264,6 +3031,46 @@ fn _log_err(msg: []const u8) void   { _log_emit("ERR",   3, msg); }
 fn _log_set_level(l: u8) void { _log_level = l; }
 fn _log_set_output_stderr(v: bool) void { _log_to_stderr = v; }
 fn _log_timestamp(v: bool) void { _log_timestamps = v; }
+// Log.setFile / Log.json — file sink + JSON lines format
+var _log_file_opt: ?std.Io.File = null;
+fn _log_set_file(path: []const u8) void {
+    if (_log_file_opt) |old| { old.close(_io); _log_file_opt = null; }
+    if (path.len == 0) return;
+    _log_file_opt = std.Io.Dir.cwd().createFile(_io, path, .{ .truncate = false }) catch return;
+}
+fn _log_json_esc(s: []const u8, out: *std.ArrayList(u8)) void {
+    for (s) |c| switch (c) {
+        '"'  => out.appendSlice(_allocator, "\\\"") catch {},
+        '\\' => out.appendSlice(_allocator, "\\\\") catch {},
+        '\n' => out.appendSlice(_allocator, "\\n")  catch {},
+        '\r' => out.appendSlice(_allocator, "\\r")  catch {},
+        '\t' => out.appendSlice(_allocator, "\\t")  catch {},
+        else => out.append(_allocator, c)            catch {},
+    };
+}
+fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(_allocator);
+    const ts_s = std.fmt.allocPrint(_allocator, "{d}", .{ts}) catch return;
+    defer _allocator.free(ts_s);
+    buf.appendSlice(_allocator, "{\"ts\":") catch return;
+    buf.appendSlice(_allocator, ts_s) catch return;
+    buf.appendSlice(_allocator, ",\"level\":\"") catch return;
+    buf.appendSlice(_allocator, level) catch return;
+    buf.appendSlice(_allocator, "\",\"msg\":\"") catch return;
+    _log_json_esc(msg, &buf);
+    if (data.len > 0) {
+        buf.appendSlice(_allocator, "\",\"data\":\"") catch return;
+        _log_json_esc(data, &buf);
+    }
+    buf.appendSlice(_allocator, "\"}\n") catch return;
+    if (_log_file_opt) |f| {
+        const st = f.stat(_io) catch return;
+        f.writePositionalAll(_io, buf.items, st.size) catch {};
+    }
+    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+}
 const UriResult = struct {
     scheme: []const u8,
     host:   []const u8,
@@ -2290,7 +3097,28 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(_: []const u8) []const u8 { return ""; }
+fn _compress_gzip(data: []const u8) []const u8 {
+    // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
+    const out_capacity = data.len + data.len / 100 + 100;
+    const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
+    var flate_w: std.Io.Writer = .fixed(out_buf);
+    var deflate_buf: [std.compress.flate.max_window_len * 2]u8 = undefined;
+    var comp = std.compress.flate.Compress.init(&flate_w, &deflate_buf, .gzip, .default) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.writer.writeAll(data) catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    comp.finish() catch {
+        _allocator.free(out_buf);
+        return "";
+    };
+    const written = flate_w.end;
+    const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
+    return result;
+}
 fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
@@ -2360,18 +3188,18 @@ fn _mime_to_ext(mime: []const u8) []const u8 {
 const TimerHandle = struct {
     _start_ns: i128,
     pub fn elapsed(self: *const TimerHandle) f64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @as(f64, @floatFromInt(_ns)) / 1_000_000.0;
     }
     pub fn elapsedMicros(self: *const TimerHandle) i64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
         return @intCast(@divFloor(_ns, 1000));
     }
     pub fn reset(self: *TimerHandle) void {
-        self._start_ns = std.time.nanoTimestamp();
+        self._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds;
     }
 };
-fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds }; }
 // ── Progress stdlib ──────────────────────────────────────────────────────────
 var _progress_root_started: bool = false;
 var _progress_root: std.Progress.Node = undefined;
@@ -2391,16 +3219,16 @@ fn _progress_bar(total: i64, label: []const u8) ProgressBar {
 // ── Profile stdlib ────────────────────────────────────────────────────────────
 const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
 var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
-var _profile_name_stack: std.ArrayList([]const u8) = .{};
-var _profile_time_stack: std.ArrayList(i128) = .{};
+var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
-    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .monotonic).nanoseconds) catch @panic("OOM");
 }
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
-    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
-    var key_buf: std.ArrayList(u8) = .{};
+    const elapsed_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - start_ns;
+    var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
         if (i > 0) key_buf.append(std.heap.page_allocator, ';') catch @panic("OOM");
@@ -2417,7 +3245,7 @@ fn _profile_end() void {
 }
 fn _profile_report() void {
     const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
-    var list: std.ArrayList(_ProfEntry) = .{};
+    var list: std.ArrayList(_ProfEntry) = .empty;
     defer list.deinit(std.heap.page_allocator);
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
@@ -2427,19 +3255,23 @@ fn _profile_report() void {
         fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
     };
     std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
-    const _w = std.fs.File.stdout().deprecatedWriter();
-    _w.writeAll("── Profile report ───────────────────────────────────────────────\n") catch {};
+    const _stdout = std.Io.File.stdout();
+    _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
     for (list.items) |e| {
         const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
-        _w.print("  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "  {s:<40}  {:>8}  {d:.3} ms\n", .{ e.key, e.calls, ms }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_dump_folded() void {
-    const _w = std.fs.File.stdout().deprecatedWriter();
+    const _stdout = std.Io.File.stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
         const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
-        _w.print("{s} {d}\n", .{ e.key_ptr.*, us }) catch {};
+        const _s = std.fmt.allocPrint(std.heap.page_allocator, "{s} {d}\n", .{ e.key_ptr.*, us }) catch continue;
+        defer std.heap.page_allocator.free(_s);
+        _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
 fn _profile_reset() void {
@@ -2514,13 +3346,15 @@ fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64
 }
 // ── File extended ─────────────────────────────────────────────────────────────
 fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
-    var content = std.ArrayList(u8){};
+    var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {
         content.appendSlice(_allocator, line) catch return;
         content.append(_allocator, '\n') catch return;
     }
-    std.fs.cwd().writeFile(.{ .sub_path = path, .data = content.items }) catch {};
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, content.items) catch {};
 }
 // ── sys extended ──────────────────────────────────────────────────────────────
 fn _sys_setenv(key: []const u8, val: []const u8) void {
@@ -2536,15 +3370,19 @@ fn _sys_setenv(key: []const u8, val: []const u8) void {
 }
 fn _sys_getenv(key: []const u8) ?[]const u8 {
     if (comptime builtin.os.tag == .windows) {
-        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+        const environ: std.process.Environ = .{ .block = .global };
+        return environ.getAlloc(_allocator, key) catch null;
     } else {
         return std.posix.getenv(key);
     }
 }
+fn _sys_self_exe() []const u8 {
+    return std.process.executablePathAlloc(_io, _allocator) catch "";
+}
 
 const Token = @import("Token.zig");
 const TokenKind = Token.TokenKind;
-const CharPred = *const fn(u21) bool;
+pub const CharPred = *const fn(u21) bool;
 pub fn isDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:22
     switch (c) {
@@ -2613,6 +3451,7 @@ pub const LineKind = union(enum) {
     empty,
     whitespace_only,
     comment_only,
+    block_comment_only,
     has_content,
 };
 
@@ -2629,8 +3468,7 @@ pub const Lexer = struct {
     inLambdaParams: bool,
     lambdaParamDepth: i64,
     afterLambdaParams: bool,
-    lambdaBodyActive: bool,
-    lambdaIndentLevel: i64,
+    lambdaStack: std.ArrayList(i64),
     afterEnsureEol: bool,
     ensureBaseDepth: i64,
     pub fn init() *Lexer {
@@ -2651,7 +3489,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:88
             _self.parenDepth = 0;
 // zbr:selfhost/Lexer.zbr:89
-            _self.out = std.ArrayList(*Token.Token){};
+            _self.out = std.ArrayList(*Token.Token).empty;
 // zbr:selfhost/Lexer.zbr:90
             _self.inLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:91
@@ -2659,79 +3497,77 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:92
             _self.afterLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:93
-            _self.lambdaBodyActive = false;
+            _self.lambdaStack = std.ArrayList(i64).empty;
 // zbr:selfhost/Lexer.zbr:94
-            _self.lambdaIndentLevel = 0;
-// zbr:selfhost/Lexer.zbr:95
             _self.afterEnsureEol = false;
-// zbr:selfhost/Lexer.zbr:96
+// zbr:selfhost/Lexer.zbr:95
             _self.ensureBaseDepth = 0;
         return _self;
     }
 
     pub fn tokenize(source: []const u8) anyerror!std.ArrayList(*Token.Token) {
-// zbr:selfhost/Lexer.zbr:99
+// zbr:selfhost/Lexer.zbr:98
         var lex = Lexer.init();
-// zbr:selfhost/Lexer.zbr:100
+// zbr:selfhost/Lexer.zbr:99
         lex.src = _intern(source);
         try lex.run();
-// zbr:selfhost/Lexer.zbr:102
+// zbr:selfhost/Lexer.zbr:101
         return lex.out;
     }
 
     pub fn lexErr(self: *Lexer, b: u21, ln: i64, cl: i64) []const u8 {
         _ = self;
-// zbr:selfhost/Lexer.zbr:108
+// zbr:selfhost/Lexer.zbr:107
         if ((b == '\r')) {
-// zbr:selfhost/Lexer.zbr:109
+// zbr:selfhost/Lexer.zbr:108
             return _str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_allocator, "{}", .{ln}) catch unreachable), ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{cl}) catch unreachable), _allocator), ": unexpected '\\r' (CRLF line endings — convert to LF)", _allocator);
         }
-// zbr:selfhost/Lexer.zbr:110
+// zbr:selfhost/Lexer.zbr:109
         return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_allocator, "{}", .{ln}) catch unreachable), ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{cl}) catch unreachable), _allocator), ": unexpected character '", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(b), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator), "'", _allocator);
     }
 
     pub fn col(self: *Lexer) i64 {
-// zbr:selfhost/Lexer.zbr:115
+// zbr:selfhost/Lexer.zbr:114
         return ((self.pos - self.lineStart) + 1);
     }
 
     pub fn peek(self: *Lexer) u21 {
-// zbr:selfhost/Lexer.zbr:118
+// zbr:selfhost/Lexer.zbr:117
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:119
+// zbr:selfhost/Lexer.zbr:118
             return self.src[@as(usize, @intCast(self.pos))];
         }
-// zbr:selfhost/Lexer.zbr:120
+// zbr:selfhost/Lexer.zbr:119
         return '\x00';
     }
 
     pub fn peek1(self: *Lexer) u21 {
-// zbr:selfhost/Lexer.zbr:123
+// zbr:selfhost/Lexer.zbr:122
         if (_zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:124
+// zbr:selfhost/Lexer.zbr:123
             return self.src[@as(usize, @intCast((self.pos + 1)))];
         }
-// zbr:selfhost/Lexer.zbr:125
+// zbr:selfhost/Lexer.zbr:124
         return '\x00';
     }
 
     pub fn peekAt(self: *Lexer, offset: i64) u21 {
         if (!(_zebra_ge(offset, 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
-// zbr:selfhost/Lexer.zbr:130
+// zbr:selfhost/Lexer.zbr:129
         if (_zebra_lt((self.pos + offset), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:131
+// zbr:selfhost/Lexer.zbr:130
             return self.src[@as(usize, @intCast((self.pos + offset)))];
         }
-// zbr:selfhost/Lexer.zbr:132
+// zbr:selfhost/Lexer.zbr:131
         return '\x00';
     }
 
     pub fn advanceNewline(self: *Lexer) void {
-// zbr:selfhost/Lexer.zbr:135
+// zbr:selfhost/Lexer.zbr:134
         self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:136
+// zbr:selfhost/Lexer.zbr:135
         self.line = (self.line + 1);
-// zbr:selfhost/Lexer.zbr:137
+// zbr:selfhost/Lexer.zbr:136
         self.lineStart = self.pos;
     }
 
@@ -2740,305 +3576,352 @@ pub const Lexer = struct {
     }
 
     pub fn scanWhile(self: *Lexer, pred: CharPred) void {
-// zbr:selfhost/Lexer.zbr:145
+// zbr:selfhost/Lexer.zbr:144
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and pred(self.src[@as(usize, @intCast(self.pos))]))) {
-// zbr:selfhost/Lexer.zbr:146
+// zbr:selfhost/Lexer.zbr:145
             self.pos = (self.pos + 1);
         }
     }
 
     pub fn classifyLine(self: *Lexer) LineKind {
-// zbr:selfhost/Lexer.zbr:151
+// zbr:selfhost/Lexer.zbr:150
         var i = self.pos;
-// zbr:selfhost/Lexer.zbr:152
+// zbr:selfhost/Lexer.zbr:151
         if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (self.src[@as(usize, @intCast(i))] == '\n'))) {
-// zbr:selfhost/Lexer.zbr:153
+// zbr:selfhost/Lexer.zbr:152
             return LineKind{ .empty = {} };
         }
-// zbr:selfhost/Lexer.zbr:154
+// zbr:selfhost/Lexer.zbr:153
         var hasWs = false;
-// zbr:selfhost/Lexer.zbr:155
+// zbr:selfhost/Lexer.zbr:154
         while ((_zebra_lt(i, @as(i64, @intCast(self.src.len))) and ((self.src[@as(usize, @intCast(i))] == ' ') or (self.src[@as(usize, @intCast(i))] == '\t')))) {
-// zbr:selfhost/Lexer.zbr:156
+// zbr:selfhost/Lexer.zbr:155
             hasWs = true;
-// zbr:selfhost/Lexer.zbr:157
+// zbr:selfhost/Lexer.zbr:156
             i = (i + 1);
         }
-// zbr:selfhost/Lexer.zbr:158
+// zbr:selfhost/Lexer.zbr:157
         if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (self.src[@as(usize, @intCast(i))] == '\n'))) {
-// zbr:selfhost/Lexer.zbr:159
+// zbr:selfhost/Lexer.zbr:158
             if (hasWs) {
-// zbr:selfhost/Lexer.zbr:160
+// zbr:selfhost/Lexer.zbr:159
                 return LineKind{ .whitespace_only = {} };
             }
-// zbr:selfhost/Lexer.zbr:161
+// zbr:selfhost/Lexer.zbr:160
             return LineKind{ .empty = {} };
         }
-// zbr:selfhost/Lexer.zbr:162
+// zbr:selfhost/Lexer.zbr:161
         if ((self.src[@as(usize, @intCast(i))] == '#')) {
-// zbr:selfhost/Lexer.zbr:163
+// zbr:selfhost/Lexer.zbr:162
             return LineKind{ .comment_only = {} };
         }
 // zbr:selfhost/Lexer.zbr:164
+        if ((((self.src[@as(usize, @intCast(i))] == '/') and _zebra_lt((i + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((i + 1)))] == '#'))) {
+// zbr:selfhost/Lexer.zbr:165
+            var depth: i64 = 0;
+// zbr:selfhost/Lexer.zbr:166
+            var j = i;
+// zbr:selfhost/Lexer.zbr:167
+            while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(j))] != '\n'))) {
+// zbr:selfhost/Lexer.zbr:168
+                if ((((self.src[@as(usize, @intCast(j))] == '/') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((j + 1)))] == '#'))) {
+// zbr:selfhost/Lexer.zbr:169
+                    depth = (depth + 1);
+// zbr:selfhost/Lexer.zbr:170
+                    j = (j + 2);
+                } else {
+// zbr:selfhost/Lexer.zbr:171
+                    if ((((self.src[@as(usize, @intCast(j))] == '#') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((j + 1)))] == '/'))) {
+// zbr:selfhost/Lexer.zbr:172
+                        if (_zebra_gt(depth, 0)) {
+// zbr:selfhost/Lexer.zbr:173
+                            depth = (depth - 1);
+                        }
+// zbr:selfhost/Lexer.zbr:174
+                        j = (j + 2);
+// zbr:selfhost/Lexer.zbr:175
+                        if ((depth == 0)) {
+// zbr:selfhost/Lexer.zbr:177
+                            while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and ((self.src[@as(usize, @intCast(j))] == ' ') or (self.src[@as(usize, @intCast(j))] == '\t')))) {
+// zbr:selfhost/Lexer.zbr:178
+                                j = (j + 1);
+                            }
+// zbr:selfhost/Lexer.zbr:179
+                            if (((_zebra_ge(j, @as(i64, @intCast(self.src.len))) or (self.src[@as(usize, @intCast(j))] == '\n')) or (self.src[@as(usize, @intCast(j))] == '#'))) {
+// zbr:selfhost/Lexer.zbr:180
+                                return LineKind{ .block_comment_only = {} };
+                            }
+// zbr:selfhost/Lexer.zbr:181
+                            return LineKind{ .has_content = {} };
+                        }
+                    } else {
+// zbr:selfhost/Lexer.zbr:183
+                        j = (j + 1);
+                    }
+                }
+            }
+// zbr:selfhost/Lexer.zbr:185
+            return LineKind{ .block_comment_only = {} };
+        }
+// zbr:selfhost/Lexer.zbr:186
         return LineKind{ .has_content = {} };
     }
 
     pub fn processIndentation(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:169
+// zbr:selfhost/Lexer.zbr:191
         const ln = self.line;
-// zbr:selfhost/Lexer.zbr:170
+// zbr:selfhost/Lexer.zbr:192
         var tabs: i64 = 0;
-// zbr:selfhost/Lexer.zbr:171
+// zbr:selfhost/Lexer.zbr:193
         var spaces: i64 = 0;
-// zbr:selfhost/Lexer.zbr:172
+// zbr:selfhost/Lexer.zbr:194
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:173
+// zbr:selfhost/Lexer.zbr:195
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:174
+// zbr:selfhost/Lexer.zbr:196
             if ((c == '\t')) {
-// zbr:selfhost/Lexer.zbr:175
+// zbr:selfhost/Lexer.zbr:197
                 tabs = (tabs + 1);
-// zbr:selfhost/Lexer.zbr:176
+// zbr:selfhost/Lexer.zbr:198
                 self.pos = (self.pos + 1);
             } else {
-// zbr:selfhost/Lexer.zbr:177
+// zbr:selfhost/Lexer.zbr:199
                 if ((c == ' ')) {
-// zbr:selfhost/Lexer.zbr:178
+// zbr:selfhost/Lexer.zbr:200
                     spaces = (spaces + 1);
-// zbr:selfhost/Lexer.zbr:179
+// zbr:selfhost/Lexer.zbr:201
                     self.pos = (self.pos + 1);
                 } else {
                     break;
                 }
             }
         }
-// zbr:selfhost/Lexer.zbr:182
+// zbr:selfhost/Lexer.zbr:204
         if ((_zebra_gt(tabs, 0) and _zebra_gt(spaces, 0))) {
-// zbr:selfhost/Lexer.zbr:183
+// zbr:selfhost/Lexer.zbr:205
             { _error_ctx = .{ .message = "MixedIndentation" }; return error.ZebraError; }
         }
-// zbr:selfhost/Lexer.zbr:184
+// zbr:selfhost/Lexer.zbr:206
         var level: i64 = 0;
-// zbr:selfhost/Lexer.zbr:185
+// zbr:selfhost/Lexer.zbr:207
         if (_zebra_gt(spaces, 0)) {
-// zbr:selfhost/Lexer.zbr:186
+// zbr:selfhost/Lexer.zbr:208
             if ((@mod(spaces, 4) != 0)) {
-// zbr:selfhost/Lexer.zbr:187
+// zbr:selfhost/Lexer.zbr:209
                 { _error_ctx = .{ .message = "SpaceIndentNotMultipleOfFour" }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:188
+// zbr:selfhost/Lexer.zbr:210
             level = @divTrunc(spaces, 4);
         } else {
-// zbr:selfhost/Lexer.zbr:190
+// zbr:selfhost/Lexer.zbr:212
             level = tabs;
         }
-// zbr:selfhost/Lexer.zbr:191
+// zbr:selfhost/Lexer.zbr:213
         const oldDepth = self.indentDepth;
-// zbr:selfhost/Lexer.zbr:192
+// zbr:selfhost/Lexer.zbr:214
         while (_zebra_gt(level, self.indentDepth)) {
             self.emit(TokenKind{ .indent = {} }, "", ln, 1);
-// zbr:selfhost/Lexer.zbr:194
+// zbr:selfhost/Lexer.zbr:216
             self.indentDepth = (self.indentDepth + 1);
         }
-// zbr:selfhost/Lexer.zbr:195
+// zbr:selfhost/Lexer.zbr:217
         while (_zebra_lt(level, self.indentDepth)) {
             self.emit(TokenKind{ .dedent = {} }, "", ln, 1);
-// zbr:selfhost/Lexer.zbr:197
+// zbr:selfhost/Lexer.zbr:219
             self.indentDepth = (self.indentDepth - 1);
         }
-// zbr:selfhost/Lexer.zbr:198
+// zbr:selfhost/Lexer.zbr:220
         if (self.afterEnsureEol) {
-// zbr:selfhost/Lexer.zbr:199
+// zbr:selfhost/Lexer.zbr:221
             if (_zebra_gt(level, oldDepth)) {
-// zbr:selfhost/Lexer.zbr:200
+// zbr:selfhost/Lexer.zbr:222
                 self.ensureBaseDepth = level;
             }
-// zbr:selfhost/Lexer.zbr:201
+// zbr:selfhost/Lexer.zbr:223
             self.afterEnsureEol = false;
         }
-// zbr:selfhost/Lexer.zbr:202
+// zbr:selfhost/Lexer.zbr:224
         if ((_zebra_gt(self.ensureBaseDepth, 0) and _zebra_lt(level, self.ensureBaseDepth))) {
-// zbr:selfhost/Lexer.zbr:203
+// zbr:selfhost/Lexer.zbr:225
             self.ensureBaseDepth = 0;
         }
-// zbr:selfhost/Lexer.zbr:204
-        if ((self.lambdaBodyActive and _zebra_le(self.indentDepth, self.lambdaIndentLevel))) {
-// zbr:selfhost/Lexer.zbr:205
-            self.lambdaBodyActive = false;
+// zbr:selfhost/Lexer.zbr:226
+        while ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le(self.indentDepth, self.lambdaStack.items[@intCast((@as(i64, @intCast(self.lambdaStack.items.len)) - 1))]))) {
+            _ = self.lambdaStack.orderedRemove(@intCast((@as(i64, @intCast(self.lambdaStack.items.len)) - 1)));
         }
     }
 
     pub fn scanBlockComment(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:210
+// zbr:selfhost/Lexer.zbr:232
         self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:211
+// zbr:selfhost/Lexer.zbr:233
         self.blockDepth = (self.blockDepth + 1);
-// zbr:selfhost/Lexer.zbr:212
+// zbr:selfhost/Lexer.zbr:234
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zebra_gt(self.blockDepth, 0))) {
-// zbr:selfhost/Lexer.zbr:213
+// zbr:selfhost/Lexer.zbr:235
             if ((((self.src[@as(usize, @intCast(self.pos))] == '/') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((self.pos + 1)))] == '#'))) {
-// zbr:selfhost/Lexer.zbr:214
+// zbr:selfhost/Lexer.zbr:236
                 self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:215
+// zbr:selfhost/Lexer.zbr:237
                 self.blockDepth = (self.blockDepth + 1);
             } else {
-// zbr:selfhost/Lexer.zbr:216
+// zbr:selfhost/Lexer.zbr:238
                 if ((((self.src[@as(usize, @intCast(self.pos))] == '#') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((self.pos + 1)))] == '/'))) {
-// zbr:selfhost/Lexer.zbr:217
+// zbr:selfhost/Lexer.zbr:239
                     self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:218
+// zbr:selfhost/Lexer.zbr:240
                     self.blockDepth = (self.blockDepth - 1);
                 } else {
-// zbr:selfhost/Lexer.zbr:219
+// zbr:selfhost/Lexer.zbr:241
                     if ((self.src[@as(usize, @intCast(self.pos))] == '\n')) {
                         self.advanceNewline();
                     } else {
-// zbr:selfhost/Lexer.zbr:222
+// zbr:selfhost/Lexer.zbr:244
                         self.pos = (self.pos + 1);
                     }
                 }
             }
         }
-// zbr:selfhost/Lexer.zbr:223
+// zbr:selfhost/Lexer.zbr:245
         if (_zebra_gt(self.blockDepth, 0)) {
-// zbr:selfhost/Lexer.zbr:224
+// zbr:selfhost/Lexer.zbr:246
             { _error_ctx = .{ .message = "UnterminatedBlockComment" }; return error.ZebraError; }
         }
     }
 
     pub fn scanAt(self: *Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:229
+// zbr:selfhost/Lexer.zbr:251
         const c1 = self.peek1();
-// zbr:selfhost/Lexer.zbr:230
+// zbr:selfhost/Lexer.zbr:252
         if ((c1 == '[')) {
-// zbr:selfhost/Lexer.zbr:231
+// zbr:selfhost/Lexer.zbr:253
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .at_lbracket = {} }, "@[", ln, cl);
-// zbr:selfhost/Lexer.zbr:233
+// zbr:selfhost/Lexer.zbr:255
             return;
         }
-// zbr:selfhost/Lexer.zbr:234
+// zbr:selfhost/Lexer.zbr:256
         if ((isAlpha(c1) or (c1 == '_'))) {
-// zbr:selfhost/Lexer.zbr:235
+// zbr:selfhost/Lexer.zbr:257
             self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:236
+// zbr:selfhost/Lexer.zbr:258
             const start = self.pos;
             self.scanWhile(isIdentContinue);
             self.emit(TokenKind{ .at_id = {} }, self.src[@as(usize, @intCast((start - 1)))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:239
+// zbr:selfhost/Lexer.zbr:261
             return;
         }
-// zbr:selfhost/Lexer.zbr:240
+// zbr:selfhost/Lexer.zbr:262
         { _error_ctx = .{ .message = self.lexErr(c1, self.line, self.col()) }; return error.ZebraError; }
     }
 
     pub fn scanIdentOrKeyword(self: *Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:245
+// zbr:selfhost/Lexer.zbr:267
         const start = self.pos;
         self.scanWhile(isIdentContinue);
-// zbr:selfhost/Lexer.zbr:247
+// zbr:selfhost/Lexer.zbr:269
         const word = self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:250
+// zbr:selfhost/Lexer.zbr:272
         if (((@as(i64, @intCast(word.len)) == 1) and (word[@as(usize, @intCast(0))] == 'c'))) {
-// zbr:selfhost/Lexer.zbr:251
+// zbr:selfhost/Lexer.zbr:273
             const q = self.peek();
-// zbr:selfhost/Lexer.zbr:252
+// zbr:selfhost/Lexer.zbr:274
             if (((q == '\'') or (q == '"'))) {
                 try self.scanCharLiteral(q, start, ln, cl);
-// zbr:selfhost/Lexer.zbr:254
+// zbr:selfhost/Lexer.zbr:276
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:257
+// zbr:selfhost/Lexer.zbr:279
         if (((@as(i64, @intCast(word.len)) == 1) and (word[@as(usize, @intCast(0))] == 'r'))) {
-// zbr:selfhost/Lexer.zbr:258
+// zbr:selfhost/Lexer.zbr:280
             const q = self.peek();
-// zbr:selfhost/Lexer.zbr:259
+// zbr:selfhost/Lexer.zbr:281
             if (((q == '\'') or (q == '"'))) {
-// zbr:selfhost/Lexer.zbr:260
+// zbr:selfhost/Lexer.zbr:282
                 var kind = TokenKind{ .string_raw_single = {} };
-// zbr:selfhost/Lexer.zbr:261
+// zbr:selfhost/Lexer.zbr:283
                 if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:262
+// zbr:selfhost/Lexer.zbr:284
                     kind = TokenKind{ .string_raw_double = {} };
                 }
                 try self.scanSimpleString(q, start, kind, ln, cl);
-// zbr:selfhost/Lexer.zbr:264
+// zbr:selfhost/Lexer.zbr:286
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:267
+// zbr:selfhost/Lexer.zbr:289
         if ((((@as(i64, @intCast(word.len)) == 2) and (word[@as(usize, @intCast(0))] == 'n')) and (word[@as(usize, @intCast(1))] == 's'))) {
-// zbr:selfhost/Lexer.zbr:268
+// zbr:selfhost/Lexer.zbr:290
             const q = self.peek();
-// zbr:selfhost/Lexer.zbr:269
+// zbr:selfhost/Lexer.zbr:291
             if (((q == '\'') or (q == '"'))) {
-// zbr:selfhost/Lexer.zbr:270
+// zbr:selfhost/Lexer.zbr:292
                 var kind = TokenKind{ .string_nosub_single = {} };
-// zbr:selfhost/Lexer.zbr:271
+// zbr:selfhost/Lexer.zbr:293
                 if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:272
+// zbr:selfhost/Lexer.zbr:294
                     kind = TokenKind{ .string_nosub_double = {} };
                 }
                 try self.scanSimpleString(q, start, kind, ln, cl);
-// zbr:selfhost/Lexer.zbr:274
+// zbr:selfhost/Lexer.zbr:296
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:277
+// zbr:selfhost/Lexer.zbr:299
         if (std.mem.eql(u8, word, "zig")) {
-// zbr:selfhost/Lexer.zbr:278
+// zbr:selfhost/Lexer.zbr:300
             const q = self.peek();
-// zbr:selfhost/Lexer.zbr:279
+// zbr:selfhost/Lexer.zbr:301
             if (((q == '\'') or (q == '"'))) {
-// zbr:selfhost/Lexer.zbr:280
+// zbr:selfhost/Lexer.zbr:302
                 var kind = TokenKind{ .zig_single = {} };
-// zbr:selfhost/Lexer.zbr:281
+// zbr:selfhost/Lexer.zbr:303
                 if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:282
+// zbr:selfhost/Lexer.zbr:304
                     kind = TokenKind{ .zig_double = {} };
                 }
                 try self.scanSimpleString(q, start, kind, ln, cl);
-// zbr:selfhost/Lexer.zbr:284
+// zbr:selfhost/Lexer.zbr:306
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:287
+// zbr:selfhost/Lexer.zbr:309
         if (((((_zebra_gt(@as(i64, @intCast(word.len)), 3) and (word[@as(usize, @intCast(0))] == 'i')) and (word[@as(usize, @intCast(1))] == 'n')) and (word[@as(usize, @intCast(2))] == 't')) and isDigit(word[@as(usize, @intCast(3))]))) {
             self.emit(TokenKind{ .int_size = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:289
+// zbr:selfhost/Lexer.zbr:311
             return;
         }
-// zbr:selfhost/Lexer.zbr:290
+// zbr:selfhost/Lexer.zbr:312
         if ((((((_zebra_gt(@as(i64, @intCast(word.len)), 4) and (word[@as(usize, @intCast(0))] == 'u')) and (word[@as(usize, @intCast(1))] == 'i')) and (word[@as(usize, @intCast(2))] == 'n')) and (word[@as(usize, @intCast(3))] == 't')) and isDigit(word[@as(usize, @intCast(4))]))) {
             self.emit(TokenKind{ .uint_size = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:292
+// zbr:selfhost/Lexer.zbr:314
             return;
         }
-// zbr:selfhost/Lexer.zbr:293
+// zbr:selfhost/Lexer.zbr:315
         if (((((((_zebra_gt(@as(i64, @intCast(word.len)), 5) and (word[@as(usize, @intCast(0))] == 'f')) and (word[@as(usize, @intCast(1))] == 'l')) and (word[@as(usize, @intCast(2))] == 'o')) and (word[@as(usize, @intCast(3))] == 'a')) and (word[@as(usize, @intCast(4))] == 't')) and isDigit(word[@as(usize, @intCast(5))]))) {
             self.emit(TokenKind{ .float_size = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:295
+// zbr:selfhost/Lexer.zbr:317
             return;
         }
-// zbr:selfhost/Lexer.zbr:298
+// zbr:selfhost/Lexer.zbr:320
         if ((std.mem.eql(u8, word, "to") and (self.peek() == '?'))) {
-// zbr:selfhost/Lexer.zbr:299
+// zbr:selfhost/Lexer.zbr:321
             self.pos = (self.pos + 1);
             self.emit(TokenKind{ .toq = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:301
+// zbr:selfhost/Lexer.zbr:323
             return;
         }
-// zbr:selfhost/Lexer.zbr:304
+// zbr:selfhost/Lexer.zbr:326
         var kw = Token.Keywords.lookup(word);
-// zbr:selfhost/Lexer.zbr:308
+// zbr:selfhost/Lexer.zbr:330
         var prevDot = false;
-// zbr:selfhost/Lexer.zbr:309
+// zbr:selfhost/Lexer.zbr:331
         if (_zebra_gt(@as(i64, @intCast(self.out.items.len)), 0)) {
-// zbr:selfhost/Lexer.zbr:310
+// zbr:selfhost/Lexer.zbr:332
             switch (self.out.items[@intCast((@as(i64, @intCast(self.out.items.len)) - 1))].kind) {
                 .dot => {
-// zbr:selfhost/Lexer.zbr:312
+// zbr:selfhost/Lexer.zbr:334
                     prevDot = true;
                 },
                 else => {
@@ -3046,262 +3929,260 @@ pub const Lexer = struct {
                 },
             }
         }
-// zbr:selfhost/Lexer.zbr:315
+// zbr:selfhost/Lexer.zbr:337
         if ((_zebra_gt(self.ensureBaseDepth, 0) and (!prevDot))) {
-// zbr:selfhost/Lexer.zbr:316
+// zbr:selfhost/Lexer.zbr:338
             if (std.mem.eql(u8, word, "old")) {
-// zbr:selfhost/Lexer.zbr:317
+// zbr:selfhost/Lexer.zbr:339
                 kw = TokenKind{ .kw_old = {} };
             }
-// zbr:selfhost/Lexer.zbr:318
+// zbr:selfhost/Lexer.zbr:340
             if (std.mem.eql(u8, word, "result")) {
-// zbr:selfhost/Lexer.zbr:319
+// zbr:selfhost/Lexer.zbr:341
                 kw = TokenKind{ .kw_result = {} };
             }
         }
-// zbr:selfhost/Lexer.zbr:321
-        if ((kw != null)) {
-// zbr:selfhost/Lexer.zbr:322
-            const resolvedKw = kw.?;
+// zbr:selfhost/Lexer.zbr:343
+        if (kw) |resolvedKw| {
             self.emit(resolvedKw, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:324
+// zbr:selfhost/Lexer.zbr:345
             switch (resolvedKw) {
                 .kw_ensure => {
-// zbr:selfhost/Lexer.zbr:326
+// zbr:selfhost/Lexer.zbr:347
                     self.afterEnsureEol = true;
                 },
                 else => {
                     // pass
                 },
             }
-// zbr:selfhost/Lexer.zbr:329
+// zbr:selfhost/Lexer.zbr:350
             return;
         }
-// zbr:selfhost/Lexer.zbr:332
+// zbr:selfhost/Lexer.zbr:353
         if ((self.peek() == '(')) {
-// zbr:selfhost/Lexer.zbr:333
+// zbr:selfhost/Lexer.zbr:354
             self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:334
+// zbr:selfhost/Lexer.zbr:355
             self.parenDepth = (self.parenDepth + 1);
             self.emit(TokenKind{ .open_call = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:336
+// zbr:selfhost/Lexer.zbr:357
             return;
         }
         self.emit(TokenKind{ .id = {} }, word, ln, cl);
     }
 
     pub fn scanCharLiteral(self: *Lexer, q: u21, start: i64, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:343
+// zbr:selfhost/Lexer.zbr:364
         self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:344
+// zbr:selfhost/Lexer.zbr:365
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:345
+// zbr:selfhost/Lexer.zbr:366
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:346
+// zbr:selfhost/Lexer.zbr:367
             if ((c == '\\')) {
-// zbr:selfhost/Lexer.zbr:347
+// zbr:selfhost/Lexer.zbr:368
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:349
+// zbr:selfhost/Lexer.zbr:370
             if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:350
+// zbr:selfhost/Lexer.zbr:371
                 self.pos = (self.pos + 1);
                 break;
             }
-// zbr:selfhost/Lexer.zbr:352
+// zbr:selfhost/Lexer.zbr:373
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:353
+// zbr:selfhost/Lexer.zbr:374
                 { _error_ctx = .{ .message = "UnterminatedCharLiteral" }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:354
+// zbr:selfhost/Lexer.zbr:375
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:355
+// zbr:selfhost/Lexer.zbr:376
         var kind = TokenKind{ .char_lit_single = {} };
-// zbr:selfhost/Lexer.zbr:356
+// zbr:selfhost/Lexer.zbr:377
         if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:357
+// zbr:selfhost/Lexer.zbr:378
             kind = TokenKind{ .char_lit_double = {} };
         }
         self.emit(kind, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
     }
 
     pub fn scanSimpleString(self: *Lexer, q: u21, start: i64, kind: TokenKind, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:363
+// zbr:selfhost/Lexer.zbr:384
         self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:364
+// zbr:selfhost/Lexer.zbr:385
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:365
+// zbr:selfhost/Lexer.zbr:386
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:366
+// zbr:selfhost/Lexer.zbr:387
             if ((c == '\\')) {
-// zbr:selfhost/Lexer.zbr:367
+// zbr:selfhost/Lexer.zbr:388
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:369
+// zbr:selfhost/Lexer.zbr:390
             if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:370
+// zbr:selfhost/Lexer.zbr:391
                 self.pos = (self.pos + 1);
                 break;
             }
-// zbr:selfhost/Lexer.zbr:372
+// zbr:selfhost/Lexer.zbr:393
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:373
+// zbr:selfhost/Lexer.zbr:394
                 { _error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:374
+// zbr:selfhost/Lexer.zbr:395
             self.pos = (self.pos + 1);
         }
         self.emit(kind, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
     }
 
     pub fn scanString(self: *Lexer, q: u21, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:380
+// zbr:selfhost/Lexer.zbr:401
         if ((((q == '"') and (self.peek1() == '"')) and (self.peekAt(2) == '"'))) {
             try self.scanDocString(ln, cl);
-// zbr:selfhost/Lexer.zbr:382
+// zbr:selfhost/Lexer.zbr:403
             return;
         }
-// zbr:selfhost/Lexer.zbr:384
+// zbr:selfhost/Lexer.zbr:405
         const openPos = self.pos;
-// zbr:selfhost/Lexer.zbr:385
+// zbr:selfhost/Lexer.zbr:406
         self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:387
+// zbr:selfhost/Lexer.zbr:408
         var hasInterp = false;
-// zbr:selfhost/Lexer.zbr:388
+// zbr:selfhost/Lexer.zbr:409
         var segStart = self.pos;
-// zbr:selfhost/Lexer.zbr:389
+// zbr:selfhost/Lexer.zbr:410
         var segLn = self.line;
-// zbr:selfhost/Lexer.zbr:391
+// zbr:selfhost/Lexer.zbr:412
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:392
+// zbr:selfhost/Lexer.zbr:413
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:394
+// zbr:selfhost/Lexer.zbr:415
             if (((c == '$') and (self.peek1() == '{'))) {
-// zbr:selfhost/Lexer.zbr:395
+// zbr:selfhost/Lexer.zbr:416
                 const segText = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:396
+// zbr:selfhost/Lexer.zbr:417
                 if ((!hasInterp)) {
-// zbr:selfhost/Lexer.zbr:397
+// zbr:selfhost/Lexer.zbr:418
                     var kind = TokenKind{ .string_start_single = {} };
-// zbr:selfhost/Lexer.zbr:398
+// zbr:selfhost/Lexer.zbr:419
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:399
+// zbr:selfhost/Lexer.zbr:420
                         kind = TokenKind{ .string_start_double = {} };
                     }
                     self.emit(kind, self.src[@as(usize, @intCast(openPos))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:401
+// zbr:selfhost/Lexer.zbr:422
                     hasInterp = true;
                 } else {
-// zbr:selfhost/Lexer.zbr:403
+// zbr:selfhost/Lexer.zbr:424
                     var kind = TokenKind{ .string_part_single = {} };
-// zbr:selfhost/Lexer.zbr:404
+// zbr:selfhost/Lexer.zbr:425
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:405
+// zbr:selfhost/Lexer.zbr:426
                         kind = TokenKind{ .string_part_double = {} };
                     }
                     self.emit(kind, segText, segLn, ((segStart - self.lineStart) + 1));
                 }
-// zbr:selfhost/Lexer.zbr:407
+// zbr:selfhost/Lexer.zbr:428
                 self.pos = (self.pos + 2);
                 try self.scanInterpExpr();
-// zbr:selfhost/Lexer.zbr:409
+// zbr:selfhost/Lexer.zbr:430
                 segStart = self.pos;
-// zbr:selfhost/Lexer.zbr:410
+// zbr:selfhost/Lexer.zbr:431
                 segLn = self.line;
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:413
+// zbr:selfhost/Lexer.zbr:434
             if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:414
+// zbr:selfhost/Lexer.zbr:435
                 const segText = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:415
+// zbr:selfhost/Lexer.zbr:436
                 self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:416
+// zbr:selfhost/Lexer.zbr:437
                 if ((!hasInterp)) {
-// zbr:selfhost/Lexer.zbr:417
+// zbr:selfhost/Lexer.zbr:438
                     var kind = TokenKind{ .string_single = {} };
-// zbr:selfhost/Lexer.zbr:418
+// zbr:selfhost/Lexer.zbr:439
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:419
+// zbr:selfhost/Lexer.zbr:440
                         kind = TokenKind{ .string_double = {} };
                     }
                     self.emit(kind, self.src[@as(usize, @intCast(openPos))..@as(usize, @intCast(self.pos))], ln, cl);
                 } else {
-// zbr:selfhost/Lexer.zbr:422
+// zbr:selfhost/Lexer.zbr:443
                     var kind = TokenKind{ .string_stop_single = {} };
-// zbr:selfhost/Lexer.zbr:423
+// zbr:selfhost/Lexer.zbr:444
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:424
+// zbr:selfhost/Lexer.zbr:445
                         kind = TokenKind{ .string_stop_double = {} };
                     }
                     self.emit(kind, segText, segLn, ((segStart - self.lineStart) + 1));
                 }
-// zbr:selfhost/Lexer.zbr:426
+// zbr:selfhost/Lexer.zbr:447
                 return;
             }
-// zbr:selfhost/Lexer.zbr:428
+// zbr:selfhost/Lexer.zbr:449
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:429
+// zbr:selfhost/Lexer.zbr:450
                 { _error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:430
+// zbr:selfhost/Lexer.zbr:451
             if ((c == '\\')) {
-// zbr:selfhost/Lexer.zbr:431
+// zbr:selfhost/Lexer.zbr:452
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:433
+// zbr:selfhost/Lexer.zbr:454
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:435
+// zbr:selfhost/Lexer.zbr:456
         { _error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
     }
 
     pub fn scanInterpExpr(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:440
+// zbr:selfhost/Lexer.zbr:461
         var depth: i64 = 1;
-// zbr:selfhost/Lexer.zbr:441
+// zbr:selfhost/Lexer.zbr:462
         while (_zebra_gt(depth, 0)) {
-// zbr:selfhost/Lexer.zbr:442
+// zbr:selfhost/Lexer.zbr:463
             if (_zebra_ge(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:443
+// zbr:selfhost/Lexer.zbr:464
                 { _error_ctx = .{ .message = "UnterminatedInterpolation" }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:444
+// zbr:selfhost/Lexer.zbr:465
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:445
+// zbr:selfhost/Lexer.zbr:466
             if (((c == ' ') or (c == '\t'))) {
-// zbr:selfhost/Lexer.zbr:446
+// zbr:selfhost/Lexer.zbr:467
                 self.pos = (self.pos + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:448
+// zbr:selfhost/Lexer.zbr:469
             if ((c == '{')) {
-// zbr:selfhost/Lexer.zbr:449
+// zbr:selfhost/Lexer.zbr:470
                 const ln = self.line;
-// zbr:selfhost/Lexer.zbr:450
+// zbr:selfhost/Lexer.zbr:471
                 const cl = self.col();
-// zbr:selfhost/Lexer.zbr:451
+// zbr:selfhost/Lexer.zbr:472
                 self.pos = (self.pos + 1);
                 self.emit(TokenKind{ .lcurly = {} }, "{", ln, cl);
-// zbr:selfhost/Lexer.zbr:453
+// zbr:selfhost/Lexer.zbr:474
                 depth = (depth + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:455
+// zbr:selfhost/Lexer.zbr:476
             if ((c == '}')) {
-// zbr:selfhost/Lexer.zbr:456
+// zbr:selfhost/Lexer.zbr:477
                 const ln = self.line;
-// zbr:selfhost/Lexer.zbr:457
+// zbr:selfhost/Lexer.zbr:478
                 const cl = self.col();
-// zbr:selfhost/Lexer.zbr:458
+// zbr:selfhost/Lexer.zbr:479
                 self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:459
+// zbr:selfhost/Lexer.zbr:480
                 depth = (depth - 1);
-// zbr:selfhost/Lexer.zbr:460
+// zbr:selfhost/Lexer.zbr:481
                 if ((depth == 0)) {
                     self.emit(TokenKind{ .rcurly_special = {} }, "}", ln, cl);
                 } else {
@@ -3309,27 +4190,27 @@ pub const Lexer = struct {
                 }
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:465
+// zbr:selfhost/Lexer.zbr:486
             if ((c == ':')) {
-// zbr:selfhost/Lexer.zbr:466
+// zbr:selfhost/Lexer.zbr:487
                 const specStart = self.pos;
-// zbr:selfhost/Lexer.zbr:467
+// zbr:selfhost/Lexer.zbr:488
                 const specLn = self.line;
-// zbr:selfhost/Lexer.zbr:468
+// zbr:selfhost/Lexer.zbr:489
                 const specCl = self.col();
-// zbr:selfhost/Lexer.zbr:469
+// zbr:selfhost/Lexer.zbr:490
                 self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:470
+// zbr:selfhost/Lexer.zbr:491
                 while (((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '}')) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:471
+// zbr:selfhost/Lexer.zbr:492
                     self.pos = (self.pos + 1);
                 }
-// zbr:selfhost/Lexer.zbr:472
+// zbr:selfhost/Lexer.zbr:493
                 if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] == '}'))) {
                     self.emit(TokenKind{ .string_part_format = {} }, self.src[@as(usize, @intCast(specStart))..@as(usize, @intCast(self.pos))], specLn, specCl);
                     continue;
                 }
-// zbr:selfhost/Lexer.zbr:475
+// zbr:selfhost/Lexer.zbr:496
                 self.pos = specStart;
             }
             try self.scanToken();
@@ -3337,167 +4218,167 @@ pub const Lexer = struct {
     }
 
     pub fn scanDocString(self: *Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:481
+// zbr:selfhost/Lexer.zbr:502
         const start = self.pos;
-// zbr:selfhost/Lexer.zbr:482
+// zbr:selfhost/Lexer.zbr:503
         self.pos = (self.pos + 3);
-// zbr:selfhost/Lexer.zbr:484
+// zbr:selfhost/Lexer.zbr:505
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((self.src[@as(usize, @intCast(self.pos))] == ' ') or (self.src[@as(usize, @intCast(self.pos))] == '\t')))) {
-// zbr:selfhost/Lexer.zbr:485
+// zbr:selfhost/Lexer.zbr:506
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:487
+// zbr:selfhost/Lexer.zbr:508
         if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:488
+// zbr:selfhost/Lexer.zbr:509
             while (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:489
+// zbr:selfhost/Lexer.zbr:510
                 if ((((self.src[@as(usize, @intCast(self.pos))] == '"') and (self.src[@as(usize, @intCast((self.pos + 1)))] == '"')) and (self.src[@as(usize, @intCast((self.pos + 2)))] == '"'))) {
-// zbr:selfhost/Lexer.zbr:490
+// zbr:selfhost/Lexer.zbr:511
                     self.pos = (self.pos + 3);
                     self.emit(TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:492
+// zbr:selfhost/Lexer.zbr:513
                     return;
                 }
-// zbr:selfhost/Lexer.zbr:493
+// zbr:selfhost/Lexer.zbr:514
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:494
+// zbr:selfhost/Lexer.zbr:515
             { _error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
         }
-// zbr:selfhost/Lexer.zbr:496
+// zbr:selfhost/Lexer.zbr:517
         if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] == '\n'))) {
             self.advanceNewline();
         }
-// zbr:selfhost/Lexer.zbr:498
+// zbr:selfhost/Lexer.zbr:519
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:499
+// zbr:selfhost/Lexer.zbr:520
             var p = self.pos;
-// zbr:selfhost/Lexer.zbr:500
+// zbr:selfhost/Lexer.zbr:521
             while ((_zebra_lt(p, @as(i64, @intCast(self.src.len))) and ((self.src[@as(usize, @intCast(p))] == ' ') or (self.src[@as(usize, @intCast(p))] == '\t')))) {
-// zbr:selfhost/Lexer.zbr:501
+// zbr:selfhost/Lexer.zbr:522
                 p = (p + 1);
             }
-// zbr:selfhost/Lexer.zbr:502
+// zbr:selfhost/Lexer.zbr:523
             if ((((_zebra_lt((p + 2), @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(p))] == '"')) and (self.src[@as(usize, @intCast((p + 1)))] == '"')) and (self.src[@as(usize, @intCast((p + 2)))] == '"'))) {
-// zbr:selfhost/Lexer.zbr:503
+// zbr:selfhost/Lexer.zbr:524
                 self.pos = (p + 3);
                 self.emit(TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:505
+// zbr:selfhost/Lexer.zbr:526
                 return;
             }
-// zbr:selfhost/Lexer.zbr:506
+// zbr:selfhost/Lexer.zbr:527
             while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:507
+// zbr:selfhost/Lexer.zbr:528
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:508
+// zbr:selfhost/Lexer.zbr:529
             if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
                 self.advanceNewline();
             }
         }
-// zbr:selfhost/Lexer.zbr:511
+// zbr:selfhost/Lexer.zbr:532
         { _error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
     }
 
     pub fn scanNumericLiteral(self: *Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:516
+// zbr:selfhost/Lexer.zbr:537
         const start = self.pos;
-// zbr:selfhost/Lexer.zbr:518
+// zbr:selfhost/Lexer.zbr:539
         if ((((self.src[@as(usize, @intCast(self.pos))] == '0') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@as(usize, @intCast((self.pos + 1)))] == 'x'))) {
-// zbr:selfhost/Lexer.zbr:519
+// zbr:selfhost/Lexer.zbr:540
             self.pos = (self.pos + 2);
             self.scanWhile(isHexDigit);
-// zbr:selfhost/Lexer.zbr:521
+// zbr:selfhost/Lexer.zbr:542
             if ((self.peek() == '_')) {
-// zbr:selfhost/Lexer.zbr:522
+// zbr:selfhost/Lexer.zbr:543
                 const suffixStart = self.pos;
-// zbr:selfhost/Lexer.zbr:523
+// zbr:selfhost/Lexer.zbr:544
                 self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:524
+// zbr:selfhost/Lexer.zbr:545
                 if ((self.peek() == 'u')) {
-// zbr:selfhost/Lexer.zbr:525
+// zbr:selfhost/Lexer.zbr:546
                     self.pos = (self.pos + 1);
                     self.scanWhile(isDigit);
                     self.emit(TokenKind{ .hex_lit_unsign = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:528
+// zbr:selfhost/Lexer.zbr:549
                     return;
                 }
                 self.scanWhile(isDigit);
-// zbr:selfhost/Lexer.zbr:530
+// zbr:selfhost/Lexer.zbr:551
                 if (_zebra_gt(self.pos, (suffixStart + 1))) {
                     self.emit(TokenKind{ .hex_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:532
+// zbr:selfhost/Lexer.zbr:553
                     return;
                 }
-// zbr:selfhost/Lexer.zbr:533
+// zbr:selfhost/Lexer.zbr:554
                 self.pos = suffixStart;
             }
             self.emit(TokenKind{ .hex_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:535
+// zbr:selfhost/Lexer.zbr:556
             return;
         }
         self.scanWhile(isDigitOrUnder);
-// zbr:selfhost/Lexer.zbr:539
+// zbr:selfhost/Lexer.zbr:560
         const hasDot = ((self.peek() == '.') and isDigit(self.peekAt(1)));
-// zbr:selfhost/Lexer.zbr:540
+// zbr:selfhost/Lexer.zbr:561
         if (hasDot) {
-// zbr:selfhost/Lexer.zbr:541
+// zbr:selfhost/Lexer.zbr:562
             self.pos = (self.pos + 1);
             self.scanWhile(isDigitOrUnder);
         }
-// zbr:selfhost/Lexer.zbr:544
+// zbr:selfhost/Lexer.zbr:565
         const sc = self.peek();
-// zbr:selfhost/Lexer.zbr:545
+// zbr:selfhost/Lexer.zbr:566
         const sc1 = self.peek1();
-// zbr:selfhost/Lexer.zbr:547
+// zbr:selfhost/Lexer.zbr:568
         if ((((sc == '_') and (sc1 == 'd')) and (!isIdentContinue(self.peekAt(2))))) {
-// zbr:selfhost/Lexer.zbr:548
+// zbr:selfhost/Lexer.zbr:569
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .decimal_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:550
+// zbr:selfhost/Lexer.zbr:571
             return;
         }
-// zbr:selfhost/Lexer.zbr:552
+// zbr:selfhost/Lexer.zbr:573
         if ((((sc == '_') and (sc1 == 'n')) and (!isIdentContinue(self.peekAt(2))))) {
-// zbr:selfhost/Lexer.zbr:553
+// zbr:selfhost/Lexer.zbr:574
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .number_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:555
+// zbr:selfhost/Lexer.zbr:576
             return;
         }
-// zbr:selfhost/Lexer.zbr:557
+// zbr:selfhost/Lexer.zbr:578
         if ((((sc == '_') and (sc1 == 'f')) or (sc == 'f'))) {
-// zbr:selfhost/Lexer.zbr:558
+// zbr:selfhost/Lexer.zbr:579
             if ((sc == '_')) {
-// zbr:selfhost/Lexer.zbr:559
+// zbr:selfhost/Lexer.zbr:580
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:560
+// zbr:selfhost/Lexer.zbr:581
             self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:561
+// zbr:selfhost/Lexer.zbr:582
             if ((((self.peek() == '3') and (self.peekAt(1) == '2')) or ((self.peek() == '6') and (self.peekAt(1) == '4')))) {
-// zbr:selfhost/Lexer.zbr:562
+// zbr:selfhost/Lexer.zbr:583
                 self.pos = (self.pos + 2);
             }
             self.emit(TokenKind{ .float_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:564
+// zbr:selfhost/Lexer.zbr:585
             return;
         }
-// zbr:selfhost/Lexer.zbr:566
+// zbr:selfhost/Lexer.zbr:587
         if (((((sc == '_') and ((sc1 == 'i') or (sc1 == 'u'))) or (sc == 'i')) or (sc == 'u'))) {
-// zbr:selfhost/Lexer.zbr:567
+// zbr:selfhost/Lexer.zbr:588
             if ((sc == '_')) {
-// zbr:selfhost/Lexer.zbr:568
+// zbr:selfhost/Lexer.zbr:589
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:569
+// zbr:selfhost/Lexer.zbr:590
             self.pos = (self.pos + 1);
             self.scanWhile(isDigit);
             self.emit(TokenKind{ .integer_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:572
+// zbr:selfhost/Lexer.zbr:593
             return;
         }
-// zbr:selfhost/Lexer.zbr:574
+// zbr:selfhost/Lexer.zbr:595
         if (hasDot) {
             self.emit(TokenKind{ .float_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
         } else {
@@ -3506,374 +4387,374 @@ pub const Lexer = struct {
     }
 
     pub fn scanOperator(self: *Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:582
+// zbr:selfhost/Lexer.zbr:603
         const c = self.peek();
-// zbr:selfhost/Lexer.zbr:583
+// zbr:selfhost/Lexer.zbr:604
         const c1 = self.peek1();
-// zbr:selfhost/Lexer.zbr:586
+// zbr:selfhost/Lexer.zbr:607
         if (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:587
+// zbr:selfhost/Lexer.zbr:608
             const c2 = self.src[@as(usize, @intCast((self.pos + 2)))];
-// zbr:selfhost/Lexer.zbr:588
+// zbr:selfhost/Lexer.zbr:609
             if ((((c == '/') and (c1 == '/')) and (c2 == '='))) {
-// zbr:selfhost/Lexer.zbr:589
+// zbr:selfhost/Lexer.zbr:610
                 self.pos = (self.pos + 3);
                 self.emit(TokenKind{ .slashslash_equals = {} }, "//=", ln, cl);
-// zbr:selfhost/Lexer.zbr:591
+// zbr:selfhost/Lexer.zbr:612
                 return;
             }
-// zbr:selfhost/Lexer.zbr:592
+// zbr:selfhost/Lexer.zbr:613
             if ((((c == '*') and (c1 == '*')) and (c2 == '='))) {
-// zbr:selfhost/Lexer.zbr:593
+// zbr:selfhost/Lexer.zbr:614
                 self.pos = (self.pos + 3);
                 self.emit(TokenKind{ .starstar_equals = {} }, "**=", ln, cl);
-// zbr:selfhost/Lexer.zbr:595
+// zbr:selfhost/Lexer.zbr:616
                 return;
             }
-// zbr:selfhost/Lexer.zbr:596
+// zbr:selfhost/Lexer.zbr:617
             if ((((c == '<') and (c1 == '<')) and (c2 == '='))) {
-// zbr:selfhost/Lexer.zbr:597
+// zbr:selfhost/Lexer.zbr:618
                 self.pos = (self.pos + 3);
                 self.emit(TokenKind{ .double_lt_equals = {} }, "<<=", ln, cl);
-// zbr:selfhost/Lexer.zbr:599
+// zbr:selfhost/Lexer.zbr:620
                 return;
             }
-// zbr:selfhost/Lexer.zbr:600
+// zbr:selfhost/Lexer.zbr:621
             if ((((c == '>') and (c1 == '>')) and (c2 == '='))) {
-// zbr:selfhost/Lexer.zbr:601
+// zbr:selfhost/Lexer.zbr:622
                 self.pos = (self.pos + 3);
                 self.emit(TokenKind{ .double_gt_equals = {} }, ">>=", ln, cl);
-// zbr:selfhost/Lexer.zbr:603
+// zbr:selfhost/Lexer.zbr:624
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:606
+// zbr:selfhost/Lexer.zbr:627
         if (((c == '+') and (c1 == '+'))) {
-// zbr:selfhost/Lexer.zbr:607
+// zbr:selfhost/Lexer.zbr:628
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .plusplus = {} }, "++", ln, cl);
-// zbr:selfhost/Lexer.zbr:609
+// zbr:selfhost/Lexer.zbr:630
             return;
         }
-// zbr:selfhost/Lexer.zbr:610
+// zbr:selfhost/Lexer.zbr:631
         if (((c == '+') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:611
+// zbr:selfhost/Lexer.zbr:632
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .plus_equals = {} }, "+=", ln, cl);
-// zbr:selfhost/Lexer.zbr:613
+// zbr:selfhost/Lexer.zbr:634
             return;
         }
-// zbr:selfhost/Lexer.zbr:614
+// zbr:selfhost/Lexer.zbr:635
         if (((c == '-') and (c1 == '>'))) {
-// zbr:selfhost/Lexer.zbr:615
+// zbr:selfhost/Lexer.zbr:636
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .arrow = {} }, "->", ln, cl);
-// zbr:selfhost/Lexer.zbr:617
+// zbr:selfhost/Lexer.zbr:638
             return;
         }
-// zbr:selfhost/Lexer.zbr:618
+// zbr:selfhost/Lexer.zbr:639
         if (((c == '-') and (c1 == '-'))) {
-// zbr:selfhost/Lexer.zbr:619
+// zbr:selfhost/Lexer.zbr:640
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .minusminus = {} }, "--", ln, cl);
-// zbr:selfhost/Lexer.zbr:621
+// zbr:selfhost/Lexer.zbr:642
             return;
         }
-// zbr:selfhost/Lexer.zbr:622
+// zbr:selfhost/Lexer.zbr:643
         if (((c == '-') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:623
+// zbr:selfhost/Lexer.zbr:644
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .minus_equals = {} }, "-=", ln, cl);
-// zbr:selfhost/Lexer.zbr:625
+// zbr:selfhost/Lexer.zbr:646
             return;
         }
-// zbr:selfhost/Lexer.zbr:626
+// zbr:selfhost/Lexer.zbr:647
         if (((c == '*') and (c1 == '*'))) {
-// zbr:selfhost/Lexer.zbr:627
+// zbr:selfhost/Lexer.zbr:648
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .starstar = {} }, "**", ln, cl);
-// zbr:selfhost/Lexer.zbr:629
+// zbr:selfhost/Lexer.zbr:650
             return;
         }
-// zbr:selfhost/Lexer.zbr:630
+// zbr:selfhost/Lexer.zbr:651
         if (((c == '*') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:631
+// zbr:selfhost/Lexer.zbr:652
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .star_equals = {} }, "*=", ln, cl);
-// zbr:selfhost/Lexer.zbr:633
+// zbr:selfhost/Lexer.zbr:654
             return;
         }
-// zbr:selfhost/Lexer.zbr:634
+// zbr:selfhost/Lexer.zbr:655
         if (((c == '/') and (c1 == '/'))) {
-// zbr:selfhost/Lexer.zbr:635
+// zbr:selfhost/Lexer.zbr:656
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .slashslash = {} }, "//", ln, cl);
-// zbr:selfhost/Lexer.zbr:637
+// zbr:selfhost/Lexer.zbr:658
             return;
         }
-// zbr:selfhost/Lexer.zbr:638
+// zbr:selfhost/Lexer.zbr:659
         if (((c == '/') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:639
+// zbr:selfhost/Lexer.zbr:660
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .slash_equals = {} }, "/=", ln, cl);
-// zbr:selfhost/Lexer.zbr:641
+// zbr:selfhost/Lexer.zbr:662
             return;
         }
-// zbr:selfhost/Lexer.zbr:642
+// zbr:selfhost/Lexer.zbr:663
         if (((c == '%') and (c1 == '%'))) {
-// zbr:selfhost/Lexer.zbr:643
+// zbr:selfhost/Lexer.zbr:664
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .percentpercent = {} }, "%%", ln, cl);
-// zbr:selfhost/Lexer.zbr:645
+// zbr:selfhost/Lexer.zbr:666
             return;
         }
-// zbr:selfhost/Lexer.zbr:646
+// zbr:selfhost/Lexer.zbr:667
         if (((c == '%') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:647
+// zbr:selfhost/Lexer.zbr:668
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .percent_equals = {} }, "%=", ln, cl);
-// zbr:selfhost/Lexer.zbr:649
+// zbr:selfhost/Lexer.zbr:670
             return;
         }
-// zbr:selfhost/Lexer.zbr:650
+// zbr:selfhost/Lexer.zbr:671
         if (((c == '=') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:651
+// zbr:selfhost/Lexer.zbr:672
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .eq = {} }, "==", ln, cl);
-// zbr:selfhost/Lexer.zbr:653
+// zbr:selfhost/Lexer.zbr:674
             return;
         }
-// zbr:selfhost/Lexer.zbr:654
+// zbr:selfhost/Lexer.zbr:675
         if (((c == '<') and (c1 == '>'))) {
-// zbr:selfhost/Lexer.zbr:655
+// zbr:selfhost/Lexer.zbr:676
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .ne = {} }, "<>", ln, cl);
-// zbr:selfhost/Lexer.zbr:657
+// zbr:selfhost/Lexer.zbr:678
             return;
         }
-// zbr:selfhost/Lexer.zbr:658
+// zbr:selfhost/Lexer.zbr:679
         if (((c == '<') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:659
+// zbr:selfhost/Lexer.zbr:680
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .le = {} }, "<=", ln, cl);
-// zbr:selfhost/Lexer.zbr:661
+// zbr:selfhost/Lexer.zbr:682
             return;
         }
-// zbr:selfhost/Lexer.zbr:662
+// zbr:selfhost/Lexer.zbr:683
         if (((c == '<') and (c1 == '<'))) {
-// zbr:selfhost/Lexer.zbr:663
+// zbr:selfhost/Lexer.zbr:684
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .double_lt = {} }, "<<", ln, cl);
-// zbr:selfhost/Lexer.zbr:665
+// zbr:selfhost/Lexer.zbr:686
             return;
         }
-// zbr:selfhost/Lexer.zbr:666
+// zbr:selfhost/Lexer.zbr:687
         if (((c == '<') and (c1 == '-'))) {
-// zbr:selfhost/Lexer.zbr:667
+// zbr:selfhost/Lexer.zbr:688
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .left_arrow = {} }, "<-", ln, cl);
-// zbr:selfhost/Lexer.zbr:669
+// zbr:selfhost/Lexer.zbr:690
             return;
         }
-// zbr:selfhost/Lexer.zbr:670
+// zbr:selfhost/Lexer.zbr:691
         if (((c == '>') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:671
+// zbr:selfhost/Lexer.zbr:692
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .ge = {} }, ">=", ln, cl);
-// zbr:selfhost/Lexer.zbr:673
+// zbr:selfhost/Lexer.zbr:694
             return;
         }
-// zbr:selfhost/Lexer.zbr:674
+// zbr:selfhost/Lexer.zbr:695
         if (((c == '>') and (c1 == '>'))) {
-// zbr:selfhost/Lexer.zbr:675
+// zbr:selfhost/Lexer.zbr:696
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .double_gt = {} }, ">>", ln, cl);
-// zbr:selfhost/Lexer.zbr:677
+// zbr:selfhost/Lexer.zbr:698
             return;
         }
-// zbr:selfhost/Lexer.zbr:678
+// zbr:selfhost/Lexer.zbr:699
         if (((c == '&') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:679
+// zbr:selfhost/Lexer.zbr:700
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .ampersand_equals = {} }, "&=", ln, cl);
-// zbr:selfhost/Lexer.zbr:681
+// zbr:selfhost/Lexer.zbr:702
             return;
         }
-// zbr:selfhost/Lexer.zbr:682
+// zbr:selfhost/Lexer.zbr:703
         if (((c == '|') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:683
+// zbr:selfhost/Lexer.zbr:704
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .vertical_bar_equals = {} }, "|=", ln, cl);
-// zbr:selfhost/Lexer.zbr:685
+// zbr:selfhost/Lexer.zbr:706
             return;
         }
-// zbr:selfhost/Lexer.zbr:686
+// zbr:selfhost/Lexer.zbr:707
         if (((c == '^') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:687
+// zbr:selfhost/Lexer.zbr:708
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .caret_equals = {} }, "^=", ln, cl);
-// zbr:selfhost/Lexer.zbr:689
+// zbr:selfhost/Lexer.zbr:710
             return;
         }
-// zbr:selfhost/Lexer.zbr:690
+// zbr:selfhost/Lexer.zbr:711
         if (((c == '?') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:691
+// zbr:selfhost/Lexer.zbr:712
             self.pos = (self.pos + 2);
             self.emit(TokenKind{ .question_equals = {} }, "?=", ln, cl);
-// zbr:selfhost/Lexer.zbr:693
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:694
-        if (((c == '?') and (c1 == '.'))) {
-// zbr:selfhost/Lexer.zbr:695
-            self.pos = (self.pos + 2);
-            self.emit(TokenKind{ .question_dot = {} }, "?.", ln, cl);
-// zbr:selfhost/Lexer.zbr:697
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:698
-        if (((c == '!') and (c1 == '='))) {
-// zbr:selfhost/Lexer.zbr:699
-            self.pos = (self.pos + 2);
-            self.emit(TokenKind{ .bang_equals = {} }, "!=", ln, cl);
-// zbr:selfhost/Lexer.zbr:701
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:702
-        if (((c == '.') and (c1 == '.'))) {
-// zbr:selfhost/Lexer.zbr:703
-            self.pos = (self.pos + 2);
-            self.emit(TokenKind{ .dotdot = {} }, "..", ln, cl);
-// zbr:selfhost/Lexer.zbr:705
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:708
-        self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:709
-        if ((c == '+')) {
-            self.emit(TokenKind{ .plus = {} }, "+", ln, cl);
-// zbr:selfhost/Lexer.zbr:711
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:712
-        if ((c == '-')) {
-            self.emit(TokenKind{ .minus = {} }, "-", ln, cl);
 // zbr:selfhost/Lexer.zbr:714
             return;
         }
 // zbr:selfhost/Lexer.zbr:715
-        if ((c == '*')) {
-            self.emit(TokenKind{ .star = {} }, "*", ln, cl);
-// zbr:selfhost/Lexer.zbr:717
-            return;
-        }
+        if (((c == '?') and (c1 == '.'))) {
+// zbr:selfhost/Lexer.zbr:716
+            self.pos = (self.pos + 2);
+            self.emit(TokenKind{ .question_dot = {} }, "?.", ln, cl);
 // zbr:selfhost/Lexer.zbr:718
-        if ((c == '/')) {
-            self.emit(TokenKind{ .slash = {} }, "/", ln, cl);
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:719
+        if (((c == '!') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:720
+            self.pos = (self.pos + 2);
+            self.emit(TokenKind{ .bang_equals = {} }, "!=", ln, cl);
+// zbr:selfhost/Lexer.zbr:722
             return;
         }
-// zbr:selfhost/Lexer.zbr:721
-        if ((c == '%')) {
-            self.emit(TokenKind{ .percent = {} }, "%", ln, cl);
 // zbr:selfhost/Lexer.zbr:723
-            return;
-        }
+        if (((c == '.') and (c1 == '.'))) {
 // zbr:selfhost/Lexer.zbr:724
-        if ((c == '=')) {
-// zbr:selfhost/Lexer.zbr:725
-            if (self.afterLambdaParams) {
+            self.pos = (self.pos + 2);
+            self.emit(TokenKind{ .dotdot = {} }, "..", ln, cl);
 // zbr:selfhost/Lexer.zbr:726
-                self.afterLambdaParams = false;
-            }
-            self.emit(TokenKind{ .assign = {} }, "=", ln, cl);
-// zbr:selfhost/Lexer.zbr:728
             return;
         }
 // zbr:selfhost/Lexer.zbr:729
-        if ((c == '<')) {
-            self.emit(TokenKind{ .lt = {} }, "<", ln, cl);
-// zbr:selfhost/Lexer.zbr:731
-            return;
-        }
+        self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:730
+        if ((c == '+')) {
+            self.emit(TokenKind{ .plus = {} }, "+", ln, cl);
 // zbr:selfhost/Lexer.zbr:732
-        if ((c == '>')) {
-            self.emit(TokenKind{ .gt = {} }, ">", ln, cl);
-// zbr:selfhost/Lexer.zbr:734
             return;
         }
+// zbr:selfhost/Lexer.zbr:733
+        if ((c == '-')) {
+            self.emit(TokenKind{ .minus = {} }, "-", ln, cl);
 // zbr:selfhost/Lexer.zbr:735
-        if ((c == '&')) {
-            self.emit(TokenKind{ .ampersand = {} }, "&", ln, cl);
-// zbr:selfhost/Lexer.zbr:737
             return;
         }
+// zbr:selfhost/Lexer.zbr:736
+        if ((c == '*')) {
+            self.emit(TokenKind{ .star = {} }, "*", ln, cl);
 // zbr:selfhost/Lexer.zbr:738
-        if ((c == '|')) {
-            self.emit(TokenKind{ .vertical_bar = {} }, "|", ln, cl);
-// zbr:selfhost/Lexer.zbr:740
             return;
         }
+// zbr:selfhost/Lexer.zbr:739
+        if ((c == '/')) {
+            self.emit(TokenKind{ .slash = {} }, "/", ln, cl);
 // zbr:selfhost/Lexer.zbr:741
-        if ((c == '^')) {
-            self.emit(TokenKind{ .caret = {} }, "^", ln, cl);
-// zbr:selfhost/Lexer.zbr:743
             return;
         }
+// zbr:selfhost/Lexer.zbr:742
+        if ((c == '%')) {
+            self.emit(TokenKind{ .percent = {} }, "%", ln, cl);
 // zbr:selfhost/Lexer.zbr:744
-        if ((c == '~')) {
-            self.emit(TokenKind{ .tilde = {} }, "~", ln, cl);
-// zbr:selfhost/Lexer.zbr:746
             return;
         }
+// zbr:selfhost/Lexer.zbr:745
+        if ((c == '=')) {
+// zbr:selfhost/Lexer.zbr:746
+            if (self.afterLambdaParams) {
 // zbr:selfhost/Lexer.zbr:747
-        if ((c == '?')) {
-            self.emit(TokenKind{ .question = {} }, "?", ln, cl);
+                self.afterLambdaParams = false;
+            }
+            self.emit(TokenKind{ .assign = {} }, "=", ln, cl);
 // zbr:selfhost/Lexer.zbr:749
             return;
         }
 // zbr:selfhost/Lexer.zbr:750
-        if ((c == '!')) {
-            self.emit(TokenKind{ .bang = {} }, "!", ln, cl);
+        if ((c == '<')) {
+            self.emit(TokenKind{ .lt = {} }, "<", ln, cl);
 // zbr:selfhost/Lexer.zbr:752
             return;
         }
 // zbr:selfhost/Lexer.zbr:753
-        if ((c == '.')) {
-            self.emit(TokenKind{ .dot = {} }, ".", ln, cl);
+        if ((c == '>')) {
+            self.emit(TokenKind{ .gt = {} }, ">", ln, cl);
 // zbr:selfhost/Lexer.zbr:755
             return;
         }
 // zbr:selfhost/Lexer.zbr:756
-        if ((c == ':')) {
-            self.emit(TokenKind{ .colon = {} }, ":", ln, cl);
+        if ((c == '&')) {
+            self.emit(TokenKind{ .ampersand = {} }, "&", ln, cl);
 // zbr:selfhost/Lexer.zbr:758
             return;
         }
 // zbr:selfhost/Lexer.zbr:759
-        if ((c == ';')) {
-            self.emit(TokenKind{ .semi = {} }, ";", ln, cl);
+        if ((c == '|')) {
+            self.emit(TokenKind{ .vertical_bar = {} }, "|", ln, cl);
 // zbr:selfhost/Lexer.zbr:761
             return;
         }
 // zbr:selfhost/Lexer.zbr:762
-        if ((c == ',')) {
-            self.emit(TokenKind{ .comma = {} }, ",", ln, cl);
+        if ((c == '^')) {
+            self.emit(TokenKind{ .caret = {} }, "^", ln, cl);
 // zbr:selfhost/Lexer.zbr:764
             return;
         }
 // zbr:selfhost/Lexer.zbr:765
-        if ((c == '(')) {
-// zbr:selfhost/Lexer.zbr:766
-            if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
+        if ((c == '~')) {
+            self.emit(TokenKind{ .tilde = {} }, "~", ln, cl);
 // zbr:selfhost/Lexer.zbr:767
-                const lastKind = self.out.items[@intCast((@as(i64, @intCast(self.out.items.len)) - 1))].kind;
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:768
+        if ((c == '?')) {
+            self.emit(TokenKind{ .question = {} }, "?", ln, cl);
+// zbr:selfhost/Lexer.zbr:770
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:771
+        if ((c == '!')) {
+            self.emit(TokenKind{ .bang = {} }, "!", ln, cl);
+// zbr:selfhost/Lexer.zbr:773
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:774
+        if ((c == '.')) {
+            self.emit(TokenKind{ .dot = {} }, ".", ln, cl);
+// zbr:selfhost/Lexer.zbr:776
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:777
+        if ((c == ':')) {
+            self.emit(TokenKind{ .colon = {} }, ":", ln, cl);
+// zbr:selfhost/Lexer.zbr:779
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:780
+        if ((c == ';')) {
+            self.emit(TokenKind{ .semi = {} }, ";", ln, cl);
+// zbr:selfhost/Lexer.zbr:782
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:783
+        if ((c == ',')) {
+            self.emit(TokenKind{ .comma = {} }, ",", ln, cl);
+// zbr:selfhost/Lexer.zbr:785
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:786
+        if ((c == '(')) {
+// zbr:selfhost/Lexer.zbr:787
+            if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
+// zbr:selfhost/Lexer.zbr:788
+                const lastKind = self.out.items[@intCast((@as(i64, @intCast(self.out.items.len)) - 1))].kind;
+// zbr:selfhost/Lexer.zbr:789
                 switch (lastKind) {
                     .kw_def => {
-// zbr:selfhost/Lexer.zbr:770
+// zbr:selfhost/Lexer.zbr:791
                         self.inLambdaParams = true;
-// zbr:selfhost/Lexer.zbr:771
+// zbr:selfhost/Lexer.zbr:792
                         self.lambdaParamDepth = (self.parenDepth + 1);
                     },
                     else => {
@@ -3881,63 +4762,63 @@ pub const Lexer = struct {
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:774
+// zbr:selfhost/Lexer.zbr:795
             self.parenDepth = (self.parenDepth + 1);
             self.emit(TokenKind{ .lparen = {} }, "(", ln, cl);
-// zbr:selfhost/Lexer.zbr:776
+// zbr:selfhost/Lexer.zbr:797
             return;
         }
-// zbr:selfhost/Lexer.zbr:777
+// zbr:selfhost/Lexer.zbr:798
         if ((c == ')')) {
-// zbr:selfhost/Lexer.zbr:778
+// zbr:selfhost/Lexer.zbr:799
             if ((self.inLambdaParams and (self.parenDepth == self.lambdaParamDepth))) {
-// zbr:selfhost/Lexer.zbr:779
+// zbr:selfhost/Lexer.zbr:800
                 self.inLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:780
+// zbr:selfhost/Lexer.zbr:801
                 self.afterLambdaParams = true;
             }
-// zbr:selfhost/Lexer.zbr:781
+// zbr:selfhost/Lexer.zbr:802
             self.parenDepth = (self.parenDepth - 1);
             self.emit(TokenKind{ .rparen = {} }, ")", ln, cl);
-// zbr:selfhost/Lexer.zbr:783
+// zbr:selfhost/Lexer.zbr:804
             return;
         }
-// zbr:selfhost/Lexer.zbr:784
+// zbr:selfhost/Lexer.zbr:805
         if ((c == '[')) {
             self.emit(TokenKind{ .lbracket = {} }, "[", ln, cl);
-// zbr:selfhost/Lexer.zbr:786
+// zbr:selfhost/Lexer.zbr:807
             return;
         }
-// zbr:selfhost/Lexer.zbr:787
+// zbr:selfhost/Lexer.zbr:808
         if ((c == ']')) {
             self.emit(TokenKind{ .rbracket = {} }, "]", ln, cl);
-// zbr:selfhost/Lexer.zbr:789
+// zbr:selfhost/Lexer.zbr:810
             return;
         }
-// zbr:selfhost/Lexer.zbr:790
+// zbr:selfhost/Lexer.zbr:811
         if ((c == '{')) {
             self.emit(TokenKind{ .lcurly = {} }, "{", ln, cl);
-// zbr:selfhost/Lexer.zbr:792
+// zbr:selfhost/Lexer.zbr:813
             return;
         }
-// zbr:selfhost/Lexer.zbr:793
+// zbr:selfhost/Lexer.zbr:814
         if ((c == '}')) {
             self.emit(TokenKind{ .rcurly = {} }, "}", ln, cl);
-// zbr:selfhost/Lexer.zbr:795
+// zbr:selfhost/Lexer.zbr:816
             return;
         }
-// zbr:selfhost/Lexer.zbr:796
+// zbr:selfhost/Lexer.zbr:817
         { _error_ctx = .{ .message = self.lexErr(c, ln, cl) }; return error.ZebraError; }
     }
 
     pub fn scanToken(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:801
+// zbr:selfhost/Lexer.zbr:822
         const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:802
+// zbr:selfhost/Lexer.zbr:823
         const ln = self.line;
-// zbr:selfhost/Lexer.zbr:803
+// zbr:selfhost/Lexer.zbr:824
         const cl = self.col();
-// zbr:selfhost/Lexer.zbr:804
+// zbr:selfhost/Lexer.zbr:825
         switch (c) {
             '0'...'9' => {
                 try self.scanNumericLiteral(ln, cl);
@@ -3967,137 +4848,151 @@ pub const Lexer = struct {
     }
 
     pub fn run(self: *Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:825
+// zbr:selfhost/Lexer.zbr:846
         var atLineStart = true;
-// zbr:selfhost/Lexer.zbr:826
+// zbr:selfhost/Lexer.zbr:847
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:827
+// zbr:selfhost/Lexer.zbr:848
             if (atLineStart) {
-// zbr:selfhost/Lexer.zbr:828
+// zbr:selfhost/Lexer.zbr:849
                 atLineStart = false;
-// zbr:selfhost/Lexer.zbr:829
+// zbr:selfhost/Lexer.zbr:850
                 const lk = self.classifyLine();
-// zbr:selfhost/Lexer.zbr:830
+// zbr:selfhost/Lexer.zbr:851
                 switch (lk) {
                     .empty => {
-// zbr:selfhost/Lexer.zbr:832
+// zbr:selfhost/Lexer.zbr:853
                         const ln = self.line;
-// zbr:selfhost/Lexer.zbr:833
+// zbr:selfhost/Lexer.zbr:854
                         const cl = self.col();
                         self.advanceNewline();
-// zbr:selfhost/Lexer.zbr:835
-                        if ((((self.parenDepth == 0) or self.afterLambdaParams) or self.lambdaBodyActive)) {
+// zbr:selfhost/Lexer.zbr:856
+                        if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
                             self.emit(TokenKind{ .eol = {} }, "\n", ln, cl);
-// zbr:selfhost/Lexer.zbr:837
+// zbr:selfhost/Lexer.zbr:858
                             if (self.afterLambdaParams) {
-// zbr:selfhost/Lexer.zbr:838
+// zbr:selfhost/Lexer.zbr:859
                                 self.afterLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:839
-                                self.lambdaBodyActive = true;
-// zbr:selfhost/Lexer.zbr:840
-                                self.lambdaIndentLevel = self.indentDepth;
+                                self.lambdaStack.append(_allocator, self.indentDepth) catch @panic("OOM");
                             }
                         }
-// zbr:selfhost/Lexer.zbr:841
+// zbr:selfhost/Lexer.zbr:861
                         atLineStart = true;
                         continue;
                     },
                     .whitespace_only => {
-// zbr:selfhost/Lexer.zbr:844
+// zbr:selfhost/Lexer.zbr:864
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:845
+// zbr:selfhost/Lexer.zbr:865
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:846
+// zbr:selfhost/Lexer.zbr:866
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:848
+// zbr:selfhost/Lexer.zbr:868
                         atLineStart = true;
                         continue;
                     },
                     .comment_only => {
-// zbr:selfhost/Lexer.zbr:851
+// zbr:selfhost/Lexer.zbr:871
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:852
+// zbr:selfhost/Lexer.zbr:872
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:853
+// zbr:selfhost/Lexer.zbr:873
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:855
+// zbr:selfhost/Lexer.zbr:875
+                        atLineStart = true;
+                        continue;
+                    },
+                    .block_comment_only => {
+// zbr:selfhost/Lexer.zbr:881
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((self.src[@as(usize, @intCast(self.pos))] == ' ') or (self.src[@as(usize, @intCast(self.pos))] == '\t')))) {
+// zbr:selfhost/Lexer.zbr:882
+                            self.pos = (self.pos + 1);
+                        }
+                        try self.scanBlockComment();
+// zbr:selfhost/Lexer.zbr:884
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
+// zbr:selfhost/Lexer.zbr:885
+                            self.pos = (self.pos + 1);
+                        }
+// zbr:selfhost/Lexer.zbr:886
+                        if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+                            self.advanceNewline();
+                        }
+// zbr:selfhost/Lexer.zbr:888
                         atLineStart = true;
                         continue;
                     },
                     .has_content => {
-// zbr:selfhost/Lexer.zbr:858
-                        if (((self.parenDepth == 0) or self.lambdaBodyActive)) {
+// zbr:selfhost/Lexer.zbr:891
+                        if (((self.parenDepth == 0) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
                             try self.processIndentation();
                         }
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:861
+// zbr:selfhost/Lexer.zbr:894
             const c = self.src[@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:863
+// zbr:selfhost/Lexer.zbr:896
             if (((c == ' ') or (c == '\t'))) {
-// zbr:selfhost/Lexer.zbr:864
+// zbr:selfhost/Lexer.zbr:897
                 self.pos = (self.pos + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:867
+// zbr:selfhost/Lexer.zbr:900
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:868
+// zbr:selfhost/Lexer.zbr:901
                 const ln = self.line;
-// zbr:selfhost/Lexer.zbr:869
+// zbr:selfhost/Lexer.zbr:902
                 const cl = self.col();
                 self.advanceNewline();
-// zbr:selfhost/Lexer.zbr:871
-                if ((((self.parenDepth == 0) or self.afterLambdaParams) or self.lambdaBodyActive)) {
+// zbr:selfhost/Lexer.zbr:904
+                if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
                     self.emit(TokenKind{ .eol = {} }, "\n", ln, cl);
-// zbr:selfhost/Lexer.zbr:873
+// zbr:selfhost/Lexer.zbr:906
                     if (self.afterLambdaParams) {
-// zbr:selfhost/Lexer.zbr:874
+// zbr:selfhost/Lexer.zbr:907
                         self.afterLambdaParams = false;
-// zbr:selfhost/Lexer.zbr:875
-                        self.lambdaBodyActive = true;
-// zbr:selfhost/Lexer.zbr:876
-                        self.lambdaIndentLevel = self.indentDepth;
+                        self.lambdaStack.append(_allocator, self.indentDepth) catch @panic("OOM");
                     }
                 }
-// zbr:selfhost/Lexer.zbr:877
+// zbr:selfhost/Lexer.zbr:909
                 atLineStart = true;
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:880
+// zbr:selfhost/Lexer.zbr:912
             if ((c == '#')) {
-// zbr:selfhost/Lexer.zbr:881
+// zbr:selfhost/Lexer.zbr:913
                 while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@as(usize, @intCast(self.pos))] != '\n'))) {
-// zbr:selfhost/Lexer.zbr:882
+// zbr:selfhost/Lexer.zbr:914
                     self.pos = (self.pos + 1);
                 }
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:885
+// zbr:selfhost/Lexer.zbr:917
             if (((c == '/') and (self.peek1() == '#'))) {
                 try self.scanBlockComment();
                 continue;
             }
             try self.scanToken();
         }
-// zbr:selfhost/Lexer.zbr:891
+// zbr:selfhost/Lexer.zbr:923
         if ((!atLineStart)) {
             self.emit(TokenKind{ .eol = {} }, "", self.line, self.col());
         }
-// zbr:selfhost/Lexer.zbr:894
+// zbr:selfhost/Lexer.zbr:926
         const eofCol = self.col();
-// zbr:selfhost/Lexer.zbr:895
+// zbr:selfhost/Lexer.zbr:927
         const eofLn = self.line;
-// zbr:selfhost/Lexer.zbr:896
+// zbr:selfhost/Lexer.zbr:928
         while (_zebra_gt(self.indentDepth, 0)) {
             self.emit(TokenKind{ .dedent = {} }, "", eofLn, eofCol);
-// zbr:selfhost/Lexer.zbr:898
+// zbr:selfhost/Lexer.zbr:930
             self.indentDepth = (self.indentDepth - 1);
         }
         self.emit(TokenKind{ .eof = {} }, "", eofLn, eofCol);
@@ -4106,8 +5001,8 @@ pub const Lexer = struct {
 };
 const _ttag_Lexer: u64 = _zbr_hash("Lexer");
 const _reflect_Lexer_name: []const u8 = "Lexer";
-const _reflect_Lexer_fields: []const []const u8 = &.{"src", "pos", "line", "lineStart", "indentDepth", "blockDepth", "parenDepth", "out", "inLambdaParams", "lambdaParamDepth", "afterLambdaParams", "lambdaBodyActive", "lambdaIndentLevel", "afterEnsureEol", "ensureBaseDepth"};
-const _reflect_Lexer_field_types: []const []const u8 = &.{"str", "int", "int", "int", "int", "int", "int", "List(Token.Token)", "bool", "int", "bool", "bool", "int", "bool", "int"};
+const _reflect_Lexer_fields: []const []const u8 = &.{"src", "pos", "line", "lineStart", "indentDepth", "blockDepth", "parenDepth", "out", "inLambdaParams", "lambdaParamDepth", "afterLambdaParams", "lambdaStack", "afterEnsureEol", "ensureBaseDepth"};
+const _reflect_Lexer_field_types: []const []const u8 = &.{"str", "int", "int", "int", "int", "int", "int", "List(Token.Token)", "bool", "int", "bool", "List(int)", "bool", "int"};
 
 const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {

@@ -57,6 +57,7 @@ union LineKind
     empty
     whitespace_only
     comment_only
+    block_comment_only
     has_content
 
 class Lexer
@@ -72,8 +73,7 @@ class Lexer
     var inLambdaParams   : bool
     var lambdaParamDepth : int
     var afterLambdaParams: bool
-    var lambdaBodyActive : bool
-    var lambdaIndentLevel: int
+    var lambdaStack      : List(int)   # one entry per active lambda body (its start indent depth)
     # Ensure-block context-sensitive keyword tracking
     var afterEnsureEol  : bool
     var ensureBaseDepth : int
@@ -90,8 +90,7 @@ class Lexer
         inLambdaParams    = false
         lambdaParamDepth  = 0
         afterLambdaParams = false
-        lambdaBodyActive  = false
-        lambdaIndentLevel = 0
+        lambdaStack       = List()
         afterEnsureEol    = false
         ensureBaseDepth   = 0
 
@@ -161,6 +160,29 @@ class Lexer
             return LineKind.empty()
         if src[i] == c'#'
             return LineKind.comment_only()
+        # Block comment at start of line: scan ahead to decide if comment-only.
+        if src[i] == c'/' and i + 1 < src.len and src[i + 1] == c'#'
+            var depth = 0
+            var j = i
+            while j < src.len and src[j] <> c'\n'
+                if src[j] == c'/' and j + 1 < src.len and src[j + 1] == c'#'
+                    depth = depth + 1
+                    j = j + 2
+                else if src[j] == c'#' and j + 1 < src.len and src[j + 1] == c'/'
+                    if depth > 0
+                        depth = depth - 1
+                    j = j + 2
+                    if depth == 0
+                        # Block comment closed: check for content after it.
+                        while j < src.len and (src[j] == c' ' or src[j] == c'\t')
+                            j = j + 1
+                        if j >= src.len or src[j] == c'\n' or src[j] == c'#'
+                            return LineKind.block_comment_only()
+                        return LineKind.has_content()
+                else
+                    j = j + 1
+            # Block comment did not close on this line — spans multiple lines.
+            return LineKind.block_comment_only()
         return LineKind.has_content()
 
     # -- Indentation ---------------------------------------------------------
@@ -201,8 +223,8 @@ class Lexer
             afterEnsureEol = false
         if ensureBaseDepth > 0 and level < ensureBaseDepth
             ensureBaseDepth = 0
-        if lambdaBodyActive and indentDepth <= lambdaIndentLevel
-            lambdaBodyActive = false
+        while lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
+            lambdaStack.remove(lambdaStack.len - 1)
 
     # -- Block comment  /# ... #/ --------------------------------------------
 
@@ -318,8 +340,7 @@ class Lexer
             if word == "result"
                 kw = TokenKind.kw_result()
 
-        if kw <> nil
-            var resolvedKw = kw to!
+        if kw as resolvedKw
             emit(resolvedKw, word, ln, cl)
             branch resolvedKw
                 on TokenKind.kw_ensure
@@ -832,12 +853,11 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
+                        if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
                             emit(TokenKind.eol(), "\n", ln, cl)
                             if afterLambdaParams
                                 afterLambdaParams = false
-                                lambdaBodyActive  = true
-                                lambdaIndentLevel = indentDepth
+                                lambdaStack.add(indentDepth)
                         atLineStart = true
                         continue
                     on LineKind.whitespace_only
@@ -854,8 +874,21 @@ class Lexer
                             advanceNewline()
                         atLineStart = true
                         continue
+                    on LineKind.block_comment_only
+                        # Block comment occupies the whole line (possibly spanning multiple lines).
+                        # Consume indentation without emitting indent/dedent, scan the comment,
+                        # then advance past the newline without emitting eol.
+                        while pos < src.len and (src[pos] == c' ' or src[pos] == c'\t')
+                            pos = pos + 1
+                        scanBlockComment()?
+                        while pos < src.len and src[pos] <> c'\n'
+                            pos = pos + 1
+                        if pos < src.len
+                            advanceNewline()
+                        atLineStart = true
+                        continue
                     on LineKind.has_content
-                        if parenDepth == 0 or lambdaBodyActive
+                        if parenDepth == 0 or lambdaStack.len > 0
                             processIndentation()?
 
             var c = src[pos]
@@ -868,12 +901,11 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if parenDepth == 0 or afterLambdaParams or lambdaBodyActive
+                if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
                     emit(TokenKind.eol(), "\n", ln, cl)
                     if afterLambdaParams
                         afterLambdaParams = false
-                        lambdaBodyActive  = true
-                        lambdaIndentLevel = indentDepth
+                        lambdaStack.add(indentDepth)
                 atLineStart = true
                 continue
 

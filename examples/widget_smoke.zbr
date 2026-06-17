@@ -1,0 +1,41 @@
+struct Model
+    var progress: float
+    var selected: int
+    var count: int
+
+union Msg
+    tick
+    pick: int
+    spin: int
+
+def init(): Model
+    return Model(progress: 0.0, selected: 0, count: 5)
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.tick
+            return Model(progress: (model.progress + 0.1) % 1.1, selected: model.selected, count: model.count)
+        on Msg.pick as idx
+            return Model(progress: model.progress, selected: idx, count: model.count)
+        on Msg.spin as n
+            return Model(progress: model.progress, selected: model.selected, count: n)
+
+def view(g: Gui, model: Model)
+    g.text("Progress demo")
+    g.progressBar("progress", model.progress)
+    if g.button("Advance")
+        g.send(Msg.tick)
+    g.separator()
+    g.text("Combobox demo")
+    var items: List(str) = ["Apple", "Banana", "Cherry"]
+    var picked: int = g.combobox("Fruit", items, model.selected)
+    if picked != model.selected
+        g.send(Msg.pick(picked))
+    g.separator()
+    g.text("Spinbox demo (selected: " + model.selected.toString() + ")")
+    var n: int = g.spinbox("Count", model.count, 0, 20)
+    if n != model.count
+        g.send(Msg.spin(n))
+
+def main()
+    Gui.run("Widget Smoke", 400, 400, init, update, view)

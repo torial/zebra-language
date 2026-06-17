@@ -42,7 +42,16 @@ cd "$REPO"
 #   - 7× WebSocket (_WsTlsState heap-alloc + _ws_connect TLS init + _ws_serve
 #         per-connection heap-alloc; TLS state must be stable in memory since
 #         tls.Client holds internal pointers back into its own buffer fields)
-EXPECTED_PREAMBLE=61
+#   - 8× Zig 0.16 API migration (commit 294bcf6): std.Io.Writer.Allocating.fromArrayList
+#         now requires explicit page_allocator where std.io.Writer.Allocating.init did not;
+#         includes 2× build target JSON emit + 6× HTTP/CSV/Regex/Profile writer conversions
+#   - 2× UDP stdlib (2026-05-25): pa const in _udp_send/_udp_recv; UDP buffers must
+#         outlive arena rewinds since socket lifetime exceeds request scope
+#   - 1× ThreadPool stdlib (2026-05-25): page_allocator.create(_ThreadPool); pool lives
+#         for program duration and must not be reclaimed by arena rewinds
+#   - 1× Atomic(T) stdlib (2026-05-25): page_allocator.create(_Atomic(T)); atomic cells
+#         are cross-thread shared state that must outlive any per-request arena
+EXPECTED_PREAMBLE=73
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)

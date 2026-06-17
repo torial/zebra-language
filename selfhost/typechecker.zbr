@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -120,6 +120,21 @@ union Type_
     build_target
     # WebSocket connection returned by Ws.connect() or passed to Ws.serve handler.
     ws_conn
+    # TCP connection returned by Tcp.connect().
+    tcp_conn
+    # Raw UDP socket returned by Udp.socket().
+    udp_socket
+    # Open SQLite database connection.
+    sqlite_db
+    # A row returned by db.query().
+    sqlite_row
+    # The result of db.query() — an ArrayList of sqlite_row. Allows type-tracing
+    # through `var rows = db.query(...)` → `for row in rows`.
+    sqlite_row_list
+    # GUI context passed to view(g: Gui, ...) in MVU programs.
+    gui_context
+    # JSON dynamic value (std.json.Value) returned by Json.parse/object/array.
+    json_value
     # Generic collections with element/key/value type info.
     # Replaces the str_slice sentinel for List(T) and HashMap(K,V).
     list_: ^Type_
@@ -272,6 +287,9 @@ class ModuleTypes
     var enum_names: HashMap(str, bool)
     # All enum member keys ("EnumName.memberName") in insertion order.
     var all_enum_member_keys: List(str)
+    # Top-level generic function names (def name(T)(...)). Used by codegen to
+    # detect call-site pattern name(TypeArg)(valueArgs) and flatten to name(T, args).
+    var generic_fn_names: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -288,6 +306,7 @@ class ModuleTypes
         type_alias_names = HashMap()
         enum_names = HashMap()
         all_enum_member_keys = List()
+        generic_fn_names = HashMap()
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -401,6 +420,12 @@ class ModuleTypes
             i = i + 1
         return result
 
+    def addGenericFn(fn_name: str)
+        .generic_fn_names.put(internString(fn_name), true)
+
+    def hasGenericFn(fn_name: str): bool
+        return .generic_fn_names.contains(fn_name)
+
     def hasClass(class_name: str): bool
         return .classes.contains(class_name)
 
@@ -472,6 +497,16 @@ def typeFromName(n: str): Type_
         return Type_.allocator_ctx
     if n == "WsConn"
         return Type_.ws_conn
+    if n == "TcpConn"
+        return Type_.tcp_conn
+    if n == "UdpSocket"
+        return Type_.udp_socket
+    if n == "SqliteDb"
+        return Type_.sqlite_db
+    if n == "SqliteRow"
+        return Type_.sqlite_row
+    if n == "Gui"
+        return Type_.gui_context
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)
@@ -591,17 +626,18 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if v.mods.is_private
                     mt.addPrivateMemberKey(ct.name, v.name)
                 if v.type_ != nil
-                    var ft: Type_ = typeFromRef(v.type_ to!)  # safe: nil checked above
+                    var vt = v.type_ to!
+                    var ft: Type_ = typeFromRef(vt)
                     ct.setField(v.name, ft)
                     if isStrSetOrWrapped(ft)
                         mt.addStrSetField(v.name)
-                    if isHashMapTypeRef(v.type_ to!)  # safe: nil checked above
+                    if isHashMapTypeRef(vt)
                         mt.addHashMapField(v.name)
-                    if isListTypeRef(v.type_ to!)  # safe: nil checked above
+                    if isListTypeRef(vt)
                         mt.addListField(v.name)
                     # Populate ref_field_keys / opt_ref_field_keys for ^T and ^T? fields.
                     # ^T? parses as ref_to(nilable(inner)); ^T as ref_to(non-nilable inner).
-                    if v.type_ to! is TypeRef.ref_to as refInner  # safe: nil checked above
+                    if vt is TypeRef.ref_to as refInner
                         var key: str = ct.name + "." + (v.name)
                         if refInner is TypeRef.nilable
                             mt.opt_ref_field_keys.add(key)
@@ -613,7 +649,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if m.mods.is_private
                     mt.addPrivateMemberKey(ct.name, m.name)
                 if m.return_type != nil
-                    ct.setMethodReturn(m.name, typeFromRef(m.return_type to!))  # safe: nil checked above
+                    ct.setMethodReturn(m.name, typeFromRef(m.return_type to!))
                 else
                     ct.setMethodReturn(m.name, Type_.void_)
                 # Collect param names as CSV for named-arg reordering in codegen.
@@ -646,7 +682,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if ct.ctorParamCount() == 0
                     for p in ini.params
                         if p.type_ != nil
-                            ct.addCtorParam(typeFromRef(p.type_ to!))  # safe: nil checked above
+                            ct.addCtorParam(typeFromRef(p.type_ to!))
                         else
                             ct.addCtorParam(Type_.unknown_)
             else
@@ -730,14 +766,14 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 mt.addUnion(uname)
                 for variant in u.variants
                     if variant.payload != nil
-                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload to!))  # safe: nil checked above
+                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload to!))
                     else
                         mt.addVariantPayload(uname, variant.name, Type_.unknown_)
             on Decl.method as topfn
                 # Top-level def: register under "" sentinel so bare calls inside
                 # class methods can resolve the return type via methodReturnAny.
                 if topfn.return_type != nil
-                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type to!))  # safe: nil checked above
+                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type to!))
                 else
                     module_fns.setMethodReturn(topfn.name, Type_.void_)
                 # Collect param types for call-arg checking at call sites.
@@ -754,6 +790,41 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     tl_pti += 1
                 if tl_ptypes != ""
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
+                # Register as generic function if it declares type params.
+                if topfn.type_params.count() > 0
+                    mt.addGenericFn(topfn.name)
+            on Decl.namespace_ as ns_decl
+                # Register namespace types so member-access inference works.
+                # Dotted name "Outer.Inner" → create ClassTypes for each path
+                # prefix; set each component as a named field of its parent.
+                var ns_parts: List(str) = ns_decl.name.split(".")
+                var ns_cur: str = ""
+                var ns_pi: int = 0
+                while ns_pi < ns_parts.count()
+                    var ns_part: str = ns_parts.at(ns_pi)
+                    var ns_prev: str = ns_cur
+                    if ns_cur == ""
+                        ns_cur = ns_part
+                    else
+                        ns_cur = ns_cur + "." + ns_part
+                    if mt.classOf(ns_cur) == nil
+                        mt.addClass(ClassTypes(ns_cur))
+                    if ns_prev != ""
+                        var ns_par: ClassTypes = mt.classOf(ns_prev) to!
+                        ns_par.setField(ns_part, Type_.named(ns_cur))
+                    ns_pi += 1
+                # Register methods from the leaf namespace.
+                var ns_leaf: ClassTypes = mt.classOf(ns_cur) to!
+                addClassMembers(mt, ns_leaf, ns_decl.decls)
+                # Handle directly nested namespace decls (nested syntax).
+                for ns_d2 in ns_decl.decls
+                    if ns_d2 is Decl.namespace_ as inner_ns
+                        var inner_path: str = ns_cur + "." + inner_ns.name
+                        if mt.classOf(inner_path) == nil
+                            mt.addClass(ClassTypes(inner_path))
+                        ns_leaf.setField(inner_ns.name, Type_.named(inner_path))
+                        var inner_ct: ClassTypes = mt.classOf(inner_path) to!
+                        addClassMembers(mt, inner_ct, inner_ns.decls)
             else
                 pass
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
@@ -761,8 +832,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
         if decl is Decl.class_ as c
             if c.mixins.count() > 0
                 var maybe_ct: ClassTypes? = mt.classOf(c.name)
-                if maybe_ct != nil
-                    var class_ct: ClassTypes = maybe_ct to!
+                if maybe_ct as class_ct
                     for mixin_ref in c.mixins
                         if mixin_ref is TypeRef.named as nr
                             for dep in m.decls
@@ -962,6 +1032,31 @@ class InferCtx
                 return true
             return .dep_types.hasClass(bare)
         return false
+
+    def hasEnumAny(name: str): bool
+        if .module_types.hasEnum(name)
+            return true
+        if .dep_types.hasEnum(name)
+            return true
+        var bare: str = stripModulePrefix(name)
+        if bare != name
+            if .module_types.hasEnum(bare)
+                return true
+            return .dep_types.hasEnum(bare)
+        return false
+
+    def memberNamesForEnumAny(name: str): List(str)
+        if .module_types.hasEnum(name)
+            return .module_types.memberNamesForEnum(name)
+        if .dep_types.hasEnum(name)
+            return .dep_types.memberNamesForEnum(name)
+        var bare: str = stripModulePrefix(name)
+        if bare != name
+            if .module_types.hasEnum(bare)
+                return .module_types.memberNamesForEnum(bare)
+            if .dep_types.hasEnum(bare)
+                return .dep_types.memberNamesForEnum(bare)
+        return List(str)()
 
     # True if name is a type alias in this module or any dep.
     def isTypeAlias(name: str): bool
@@ -1187,6 +1282,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # inferExpr for the outer call.
             if ctx.module_types.hasClass(nm)
                 return Type_.named(nm)
+            # Enum type name used as a qualifier (e.g. `Color` in `Color.red`).
+            if ctx.hasEnumAny(nm)
+                return Type_.named(nm)
             # Implicit self-field: a bare ident inside a method that doesn't
             # resolve to a local can mean `self.field`. Look up field type
             # on the current class.
@@ -1210,6 +1308,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 else
                     pass
             if obj_t is Type_.named as tn
+                # Enum member access: Color.red → Type_.named("Color").
+                if ctx.hasEnumAny(tn)
+                    return Type_.named(tn)
                 var ft: Type_? = ctx.fieldTypeAny(tn, m.member)
                 if ft as ft_v
                     if ctx.module_types.isPrivateMember(tn, m.member)
@@ -1284,7 +1385,35 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)
                             return Type_.void_  # serve
-                    # ── Json static-method TC inference (intentionally absent) ──
+                        if bname == "Tcp"
+                            if mem.member == "connect"
+                                return Type_.optional(Type_.tcp_conn)
+                            return Type_.void_  # serve
+                        if bname == "Udp"
+                            if mem.member == "socket" or mem.member == "bind"
+                                return Type_.udp_socket
+                            return Type_.void_
+                        if bname == "Sqlite"
+                            if mem.member == "open"
+                                return Type_.optional(Type_.sqlite_db)
+                            return Type_.void_
+                        if bname == "Path"
+                            if mem.member == "isAbsolute"
+                                return Type_.bool_
+                            return Type_.string_  # join/basename/dirname/ext/extension/stem/absolute
+                        if bname == "Crypto"
+                            if mem.member == "encrypt"
+                                return Type_.string_
+                            return Type_.optional(Type_.string_)  # decrypt → ?str
+                        if bname == "Json"
+                            if mem.member == "object" or mem.member == "array"
+                                return Type_.json_value
+                            if mem.member == "parse"
+                                return Type_.optional(Type_.json_value)
+                            if mem.member == "stringify"
+                                return Type_.string_
+                            return Type_.unresolved
+                    # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
                     # are dispatched by codegen.zbr::genJsonCall (~line 6848);
@@ -1367,6 +1496,30 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                             if wsmname == "recv"
                                 return Type_.optional(Type_.string_)
+                        on Type_.tcp_conn
+                            var tcpmname: str = mem.member
+                            if tcpmname == "read" or tcpmname == "readLine" or tcpmname == "readBytes"
+                                return Type_.string_
+                            return Type_.void_  # write, close
+                        on Type_.udp_socket
+                            var udpmname: str = mem.member
+                            if udpmname == "recv"
+                                return Type_.string_
+                            return Type_.void_  # send, close
+                        on Type_.sqlite_db
+                            var sqmname: str = mem.member
+                            if sqmname == "query"
+                                return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
+                            return Type_.void_  # exec, begin, commit, rollback, close
+                        on Type_.sqlite_row
+                            var sqrmname: str = mem.member
+                            if sqrmname == "asInt" or sqrmname == "asBool"
+                                return Type_.int_
+                            if sqrmname == "asStr"
+                                return Type_.string_
+                            if sqrmname == "asFloat"
+                                return Type_.float_
+                            return Type_.unknown_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
                             if lmname == "at" or lmname == "fetch"
@@ -1387,6 +1540,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(chan_elem)
                             if cmname == "send" or cmname == "close"
                                 return Type_.void_
+                        on Type_.json_value
+                            var jmname: str = mem.member
+                            if jmname == "getStr" or jmname == "getObj"
+                                return Type_.string_
+                            if jmname == "getInt"
+                                return Type_.int_
+                            if jmname == "getFloat"
+                                return Type_.float_
+                            if jmname == "getBool"
+                                return Type_.bool_
+                            if jmname == "getList"
+                                return Type_.list_(Type_.json_value)
+                            if jmname == "put" or jmname == "putInt" or jmname == "putFloat" or jmname == "putBool"
+                                return Type_.void_
+                            if jmname == "append" or jmname == "appendInt" or jmname == "appendFloat" or jmname == "appendBool"
+                                return Type_.void_
+                            if jmname == "isNull" or jmname == "isObject" or jmname == "isArray"
+                                return Type_.bool_
+                            if jmname == "stringify"
+                                return Type_.string_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
                             if hmname == "fetch"
@@ -1428,6 +1601,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if gcname == "List" and gc.args.count() == 1
                             if gc.args.at(0).value is Expr.ident as tn
                                 return Type_.list_(typeFromName(tn.name))
+                        # Generic function call: identity(str)("hi") — the outer call's callee is
+                        # identity(str), a call of a generic fn with a type arg. Return type is the
+                        # function's declared return type with the type param substituted.
+                        # Simple single-type-param case: return typeFromName(type_arg).
+                        if ctx.module_types.hasGenericFn(gcname) or ctx.dep_types.hasGenericFn(gcname)
+                            if gc.args.count() == 1
+                                if gc.args.at(0).value is Expr.ident as targ
+                                    var subst_t: Type_ = typeFromName(targ.name)
+                                    if subst_t is not Type_.named
+                                        return subst_t
                     return Type_.unresolved
                 else
                     return Type_.unresolved
@@ -1664,6 +1847,25 @@ def isStrListCallExpr(e: Expr): bool
                 return true
     return false
 
+def isSqliteQueryCallExpr(e: Expr, ctx: InferCtx): bool
+    if e is Expr.call as cal
+        if cal.callee is Expr.member as mem
+            if mem.member == "query"
+                if mem.object is Expr.ident as id
+                    var ot: Type_ = ctx.localType(id.name)
+                    if ot is Type_.sqlite_db
+                        return true
+                if mem.object is Expr.call
+                    var nt: Type_ = inferExpr(mem.object, ctx)
+                    if nt is Type_.sqlite_db
+                        return true
+    # Indirect: var rows = db.query(...) — rows has type sqlite_row_list.
+    if e is Expr.ident as id2
+        var it: Type_ = ctx.localType(id2.name)
+        if it is Type_.sqlite_row_list
+            return true
+    return false
+
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -1740,6 +1942,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 loop_var_t = Type_.char_
             else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
                 loop_var_t = Type_.string_
+            else if fi.vars.count() == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
+                loop_var_t = Type_.sqlite_row
             else if fi.vars.count() == 1
                 # `for x in obj.field` where field: List(str) on a same-file/dep struct.
                 if fi.iter is Expr.member as iter_mem
@@ -1762,7 +1966,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkExpr(fnum.start, ctx)
             walkExpr(fnum.stop_, ctx)
             if fnum.step != nil
-                walkExpr(fnum.step to!, ctx)  # safe: nil checked above
+                walkExpr(fnum.step to!, ctx)
             ctx.bind(fnum.var_, Type_.int_)
             walkStmts(fnum.stmts, ctx)
         on Stmt.branch_ as sb
@@ -1793,11 +1997,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 walkStmts(sb_else, ctx)
         on Stmt.return_ as sr
             if sr.value != nil
-                walkExpr(sr.value to!, ctx)  # safe: nil checked above
+                walkExpr(sr.value to!, ctx)
         on Stmt.assert_ as sa
             walkExpr(sa.cond, ctx)
             if sa.message != nil
-                walkExpr(sa.message to!, ctx)  # safe: nil checked above
+                walkExpr(sa.message to!, ctx)
         on Stmt.assert_eq_ as sac
             walkExpr(sac.lhs, ctx)
             walkExpr(sac.rhs, ctx)
@@ -1822,10 +2026,10 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # when the declaration omits the type annotation.
             var t: Type_ = Type_.unknown_
             if dv.type_ != nil
-                t = typeFromRef(dv.type_ to!)  # safe: nil checked above
+                t = typeFromRef(dv.type_ to!)
             else
                 if dv.init_expr != nil
-                    t = inferExpr(dv.init_expr to!, ctx)  # safe: nil checked above
+                    t = inferExpr(dv.init_expr to!, ctx)
             ctx.bind(dv.name, t)
         on Stmt.expr as e
             walkExpr(e, ctx)
@@ -1834,11 +2038,33 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.with_ as sw2
             walkExpr(sw2.target, ctx)
             walkStmts(sw2.stmts, ctx)
+        on Stmt.in_scope as si2
+            walkExpr(si2.expr, ctx)
+            var scope_t: Type_ = inferExpr(si2.expr, ctx)
+            branch scope_t
+                on Type_.optional
+                    ctx.addErr(ctx.file, si2.span.line, si2.span.col, "expression has optional type — use 'using expr!' to unwrap before 'using'")
+                on Type_.named as cname
+                    if ctx.module_types.hasClass(cname)
+                        var has_begin: bool = ctx.module_types.methodReturn(cname, "begin") != nil
+                        var has_end: bool = ctx.module_types.methodReturn(cname, "end") != nil
+                        if not has_begin or not has_end
+                            var missing: str = ""
+                            if not has_begin and not has_end
+                                missing = "begin and end"
+                            else if not has_begin
+                                missing = "begin"
+                            else
+                                missing = "end"
+                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'using' must define 'def begin()' and 'def end()': '" + missing + "' is missing")
+                else
+                    pass
+            walkStmts(si2.stmts, ctx)
         on Stmt.raise_ as sra
             if sra.message != nil
-                walkExpr(sra.message to!, ctx)  # safe: nil checked above
+                walkExpr(sra.message to!, ctx)
             if sra.details != nil
-                walkExpr(sra.details to!, ctx)  # safe: nil checked above
+                walkExpr(sra.details to!, ctx)
         on Stmt.try_catch as stc
             walkStmts(stc.stmts, ctx)
             for cc in stc.clauses
@@ -2051,10 +2277,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # Bind the local so later stmts in the same block can infer it.
                 var bt: Type_ = Type_.unknown_
                 if dv.type_ != nil
-                    bt = typeFromRef(dv.type_ to!)  # safe: nil checked above
+                    bt = typeFromRef(dv.type_ to!)
                 else
                     if dv.init_expr != nil
-                        bt = inferExpr(dv.init_expr to!, ctx)  # safe: nil checked above
+                        bt = inferExpr(dv.init_expr to!, ctx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
                 checkStmts(si.then_stmts, file, ctx)
@@ -2086,6 +2312,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallExpr(stmt_call, file, 0, ctx)
             on Stmt.with_ as sw
                 checkStmts(sw.stmts, file, ctx)
+            on Stmt.in_scope as si
+                checkStmts(si.stmts, file, ctx)
             on Stmt.guard_ as sg
                 checkStmts(sg.else_stmts, file, ctx)
             on Stmt.allocate_ as sal
@@ -2118,8 +2346,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                             if not found
                                 ctx.addErr(file, sb.span.line, 0, "branch on '" + sb_tname + "' does not cover variant '" + vname + "' (add 'on " + sb_tname + "." + vname + "' or an 'else' clause)")
                 # Enum exhaustiveness error: no else, not all members covered.
-                if sb.else_ == nil and sb_tname != "" and ctx.module_types.hasEnum(sb_tname)
-                    var sb_mems: List(str) = ctx.module_types.memberNamesForEnum(sb_tname)
+                if sb.else_ == nil and sb_tname != "" and ctx.hasEnumAny(sb_tname)
+                    var sb_mems: List(str) = ctx.memberNamesForEnumAny(sb_tname)
                     if sb_mems.count() > 0
                         var sb_mcvd: List(str) = List(str)()
                         for bc in sb.cases
@@ -2160,11 +2388,11 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             if dm.stmts as dm_stmts
                 var saved_class: str = ctx.current_class
                 if dm.return_type != nil
-                    ctx.withReturnType(typeFromRef(dm.return_type to!))  # safe: nil checked above
+                    ctx.withReturnType(typeFromRef(dm.return_type to!))
                 for p in dm.params
                     var pt: Type_ = Type_.unknown_
                     if p.type_ != nil
-                        pt = typeFromRef(p.type_ to!)  # safe: nil checked above
+                        pt = typeFromRef(p.type_ to!)
                     ctx.bind(p.name, pt)
                 checkStmts(dm_stmts, file, ctx)
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)

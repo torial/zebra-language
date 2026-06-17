@@ -1,0 +1,12 @@
+union Val
+    int_val: int
+    str_val: str
+
+struct Container
+    var opt_val: ^Val?
+    cue init(opt_val: ^Val?)
+        .opt_val = opt_val
+
+def makeContainer(n: int): Container
+    var v = Val.int_val(n)
+    return Container(v)

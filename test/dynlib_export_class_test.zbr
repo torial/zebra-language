@@ -1,0 +1,10 @@
+interface IGreeter
+    def greet(name: str): str
+
+@export("greeter")
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name
+
+def main()
+    print "dynlib_export_class OK"

@@ -79,6 +79,7 @@ pub fn tokenizeWithDiag(
         .alloc = allocator,
     };
     errdefer t.out.deinit(allocator);
+    defer t.lambda_stack.deinit(allocator);
     t.run() catch |e| {
         if (out_diag) |d| d.* = .{
             .line = if (t.err_line != 0) t.err_line else t.line,
@@ -125,6 +126,17 @@ const Tokenizer = struct {
     // ── Lambda-in-call-arg state machine ──────────────────────────────────
     // Tracks `sortBy(def(a, b)\n    body\n)` so that EOL/INDENT/DEDENT are
     // emitted inside the lambda body even though paren_depth > 0.
+    //
+    // A stack is used instead of flat fields so that nested lambdas passed as
+    // call arguments work correctly:
+    //   outer(def(a)
+    //       inner(def(b)
+    //           b + 1
+    //       )
+    //       a + 1
+    //   )
+    // Each entry on lambda_stack is the indent_depth at which that lambda body
+    // started.  The stack grows on lambda-body-open and shrinks on dedent-out.
 
     /// True while scanning the parameter list of a `def(` that appears inside
     /// an outer call's argument list.
@@ -134,10 +146,9 @@ const Tokenizer = struct {
     /// True after the lambda's `)` closes (and optional `as T`) but before
     /// the EOL that starts its body.  Cleared when that EOL is consumed.
     after_lambda_params: bool = false,
-    /// True while inside the indented body of a statement-body lambda.
-    lambda_body_active: bool = false,
-    /// indent_depth when the lambda body started; used to detect dedent-out.
-    lambda_indent_level: u32 = 0,
+    /// Stack of indent_depth values, one per active statement-body lambda.
+    /// Non-empty iff we are currently inside at least one lambda body.
+    lambda_stack: std.ArrayListUnmanaged(u32) = .empty,
 
     // ── Ensure-block context-sensitive keyword tracking ───────────────────
     // `old` and `result` are only keywords inside an `ensure` block body.
@@ -195,12 +206,11 @@ const Tokenizer = struct {
                         const ln = self.line;
                         const cl = self.col();
                         self.advanceNewline();
-                        if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_body_active) {
+                        if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_stack.items.len > 0) {
                             try self.emit(.eol, "\n", ln, cl);
                             if (self.after_lambda_params) {
                                 self.after_lambda_params = false;
-                                self.lambda_body_active = true;
-                                self.lambda_indent_level = self.indent_depth;
+                                try self.lambda_stack.append(self.alloc, self.indent_depth);
                             }
                         }
                         at_line_start = true;
@@ -215,6 +225,17 @@ const Tokenizer = struct {
                     },
                     .comment_only => {
                         // Skip the whole line silently.
+                        while (self.pos < self.src.len and self.src[self.pos] != '\n') : (self.pos += 1) {}
+                        if (self.pos < self.src.len) self.advanceNewline();
+                        at_line_start = true;
+                        continue;
+                    },
+                    .block_comment_only => {
+                        // Block comment occupies the whole line (possibly spanning multiple lines).
+                        // Consume indentation without emitting indent/dedent, scan the comment,
+                        // then advance past the newline without emitting eol.
+                        while (self.pos < self.src.len and (self.src[self.pos] == ' ' or self.src[self.pos] == '\t')) : (self.pos += 1) {}
+                        try self.scanBlockComment();
                         while (self.pos < self.src.len and self.src[self.pos] != '\n') : (self.pos += 1) {}
                         if (self.pos < self.src.len) self.advanceNewline();
                         at_line_start = true;
@@ -237,12 +258,11 @@ const Tokenizer = struct {
                 self.advanceNewline();
                 // Inside balanced parens, newlines are not significant unless
                 // we're in a statement-body lambda (after_lambda_params / lambda_body_active).
-                if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_body_active) {
+                if (self.paren_depth == 0 or self.after_lambda_params or self.lambda_stack.items.len > 0) {
                     try self.emit(.eol, "\n", ln, cl);
                     if (self.after_lambda_params) {
                         self.after_lambda_params = false;
-                        self.lambda_body_active = true;
-                        self.lambda_indent_level = self.indent_depth;
+                        try self.lambda_stack.append(self.alloc, self.indent_depth);
                     }
                 }
                 at_line_start = true;
@@ -280,7 +300,7 @@ const Tokenizer = struct {
         try self.emit(.eof, "", eof_ln, eof_col);
     }
 
-    const LineKind = enum { empty, whitespace_only, comment_only, has_content };
+    const LineKind = enum { empty, whitespace_only, comment_only, block_comment_only, has_content };
 
     /// Peek at the current line to decide how to handle it without advancing.
     fn classifyLine(self: *const Tokenizer) LineKind {
@@ -294,6 +314,31 @@ const Tokenizer = struct {
             return if (has_ws) .whitespace_only else .empty;
         }
         if (self.src[i] == '#') return .comment_only;
+        // Block comment starting the line: scan ahead to decide if it covers the whole line.
+        // If yes (comment-only line), suppress indent/dedent/eol for the line.
+        // If no (code follows after #/), fall through to has_content.
+        if (self.src[i] == '/' and i + 1 < self.src.len and self.src[i + 1] == '#') {
+            var depth: u32 = 0;
+            var j = i;
+            while (j < self.src.len and self.src[j] != '\n') {
+                if (self.src[j] == '/' and j + 1 < self.src.len and self.src[j + 1] == '#') {
+                    depth += 1; j += 2;
+                } else if (self.src[j] == '#' and j + 1 < self.src.len and self.src[j + 1] == '/') {
+                    if (depth > 0) depth -= 1;
+                    j += 2;
+                    if (depth == 0) {
+                        // Block comment closed on this line — check for content after.
+                        while (j < self.src.len and (self.src[j] == ' ' or self.src[j] == '\t')) j += 1;
+                        if (j >= self.src.len or self.src[j] == '\n' or self.src[j] == '#') return .block_comment_only;
+                        return .has_content;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            // Block comment did not close on this line — spans multiple lines.
+            return .block_comment_only;
+        }
         return .has_content;
     }
 
@@ -317,7 +362,7 @@ const Tokenizer = struct {
         // Inside balanced parentheses, indentation is not significant —
         // suppress INDENT/DEDENT emission and return after consuming whitespace.
         // Exception: while inside a statement-body lambda, emit normally.
-        if (self.paren_depth > 0 and !self.lambda_body_active) return;
+        if (self.paren_depth > 0 and self.lambda_stack.items.len == 0) return;
 
         const level: u32 = if (spaces > 0) blk: {
             if (spaces % 4 != 0) return error.SpaceIndentNotMultipleOfFour;
@@ -346,9 +391,10 @@ const Tokenizer = struct {
             self.ensure_base_depth = 0;
         }
 
-        // Detect dedent back to or below the lambda's start level — body is done.
-        if (self.lambda_body_active and self.indent_depth <= self.lambda_indent_level) {
-            self.lambda_body_active = false;
+        // Pop any lambda stack frames whose body has ended (dedented to or below start level).
+        while (self.lambda_stack.items.len > 0 and
+               self.indent_depth <= self.lambda_stack.getLast()) {
+            _ = self.lambda_stack.pop();
         }
     }
 
@@ -420,15 +466,7 @@ const Tokenizer = struct {
             self.pos += 1;  // consume @
             const id_start = self.pos;
             while (self.pos < self.src.len and isIdentContinue(self.src[self.pos])) : (self.pos += 1) {}
-            const word = self.src[id_start..self.pos];
-            // @keyword escape hatch: @body, @init, @class, etc.
-            // If the word after @ is a reserved keyword, emit it as a plain identifier
-            // so it can be used as a field name, variable name, or parameter name.
-            if (tk.keyword_map.get(word) != null) {
-                try self.emit(.id, word, ln, cl);
-                return;
-            }
-            // Otherwise emit as at_id (e.g. @TypeName for future attributes).
+            // Emit as at_id (@TypeName, @export, @reflectable, any future attribute).
             try self.emit(.at_id, self.src[id_start - 1 .. self.pos], ln, cl);
             return;
         }
@@ -1140,6 +1178,76 @@ test "lambda in call arg: multi-statement body" {
             .kw_return, .kw_false, .eol,
             .dedent,
             .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: nested lambda as inner arg" {
+    // outer(def(a)\n    inner(def(b)\n        b + 1\n    )\n    a + 1\n)
+    // inner( is an open_call (id merged with (); outer and inner lambda stacks coexist
+    try expectKinds(
+        "outer(def(a)\n    inner(def(b)\n        b + 1\n    )\n    a + 1\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .rparen,
+            .eol,
+            .indent,
+            .open_call,                                          // inner(
+            .kw_def, .lparen, .id, .rparen,
+            .eol,
+            .indent, .id, .plus, .integer_lit, .eol, .dedent,
+            .rparen,
+            .eol,
+            .id, .plus, .integer_lit, .eol,                     // a + 1 in outer body
+            .dedent,
+            .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: two sibling lambdas" {
+    // f(def(a)\n    a\n, def(b)\n    b\n)
+    try expectKinds(
+        "f(def(a)\n    a\n, def(b)\n    b\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .id, .rparen,
+            .eol,
+            .indent, .id, .eol, .dedent,
+            .comma,
+            .kw_def, .lparen, .id, .rparen,
+            .eol,
+            .indent, .id, .eol, .dedent,
+            .rparen,
+            .eol,
+        },
+    );
+}
+
+test "lambda in call arg: nested lambda inside for loop body" {
+    // outer(def()\n    for x in items\n        inner(def()\n            body\n        )\n)
+    // The outer close ) is at the same level as outer(, which is 2 DEDENTs down
+    // from the for body. The lambda_stack must survive the for body DEDENT.
+    try expectKinds(
+        "outer(def()\n    for x in items\n        inner(def()\n            body\n        )\n)",
+        &.{
+            .open_call,
+            .kw_def, .lparen, .rparen,
+            .eol,
+            .indent,                                    // enter outer lambda body
+            .kw_for, .id, .kw_in, .id, .eol,           // for x in items
+            .indent,                                    // enter for body
+            .open_call,                                 // inner(
+            .kw_def, .lparen, .rparen,
+            .eol,
+            .indent, .id, .eol, .dedent,               // inner lambda body
+            .rparen,                                    // closes inner()
+            .eol,
+            .dedent,                                    // exit for body
+            .dedent,                                    // exit outer lambda body
+            .rparen,                                    // closes outer()
             .eol,
         },
     );

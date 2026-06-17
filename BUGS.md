@@ -1,6 +1,161 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-121. Next new bug: BUG-122.**
+**Last bug number generated: BUG-129. Next new bug: BUG-130.**
+
+---
+
+## BUG-125: selfhost --emit-zig user-script mode emits cross-module union ctors as tag-calls
+
+**Severity:** medium (blocks user scripts from constructing ECS Components directly)
+**Status:** FIXED 2026-06-09 — selfhost now honors `--module-path`; deps found
+there are parsed for types only (not emitted), so exposed cross-module unions
+classify correctly.  Root cause: `compileDep_use` only searched the source's
+own directory, so `use ecs` from `game/scripts/` never parsed `zbra/ecs.zbr`
+and `dep_types` never learned `Component` is a union.  Fix: `MultiCompiler`
+gained a `module_path` field + `scanDepForTypes` (parse + `populateModuleTypes`,
+no emit), wired through `--module-path`.  The bootstrap already handled this;
+this brought the selfhost to parity.  `tools/wire_script.py` now passes
+`--module-path <engine>/zbra`.  Verified: `Component.anchored(true)` →
+`Component{ .anchored = true }`.
+
+**Follow-up 2026-06-09:** `scanDepForTypes` also now registers the dep's
+class names in `dep_class_names`, so a script that stores a cross-module
+class instance in a field or capture (e.g. `var t: Vector3Tween`) emits the
+field/param as `*T` (reference type) instead of by-value — without this,
+storing the constructor result (`*Vector3Tween`) into a value-typed field is
+a `*T`-vs-`T` mismatch.  Consequence: scripts compiled with `--module-path`
+now take their class-typed `main(...)` params by pointer (`*Instance`,
+`*RunService`), so the host dispatch passes `inst`/`run` directly rather than
+`inst.*`/`run.*`.  Pre-`--module-path` scripts (value params) are unaffected.
+
+**Symptom:** In a `.zbr` file under `game/scripts/` compiled via `zebra.exe --emit-zig`, calls of the form `Component.transform(cf)` (where `Component` is a cross-module union imported via `use ecs exposing Component`) emit literally as `Component.transform(cf)` in Zig — which the Zig compiler rejects with:
+
+```
+error: type '@typeInfo(ecs.Component).@"union".tag_type.?' not a function
+```
+
+The correct emit, observed for the SAME pattern in stdlib `.zbr` files (`zbra/physics.zbr`, `zbra/humanoid.zbr` — both `use ecs exposing World, Component`), is `Component{ .transform = cf }`.
+
+**Repro (in `C:\Projects\GameEngine`):**
+```zebra
+# game/scripts/repro.zbr
+use ecs exposing Component, World
+
+def main(world: World)
+    var cf = ...
+    world.addComponent(eid, Component.transform(cf))   # → broken Zig in --emit-zig
+```
+
+Failure persists across: nested call args, ident-bound vars, staged locals, and helper-wrapped return statements. The discriminator is *where the .zbr lives* (script vs stdlib), not the syntactic shape.
+
+**Workaround:** Hide the union ctor behind a stdlib method. See `zbra/workspace.zbr`'s `spawnBox` / `setEntityPosition` (and `zbra/workspace.zig` hand-impl) for the pattern used by `game/scripts/orbit_follower.zbr`.
+
+**Discovered:** OrbitFollower case study (4th hand-ported script), 2026-06-09.
+
+---
+
+## BUG-126: Gap 1 closure-via-sig thunk uses per-call-site state slot (last-wins)
+
+**Severity:** medium (blocks two scene instances of the same script that share a `connect()` call site)
+**Status:** FIXED 2026-06-09 — replaced the single module-level state slot per
+call site with a **trampoline pool** of K=64 (state slot, thunk fn) pairs.
+Each connection reached at a call site grabs the next free slot via a
+monotonic `_zbr_next_N` counter and is handed a distinct `_zbr_thunks_N[slot]`
+fn-pointer bound to its own `_zbr_state_N[slot]`.  A bare Zig fn-pointer
+carries no context, so K distinct code addresses are fundamentally required;
+the pool bounds concurrent connections at one call site.  Overflow (>K live
+connections through one source line) panics with a clear message rather than
+silently dropping earlier connections (the old last-wins behaviour).  Fixed in
+both `src/CodeGen.zig` (flushPendingThunks + emitCallWithClosureThunks) and
+`selfhost/codegen.zbr`; round-trip clean.  Verified: the OrbitFollower
+two-instance scene now ticks Follower1 AND Follower2 independently (was
+Follower2 only).  **Remaining limitation:** `_zbr_next_N` is monotonic, so
+connect/disconnect churn leaks slots; and K is a hard ceiling.  A truly
+unbounded fix needs the `sig` ABI to carry a context pointer (fat pointer) —
+deferred until a use case needs >64 live connections or dynamic disconnect.
+
+**Symptom:** Each call site that connects a closure to a `sig`-typed signal handler synthesizes a single module-level state cell (`_zbr_state_N: ?*anyopaque`). When the same `connect()` call is reached twice in one program execution (e.g. two scene instances of the same script), the second call overwrites the cell. The first closure is orphaned — its `Heartbeat`/`RenderStepped` handler never fires again, even though the connection appears successful.
+
+**Repro (in `C:\Projects\GameEngine`):** `game/scripts/orbit_follower.zbr` loaded twice as `Follower1` and `Follower2` in `demo_scripts.zbr-scene`. Both `[orbit_follower:FollowerN] connected` messages print; only Follower2's tick lines appear thereafter. Confirmed visually: Follower1's spawned cube sits stationary at its initial position; Follower2's cube orbits.
+
+**Fix direction:** Have `signal.connect(handler)` return a connection ID and have the thunk store a *map* of state cells keyed by ID, rather than a single slot per call site. Existing single-subscriber Roblox-style code stays correct; multi-subscriber works.
+
+**Discovered:** OrbitFollower case study, 2026-06-09. Flagged as unverified concern in the TimerTest case study (`docs/TIMER_TEST_CASE_STUDY.md`); empirically falsified by the OrbitFollower two-instance scene.
+
+---
+
+## BUG-127: selfhost emits negative-literal `var` initializer without type annotation
+
+**Severity:** low (annotation workaround is trivial)
+**Status:** FIXED 2026-06-09 — `genLocalVar`'s literal-shape annotation branch
+now handles `Expr.unary` (neg of int/float literal), emitting `: i64`/`: f64`
+like the bare-literal case.  Used `branch un.operand` (not `is`) so the `^Expr`
+deref round-trips identically under bootstrap and selfhost.  Verified:
+`var a = -6.0` → `var a: f64 = (-6.0);`.
+
+**Symptom:**
+```zebra
+var x = -6.0   # emits: var x = (-6.0);  → Zig: comptime_float not const/comptime
+var y = 0.0    # emits: var y: f64 = 0.0; (correct)
+```
+
+Positive literal initializers widen to `f64`; negative literals (unary minus) emit as a bare comptime expression that Zig rejects when the binding is `var` rather than `const`.
+
+**Workaround:** Annotate explicitly: `var x: float = -6.0`.
+
+**Discovered:** OrbitFollower case study, 2026-06-09.
+
+---
+
+## BUG-128: Gap 1 thunk path over-applies to `sys.go` / `ThreadPool.submit`
+
+**Severity:** high (broke two shipped 1.0 concurrency features — `Chan`+`sys.go`, `ThreadPool` — for closure arguments, in *both* compilers)
+**Status:** FIXED 2026-06-16 — `genCall`'s Gap-1 gate routed *any* call with a
+closure argument into `emitCallWithClosureThunks`, before the `sys.go`
+(`_sys_go`) and `ThreadPool.submit` handlers could run.  Those consumers take
+the closure *struct* directly via `anytype` dispatch, but the thunk path handed
+them a bare fn-pointer and emitted the callee verbatim (`sys.go(...)` →
+undeclared `sys`; `pool.submit(thunk)` → anon-struct type-identity mismatch).
+
+**Root cause:** introduced by BUG-126 (commit 48a3aad).  The Gap-1 thunk exists
+only to satisfy bare `sig` fn-pointer parameters, but the gate never checked
+that — it fired on the mere presence of a closure arg.
+
+**Fix:** a *negative* gate (`callNeedsClosureThunks` /
+`isStdlibClosureStructConsumer` in both `src/CodeGen.zig` and
+`selfhost/codegen.zbr`): thunk every closure arg EXCEPT those passed to the two
+stdlib closure-struct consumers (`sys.go`, `<pool: ThreadPool>.submit`).  In
+Zebra *user* code a closure value can only be typed through a `sig` param (no
+user-writable `anytype`), so this never un-thunks the cross-module `sig` case
+(`Signal.connect`) that Gap 1 exists for — verified with an isolated
+cross-module repro (`evt.connect(closure)` → `evt.connect(_zbr_thunks_1[...])`).
+
+**Discovered:** WIP-branch merge gate (`chan_thread_test` + `thread_pool_test`
+smoke failures), 2026-06-16.
+
+---
+
+## BUG-129: bare `Atomic.add(...)` statement misses the `_ =` discard (bootstrap TC)
+
+**Severity:** medium (any `Atomic(int).add/sub/swap/load` used as a bare
+statement fails to compile under the bootstrap compiler — Zig "value of type
+i64 ignored")
+**Status:** FIXED 2026-06-16 — pre-existing, independent of BUG-128 (fails even
+at top level, not just in closures).  `src/TypeChecker.zig` had no `Atomic`
+inference, so `counter.add(1)` typed as `.unknown`, and the CodeGen discard rule
+(`t != .void_ and t != .unknown`) skipped the `_ =`.  `atomic_test` only passes
+because it captures every non-void return (`var old: int = counter.add(3)`).
+
+**Fix:** `atomicElemType` + an Atomic arm in `inferCall` (`add/sub/swap/load` →
+element type `T`, `cas` → bool, `store` → void).  The selfhost already handled
+this in codegen via `atomic_locals` (the `inferExpr`-can't-see-Atomic
+workaround); its method set was widened to `{add,sub,swap,load,cas}` to match
+the bootstrap so both compilers emit the discard identically.
+
+**Discovered:** unmasked by the BUG-128 fix while greening `thread_pool_test`,
+2026-06-16.
+
+---
 
 > BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
 
@@ -757,7 +912,7 @@ Bootstrap verified: `zig build update-selfhost` + smoke 117/117 passing + bootst
 ### BUG-122: Selfhost codegen — `opt_ptr_field_bindings` not seeded for local variables with inferred types
 
 - **Severity:** Low (workaround exists; only hits when a local var holds a struct with `^T?` fields and those fields are accessed via `to!`)
-- **Status:** Open — sub-problem 1 (explicit annotation) easy; sub-problem 2 (inferred type) deferred
+- **Status:** Fixed (2026-05-26) — both sub-problems resolved via `infer_ctx` in `genLocalVar`
 
 #### Background
 
@@ -836,4 +991,53 @@ Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_dec
 
 ---
 
-*Last updated: 2026-05-18 — BUG-115 closed (visibility keywords shipped 2026-05-14); BUG-107 verified (halt confirmed in all 3 entry points); BUG-119 fixed (list_field_names index in ModuleTypes); BUG-106 TC check added (cast syntax not yet parseable); BUG-122 filed (opt_ptr_field_bindings gap for local vars with inferred types)*
+### BUG-123: Generated `pub fn main(init: std.process.Init)` shadows user-defined `init` function
+
+- **Status:** Fixed (2026-05-21)
+- **Symptom:** An MVU program with `def init(): Model` would fail to compile. Inside the generated `main`, the parameter `init: std.process.Init` shadowed the user's top-level `init` function.
+- **Fix:** Renamed the parameter from `init` to `_zinit` in `genMain` in `src/CodeGen.zig` (4 sites) and matching locations in `selfhost/codegen.zbr` (4 sites). Both compilers regenerated. Bootstrap 5/5.
+
+---
+
+### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
+
+- **Severity:** Low (only affects bootstrap compiler for value-typed union/struct `^T?` constructor args; selfhost is correct)
+- **Status:** Fixed (2026-05-26) — `genBoxedArgExpr` uses `payload` (nilable-stripped) instead of `inner` for `create()` type; same for same-module union-variant boxing path
+
+#### Symptom
+
+When the bootstrap compiler (`zebra-bootstrap.exe`, the Zig-implemented compiler) generates a constructor call where a `^T?` parameter receives a value-typed union or struct (not a class), it wraps it as `*?T` instead of `?*T`.
+
+Example: `Container(v)` where `Container.opt_val: ^Val?` and `Val` is a union type emits something like:
+
+```zig
+// Bootstrap (wrong)
+const _bp = _allocator.create(?Val) catch @panic("OOM");
+_bp.* = v;  // _bp is *?Val but Container wants ?*Val
+```
+
+instead of the correct selfhost output:
+
+```zig
+// Selfhost (correct)
+const _bv = v;
+const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM");
+_bp.* = _bv;  // _bp is *Val, then break gives ?*Val
+```
+
+#### Root cause
+
+`src/CodeGen.zig` boxing logic for `^T?` arguments. When T is a value type (union, struct, primitive), the bootstrap compiler wraps the whole optional type instead of just T, producing `*?T`. The selfhost `_bx0:` labeled-block approach avoids this by creating a pointer to the concrete value first.
+
+#### Files to change when fixing
+
+- `src/CodeGen.zig` — fix boxing for `^T?` arguments when T is value-typed; use `@TypeOf(value)` or strip the `?` before `create()`
+- `src/TypeChecker.zig` — may need `isValueType()` helper to distinguish class (heap-allocated) from value-typed (union/struct/primitive)
+
+#### Discovered
+
+2026-05-26 during BUG-122 testing: `val_test.zbr` (`val_lib.Val` union in `Container.opt_val: ^Val?`) compiled incorrectly through bootstrap.
+
+---
+
+*Last updated: 2026-05-26 — BUG-122 fixed (opt_ptr_field_bindings seeded for local vars); BUG-124 fixed (^T? boxing uses payload not inner); multi-error parse recovery added to both src/ and selfhost/ compilers*

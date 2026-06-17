@@ -19,7 +19,7 @@
 //!   Each comment appears on its own line immediately before the
 //!   generated Zig statement it annotates.  Example:
 //!     // zbr:selfhost\main.zbr:60
-//!     self.visited = std.ArrayList([]const u8){};
+//!     self.visited = std.ArrayList([]const u8).empty;
 //!
 //! Prerequisites: lldb-dap (or lldb-vscode) must be on PATH.
 //!   Windows: winget install LLVM.LLVM (then add llvm/bin to PATH)
@@ -28,6 +28,8 @@
 
 const std     = @import("std");
 const builtin = @import("builtin");
+
+var _io: std.Io = undefined;
 
 // ── Source map ────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ pub const SourceMap = struct {
         var zig_line: u32 = 1;
         var lines = std.mem.splitScalar(u8, zig_src, '\n');
         while (lines.next()) |line| : (zig_line += 1) {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            const trimmed = std.mem.trimStart(u8, line, " \t");
             if (!std.mem.startsWith(u8, trimmed, "// zbr:")) continue;
             const payload = trimmed["// zbr:".len..];
             // Use LAST colon to split — Windows paths contain colons: C:\foo.zbr:10
@@ -93,7 +95,7 @@ pub const SourceMap = struct {
                 self.alloc.free(key_norm); // key already owned by map
             } else {
                 gop.key_ptr.* = key_norm;
-                gop.value_ptr.* = .{};
+                gop.value_ptr.* = .empty;
             }
             // Store zig_line + 1: the code line after the comment, so the
             // breakpoint lands on an executable line, not a comment.
@@ -174,21 +176,69 @@ fn normalizeSepBuf(buf: []u8, path: []const u8) []const u8 {
     return buf[0..len];
 }
 
+// ── DAP reader/writer vtable types ────────────────────────────────────────────
+//
+// Replaces std.io.AnyReader / std.io.AnyWriter (removed in Zig 0.16).
+// Both types use the same vtable pattern: context pointer + function pointer.
+
+const DapReader = struct {
+    context: *anyopaque,
+    readFn:  *const fn (*anyopaque, []u8) anyerror!usize,
+
+    fn readByte(self: DapReader) !u8 {
+        var b: [1]u8 = undefined;
+        const n = try self.readFn(self.context, &b);
+        if (n == 0) return error.EndOfStream;
+        return b[0];
+    }
+
+    fn readNoEof(self: DapReader, buf: []u8) !void {
+        var pos: usize = 0;
+        while (pos < buf.len) {
+            const n = try self.readFn(self.context, buf[pos..]);
+            if (n == 0) return error.EndOfStream;
+            pos += n;
+        }
+    }
+};
+
+const DapWriter = struct {
+    context: *anyopaque,
+    writeFn: *const fn (*anyopaque, []const u8) anyerror!usize,
+
+    fn writeAll(self: DapWriter, bytes: []const u8) !void {
+        var pos: usize = 0;
+        while (pos < bytes.len) {
+            pos += try self.writeFn(self.context, bytes[pos..]);
+        }
+    }
+
+    fn writeByte(self: DapWriter, b: u8) !void {
+        return self.writeAll(&.{b});
+    }
+
+    fn print(self: DapWriter, comptime fmt: []const u8, args: anytype) !void {
+        var buf: [512]u8 = undefined;
+        const s = try std.fmt.bufPrint(&buf, fmt, args);
+        return self.writeAll(s);
+    }
+};
+
 // ── DAP transport ─────────────────────────────────────────────────────────────
 
 const DapTransport = struct {
-    reader: std.io.AnyReader,
-    writer: std.io.AnyWriter,
-    mu:     std.Thread.Mutex,
+    reader: DapReader,
+    writer: DapWriter,
+    mu:     std.Io.Mutex,
 
-    fn init(r: std.io.AnyReader, w: std.io.AnyWriter) DapTransport {
-        return .{ .reader = r, .writer = w, .mu = .{} };
+    fn init(r: DapReader, w: DapWriter) DapTransport {
+        return .{ .reader = r, .writer = w, .mu = std.Io.Mutex.init };
     }
 
     /// Read one DAP message body.  Caller owns the returned slice.
     fn readMessage(self: *DapTransport, alloc: std.mem.Allocator) ![]u8 {
         var content_length: usize = 0;
-        var line_buf: std.ArrayListUnmanaged(u8) = .{};
+        var line_buf: std.ArrayListUnmanaged(u8) = .empty;
         defer line_buf.deinit(alloc);
 
         while (true) {
@@ -200,7 +250,7 @@ const DapTransport = struct {
             }
             if (line_buf.items.len == 0) break;
             if (std.ascii.startsWithIgnoreCase(line_buf.items, "Content-Length:")) {
-                const val = std.mem.trimLeft(u8, line_buf.items["Content-Length:".len..], " \t");
+                const val = std.mem.trimStart(u8, line_buf.items["Content-Length:".len..], " \t");
                 content_length = std.fmt.parseInt(usize, val, 10) catch return error.BadContentLength;
             }
         }
@@ -214,37 +264,79 @@ const DapTransport = struct {
 
     /// Write one DAP message body, thread-safe.
     fn writeMessage(self: *DapTransport, body: []const u8) !void {
-        self.mu.lock();
-        defer self.mu.unlock();
+        self.mu.lockUncancelable(_io);
+        defer self.mu.unlock(_io);
         try self.writer.print("Content-Length: {d}\r\n\r\n", .{body.len});
         try self.writer.writeAll(body);
     }
 };
 
 // ── TCP stream wrapper ────────────────────────────────────────────────────────
-
-// Wraps std.net.Stream to provide std.io.AnyReader / AnyWriter.
+//
+// Wraps std.Io.net.Stream to provide DapReader / DapWriter.
 // Must be stored at a stable address — do not move it after creating
-// readers/writers from it (the AnyReader/AnyWriter hold a pointer to self).
+// readers/writers from it (the DapReader/DapWriter hold a pointer to self).
 const NetStreamWrapper = struct {
-    stream: std.net.Stream,
+    stream: std.Io.net.Stream,
 
-    fn anyReader(self: *NetStreamWrapper) std.io.AnyReader {
+    fn dapReader(self: *NetStreamWrapper) DapReader {
         return .{ .context = self, .readFn = readFn };
     }
 
-    fn anyWriter(self: *NetStreamWrapper) std.io.AnyWriter {
+    fn dapWriter(self: *NetStreamWrapper) DapWriter {
         return .{ .context = self, .writeFn = writeFn };
     }
 
-    fn readFn(context: *const anyopaque, buffer: []u8) anyerror!usize {
-        const self: *const NetStreamWrapper = @alignCast(@ptrCast(context));
-        return self.stream.read(buffer);
+    fn readFn(context: *anyopaque, buffer: []u8) anyerror!usize {
+        const self: *NetStreamWrapper = @alignCast(@ptrCast(context));
+        // Zero-length internal buffer: reads go directly to socket without read-ahead.
+        var no_buf: [0]u8 = .{};
+        var rdr = self.stream.reader(_io, &no_buf);
+        return rdr.interface.readSliceShort(buffer) catch |e| return e;
     }
 
-    fn writeFn(context: *const anyopaque, bytes: []const u8) anyerror!usize {
-        const self: *const NetStreamWrapper = @alignCast(@ptrCast(context));
-        return self.stream.write(bytes);
+    fn writeFn(context: *anyopaque, bytes: []const u8) anyerror!usize {
+        const self: *NetStreamWrapper = @alignCast(@ptrCast(context));
+        var no_buf: [0]u8 = .{};
+        var wrt = self.stream.writer(_io, &no_buf);
+        try wrt.interface.writeAll(bytes);
+        return bytes.len;
+    }
+};
+
+// ── File I/O wrappers (for stdio and child-pipe mode) ─────────────────────────
+//
+// Provide DapReader / DapWriter backed by std.Io.File (stdin, stdout, pipes).
+// Must be stored at a stable address.
+
+const FileReadCtx = struct {
+    file: std.Io.File,
+
+    fn dapReader(self: *FileReadCtx) DapReader {
+        return .{ .context = self, .readFn = readFn };
+    }
+
+    fn readFn(context: *anyopaque, buffer: []u8) anyerror!usize {
+        const self: *FileReadCtx = @alignCast(@ptrCast(context));
+        if (buffer.len == 0) return 0;
+        var storage: [1]u8 = undefined;
+        var r = self.file.readerStreaming(_io, &storage);
+        const n = r.interface.readSliceShort(buffer[0..1]) catch return error.Unexpected;
+        return n;
+    }
+};
+
+const FileWriteCtx = struct {
+    file: std.Io.File,
+
+    fn dapWriter(self: *FileWriteCtx) DapWriter {
+        return .{ .context = self, .writeFn = writeFn };
+    }
+
+    fn writeFn(context: *anyopaque, bytes: []const u8) anyerror!usize {
+        const self: *FileWriteCtx = @alignCast(@ptrCast(context));
+        try self.file.writeStreamingAll(_io, bytes);
+        return bytes.len;
     }
 };
 
@@ -364,8 +456,9 @@ fn remapSetBreakpoints(
     const bps_val = args.get("breakpoints") orelse return orig;
     if (bps_val != .array) return orig;
 
-    var out = std.io.Writer.Allocating.init(alloc);
-    const w = &out.writer;
+    var out_list = std.ArrayList(u8).empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(alloc, &out_list);
+    const w = &out_aw.writer;
 
     try w.writeByte('{');
     var first = true;
@@ -442,7 +535,8 @@ fn remapSetBreakpoints(
     }
     try w.writeByte('}');
 
-    return out.toOwnedSlice();
+    out_list = out_aw.toArrayList();
+    return try out_list.toOwnedSlice(alloc);
 }
 
 // ── stackTrace response remapping (lldb→ide: zig → zbr) ──────────────────────
@@ -459,8 +553,9 @@ fn remapStackTrace(
     const frames_val = body_obj.get("stackFrames") orelse return orig;
     if (frames_val != .array) return orig;
 
-    var out = std.io.Writer.Allocating.init(alloc);
-    const w = &out.writer;
+    var out_list = std.ArrayList(u8).empty;
+    var out_aw = std.Io.Writer.Allocating.fromArrayList(alloc, &out_list);
+    const w = &out_aw.writer;
 
     try w.writeByte('{');
     var first = true;
@@ -503,10 +598,11 @@ fn remapStackTrace(
     }
     try w.writeByte('}');
 
-    return out.toOwnedSlice();
+    out_list = out_aw.toArrayList();
+    return try out_list.toOwnedSlice(alloc);
 }
 
-fn remapFrame(ctx: RelayCtx, frame: std.json.ObjectMap, w: *std.io.Writer) !void {
+fn remapFrame(ctx: RelayCtx, frame: std.json.ObjectMap, w: *std.Io.Writer) !void {
     const zig_line: u32 = blk: {
         const lv = frame.get("line") orelse break :blk 0;
         if (lv != .integer) break :blk 0;
@@ -558,7 +654,7 @@ fn remapFrame(ctx: RelayCtx, frame: std.json.ObjectMap, w: *std.io.Writer) !void
     try w.writeByte('}');
 }
 
-fn jsonKey(w: *std.io.Writer, key: []const u8) !void {
+fn jsonKey(w: *std.Io.Writer, key: []const u8) !void {
     try std.json.Stringify.value(key, .{}, w);
     try w.writeByte(':');
 }
@@ -574,9 +670,9 @@ fn pathStem(path: []const u8) []const u8 {
 // ── Debug compile: .zig → binary with debug info ──────────────────────────────
 
 fn compileDebug(zig_path: []const u8, c_sources: []const []u8, alloc: std.mem.Allocator) !u8 {
-    var argv: std.ArrayListUnmanaged([]const u8) = .{};
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     defer argv.deinit(alloc);
-    var i_flags: std.ArrayListUnmanaged([]u8) = .{};
+    var i_flags: std.ArrayListUnmanaged([]u8) = .empty;
     defer { for (i_flags.items) |f| alloc.free(f); i_flags.deinit(alloc); }
 
     try argv.appendSlice(alloc, &.{ "zig", "build-exe", zig_path });
@@ -595,16 +691,18 @@ fn compileDebug(zig_path: []const u8, c_sources: []const []u8, alloc: std.mem.Al
     }
     try argv.append(alloc, "-lc");
 
-    var child = std.process.Child.init(argv.items, alloc);
-    child.stdin_behavior  = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    const term = try child.spawnAndWait();
+    var child = try std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .stdin  = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const term = try child.wait(_io);
     return switch (term) {
-        .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .exited  => |c| c,
+        .signal  => 1,
+        .stopped => 1,
+        .unknown => 1,
     };
 }
 
@@ -631,7 +729,7 @@ fn findLldbDap(alloc: std.mem.Allocator) ?[]u8 {
             for (candidates) |name| {
                 const full = std.fs.path.join(alloc, &.{ dir, name }) catch continue;
                 defer alloc.free(full);
-                std.fs.cwd().access(full, .{}) catch continue;
+                std.Io.Dir.cwd().access(_io, full, .{}) catch continue;
                 return alloc.dupe(u8, full) catch null;
             }
         }
@@ -645,7 +743,7 @@ fn findLldbDap(alloc: std.mem.Allocator) ?[]u8 {
             for (candidates) |name| {
                 const full = std.fs.path.join(alloc, &.{ dir, name }) catch continue;
                 defer alloc.free(full);
-                std.fs.cwd().access(full, .{}) catch continue;
+                std.Io.Dir.cwd().access(_io, full, .{}) catch continue;
                 return alloc.dupe(u8, full) catch null;
             }
         }
@@ -654,7 +752,7 @@ fn findLldbDap(alloc: std.mem.Allocator) ?[]u8 {
 }
 
 fn findOnPath(name: []const u8, alloc: std.mem.Allocator) ?[]u8 {
-    const path_env = std.process.getEnvVarOwned(alloc, "PATH") catch return null;
+    const path_env = (std.process.Environ{ .block = .global }).getAlloc(alloc, "PATH") catch return null;
     defer alloc.free(path_env);
 
     const sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
@@ -662,7 +760,7 @@ fn findOnPath(name: []const u8, alloc: std.mem.Allocator) ?[]u8 {
     while (it.next()) |dir| {
         const candidate = std.fs.path.join(alloc, &.{ dir, name }) catch continue;
         defer alloc.free(candidate);
-        std.fs.cwd().access(candidate, .{}) catch continue;
+        std.Io.Dir.cwd().access(_io, candidate, .{}) catch continue;
         return alloc.dupe(u8, candidate) catch null;
     }
     return null;
@@ -677,13 +775,13 @@ fn findPythonDir(alloc: std.mem.Allocator) ?[]u8 {
     if (findOnPath("python311.dll", alloc)) |p| { alloc.free(p); return null; }
 
     // Common per-user and system install locations from winget / python.org installer.
-    const local_app_data = std.process.getEnvVarOwned(alloc, "LOCALAPPDATA") catch null;
+    const local_app_data = (std.process.Environ{ .block = .global }).getAlloc(alloc, "LOCALAPPDATA") catch null;
     defer if (local_app_data) |d| alloc.free(d);
 
-    const program_files = std.process.getEnvVarOwned(alloc, "ProgramFiles") catch null;
+    const program_files = (std.process.Environ{ .block = .global }).getAlloc(alloc, "ProgramFiles") catch null;
     defer if (program_files) |d| alloc.free(d);
 
-    var candidates = std.ArrayListUnmanaged([]u8){};
+    var candidates: std.ArrayListUnmanaged([]u8) = .empty;
     defer { for (candidates.items) |c| alloc.free(c); candidates.deinit(alloc); }
 
     if (local_app_data) |lad| {
@@ -706,7 +804,7 @@ fn findPythonDir(alloc: std.mem.Allocator) ?[]u8 {
     for (candidates.items) |dir| {
         const dll = std.fs.path.join(alloc, &.{ dir, "python311.dll" }) catch continue;
         defer alloc.free(dll);
-        std.fs.cwd().access(dll, .{}) catch continue;
+        std.Io.Dir.cwd().access(_io, dll, .{}) catch continue;
         return alloc.dupe(u8, dir) catch null;
     }
     return null;
@@ -721,10 +819,13 @@ pub fn runDebugSession(
     zbr_path:  []const u8,
     zig_path:  []const u8,
     c_sources: []const []u8,
+    io:        std.Io,
     alloc:     std.mem.Allocator,
 ) !u8 {
+    _io = io;
+
     // 1. Build source map.
-    const zig_src = std.fs.cwd().readFileAlloc(alloc, zig_path, 64 * 1024 * 1024) catch |err| {
+    const zig_src = std.Io.Dir.cwd().readFileAlloc(_io, zig_path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
         std.debug.print("zebra debug: cannot read '{s}': {}\n", .{ zig_path, err });
         return 1;
     };
@@ -764,7 +865,7 @@ pub fn runDebugSession(
     //   a) lldb-dap's own directory (so liblldb.dll is found)
     //   b) Python 3.11 directory if installed but not on PATH (so python311.dll is found)
     const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
-    var env_map = try std.process.getEnvMap(alloc);
+    var env_map = try (std.process.Environ{ .block = .global }).createMap(alloc);
     defer env_map.deinit();
     const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
     const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
@@ -772,7 +873,7 @@ pub fn runDebugSession(
     const py_dir: ?[]u8 = findPythonDir(alloc);
     defer if (py_dir) |d| alloc.free(d);
 
-    var extra_dirs = std.ArrayListUnmanaged([]const u8){};
+    var extra_dirs: std.ArrayListUnmanaged([]const u8) = .empty;
     defer extra_dirs.deinit(alloc);
     try extra_dirs.append(alloc, lldb_dir);
     if (py_dir) |d| try extra_dirs.append(alloc, d);
@@ -791,20 +892,29 @@ pub fn runDebugSession(
     }
 
     const lldb_argv = [_][]const u8{lldb_path};
-    var lldb_child = std.process.Child.init(&lldb_argv, alloc);
-    lldb_child.stdin_behavior  = .Pipe;
-    lldb_child.stdout_behavior = .Pipe;
-    lldb_child.stderr_behavior = .Inherit;
-    lldb_child.env_map = &env_map;
-    try lldb_child.spawn();
+    var lldb_child = try std.process.spawn(_io, .{
+        .argv    = &lldb_argv,
+        .stdin   = .pipe,
+        .stdout  = .pipe,
+        .stderr  = .inherit,
+        .environ_map = &env_map,
+    });
+
+    // 5. Wire up DAP transports for stdio relay.
+    //    ide_xport:  reads from our stdin, writes to lldb's stdin
+    //    lldb_xport: reads from lldb's stdout, writes to our stdout
+    var stdin_read_ctx   = FileReadCtx  { .file = std.Io.File.stdin()    };
+    var lldb_stdin_ctx   = FileWriteCtx { .file = lldb_child.stdin.?     };
+    var lldb_stdout_ctx  = FileReadCtx  { .file = lldb_child.stdout.?    };
+    var stdout_write_ctx = FileWriteCtx { .file = std.Io.File.stdout()   };
 
     var ide_xport = DapTransport.init(
-        std.fs.File.stdin().deprecatedReader().any(),
-        lldb_child.stdin.?.deprecatedWriter().any(),
+        stdin_read_ctx.dapReader(),
+        lldb_stdin_ctx.dapWriter(),
     );
     var lldb_xport = DapTransport.init(
-        lldb_child.stdout.?.deprecatedReader().any(),
-        std.fs.File.stdout().deprecatedWriter().any(),
+        lldb_stdout_ctx.dapReader(),
+        stdout_write_ctx.dapWriter(),
     );
 
     const ctx_fwd = RelayCtx{
@@ -822,18 +932,18 @@ pub fn runDebugSession(
         .alloc     = alloc,
     };
 
-    // 5. Relay threads + wait.
+    // 6. Relay threads + wait.
     const t1 = try std.Thread.spawn(.{}, relayThread, .{ctx_fwd});
     const t2 = try std.Thread.spawn(.{}, relayThread, .{ctx_rev});
     t1.join();
     t2.join();
 
-    const term = try lldb_child.wait();
+    const term = try lldb_child.wait(_io);
     return switch (term) {
-        .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .exited  => |c| c,
+        .signal  => 1,
+        .stopped => 1,
+        .unknown => 1,
     };
 }
 
@@ -853,10 +963,13 @@ pub fn runDebugSessionListen(
     zig_path:  []const u8,
     c_sources: []const []u8,
     ide_port:  u16,
+    io:        std.Io,
     alloc:     std.mem.Allocator,
 ) !u8 {
+    _io = io;
+
     // 1. Build source map.
-    const zig_src = std.fs.cwd().readFileAlloc(alloc, zig_path, 64 * 1024 * 1024) catch |err| {
+    const zig_src = std.Io.Dir.cwd().readFileAlloc(_io, zig_path, alloc, .limited(64 * 1024 * 1024)) catch |err| {
         std.debug.print("zebra debug: cannot read '{s}': {}\n", .{ zig_path, err });
         return 1;
     };
@@ -891,7 +1004,7 @@ pub fn runDebugSessionListen(
 
     // 4. Build child env (PATH + LLDB_DISABLE_PYTHON, same as stdio mode).
     const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
-    var env_map = try std.process.getEnvMap(alloc);
+    var env_map = try (std.process.Environ{ .block = .global }).createMap(alloc);
     defer env_map.deinit();
     const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
     const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
@@ -900,7 +1013,7 @@ pub fn runDebugSessionListen(
     const py_dir: ?[]u8 = findPythonDir(alloc);
     defer if (py_dir) |d| alloc.free(d);
 
-    var extra_dirs = std.ArrayListUnmanaged([]const u8){};
+    var extra_dirs: std.ArrayListUnmanaged([]const u8) = .empty;
     defer extra_dirs.deinit(alloc);
     try extra_dirs.append(alloc, lldb_dir);
     if (py_dir) |d| try extra_dirs.append(alloc, d);
@@ -917,64 +1030,66 @@ pub fn runDebugSessionListen(
     // 5. Pick an OS-assigned internal port for lldb-dap's TCP listener,
     //    then release it (small race window — acceptable for a local tool).
     const internal_port: u16 = blk: {
-        var probe = try (try std.net.Address.parseIp4("127.0.0.1", 0)).listen(.{});
-        defer probe.deinit();
-        break :blk probe.listen_address.getPort();
+        var probe = try (try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0)).listen(_io, .{});
+        defer probe.deinit(_io);
+        // socket.address.getPort() returns the OS-assigned ephemeral port.
+        break :blk probe.socket.address.getPort();
     };
 
     // 6. Bind the IDE-facing server so the IDE can connect immediately after
     //    we print the "listening" message (connections queue in the kernel).
-    var ide_server = try (try std.net.Address.parseIp4("127.0.0.1", ide_port)).listen(.{ .reuse_address = true });
-    defer ide_server.deinit();
+    var ide_server = try (try std.Io.net.IpAddress.parseIp4("127.0.0.1", ide_port)).listen(_io, .{ .reuse_address = true });
+    defer ide_server.deinit(_io);
     std.debug.print("zebra debug: listening for IDE on 127.0.0.1:{d}...\n", .{ide_port});
 
     // 7. Spawn lldb-dap in listen mode.
     const conn_str = try std.fmt.allocPrint(alloc, "listen://127.0.0.1:{d}", .{internal_port});
     defer alloc.free(conn_str);
     const lldb_argv = [_][]const u8{ lldb_path, "--connection", conn_str };
-    var lldb_child = std.process.Child.init(&lldb_argv, alloc);
-    lldb_child.stdin_behavior  = .Ignore;
-    lldb_child.stdout_behavior = .Ignore;
-    lldb_child.stderr_behavior = .Inherit;
-    lldb_child.env_map = &env_map;
-    try lldb_child.spawn();
+    var lldb_child = try std.process.spawn(_io, .{
+        .argv    = &lldb_argv,
+        .stdin   = .ignore,
+        .stdout  = .ignore,
+        .stderr  = .inherit,
+        .environ_map = &env_map,
+    });
 
     // 8. Connect to lldb-dap (retry up to 3 s to allow startup time).
-    const lldb_addr = try std.net.Address.parseIp4("127.0.0.1", internal_port);
-    var lldb_stream: std.net.Stream = blk: {
+    const lldb_addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", internal_port);
+    var lldb_stream: std.Io.net.Stream = blk: {
         var retries: u32 = 30;
         while (retries > 0) : (retries -= 1) {
-            const s = std.net.tcpConnectToAddress(lldb_addr) catch |err| {
+            const s = lldb_addr.connect(_io, .{ .mode = .stream }) catch |err| {
                 if (retries == 1) return err;
-                std.Thread.sleep(100 * std.time.ns_per_ms);
+                std.Io.sleep(_io, std.Io.Duration.fromMilliseconds(100), .real) catch {};
                 continue;
             };
             break :blk s;
         }
         unreachable;
     };
-    defer lldb_stream.close();
+    defer lldb_stream.close(_io);
     std.debug.print("zebra debug: connected to lldb-dap on internal port {d}\n", .{internal_port});
 
     // 9. Accept the IDE connection.
-    const client_conn = try ide_server.accept();
-    defer client_conn.stream.close();
+    var client_conn = try ide_server.accept(_io);
+    defer client_conn.close(_io);
     std.debug.print("zebra debug: IDE connected\n", .{});
 
-    // 10. Create stream wrappers at stable addresses (pointers held by AnyReader/AnyWriter).
-    var client_wrapper: NetStreamWrapper = .{ .stream = client_conn.stream };
+    // 10. Create stream wrappers at stable addresses (pointers held by DapReader/DapWriter).
+    var client_wrapper: NetStreamWrapper = .{ .stream = client_conn };
     var lldb_wrapper:   NetStreamWrapper = .{ .stream = lldb_stream };
 
     // 11. Cross-linked transports: each transport reads/writes one side.
     //     ctx_fwd: read IDE  → write lldb  (ide→lldb direction)
     //     ctx_rev: read lldb → write IDE   (lldb→ide direction)
     var client_xport = DapTransport.init(
-        client_wrapper.anyReader(),
-        client_wrapper.anyWriter(),
+        client_wrapper.dapReader(),
+        client_wrapper.dapWriter(),
     );
     var lldb_xport = DapTransport.init(
-        lldb_wrapper.anyReader(),
-        lldb_wrapper.anyWriter(),
+        lldb_wrapper.dapReader(),
+        lldb_wrapper.dapWriter(),
     );
 
     const ctx_fwd = RelayCtx{
@@ -998,11 +1113,11 @@ pub fn runDebugSessionListen(
     t1.join();
     t2.join();
 
-    const term = try lldb_child.wait();
+    const term = try lldb_child.wait(_io);
     return switch (term) {
-        .Exited  => |c| c,
-        .Signal  => |_| 1,
-        .Stopped => |_| 1,
-        .Unknown => |_| 1,
+        .exited  => |c| c,
+        .signal  => 1,
+        .stopped => 1,
+        .unknown => 1,
     };
 }

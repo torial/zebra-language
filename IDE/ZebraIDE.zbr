@@ -1,15 +1,12 @@
-# Zebra IDE — Self-Hosted Development Environment
+# Zebra IDE — MVU architecture
 #
-# A complete IDE written in Zebra, using the Gui API with Dear ImGui backend.
-# Demonstrates: stateful GUI, subprocess integration, file I/O, parsing, error handling.
+# Self-hosted IDE demonstrating: compiler integration, file I/O, subprocess
+# management, and the MVU (Model-View-Update) GUI pattern.
 #
-# Usage: zebra --gui-backend=glfw ZebraIDE.zbr
+# Usage: zebra IDE/ZebraIDE.zbr --gui-backend=libui_ng
 
-# ────────────────────────────────────────────────────────────────────────────
-# Type Definitions
-# ────────────────────────────────────────────────────────────────────────────
+# ── Diagnostics ───────────────────────────────────────────────────────────────
 
-# Represents a single compiler diagnostic (error or warning)
 class IDEDiagnostic
     var line: int = 0
     var col: int = 0
@@ -17,7 +14,6 @@ class IDEDiagnostic
     var message: str = ""
     var is_error: bool = false
 
-# Calls the Zebra compiler as a subprocess and parses diagnostics
 class CompilerBridge
     static
         def check(filepath: str): List(IDEDiagnostic)
@@ -84,334 +80,47 @@ class CompilerBridge
             d.is_error = isError
             return d
 
-# All IDE state that persists across frames via capture
-class IDEState
+# ── Model ─────────────────────────────────────────────────────────────────────
+
+class Model
     var filepath: str = "untitled.zbr"
     var diags: List(IDEDiagnostic) = List(IDEDiagnostic)()
     var output: str = ""
     var dirty: bool = false
-    var lastCheck: str = ""
-    var files: List(str) = List(str)()
-    # Debug state — proc is authoritative; only PollRegistry clears these
     var debugProc: SysProcess? = nil
     var debugPort: int = 0
-    # Build state — written by BuildTask.poll() each frame
     var buildOutput: str = ""
     var buildRunning: bool = false
+    var buildProc: SysProcess? = nil
     var buildTargets: List(str) = List(str)()
     var buildFile: str = "build.zbr"
+    var buildTmpFile: str = ""
+    var buildLastPos: int = 0
+    var editor: CodeEditor? = nil
+    var diagEditor: CodeEditor? = nil
+    var outputEditor: CodeEditor? = nil
+    var buildOutputEditor: CodeEditor? = nil
 
-    def diagCount(): int
-        return .diags.len
+# ── Messages ──────────────────────────────────────────────────────────────────
 
-    def fileCount(): int
-        return .files.len
+union Msg
+    open_file
+    save_file
+    check_requested
+    run_requested
+    debug_start
+    debug_stop
+    debug_exited
+    build_start
+    build_cancel
+    build_done
+    list_targets
+    filepath_changed: str
+    buildfile_changed: str
+    build_output_chunk: str
 
-# ────────────────────────────────────────────────────────────────────────────
-# Polling infrastructure
-# ────────────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-# Polls a debug subprocess each frame. Clears state.debugProc when process exits.
-class DebugTask
-    var state: IDEState
-    var proc: SysProcess
-
-    static def new(state: IDEState, proc: SysProcess): DebugTask
-        var t = DebugTask()
-        t.state = state
-        t.proc = proc
-        return t
-
-    def poll(): bool
-        if not .proc.isRunning()
-            .state.debugProc = nil
-            .state.debugPort = 0
-            return false
-        return true
-
-    def cancel()
-        .proc.kill()
-        .state.debugProc = nil
-        .state.debugPort = 0
-        .state.output = "Debugger stopped."
-
-# Polls a build subprocess each frame. Streams output from a temp file into state.buildOutput.
-#
-# Note: cancelling via cmd /C kills the shell but may leave zebra-bootstrap orphaned on
-# Windows (no process group kill). The build continues running but output is no longer read.
-class BuildTask
-    var state: IDEState
-    var proc: SysProcess
-    var tmpFile: str
-    var lastPos: int
-
-    static def new(state: IDEState, proc: SysProcess, tmpFile: str): BuildTask
-        var t = BuildTask()
-        t.state = state
-        t.proc = proc
-        t.tmpFile = tmpFile
-        t.lastPos = 0
-        return t
-
-    def poll(): bool
-        if File.exists(.tmpFile)
-            var content = File.read(.tmpFile)
-            if content.len > .lastPos
-                .state.buildOutput = .state.buildOutput + content.substring(.lastPos, content.len)
-                .lastPos = content.len
-        if not .proc.isRunning()
-            .state.buildRunning = false
-            return false
-        return true
-
-    def cancel()
-        .proc.kill()
-        .state.buildRunning = false
-
-# Tagged union of pollable task types.
-union PollTask
-    debug_task: DebugTask
-    build_task: BuildTask
-
-# Registry of active background tasks. pollAll() is called once per frame.
-class PollRegistry
-    var _tasks: List(PollTask) = List(PollTask)()
-
-    def register(task: PollTask)
-        ._tasks.add(task)
-
-    # Dispatch poll() to each task; remove tasks that return false (done).
-    def pollAll()
-        var next: List(PollTask) = List(PollTask)()
-        for task in ._tasks
-            var keep: bool = false
-            branch task
-                on PollTask.debug_task as dt
-                    keep = dt.poll()
-                on PollTask.build_task as bt
-                    keep = bt.poll()
-            if keep
-                next.add(task)
-        ._tasks = next
-
-    # Cancel and remove all debug tasks; preserve build tasks.
-    def cancelDebug()
-        var next: List(PollTask) = List(PollTask)()
-        for task in ._tasks
-            branch task
-                on PollTask.debug_task as dt
-                    dt.cancel()
-                on PollTask.build_task as bt
-                    next.add(task)
-        ._tasks = next
-
-    # Cancel and remove all build tasks; preserve debug tasks.
-    def cancelBuilds()
-        var next: List(PollTask) = List(PollTask)()
-        for task in ._tasks
-            branch task
-                on PollTask.debug_task as dt
-                    next.add(task)
-                on PollTask.build_task as bt
-                    bt.cancel()
-        ._tasks = next
-
-# ────────────────────────────────────────────────────────────────────────────
-# Per-frame helpers (called from ideFrame lambda each frame)
-# ────────────────────────────────────────────────────────────────────────────
-
-def renderToolbar(g: Gui, state: IDEState, editor: CodeEditor, registry: PollRegistry)
-    if g.button("Open")
-        if File.exists(state.filepath)
-            editor.setText(File.read(state.filepath))
-            state.diags = List(IDEDiagnostic)()
-            state.output = ""
-            state.dirty = false
-    g.sameLine()
-    if g.button("Save")
-        var src = editor.getText()
-        File.write(state.filepath, src)
-        state.dirty = false
-    g.sameLine()
-    if g.button("Check  (F5)")
-        doCheck(state, editor)
-    g.sameLine()
-    if g.button("Run  (F9)")
-        doRun(state, editor)
-    g.sameLine()
-    # Debug / Stop button — mutually exclusive based on running state
-    var debugRunning: bool = false
-    if state.debugProc != nil
-        debugRunning = state.debugProc to!.isRunning()
-    if debugRunning
-        if g.button("Stop Debug")
-            registry.cancelDebug()
-        g.sameLine()
-        g.textColored(0.2, 0.9, 0.2, 1.0, "DAP :${state.debugPort}")
-    else
-        if state.debugProc != nil
-            state.debugProc = nil  # reap exited proc
-        if g.button("Debug  (F10)")
-            doDebug(state, editor, registry)
-    g.sameLine()
-    # Build button — mutually exclusive with Cancel Build
-    if state.buildRunning
-        if g.button("Cancel Build")
-            registry.cancelBuilds()
-        g.sameLine()
-        g.textColored(0.2, 0.9, 0.2, 1.0, "Building...")
-    else
-        if g.button("Build  (F7)")
-            doBuild(state, registry)
-    g.sameLine()
-    state.filepath = g.input("##filepath", state.filepath)
-    if state.dirty
-        g.sameLine()
-        g.text("*")
-    g.sameLine()
-    g.text("  Ln ${editor.getCursorLine()}  Col ${editor.getCursorCol()}")
-
-def renderDiags(gc: Gui, state: IDEState, editor: CodeEditor)
-    var errorCount = 0
-    for d in state.diags
-        if d.is_error
-            errorCount = errorCount + 1
-    gc.text("Errors: ${errorCount} / ${state.diagCount()}")
-    gc.separator()
-    if gc.beginTable("##diagtbl", 3)
-        gc.tableSetupColumn("T")
-        gc.tableSetupColumn("Ln:Col")
-        gc.tableSetupColumn("Message")
-        gc.tableHeadersRow()
-        for d in state.diags
-            gc.tableNextRow()
-            gc.tableNextColumn()
-            if d.is_error
-                gc.textColored(1.0, 0.35, 0.35, 1.0, "E")
-            else
-                gc.textColored(1.0, 0.80, 0.20, 1.0, "W")
-            gc.tableNextColumn()
-            if gc.selectable("${d.line}:${d.col}##loc${d.line}_${d.col}")
-                editor.setCursorPosition(d.line, d.col)
-            gc.tableNextColumn()
-            gc.text(d.message)
-        gc.endTable()
-
-def renderFileBrowser(gc: Gui, state: IDEState, editor: CodeEditor)
-    if gc.button("Refresh")
-        state.files = Dir.walk(".")
-    gc.separator()
-    for f in state.files
-        if f.endsWith(".zbr")
-            if gc.selectable(f)
-                state.filepath = f
-                if File.exists(f)
-                    editor.setText(File.read(f))
-                    state.diags = List(IDEDiagnostic)()
-                    state.output = ""
-                    state.dirty = false
-
-def renderBuildPanel(gc: Gui, state: IDEState, registry: PollRegistry)
-    gc.text("Build file:")
-    gc.sameLine()
-    state.buildFile = gc.input("##buildfile", state.buildFile)
-    if gc.button("List Targets")
-        refreshBuildTargets(state)
-    if state.buildTargets.len > 0
-        gc.separator()
-        gc.text("Targets:")
-        for t in state.buildTargets
-            gc.text("  " + t)
-
-def renderBody(g: Gui, state: IDEState, editor: CodeEditor, registry: PollRegistry)
-    editor.setErrorMarkers(state.diags)
-    g.childWindow("##browser", 180, 520, def(gc: Gui)
-        renderFileBrowser(gc, state, editor)
-    )
-    g.sameLine()
-    editor.render(g, "##code", 560, 520)
-    g.sameLine()
-    g.childWindow("##rightpanel", 0, 520, def(gc: Gui)
-        gc.text("Diagnostics")
-        gc.separator()
-        renderDiags(gc, state, editor)
-        gc.separator()
-        gc.text("Build")
-        gc.separator()
-        renderBuildPanel(gc, state, registry)
-    )
-
-def renderOutput(g: Gui, state: IDEState, outputEditor: CodeEditor)
-    g.text("Output:")
-    outputEditor.setText(state.output)
-    outputEditor.render(g, "##output", 990, 80)
-    if state.buildOutput != ""
-        g.text("Build output:")
-        g.text(state.buildOutput)
-
-def doCheck(state: IDEState, editor: CodeEditor)
-    var src = editor.getText()
-    var tmpFile = "_ide_tmp_check.zbr"
-    File.write(tmpFile, src)
-    state.diags = CompilerBridge.check(tmpFile)
-    state.lastCheck = src
-    state.dirty = true
-
-def doRun(state: IDEState, editor: CodeEditor)
-    state.buildOutput = ""
-    var src = editor.getText()
-    File.write(state.filepath, src)
-    state.dirty = false
-    state.output = CompilerBridge.runFile(state.filepath)
-
-def doDebug(state: IDEState, editor: CodeEditor, registry: PollRegistry)
-    if state.debugProc != nil
-        if state.debugProc to!.isRunning()
-            return  # already debugging
-    var src = editor.getText()
-    File.write(state.filepath, src)
-    state.dirty = false
-    state.debugPort = 7777
-    var argv = List(str)()
-    argv.add("zebra")
-    argv.add("debug")
-    argv.add("--listen")
-    argv.add(state.debugPort.toString())
-    argv.add(state.filepath)
-    var proc = sys.spawn(argv)
-    state.debugProc = proc
-    state.output = "Debug proxy listening on 127.0.0.1:" + state.debugPort.toString() + " — connect with CodeLLDB or VS Code DAP client."
-    registry.register(PollTask.debug_task(DebugTask.new(state, proc)))
-
-def doBuild(state: IDEState, registry: PollRegistry)
-    if state.buildRunning
-        return
-    var tmpFile = ".ide_build.tmp"
-    File.write(tmpFile, "")
-    state.buildOutput = ""
-    state.buildRunning = true
-    var cmd = "zebra build"
-    if state.buildFile != "build.zbr"
-        cmd = cmd + " --build-file=" + state.buildFile
-    var argv = List(str)()
-    argv.add("cmd")
-    argv.add("/C")
-    argv.add(cmd + " > " + tmpFile + " 2>&1")
-    var proc = sys.spawn(argv)
-    registry.register(PollTask.build_task(BuildTask.new(state, proc, tmpFile)))
-
-def refreshBuildTargets(state: IDEState)
-    var argv = List(str)()
-    argv.add("zebra")
-    argv.add("build")
-    argv.add("--list-targets")
-    var out = sys.run(argv)
-    if out.exit_code == 0
-        state.buildTargets = parseBuildTargetNames(out.stdout)
-    else
-        state.buildTargets = List(str)()
-
-# Parse target names from --list-targets JSON: {"targets":[{"name":"foo",...},...]}.
 def parseBuildTargetNames(json: str): List(str)
     var names = List(str)()
     var marker = "\"name\":\""
@@ -428,26 +137,212 @@ def parseBuildTargetNames(json: str): List(str)
         pos = endIdx + 1
     return names
 
+def diagSummary(diags: List(IDEDiagnostic)): str
+    var errors = 0
+    var warnings = 0
+    for d in diags
+        if d.is_error
+            errors = errors + 1
+        else
+            warnings = warnings + 1
+    var lines = "Errors: ${errors}  Warnings: ${warnings}\n"
+    for d in diags
+        var prefix = "W"
+        if d.is_error
+            prefix = "E"
+        lines = lines + "[${prefix}] ${d.line}:${d.col}  ${d.message}\n"
+    return lines
+
+# ── Init ──────────────────────────────────────────────────────────────────────
+
+def ideInit(): Model
+    var m = Model()
+    m.editor = CodeEditor.forZebra()
+    m.diagEditor = CodeEditor()
+    m.outputEditor = CodeEditor()
+    m.buildOutputEditor = CodeEditor()
+    if File.exists(m.filepath)
+        m.editor to!.setText(File.read(m.filepath))
+    m.outputEditor to!.setReadOnly(true)
+    m.diagEditor to!.setReadOnly(true)
+    m.buildOutputEditor to!.setReadOnly(true)
+    return m
+
+# ── Update ────────────────────────────────────────────────────────────────────
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.open_file
+            if File.exists(m.filepath)
+                m.editor to!.setText(File.read(m.filepath))
+                m.diags = List(IDEDiagnostic)()
+                m.diagEditor to!.setText("")
+                m.output = ""
+                m.outputEditor to!.setText("")
+                m.dirty = false
+        on Msg.save_file
+            File.write(m.filepath, m.editor to!.getText())
+            m.dirty = false
+        on Msg.check_requested
+            var tmpFile = "_ide_tmp_check.zbr"
+            File.write(tmpFile, m.editor to!.getText())
+            m.diags = CompilerBridge.check(tmpFile)
+            m.diagEditor to!.setText(diagSummary(m.diags))
+            m.editor to!.setErrorMarkers(m.diags)
+            m.dirty = true
+        on Msg.run_requested
+            m.buildOutput = ""
+            m.buildOutputEditor to!.setText("")
+            File.write(m.filepath, m.editor to!.getText())
+            m.dirty = false
+            m.output = CompilerBridge.runFile(m.filepath)
+            m.outputEditor to!.setText(m.output)
+        on Msg.debug_start
+            if m.debugProc != nil
+                if m.debugProc to!.isRunning()
+                    return m
+            File.write(m.filepath, m.editor to!.getText())
+            m.dirty = false
+            m.debugPort = 7777
+            var argv = List(str)()
+            argv.add("zebra")
+            argv.add("debug")
+            argv.add("--listen")
+            argv.add(m.debugPort.toString())
+            argv.add(m.filepath)
+            m.debugProc = sys.spawn(argv)
+            m.output = "Debug proxy on 127.0.0.1:${m.debugPort} — connect with DAP client."
+            m.outputEditor to!.setText(m.output)
+        on Msg.debug_stop
+            if m.debugProc as proc
+                proc.kill()
+            m.debugProc = nil
+            m.debugPort = 0
+            m.output = "Debugger stopped."
+            m.outputEditor to!.setText(m.output)
+        on Msg.debug_exited
+            m.debugProc = nil
+            m.debugPort = 0
+        on Msg.build_start
+            if m.buildRunning
+                return m
+            m.buildTmpFile = ".ide_build.tmp"
+            File.write(m.buildTmpFile, "")
+            m.buildOutput = ""
+            m.buildOutputEditor to!.setText("")
+            m.buildLastPos = 0
+            m.buildRunning = true
+            var cmd = "zebra build"
+            if m.buildFile != "build.zbr"
+                cmd = cmd + " --build-file=" + m.buildFile
+            var argv = List(str)()
+            argv.add("cmd")
+            argv.add("/C")
+            argv.add(cmd + " > " + m.buildTmpFile + " 2>&1")
+            m.buildProc = sys.spawn(argv)
+        on Msg.build_cancel
+            if m.buildProc as proc
+                proc.kill()
+            m.buildRunning = false
+            m.buildProc = nil
+        on Msg.build_done
+            m.buildRunning = false
+        on Msg.list_targets
+            var argv = List(str)()
+            argv.add("zebra")
+            argv.add("build")
+            argv.add("--list-targets")
+            var out = sys.run(argv)
+            if out.exit_code == 0
+                m.buildTargets = parseBuildTargetNames(out.stdout)
+            else
+                m.buildTargets = List(str)()
+        on Msg.filepath_changed as path
+            m.filepath = path
+        on Msg.buildfile_changed as path
+            m.buildFile = path
+        on Msg.build_output_chunk as chunk
+            m.buildOutput = m.buildOutput + chunk
+            m.buildLastPos = m.buildLastPos + chunk.len
+            m.buildOutputEditor to!.setText(m.buildOutput)
+    return m
+
+# ── View ──────────────────────────────────────────────────────────────────────
+
+def view(g: Gui, m: Model)
+    # Poll background processes — send messages rather than mutating model
+    if m.debugProc as proc
+        if not proc.isRunning()
+            g.send(Msg.debug_exited)
+    if m.buildRunning
+        if m.buildTmpFile != ""
+            if File.exists(m.buildTmpFile)
+                var content = File.read(m.buildTmpFile)
+                if content.len > m.buildLastPos
+                    g.send(Msg.build_output_chunk(content.substring(m.buildLastPos, content.len)))
+        if m.buildProc as proc
+            if not proc.isRunning()
+                g.send(Msg.build_done)
+
+    using g.vbox("##root", true)
+        # Toolbar — all buttons always present (libui-ng retained-mode requirement)
+        using g.hbox("##toolbar", false)
+            if g.button("Open")
+                g.send(Msg.open_file)
+            if g.button("Save")
+                g.send(Msg.save_file)
+            if g.button("Check")
+                g.send(Msg.check_requested)
+            if g.button("Run")
+                g.send(Msg.run_requested)
+            if g.button("Debug")
+                g.send(Msg.debug_start)
+            if g.button("Stop Debug")
+                g.send(Msg.debug_stop)
+            if g.button("Build")
+                g.send(Msg.build_start)
+            if g.button("Cancel Build")
+                g.send(Msg.build_cancel)
+            var pathVal = g.input("##filepath", m.filepath)
+            if pathVal != m.filepath
+                g.send(Msg.filepath_changed(pathVal))
+            var statusLine = ""
+            if m.dirty
+                statusLine = "* "
+            if m.debugPort > 0
+                statusLine = statusLine + "DAP :${m.debugPort}  "
+            if m.buildRunning
+                statusLine = statusLine + "Building..."
+            g.text(statusLine)
+
+        # Body: code editor (left, stretches) + right panel (fixed width)
+        using g.hbox("##body", true)
+            using g.vbox("##editor_col", true)
+                m.editor to!.render(g, "##code", 0, 0)
+            using g.vbox("##right_col", false)
+                g.text("Diagnostics")
+                m.diagEditor to!.render(g, "##diags", 340, 280)
+                g.separator()
+                g.text("Build file:")
+                var bfVal = g.input("##buildfile", m.buildFile)
+                if bfVal != m.buildFile
+                    g.send(Msg.buildfile_changed(bfVal))
+                if g.button("List Targets")
+                    g.send(Msg.list_targets)
+                var targetsText = ""
+                for t in m.buildTargets
+                    targetsText = targetsText + "  " + t + "\n"
+                g.text(targetsText)
+        # Output row — program output and build output side by side
+        using g.hbox("##output_row", false)
+            using g.vbox("##output_col", true)
+                g.text("Output")
+                m.outputEditor to!.render(g, "##output", 0, 120)
+            using g.vbox("##buildout_col", true)
+                g.text("Build Output")
+                m.buildOutputEditor to!.render(g, "##buildout", 0, 120)
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def main()
-    var frame = def(g: Gui)
-        capture
-            var state: IDEState = IDEState()
-            var registry: PollRegistry = PollRegistry()
-            var editor: CodeEditor = CodeEditor.forZebra()
-            var outputEditor: CodeEditor = CodeEditor()
-            var inited: bool = false
-        if not inited
-            if File.exists(state.filepath)
-                var content = File.read(state.filepath)
-                editor.setText(content)
-                state.lastCheck = content
-            outputEditor.setReadOnly(true)
-            state.files = Dir.walk(".")
-            inited = true
-        registry.pollAll()
-        renderToolbar(g, state, editor, registry)
-        g.separator()
-        renderBody(g, state, editor, registry)
-        g.separator()
-        renderOutput(g, state, outputEditor)
-    Gui.run("Zebra IDE", 1200, 800, frame)
+    Gui.run("Zebra IDE", 1200, 800, ideInit, update, view)

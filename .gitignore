@@ -9,6 +9,14 @@ zig-out/
 _repl_session.zbr
 _repl_session.zig
 
+# Generated GUI project directories (scaffolded by --gui-backend=XXX)
+# Pattern covers plain (_gui/), TUI (_gui_tui/), and libui-ng (_gui_libui_ng/) variants
+examples/*_gui*/
+test/*_gui*/
+
+# Zig package cache directories created by zig fetch / zig build
+zig-pkg/
+
 # Windows build artifacts
 *.obj
 
@@ -37,6 +45,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# One-off migration scripts
+fix_016*.py
+
 # Claude Code internal
 .claude/scheduled_tasks.lock
+.claude
 

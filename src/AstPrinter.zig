@@ -32,7 +32,7 @@ const Ast = @import("Ast.zig");
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Write a human-readable S-expression listing of `module` to `writer`.
-pub fn print(module: Ast.Module, writer: std.io.AnyWriter) anyerror!void {
+pub fn print(module: Ast.Module, writer: *std.Io.Writer) anyerror!void {
     var p = Printer{ .writer = writer, .indent = 0 };
     try p.printModule(module);
 }
@@ -40,7 +40,7 @@ pub fn print(module: Ast.Module, writer: std.io.AnyWriter) anyerror!void {
 // ── Printer context ───────────────────────────────────────────────────────────
 
 const Printer = struct {
-    writer: std.io.AnyWriter,
+    writer: *std.Io.Writer,
     indent: u32,
 
     // ── Indent helpers ────────────────────────────────────────────────────────
@@ -326,14 +326,15 @@ const Printer = struct {
             .defer_   => |n| try p.printDefer(n.*),
             .with     => |n| { try p.w("(with ", .{}); try p.printExpr(n.target.*); try p.w(")", .{}); },
             .var_except    => |n| { try p.w("(var-except {s})", .{n.name}); },
-            .assign_except => |_| { try p.w("(assign-except)", .{}); },
-            .raise         => |_| { try p.w("(raise)", .{}); },
-            .try_catch     => |_| { try p.w("(try-catch)", .{}); },
-            .guard       => |_| { try p.w("(guard)", .{}); },
-            .destruct    => |_| { try p.w("(destruct)", .{}); },
-            .arena_scope => |_| { try p.w("(arena)", .{}); },
-            .allocate_   => |_| { try p.w("(allocate)", .{}); },
-            .copy_out    => |_| { try p.w("(copy-out)", .{}); },
+            .assign_except => { try p.w("(assign-except)", .{}); },
+            .raise         => { try p.w("(raise)", .{}); },
+            .try_catch     => { try p.w("(try-catch)", .{}); },
+            .guard       => { try p.w("(guard)", .{}); },
+            .destruct    => { try p.w("(destruct)", .{}); },
+            .arena_scope => { try p.w("(arena)", .{}); },
+            .allocate_   => { try p.w("(allocate)", .{}); },
+            .copy_out    => { try p.w("(copy-out)", .{}); },
+            .in_scope  => { try p.w("(in-scope)", .{}); },
             .pass     => try p.w("(pass)", .{}),
             .break_   => try p.w("(break)", .{}),
             .continue_=> try p.w("(continue)", .{}),

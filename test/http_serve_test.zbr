@@ -1,0 +1,11 @@
+def handleRequest(req: HttpRequest): HttpResponse
+    if req.method == "GET" and req.path == "/hello"
+        return HttpResponse(200, "Hello, World!")
+    return HttpResponse(404, "Not Found")
+
+def startServer()
+    Http.serve(8080, handleRequest)
+
+def main()
+    # Compile smoke: exercises Http.serve codegen path without starting a server
+    print "http_serve_test OK"

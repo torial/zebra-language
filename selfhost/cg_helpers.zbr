@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param
+use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -72,6 +72,36 @@ class StrSet
 
     def items(): List(str)
         return _items
+
+# ── ThunkList — Gap 1 (closure-to-sig) per-module pending list ───────────────
+#
+# When a call passes a capture-block lambda to a sig-typed parameter, the
+# codegen registers a ClosureThunk here.  At module end the codegen emits a
+# state slot + dispatcher slot + public thunk fn for each registered entry.
+# See genCall + flushPendingThunks in codegen.zbr.
+
+struct ClosureThunk
+    var id: int
+    var lambda: ExprLambda
+
+    cue init(id: int, lambda: ExprLambda)
+        .id = id
+        .lambda = lambda
+
+class ThunkList
+    var _items: List(ClosureThunk)
+
+    cue init()
+        _items = List(ClosureThunk)()
+
+    def add(t: ClosureThunk)
+        _items.add(t)
+
+    def count(): int
+        return _items.count()
+
+    def at(i: int): ClosureThunk
+        return _items.at(i)
 
 # ── assignOpStr ───────────────────────────────────────────────────────────────
 
@@ -126,13 +156,13 @@ def typeRefStr(tr: TypeRef): str
         on TypeRef.named as n
             return n.name
         on TypeRef.nilable as inner
-            return "?" + typeRefStr(inner)
+            return "?${typeRefStr(inner)}"
         on TypeRef.stream as inner
-            return typeRefStr(inner) + "*"
+            return "${typeRefStr(inner)}*"
         on TypeRef.error_union as inner
-            return "!" + typeRefStr(inner)
+            return "!${typeRefStr(inner)}"
         on TypeRef.ref_to as inner
-            return "^" + typeRefStr(inner)
+            return "^${typeRefStr(inner)}"
         on TypeRef.generic as g
             var b: StringBuilder = StringBuilder()
             b.append(g.name)
@@ -279,8 +309,8 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                         return true
                     if bodyHasRaise(ei.stmts)
                         return true
-                if si.else_stmts != nil
-                    if bodyHasRaise(si.else_stmts to!)
+                if si.else_stmts as se
+                    if bodyHasRaise(se)
                         return true
             on Stmt.while_ as w
                 if exprHasTry(w.cond)
@@ -303,11 +333,14 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                 for c in b.cases
                     if bodyHasRaise(c.stmts)
                         return true
-                if b.else_ != nil
-                    if bodyHasRaise(b.else_ to!)
+                if b.else_ as be
+                    if bodyHasRaise(be)
                         return true
             on Stmt.with_ as w
                 if bodyHasRaise(w.stmts)
+                    return true
+            on Stmt.in_scope as si_r
+                if bodyHasRaise(si_r.stmts)
                     return true
             on Stmt.defer_ as d
                 # Defer body is a single statement; wrap in a temporary list to recurse.
@@ -395,10 +428,12 @@ def nameUsedInExpr(name: str, expr: Expr): bool
         on Expr.slice as sl
             if nameUsedInExpr(name, sl.object)
                 return true
-            if sl.start != nil and nameUsedInExpr(name, sl.start to!)
-                return true
-            if sl.stop_ != nil and nameUsedInExpr(name, sl.stop_ to!)
-                return true
+            if sl.start != nil
+                if nameUsedInExpr(name, sl.start to!)
+                    return true
+            if sl.stop_ != nil
+                if nameUsedInExpr(name, sl.stop_ to!)
+                    return true
             return false
         on Expr.try_ as t
             return nameUsedInExpr(name, t.expr)
@@ -463,6 +498,34 @@ def nameUsedInExpr(name: str, expr: Expr): bool
                 if nameUsedInExpr(name, arg.value)
                     return true
             return false
+        on Expr.lambda as lam
+            # BUG-FIX: previously the lambda case fell into the else branch
+            # and returned false, so names used inside a lambda's capture-init
+            # or body were treated as unused at the outer scope — leading to
+            # spurious `_ = name;` cleanup emit that conflicted with later use.
+            #
+            # Walk:
+            #   1. capture init expressions (these always reference outer scope)
+            #   2. lambda body, UNLESS a lambda param or capture-field with the
+            #      same name shadows the outer ident
+            for cap in lam.captures
+                if cap.init_expr != nil
+                    if nameUsedInExpr(name, cap.init_expr to!)
+                        return true
+            # Shadowing check: does a lambda param shadow `name`?
+            for p in lam.params
+                if p.name == name
+                    return false
+            # Shadowing check: does a capture field shadow `name`?
+            for cap2 in lam.captures
+                if cap2.name == name
+                    return false
+            # Body refs are not shadowed; recurse.
+            branch lam.body_
+                on LambdaBody.expr_ as ex
+                    return nameUsedInExpr(name, ex)
+                on LambdaBody.stmts as ss
+                    return nameUsedInStmts(name, ss)
         else
             # Literals, nil_, this_, zig_lit, list_lit, array_lit -- no user idents
             return false
@@ -507,8 +570,8 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
                     return true
                 if nameUsedInStmts(name, ei.stmts)
                     return true
-            if si.else_stmts != nil
-                return nameUsedInStmts(name, si.else_stmts to!)
+            if si.else_stmts as se
+                return nameUsedInStmts(name, se)
             return false
         on Stmt.while_ as w
             if nameUsedInExpr(name, w.cond)
@@ -546,8 +609,8 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
                         return true
                 if nameUsedInStmts(name, c.stmts)
                     return true
-            if b.else_ != nil
-                return nameUsedInStmts(name, b.else_ to!)
+            if b.else_ as be
+                return nameUsedInStmts(name, be)
             return false
         on Stmt.try_catch as tc
             if nameUsedInStmts(name, tc.stmts)
@@ -640,8 +703,8 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
                 seedEscapedFromReturns(si.then_stmts, out)
                 for ei in si.else_ifs
                     seedEscapedFromReturns(ei.stmts, out)
-                if si.else_stmts != nil
-                    seedEscapedFromReturns(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    seedEscapedFromReturns(se, out)
             on Stmt.while_ as w
                 seedEscapedFromReturns(w.stmts, out)
             on Stmt.for_in as f
@@ -651,10 +714,12 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
             on Stmt.branch_ as b
                 for c in b.cases
                     seedEscapedFromReturns(c.stmts, out)
-                if b.else_ != nil
-                    seedEscapedFromReturns(b.else_ to!, out)
+                if b.else_ as be
+                    seedEscapedFromReturns(be, out)
             on Stmt.with_ as w
                 seedEscapedFromReturns(w.stmts, out)
+            on Stmt.in_scope as si_s
+                seedEscapedFromReturns(si_s.stmts, out)
             on Stmt.try_catch as tc
                 seedEscapedFromReturns(tc.stmts, out)
                 for cl in tc.clauses
@@ -695,8 +760,8 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 for ei in si.else_ifs
                     if propagateEscapesOnce(ei.stmts, out)
                         grew = true
-                if si.else_stmts != nil
-                    if propagateEscapesOnce(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    if propagateEscapesOnce(se, out)
                         grew = true
             on Stmt.while_ as w
                 if propagateEscapesOnce(w.stmts, out)
@@ -711,11 +776,14 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 for c in b.cases
                     if propagateEscapesOnce(c.stmts, out)
                         grew = true
-                if b.else_ != nil
-                    if propagateEscapesOnce(b.else_ to!, out)
+                if b.else_ as be
+                    if propagateEscapesOnce(be, out)
                         grew = true
             on Stmt.with_ as ww
                 if propagateEscapesOnce(ww.stmts, out)
+                    grew = true
+            on Stmt.in_scope as si_p
+                if propagateEscapesOnce(si_p.stmts, out)
                     grew = true
             on Stmt.try_catch as tc
                 if propagateEscapesOnce(tc.stmts, out)
@@ -793,6 +861,15 @@ def isReadOnlyMethod(name: str): bool
     # @derive(Eq) / @derive(Hash) — take *const Self, do not mutate receiver
     if name == "eql" or name == "hash"
         return true
+    # DateTime methods — all return a new value, never mutate the receiver
+    if name == "inZone" or name == "inCalendar" or name == "toEpoch" or name == "toIso8601"
+        return true
+    if name == "addDays" or name == "addHours" or name == "addMinutes" or name == "addSeconds"
+        return true
+    if name == "addMonths" or name == "addYears" or name == "daysBetween" or name == "secondsBetween"
+        return true
+    if name == "format"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)
@@ -861,21 +938,21 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 scanMutationsInto(si.then_stmts, out)
                 for ei in si.else_ifs
                     scanMutationsInto(ei.stmts, out)
-                if si.else_stmts != nil
-                    scanMutationsInto(si.else_stmts to!, out)
+                if si.else_stmts as se
+                    scanMutationsInto(se, out)
             on Stmt.while_ as w
                 scanMutationsInto(w.stmts, out)
             on Stmt.for_in as f
                 scanMutationsInto(f.stmts, out)
-                if f.else_ != nil
-                    scanMutationsInto(f.else_ to!, out)
+                if f.else_ as fe
+                    scanMutationsInto(fe, out)
             on Stmt.for_num as fnum
                 scanMutationsInto(fnum.stmts, out)
             on Stmt.branch_ as b
                 for c in b.cases
                     scanMutationsInto(c.stmts, out)
-                if b.else_ != nil
-                    scanMutationsInto(b.else_ to!, out)
+                if b.else_ as be
+                    scanMutationsInto(be, out)
             on Stmt.var_ as n
                 if n.init_expr != nil
                     scanMutationsInExpr(n.init_expr to!, out)
@@ -888,6 +965,8 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 if w.target is Expr.ident as id
                     out.add(id.name)
                 scanMutationsInto(w.stmts, out)
+            on Stmt.in_scope as si_m
+                scanMutationsInto(si_m.stmts, out)
             on Stmt.copy_out as co
                 if co.target is Expr.ident as id
                     out.add(id.name)
@@ -953,11 +1032,9 @@ def isContainerTypeRef(tr: TypeRef): bool
 # memoise per-method by adding a HashMap(str, StrSet) on Generator keyed by
 # "Class.method" (the same key shape used by lookupFnParams/lookupFnBody).
 def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
-    if p.type_ == nil
-        return false
-    if not isContainerTypeRef(p.type_ to!)
-        return false
-    if body == nil
-        return false
-    var ms: StrSet = scanMutations(body to!)
-    return ms.contains_(p.name)
+    if p.type_ == nil: return false
+    if not isContainerTypeRef(p.type_ to!): return false
+    if body as b
+        var ms: StrSet = scanMutations(b)
+        return ms.contains_(p.name)
+    return false

@@ -61,6 +61,7 @@ union PNode
     stmt_allocate: ^PAllocate
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
+    stmt_in: ^PInScope
     stmt_guard: ^PGuard
     stmt_destruct: ^PDestruct
     stmt_require: List(PNode)
@@ -102,6 +103,7 @@ union PNode
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
     expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
     expr_opt_chain: ^POptChain         # expr?.member / expr?.method(args)
+    expr_if_expr: ^PIfExpr             # if cond: val else: other  (inline ternary)
 
     # Branch statement
     stmt_branch: ^PBranch
@@ -256,7 +258,8 @@ struct PClass
     var is_derive_debug: bool
     var is_derive_eq: bool
     var is_derive_hash: bool
-    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false)
+    var export_sym: str?
+    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, export_sym: str? = nil)
         .name = name
         .type_params = type_params
         .ifaces = ifaces
@@ -267,6 +270,7 @@ struct PClass
         .is_derive_debug = is_derive_debug
         .is_derive_eq = is_derive_eq
         .is_derive_hash = is_derive_hash
+        .export_sym = export_sym
 
 struct PExtend
     var target_name: str
@@ -312,7 +316,9 @@ struct PMethod
     var is_once: bool
     var tags: List(str)
     var is_export: bool
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool)
+    var type_params: List(str)
+    var is_pure: bool
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false)
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -325,6 +331,8 @@ struct PMethod
         .is_once = is_once
         .tags = tags
         .is_export = is_export
+        .type_params = type_params
+        .is_pure = is_pure
 
 struct PInit
     var params: List(PParam)
@@ -388,6 +396,15 @@ struct PWith
     var line: int
     cue init(target: List(PNode), stmts: List(PNode), line: int)
         .target = target
+        .stmts = stmts
+        .line = line
+
+struct PInScope
+    var expr: List(PNode)
+    var stmts: List(PNode)
+    var line: int
+    cue init(expr: List(PNode), stmts: List(PNode), line: int)
+        .expr = expr
         .stmts = stmts
         .line = line
 
@@ -604,6 +621,15 @@ struct POptChain
         .has_args = has_args
         .args = args
 
+struct PIfExpr
+    var cond: List(PNode)       # single element: condition expression
+    var then_expr: List(PNode)  # single element: then-branch expression
+    var else_expr: List(PNode)  # single element: else-branch expression
+    cue init(cond: List(PNode), then_expr: List(PNode), else_expr: List(PNode))
+        .cond = cond
+        .then_expr = then_expr
+        .else_expr = else_expr
+
 struct PExprId
     var name: str
     var line: int
@@ -619,11 +645,15 @@ class Parser
     var tokens: List(Token.Token)
     var pos: int
     var file_name: str
+    var parse_errors: List(str)
+    var collected_decls: List(PNode)
 
     cue init(tokens: List(Token.Token), file_name: str)
         .tokens = tokens
         .pos = 0
         .file_name = file_name
+        .parse_errors = List(str)()
+        .collected_decls = List(PNode)()
 
     # -- Cursor ----------------------------------------------------------------
 
@@ -680,6 +710,64 @@ class Parser
                 return true
             else
                 return false
+
+    # -- Error recovery --------------------------------------------------------
+
+    def isRecoveryStarter(kind: Token.TokenKind): bool
+        branch kind
+            on TokenKind.kw_use
+                return true
+            on TokenKind.kw_namespace
+                return true
+            on TokenKind.kw_class
+                return true
+            on TokenKind.kw_interface
+                return true
+            on TokenKind.kw_struct
+                return true
+            on TokenKind.kw_def
+                return true
+            on TokenKind.kw_extend
+                return true
+            on TokenKind.at_id
+                return true
+            on TokenKind.kw_sig
+                return true
+            on TokenKind.kw_type
+                return true
+            on TokenKind.kw_public
+                return true
+            on TokenKind.kw_private
+                return true
+            on TokenKind.kw_protected
+                return true
+            on TokenKind.kw_internal
+                return true
+            on TokenKind.kw_abstract
+                return true
+            on TokenKind.kw_export
+                return true
+            on TokenKind.kw_static
+                return true
+            on TokenKind.kw_readonly
+                return true
+            on TokenKind.kw_extern
+                return true
+            else
+                return false
+
+    def skipToTopLevelBoundary()
+        while not .isEof()
+            const t = .peek()
+            if t.col == 1 and .isRecoveryStarter(t.kind)
+                return
+            .advance()
+
+    def tryParseTopDeclInto()
+        .collected_decls.add(.parseTopDecl()?)
+    catch |e|
+        .parse_errors.add(zig"_error_ctx.message")
+        .skipToTopLevelBoundary()
 
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
@@ -1020,12 +1108,18 @@ class Parser
     # -- Module ----------------------------------------------------------------
 
     def parseModule(): PNode throws
-        var decls = List(PNode)()
         .skipEol()
         while not .isEof()
-            decls.add(.parseTopDecl())
+            .tryParseTopDeclInto()
             .skipEol()
-        return PNode.module_(PModule(decls))
+        if .parse_errors.len > 0
+            var msg: str = .parse_errors.at(0)
+            var i: int = 1
+            while i < .parse_errors.len
+                msg = msg + "\n" + .parse_errors.at(i)
+                i = i + 1
+            raise msg
+        return PNode.module_(PModule(.collected_decls))
 
     # -- Top-level declarations ------------------------------------------------
 
@@ -1035,10 +1129,12 @@ class Parser
         var pending_reflectable: bool = false
         var pending_profile: bool = false
         var pending_once: bool = false
+        var pending_pure: bool = false
         var pending_derive_debug: bool = false
         var pending_derive_eq: bool = false
         var pending_derive_hash: bool = false
         var pending_tags: List(str) = List(str)()
+        var pending_export_sym: str? = nil
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -1055,6 +1151,9 @@ class Parser
                     else if dtext == "@once"
                         .skipEol()
                         pending_once = true
+                    else if dtext == "@pure"
+                        .skipEol()
+                        pending_pure = true
                     else if dtext == "@tag"
                         # Parse optional @tag("str", ...) argument list.
                         if .textIs("(")
@@ -1091,6 +1190,19 @@ class Parser
                                         sys.errln("warning: unknown @derive trait '" + trait_name + "'; ignored")
                             .expectText(")")
                         .skipEol()
+                    else if dtext == "@export"
+                        var export_raw: str = ""
+                        if .textIs("(")
+                            .advance()
+                            if not .textIs(")")
+                                export_raw = .peek().text
+                                .advance()
+                                if export_raw.len >= 2
+                                    export_raw = export_raw.substring(1, export_raw.len - 1)
+                            .expectText(")")
+                        .skipEol()
+                        if export_raw != ""
+                            pending_export_sym = export_raw
                     else
                         .skipEol()
                         sys.errln("warning: unknown @-directive '" + dtext + "'; ignored")
@@ -1102,7 +1214,7 @@ class Parser
         else if .textIs("namespace")
             return .parseNamespaceDecl()
         else if .textIs("class")
-            return .parseClassDecl(pending_reflectable)
+            return .parseClassDecl(pending_reflectable, pending_export_sym)
         else if .textIs("struct")
             return .parseStructDecl(pending_reflectable, pending_derive_debug, pending_derive_eq, pending_derive_hash)
         else if .textIs("interface")
@@ -1121,12 +1233,12 @@ class Parser
             return .parseTypeAliasDecl()
         else if .textIs("static")
             .advance()
-            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false)
+            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure)
         else if .textIs("export")
             .advance()
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true)
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure)
         else if .textIs("def")
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false)
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure)
         raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws
@@ -1167,7 +1279,7 @@ class Parser
         .skipEol()
         return PNode.use_(PUse(path, exposed))
 
-    def parseClassDecl(is_reflectable: bool): PNode throws
+    def parseClassDecl(is_reflectable: bool, export_sym: str? = nil): PNode throws
         .expectText("class")
         var name: str = ""
         var type_params = List(str)()
@@ -1239,7 +1351,7 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 .advance()
-        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false))
+        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")
@@ -1446,6 +1558,7 @@ class Parser
             .advance()
         var pending_profile: bool = false
         var pending_once: bool = false
+        var pending_pure: bool = false
         var pending_tags: List(str) = List(str)()
         while .peek().kind == TokenKind.at_id
             const dtext = .peek().text
@@ -1456,6 +1569,9 @@ class Parser
             else if dtext == "@once"
                 .skipEol()
                 pending_once = true
+            else if dtext == "@pure"
+                .skipEol()
+                pending_pure = true
             else if dtext == "@tag"
                 if .textIs("(")
                     .advance()
@@ -1475,7 +1591,7 @@ class Parser
                 .skipEol()
                 sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
         if .textIs("def")
-            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false)
+            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false, pending_pure)
         else if .textIs("var")
             return .parseDeclField(false, is_static, pending_private, pending_public)
         else if .textIs("const")
@@ -1555,12 +1671,13 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool): PNode throws
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false): PNode throws
         const line = .peek().line
         .expectText("def")
         var name = ""
         var has_params = false
         var params = List(PParam)()
+        var type_params = List(str)()
         if .isOpenCall()
             name = .peek().text
             .advance()
@@ -1568,6 +1685,30 @@ class Parser
         else
             name = .eatId()
         if has_params
+            # Speculative check: is the first group type params?
+            # def identity(T)(x: T): T — first group has only bare identifiers,
+            # and the closing `)` is followed by `(`.
+            # If so, collect them as type_params and parse value params from the second `(`.
+            var saved_pos = .pos
+            var all_bare = true
+            while not .textIs(")") and not .isEol() and not .isEof()
+                if .textIs(",")
+                    .advance()
+                else if .isId() and .peekAt(1).text != ":" and .peekAt(1).text != "="
+                    type_params.add(.peek().text)
+                    .advance()
+                else
+                    all_bare = false
+                    break
+            if all_bare and .textIs(")") and .peekAt(1).text == "("
+                # Confirmed type-param group: consume `)` and the opening `(` of value params.
+                .advance()
+                .advance()
+            else
+                # Not type params — restore position and clear any tentative entries.
+                .pos = saved_pos
+                type_params = List(str)()
+            # Parse value params (either from the second `(` or the only `(`).
             while not .textIs(")")
                 if .textIs(",")
                     .advance()
@@ -1616,7 +1757,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure))
 
     # -- Block and statements --------------------------------------------------
 
@@ -1686,6 +1827,8 @@ class Parser
             return .parseAllocateStmt()
         else if .textIs("with")
             return .parseWithStmt()
+        else if .textIs("using")
+            return .parseInStmt()
         else if .textIs("guard")
             return .parseGuardStmt()
         else if .textIs("require")
@@ -1718,22 +1861,41 @@ class Parser
         if .textIs("as")
             .advance()
             capture_name = .eatId()
-        .skipEol()
-        const then_stmts = .parseBlock()
-        var else_stmts = List(PNode)()
-        if .textIs("else")
-            .advance()
-            if .textIs("if")
-                # else if → wrap: single-element else list
-                else_stmts.add(.parseIfStmt())
-            else
-                .skipEol()
-                else_stmts = .parseBlock()
-        var cond_list = List(PNode)()
-        cond_list.add(cond_expr)
-        var pif = PIf(cond_list, then_stmts, else_stmts, line)
-        pif.is_capture = capture_name
-        return PNode.stmt_if(pif)
+        if .isEol()
+            # Block form (existing)
+            .skipEol()
+            const then_stmts = .parseBlock()
+            var else_stmts = List(PNode)()
+            if .textIs("else")
+                .advance()
+                if .textIs("if")
+                    else_stmts.add(.parseIfStmt())
+                else
+                    .skipEol()
+                    else_stmts = .parseBlock()
+            var cond_list = List(PNode)()
+            cond_list.add(cond_expr)
+            var pif = PIf(cond_list, then_stmts, else_stmts, line)
+            pif.is_capture = capture_name
+            return PNode.stmt_if(pif)
+        else
+            # Inline form: `if cond: stmt` — colon required, capture not supported
+            if capture_name != nil
+                raise .errorAt("inline if does not support capture binding; use block form")
+            .expectText(":")
+            var then_stmts = List(PNode)()
+            then_stmts.add(.parseStmt())
+            var else_stmts = List(PNode)()
+            if .textIs("else")
+                .advance()
+                if .textIs("if")
+                    else_stmts.add(.parseIfStmt())
+                else
+                    .expectText(":")
+                    else_stmts.add(.parseStmt())
+            var cond_list = List(PNode)()
+            cond_list.add(cond_expr)
+            return PNode.stmt_if(PIf(cond_list, then_stmts, else_stmts, line))
 
     def parseUnlessStmt(): PNode throws
         const line = .peek().line
@@ -1838,6 +2000,16 @@ class Parser
         var target_list = List(PNode)()
         target_list.add(target_expr)
         return PNode.stmt_with(PWith(target_list, stmts, line))
+
+    def parseInStmt(): PNode throws
+        const line = .peek().line
+        .expectText("using")
+        const expr = .parseExpr()
+        .skipEol()
+        const stmts = .parseBlock()
+        var expr_list = List(PNode)()
+        expr_list.add(expr)
+        return PNode.stmt_in(PInScope(expr_list, stmts, line))
 
     def parseGuardStmt(): PNode throws
         const line = .peek().line
@@ -2255,7 +2427,23 @@ class Parser
         else if .textIs("in")
             op = "in"
         else if .textIs("is")
-            op = "is"
+            # Consume "is"; peek for `not` to handle `x is not T` → not (x is T)
+            .advance()
+            var negate_is = false
+            if .textIs("not")
+                .advance()
+                negate_is = true
+            const right = .parseAddSub()
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            var tc_node = PNode.expr_binary(PBinary("is", l, r))
+            if negate_is
+                var inner = List(PNode)()
+                inner.add(tc_node)
+                return PNode.expr_unary(PUnary("not", inner))
+            return tc_node
         else if .textIs("not")
             # Peek ahead: `not in` is a binary operator
             # Consume "not", then expect "in"
@@ -2363,13 +2551,6 @@ class Parser
             var ops = List(PNode)()
             ops.add(operand)
             return PNode.expr_unary(PUnary("-", ops))
-        if .textIs("try")
-            # `try expr` prefix form — semantically identical to `expr?`
-            # (both emit Expr.try_ / ExprTry). Zig backend treats them as
-            # the same Expr8 production.
-            .advance()
-            const operand = .parseUnary()
-            return PNode.expr_try(operand)
         if .isKwOld()
             # `old expr` — pre-call value in `ensure` contracts (Expr8 → kw_old Expr9).
             .advance()
@@ -2442,8 +2623,12 @@ class Parser
             else if .textIs("?")
                 .advance()
                 expr = PNode.expr_try(expr)
+            else if .textIs("!")
+                # x! force-unwrap — alias for x to!
+                .advance()
+                expr = PNode.expr_to_bang(expr)
             else if .textIs("to")
-                # to! force-unwrap
+                # to! force-unwrap (legacy syntax — kept as alias)
                 .advance()
                 .expectText("!")
                 expr = PNode.expr_to_bang(expr)
@@ -2632,6 +2817,19 @@ class Parser
             return PNode.expr_id(PExprId(name, id_line, id_col))
         else if .textIs("def") and .peekAt(1).text == "("
             return .parseLambdaExpr()
+        else if .textIs("if")
+            # Inline ternary: if cond: then_val else: else_val
+            .advance()
+            var cond_nodes = List(PNode)()
+            cond_nodes.add(.parseExpr())
+            .expectText(":")
+            var then_nodes = List(PNode)()
+            then_nodes.add(.parseExpr())
+            .expectText("else")
+            .expectText(":")
+            var else_nodes = List(PNode)()
+            else_nodes.add(.parseExpr())
+            return PNode.expr_if_expr(PIfExpr(cond_nodes, then_nodes, else_nodes))
         raise .errorAt("unexpected expression token: '" + .peek().text + "'")
 
     def parseLambdaExpr(): PNode throws

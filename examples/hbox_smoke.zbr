@@ -1,0 +1,52 @@
+# hbox_smoke.zbr — layout primitive smoke test
+# Tests: HBox (horizontal row) + nested VBox within HBox
+# Run with: zig build run -- examples/hbox_smoke.zbr --gui-backend=libui_ng
+
+struct Model
+    var count: int
+    var name: str
+
+union Msg
+    inc
+    dec
+    name_changed: str
+
+def init(): Model
+    return Model(count: 0, name: "World")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.inc            return Model(count: m.count + 1, name: m.name)
+        on Msg.dec            return Model(count: m.count - 1, name: m.name)
+        on Msg.name_changed as s
+            return Model(count: m.count, name: s)
+
+def view(g: Gui, m: Model)
+    # Toolbar row — buttons side by side
+    g.beginHBox("toolbar", false)
+    if g.button("+")
+        g.send(Msg.inc)
+    if g.button("-")
+        g.send(Msg.dec)
+    g.endHBox()
+
+    g.separator()
+
+    # Main area — two panels side by side
+    g.beginHBox("main", true)
+
+    g.beginVBox("left", true)
+    g.text("Count: " + m.count.toString())
+    g.text("Name: " + m.name)
+    g.endVBox()
+
+    g.beginVBox("right", true)
+    var newName = g.input("##name", m.name)
+    if newName != m.name
+        g.send(Msg.name_changed(newName))
+    g.endVBox()
+
+    g.endHBox()
+
+def main()
+    Gui.run("HBox Smoke", 500, 300, init, update, view)

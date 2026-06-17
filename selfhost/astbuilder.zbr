@@ -16,17 +16,17 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain
+use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false)
 
 def zstatic(): Modifiers
-    return Modifiers(false, false, false, true, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, true, false, false, false, false, false, false, false, false, false, false)
 
 # Strip surrounding quote characters from a string token text.
 # The selfhost Lexer captures token text including the surrounding " or '.
@@ -229,10 +229,9 @@ class ASTBuilder
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in c.invs
             inv_exprs.add(.buildExpr(inv_pn)?)
-        var mods: Modifiers = zmods()
-        if c.is_reflectable
-            mods = Modifiers(false, false, false, false, false, false, true, false, false, false, false, false, false)
-        return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs))
+        var mods = zmods()
+        mods.is_reflectable = c.is_reflectable
+        return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs, c.export_sym))
 
     # ── Interface ─────────────────────────────────────────────────────────────
 
@@ -274,9 +273,11 @@ class ASTBuilder
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in s.invs
             inv_exprs.add(.buildExpr(inv_pn)?)
-        var mods: Modifiers = zmods()
-        if s.is_reflectable or s.is_derive_debug or s.is_derive_eq or s.is_derive_hash
-            mods = Modifiers(false, false, false, false, false, false, s.is_reflectable, false, false, false, s.is_derive_debug, s.is_derive_eq, s.is_derive_hash)
+        var mods = zmods()
+        mods.is_reflectable = s.is_reflectable
+        mods.is_derive_debug = s.is_derive_debug
+        mods.is_derive_eq = s.is_derive_eq
+        mods.is_derive_hash = s.is_derive_hash
         return Decl.struct_(DeclStruct(zspan(), mods, s.name, ifaces, members, inv_exprs))
 
     # ── Union ─────────────────────────────────────────────────────────────────
@@ -320,10 +321,9 @@ class ASTBuilder
             on PNode.field_ as f
                 const type_ref = .parseTypeRef(f.type_name)
                 var fmods = zmods()
-                if f.is_static
-                    fmods = zstatic()
-                if f.is_private
-                    fmods = Modifiers(f.is_public, f.is_private, false, f.is_static, false, false, false, false, false, false, false, false, false)
+                fmods.is_public = f.is_public
+                fmods.is_private = f.is_private
+                fmods.is_static = f.is_static
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
                     return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
@@ -375,8 +375,15 @@ class ASTBuilder
                 else
                     body_stmts.add(s)
         var stmts_list: List(Stmt)? = body_stmts
-        var mods = Modifiers(m.is_public, m.is_private, false, m.is_static, false, false, false, m.is_profile, m.is_once, m.is_export, false, false, false)
-        return Decl.method(DeclMethod(zspan(), mods, m.name, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
+        var mods = zmods()
+        mods.is_public = m.is_public
+        mods.is_private = m.is_private
+        mods.is_static = m.is_static
+        mods.is_profile = m.is_profile
+        mods.is_once = m.is_once
+        mods.is_export = m.is_export
+        mods.is_pure = m.is_pure
+        return Decl.method(DeclMethod(zspan(), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
 
@@ -428,6 +435,19 @@ class ASTBuilder
                         var new_target: Expr = Expr.member(ExprMember(zspan(), target_expr, ei.name))
                         var val_copy: Expr = sa.value
                         return Stmt.assign(StmtAssign(zspan(), new_target, sa.op, val_copy))
+                    else
+                        return s
+            on Stmt.expr as se
+                # Desugar bare-ident call: `method(args)` → `target.method(args)`
+                branch se
+                    on Expr.call as call
+                        branch call.callee
+                            on Expr.ident as ei
+                                var new_callee: Expr = Expr.member(ExprMember(zspan(), target_expr, ei.name))
+                                var call_copy: Expr = Expr.call(ExprCall(zspan(), new_callee, call.args))
+                                return Stmt.expr(call_copy)
+                            else
+                                return s
                     else
                         return s
             else
@@ -583,6 +603,11 @@ class ASTBuilder
                 for s in raw_body
                     new_body.add(.rewriteWithStmt(s, target_expr))
                 return Stmt.with_(StmtWith(Span(pw.line, 0, pw.line, 0), target_expr, new_body))
+
+            on PNode.stmt_in as pi
+                const in_expr = .buildExpr(pi.expr.at(0))?
+                const in_body: List(Stmt) = .buildStmts(pi.stmts)?
+                return Stmt.in_scope(StmtIn(Span(pi.line, 0, pi.line, 0), in_expr, in_body))
 
             on PNode.stmt_destruct as pd
                 const init_expr = .buildExpr(pd.init_expr.at(0))?
@@ -799,8 +824,8 @@ class ASTBuilder
                         on Expr.member as em
                             # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
                             var obj_name = getObjectIdentName(em.object)
-                            if obj_name != nil
-                                var tc = ExprTypeCheck(zspan(), left_expr, obj_name to!)
+                            if obj_name as obj_n
+                                var tc = ExprTypeCheck(zspan(), left_expr, obj_n)
                                 tc.variant_name = em.member
                                 return Expr.type_check(tc)
                             else
@@ -926,6 +951,12 @@ class ASTBuilder
                     const e = .buildExpr(pnd)?
                     operands_list.add(e)
                 return Expr.chained_cmp(ExprChainedCmp(zspan(), ops_list, operands_list))
+
+            on PNode.expr_if_expr as pie
+                const cond_e = .buildExpr(pie.cond.at(0))?
+                const then_e = .buildExpr(pie.then_expr.at(0))?
+                const else_e = .buildExpr(pie.else_expr.at(0))?
+                return Expr.if_expr(ExprIf(zspan(), cond_e, then_e, else_e))
 
             else
                 raise "buildExpr: unexpected PNode variant"
@@ -1185,9 +1216,9 @@ class ASTBuilder
 
     def parseTypeRefRequired(s: str): TypeRef
         const tr = .parseTypeRef(s)
-        if tr == nil
-            return TypeRef.void_()
-        return tr to!
+        if tr as tref
+            return tref
+        return TypeRef.void_()
 
 def main()
     print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"

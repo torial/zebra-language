@@ -12,13 +12,13 @@ class Validator
             return s[0..1]
 
 def testGuardSuccess()
-    var x = try Validator.checkPositive(42)
+    var x = Validator.checkPositive(42)?
     print x
 catch |e|
     print "unexpected error: ".concat(e.message)
 
 def testGuardFail()
-    var bad = try Validator.checkPositive(-5)
+    var bad = Validator.checkPositive(-5)?
     print bad
 catch |e|
     print "guard raised: ".concat(e.message)

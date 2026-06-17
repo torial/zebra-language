@@ -100,7 +100,7 @@ pub fn resolvePass2(
     var exprs       = std.AutoHashMap(*const Ast.ExprIdent, *Symbol).init(map_alloc);
     var class_syms  = std.AutoHashMap(*const Ast.DeclClass, *const Symbol).init(map_alloc);
     var struct_syms = std.AutoHashMap(*const Ast.DeclStruct, *const Symbol).init(map_alloc);
-    var diags       = std.ArrayList(Diagnostic){};
+    var diags       = std.ArrayList(Diagnostic).empty;
 
     const r = Resolver{
         .table            = table,
@@ -165,9 +165,23 @@ const Resolver = struct {
     // ── Namespace ─────────────────────────────────────────────────────────────
 
     fn walkNamespace(r: Resolver, n: *Ast.DeclNamespace, scope: *Scope) anyerror!void {
-        const sym = scope.lookupLocal(n.name) orelse return;
-        const inner = sym.own_scope orelse return;
-        for (n.decls) |decl| try r.walkTopDecl(decl, inner);
+        // Navigate scope chain for dotted names like "Outer.Inner".
+        var parts_buf: [16][]const u8 = undefined;
+        var n_parts: usize = 0;
+        var it = std.mem.splitScalar(u8, n.name, '.');
+        while (it.next()) |p| { if (n_parts < parts_buf.len) { parts_buf[n_parts] = p; n_parts += 1; } }
+        const parts = parts_buf[0..n_parts];
+
+        var current_scope = scope;
+        for (parts, 0..) |part, i| {
+            const sym = current_scope.lookupLocal(part) orelse return;
+            if (i == parts.len - 1) {
+                const inner = sym.own_scope orelse return;
+                for (n.decls) |decl| try r.walkTopDecl(decl, inner);
+            } else {
+                current_scope = sym.own_scope orelse return;
+            }
+        }
     }
 
     // ── Type declarations ─────────────────────────────────────────────────────
@@ -466,6 +480,7 @@ const Resolver = struct {
             .contract => |s| { for (s.exprs) |e| try r.walkExpr(e, scope); },
             .defer_   => |s| try r.walkStmt(s.body, scope),
             .with        => |s| { try r.walkExpr(s.target, scope); try r.walkStmts(s.body, scope); },
+            .in_scope    => |s| { try r.walkExpr(s.expr, scope);   try r.walkStmts(s.body, scope); },
             .arena_scope => |s| try r.walkStmts(s.body, scope),
             .allocate_   =>|s| { try r.walkExpr(s.source, scope); try r.walkStmts(s.body, scope); },
             .copy_out => |s| { try r.walkExpr(s.target, scope); try r.walkExpr(s.value, scope); },
@@ -694,7 +709,7 @@ const Resolver = struct {
         // synthesise a DeclVar and extend e.capture so CodeGen emits the struct
         // field and initialiser automatically — no `capture` block needed in source.
         {
-            var free_names = std.ArrayList([]const u8){};
+            var free_names = std.ArrayList([]const u8).empty;
             defer free_names.deinit(r.diag_alloc);
             var free_seen = std.StringHashMap(void).init(r.diag_alloc);
             defer free_seen.deinit();
@@ -1020,6 +1035,10 @@ const Resolver = struct {
             .defer_  => |s| try r.checkCaptureBoundaryStmt(s.body, lambda_local),
             .with    => |s| {
                 try r.checkCaptureBoundary(s.target, lambda_local);
+                for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
+            },
+            .in_scope => |s| {
+                try r.checkCaptureBoundary(s.expr, lambda_local);
                 for (s.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
             },
             .arena_scope => |s| {

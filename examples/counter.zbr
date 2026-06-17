@@ -1,0 +1,37 @@
+# Counter — MVU example
+# Model: plain struct carrying state
+# Msg:   union of events that can change state
+# update: pure function, returns new model
+# view:  renders model into Gui widgets, calls g.send() to dispatch
+
+struct Counter
+    var count: int
+
+union Msg
+    inc
+    dec
+    reset
+
+def init(): Counter
+    return Counter(count: 0)
+
+def update(model: Counter, msg: Msg): Counter
+    branch msg
+        on Msg.inc   return Counter(count: model.count + 1)
+        on Msg.dec   return Counter(count: model.count - 1)
+        on Msg.reset return Counter(count: 0)
+
+def view(g: Gui, model: Counter)
+    g.text("Count: " + model.count.toString())
+    g.separator()
+    if g.button("+")
+        g.send(Msg.inc)
+    g.sameLine()
+    if g.button("-")
+        g.send(Msg.dec)
+    g.sameLine()
+    if g.button("Reset")
+        g.send(Msg.reset)
+
+def main()
+    Gui.run("Counter", 400, 200, init, update, view)

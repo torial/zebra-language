@@ -119,6 +119,111 @@ pub fn parse(tokens: []const Token, alloc: Allocator) !ParseResult {
     return .{ .ok = .{ .tree = tree, .tokens = tokens } };
 }
 
+// ── Recovery parsing ──────────────────────────────────────────────────────────
+
+/// A recovery-mode parse that accumulates multiple errors instead of stopping
+/// at the first.  On each parse failure the scanner advances to the next
+/// top-level declaration boundary (col==1 + decl-starter keyword) and retries.
+///
+/// Ownership:
+/// - On success (no errors) `trees[0]` owns its ParseTree; caller frees via `deinit`.
+/// - On error all `trees` (partial fragments) and `errors` are freed by `deinit`.
+pub const MultiParseResult = struct {
+    /// Successfully-parsed fragments.  Typically 1 on full success, 0 or more
+    /// on partial success after recovery.  Not used for compilation — only
+    /// present so that `deinit` can free their ParseTrees.
+    trees:  []ParseSuccess,
+    /// All parse errors encountered, in order.  `error_pos` indexes `tokens`.
+    errors: []ParseError,
+    /// The original full token array (non-owning pointer for error reporting).
+    tokens: []const Token,
+    alloc:  Allocator,
+
+    pub fn deinit(self: *MultiParseResult) void {
+        for (self.trees) |*t| t.deinit();
+        self.alloc.free(self.trees);
+        self.alloc.free(self.errors);
+    }
+
+    pub fn hasErrors(self: MultiParseResult) bool {
+        return self.errors.len > 0;
+    }
+};
+
+/// Token kinds that can start a top-level declaration at col==1.
+/// These are the recovery sync points.
+const RECOVERY_STARTERS = [_]TokenKind{
+    .kw_use, .kw_namespace,
+    .kw_class, .kw_interface, .kw_struct,
+    .kw_def, .kw_extend, .at_id, .kw_sig, .kw_type,
+    // visibility / storage modifiers that can precede a decl
+    .kw_public, .kw_private, .kw_protected, .kw_internal,
+    .kw_abstract, .kw_export, .kw_static, .kw_readonly, .kw_extern,
+};
+
+fn isRecoveryStarter(kind: TokenKind) bool {
+    for (RECOVERY_STARTERS) |k| if (k == kind) return true;
+    return false;
+}
+
+/// Scan `tokens[from..]` for the next col==1 decl-starter.
+/// Returns the absolute index in `tokens`, or null if none found before eof.
+fn findRecoveryBoundary(tokens: []const Token, from: usize) ?usize {
+    var i = from;
+    while (i < tokens.len) : (i += 1) {
+        const t = tokens[i];
+        if (t.kind == .eof) break;
+        if (t.col == 1 and isRecoveryStarter(t.kind)) return i;
+    }
+    return null;
+}
+
+/// Parse with boundary-restart error recovery.
+///
+/// Tries to parse `tokens` as a whole program.  On failure, records the error,
+/// advances to the next top-level declaration boundary, and retries.  All
+/// accumulated errors are available in `result.errors`.
+///
+/// Returns a `MultiParseResult`; caller must call `deinit` when done.
+pub fn parseWithRecovery(tokens: []const Token, alloc: Allocator) !MultiParseResult {
+    var trees  = std.ArrayListUnmanaged(ParseSuccess).empty;
+    errdefer { for (trees.items) |*t| t.deinit(); trees.deinit(alloc); }
+    var errors = std.ArrayListUnmanaged(ParseError).empty;
+    errdefer errors.deinit(alloc);
+
+    var pos: usize = 0;
+
+    while (pos < tokens.len) {
+        var pr = try parse(tokens[pos..], alloc);
+        switch (pr) {
+            .ok => |s| {
+                // Transfer ownership of the ParseSuccess to `trees`.
+                // Do NOT call pr.deinit() — ownership has moved.
+                try trees.append(alloc, s);
+                break;
+            },
+            .err => |e| {
+                pr.deinit(); // no-op for .err; keeps symmetry
+                // Normalise error_pos to be absolute in the original `tokens`.
+                const abs_pos: u32 = @intCast(pos + e.error_pos);
+                try errors.append(alloc, .{
+                    .error_pos = abs_pos,
+                    .tokens    = tokens, // full array; abs_pos indexes into it
+                });
+                // Advance to next recovery boundary.
+                pos = findRecoveryBoundary(tokens, pos + e.error_pos + 1) orelse break;
+            },
+        }
+    }
+
+    return .{
+        .trees  = try trees.toOwnedSlice(alloc),
+        .errors = try errors.toOwnedSlice(alloc),
+        .tokens = tokens,
+        .alloc  = alloc,
+    };
+}
+
 // ── Error location heuristic ──────────────────────────────────────────────────
 
 /// Return the index of the last Earley set that contained at least one item.
@@ -397,6 +502,16 @@ test "parse: to! non-nil assertion" {
     try expectAccepts("class Foo\n\tdef run\n\t\tx = foo() to!\n");
 }
 
+test "parse: postfix ! force-unwrap" {
+    // Expr9 → Expr9 bang  — alias for expr to!
+    try expectAccepts("class Foo\n\tdef run\n\t\tx = foo()!\n");
+}
+
+test "parse: postfix ! chained with member access" {
+    // x!.member — force-unwrap then access
+    try expectAccepts("class Foo\n\tdef run\n\t\tx = foo()!.value\n");
+}
+
 // ── Rejection cases ────────────────────────────────────────────────────────────
 
 // ── Acceptance: extended enum (sum types with payloads) ───────────────────────
@@ -531,6 +646,30 @@ test "parse: old expression in ensure clause" {
     try expectAccepts("class Foo\n\tdef push(x: int)\n\t\tensure\n\t\t\tcount == old count + 1\n");
 }
 
+// ── Acceptance: lambda-in-call argument patterns ──────────────────────────────
+
+test "parse: lambda-in-call with for loop body" {
+    // f(def()  \n  indent  for x in items  eol  indent  pass  eol  dedent  dedent  )
+    // This is the minimal lambda-in-call-arg with a nested block statement.
+    try expectAccepts("def main()\n\tvar items = List()\n\tf(def()\n\t\tfor x in items\n\t\t\tpass\n\t)\n");
+}
+
+test "parse: nested lambda-in-call (two levels)" {
+    // f(def()  \n  INDENT  g(def()  \n  INDENT  pass  eol  DEDENT  )  eol  DEDENT  )
+    // Two levels of lambda-in-call argument, stacked vertically.
+    // Token structure: open_call(f) def lparen rparen eol
+    //   INDENT  open_call(g) def lparen rparen eol
+    //     INDENT  pass eol  DEDENT  rparen eol
+    //   DEDENT  rparen eol
+    try expectAccepts("def main()\n\tf(def()\n\t\tg(def()\n\t\t\tpass\n\t\t)\n\t)\n");
+}
+
+test "parse: lambda-in-call with for loop containing nested lambda call" {
+    // f(def() for x in items g(def() pass ) )
+    // Three levels: outer lambda body → for body → inner lambda call
+    try expectAccepts("def main()\n\tvar items = List()\n\tf(def()\n\t\tfor x in items\n\t\t\tg(def()\n\t\t\t\tpass\n\t\t\t)\n\t)\n");
+}
+
 // ── Acceptance: tuple types and destructuring ─────────────────────────────────
 
 test "parse: tuple return type (int, int)" {
@@ -553,6 +692,25 @@ test "parse: tuple index access .0 .1" {
     try expectAccepts("def main()\n\tvar t = foo()\n\tvar x = t.0\n\tvar y = t.1\n");
 }
 
+// ── Acceptance: block comments ───────────────────────────────────────────────
+
+test "parse: block comment /# #/ at top level" {
+    try expectAccepts("/# this is a block comment #/\ndef foo(): int\n\treturn 1\n");
+}
+
+test "parse: block comment /# #/ inline after expression" {
+    try expectAccepts("def main()\n\tvar x = 1 /# plus two #/ + 2\n");
+}
+
+test "parse: nested block comments /# /# #/ #/" {
+    // Inner /# #/ pair is consumed first; outer pair closes after.
+    try expectAccepts("def main()\n\t/# outer /# inner #/ still outer #/\n\tvar x = 1\n");
+}
+
+test "parse: block comment spanning multiple lines" {
+    try expectAccepts("def main()\n\t/#\n\t  multi-line block comment\n\t  spanning three lines\n\t#/\n\tvar x = 1\n");
+}
+
 // ── Rejection cases ────────────────────────────────────────────────────────────
 
 test "parse: error position is past the valid prefix" {
@@ -565,4 +723,37 @@ test "parse: error position is past the valid prefix" {
     try testing.expect(!result.isOk());
     // Must have advanced past position 0 (the start of the class)
     try testing.expect(result.err.error_pos > 0);
+}
+
+test "parse: recovery boundary — slice from second class parses ok" {
+    // Validates the core recovery assumption: after a parse error in the first
+    // top-level decl, a slice starting at the second decl (col==1, kw_class)
+    // parses successfully.  If this fails, recovery would produce cascading
+    // errors from orphaned indent/dedent tokens.
+    const src =
+        "class Foo\n\tdef m()\n\t\tbad syntax here!!!\n\nclass Bar\n\tdef greet(): str\n\t\treturn \"hello\"\n";
+    const tokens = try Tokenizer.tokenize(src, testing.allocator);
+    defer testing.allocator.free(tokens);
+
+    // Find the second kw_class at col==1
+    var bar_pos: usize = 0;
+    var class_count: usize = 0;
+    for (tokens, 0..) |t, i| {
+        if (t.kind == .kw_class and t.col == 1) {
+            class_count += 1;
+            if (class_count == 2) { bar_pos = i; break; }
+        }
+    }
+    try testing.expect(class_count >= 2); // sanity: two classes found
+
+    // The slice from bar_pos should parse cleanly (no orphaned dedents).
+    var result = try parse(tokens[bar_pos..], testing.allocator);
+    defer result.deinit();
+    if (!result.isOk()) {
+        const e = result.err;
+        const ep = if (e.error_pos < e.tokens.len) e.error_pos else e.tokens.len - 1;
+        std.debug.print("recovery slice parse FAILED at pos {d} kind={s}\n",
+            .{ e.error_pos, @tagName(e.tokens[ep].kind) });
+    }
+    try testing.expect(result.isOk());
 }

@@ -78,6 +78,10 @@ pub const Type = union(enum) {
     tcp_conn,
     /// `UdpSocket` — result of `Udp.socket`.
     udp_socket,
+    /// `SqliteDb` — open SQLite database connection.
+    sqlite_db,
+    /// `SqliteRow` — a row returned by `db.query()`.
+    sqlite_row,
     /// `Regex` — compiled regular expression.
     regex,
     /// `Gui` — GUI context passed to `Gui.run` frame callback; also the `Gui` namespace type.
@@ -257,6 +261,8 @@ pub const Type = union(enum) {
             .http_response  => b == .http_response,
             .tcp_conn       => b == .tcp_conn,
             .udp_socket     => b == .udp_socket,
+            .sqlite_db      => b == .sqlite_db,
+            .sqlite_row     => b == .sqlite_row,
             .regex          => b == .regex,
             .gui_context    => b == .gui_context,
             .low_level      => b == .low_level,
@@ -342,6 +348,8 @@ pub const Type = union(enum) {
             .http_response  => "HttpResponse",
             .tcp_conn       => "TcpConn",
             .udp_socket     => "UdpSocket",
+            .sqlite_db      => "SqliteDb",
+            .sqlite_row     => "SqliteRow",
             .regex          => "Regex",
             .gui_context    => "Gui",
             .low_level      => "_LowLevel",
@@ -1083,7 +1091,7 @@ pub fn typeCheckPass3Ex(
     try collectIfaceDecls(module, &iface_decls);
     var narrowed_types  = std.StringHashMap(Type).init(map_alloc);
     defer narrowed_types.deinit();
-    var diags           = std.ArrayList(Diagnostic){};
+    var diags           = std.ArrayList(Diagnostic).empty;
 
     const tc = TypeChecker{
         .resolve              = resolve,
@@ -1196,6 +1204,8 @@ const TypeChecker = struct {
         if (from == .http_response and to == .http_response) return true;
         if (from == .tcp_conn   and to == .tcp_conn)   return true;
         if (from == .udp_socket and to == .udp_socket) return true;
+        if (from == .sqlite_db  and to == .sqlite_db)  return true;
+        if (from == .sqlite_row and to == .sqlite_row) return true;
         if (from == .regex      and to == .regex)       return true;
         if (from == .date_time     and to == .date_time)     return true;
         if (from == .calendar_view and to == .calendar_view) return true;
@@ -1821,6 +1831,31 @@ const TypeChecker = struct {
             .contract => |s| { for (s.exprs) |e| _ = try tc.inferExpr(e); },
             .defer_   => |s| try tc.checkStmt(s.body),
             .with        => |s| { _ = try tc.inferExpr(s.target); try tc.checkStmts(s.body); },
+            .in_scope    => |s| {
+                const scope_t = try tc.inferExpr(s.expr);
+                switch (scope_t) {
+                    .optional => |inner| try tc.emitError(s.span,
+                        "expression has optional type '{s}?' — use 'using expr!' to unwrap before 'using'",
+                        .{inner.name()}),
+                    .named => |sym| {
+                        if (sym.own_scope) |scope| {
+                            const has_begin = scope.lookupLocal("begin") != null;
+                            const has_end   = scope.lookupLocal("end")   != null;
+                            if (!has_begin or !has_end) {
+                                const missing: []const u8 =
+                                    if (!has_begin and !has_end) "begin and end"
+                                    else if (!has_begin) "begin"
+                                    else "end";
+                                try tc.emitError(s.span,
+                                    "type '{s}' used in 'using' must define 'def begin()' and 'def end()': '{s}' is missing",
+                                    .{ sym.name, missing });
+                            }
+                        }
+                    },
+                    else => {},
+                }
+                try tc.checkStmts(s.body);
+            },
             .arena_scope => |s| try tc.checkStmts(s.body),
             .allocate_   =>|s| { _ = try tc.inferExpr(s.source); try tc.checkStmts(s.body); },
             .copy_out    => |s| { _ = try tc.inferExpr(s.target); _ = try tc.inferExpr(s.value); },
@@ -2587,6 +2622,24 @@ const TypeChecker = struct {
                 }
             }
         }
+        // Bare identifier initialized from db.query(sql) — no explicit type annotation,
+        // but the variable's init expression is a sqlite query call → elements are sqlite_row.
+        if (iter.* == .ident) {
+            if (tc.resolve.exprs.get(&iter.ident)) |sym| {
+                if (sym.decl == .var_) {
+                    const dv = sym.decl.var_;
+                    if (dv.init) |init_expr| {
+                        if (init_expr.* == .call and init_expr.call.callee.* == .member) {
+                            const m = init_expr.call.callee.member;
+                            if (std.mem.eql(u8, m.member, "query")) {
+                                const obj_t = tc.expr_types.get(m.object) orelse .unknown;
+                                if (obj_t == .sqlite_db) return .sqlite_row;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // csv.rows() / csv.dataRows() / csv.header() / csv.row(n) → each element is a csv_row
         if (iter.* == .call) {
             if (iter.call.callee.* == .member) {
@@ -2605,6 +2658,16 @@ const TypeChecker = struct {
         if (iter.* == .ident) {
             const t = tc.expr_types.get(iter) orelse .unknown;
             if (t == .csv_row) return .string;
+        }
+        // db.query(sql) / db.query(sql, params) → each element is a sqlite_row
+        if (iter.* == .call) {
+            if (iter.call.callee.* == .member) {
+                const m = iter.call.callee.member;
+                if (std.mem.eql(u8, m.member, "query")) {
+                    const obj_t = tc.expr_types.get(m.object) orelse .unknown;
+                    if (obj_t == .sqlite_db) return .sqlite_row;
+                }
+            }
         }
         // Cross-module field: `c.args` where `c` has cross_module type and `args` is List(T).
         // Look up list_field_elem_types in the imported module interface.
@@ -2672,7 +2735,29 @@ const TypeChecker = struct {
     }
 
     fn inferCall(tc: TypeChecker, e: *Ast.ExprCall) anyerror!Type {
-        for (e.args) |arg| _ = try tc.inferExpr(arg.value);
+        // SQLite exec/query: the params argument (arg[1]) is a list literal that may
+        // contain mixed types (int, str, float) — suppress the homogeneity check by
+        // visiting each element directly instead of inferring the list as a whole.
+        const sqlite_params_idx: ?usize = blk: {
+            if (e.callee.* != .member) break :blk null;
+            const m = e.callee.member;
+            if (!std.mem.eql(u8, m.member, "exec") and !std.mem.eql(u8, m.member, "query"))
+                break :blk null;
+            if (m.object.* != .ident) break :blk null;
+            const sym = tc.resolve.exprs.get(&m.object.ident) orelse break :blk null;
+            const obj_t = tc.symbolType(sym);
+            if (obj_t != .sqlite_db) break :blk null;
+            break :blk 1;
+        };
+        for (e.args, 0..) |arg, i| {
+            if (sqlite_params_idx) |pi| {
+                if (i == pi and arg.value.* == .list_lit) {
+                    for (arg.value.list_lit.elems) |el| _ = try tc.inferExpr(el);
+                    continue;
+                }
+            }
+            _ = try tc.inferExpr(arg.value);
+        }
         // Mark fn_ref arguments that are passed to fn_sig parameters so CodeGen
         // can prepend `&` to coerce a function value to a function pointer.
         if (e.callee.* == .ident) {
@@ -2827,6 +2912,7 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "basename") or
                         std.mem.eql(u8, mem.member, "dirname") or
                         std.mem.eql(u8, mem.member, "ext") or
+                        std.mem.eql(u8, mem.member, "extension") or
                         std.mem.eql(u8, mem.member, "stem") or
                         std.mem.eql(u8, mem.member, "absolute")) return .string;
                     return .void_;
@@ -2850,6 +2936,19 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "clz") or
                         std.mem.eql(u8, mem.member, "ctz")) return .int;
                     return .float;
+                }
+                // Atomic(T) instance methods.  An Atomic var types as .unknown
+                // (nested generic), so detect it from the declared `Atomic(T)`
+                // type ref and return the element type.  Without this, a bare
+                // `counter.add(1)` statement reads as .unknown and CodeGen omits
+                // the `_ =` discard, producing "value of type i64 ignored".
+                if (tc.atomicElemType(mem.object)) |elem_t| {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "store")) return .void_;
+                    if (std.mem.eql(u8, mem.member, "cas")) return .bool; // compare-and-swap → bool
+                    // add / sub / swap / load / exchange → element type T.
+                    return elem_t;
                 }
                 // SIMD static constructors: f32x8.splat(v), f32x8.load(s).
                 if (mem.object.* == .ident) {
@@ -2925,6 +3024,17 @@ const TypeChecker = struct {
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Udp")) {
                     _ = try tc.inferExpr(mem.object);
                     if (std.mem.eql(u8, mem.member, "socket")) return .udp_socket;
+                    if (std.mem.eql(u8, mem.member, "bind"))   return .udp_socket;
+                    return .void_;
+                }
+                // Sqlite.* static methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Sqlite")) {
+                    _ = try tc.inferExpr(mem.object);
+                    if (std.mem.eql(u8, mem.member, "open")) {
+                        const boxed = tc.map_alloc.create(Type) catch return .sqlite_db;
+                        boxed.* = .sqlite_db;
+                        return .{ .optional = boxed };
+                    }
                     return .void_;
                 }
                 // Net.* static methods.
@@ -2963,6 +3073,7 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "exec_inherit")) return .int;
                     if (std.mem.eql(u8, mem.member, "spawn"))        return .sys_process;
                     if (std.mem.eql(u8, mem.member, "cwd"))          return .string;
+                    if (std.mem.eql(u8, mem.member, "selfExe"))      return .string;
                     if (std.mem.eql(u8, mem.member, "exit"))         return .void_;
                     if (std.mem.eql(u8, mem.member, "err"))      return .void_;
                     if (std.mem.eql(u8, mem.member, "errln"))    return .void_;
@@ -3027,6 +3138,16 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "fnv64") or
                         std.mem.eql(u8, mem.member, "xxHash64")) return .int;
                     return .string; // sha256/sha512/md5/blake3/hmac256/hmac512
+                }
+                // Crypto.* static methods.
+                if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Crypto")) {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "encrypt")) return .string;
+                    // decrypt returns ?string
+                    const boxed = tc.map_alloc.create(Type) catch return .string;
+                    boxed.* = .string;
+                    return .{ .optional = boxed };
                 }
                 // Random.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Random")) {
@@ -3412,6 +3533,18 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "recv")) return .string;
             return .void_;  // send, close
         }
+        // SqliteDb methods
+        if (obj_type == .sqlite_db) {
+            if (std.mem.eql(u8, method, "query")) return .unknown; // List(sqlite_row) — for-in uses separate inference
+            return .void_;  // exec, begin, commit, rollback, close
+        }
+        // SqliteRow methods
+        if (obj_type == .sqlite_row) {
+            if (std.mem.eql(u8, method, "asInt")   or std.mem.eql(u8, method, "asBool")) return .int;
+            if (std.mem.eql(u8, method, "asStr"))   return .string;
+            if (std.mem.eql(u8, method, "asFloat")) return .float;
+            return .unknown;
+        }
         // Regex methods
         if (obj_type == .regex) {
             if (std.mem.eql(u8, method, "match"))   return .bool;
@@ -3439,8 +3572,17 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "slider"))          return .float;
             if (std.mem.eql(u8, method, "input"))           return .string;
             if (std.mem.eql(u8, method, "inputMultiline"))  return .string;
+            if (std.mem.eql(u8, method, "combobox"))        return .int;
+            if (std.mem.eql(u8, method, "spinbox"))         return .int;
+            if (std.mem.eql(u8, method, "openFile") or
+                std.mem.eql(u8, method, "saveFile") or
+                std.mem.eql(u8, method, "openFolder")) {
+                const boxed = tc.map_alloc.create(Type) catch return .string;
+                boxed.* = .string;
+                return .{ .optional = boxed };
+            }
             // void-returning widgets
-            return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, …
+            return .void_;  // text, separator, sameLine, textColored, treePop, endTable, childWindow, progressBar, msgBox, msgBoxError, …
         }
         // LowLevel sub-API methods (g.lowLevel.xxx)
         if (obj_type == .low_level) {
@@ -3490,6 +3632,7 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, method, "toIso8601") or
                 std.mem.eql(u8, method, "format"))        return .string;
             if (std.mem.eql(u8, method, "inCalendar"))    return .calendar_view;
+            if (std.mem.eql(u8, method, "inZone"))        return .date_time;
             return .void_;
         }
         // JsonValue methods
@@ -3701,10 +3844,28 @@ const TypeChecker = struct {
     /// - Variables and parameters → their declared type (or `unknown` if inferred).
     /// - Methods → `unknown` (use `inferCall` to get the return type at a call site).
     /// - Type symbols → `named(sym)` (the symbol represents the type itself).
+    /// If `obj` is an identifier bound to a var/local of declared type
+    /// `Atomic(T)`, return the element type `T` (defaulting to `.int` when the
+    /// type arg is absent).  Returns null otherwise.  Used to give Atomic
+    /// instance-method calls a concrete return type for the `_ =` discard and
+    /// assignment checks.
+    fn atomicElemType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        if (obj.* != .ident) return null;
+        const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        if (sym.kind != .var_ and sym.kind != .local) return null;
+        if (sym.decl != .var_) return null;
+        const tr = sym.decl.var_.type_ orelse return null;
+        if (tr != .generic) return null;
+        const g = tr.generic;
+        if (!std.mem.eql(u8, g.name, "Atomic")) return null;
+        if (g.args.len < 1) return .int;
+        return tc.typeFromRef(&g.args[0]);
+    }
+
     fn symbolType(tc: TypeChecker, sym: *const Symbol) Type {
         return switch (sym.kind) {
             .class, .interface, .struct_, .mixin, .enum_ => .{ .named = sym },
-            .namespace_   => .unknown, // namespaces are not value-typed
+            .namespace_   => .{ .named = sym }, // namespaces act as named containers for member access
             .method       => .{ .fn_ref = sym }, // first-class function reference
             .var_, .local => switch (sym.decl) {
                 .var_ => |decl| {
@@ -3984,6 +4145,8 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "HttpResponse"))   return .http_response;
     if (std.mem.eql(u8, n, "TcpConn"))       return .tcp_conn;
     if (std.mem.eql(u8, n, "UdpSocket"))     return .udp_socket;
+    if (std.mem.eql(u8, n, "SqliteDb"))      return .sqlite_db;
+    if (std.mem.eql(u8, n, "SqliteRow"))     return .sqlite_row;
     if (std.mem.eql(u8, n, "Regex"))         return .regex;
     if (std.mem.eql(u8, n, "Gui"))          return .gui_context;
     if (std.mem.eql(u8, n, "Shell"))         return .shell;

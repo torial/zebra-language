@@ -140,6 +140,11 @@ pub const Modifiers = packed struct {
     derive_eq: bool = false,
     /// `@derive(Hash)` — auto-generates `hash()` for use as a HashMap key.
     derive_hash: bool = false,
+    /// `@pure` annotation — method does not mutate `this`.  Emits
+    /// `self: *const Owner` so the method can be called on by-value
+    /// or const receivers (e.g. function params declared by value).
+    /// Opt-in; default behavior unchanged.
+    pure: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────
@@ -165,6 +170,9 @@ pub const DeclClass = struct {
     /// `invariant` block (contract).
     invariants: []const *Expr,
     members: []const Decl,
+    /// `@export("sym") class Foo is IFoo` — symbol name for the factory function.
+    /// When set, emits `pub export fn sym() *IFoo` that returns a module-static singleton.
+    export_sym: ?[]const u8 = null,
 };
 
 pub const DeclInterface = struct {
@@ -378,6 +386,7 @@ pub const Stmt = union(enum) {
     arena_scope: *StmtArenaScope,   // arena eol Block — scoped sub-arena
     allocate_: *StmtAllocate,       // allocate <expr> eol Block — redirect _allocator
     copy_out: *StmtCopyOut,         // lhs <- rhs — copy rhs out of the current arena
+    in_scope: *StmtIn,              // in expr eol Block → expr.begin(); defer expr.end(); body
 };
 
 pub const StmtIf = struct {
@@ -513,6 +522,14 @@ pub const StmtDefer = struct {
 pub const StmtWith = struct {
     span: Span,
     target: *Expr,
+    body: []const Stmt,
+};
+
+/// `in expr eol Block` — calls expr.begin(), defers expr.end(), executes body.
+/// Desugars to: { const _in_N = expr; _in_N.begin(); defer _in_N.end(); body }
+pub const StmtIn = struct {
+    span: Span,
+    expr: *Expr,
     body: []const Stmt,
 };
 
