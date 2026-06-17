@@ -2937,6 +2937,19 @@ const TypeChecker = struct {
                         std.mem.eql(u8, mem.member, "ctz")) return .int;
                     return .float;
                 }
+                // Atomic(T) instance methods.  An Atomic var types as .unknown
+                // (nested generic), so detect it from the declared `Atomic(T)`
+                // type ref and return the element type.  Without this, a bare
+                // `counter.add(1)` statement reads as .unknown and CodeGen omits
+                // the `_ =` discard, producing "value of type i64 ignored".
+                if (tc.atomicElemType(mem.object)) |elem_t| {
+                    _ = try tc.inferExpr(mem.object);
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "store")) return .void_;
+                    if (std.mem.eql(u8, mem.member, "cas")) return .bool; // compare-and-swap → bool
+                    // add / sub / swap / load / exchange → element type T.
+                    return elem_t;
+                }
                 // SIMD static constructors: f32x8.splat(v), f32x8.load(s).
                 if (mem.object.* == .ident) {
                     if (Builtins.parseSimdType(mem.object.ident.name)) |si| {
@@ -3831,6 +3844,24 @@ const TypeChecker = struct {
     /// - Variables and parameters → their declared type (or `unknown` if inferred).
     /// - Methods → `unknown` (use `inferCall` to get the return type at a call site).
     /// - Type symbols → `named(sym)` (the symbol represents the type itself).
+    /// If `obj` is an identifier bound to a var/local of declared type
+    /// `Atomic(T)`, return the element type `T` (defaulting to `.int` when the
+    /// type arg is absent).  Returns null otherwise.  Used to give Atomic
+    /// instance-method calls a concrete return type for the `_ =` discard and
+    /// assignment checks.
+    fn atomicElemType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        if (obj.* != .ident) return null;
+        const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        if (sym.kind != .var_ and sym.kind != .local) return null;
+        if (sym.decl != .var_) return null;
+        const tr = sym.decl.var_.type_ orelse return null;
+        if (tr != .generic) return null;
+        const g = tr.generic;
+        if (!std.mem.eql(u8, g.name, "Atomic")) return null;
+        if (g.args.len < 1) return .int;
+        return tc.typeFromRef(&g.args[0]);
+    }
+
     fn symbolType(tc: TypeChecker, sym: *const Symbol) Type {
         return switch (sym.kind) {
             .class, .interface, .struct_, .mixin, .enum_ => .{ .named = sym },

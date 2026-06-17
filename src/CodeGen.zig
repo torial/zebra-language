@@ -12780,6 +12780,52 @@ const Generator = struct {
 
     /// Emit a call with one or more closure-typed args wrapped in a labeled
     /// block that registers a module-level thunk per closure arg.  See
+    /// Gap 1 gate: a capture-block closure passed as a call arg needs the
+    /// bare-fn-pointer thunk treatment when its destination is a `sig` (bare
+    /// fn-pointer) parameter — those can't carry the closure's captured state,
+    /// so we hoist a module-level trampoline.
+    ///
+    /// In Zebra *user* code a closure value can only be typed through a `sig`
+    /// parameter (there is no user-writable `anytype`), so every closure arg to
+    /// a user function — same-module *or* cross-module (e.g. `Signal.connect`,
+    /// the case Gap 1 exists for) — wants the thunk.  The sole exceptions are
+    /// the stdlib builtins that take the closure *struct* directly via `anytype`
+    /// dispatch (`sys.go`, `ThreadPool.submit`); those must NOT be thunked, and
+    /// are handled by their own stdlib emitters.  A negative gate (thunk unless
+    /// a known struct-consumer) is therefore correct and, unlike a param-type
+    /// probe, never risks un-thunking an unresolvable cross-module `sig` param.
+    fn callNeedsClosureThunks(g: Generator, e: *Ast.ExprCall) bool {
+        if (g.isStdlibClosureStructConsumer(e.callee)) return false;
+        for (e.args) |a| {
+            if (g.closureLambdaFor(a.value) != null) return true;
+        }
+        return false;
+    }
+
+    /// stdlib functions that accept a closure *struct* via `anytype` dispatch
+    /// and therefore must never be handed a bare-fn-pointer thunk: `sys.go(...)`
+    /// and `<pool: ThreadPool>.submit(...)`.  Detected structurally so the
+    /// detection survives even when the receiver's type can't be resolved.
+    fn isStdlibClosureStructConsumer(g: Generator, callee: *const Ast.Expr) bool {
+        if (callee.* != .member) return false;
+        const m = callee.member;
+        // sys.go(closure)
+        if (std.mem.eql(u8, m.member, "go") and m.object.* == .ident and
+            std.mem.eql(u8, m.object.ident.name, "sys")) return true;
+        // <ThreadPool>.submit(closure)
+        if (std.mem.eql(u8, m.member, "submit")) {
+            if (g.getExprDeclaredType(m.object)) |tr| {
+                const nm: ?[]const u8 = switch (tr) {
+                    .generic => |gt| gt.name,
+                    .named   => |nn| nn.name,
+                    else     => null,
+                };
+                if (nm) |n| if (std.mem.eql(u8, n, "ThreadPool")) return true;
+            }
+        }
+        return false;
+    }
+
     /// genCall's Gap 1 dispatch + flushPendingThunks.
     fn emitCallWithClosureThunks(g: Generator, e: *Ast.ExprCall) anyerror!void {
         // Pre-assign thunk IDs and stash specs so the call body can refer to
@@ -12888,11 +12934,7 @@ const Generator = struct {
         // dispatch fn into the slots, (c) calls the target with the public
         // thunk fn pointer in place of the closure.
         // See QUICKSTART §19.1 + docs/CONCERNS.md #3 Gap 1.
-        var closure_arg_count: usize = 0;
-        for (e.args) |a| {
-            if (g.closureLambdaFor(a.value) != null) closure_arg_count += 1;
-        }
-        if (closure_arg_count > 0) {
+        if (g.callNeedsClosureThunks(e)) {
             try g.emitCallWithClosureThunks(e);
             return;
         }

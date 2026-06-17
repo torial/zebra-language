@@ -3583,14 +3583,18 @@ struct Generator
                             var stmt_t: Type_ = inferExpr(e, .infer_ctx to!)
                             if not stmt_t is Type_.void_ and not stmt_t is Type_.unknown_ and not stmt_t is Type_.unresolved and not stmt_t is Type_.context_dependent
                                 needs_discard = true
-                        # Atomic.add/swap/cas return the previous value (non-void).
-                        # inferExpr can't see through Atomic(T) → unknown_, so check directly.
+                        # Atomic non-void methods: add/sub/swap return the prior
+                        # value, load returns the current value, cas returns a
+                        # bool.  store → void (no discard).  inferExpr can't see
+                        # through Atomic(T) → unknown_, so check directly.  Set
+                        # must match the bootstrap TC's non-void Atomic methods
+                        # (src/TypeChecker.zig atomicElemType) so emission agrees.
                         if not needs_discard
                             if e is Expr.call as ec_at
                                 if ec_at.callee is Expr.member as mem_at
                                     if mem_at.object is Expr.ident as recv_at
                                         if atomic_locals.contains_(recv_at.name)
-                                            if mem_at.member == "add" or mem_at.member == "swap" or mem_at.member == "cas"
+                                            if mem_at.member == "add" or mem_at.member == "sub" or mem_at.member == "swap" or mem_at.member == "load" or mem_at.member == "cas"
                                                 needs_discard = true
                         if needs_discard
                             w.emit("_ = ")
@@ -7487,6 +7491,38 @@ struct Generator
                     return lam_id
         return nil
 
+    # stdlib functions that take a closure *struct* via anytype dispatch and so
+    # must never be handed a bare-fn-pointer thunk: sys.go(...) and
+    # <pool: ThreadPool>.submit(...).  Mirrors bootstrap isStdlibClosureStructConsumer.
+    def isStdlibClosureStructConsumer(callee: Expr): bool
+        if callee is Expr.member as m
+            if m.member == "go"
+                if getIdentName(m.object) as on1
+                    if on1 == "sys"
+                        return true
+            if m.member == "submit"
+                if getIdentName(m.object) as on2
+                    if thread_pool_locals.contains_(on2)
+                        return true
+        return false
+
+    # Gap 1 gate: thunk every closure arg except those bound for a stdlib
+    # struct-consumer (sys.go / ThreadPool.submit).  Mirrors bootstrap
+    # callNeedsClosureThunks.  A closure value in Zebra user code can only be
+    # typed through a sig param, so this negative gate never un-thunks the
+    # cross-module sig case (Signal.connect) — Gap 1's reason for existing.
+    def callNeedsClosureThunks(c: ExprCall): bool
+        if .isStdlibClosureStructConsumer(c.callee)
+            return false
+        for a in c.args
+            if a.value is Expr.lambda as lam_chk
+                if lam_chk.captures.count() > 0
+                    return true
+            else if a.value is Expr.ident as id_chk
+                if closure_vars.contains_(id_chk.name)
+                    return true
+        return false
+
     def emitCallWithClosureThunks(c: ExprCall)
         # Pre-assign thunk IDs per closure arg.  Parallel list keeps the same
         # order as c.args; entry is -1 for non-closure args.  The lambda nodes
@@ -7672,19 +7708,11 @@ struct Generator
 
     def genCall(c: ExprCall)
         # ── Gap 1: closure-via-sig thunking ───────────────────────────────────
-        # When any arg is a closure — either an inline capture-block lambda,
-        # OR an ident bound to one (tracked in closure_vars) — wrap the call
-        # in `({ setup; target(thunk_fn) })` and register a module-level
-        # thunk per closure arg.  See bootstrap src/CodeGen.zig.
-        var has_closure_arg = false
-        for a in c.args
-            if a.value is Expr.lambda as lam_chk
-                if lam_chk.captures.count() > 0
-                    has_closure_arg = true
-            else if a.value is Expr.ident as id_chk
-                if closure_vars.contains_(id_chk.name)
-                    has_closure_arg = true
-        if has_closure_arg
+        # Thunk every closure arg (inline capture-block lambda OR ident bound to
+        # one) EXCEPT those passed to a stdlib closure-struct consumer (sys.go /
+        # ThreadPool.submit), which take the struct directly.  See bootstrap
+        # src/CodeGen.zig callNeedsClosureThunks.
+        if .callNeedsClosureThunks(c)
             emitCallWithClosureThunks(c)
             return
 

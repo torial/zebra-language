@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-127. Next new bug: BUG-128.**
+**Last bug number generated: BUG-129. Next new bug: BUG-130.**
 
 ---
 
@@ -104,6 +104,56 @@ Positive literal initializers widen to `f64`; negative literals (unary minus) em
 **Workaround:** Annotate explicitly: `var x: float = -6.0`.
 
 **Discovered:** OrbitFollower case study, 2026-06-09.
+
+---
+
+## BUG-128: Gap 1 thunk path over-applies to `sys.go` / `ThreadPool.submit`
+
+**Severity:** high (broke two shipped 1.0 concurrency features — `Chan`+`sys.go`, `ThreadPool` — for closure arguments, in *both* compilers)
+**Status:** FIXED 2026-06-16 — `genCall`'s Gap-1 gate routed *any* call with a
+closure argument into `emitCallWithClosureThunks`, before the `sys.go`
+(`_sys_go`) and `ThreadPool.submit` handlers could run.  Those consumers take
+the closure *struct* directly via `anytype` dispatch, but the thunk path handed
+them a bare fn-pointer and emitted the callee verbatim (`sys.go(...)` →
+undeclared `sys`; `pool.submit(thunk)` → anon-struct type-identity mismatch).
+
+**Root cause:** introduced by BUG-126 (commit 48a3aad).  The Gap-1 thunk exists
+only to satisfy bare `sig` fn-pointer parameters, but the gate never checked
+that — it fired on the mere presence of a closure arg.
+
+**Fix:** a *negative* gate (`callNeedsClosureThunks` /
+`isStdlibClosureStructConsumer` in both `src/CodeGen.zig` and
+`selfhost/codegen.zbr`): thunk every closure arg EXCEPT those passed to the two
+stdlib closure-struct consumers (`sys.go`, `<pool: ThreadPool>.submit`).  In
+Zebra *user* code a closure value can only be typed through a `sig` param (no
+user-writable `anytype`), so this never un-thunks the cross-module `sig` case
+(`Signal.connect`) that Gap 1 exists for — verified with an isolated
+cross-module repro (`evt.connect(closure)` → `evt.connect(_zbr_thunks_1[...])`).
+
+**Discovered:** WIP-branch merge gate (`chan_thread_test` + `thread_pool_test`
+smoke failures), 2026-06-16.
+
+---
+
+## BUG-129: bare `Atomic.add(...)` statement misses the `_ =` discard (bootstrap TC)
+
+**Severity:** medium (any `Atomic(int).add/sub/swap/load` used as a bare
+statement fails to compile under the bootstrap compiler — Zig "value of type
+i64 ignored")
+**Status:** FIXED 2026-06-16 — pre-existing, independent of BUG-128 (fails even
+at top level, not just in closures).  `src/TypeChecker.zig` had no `Atomic`
+inference, so `counter.add(1)` typed as `.unknown`, and the CodeGen discard rule
+(`t != .void_ and t != .unknown`) skipped the `_ =`.  `atomic_test` only passes
+because it captures every non-void return (`var old: int = counter.add(3)`).
+
+**Fix:** `atomicElemType` + an Atomic arm in `inferCall` (`add/sub/swap/load` →
+element type `T`, `cas` → bool, `store` → void).  The selfhost already handled
+this in codegen via `atomic_locals` (the `inferExpr`-can't-see-Atomic
+workaround); its method set was widened to `{add,sub,swap,load,cas}` to match
+the bootstrap so both compilers emit the discard identically.
+
+**Discovered:** unmasked by the BUG-128 fix while greening `thread_pool_test`,
+2026-06-16.
 
 ---
 
