@@ -119,6 +119,67 @@ queued for the 0.13 syntax-cleanup window. See §12 below.
 
 ## Medium Term (Milestone Features)
 
+### 27. Complete + reconcile cross-module type resolution ★ (scoped 2026-06-17)
+
+**Motivation:** GameEngine script porting repeatedly hits the same root — the
+front-end doesn't fully resolve a `use`d module's type signatures, so inference
+falls back to defaults. Four distinct symptoms, one cause:
+1. **Cross-module default-fill** — a caller can't omit defaulted ctor args
+   (default-fill is same-module only). Forced GameEngine `TweenInfo` to stay
+   3 required params + translator pad/truncate.
+2. **Cross-module free-function return inference (selfhost)** — `goalNum(...)`
+   from a dep infers `unknown_` → a `[goalNum(...)]` list literal builds
+   `ArrayList([]const u8)` (str) instead of `ArrayList(*TweenGoal)`. Blocks the
+   translated `TweenService:Create(inst, info, {Prop=goal})` → `[goalX(...)]`
+   path end-to-end.
+3. **Cross-module method param types** — no `List(T)` hint reaches an inline
+   collection arg of a cross-module method (`svc.create(.., [..])`).
+4. **Cross-module optional-return divergence** — bootstrap TC strips `?T` from a
+   cross-module method return (`getSize(): Vector3?` → `Vector3`), so
+   GameEngine `instance.zbr` compiles under selfhost but NOT bootstrap. The two
+   compilers have *diverged* in cross-module inference (each ahead in places).
+
+**Good news (the infra mostly exists — this is completion, not greenfield):**
+- Bootstrap `ModuleInterface` already carries: method returns (`methods`),
+  field types, type kinds, `throws_methods`, `fn_return_types` (free-fn returns),
+  `ref_fields`/`optional_ref_fields`. `inferCall` consults `fn_return_types` for
+  cross-module free-fn calls (src/TypeChecker.zig ~2855).
+- Selfhost `methodReturnAny` / `methodParamTypeAtAny` already consult
+  `dep_types`; dep free functions are stored in `dep_types.classOf("")`.
+- The self-hosting equivalence rule *requires* reconciling the divergence.
+
+**Sliced plan (gate each independently; validate on a real porting case):**
+- **27a — free-fn return inference (selfhost).** *Unblocks the tween case.* The
+  bare-call path (`typechecker.zbr` ~1363 `methodReturnAny("", cname)`) already
+  consults `dep_types`, so the remaining gap is upstream: confirm
+  `scanDepForTypes` runs the top-level-`def` arm for deps AND that
+  `typeFromRef(<dep return type>)` resolves the dep class name at scan time
+  (suspect `goalNum` is recorded returning `unknown_` because TweenGoal isn't
+  resolvable then). Needs an instrumented trace to pin. Then `[goalX(...)]`
+  builds the right ArrayList via existing first-element inference — no
+  expected-type hint needed.
+- **27b — cross-module param types** in inference/codegen (default-fill + `^T`
+  boxing decisions). `methodParamTypeAtAny` infra exists; thread it through.
+- **27c — optional-return reconciliation.** Bootstrap must preserve `?T` on
+  cross-module method returns (parity with selfhost).
+- **27d — param defaults** across modules (lets `TweenInfo` carry its full
+  6-arg signature; undo the GameEngine translator truncation).
+
+**Design note:** this is a *module-interface completeness* problem, not a
+generics/comptime one (front-end signature visibility, not back-end
+polymorphism). One adjacent comptime tactic worth considering for literals:
+emit typed-context list literals as `&.{ e0, e1 }` (anon-array → slice) and let
+Zig infer the element type, sidestepping front-end element-type computation —
+but it doesn't address boxing/optionals/defaults.
+
+**Deferred exploratory work (2026-06-17):** an "expected-type propagation for
+list literals" patch (genTypedOrExpr / genCallWithTypeHint) and the GameEngine
+translator `{Prop=goal}` → `[goalX(...)]` mapping were prototyped and reverted —
+they work only when the callee's param type is resolvable, which is exactly what
+27b provides. Land them together with 27a/27b. The translator mapping logic
+(property→builder table + `_rewrite_tween_goals`) is in the 2026-06-17 session
+transcript; ~40 lines, re-addable quickly.
+
 ### 24. Compiler ergonomics + self-hosting quality (active sprint 2026-05-16)
 
 Five pain points surfaced during Gap-3 / tuple / DynLib work. Prioritised in this order:
