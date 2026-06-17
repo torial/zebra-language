@@ -1,6 +1,40 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-131. Next new bug: BUG-132.**
+**Last bug number generated: BUG-133. Next new bug: BUG-134.**
+
+---
+
+## BUG-132: bootstrap `genIf` panics on `else if <call> as <bind>`
+
+**Severity:** low (codegen crash on a specific else-if shape; workaround =
+nested `else { if … as … }`)
+**Status:** OPEN — discovered 2026-06-17 (§27a).
+
+`src/CodeGen.zig` `genIf` (~9640) reads `ei.cond.type_check` for an `else if`
+condition, assuming the `is X as y` form — but an else-if whose condition is an
+**optional-unwrap on a call** (`else if structNameFromType(et) as snm`) has an
+active `.call` union field, so it panics: `access of union field 'type_check'
+while field 'call' is active`. The first `if … as …` (non-else) handles this
+correctly; only the `else if` path assumes type_check. Fix: in `genIf`'s
+else-if handling, dispatch on the actual condition variant (call/type_check/…)
+as the primary `if` path already does.
+
+---
+
+## BUG-133: bootstrap strips `?T` from cross-module method returns
+
+**Severity:** medium (a cross-module method declared `: T?` is inferred as `T`
+by the bootstrap TC, so `if x as n` on its result errors; selfhost handles it,
+so the two compilers diverge — this is §27c)
+**Status:** OPEN — discovered 2026-06-17 (GameEngine `instance.zbr`).
+
+GameEngine `instance.zbr` calls `w.getSize(.entityId)` / `w.getTransform(...)`
+(cross-module `World` methods returning `Vector3?` / `CFrame?`). The **selfhost**
+compiles the `if … as …` unwrap fine; the **bootstrap** TC infers the return as
+non-optional (`Vector3` / `CFrame`) and errors `if x as n requires an optional
+type, got 'Vector3'`. So `instance.zbr` builds under selfhost but not bootstrap.
+Fix: preserve the `?T` wrapper on cross-module method-return inference in the
+bootstrap (parity with selfhost). Tracked as §27c in NEXT_STEPS.
 
 ---
 

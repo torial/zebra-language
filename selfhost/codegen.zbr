@@ -6850,7 +6850,25 @@ struct Generator
                     w.emit(").empty; ")
                 else if ll.elems.count() > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx to!)
-                    elem_zig = zigTypeForListElem(et)
+                    # §27a: user class/struct elements render *Class (classes) /
+                    # value (structs); cross-module user types are reference (*T).
+                    # zigTypeForListElem (free fn) lacks the class registry, so
+                    # resolve element type here.  Nested `else { if ... as ... }`
+                    # (not `else if ... as ...`) avoids a bootstrap genIf crash on
+                    # an else-if whose condition is `<call> as <bind>`.
+                    if et is Type_.cross_module as et_cm
+                        # Module-qualified (`*tween.TweenGoal`): the element type
+                        # may not be `exposing`-imported, but the dep module is
+                        # always `@import`ed under its alias.
+                        elem_zig = "*" + et_cm.module + "." + et_cm.type_name
+                    else
+                        if structNameFromType(et) as et_snm
+                            if class_names.contains_(et_snm)
+                                elem_zig = "*" + et_snm
+                            else
+                                elem_zig = et_snm
+                        else
+                            elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 else
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")

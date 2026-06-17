@@ -149,15 +149,20 @@ falls back to defaults. Four distinct symptoms, one cause:
 - The self-hosting equivalence rule *requires* reconciling the divergence.
 
 **Sliced plan (gate each independently; validate on a real porting case):**
-- **27a — free-fn return inference (selfhost).** *Unblocks the tween case.* The
-  bare-call path (`typechecker.zbr` ~1363 `methodReturnAny("", cname)`) already
-  consults `dep_types`, so the remaining gap is upstream: confirm
-  `scanDepForTypes` runs the top-level-`def` arm for deps AND that
-  `typeFromRef(<dep return type>)` resolves the dep class name at scan time
-  (suspect `goalNum` is recorded returning `unknown_` because TweenGoal isn't
-  resolvable then). Needs an instrumented trace to pin. Then `[goalX(...)]`
-  builds the right ArrayList via existing first-element inference — no
-  expected-type hint needed.
+- **27a — free-fn return inference (selfhost). ✅ DONE 2026-06-17.** The gap was
+  *narrower* than feared: `inferCall` already resolved the cross-module free-fn
+  return (`methodReturnAny`→`dep_types` produces `cross_module`/named) — the only
+  break was the **list-literal element renderer**. `zigTypeForListElem` is a free
+  fn with no class registry, so named/cross-module class elements fell to
+  `[]const u8`. Fixed in `codegen.zbr`'s `list_lit` arm (which has `class_names`):
+  render `*Class` for classes, `*module.Type` for cross_module. Verified: cross-
+  module `[makeItem(...)]` → `ArrayList(*Item)` (runs); `svc.create(.., [goalX...])`
+  → `ArrayList(*tween.TweenGoal)` (`tween_goal_list_test: all ok`). Round-trip
+  byte-identical, smoke 152/152. **Caveat:** a cross-module class used *only*
+  implicitly (via a goalX return) still needs the script to `use tween exposing
+  TweenGoal` so the bare `*TweenGoal` resolves — so the translator must add the
+  goal type + builders to the import list (see "remaining" below). Two bootstrap
+  bugs surfaced + filed: BUG-132 (genIf else-if-as panic), BUG-133 (= 27c).
 - **27b — cross-module param types** in inference/codegen (default-fill + `^T`
   boxing decisions). `methodParamTypeAtAny` infra exists; thread it through.
 - **27c — optional-return reconciliation.** Bootstrap must preserve `?T` on
