@@ -1,6 +1,46 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-130. Next new bug: BUG-131.**
+**Last bug number generated: BUG-131. Next new bug: BUG-132.**
+
+---
+
+## BUG-131: inline capture-lambda to a `sig` param triple-emits the anon struct
+
+**Severity:** medium (blocks the natural inline `signal.connect(def() capture
+… )` idiom — the common Roblox `:Connect(function() … end)` shape; the
+ident-bound form is a working workaround)
+**Status:** OPEN — discovered 2026-06-16 (GameEngine TweenService.Completed).
+
+`emitCallWithClosureThunks` (the Gap-1 closure-via-sig path) emits the closure
+value `genExpr(a.value)` **three times** — inside `@TypeOf(...)` for the
+`_allocator.create`, in the `_zbr_cls_N.* = …` assignment, and inside the
+dispatcher's `@TypeOf(...)`.  For an **inline** capture-lambda each emission is
+a distinct anonymous `(struct {…}{…})` literal, and Zig gives each its own
+type, so:
+
+```
+const _zbr_cls_1 = _allocator.create(@TypeOf((struct {…}))) …;  // *T1
+_zbr_cls_1.* = (struct {…});                                    // T2 != T1  ← error
+```
+
+→ `error: expected type 'main__struct_60370', found 'main__struct_60375'`.
+
+**Why it's been latent:** the **ident-bound** form
+(`var f = def() capture …; sig.connect(f)`) works, because all three emissions
+are the same named variable `f` (one type).  Gap-1 / BuildingTest used that
+form, so the inline form was never exercised.  (thread_pool's earlier
+anon-struct error was the *same* root cause, masked once BUG-128 stopped it
+thunking `submit` at all.)
+
+**Repro:** `signal.connect(def() capture { var x = x }; …)` — any inline
+capture-lambda passed to a `sig`-typed parameter.
+
+**Fix:** in both `src/CodeGen.zig` and `selfhost/codegen.zbr`
+`emitCallWithClosureThunks`, emit the closure struct as a **named type** once
+(`const _ZbrClsN = struct {…};`), then reference `_ZbrClsN` in the create, the
+assignment value, and the dispatcher — so all three share one type.  (The
+dispatcher is a separate inline struct; a container-scope `const` type decl is
+visible to its `fn`, so a named type works where a `_zbr_val` local would not.)
 
 ---
 
