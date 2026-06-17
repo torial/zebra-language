@@ -163,28 +163,25 @@ falls back to defaults. Four distinct symptoms, one cause:
   TweenGoal` so the bare `*TweenGoal` resolves — so the translator must add the
   goal type + builders to the import list (see "remaining" below). Two bootstrap
   bugs surfaced + filed: BUG-132 (genIf else-if-as panic), BUG-133 (= 27c).
-- **27b — cross-module param defaults / default-fill (selfhost). ◐ SCOPED
-  2026-06-17.** Confirmed gap (minimal repro): a dep ctor `Cfg(a, b: int = 99)`
-  called cross-module as `Cfg(5)` emits `Cfg.init(5)` against the 2-param dep
-  `init` → "expected 2 argument(s), found 1". Same root as the GameEngine
-  `TweenInfo` truncation. Pin: `codegen.zbr` `lookupFnParams("Cfg.init")` only
-  searches the local `module_decls`, so it returns nil for a cross-module ctor →
-  `ctor_needs_fill` stays false → positional path emits raw args (no defaults).
-  The codegen entry (`generateFullWithDeps`) threads `dep_types` (a `ModuleTypes`)
-  but NOT dep ASTs, and `ModuleTypes` carries param *type tags* only (not the
-  default *expressions*). **Fix:** extend `ModuleTypes` to store each ctor/fn's
-  param list incl. default exprs, populate it in `populateModuleTypes` (the dep
-  scan already runs it), and add a `dep_types` fallback to `lookupFnParams` /
-  `lookupFnBody` so `genArgListFull` fills cross-module defaults. **Subtlety
-  (same as 27a):** a default expr that references a dep type (e.g.
-  `EasingStyle.Quad`) must resolve at the call site — emit it module-qualified or
-  require the script to `exposing` that type. Validate by restoring GameEngine
-  `TweenInfo`'s 6-arg defaulted signature and dropping the translator truncation.
-  (Also covers the `^T`-boxing-for-cross-module-params decision, which uses the
-  same param info via `methodParamTypeAtAny`.)
+- **27b — cross-module param defaults / default-fill (selfhost). ✅ DONE
+  2026-06-17.** (Subsumes 27d.) `ModuleTypes`/`ClassTypes` now stores each
+  ctor/fn's full `Param` list (with default exprs), populated in
+  `populateModuleTypes` for class methods, ctors, and top-level defs;
+  `lookupFnParams` falls back to `dep_types` so `genArgListFull` fills
+  cross-module defaults. Verified: `Cfg(5)` → `Cfg.init(5, 99)` (prints 99);
+  GameEngine `TweenInfo` restored to its full 6-arg defaulted signature and the
+  translator's `TweenInfo.new` truncation dropped (`.new(`→`(` plain). Round-trip
+  byte-identical; smoke 152/152; full GameEngine suite green. (Implementation
+  note: consume the cross-module optional returns with `!= nil` + `to!`, not
+  `if … as …`, because the bootstrap strips `?T` — 27c/BUG-133.) **Caveat (= 27a):**
+  a 1-arg `TweenInfo(t)` fills `EasingStyle.Quad`/`EasingDirection.Out`, which
+  resolve only if the script imports those enums; 3-arg+ calls are clean.
 - **27c — optional-return reconciliation.** Bootstrap must preserve `?T` on
-  cross-module method returns (parity with selfhost).
-- **27d — param defaults** across modules (lets `TweenInfo` carry its full
+  cross-module method returns (parity with selfhost). = BUG-133. Now the main
+  remaining §27 item: it forced both the `instance.zbr`-on-bootstrap break and
+  the `!= nil`/`to!` workarounds in 27a/27b. Fixing it lets those use `if … as …`
+  and unblocks compiling GameEngine `instance.zbr` under the bootstrap.
+- **27d — param defaults** ✅ folded into 27b. (Originally: lets `TweenInfo` carry its full
   6-arg signature; undo the GameEngine translator truncation).
 
 **Design note:** this is a *module-interface completeness* problem, not a
