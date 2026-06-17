@@ -1,6 +1,36 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-129. Next new bug: BUG-130.**
+**Last bug number generated: BUG-130. Next new bug: BUG-131.**
+
+---
+
+## BUG-130: methodMutatesSelf marks some non-mutating methods `*self` not `*const self`
+
+**Severity:** low (forces callers to copy a const-bound receiver to a mutable
+local before calling; no incorrect behavior, just an ergonomic + const-safety
+gap)
+**Status:** OPEN — discovered 2026-06-16 (GameEngine property-reflection work).
+
+`Color3.lerp` and `Vector2.lerp` emit `pub fn lerp(self: *Color3, ...)` while
+`Vector3.lerp` — with a structurally **identical**, non-mutating body (returns a
+fresh struct built from `self`'s fields, no field writes) — correctly emits
+`pub fn lerp(self: *const Vector3, ...)`.  The Gap-2 `@pure`/methodMutatesSelf
+analysis (commit 1757706) is therefore inconsistent: it proves Vector3.lerp pure
+but not the identical Color3/Vector2 versions.
+
+**Symptom:** calling the method on a value bound from a union variant (`if x is
+U.col as c` → `c` is `*const`) fails to compile: `expected type '*math.Color3',
+found '*const math.Color3'`.
+
+**Repro:** GameEngine `zbra/math.zbr` Color3.lerp vs Vector3.lerp; see
+`zbra/instance.zbr::lerpProperty`, which works around it by copying the receiver
+to a `var` local.
+
+**Likely cause:** the analyzer's mutation walk over the method body is
+order/shape-sensitive (e.g. treats the `Color3(...)` constructor-from-`.r/.g/.b`
+differently than `Vector3(...)` from `.x/.y/.z`), or short-circuits on the first
+type and doesn't re-run identically per type.  Fix: make the purity walk
+structural so identical bodies yield identical `*const` decisions.
 
 ---
 
