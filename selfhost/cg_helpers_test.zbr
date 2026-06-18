@@ -1,4 +1,4 @@
-# cg_helpers_test.zbr -- integration tests for cg_helpers.zbr
+# cg_helpers_test.zbr -- integration tests for CgHelpers.zbr
 #
 # Tests grouped by complexity:
 #   Part 1 -- StrSet, assignOpStr, binaryOpStr (no AST)
@@ -12,8 +12,8 @@
 #
 # Throws-requiring tests run inside `try { ... } catch |_e| { assert false }`.
 
-use cg_helpers exposing StrSet, assignOpStr, binaryOpStr, typeRefStr, exprHasTry, bodyHasRaise, nilNarrowVar, nameUsedInExpr, nameUsedInStmts, collectAllIdents, analyzeEscapes, scanMutations
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, DeclVar, Modifiers, Span, ExprIdent, ExprIntLit, ExprBoolLit, ExprBinary, ExprUnary, ExprTry, IntBase, StmtReturn, StmtRaise, StmtAssign
+use CgHelpers exposing StrSet, assignOpStr, binaryOpStr, typeRefStr, exprHasTry, bodyHasRaise, nilNarrowVar, nameUsedInExpr, nameUsedInStmts, collectAllIdents, analyzeEscapes, scanMutations
+use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, DeclVar, Modifiers, Span, ExprIdent, ExprIntLit, ExprBoolLit, ExprBinary, ExprUnary, ExprTry, IntBase, StmtReturn, StmtRaise, StmtAssign
 
 def zspan(): Span
     return Span(0, 0, 0, 0)

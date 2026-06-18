@@ -23,45 +23,40 @@ Authoritative priority queue for the project. Update this file rather than regen
 
 ---
 
-## selfhost artifact refresh (committed `selfhost/*.zig` drift) — open, do on CI/Linux
+## selfhost artifact refresh — ✅ DONE 2026-06-18 (committed = bootstrap canonical, idempotent)
 
-**Problem:** the checked-in `selfhost/*.zig` have drifted from what the canonical
-regen tool (`zig build update-selfhost`, which uses `zebra-bootstrap.exe`)
-produces, so `update-selfhost` shows a large mystery diff. Investigated
-2026-06-17. Two independent causes:
+The committed `selfhost/*.zig` had drifted from what the canonical regen tool
+(`zig build update-selfhost`, via `zebra-bootstrap.exe`) produces, so
+`update-selfhost` showed a large mystery diff. Two causes, both now resolved:
 
 1. **Path-marker non-determinism (BUG-135).** `// Source:` / `// zbr:` markers
-   echoed the verbatim input path; on Windows+Git Bash, MSYS arg mangling flips
+   echoed the verbatim input path; on Windows+Git Bash, MSYS arg mangling flipped
    the slash (`/`↔`\`) and, for `parser`/`resolver`, the case
-   (`parser.zbr`↔`Parser.zbr`) **non-deterministically** run-to-run. The slash
-   axis is now fixed in both compilers (`writePathFwd` / `fwdSlashes`,
-   2026-06-17). The **case** axis remains: it is rooted in the intentional
-   `parser.zbr`→`Parser.zig` naming (`.zig` mirrors `src/Parser.zig`, imported by
-   that capital name in `build.zig` + emitted files), so it can't be normalized
-   in codegen without a coordinated rename.
+   (`parser.zbr`↔`Parser.zbr`) run-to-run. **Slash:** fixed in both compilers
+   (`writePathFwd` / `fwdSlashes`, 2026-06-17). **Case:** eliminated by the
+   PascalCase rename (2026-06-18) — every `.zbr`/`.zig` pair now has matching
+   case (`Parser.zbr`↔`Parser.zig`, etc.), so there is no mismatch for MSYS to
+   mangle. Regeneration is now **idempotent** (verified: 0 diff on re-emit).
 
-2. **Bootstrap vs selfhost emit-style divergence (Issue B).** Even ignoring
-   markers, the two compilers emit functionally-equivalent but textually-different
-   Zig: type tags as a precomputed literal (bootstrap) vs `_zbr_hash("Name")`
-   (selfhost); an extra `self.* = .{}` zero-init; reflection/`_zbr_error_msg`
-   placement (body vs preamble); and the GUI preamble (bootstrap's inline GUI in
-   `CodeGen.zig` is newer than `stdlib_preamble.zig`'s GUI section). The committed
-   files are selfhost-style; `update-selfhost` is bootstrap-style.
+2. **Bootstrap vs selfhost emit-style divergence (Issue B).** Resolved *by
+   decision*: the refresh adopted bootstrap output as the canonical committed
+   form, so `update-selfhost` is now a no-op. The two compilers still emit
+   functionally-equivalent but textually-different Zig (type tags: precomputed
+   literal vs `_zbr_hash("Name")`; an extra `self.* = .{}` zero-init;
+   reflection/`_zbr_error_msg` placement; and the GUI preamble — bootstrap's
+   inline GUI in `CodeGen.zig` is newer than `stdlib_preamble.zig`'s GUI section).
+   This *textual* (not functional) divergence is the only remaining gap.
 
-**Why it stalled on Windows:** a clean refresh needs the regen to be
-deterministic, but the MSYS case-mangling makes `parser`/`resolver` flip per run.
-Also, a single `selfhost/X.zig` cannot be regenerated alone — emit shape (root vs
-dep) differs and mixing shapes crashes at runtime — so the whole set must go
-together.
+**Optional follow-up — true byte-identical equivalence (Issue B).** If desired,
+make bootstrap and selfhost emit identical Zig: sync `stdlib_preamble.zig`'s GUI
+section ↔ `CodeGen.zig`'s inline GUI (the substantive one); align the header
+string; pick one type-tag form; match `self.* = .{}` and reflection placement.
+Then either compiler regenerates the same baseline. Not required — the gate
+(selfhost A==B fixed point) already guarantees functional equivalence.
 
-**Recommended path:** run `zig build update-selfhost` on a case/slash-stable
-environment (Linux/CI), commit the result as the new canonical (bootstrap-style)
-baseline, and update `tools/bootstrap_check.sh`'s `FILES` + any docs that assume
-selfhost-style headers. Optionally first reconcile Issue B (sync
-`stdlib_preamble.zig` GUI ↔ `CodeGen.zig`; align the header string; pick one
-type-tag form) so bootstrap and selfhost emit byte-identical and the baseline is
-stable regardless of which compiler regenerates. The path-slash fix is the
-prerequisite that's already landed.
+Note: a single `selfhost/X.zig` still cannot be regenerated alone — emit shape
+(root vs dep) differs and mixing shapes crashes at runtime — so always
+regenerate the whole set via `update-selfhost`.
 
 ---
 

@@ -1,7 +1,7 @@
-# codegen.zbr — Phase 7 self-hosting: CodeGen main body
+# CodeGen.zbr — Phase 7 self-hosting: CodeGen main body
 #
 # Port of src/CodeGen.zig to Zebra.  Consumes the AST produced by the parser
-# (selfhost/ast.zbr) and emits Zig source.
+# (selfhost/Ast.zbr) and emits Zig source.
 #
 # Phase 7a scope:
 #   Writer       — output sink class
@@ -22,9 +22,9 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use cg_helpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
-use typechecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
+use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     # BUG-034: prefer the dep-module's authoritative type table
                     # over name heuristics. deps_mt.hasUnion covers any exposed
                     # cross-module union declared in a dep (e.g. Type_ from
-                    # typechecker.zbr); the hardcoded isUnionLikeName /
+                    # TypeChecker.zbr); the hardcoded isUnionLikeName /
                     # isEnumLikeName lists remain: a fallback for the
                     # generate-single-file path where deps_mt is empty.
                     if deps_mt.hasUnion(exposed_name)
@@ -948,7 +948,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
 
 def generateErrorMsgHelper(m: Module): str
     # Back-compat: walk m.decls for direct uses only. Misses transitive deps
-    # (e.g. parser.zbr uses Lexer, but main.zbr only uses parser — Lexer's
+    # (e.g. Parser.zbr uses Lexer, but main.zbr only uses parser — Lexer's
     # _error_ctx was invisible to main.zig). Prefer generateErrorMsgHelperWith
     # with the full transitive module list from main.zbr's compile graph.
     var dep_modules: List(str) = List(str)()

@@ -9,8 +9,10 @@
 **Severity:** low (cosmetic — affects only the `// Source:` / `// zbr:file:line`
 comment markers — but it makes regenerated artifacts differ run-to-run, which
 is what makes `update-selfhost` show a spurious diff)
-**Status:** SOURCE FIXED 2026-06-17 (path separator); artifact propagation +
-the filename-case axis are deferred — see NEXT_STEPS "selfhost artifact refresh".
+**Status:** FIXED. Slash axis: source-fixed 2026-06-17 (`writePathFwd` /
+`fwdSlashes`). Case axis: eliminated 2026-06-18 by the PascalCase file rename —
+every `.zbr`/`.zig` pair now matches case, so there is no mismatch for MSYS to
+mangle. Artifacts refreshed to the bootstrap canonical; regen is idempotent.
 
 Emitted markers echoed the *verbatim* input path. On Windows + Git Bash, MSYS
 argument mangling rewrites the `.zbr` path passed to the compiler

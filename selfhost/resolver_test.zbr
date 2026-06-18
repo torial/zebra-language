@@ -1,5 +1,5 @@
 # Phase 4 test: Resolver
-# Self-hosting validation — verifies that resolver.zbr correctly:
+# Self-hosting validation — verifies that Resolver.zbr correctly:
 #   1. Builds scope tables from PNode parse trees (class names, fields, methods, locals)
 #   2. Reports undefined-name errors for unresolved expr_id references
 #   3. Accepts valid code without false positives

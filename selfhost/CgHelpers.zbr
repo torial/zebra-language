@@ -1,4 +1,4 @@
-# cg_helpers.zbr -- CodeGen helper functions (Phase 6 self-hosting)
+# CgHelpers.zbr -- CodeGen helper functions (Phase 6 self-hosting)
 #
 # Pure analysis passes on the Zebra AST: no I/O, no allocator dependencies.
 # Used by the cg_*.zbr files to classify statements and expressions before
@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
+use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -78,7 +78,7 @@ class StrSet
 # When a call passes a capture-block lambda to a sig-typed parameter, the
 # codegen registers a ClosureThunk here.  At module end the codegen emits a
 # state slot + dispatcher slot + public thunk fn for each registered entry.
-# See genCall + flushPendingThunks in codegen.zbr.
+# See genCall + flushPendingThunks in CodeGen.zbr.
 
 struct ClosureThunk
     var id: int

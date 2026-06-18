@@ -1,4 +1,4 @@
-# Phase 4: Resolver - resolver.zbr
+# Phase 4: Resolver - Resolver.zbr
 # Self-hosting demo: walk a PNode parse tree, build a scope tree, and report
 # undefined-name errors.
 #

@@ -5,14 +5,14 @@
 #
 # Self-hosting pipeline (all phases complete):
 #   Phase 1  ✅ Lexer        (selfhost/Lexer.zbr)          — tokenizes source
-#   Phase 2  ✅ AST types    (selfhost/ast.zbr)             — node type definitions
-#   Phase 3  ✅ Parser       (selfhost/parser.zbr)          — builds PNode parse tree
-#   Phase 4  ✅ Resolver     (selfhost/resolver.zbr)        — scope + name checking
+#   Phase 2  ✅ AST types    (selfhost/Ast.zbr)             — node type definitions
+#   Phase 3  ✅ Parser       (selfhost/Parser.zbr)          — builds PNode parse tree
+#   Phase 4  ✅ Resolver     (selfhost/Resolver.zbr)        — scope + name checking
 #   Phase 5  ✅ TypeChecker  (selfhost/tc_*.zbr)            — type inference + checks
-#   Phase 6  ✅ CG helpers   (selfhost/cg_helpers.zbr)      — escape/mutation analysis
-#   Phase 7  ✅ CodeGen      (selfhost/codegen.zbr)         — Zig emission from ast.zbr
+#   Phase 6  ✅ CG helpers   (selfhost/CgHelpers.zbr)      — escape/mutation analysis
+#   Phase 7  ✅ CodeGen      (selfhost/CodeGen.zbr)         — Zig emission from Ast.zbr
 #   Phase 8  ✅ Main / CLI   (this file)                    — argument parsing + dispatch
-#   Phase 9  ✅ ASTBuilder   (selfhost/astbuilder.zbr)      — PNode → ast.zbr Module
+#   Phase 9  ✅ ASTBuilder   (selfhost/AstBuilder.zbr)      — PNode → Ast.zbr Module
 #   Phase 10 ✅ Full pipeline (this file)                   — Lex→Parse→ASTBuilder→CodeGen
 #   Phase 11 ✅ Complete output (this file)                 — preamble + decls + entry thunk
 #   Phase 22 ✅ Cutover       (build.zig)                   — selfhost IS the production binary
@@ -38,11 +38,11 @@
 
 use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
-use astbuilder exposing ASTBuilder
-use ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef
-use codegen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith
-use typechecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
-use checker exposing runCheck
+use AstBuilder exposing ASTBuilder
+use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith
+use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
+use Checker exposing runCheck
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 

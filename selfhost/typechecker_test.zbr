@@ -1,11 +1,11 @@
-# typechecker_test.zbr -- Phase 16a/16b smoke tests for typechecker.zbr.
+# typechecker_test.zbr -- Phase 16a/16b smoke tests for TypeChecker.zbr.
 #
 # Phase 16a exercises Type_ / ClassTypes / ModuleTypes construction & lookup.
 # Phase 16b adds typeFromRef, buildModuleTypes, and inferExpr tests — AST is
 # hand-constructed (no Parser dependency) to keep the test file self-contained.
 
-use typechecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
+use TypeChecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
 def check(ok: bool, label: str)
     if ok
@@ -225,7 +225,7 @@ def varDecl(name: str, t: TypeRef): Decl
     return Decl.var_(DeclVar(mkSpan(), emptyMods(), name, t, nil, false))
 
 def classDecl(name: str, members: List(Decl)): Decl
-    return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members))
+    return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(Ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members))
 
 def testBuildModuleTypesClass()
     var members: List(Decl) = List(Decl)()
@@ -504,7 +504,7 @@ def testInferDepModuleFuncCall()
     var caller_m: Module = Module("" + "<caller>", caller_decls)
     var caller_mt: ModuleTypes = buildModuleTypes(caller_m)
 
-    # Wire dep_types into InferCtx — same path as codegen.zbr ctx17c.withDepTypes.
+    # Wire dep_types into InferCtx — same path as CodeGen.zbr ctx17c.withDepTypes.
     var ctx: InferCtx = InferCtx(caller_mt, "Caller")
     ctx.withDepTypes(dep_mt)
 

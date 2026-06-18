@@ -7,8 +7,8 @@
 
 use Parser exposing PNode
 use Resolver
-use astbuilder exposing ASTBuilder
-use codegen exposing generateModule, generateFull, generateEntryPoint
+use AstBuilder exposing ASTBuilder
+use CodeGen exposing generateModule, generateFull, generateEntryPoint
 
 def runPipeline(src: str): str throws
     const pm_node = Parser.Parser.parse(src, "<test>")?

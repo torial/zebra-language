@@ -1,6 +1,6 @@
-# Phase 9 test: ASTBuilder (PNode → ast.zbr Module)
-# Self-hosting validation - verifies that astbuilder.zbr produces correct
-# ast.zbr Module/Decl/Stmt/Expr trees from parsed PNode input.
+# Phase 9 test: ASTBuilder (PNode → Ast.zbr Module)
+# Self-hosting validation - verifies that AstBuilder.zbr produces correct
+# Ast.zbr Module/Decl/Stmt/Expr trees from parsed PNode input.
 #
 # Design notes:
 #   - ^Expr pointer fields (si.cond, sa.target, sa.value, eb.left, eb.right,
@@ -15,8 +15,8 @@
 use Token exposing TokenKind
 use Lexer
 use Parser exposing PNode
-use ast exposing Module, Decl, DeclUse, DeclClass, DeclEnum, DeclMethod, DeclInit, DeclVar, EnumMember, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssign, StmtAssert, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprStringLit, BinaryOp, UnaryOp, AssignOp, Arg
-use astbuilder exposing ASTBuilder
+use Ast exposing Module, Decl, DeclUse, DeclClass, DeclEnum, DeclMethod, DeclInit, DeclVar, EnumMember, TypeRef, NamedTypeRef, GenericTypeRef, Modifiers, Param, Stmt, StmtIf, StmtWhile, StmtForIn, StmtReturn, StmtAssign, StmtAssert, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprStringLit, BinaryOp, UnaryOp, AssignOp, Arg
+use AstBuilder exposing ASTBuilder
 
 class ASTBuilderTest
     def run() throws

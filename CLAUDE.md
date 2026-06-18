@@ -18,8 +18,11 @@ history lives.
 - `src/` — the Zig-implemented Zebra compiler (Tokenizer, Parser, Resolver,
   TypeChecker, CodeGen, Builtins, etc.). This is the trusted/production compiler.
 - `selfhost/` — the in-progress self-hosted compiler written in Zebra (`*.zbr`).
-  Each phase mirrors a file in `src/` (e.g. `parser.zbr` ↔ `src/Parser.zig`).
-  Paired `*.zig` files are generated artifacts.
+  Each phase mirrors a file in `src/` (e.g. `Parser.zbr` ↔ `src/Parser.zig`).
+  Compiler module files are **PascalCase** to match the Zig `src/` naming
+  (`Ast`, `AstBuilder`, `CgHelpers`, `Checker`, `CodeGen`, `Parser`, `Resolver`,
+  `TypeChecker`, `Token`, `Lexer`; `main` stays lowercase per Zig convention).
+  Paired `*.zig` files are generated artifacts (`Parser.zbr` → `Parser.zig`).
 - `test/` — integration test suite (`.zbr` fixtures + runners).
 - `tools/` — ancillary tools (build/runner scripts, etc.).
 - `IDE/` — self-hosted IDE experiments using the Dear ImGui GUI backend.

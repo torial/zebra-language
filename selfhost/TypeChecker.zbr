@@ -1,4 +1,4 @@
-# typechecker.zbr -- Phases 16a–b: TypeChecker for self-hosted compiler.
+# TypeChecker.zbr -- Phases 16a–b: TypeChecker for self-hosted compiler.
 #
 # Mirrors src/TypeChecker.zig. Phase 16a shipped the data model: `Type_`,
 # `ClassTypes`, `ModuleTypes`. Phase 16b adds:
@@ -6,12 +6,12 @@
 #   - buildModuleTypes(Module) → ModuleTypes        (walks AST, populates)
 #   - InferCtx / inferExpr(Expr, InferCtx) → Type_   (expr-level inference)
 #
-# These are advisory only: codegen.zbr still uses its heuristics. Phase 16c
+# These are advisory only: CodeGen.zbr still uses its heuristics. Phase 16c
 # wires codegen to prefer ModuleTypes over the heuristics, one at a time.
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -77,7 +77,7 @@ class TupleType_
 #
 # Keyword-collision rule: Zebra keywords get `_` suffix on variants.
 # int/uint/float/bool/char are keywords; string/regex/named/optional are not,
-# but `void_` matches the existing convention in ast.zbr::TypeRef.
+# but `void_` matches the existing convention in Ast.zbr::TypeRef.
 
 union Type_
     # Primitives
@@ -100,7 +100,7 @@ union Type_
     # Optional wrapper: ?T. Phase 17 may extend to nested optionals.
     optional: ^Type_
 
-    # Heap-indirection pointer: ^T (matches ast.TypeRef.ref_to).
+    # Heap-indirection pointer: ^T (matches Ast.TypeRef.ref_to).
     # src/TypeChecker.zig lacks this variant — it tracks ref_to-ness via a
     # side table (struct_init_ref_params). The selfhost port carries it in
     # Type_ directly; Phase 18 may refactor to match the Zig compiler.
@@ -160,7 +160,7 @@ union Type_
 
 # ── Per-class type info ──────────────────────────────────────────────────────
 # Holds the subset of a class declaration's typing surface that
-# codegen.zbr's heuristics currently approximate:
+# CodeGen.zbr's heuristics currently approximate:
 #   - field types   (replaces isKnownStrSetField name list)
 #   - method return types (future: method-chain inference)
 #   - positional ctor param types (replaces shouldBoxCtorArg / isUnboxedCtorArg)
@@ -245,7 +245,7 @@ class ClassTypes
 
 # ── Module-level type table ──────────────────────────────────────────────────
 # Aggregates ClassTypes for every user-defined class/struct in a module.
-# Phase 16b adds a builder that walks an ast.Module to populate .
+# Phase 16b adds a builder that walks an Ast.Module to populate .
 
 class ModuleTypes
     var classes: HashMap(str, ClassTypes)
@@ -551,7 +551,7 @@ def typeFromName(n: str): Type_
     return Type_.named(internString(n))
 
 # ── TypeRef → Type_ mapping ──────────────────────────────────────────────────
-# Maps a parsed ast.TypeRef into the Type_ domain. Phase 16b handles
+# Maps a parsed Ast.TypeRef into the Type_ domain. Phase 16b handles
 # primitive named, nilable, ref_to, void; 17+ extend to generics and tuples.
 
 def typeFromRef(tr: TypeRef): Type_
@@ -586,7 +586,7 @@ def typeFromRef(tr: TypeRef): Type_
             return Type_.unknown_
 
 # ── ModuleTypes builder ──────────────────────────────────────────────────────
-# Walks an ast.Module and populates ModuleTypes. Phase 16b covers class and
+# Walks an Ast.Module and populates ModuleTypes. Phase 16b covers class and
 # struct declarations. Unions and enums are added in Phase 17 when inferExpr
 # needs to infer union-variant / enum-member types.
 
@@ -988,7 +988,7 @@ class InferCtx
     # consulted only module_types for Expr.member/Expr.call; that missed
     # parameters and locals of types defined in deps (the common case when
     # compiling parser/resolver/codegen, all of which take AST struct params
-    # from ast.zbr). These two helpers mirror hasUnion's module+dep fallback.
+    # from Ast.zbr). These two helpers mirror hasUnion's module+dep fallback.
     def fieldTypeAny(class_name: str, field_name: str): Type_?
         var ft: Type_? = .module_types.fieldType(class_name, field_name)
         if ft != nil
@@ -1433,7 +1433,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
-                    # are dispatched by codegen.zbr::genJsonCall (~line 6848);
+                    # are dispatched by CodeGen.zbr::genJsonCall (~line 6848);
                     # neither needs a TC arm here today because:
                     #   - parse/stringify/object/array consumers route through
                     #     the json_value / string_ types via member dispatch.
@@ -1801,7 +1801,7 @@ def narrowPayloadFromOnValue(mt: ModuleTypes, v: Expr): Type_?
 
 # Phase 17d — variant payload lookup that also consults dep_types, so
 # branch-on patterns against unions defined in imported modules (Expr /
-# Stmt / Decl live in ast.zbr; every other selfhost module branches on
+# Stmt / Decl live in Ast.zbr; every other selfhost module branches on
 # them) get their payload types narrowed correctly.
 def narrowPayloadFromOnValueDeps(mt: ModuleTypes, dt: ModuleTypes, v: Expr): Type_?
     if v is Expr.member as em
@@ -1820,7 +1820,7 @@ def narrowPayloadFromOnValueDeps(mt: ModuleTypes, dt: ModuleTypes, v: Expr): Typ
     return nil
 
 # ── Statement walker ─────────────────────────────────────────────────────────
-# Phase 17a: structural walker over all 22 ast.Stmt variants. Populates
+# Phase 17a: structural walker over all 22 Ast.Stmt variants. Populates
 # InferCtx scope bindings on var/const decls and (basic) for-in loop vars
 # so that later expr-level inference sees real types for local names.
 # Sub-expression inference is advisory — results are not yet persisted to a

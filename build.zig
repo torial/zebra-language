@@ -221,7 +221,7 @@ pub fn build(b: *std.Build) void {
     // `zig build update-selfhost` emits all selfhost/*.zig from selfhost/*.zbr
     // using zebra-bootstrap.exe (the authoritative Zig-compiled compiler).
     // Using bootstrap — not the selfhost binary — avoids the chicken-and-egg
-    // where a codegen bug in selfhost/codegen.zbr causes the selfhost binary to
+    // where a codegen bug in selfhost/CodeGen.zbr causes the selfhost binary to
     // regenerate that same bug. Round-trip fidelity is tested separately by
     // `zig build bootstrap` (the full 5-step check).
     // After this step, run `zig build` again to rebuild zebra.exe.

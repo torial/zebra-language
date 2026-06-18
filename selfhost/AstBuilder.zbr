@@ -1,8 +1,8 @@
-# astbuilder.zbr — Phase 9/10: PNode parse tree → ast.zbr Module
+# AstBuilder.zbr — Phase 9/10: PNode parse tree → Ast.zbr Module
 #
-# Converts the simplified PNode parse tree produced by selfhost/parser.zbr into
-# the full ast.zbr Module/Decl/Stmt/Expr representation consumed by
-# selfhost/codegen.zbr.
+# Converts the simplified PNode parse tree produced by selfhost/Parser.zbr into
+# the full Ast.zbr Module/Decl/Stmt/Expr representation consumed by
+# selfhost/CodeGen.zbr.
 #
 # Design notes:
 #   - All Spans are synthetic (0,0,0,0) — parser doesn't preserve source positions.
@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
+use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
@@ -30,7 +30,7 @@ def zstatic(): Modifiers
 
 # Strip surrounding quote characters from a string token text.
 # The selfhost Lexer captures token text including the surrounding " or '.
-# The ast.zbr ExprStringLit.text convention is content-only (no surrounding quotes),
+# The Ast.zbr ExprStringLit.text convention is content-only (no surrounding quotes),
 # matching the Zig backend's AST representation.
 # Slices from index 1 to len-1 to preserve internal escape sequences.
 def stripStringQuotes(text: str): str
@@ -167,7 +167,7 @@ class ASTBuilder
     cue init()
         .next_old_uid = 0
 
-    # Entry point: convert a parsed PModule into a full ast.zbr Module.
+    # Entry point: convert a parsed PModule into a full Ast.zbr Module.
     static def build(pm: PModule, file: str): Module throws
         var ab = ASTBuilder()
         var decls = ab.buildTopDecls(pm.decls)?
@@ -1221,4 +1221,4 @@ class ASTBuilder
         return TypeRef.void_()
 
 def main()
-    print "astbuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"
+    print "AstBuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"

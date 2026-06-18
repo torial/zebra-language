@@ -1,4 +1,4 @@
-# codegen_test.zbr -- Phase 7 integration tests for codegen.zbr
+# codegen_test.zbr -- Phase 7 integration tests for CodeGen.zbr
 #
 # Tests:
 #   Part 1 — Writer class (shared output buffer)
@@ -12,10 +12,10 @@
 #   Part 9 — genClass (_type_tag + fields)
 #   Part 10 — genFieldDecl (StringBuilder special case)
 
-use codegen exposing Writer, Generator
-use cg_helpers exposing StrSet
-use typechecker exposing ModuleTypes
-use ast exposing Decl, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, Span, ParamMode, TypeParam
+use CodeGen exposing Writer, Generator
+use CgHelpers exposing StrSet
+use TypeChecker exposing ModuleTypes
+use Ast exposing Decl, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, Span, ParamMode, TypeParam
 
 def zspan(): Span
     return Span(0, 0, 0, 0)

@@ -1,7 +1,7 @@
-# selfhost/checker.zbr — `zebra check <file.zbr>`
+# selfhost/Checker.zbr — `zebra check <file.zbr>`
 # Reports dead union arms and unreachable module-level def functions.
 #
-# Regression canary: Type_.str_slice is matched in codegen.zbr (lines 372, 5095,
+# Regression canary: Type_.str_slice is matched in CodeGen.zbr (lines 372, 5095,
 # 5130, 7304) but never constructed after Stage-4 shadow-set migration.
 # This tool MUST report it as a dead arm.
 #
@@ -10,10 +10,10 @@
 #   2. Phantoms   — union variants constructed but never matched (forgotten handler).
 #   3. Unreachable — module-level def functions unreachable from any root.
 
-use ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprToNilable, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprToNilable, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
 use Parser exposing PNode, PUse, PModule
 use Resolver
-use astbuilder exposing ASTBuilder
+use AstBuilder exposing ASTBuilder
 
 # ── UnionInfo ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 # Phase 3 test: Grammar / Parser
-# Self-hosting validation - verifies that parser.zbr produces correct PNode trees.
+# Self-hosting validation - verifies that Parser.zbr produces correct PNode trees.
 #
 # Strategy: parse small, focused Zebra snippets and branch-dispatch on the
 # resulting PNode to verify structure. All assertions use `branch ... on variant`

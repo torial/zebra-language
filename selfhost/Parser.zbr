@@ -1,4 +1,4 @@
-# Phase 3: Recursive-descent parser - parser.zbr
+# Phase 3: Recursive-descent parser - Parser.zbr
 # Self-hosting demo: token stream - PNode parse tree.
 #
 # Design note: all recursive child references go through List(PNode) or union
@@ -1040,7 +1040,7 @@ class Parser
             return sb.build()
         if .isId()
             .advance()
-            # Handle dotted names: Token.Token, ast.Module, etc.
+            # Handle dotted names: Token.Token, Ast.Module, etc.
             if .textIs(".")
                 .advance()
                 var rest: str = .eatTypeName()

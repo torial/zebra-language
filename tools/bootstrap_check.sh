@@ -28,7 +28,7 @@
 # on any failure, so a partial emit never leaves the working tree in a mixed state.
 #
 # Why bootstrap, not selfhost-A? Using selfhost-A to regenerate itself is
-# chicken-and-egg: a codegen bug in selfhost/codegen.zbr would cause selfhost-A
+# chicken-and-egg: a codegen bug in selfhost/CodeGen.zbr would cause selfhost-A
 # to reproduce that same bug in the output .zig files, making it impossible to
 # fix without bypassing the step manually.  Bootstrap is the ground truth;
 # selfhost-A's correctness is tested by the full round-trip (steps 3-5).
@@ -75,7 +75,7 @@ SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
 
 # typechecker is part of the selfhost dep graph as of Phase 16c. It is
 # included here so the round-trip fixed-point check covers it.
-FILES=(Token Lexer ast parser resolver astbuilder cg_helpers typechecker codegen checker main)
+FILES=(Token Lexer Ast Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main)
 
 if [[ ! -x "$ZEBRA" ]]; then
     echo "bootstrap_check: $ZEBRA missing. Run 'zig build' first." >&2
