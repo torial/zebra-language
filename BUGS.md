@@ -1,6 +1,39 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-134. Next new bug: BUG-135.**
+**Last bug number generated: BUG-135. Next new bug: BUG-136.**
+
+---
+
+## BUG-135: non-deterministic source-path markers in emitted .zig
+
+**Severity:** low (cosmetic — affects only the `// Source:` / `// zbr:file:line`
+comment markers — but it makes regenerated artifacts differ run-to-run, which
+is what makes `update-selfhost` show a spurious diff)
+**Status:** SOURCE FIXED 2026-06-17 (path separator); artifact propagation +
+the filename-case axis are deferred — see NEXT_STEPS "selfhost artifact refresh".
+
+Emitted markers echoed the *verbatim* input path. On Windows + Git Bash, MSYS
+argument mangling rewrites the `.zbr` path passed to the compiler
+**non-deterministically** — sometimes `selfhost/codegen.zbr`, sometimes
+`selfhost\codegen.zbr` (slash), and for the `parser`/`resolver` files whose
+`.zig` artifact is capitalized but `.zbr` source is lowercase, sometimes
+`parser.zbr` vs `Parser.zbr` (case). So two regen runs of the *same* file could
+differ in hundreds–thousands of marker lines with no semantic change.
+
+Fix (slash axis, both compilers): `src/CodeGen.zig` `writePathFwd` + `selfhost/
+codegen.zbr` `fwdSlashes` normalize the marker path to forward slashes at emit
+time, so the slash is deterministic and portable regardless of how the shell
+passes the path. The **case** axis (parser/resolver) is *not* addressed — it is
+rooted in the intentional `parser.zbr` → `Parser.zig` naming (the `.zig` mirrors
+the hand-written `src/Parser.zig`, and is cross-imported by that capital name in
+`build.zig` and many emitted files). Eliminating it would require a coordinated
+rename, so it is left for the artifact-refresh pass, which is best run on a
+case/slash-stable environment (Linux/CI) where neither axis is mangled.
+
+Note: a single `selfhost/X.zig` cannot be regenerated in isolation — emit shape
+(root vs dep, e.g. the aggregated `_zbr_error_msg`) differs and mixing shapes
+crashes at runtime (see `tools/bootstrap_check.sh` header). The whole set must
+be regenerated together (`update-selfhost`).
 
 ---
 
