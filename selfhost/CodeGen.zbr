@@ -2459,6 +2459,8 @@ struct Generator
             dig.w.emit(n.name)
             dig.w.emit(") catch @panic(\"OOM\");\n")
             dig.writeIndent()
+            dig.w.emit("self.* = .{};\n")
+            dig.writeIndent()
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
