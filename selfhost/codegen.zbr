@@ -10545,15 +10545,12 @@ struct Generator
         if cm_parts.count() >= 2
             cm_class = cm_parts.at(0)
             cm_method = cm_parts.at(1)
-        # No type annotation + `!= nil` + `to!` (mirrors the variantPayload
-        # consumption pattern): classOf/fnParamList are cross-module methods
-        # returning optionals, and the bootstrap strips the `?T` (BUG-133), so
-        # `if … as …` / a `ClassTypes` annotation won't type-check there.
-        var cm_ct_opt = .dep_types.classOf(cm_class)
-        if cm_ct_opt != nil
-            var cm_ps_opt = (cm_ct_opt to!).fnParamList(cm_method)
-            if cm_ps_opt != nil
-                return cm_ps_opt to!
+        # classOf/fnParamList are cross-module methods returning optionals; the
+        # bootstrap now preserves the `?T` on cross-module returns (BUG-133), so
+        # bind the unwrapped values directly with `if … as …`.
+        if .dep_types.classOf(cm_class) as cm_ct
+            if cm_ct.fnParamList(cm_method) as cm_ps
+                return cm_ps
         return nil
 
     # Given a ctor name and an arg (possibly named), return the matching param's TypeRef.
