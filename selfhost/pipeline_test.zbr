@@ -24,7 +24,7 @@ def runPipelineFull(src: str, preamble_path: str): str throws
     branch pm_node
         on PNode.module_ as pm
             const module = ASTBuilder.build(pm, "<test>")?
-            return generateFull(module, "<test>", preamble_path, false)?
+            return generateFull(module, "<test>", preamble_path, false, false)?
         else
             raise "expected module_ from parser"
 

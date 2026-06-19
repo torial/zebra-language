@@ -55,6 +55,7 @@ class MultiCompiler
     var c_sources: List(str)   # paths to .c deps discovered via `use`
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
+    var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
@@ -71,6 +72,7 @@ class MultiCompiler
         .c_sources = List(str)()
         .c_i_dirs = List(str)()
         .strip_contracts = false
+        .library_mode = false
         .test_mode = false
         .tag_filter = nil
         .warn_non_exhaustive = false
@@ -157,7 +159,7 @@ class MultiCompiler
                     if test_mode
                         zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, tag_filter)?
                     else
-                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result)?
+                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, library_mode)?
                     # Detect SQLite usage in generated root Zig
                     if zig_src.contains("_sqlite_open")
                         uses_sqlite = true
@@ -878,6 +880,7 @@ def main()
     var mode_emit            = args.contains("--emit-zig")
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
+    var lib_mode             = args.contains("--library-mode")
     var warn_ne              = args.contains("--warn-non-exhaustive")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
@@ -897,6 +900,7 @@ def main()
         # Compile the root file and all its dependencies
         var mc = MultiCompiler(preamble_path, output_dir)
         mc.strip_contracts = turbo
+        mc.library_mode = lib_mode
         mc.test_mode = run_test_mode
         mc.tag_filter = run_tag_filter
         mc.warn_non_exhaustive = warn_ne

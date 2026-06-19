@@ -642,9 +642,9 @@ def typeRefStr(tr: TypeRef): str
     return "unknown"
 
 def generateModule(m: Module, file: str): str
-    return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil)
+    return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
-def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?): str
+def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str
     var w = Writer()
     var cn = StrSet()
     # Pre-populate class_names, union_names, enum_names for forward references.
@@ -664,6 +664,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
         g = g.withStripContracts()
     if tc_result as tcr
         g = g.withTcResult(tcr)
+    g.library_mode = library_mode
     # Pre-populate union/enum names and throws_methods from module declarations
     for decl in m.decls
         branch decl
@@ -803,7 +804,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
 #   pub fn main() void { _allocator = _arena.allocator(); defer _arena.deinit(); ClassName.main(); }
 # For a throws main, wraps in a catch block for clean error display.
 
-def generateEntryPoint(m: Module): str
+def generateEntryPoint(m: Module, library_mode: bool): str
     var main_class = ""
     var main_throws = false
     for decl in m.decls
@@ -834,7 +835,8 @@ def generateEntryPoint(m: Module): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
-    sb.append("    defer _arena.deinit();\n")
+    if not library_mode
+        sb.append("    defer _arena.deinit();\n")
     if main_throws
         sb.append("    ")
         sb.append(main_class)
@@ -989,18 +991,18 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
 def fwdSlashes(p: str): str
     return p.replace("\\", "/")
 
-def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool): str throws
-    return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts)
+def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool, library_mode: bool): str throws
+    return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)
 
-def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool): str throws
-    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), strip_contracts, nil)
+def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, library_mode: bool): str throws
+    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), strip_contracts, nil, library_mode)
 
-def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?): str throws
+def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str throws
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
-    var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, tc_result)
-    var entry = generateEntryPoint(m)
+    var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, tc_result, library_mode)
+    var entry = generateEntryPoint(m, library_mode)
     var error_helper: str = ""
     if all_dep_modules.len > 0
         error_helper = generateErrorMsgHelperWith(all_dep_modules)
@@ -1045,7 +1047,7 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
         if not skip
             filtered_decls.add(d)
     var m_no_main: Module = Module(m.file, filtered_decls)
-    var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result)
+    var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result, false)
     var entry = generateTestEntryPoint(m, file_stem, tag_filter)
     var error_helper: str = ""
     if all_dep_modules.len > 0
@@ -1076,7 +1078,7 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
-    var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil)
+    var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil, false)
     var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost.\n")
     sb.append("// Source: ")
@@ -1279,6 +1281,7 @@ struct Generator
     var try_block_label      : str?     # non-nil inside a `try` block
     var catch_var            : str      # catch clause binding name ("" if none)
     var source_file          : str      # source path for comment markers
+    var library_mode         : bool     # --library-mode: omit `defer _arena.deinit()` from the main entry
     var class_names          : StrSet  # names of classes → emit *ClassName in genType
     var union_names          : StrSet  # names of unions → emit union construction
     var enum_names           : StrSet  # names of enums → emit enum construction
@@ -1369,6 +1372,7 @@ struct Generator
         .try_block_label       = try_block_label
         .catch_var             = catch_var
         .source_file           = source_file
+        .library_mode          = false
         .class_names           = class_names
         .union_names           = StrSet()
         .enum_names            = StrSet()
@@ -2817,8 +2821,9 @@ struct Generator
                 ei.w.emit("_args = _zinit.minimal.args;\n")
                 ei.writeIndent()
                 ei.w.emit("_allocator = _arena.allocator();\n")
-                ei.writeIndent()
-                ei.w.emit("defer _arena.deinit();\n")
+                if not .library_mode
+                    ei.writeIndent()
+                    ei.w.emit("defer _arena.deinit();\n")
                 for ei_decl in module_decls
                     if ei_decl is Decl.use_ as ei_u
                         var ei_path: str = ei_u.path.replace(".", "/")
