@@ -515,6 +515,9 @@ smoke test/compress_test.zbr
 # Generic functions: def identity(T)(x: T): T — comptime type params, multi-type-arg calls.
 smoke_run test/generic_fn_test.zbr "generic functions: OK"
 
+# Reflect.hostKind(x): comptime substrate category (dynamic-interop primitive).
+smoke_run test/hostkind_test.zbr "hostKind: OK"
+
 # `is not` operator: x is not Union.variant — negated type/variant check.
 smoke_run test/is_not_test.zbr "is_not: OK"
 

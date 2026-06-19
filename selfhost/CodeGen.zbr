@@ -12419,6 +12419,15 @@ struct Generator
         if args.count() < 1
             w.emit("@compileError(\"Reflect requires 1 argument\")")
             return
+        # Reflect.hostKind(x): language-neutral substrate category of x's
+        # compile-time type, resolved by Zig at comptime.  @TypeOf does not
+        # evaluate its operand, so call-args are side-effect-safe.  Per-language
+        # name mapping lives in the consumer (see docs/dynamic_interop.md).
+        if mname == "hostKind"
+            w.emit("switch (@typeInfo(@TypeOf(")
+            genExpr(args.at(0).value)
+            w.emit("))) { .bool => \"bool\", .int, .comptime_int => \"int\", .float, .comptime_float => \"float\", .pointer => |_p| _sw: { const _ci = @typeInfo(_p.child); break :_sw if (_p.child == u8 or (_ci == .array and _ci.array.child == u8)) \"string\" else \"ref\"; }, .@\"fn\" => \"function\", .optional, .null => \"nil\", else => \"ref\" }")
+            return
         if mname == "className"
             w.emit("_reflect_lookup_name(")
             genExpr(args.at(0).value)

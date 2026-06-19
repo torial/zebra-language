@@ -2759,7 +2759,16 @@ pb.done()
 Reflect.className(obj)               # str — class name
 Reflect.fieldNames(obj)              # []str — field names
 Reflect.fieldTypes(obj)              # []str — field type strings
+Reflect.hostKind(x)                  # str — substrate category of x's static type
 ```
+
+`Reflect.hostKind(x)` returns the language-neutral Zig substrate category of `x`'s
+compile-time type: `"nil" | "bool" | "int" | "float" | "string" | "function" |
+"ref"`. Resolved at comptime via `@typeInfo(@TypeOf(x))` (zero runtime cost;
+`@TypeOf` does not evaluate its operand, so a call expression is side-effect-safe).
+It's the substrate primitive for dynamic-language interop — per-language type-name
+mappings (Luau's `"number"`/`"table"`/…, JS's …) live in the *consumer*, keeping
+the compiler free of any source-language knowledge. See `docs/dynamic_interop.md`.
 
 See §25 for `@reflectable` + `Json.parseStrict` (Tier 3).
 

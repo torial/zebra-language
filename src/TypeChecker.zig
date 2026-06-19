@@ -3177,6 +3177,7 @@ const TypeChecker = struct {
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Reflect")) {
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "className"))  return .string;
+                    if (std.mem.eql(u8, mem.member, "hostKind"))  return .string;
                     if (std.mem.eql(u8, mem.member, "fieldNames") or
                         std.mem.eql(u8, mem.member, "fieldTypes")) return .str_slice;
                     return .unknown;

@@ -1,0 +1,25 @@
+# Reflect.hostKind(x): language-neutral substrate category of x's compile-time
+# type, resolved at comptime via @typeInfo(@TypeOf(x)).  Underpins dynamic-
+# language interop (see docs/dynamic_interop.md).
+
+class Widget
+    var w: int
+    cue init()
+        .w = 1
+
+def main()
+    var n = 5
+    var f = 1.5
+    var s = "hi"
+    var b = true
+    var wgt = Widget()
+    print Reflect.hostKind(n)        # int
+    print Reflect.hostKind(f)        # float
+    print Reflect.hostKind(s)        # string
+    print Reflect.hostKind(b)        # bool
+    print Reflect.hostKind(wgt)      # ref
+    # @TypeOf does not evaluate its operand — call-arg is side-effect-safe and
+    # still resolves the static category.
+    print Reflect.hostKind(Widget()) # ref
+    if Reflect.hostKind(s) == "string"
+        print "hostKind: OK"

@@ -8558,6 +8558,22 @@ const Generator = struct {
     fn genReflectCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (args.len != 1) return false;
         const arg = args[0].value;
+        // Reflect.hostKind(x): language-neutral substrate category of x's
+        // compile-time type ("nil"/"bool"/"int"/"float"/"string"/"function"/"ref").
+        // Resolved by Zig at comptime via @typeInfo(@TypeOf(x)); @TypeOf does NOT
+        // evaluate its operand, so passing a call expression is side-effect-safe.
+        // Per-language type-name mapping (Luau's "number"/"table"/…, JS's …) lives
+        // in the *consumer* (e.g. GameEngine's luaTypeName), keeping the compiler
+        // free of any source-language knowledge.  See docs/dynamic_interop.md.
+        if (std.mem.eql(u8, method, "hostKind")) {
+            try g.w.writeAll("switch (@typeInfo(@TypeOf(");
+            try g.genExpr(arg);
+            // A Zig string is a slice of u8 OR a pointer to an array of u8
+            // (uncoerced string literals are `*const [N:0]u8`) — mirrors the
+            // preamble's string detection.
+            try g.w.writeAll("))) { .bool => \"bool\", .int, .comptime_int => \"int\", .float, .comptime_float => \"float\", .pointer => |_p| _sw: { const _ci = @typeInfo(_p.child); break :_sw if (_p.child == u8 or (_ci == .array and _ci.array.child == u8)) \"string\" else \"ref\"; }, .@\"fn\" => \"function\", .optional, .null => \"nil\", else => \"ref\" }");
+            return true;
+        }
         const arg_type = if (g.tc) |tc| tc.expr_types.get(arg) orelse .unknown else .unknown;
         const class_name: []const u8 = switch (arg_type) {
             .named => |sym| switch (sym.decl) {
