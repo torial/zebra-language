@@ -2162,6 +2162,11 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
         return true
     if not isPrimitive(inferred)
         return true
+    # Any numeric -> any numeric: defer to Zig (matches src/TypeChecker.zig
+    # isAssignable). Lets an int literal/value flow into a float param, e.g.
+    # goalNum("Transparency", 0) or TweenInfo(5, ...).
+    if isNumeric(declared) and isNumeric(inferred)
+        return true
     return typeTag(declared) == typeTag(inferred)
 
 # Thin wrapper around inferExpr that compares the result against an expected type.
