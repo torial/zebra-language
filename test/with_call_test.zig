@@ -36,6 +36,19 @@ fn _intern(s: []const u8) []const u8 {
     return owned;
 }
 
+// Normalize a filesystem path for the host OS.  On Windows, std.Io.Dir's
+// createFile rejects an absolute path containing backslashes mixed with
+// forward slashes (OBJECT_NAME_INVALID) — e.g. an output dir like
+// "C:\dir" joined with "/name.zig".  Forward-slash absolute paths work
+// everywhere, so collapse backslashes to forward slashes.  Returns the
+// input unchanged when there is nothing to normalize.
+fn _zbr_norm_path(p: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, p, '\\') == null) return p;
+    const buf = _allocator.alloc(u8, p.len) catch return p;
+    for (p, 0..) |c, i| buf[i] = if (c == '\\') '/' else c;
+    return buf;
+}
+
 const _Stringable = struct {
     ptr:         *anyopaque,
     toString_fn: *const fn (*anyopaque) []const u8,
@@ -1836,7 +1849,7 @@ const _RFrag = struct {
 };
 const _RC = struct {
     pat: []const u8, pos: usize = 0,
-    nodes: std.ArrayListUnmanaged(_RNode) = .{}, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
+    nodes: std.ArrayListUnmanaged(_RNode) = .{ .items = &.{}, .capacity = 0 }, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
     fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
@@ -2037,7 +2050,7 @@ const Regex = struct {
     }
     fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
-        var cur: std.ArrayListUnmanaged(u32) = .{}; var nxt: std.ArrayListUnmanaged(u32) = .{};
+        var cur: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 }; var nxt: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 };
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
@@ -2171,9 +2184,9 @@ fn _re_eclosure_s(
 fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
     const empty: [_MAX_SAVE_SLOTS]usize = [_]usize{0xFFFF_FFFF_FFFF_FFFF} ** _MAX_SAVE_SLOTS;
-    var cur: std.ArrayListUnmanaged(_RegThread) = .{};
+    var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer cur.deinit(alloc);
-    var nxt: std.ArrayListUnmanaged(_RegThread) = .{};
+    var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer nxt.deinit(alloc);
     const vis = alloc.alloc(bool, re.nodes.len) catch return null;
     defer alloc.free(vis);
@@ -2204,7 +2217,7 @@ fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayListUnmanaged([]const u8) = .{};
+            var out: std.ArrayListUnmanaged([]const u8) = .{ .items = &.{}, .capacity = 0 };
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
@@ -2497,6 +2510,14 @@ const _GuiBackend = struct {
     endHBoxFn:   *const fn () void,
     beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
     endVBoxFn:   *const fn () void,
+    progressBarFn: *const fn (label: []const u8, value: f64) void,
+    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
+    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
+    openFileFn:    *const fn () ?[]const u8,
+    saveFileFn:    *const fn () ?[]const u8,
+    openFolderFn:  *const fn () ?[]const u8,
+    msgBoxFn:      *const fn (title: []const u8, description: []const u8) void,
+    msgBoxErrorFn: *const fn (title: []const u8, description: []const u8) void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -2596,6 +2617,14 @@ const GuiContext = struct {
     pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
+    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
+    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+    pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
+    pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
+    pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
+    pub fn msgBox(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxFn(title, description); }
+    pub fn msgBoxError(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxErrorFn(title, description); }
 };
 const _GuiVBox = struct {
     _b: *const _GuiBackend,
@@ -2611,6 +2640,7 @@ const _GuiHBox = struct {
     pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
     pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
+const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -2758,6 +2788,14 @@ fn _stub_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
 fn _stub_end_hbox() void {}
 fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
 fn _stub_end_vbox() void {}
+fn _stub_progressbar(_l: []const u8, _v: f64) void { std.debug.print("[gui] progressBar: {s} {d:.1}%\n", .{_l, _v * 100.0}); }
+fn _stub_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { std.debug.print("[gui] combobox: {s} sel={d}/{d}\n", .{_l, _sel, _items.len}); return _sel; }
+fn _stub_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { std.debug.print("[gui] spinbox: {s} val={d} [{d},{d}]\n", .{_l, _v, _min, _max}); return _v; }
+fn _stub_open_file() ?[]const u8 { std.debug.print("[gui] openFile (no window)\n", .{}); return null; }
+fn _stub_save_file() ?[]const u8 { std.debug.print("[gui] saveFile (no window)\n", .{}); return null; }
+fn _stub_open_folder() ?[]const u8 { std.debug.print("[gui] openFolder (no window)\n", .{}); return null; }
+fn _stub_msg_box(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBox: {s}: {s}\n", .{_t, _m}); }
+fn _stub_msg_box_error(_t: []const u8, _m: []const u8) void { std.debug.print("[gui] msgBoxError: {s}: {s}\n", .{_t, _m}); }
 const _gui_stub_backend = _GuiBackend{
     .initFn             = _stub_init,
     .deinitFn           = _stub_deinit,
@@ -2812,6 +2850,14 @@ const _gui_stub_backend = _GuiBackend{
     .endHBoxFn   = _stub_end_hbox,
     .beginVBoxFn = _stub_begin_vbox,
     .endVBoxFn   = _stub_end_vbox,
+    .progressBarFn = _stub_progressbar,
+    .comboboxFn    = _stub_combobox,
+    .spinboxFn     = _stub_spinbox,
+    .openFileFn    = _stub_open_file,
+    .saveFileFn    = _stub_save_file,
+    .openFolderFn  = _stub_open_folder,
+    .msgBoxFn      = _stub_msg_box,
+    .msgBoxErrorFn = _stub_msg_box_error,
 };
 const _gui_active_backend: _GuiBackend = _gui_stub_backend;
 // === STDLIB_PREAMBLE_GUI_END ===
@@ -3357,7 +3403,8 @@ fn _sys_setenv(key: []const u8, val: []const u8) void {
 }
 fn _sys_getenv(key: []const u8) ?[]const u8 {
     if (comptime builtin.os.tag == .windows) {
-        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+        const environ: std.process.Environ = .{ .block = .global };
+        return environ.getAlloc(_allocator, key) catch null;
     } else {
         return std.posix.getenv(key);
     }
