@@ -4478,7 +4478,25 @@ const Generator = struct {
             try g.w.writeAll(kw);
             try g.w.writeAll(" ");
             try g.w.writeAll(n.name);
-            if (n.type_) |tr| { try g.w.writeAll(": "); try g.genType(tr); }
+            if (n.type_) |tr| {
+                try g.w.writeAll(": ");
+                try g.genType(tr);
+            } else if (std.mem.eql(u8, kw, "var")) {
+                // Untyped static `var`: emit the TC-inferred type so Zig doesn't
+                // reject `pub var x = 10` ("comptime_int must be const or
+                // comptime"). Same machinery as genLocalVar. (`const` statics
+                // stay untyped — Zig keeps them comptime.)
+                if (n.init) |e| {
+                    if (g.tc) |tc| {
+                        const t = tc.expr_types.get(e) orelse .unknown;
+                        if (try tcTypeAnnotation(t, g.alloc)) |ann| {
+                            defer g.alloc.free(ann);
+                            try g.w.writeAll(": ");
+                            try g.w.writeAll(ann);
+                        }
+                    }
+                }
+            }
             if (n.init) |e| { try g.w.writeAll(" = "); try g.genExpr(e); }
             else try g.w.writeAll(" = undefined");
             try g.w.writeAll(";\n");

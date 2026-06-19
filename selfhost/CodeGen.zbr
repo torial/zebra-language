@@ -1974,12 +1974,34 @@ struct Generator
         if n.mods.is_static
             w.emit("pub var ")
             w.emit(n.name)
-            # Only annotate when typed; an untyped static var lets Zig infer from
-            # the initializer (matches src/CodeGen.zig).  Emitting `: anytype` here
-            # is invalid Zig ("expected type expression, found 'anytype'").
+            # Untyped static `var` of a literal would be comptime_int/float (Zig:
+            # "must be const or comptime"); annotate it the same way genLocalVar
+            # does for untyped mutable locals.  A typed static uses its annotation;
+            # a non-literal init is left for Zig to infer (never `: anytype`, which
+            # is invalid).
             if n.type_ != nil
                 w.emit(": ")
                 genType(n.type_ to!)
+            else
+                if n.init_expr != nil
+                    branch n.init_expr to!
+                        on Expr.int_lit
+                            w.emit(": i64")
+                        on Expr.float_lit
+                            w.emit(": f64")
+                        on Expr.string_lit
+                            w.emit(": []const u8")
+                        on Expr.unary as un
+                            if un.op == UnaryOp.neg
+                                branch un.operand
+                                    on Expr.int_lit
+                                        w.emit(": i64")
+                                    on Expr.float_lit
+                                        w.emit(": f64")
+                                    else
+                                        pass
+                        else
+                            pass
             w.emit(" = ")
             if n.init_expr != nil
                 genExpr(n.init_expr to!)
