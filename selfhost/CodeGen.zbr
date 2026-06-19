@@ -1974,11 +1974,12 @@ struct Generator
         if n.mods.is_static
             w.emit("pub var ")
             w.emit(n.name)
-            w.emit(": ")
+            # Only annotate when typed; an untyped static var lets Zig infer from
+            # the initializer (matches src/CodeGen.zig).  Emitting `: anytype` here
+            # is invalid Zig ("expected type expression, found 'anytype'").
             if n.type_ != nil
+                w.emit(": ")
                 genType(n.type_ to!)
-            else
-                w.emit("anytype")
             w.emit(" = ")
             if n.init_expr != nil
                 genExpr(n.init_expr to!)
