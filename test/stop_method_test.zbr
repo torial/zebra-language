@@ -1,0 +1,13 @@
+# `stop` is not a reserved keyword: it must work as a method name (Sound/
+# Animation/Tween :Stop() ports rely on `.stop()`).
+class Anim
+    var playing: bool
+    cue init()
+        .playing = true
+    def stop()
+        .playing = false
+
+def main()
+    var a = Anim()
+    a.stop()
+    print "stop-method: OK"

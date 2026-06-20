@@ -518,6 +518,9 @@ smoke_run test/generic_fn_test.zbr "generic functions: OK"
 # Reflect.hostKind(x): comptime substrate category (dynamic-interop primitive).
 smoke_run test/hostkind_test.zbr "hostKind: OK"
 
+# `stop` is not a reserved keyword — `.stop()` works as a method name.
+smoke_run test/stop_method_test.zbr "stop-method: OK"
+
 # `is not` operator: x is not Union.variant — negated type/variant check.
 smoke_run test/is_not_test.zbr "is_not: OK"
 

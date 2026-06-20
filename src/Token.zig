@@ -381,7 +381,9 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "continue",    .kw_continue },
     .{ "pass",        .kw_pass },
     .{ "print",       .kw_print },
-    .{ "stop",        .kw_stop },
+    // `stop` is intentionally NOT reserved: kw_stop is unused by the parser and
+    // `stop` is an extremely common method name (Sound/Animation/Tween :Stop()).
+    // Reserving it broke `.stop()` calls — tokenize it as a plain identifier.
     .{ "trace",       .kw_trace },
     .{ "return",      .kw_return },
     .{ "yield",       .kw_yield },

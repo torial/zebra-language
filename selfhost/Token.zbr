@@ -327,8 +327,8 @@ class Keywords
             return TokenKind.kw_pass()
         if word == "print"
             return TokenKind.kw_print()
-        if word == "stop"
-            return TokenKind.kw_stop()
+        # `stop` is intentionally NOT reserved (kw_stop unused; `.stop()` is a
+        # very common method name — Sound/Animation/Tween :Stop()).
         if word == "trace"
             return TokenKind.kw_trace()
         if word == "return"
