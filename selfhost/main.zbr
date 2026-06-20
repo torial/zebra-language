@@ -917,6 +917,37 @@ def main()
         # --selfhost-compile: invoke zig to compile/run the generated file
         var zig_path: str = mc.zbrToZig(path)
 
+        # Debug fast path (run mode, no C deps): build a temp exe with Zig's
+        # self-hosted x86_64 backend + self-hosted linker (-fno-llvm -fno-lld),
+        # then execute it.  ~3x faster than LLVM+LLD for the compile-run dev loop.
+        # Skipped when C deps are present: the self-hosted linker does not error on
+        # unresolved C/libc symbols (it emits a crashing exe), so compile-failure
+        # fallback can't protect those.  A pure-Zig backend gap is a real compile
+        # error, so falling through to the LLVM path below stays safe.
+        if not mode_c and not release and mc.c_sources.count() == 0 and not mc.uses_sqlite
+            var fast_exe: str = zig_path + ".fast.exe"
+            var fargv = List(str)()
+            fargv.add("zig")
+            fargv.add("build-exe")
+            fargv.add(zig_path)
+            fargv.add("-fno-llvm")
+            fargv.add("-fno-lld")
+            fargv.add("-femit-bin=" + fast_exe)
+            if cpu_flag != ""
+                fargv.add("-mcpu=" + cpu_flag)
+            var fr = sys.run(fargv)
+            if fr.exit_code == 0
+                var rargv = List(str)()
+                rargv.add(fast_exe)
+                var rr = sys.run(rargv)
+                if rr.stdout != ""
+                    Terminal.write(rr.stdout, "")
+                if rr.stderr != ""
+                    sys.err(rr.stderr)
+                if rr.exit_code != 0
+                    sys.exit(1)
+                sys.exit(0)
+
         var argv2 = List(str)()
         argv2.add("zig")
         if mode_c

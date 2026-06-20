@@ -75,6 +75,7 @@ Everything here must ship before 1.0 stability locks in.
 - [x] Zig 0.16 compat — `_Chan` updated to `std.Io.Mutex`/`Condition` + `std.Options.debug_io`; `_build_new` `.targets = .empty`; 122/122 smoke, bootstrap 5/5 (2026-05-20)
 - [x] Debugger / DAP — `zebra debug <file.zbr>` + DAP proxy (commit 18bccac)
 - [x] Build system in Zebra — `zebra build` + `Build` stdlib module; selfhost TC/codegen parity; --build-file/--list-targets/b.target(); 96/96 smoke, bootstrap 5/5 (2026-05-14)
+- [x] Debug-run fast path — `zebra file.zbr` (non-release, no C deps) builds via Zig's self-hosted x86_64 backend + self-hosted linker (`-fno-llvm -fno-lld`) into `<file>.zig.fast.exe`, then executes it: ~3x faster compile-run dev loop than LLVM+LLD. Skipped when C deps present (SQLite, GUI, dep `.c`): the self-hosted linker does **not** error on unresolved C/libc symbols — it emits a crashing exe — so those stay on LLVM+`-lc`. Pure-Zig backend gaps are real compile errors, so the fallback (`zig run` LLVM) is reliable. Both compilers (`src/main.zig` + `selfhost/main.zbr`); 155/155 smoke, bootstrap round-trip clean (2026-06-20)
 
 **0.13 remaining:**
 - [x] BUG-115 — visibility keywords enforcement: `private`/`public`/`internal`/`protected` parsed + enforced; TC error outside owning class; cross-module `internal` excluded from interface table; selfhost parity; 99/99 smoke, bootstrap 5/5 (2026-05-14)

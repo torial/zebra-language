@@ -1346,7 +1346,63 @@ fn compileOnly(zig_path: []const u8, c_sources: []const []u8, release: bool, cpu
 
 /// `zig run <file.zig> [c_sources...] -lc` — compile and immediately execute.
 fn compileAndRun(zig_path: []const u8, c_sources: []const []u8, release: bool, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+    // Debug fast path: Zig's self-hosted x86_64 backend + self-hosted linker are
+    // ~3x faster than LLVM+LLD (the LLD link dominates).  Try it first; on any
+    // compile failure (C deps / libc / backend gap) fall back to the full LLVM
+    // `zig run`.  Release always uses LLVM (the self-hosted backend is debug-only).
+    // Only when there are NO C deps: the self-hosted linker does not error on
+    // unresolved C/libc symbols (it emits a crashing exe), so compile-failure
+    // fallback can't protect C-dep programs — those stay on LLVM+lc.  For pure
+    // Zig, a backend gap is a real compile error, so the fallback is reliable.
+    if (!release and c_sources.len == 0) {
+        if (try tryFastRun(zig_path, cpu, alloc)) |code| return code;
+    }
     return runZigCmd("run", zig_path, c_sources, release, cpu, alloc);
+}
+
+/// Compile `zig_path` with the self-hosted backend + linker (no LLVM/LLD, no
+/// libc, no C deps) to a temp exe and execute it.  Returns the program's exit
+/// code on success, or null if the self-hosted compile failed (caller falls back
+/// to the LLVM path).  ~3x faster than LLVM+LLD for pure-Zig programs.
+fn tryFastRun(zig_path: []const u8, cpu: ?[]const u8, alloc: std.mem.Allocator) !?u8 {
+    const exe_path = try std.fmt.allocPrint(alloc, "{s}.fast.exe", .{zig_path});
+    defer alloc.free(exe_path);
+    const emit = try std.fmt.allocPrint(alloc, "-femit-bin={s}", .{exe_path});
+    defer alloc.free(emit);
+
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ "zig", "build-exe", zig_path, "-fno-llvm", "-fno-lld", emit });
+    var cpu_flag: ?[]u8 = null;
+    defer if (cpu_flag) |f| alloc.free(f);
+    if (cpu) |c| {
+        cpu_flag = try std.fmt.allocPrint(alloc, "-mcpu={s}", .{c});
+        try argv.append(alloc, cpu_flag.?);
+    }
+
+    // Compile attempt — pipe + drain output (we only want the exit code; on
+    // failure the LLVM fallback re-reports the real, source-mapped errors).
+    var comp = std.process.spawn(_io, .{
+        .argv = argv.items, .stdin = .inherit, .stdout = .pipe, .stderr = .pipe,
+    }) catch return null;
+    {
+        var ob: [4096]u8 = undefined;
+        var orr = comp.stdout.?.readerStreaming(_io, &ob);
+        if (orr.interface.allocRemaining(alloc, .limited(4 * 1024 * 1024))) |t| alloc.free(t) else |_| {}
+        var eb: [4096]u8 = undefined;
+        var err_ = comp.stderr.?.readerStreaming(_io, &eb);
+        if (err_.interface.allocRemaining(alloc, .limited(4 * 1024 * 1024))) |t| alloc.free(t) else |_| {}
+    }
+    const cterm = comp.wait(_io) catch return null;
+    const ccode: u8 = switch (cterm) { .exited => |c| c, else => 1 };
+    if (ccode != 0) return null; // self-hosted compile failed → fall back to LLVM
+
+    // Compiled — execute with inherited stdio (program output flows through).
+    var prog = try std.process.spawn(_io, .{
+        .argv = &.{exe_path}, .stdin = .inherit, .stdout = .inherit, .stderr = .inherit,
+    });
+    const rterm = try prog.wait(_io);
+    return switch (rterm) { .exited => |c| c, else => 1 };
 }
 
 /// `zig build-lib [--dynamic] <file.zig> [c_sources...] -lc`
