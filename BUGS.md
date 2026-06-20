@@ -1,8 +1,54 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-135. Next new bug: BUG-136.**
+**Last bug number generated: BUG-136. Next new bug: BUG-137.**
 
 ---
+
+## BUG-136: `zebra file.zbr` run path captures child stdout instead of streaming
+
+**Severity:** low (UX / capability — affects interactive programs, not
+correctness of batch programs)
+**Status:** OPEN — known limitation, decision pending (fix vs. leave as-is).
+
+When `zebra file.zbr` runs a program, the selfhost driver
+(`selfhost/main.zbr`) invokes the child via `sys.run(argv)`, which **captures**
+the child's stdout/stderr into strings and prints them *after* the child exits
+(`Terminal.write(rr.stdout, "")` / `sys.err(rr.stderr)`). The Zig-side
+bootstrap (`src/main.zig`) does the same on its non-fast path (`runChildRemapped`
+captures stderr for source-map remapping). Consequences:
+
+- **No streaming** — output appears all at once when the program finishes, not
+  as it is produced. A long-running program looks hung until it exits.
+- **No interactivity** — a program that reads stdin or expects a live TTY
+  (prompts, REPL-like loops, progress bars) won't work, because the child's
+  stdio is piped, not inherited.
+
+This is **pre-existing**, not introduced by the debug-run fast path (2026-06-20,
+commit f9a05d1): the fast path's exec step (`sys.run([fast_exe])`) merely follows
+the same capture convention the LLVM `zig run` path already used, so behavior is
+unchanged either way. The fast path's *build* step legitimately needs capture
+(to inspect exit code for fallback); only the *exec* step is the candidate to
+change.
+
+**Why it's not obviously a bug:** capture is *required* on the Zig backend's
+LLVM path so stderr can be run through `remapZigErrors` (rewrites generated-`.zig`
+line numbers back to `.zbr` source lines). Streaming would lose that remapping
+for compile-time errors — though for the **fast-path exec** step the child is a
+user program (its stderr is the program's own output / panic trace, not Zig
+compiler errors), so inheriting stdio there is safe and would restore both
+streaming and interactivity for the common debug-run case.
+
+**Possible fixes (decide later):**
+1. Fast-path exec only: spawn `fast_exe` with inherited stdio (needs a
+   `sys.runInherit`-style API in the selfhost runtime; the bootstrap already has
+   `runChild` with inherited stdio — `src/main.zig`). Scoped, low-risk; fixes the
+   common case without touching the error-remapping path.
+2. General: detect "is this a run (not compile-error) context" and inherit stdio
+   for the program while still capturing the compiler's own diagnostics
+   separately. More invasive.
+
+Repro: a `.zbr` that prints in a loop with a sleep between lines — under
+`zebra file.zbr` nothing appears until it exits.
 
 ## BUG-135: non-deterministic source-path markers in emitted .zig
 
