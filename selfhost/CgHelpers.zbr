@@ -538,6 +538,133 @@ def nameUsedInStmts(name: str, stmts: List(Stmt)): bool
             return true
     return false
 
+# CONSERVATIVE expression-level companion: TRUE for any expr form it doesn't
+# model, so a use hidden inside one (type_check / orelse / if_expr / …) is never
+# missed.  Leaves (literals / nil) must return FALSE so a `var X = nil` stub
+# isn't seen as using X.  Mirrors src/CodeGen.zig mightUseNameInExpr.
+def mightUseNameInExpr(name: str, expr: Expr): bool
+    branch expr
+        on Expr.ident as id
+            return id.name == name
+        on Expr.member as m
+            return mightUseNameInExpr(name, m.object)
+        on Expr.index as i
+            if mightUseNameInExpr(name, i.object)
+                return true
+            return mightUseNameInExpr(name, i.index)
+        on Expr.unary as u
+            return mightUseNameInExpr(name, u.operand)
+        on Expr.binary as b
+            if mightUseNameInExpr(name, b.left)
+                return true
+            return mightUseNameInExpr(name, b.right)
+        on Expr.call as c
+            if mightUseNameInExpr(name, c.callee)
+                return true
+            for arg in c.args
+                if mightUseNameInExpr(name, arg.value)
+                    return true
+            return false
+        on Expr.tuple_lit as tl
+            for telem in tl.elems
+                if mightUseNameInExpr(name, telem)
+                    return true
+            return false
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if mightUseNameInExpr(name, op)
+                    return true
+            return false
+        on Expr.int_lit
+            return false
+        on Expr.float_lit
+            return false
+        on Expr.bool_lit
+            return false
+        on Expr.char_lit
+            return false
+        on Expr.string_lit
+            return false
+        on Expr.nil_
+            return false
+        else
+            return true
+
+# CONSERVATIVE "might `name` be read anywhere in `stmts`?" — returns true for any
+# statement form it can't fully analyse, so a caller may safely emit an unused
+# discard (`_ = X;`) only when this is false (never discarding a used name, which
+# Zig rejects as a pointless discard).  Same core set as src/CodeGen.zig.
+def mightUseName(name: str, stmts: List(Stmt)): bool
+    for s in stmts
+        if mightUseNameStmt(name, s)
+            return true
+    return false
+
+def mightUseNameStmt(name: str, stmt: Stmt): bool
+    branch stmt
+        on Stmt.var_ as n
+            if n.init_expr != nil
+                return mightUseNameInExpr(name, n.init_expr to!)
+            return false
+        on Stmt.assign as a
+            if mightUseNameInExpr(name, a.target)
+                return true
+            return mightUseNameInExpr(name, a.value)
+        on Stmt.return_ as r
+            if r.value != nil
+                return mightUseNameInExpr(name, r.value to!)
+            return false
+        on Stmt.expr as e
+            return mightUseNameInExpr(name, e)
+        on Stmt.print_ as p
+            var pi = 0
+            while pi < p.args.count()
+                if mightUseNameInExpr(name, p.args.at(pi))
+                    return true
+                pi += 1
+            return false
+        on Stmt.destruct as d
+            return mightUseNameInExpr(name, d.init_expr)
+        on Stmt.if_ as si
+            if mightUseNameInExpr(name, si.cond)
+                return true
+            if mightUseName(name, si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if mightUseNameInExpr(name, ei.cond)
+                    return true
+                if mightUseName(name, ei.stmts)
+                    return true
+            if si.else_stmts as se
+                return mightUseName(name, se)
+            return false
+        on Stmt.while_ as w
+            if mightUseNameInExpr(name, w.cond)
+                return true
+            return mightUseName(name, w.stmts)
+        on Stmt.for_in as f
+            if mightUseNameInExpr(name, f.iter)
+                return true
+            return mightUseName(name, f.stmts)
+        on Stmt.for_num as fnum
+            if mightUseNameInExpr(name, fnum.start)
+                return true
+            if mightUseNameInExpr(name, fnum.stop_)
+                return true
+            return mightUseName(name, fnum.stmts)
+        on Stmt.guard_ as g
+            if mightUseNameInExpr(name, g.cond)
+                return true
+            return mightUseName(name, g.else_stmts)
+        on Stmt.break_
+            return false
+        on Stmt.continue_
+            return false
+        on Stmt.pass_
+            return false
+        else
+            return true
+
 def nameUsedInStmt(name: str, stmt: Stmt): bool
     branch stmt
         on Stmt.var_ as n

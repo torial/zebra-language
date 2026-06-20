@@ -1490,6 +1490,72 @@ fn nameUsedInStmts(name: []const u8, stmts: []const Ast.Stmt) bool {
     for (stmts) |s| if (nameUsedInStmt(name, s)) return true;
     return false;
 }
+
+/// CONSERVATIVE "might `name` be read anywhere in `stmts`?".  Unlike
+/// nameUsedInStmt (which under-approximates — it returns false for statement
+/// forms it doesn't model, e.g. `branch`/`with`/`try`), this returns TRUE for
+/// any form it can't fully analyze.  Callers may therefore safely emit an
+/// "unused local" discard (`_ = X;`) only when this is FALSE — guaranteeing we
+/// never discard a name that is actually used (which Zig rejects as a
+/// "pointless discard").
+/// CONSERVATIVE expression-level companion to mightUseName: TRUE for any expr
+/// form it doesn't model (type_check / if_expr / orelse / catch / try / …), so
+/// a use hidden inside one is never missed.
+fn mightUseNameInExpr(name: []const u8, expr: *const Ast.Expr) bool {
+    return switch (expr.*) {
+        .ident     => |e| std.mem.eql(u8, e.name, name),
+        .member    => |e| mightUseNameInExpr(name, e.object),
+        .index     => |e| mightUseNameInExpr(name, e.object) or mightUseNameInExpr(name, e.index),
+        .unary     => |e| mightUseNameInExpr(name, e.operand),
+        .binary    => |e| mightUseNameInExpr(name, e.left) or mightUseNameInExpr(name, e.right),
+        .call      => |e| blk: {
+            if (mightUseNameInExpr(name, e.callee)) break :blk true;
+            for (e.args) |a| if (mightUseNameInExpr(name, a.value)) break :blk true;
+            break :blk false;
+        },
+        .tuple_lit => |e| blk: { for (e.elems) |el| if (mightUseNameInExpr(name, el)) break :blk true; break :blk false; },
+        .chained_cmp => |cc| blk: { for (cc.operands) |op| if (mightUseNameInExpr(name, op)) break :blk true; break :blk false; },
+        .nil, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit => false,
+        // type_check / if_expr / orelse / catch_ / try_ / opt_chain / lambda /
+        // string_interp / … — not modelled; conservatively assume a use.
+        else       => true,
+    };
+}
+
+fn mightUseName(name: []const u8, stmts: []const Ast.Stmt) bool {
+    for (stmts) |s| if (mightUseNameStmt(name, s)) return true;
+    return false;
+}
+fn mightUseNameStmt(name: []const u8, stmt: Ast.Stmt) bool {
+    return switch (stmt) {
+        .var_     => |n| if (n.init) |e| mightUseNameInExpr(name, e) else false,
+        .assign   => |s| mightUseNameInExpr(name, s.target) or mightUseNameInExpr(name, s.value),
+        .return_  => |s| if (s.value) |v| mightUseNameInExpr(name, v) else false,
+        .print    => |s| blk: { for (s.args) |a| if (mightUseNameInExpr(name, a)) break :blk true; break :blk false; },
+        .expr     => |e| mightUseNameInExpr(name, e),
+        .destruct => |s| mightUseNameInExpr(name, s.init),
+        .if_      => |s| blk: {
+            if (mightUseNameInExpr(name, s.cond)) break :blk true;
+            if (mightUseName(name, s.then_body)) break :blk true;
+            for (s.else_ifs) |ei| if (mightUseNameInExpr(name, ei.cond) or mightUseName(name, ei.body)) break :blk true;
+            if (s.else_body) |eb| if (mightUseName(name, eb)) break :blk true;
+            break :blk false;
+        },
+        .while_   => |s| blk: {
+            if (s.bind) |bind| if (mightUseNameInExpr(name, bind.init)) break :blk true;
+            break :blk mightUseNameInExpr(name, s.cond) or mightUseName(name, s.body);
+        },
+        .for_in   => |s| mightUseNameInExpr(name, s.iter) or mightUseName(name, s.body),
+        .for_num  => |s| mightUseNameInExpr(name, s.start) or mightUseNameInExpr(name, s.stop) or mightUseName(name, s.body),
+        .guard    => |s| mightUseNameInExpr(name, s.cond) or mightUseName(name, s.else_body),
+        .break_, .continue_, .pass => false,
+        // branch / with / try_catch / raise / yield / defer / *_except / arena /
+        // allocate / copy_out / contract / assert* — not modelled here;
+        // conservatively assume a use (so we never wrongly discard).  Kept to the
+        // same core set as the selfhost mirror for bootstrap parity.
+        else => true,
+    };
+}
 fn nameUsedInStmt(name: []const u8, stmt: Ast.Stmt) bool {
     return switch (stmt) {
         .var_    => |n| { if (n.init) |e| return nameUsedInExpr(name, e); return false; },
@@ -5323,7 +5389,29 @@ const Generator = struct {
         // declared `var`, otherwise `&items` is `*const ArrayList`.
         try addAddrOfMutationsInStmts(stmts, &block_mut, g.alloc, g.tc, g.resolve);
         const bg = g.withMutated(&block_mut);
-        for (stmts) |stmt| try bg.genStmt(stmt);
+        for (stmts) |stmt| {
+            try bg.genStmt(stmt);
+            // Auto-discard a local that is never read anywhere in the block and
+            // never mutated.  Zig hard-errors on unused locals; translated code
+            // routinely emits dead `var X = …` stubs.  A `_ = X;` no-op satisfies
+            // Zig.  Conservative (mutated OR used ⇒ no discard); a stray discard
+            // would only be a harmless redundant read, never a miscompile.
+            if (stmt == .var_) {
+                const name = stmt.var_.name;
+                // Skip explicitly-typed locals: a refinement type (`int where …`)
+                // emits an inline contract check that *uses* the local — invisible
+                // to mightUseName — so discarding it would be a pointless discard.
+                // The dominant dead-stub case (`var X = nil`) is untyped anyway.
+                if (!std.mem.eql(u8, name, "_") and
+                    stmt.var_.type_ == null and
+                    !block_mut.contains(name) and
+                    !mightUseName(name, stmts))
+                {
+                    try bg.writeIndent();
+                    try bg.w.print("_ = {s};\n", .{name});
+                }
+            }
+        }
     }
 
     /// Extract the source span from any Stmt variant.

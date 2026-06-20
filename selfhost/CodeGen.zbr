@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -3515,30 +3515,25 @@ struct Generator
         # declared `var`, otherwise `&items` is `*const ArrayList`.
         addAddrOfMutationsInStmts(stmts, ms)
         mut_set = ms
-        # Pre-scan: find lambda-assigned vars that are never referenced in the body.
-        # Emit `_ = name;` for those at the end to suppress Zig's unused-const error.
-        var unused_lambdas = StrSet()
-        for s in stmts
-            if s is Stmt.var_ as n
-                if n.init_expr != nil
-                    branch n.init_expr to!
-                        on Expr.lambda
-                            if not nameUsedInStmts(n.name, stmts)
-                                unused_lambdas.add(n.name)
-                        else
-                            pass
+        # Auto-discard a local that is never read anywhere in the block and never
+        # mutated.  Zig hard-errors on unused locals; translated code routinely
+        # emits dead `var X = …` stubs (and unused lambda vars).  A `_ = X;` no-op
+        # satisfies Zig.  Conservative (mutated OR used => no discard); a stray
+        # discard would only be a harmless redundant read.  Mirrors src/CodeGen.zig.
         for s in stmts
             genStmt(s)
+            if s is Stmt.var_ as n
+                # Skip explicitly-typed locals: a refinement type emits an inline
+                # contract check that uses the local (invisible to mightUseName).
+                if n.name != "_"
+                    if n.type_ == nil
+                        if not ms.contains_(n.name)
+                            if not mightUseName(n.name, stmts)
+                                writeIndent()
+                                w.emit("_ = ")
+                                w.emit(n.name)
+                                w.emit(";\n")
         mut_set = saved_ms
-        var lambda_names = unused_lambdas.items()
-        var nm_i = 0
-        while nm_i < lambda_names.count()
-            var nm = lambda_names.at(nm_i)
-            writeIndent()
-            w.emit("_ = ")
-            w.emit(nm)
-            w.emit(";\n")
-            nm_i = nm_i + 1
 
     def genStmt(s: Stmt)
         if source_file != ""
