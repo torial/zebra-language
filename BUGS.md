@@ -1,6 +1,62 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-136. Next new bug: BUG-137.**
+**Last bug number generated: BUG-137. Next new bug: BUG-138.**
+
+---
+
+## BUG-137: module-level `var`/`const` names can collide with file-scope decls (no in-compiler guard)
+
+**Severity:** medium (correctness/usability for hand-written module vars; the
+GameEngine translator side-steps it with a reserved prefix — see below).
+**Status:** OPEN — deferred by decision (2026-06-21). Translator-side prefix is
+the interim mitigation; this entry tracks the proper in-compiler fix.
+
+Module-level `var`/`const` (shipped 2026-06-21, commit 08802f6) emit as bare
+file-scope `pub var`/`pub const NAME`. Zig **forbids any function-local or
+parameter from shadowing a file-scope declaration**, so a module var whose name
+matches *any* identifier used as a local/param anywhere in the emitted file
+fails to compile with `local … shadows declaration of 'NAME'`. Two collision
+sources:
+
+1. **Runtime preamble** — uses many short/common local & param names. Observed:
+   a module `var total` collides with a datetime helper's `const total`, the
+   `_progress_bar(total: i64, …)` parameter, *and* a `var total` local — three
+   hits from one name. `g`, `s`, `c`, `i`, `node`, `out`, `count`, `label`,
+   `config`, `enabled`, `player` … are all landmines.
+2. **User's own locals** — a user function declaring `var count` when a module
+   `var count` exists is also rejected (same Zig shadow rule).
+
+**Why not fixed in-compiler now:** the sound fix is to move user module vars out
+of bare file scope — emit them inside a container struct
+(`const _M = struct { pub var total: i64 = 0; };`) and rewrite references to
+`_M.total`. The **bootstrap** (`src/`) can do this soundly because the resolver
+binds each ident to its declaration (`DeclVar.is_top_level`), so `genIdent`
+knows per-reference whether a `total` is the module var or a shadowing local.
+The **selfhost** codegen has **no general local-name set** (only typed-local
+sets: `strset_locals`, `chan_locals`, …), so it cannot disambiguate a module-var
+reference from a same-named local without new local-name tracking on the hot
+`genIdent` path. That makes the guard a medium, two-compiler change with several
+round-trip gate cycles — deferred while the parallel Zig-0.17 work is in flight.
+
+**Interim mitigation (in use):** the GameEngine Luau→Zebra translator
+(`tools/luau2zebra_ast.py`) emits module vars with a reserved prefix
+(`_mod_<name>`) for both the declaration and every reference it generates, and
+never emits a shadowing local — fully sound for generated code, zero compiler
+risk.
+
+**Fix when picked up:**
+- `src/CodeGen.zig` — emit module vars in a `_M` container struct (or a reserved
+  prefix); `genIdent` already has `is_top_level`, so reference rewriting is local.
+- `selfhost/CodeGen.zbr` — same container/prefix emit in `genFieldDecl`
+  (owner == "" path) and `genIdent`, **plus** a `method_local_names: StrSet`
+  threaded through the generator (reset per method, populated by
+  `genLocalVar`/params/for-binds/captures) so `genIdent` only prefixes a name
+  that is a module var **and not** a shadowing local.
+- Add a smoke fixture: a module var named after a known preamble local (e.g.
+  `total`) that compiles and runs.
+
+**Discovered:** 2026-06-21, immediately after shipping module-level var/const
+(Stage 1). Probe: `var total = 0` at module scope + any function → shadow error.
 
 ---
 
