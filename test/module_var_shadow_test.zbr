@@ -1,0 +1,36 @@
+# BUG-137 residual: binding forms other than plain `var` — for-in loop vars,
+# numeric loop vars, and `if … as` captures — must also shadow a same-named
+# module var (keep the bare name), not be mis-prefixed as `_zbr_mv_`.
+# Each shadow is confined to its own method, and `main` confirms the module
+# vars are untouched.
+
+var item = 100
+var idx = 50
+
+def getOpt(): int?
+    return 7
+
+def loopSum(): int
+    var total = 0
+    for item in [1, 2, 3]          # `item` here is the loop var, not the module var
+        total = total + item
+    return total                   # 6
+
+def numLoop(): int
+    var acc = 0
+    for idx in 1:4                 # `idx` here is the numeric loop var (1,2,3)
+        acc = acc + idx
+    return acc
+
+def captured(): int
+    if getOpt() as idx             # `idx` here is the capture binding
+        return idx
+    return -1
+
+def main()
+    print("loopSum=${loopSum()}")
+    print("numLoop=${numLoop()}")
+    print("captured=${captured()}")
+    print("item=${item} idx=${idx}")     # module vars untouched: 100 50
+    if item == 100 and idx == 50
+        print("module_var_shadow_test: OK")

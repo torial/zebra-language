@@ -25,13 +25,22 @@ var is emitted with the same prefix:
 - **Selfhost** (`selfhost/CodeGen.zbr` `genIdent`): name-based via
   `isModuleVarName` (`module_types.fieldType("", name)`) guarded by
   `isLocalOrParamName` (`param_names` + `infer_ctx.hasLocal`). `genLocalVar` now
-  binds every local (incl. unknown-typed) into `infer_ctx` so the shadow guard
-  and the §inferExpr module-var fallback both see it.
+  binds every local (incl. unknown-typed) into `infer_ctx`; `noteShadowLocal`
+  registers the other binding forms — for-in loop vars (`genForIn`), numeric
+  loop vars (`genForNum`), `if … as` captures (`genIsCaptureThen`), and
+  `branch … on V as r` captures (`genBranchTagged`) — so all shadow a same-named
+  module var instead of being mis-prefixed.
 
-Verified: `test/module_var_collision_test.zbr` — a module `var total`/`const
-count` (names that collide with preamble locals/params) compiles and runs, and a
-function-local `total` correctly shadows (prints the local, not the module var).
-Round-trip byte-identical; smoke 157/157.
+Known minor limitation (selfhost only; the bootstrap is sound per-reference): a
+binding's local-name entry in `infer_ctx` is not scope-popped, so within ONE
+method a module-var reference that appears *after* a block/loop binding the same
+name would be treated as the local. Pathological (a method using both a module
+var and a same-named local in disjoint scopes); not seen in the corpus.
+
+Verified: `test/module_var_collision_test.zbr` (preamble-name collision +
+plain-local shadow) and `test/module_var_shadow_test.zbr` (for-in / for-num /
+if-capture shadows, module vars untouched). Round-trip byte-identical; smoke
+158/158.
 
 ### Original report (for context)
 

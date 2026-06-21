@@ -4640,6 +4640,8 @@ struct Generator
     def genIsCaptureThen(cond_expr: Expr, cap: String, stmts: List(Stmt))
         # Helper called from genIf when is_capture is set.
         # Takes Expr by value so callers with ^Expr get auto-deref at the call site.
+        # BUG-137: the capture binding shadows any same-named module var.
+        .noteShadowLocal(cap)
         branch cond_expr
             on Expr.type_check as tc
                 if tc.variant_name != nil
@@ -4771,6 +4773,10 @@ struct Generator
         var ig = indented()
         # Nested loops must not inherit the enclosing for-else label — their breaks are plain.
         ig.for_else_label = nil
+        # BUG-137: a loop variable shadows any same-named module var inside the
+        # body — register it so genIdent emits it bare, not `_zbr_mv_`-prefixed.
+        for fv in fi.vars
+            .noteShadowLocal(fv)
         # for a, b in list_of_pairs — tuple List destructuring takes priority over HashMap dispatch.
         if fi.vars.count() >= 2
             var is_tuple_list = false
@@ -5257,6 +5263,8 @@ struct Generator
         var ig = indented()
         # Nested loops must not inherit the enclosing for-else label.
         ig.for_else_label = nil
+        # BUG-137: numeric loop variable shadows any same-named module var.
+        .noteShadowLocal(fn_.var_)
         writeIndent()
         w.emit("{\n")
         ig.writeIndent()
@@ -5608,6 +5616,11 @@ struct Generator
         w.emit(") {\n")
         var ig = indented()
         for cas in b.cases
+            # BUG-137: a branch-case binding (`on V as r`) shadows any same-named
+            # module var inside the arm.
+            if cas.binding != nil
+                if cas.binding to! != "_"
+                    .noteShadowLocal(cas.binding to!)
             ig.writeIndent()
             var fi = true
             var vi = 0
@@ -7136,6 +7149,17 @@ struct Generator
             if ic.hasLocal(name)
                 return true
         return false
+
+    # BUG-137: register a binding name (for-loop variable, `if/branch … as`
+    # capture, …) as a local in infer_ctx so the genIdent module-var shadow
+    # guard treats it as a local rather than prefixing it as a module var.
+    # genLocalVar handles plain `var`/`const`; this covers the other binding
+    # forms. Binds as unknown only if not already bound, to avoid clobbering a
+    # known type seeded for inference.
+    def noteShadowLocal(name: str)
+        if .infer_ctx as ic
+            if not ic.hasLocal(name)
+                ic.bind(name, Type_.unknown_)
 
     def isSharedField(name: str): bool
         for d in owner_members
