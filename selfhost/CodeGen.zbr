@@ -1971,13 +1971,19 @@ struct Generator
     def genFieldDecl(n: DeclVar)
         writeIndent()
         # Shared (static) fields become `pub var name: type = default;` inside the struct.
-        # Module-scope vars/consts (owner == "") become file-scope `pub var`/`pub const`;
-        # bare references to them are emitted unqualified by genIdent (no self-prefix).
+        # Module-scope vars/consts (owner == "") become file-scope `pub var`/`pub const`.
+        # BUG-137: a module-scope var gets the reserved `_zbr_mv_` prefix (matched
+        # by genIdent) so its file-scope Zig name can't be shadowed by — or collide
+        # with — a function-local/param of the same source name (Zig forbids a
+        # local shadowing a file-scope decl). Static class fields are namespaced as
+        # `Owner.field`, so they are NOT prefixed.
         if n.mods.is_static or owner == ""
             if n.is_const and not n.mods.is_static
                 w.emit("pub const ")
             else
                 w.emit("pub var ")
+            if owner == "" and not n.mods.is_static
+                w.emit("_zbr_mv_")
             w.emit(n.name)
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar
@@ -3667,6 +3673,11 @@ struct Generator
                     var_t = inferExpr(n.init_expr to!, ic_lv)
             if not (var_t is Type_.unknown_) and not (var_t is Type_.unresolved)
                 ic_lv.bind(n.name, var_t)
+            else
+                # BUG-137: still record the local NAME (as unknown) so the
+                # genIdent shadow guard (isLocalOrParamName) and the module-var
+                # inferExpr fallback know this name is a local, not a module var.
+                ic_lv.bind(n.name, Type_.unknown_)
             if var_t is Type_.named as lv_vtn
                 lv_struct_name = lv_vtn
             if var_t is Type_.cross_module as lv_cm
@@ -7096,7 +7107,35 @@ struct Generator
             else
                 w.emit(self_name)
             w.emit(".")
+            w.emit(id.name)
+            return
+        # BUG-137: a reference to a module-level var → its prefixed file-scope
+        # name (matches genFieldDecl), UNLESS a local/param of the same name
+        # shadows it — in which case the bare name refers to the local. A class
+        # field of the same name already won returned above (fields shadow
+        # module vars inside methods).
+        if isModuleVarName(id.name) and not isLocalOrParamName(id.name)
+            w.emit("_zbr_mv_")
+            w.emit(id.name)
+            return
         w.emit(id.name)
+
+    # True if `name` is a module-level var/const (registered under the ""
+    # sentinel class by populateModuleTypes). Module vars emit as a prefixed
+    # file-scope `pub var`/`pub const`; see genFieldDecl + genIdent (BUG-137).
+    def isModuleVarName(name: str): bool
+        return .module_types.fieldType("", name) != nil
+
+    # True if `name` is bound as a local or parameter in the current method, so
+    # it shadows any same-named module var and must keep its bare Zig name.
+    def isLocalOrParamName(name: str): bool
+        if param_names != nil
+            if param_names to!.contains_(name)
+                return true
+        if .infer_ctx as ic
+            if ic.hasLocal(name)
+                return true
+        return false
 
     def isSharedField(name: str): bool
         for d in owner_members

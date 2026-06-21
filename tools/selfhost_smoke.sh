@@ -588,6 +588,10 @@ smoke_run test/dynlib_export_class_test.zbr "dynlib_export_class OK"
 # across functions and read via interpolation / int-method dispatch.
 smoke_run test/module_var_test.zbr "module_var_test: OK"
 
+# BUG-137: module var named like a preamble local/param (`total`, `count`) must
+# compile (emitted as `_zbr_mv_*`); a shadowing local keeps its bare name.
+smoke_run test/module_var_collision_test.zbr "module_var_collision_test: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

@@ -61,6 +61,15 @@ const build_options = @import("build_options");
 
 const Allocator = std.mem.Allocator;
 
+/// BUG-137: reserved Zig-name prefix for module-level `var`/`const`.  Module
+/// vars emit as file-scope `pub var`/`pub const`, and Zig forbids any
+/// function-local/param from shadowing a file-scope name — so a module var
+/// named like a common local (`total`, `count`, `g`, …) or a runtime-preamble
+/// local/param would fail to compile.  Emitting them as `_zbr_mv_<name>` (and
+/// prefixing references identically in genIdent) moves them out of the namespace
+/// any user/preamble identifier occupies.  The Zebra source name is unchanged.
+const module_var_prefix = "_zbr_mv_";
+
 // ── Compile-time hash (FNV-1a 32-bit) ────────────────────────────────────────
 // Used internally by CodeGen to compute class-name hash components for
 // `_ttag_ClassName` constants.  The algorithm must stay bitwise-identical to
@@ -4992,7 +5001,14 @@ const Generator = struct {
     fn genTopVar(g: Generator, n: *Ast.DeclVar) anyerror!void {
         try g.writeIndent();
         const kw: []const u8 = if (n.is_const) "const" else "var";
-        try g.w.print("pub {s} {s}", .{ kw, n.name });
+        // BUG-137: module-level vars are file-scope `pub var`/`pub const`. Zig
+        // forbids any function-local/param from shadowing a file-scope name, so a
+        // module var named like a common local (`total`, `count`, `g`, …) — or
+        // like a runtime-preamble local/param — would fail to compile. Emit the
+        // Zig name with a reserved prefix that user/preamble identifiers never
+        // use; references are prefixed identically in genIdent. The Zebra source
+        // name (n.name) is unchanged.
+        try g.w.print("pub {s} {s}{s}", .{ kw, module_var_prefix, n.name });
         if (n.type_) |tr| {
             try g.w.writeAll(": ");
             try g.genType(tr);
@@ -12520,15 +12536,20 @@ const Generator = struct {
                 return;
             }
         }
+        // BUG-137: a reference that resolves to a module-level var → the prefixed
+        // file-scope name emitted by genTopVar.  Checked before in_method/self
+        // logic and regardless of scope (top-level `def` bodies and class methods
+        // alike).  Sound per-reference: a shadowing local/param resolves to its
+        // own symbol here, not the top-level var, so it keeps its bare name.
+        if (g.resolve.exprs.get(e)) |sym| {
+            if (sym.kind == .var_ and sym.decl.var_.is_top_level) {
+                try g.w.print("{s}{s}", .{ module_var_prefix, e.name });
+                return;
+            }
+        }
         if (g.in_method) {
             if (g.resolve.exprs.get(e)) |sym| {
                 if (sym.kind == .var_) {
-                    // Module-level (top-level) var → bare Zig file-scope name,
-                    // never `self.name` (it's not a class field).
-                    if (sym.decl.var_.is_top_level) {
-                        try g.w.writeAll(e.name);
-                        return;
-                    }
                     // Shared (static) fields → TypeName.field, not self.field
                     if (sym.decl.var_.mods.static_) {
                         try g.w.print("{s}.{s}", .{g.owner, e.name});

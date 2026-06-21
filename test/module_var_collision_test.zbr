@@ -1,0 +1,22 @@
+# BUG-137 regression: a module var whose name collides with a runtime-preamble
+# local/param (`total` appears as a datetime helper local, the _progress_bar
+# parameter, and a slice-read local) must still compile and run. Module vars
+# emit as `_zbr_mv_<name>` so they can't be shadowed by — or collide with — any
+# function-local/param of the same source name.
+#
+# Also checks the shadow guard: a function-local `total` keeps its bare name and
+# refers to the local, NOT the module var.
+
+var total = 0
+const count = 100        # `count` is also a common preamble local name
+
+def addLocal()
+    var total = 5        # shadows the module var inside this function only
+    print("local=${total}")
+
+def main()
+    addLocal()
+    total = 7            # mutate the module var (bare ref resolves to it here)
+    print("module=${total} count=${count}")
+    if total == 7
+        print("module_var_collision_test: OK")

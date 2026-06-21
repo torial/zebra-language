@@ -222,7 +222,13 @@ def main()
   methods alike); no `self.` / qualifier is needed.
 - `var` emits a Zig `pub var`; `const` emits a `pub const`. Untyped literal
   inits are given a concrete type (`var n = 10` → `pub var n: i64 = 10`) so they
-  are not left as `comptime_int`.
+  are not left as `comptime_int`. The emitted Zig name carries a reserved
+  `_zbr_mv_` prefix (so `var n` → `pub var _zbr_mv_n`); the prefix is internal —
+  your source always uses the bare name.
+- **Collision-safe:** because of that prefix, a module var may share its name
+  with a function-local or parameter anywhere in the file. A local of the same
+  name simply shadows the module var within that function (and keeps its own
+  value); the module var is unaffected.
 - Unlike locals, module-scope `const` is a real keyword here: use it for named
   constants, `var` for shared mutable state.
 

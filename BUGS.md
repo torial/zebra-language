@@ -4,12 +4,36 @@
 
 ---
 
-## BUG-137: module-level `var`/`const` names can collide with file-scope decls (no in-compiler guard)
+## BUG-137: module-level `var`/`const` names can collide with file-scope decls
 
-**Severity:** medium (correctness/usability for hand-written module vars; the
-GameEngine translator side-steps it with a reserved prefix — see below).
-**Status:** OPEN — deferred by decision (2026-06-21). Translator-side prefix is
-the interim mitigation; this entry tracks the proper in-compiler fix.
+**Severity:** medium (correctness/usability for hand-written module vars).
+**Status:** ✅ FIXED 2026-06-21 (commit pending). Module vars now emit with a
+reserved `_zbr_mv_` prefix in both compilers; references are prefixed
+identically, and a shadowing local/param keeps its bare name. The
+translator-side mitigation discussed below is no longer required.
+
+### Resolution
+
+Both compilers emit a module-level `var`/`const` as `pub var`/`pub const
+_zbr_mv_<name>` (constant `module_var_prefix` in `src/CodeGen.zig`; literal in
+`selfhost/CodeGen.zbr` `genFieldDecl`). A reference that resolves to a module
+var is emitted with the same prefix:
+
+- **Bootstrap** (`src/CodeGen.zig` `genIdent`): keyed on the resolved symbol
+  (`sym.decl.var_.is_top_level`) — sound per-reference, since a shadowing local
+  resolves to its own symbol and keeps its bare name.
+- **Selfhost** (`selfhost/CodeGen.zbr` `genIdent`): name-based via
+  `isModuleVarName` (`module_types.fieldType("", name)`) guarded by
+  `isLocalOrParamName` (`param_names` + `infer_ctx.hasLocal`). `genLocalVar` now
+  binds every local (incl. unknown-typed) into `infer_ctx` so the shadow guard
+  and the §inferExpr module-var fallback both see it.
+
+Verified: `test/module_var_collision_test.zbr` — a module `var total`/`const
+count` (names that collide with preamble locals/params) compiles and runs, and a
+function-local `total` correctly shadows (prints the local, not the module var).
+Round-trip byte-identical; smoke 157/157.
+
+### Original report (for context)
 
 Module-level `var`/`const` (shipped 2026-06-21, commit 08802f6) emit as bare
 file-scope `pub var`/`pub const NAME`. Zig **forbids any function-local or
