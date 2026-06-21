@@ -1,0 +1,27 @@
+# Module-level var/const declarations: top-level mutable state + named constants.
+# Exercises the four-stage selfhost path for module vars:
+#   Parser  — parseTopDecl recognizes leading `var`/`const`
+#   Resolver — bindPass1 hoists the name into module scope (bare refs resolve)
+#   TypeChecker — populateModuleTypes registers the type under the "" sentinel
+#                 so inferExpr resolves bare refs (int-method dispatch, etc.)
+#   CodeGen — genFieldDecl emits a file-scope `pub var`/`pub const`
+#
+# A module var is shared mutable state: `bump()` mutates `counter`, and `main()`
+# observes the mutation — proving the var is one file-scope binding, not a copy.
+
+var counter = 0
+const MAX = 100
+const LABEL = "module_var"
+
+def bump()
+    counter += 1
+
+def main()
+    bump()
+    bump()
+    bump()
+    # int-method dispatch on a module const (MAX.toString) and a module var
+    # read inside string interpolation (${counter}).
+    print("${LABEL}: counter=${counter} max=" + MAX.toString())
+    if counter < MAX
+        print("module_var_test: OK")

@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprToNilable, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -810,6 +810,34 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.count() > 0
                     mt.addGenericFn(topfn.name)
+            on Decl.var_ as mv
+                # Module-level var/const: register its type under the "" sentinel
+                # class so inferExpr resolves bare references (e.g. int-method
+                # dispatch on `counter.str()`). Untyped literal inits are inferred
+                # the same way genFieldDecl annotates an untyped static.
+                if mv.type_ != nil
+                    module_fns.setField(mv.name, typeFromRef(mv.type_ to!))
+                else if mv.init_expr != nil
+                    var mv_t: Type_ = Type_.unknown_
+                    branch mv.init_expr to!
+                        on Expr.int_lit
+                            mv_t = Type_.int_
+                        on Expr.float_lit
+                            mv_t = Type_.float_
+                        on Expr.string_lit
+                            mv_t = Type_.string_
+                        on Expr.unary as mv_un
+                            if mv_un.op == UnaryOp.neg
+                                branch mv_un.operand
+                                    on Expr.int_lit
+                                        mv_t = Type_.int_
+                                    on Expr.float_lit
+                                        mv_t = Type_.float_
+                                    else
+                                        pass
+                        else
+                            pass
+                    module_fns.setField(mv.name, mv_t)
             on Decl.namespace_ as ns_decl
                 # Register namespace types so member-access inference works.
                 # Dotted name "Outer.Inner" → create ClassTypes for each path
@@ -1309,6 +1337,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 var fft: Type_? = ctx.module_types.fieldType(ctx.current_class, nm)
                 if fft as fft_v
                     return fft_v
+            # Module-level var/const: registered as a field of the "" sentinel
+            # class (see populateModuleTypes). Resolves bare refs from any scope.
+            var mvt: Type_? = ctx.fieldTypeAny("", nm)
+            if mvt as mvt_v
+                return mvt_v
             return Type_.unresolved
         on Expr.member as m
             # Phase 17d — infer the object's type recursively, then look up

@@ -1239,6 +1239,10 @@ class Parser
             return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure)
         else if .textIs("def")
             return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure)
+        else if .textIs("var")
+            return .parseVarStmt(false)
+        else if .textIs("const")
+            return .parseVarStmt(true)
         raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
 
     def parseNamespaceDecl(): PNode throws

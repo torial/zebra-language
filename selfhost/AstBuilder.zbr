@@ -208,6 +208,14 @@ class ASTBuilder
                 return .buildTypeAlias(ta)?
             on PNode.method_ as m
                 return .buildMethod(m, false)?
+            on PNode.stmt_var as pv
+                # module-level `var`/`const` → a top-level Decl.var_ (emitted as a
+                # Zig file-scope `pub var`/`const` by genFieldDecl when owner == "").
+                const type_ref = .parseTypeRef(pv.type_name)
+                if pv.init_expr.len > 0
+                    const initval = .buildExpr(pv.init_expr.at(0))?
+                    return Decl.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, initval, pv.is_const))
+                return Decl.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, nil, pv.is_const))
             else
                 raise "buildTopDecl: unexpected PNode variant"
 

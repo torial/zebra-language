@@ -273,6 +273,10 @@ pub const DeclVar = struct {
     init: ?*Expr,
     /// `const` instead of `var`.
     is_const: bool,
+    /// Declared at module scope (a top-level `var`/`const`), not a class field.
+    /// Module-level vars are referenced bare (emitted as a Zig file-scope
+    /// `pub var`), never `self.name`.
+    is_top_level: bool = false,
 };
 
 /// `cue init(...)` — constructor.

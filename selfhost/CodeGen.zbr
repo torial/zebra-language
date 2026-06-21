@@ -1971,8 +1971,13 @@ struct Generator
     def genFieldDecl(n: DeclVar)
         writeIndent()
         # Shared (static) fields become `pub var name: type = default;` inside the struct.
-        if n.mods.is_static
-            w.emit("pub var ")
+        # Module-scope vars/consts (owner == "") become file-scope `pub var`/`pub const`;
+        # bare references to them are emitted unqualified by genIdent (no self-prefix).
+        if n.mods.is_static or owner == ""
+            if n.is_const and not n.mods.is_static
+                w.emit("pub const ")
+            else
+                w.emit("pub var ")
             w.emit(n.name)
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar

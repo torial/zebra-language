@@ -205,6 +205,11 @@ const Builder = struct {
                 m.is_top_level = true;
                 break :blk .{ .method = try b.box(Ast.DeclMethod, m) };
             },
+            .VarMemberDecl => blk: {
+                var v = try b.buildVarMemberDecl(decl_node);
+                v.is_top_level = true;
+                break :blk .{ .var_ = try b.box(Ast.DeclVar, v) };
+            },
             .AspectDecl    => {
                 const sp = spanOf(decl_node, b.tokens);
                 std.debug.panic(

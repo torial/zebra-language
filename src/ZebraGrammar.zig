@@ -313,6 +313,7 @@ const program_rules: []const Rule = &.{
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.SigDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.TypeAliasDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.MethodDecl) } }, // top-level free function
+    .{ .lhs = .TopDecl,     .rhs = &.{ n(.VarMemberDecl) } }, // module-level var/const
 };
 
 // ── Use directive ─────────────────────────────────────────────────────────────

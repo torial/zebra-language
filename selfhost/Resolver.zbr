@@ -114,6 +114,12 @@ class Resolver
             on PNode.method_ as m
                 .module_scope.put(m.name, 1)
                 .symbol_count = .symbol_count + 1
+            on PNode.stmt_var as v
+                # Module-level var/const: hoist its name into module scope so bare
+                # references from function bodies resolve (emitted as a file-scope
+                # `pub var`/`pub const` by CodeGen).
+                .module_scope.put(v.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.use_ as u
                 .module_scope.put(u.path, 5)
                 for name in u.exposed

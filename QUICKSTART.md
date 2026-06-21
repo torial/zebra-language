@@ -189,11 +189,42 @@ var flag: bool                 # declaration without init (must assign before us
 var opt: int? = nil            # optional int, initially nil
 ```
 
-- `var` is always mutable.  There is no `let` / `const` in Zebra source.
+- `var` is always mutable.  Local declarations use `var` only — there is no
+  `let`, and `const` is not used for locals.
 - The compiler emits `const` or `var` in Zig based on mutation analysis — you
-  don't control this.
+  don't control this (for locals).
 - Type annotations use `: Type` (colon) syntax, not `as Type`.  `as` is reserved
   for binding clauses (`if x as n`, `branch on V as r`, `if x is T as r`) — see §11, §13, §21.
+
+### §2.1 Module-level `var` / `const`
+
+A `.zbr` file may declare **module-scope** variables and constants at the top
+level, alongside `def` / `class` / `struct` / `enum` / `use`:
+
+```zebra
+var counter = 0                # module-scope mutable state (Zig `pub var`)
+const MAX = 100                # named constant (Zig `pub const`)
+const LABEL = "config"
+
+def bump()
+    counter += 1               # any function in the file may read/mutate it
+
+def main()
+    bump()
+    bump()
+    print("${LABEL}: ${counter}/${MAX}")   # → config: 2/100
+```
+
+- A module-level binding is **one file-scope value**, shared by every function
+  and method in the file — not a per-call copy. `bump()` mutating `counter` is
+  observable from `main()`.
+- Bare references resolve from any scope in the file (free functions and class
+  methods alike); no `self.` / qualifier is needed.
+- `var` emits a Zig `pub var`; `const` emits a `pub const`. Untyped literal
+  inits are given a concrete type (`var n = 10` → `pub var n: i64 = 10`) so they
+  are not left as `comptime_int`.
+- Unlike locals, module-scope `const` is a real keyword here: use it for named
+  constants, `var` for shared mutable state.
 
 ---
 

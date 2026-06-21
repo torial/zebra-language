@@ -4996,6 +4996,21 @@ const Generator = struct {
         if (n.type_) |tr| {
             try g.w.writeAll(": ");
             try g.genType(tr);
+        } else if (std.mem.eql(u8, kw, "var")) {
+            // Untyped module-level `var`: emit the TC-inferred type so Zig
+            // doesn't reject `pub var x = 10` ("comptime_int must be const or
+            // comptime").  Same machinery as genFieldDecl. (`const` stays
+            // untyped — Zig keeps it comptime.)
+            if (n.init) |e| {
+                if (g.tc) |tc| {
+                    const t = tc.expr_types.get(e) orelse .unknown;
+                    if (try tcTypeAnnotation(t, g.alloc)) |ann| {
+                        defer g.alloc.free(ann);
+                        try g.w.writeAll(": ");
+                        try g.w.writeAll(ann);
+                    }
+                }
+            }
         }
         if (n.init) |e| {
             try g.w.writeAll(" = ");
@@ -12508,6 +12523,12 @@ const Generator = struct {
         if (g.in_method) {
             if (g.resolve.exprs.get(e)) |sym| {
                 if (sym.kind == .var_) {
+                    // Module-level (top-level) var → bare Zig file-scope name,
+                    // never `self.name` (it's not a class field).
+                    if (sym.decl.var_.is_top_level) {
+                        try g.w.writeAll(e.name);
+                        return;
+                    }
                     // Shared (static) fields → TypeName.field, not self.field
                     if (sym.decl.var_.mods.static_) {
                         try g.w.print("{s}.{s}", .{g.owner, e.name});

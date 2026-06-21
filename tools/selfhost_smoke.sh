@@ -584,6 +584,10 @@ smoke_run test/nested_namespace_nested_test.zbr "hi"
 smoke_run test/dynlib_export_def_test.zbr "42"
 smoke_run test/dynlib_export_class_test.zbr "dynlib_export_class OK"
 
+# Module-level var/const: file-scope mutable state + named constants, mutated
+# across functions and read via interpolation / int-method dispatch.
+smoke_run test/module_var_test.zbr "module_var_test: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
