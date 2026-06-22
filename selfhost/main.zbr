@@ -132,6 +132,7 @@ class MultiCompiler
                 # Step 4.5: Selfhost type-check pass (primitive mismatch detection)
                 var tc_mt: ModuleTypes = buildModuleTypes(module)
                 var tc_ctx: InferCtx = InferCtx(tc_mt, "")
+                tc_ctx.withSource(src)
                 tc_ctx.withDepTypes(dep_types)
                 if warn_non_exhaustive
                     tc_ctx.enableWarnNonExhaustive()
@@ -520,6 +521,7 @@ def tcCheckSide(src: str, path: str, diags: List(str))
         var module = ASTBuilder.build(pm, path)?
         var tc_mt: ModuleTypes = buildModuleTypes(module)
         var tc_ctx: InferCtx = InferCtx(tc_mt, "")
+        tc_ctx.withSource(src)
         tc_ctx.enableStrict()
         checkModule(module, path, tc_ctx)
         if tc_ctx.hasErrors()

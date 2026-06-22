@@ -1,0 +1,6 @@
+# Diagnostics: a primitive type mismatch reports a caret-rendered message from
+# the TypeChecker. Expected to FAIL; the smoke harness asserts the message and
+# the source-line/caret appear.
+def main()
+    var count: int = "not a number"
+    print(count)

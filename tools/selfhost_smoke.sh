@@ -446,6 +446,9 @@ smoke_tc_fail test/visibility_tc_fail.zbr "is private"
 smoke_tc_fail test/diag_nested_def_test.zbr "can't appear in expression position"
 smoke_tc_fail test/diag_toplevel_stmt_test.zbr "can't appear at the top level"
 smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
+# Caret-specific: asserts the rendered source line appears in the TypeChecker's
+# type-mismatch diagnostic (only emitted when caretSuffix() works).
+smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'
 
 # Interface vtable construction: class implementing interface coerced to interface var.
 # Full run (not just emit) to verify vtable dispatch produces correct output.

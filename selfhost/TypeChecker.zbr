@@ -927,6 +927,7 @@ class InferCtx
     # explicitly name every variant of a same-module union type.
     var warn_non_exhaustive: bool
     var file: str  # source file path for error reporting in inferExpr
+    var source: str  # full source text, for source-line/caret rendering in errorMessages()
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -939,9 +940,15 @@ class InferCtx
         .strict = false
         .warn_non_exhaustive = false
         .file = ""
+        .source = ""
 
     def withFile(f: str)
         .file = f
+
+    # Attach the full source text so errorMessages()/warningMessages() can render
+    # the offending source line plus a `^` caret under the reported column.
+    def withSource(s: str)
+        .source = s
 
     def withReturnType(rt: Type_?)
         .current_return_type = rt
@@ -965,12 +972,43 @@ class InferCtx
     def hasErrors(): bool
         return errors.len > 0
 
+    # Return the 0-based source line at index li, or "" when no source is
+    # attached / li is out of range.
+    def sourceLine(li: int): str
+        if .source.len == 0 or li < 0
+            return ""
+        var idx = 0
+        for ln in .source.split("\n")
+            if idx == li
+                return ln
+            idx = idx + 1
+        return ""
+
+    # The "<src line>\n<spaces>^" suffix for a diagnostic at (line, col), or ""
+    # when no source line is available. `line` is 1-based, `col` is 1-based.
+    def caretSuffix(line: int, col: int): str
+        var src_line = .sourceLine(line - 1)
+        if src_line.len == 0
+            return ""
+        # Some diagnostics (e.g. var-decl spans) report col 0 — point the caret
+        # at the first non-whitespace character instead of column 0.
+        var eff_col = col
+        if eff_col < 1
+            eff_col = (src_line.len - src_line.trimLeft().len) + 1
+        var caret = StringBuilder()
+        var c = 1
+        while c < eff_col
+            caret.append(" ")
+            c = c + 1
+        caret.append("^")
+        return "\n" + src_line + "\n" + caret.build()
+
     def errorMessages(): str
         var sb: StringBuilder = StringBuilder()
         var i: int = 0
         while i < errors.len
             var d: Diagnostic = errors.at(i)
-            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": error: " + d.message + "\n")
+            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": error: " + d.message + .caretSuffix(d.line, d.col) + "\n")
             i = i + 1
         return sb.build()
 
@@ -985,7 +1023,7 @@ class InferCtx
         var i: int = 0
         while i < warnings.len
             var d: Diagnostic = warnings.at(i)
-            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": warning: " + d.message + "\n")
+            sb.append(d.file + ":" + d.line.toString() + ":" + d.col.toString() + ": warning: " + d.message + .caretSuffix(d.line, d.col) + "\n")
             i = i + 1
         return sb.build()
 
