@@ -1,6 +1,44 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-138. Next new bug: BUG-139.**
+**Last bug number generated: BUG-139. Next new bug: BUG-140.**
+
+---
+
+## BUG-139: selfhost doesn't fill default `cue init` params at omitting call sites
+
+**Severity:** low (easy workaround: pass the arg explicitly).
+**Status:** OPEN, discovered 2026-06-22 while threading `source` into the Resolver
+for the undefined-name caret.
+
+**What happened:** a `cue init` with a trailing default param —
+`cue init(file_name: str, source: str = "")` — does **not** get the default
+filled in at call sites that omit it. `Resolver.Resolver(path)` emitted a 1-arg
+Zig `init(path)` against a 2-param `init`, failing:
+
+```
+expected 2 argument(s), found 1
+```
+
+Every Resolver construction now passes the arg explicitly (`Resolver.Resolver(path, "")`
+at the error-ignoring site, `…(path, src)` elsewhere), which is why the caret
+shipped. The Parser's identical `source: str = ""` default never tripped this
+only because every Parser construction already passed all args.
+
+**Scope / open questions:**
+- Default-fill clearly works *somewhere* (default params have been used before) —
+  characterize precisely when it does/doesn't. Suspect it's **constructor**
+  (`Type.Type(...)` cue-init) call sites specifically, vs. ordinary method calls.
+- Bootstrap parity unknown: the bootstrap (Zig `src/`) likely fills defaults
+  correctly (this surfaced only on the selfhost round-trip path). Confirm whether
+  this is a genuine bootstrap-vs-selfhost divergence or a shared gap.
+
+**Where to look:** selfhost call-emission for cue-init / constructor calls — the
+arg-count/default-fill logic in `selfhost/CodeGen.zbr` (genCall / ctor path).
+Compare against how the bootstrap fills missing trailing defaults.
+
+**Payoff when fixed:** removes a latent foot-gun (silent "expected N args, found
+M" on any defaulted cue init) and lets selfhost compiler code rely on init
+defaults the way user programs can.
 
 ---
 
