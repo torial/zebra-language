@@ -4,13 +4,32 @@
 
 ---
 
-## BUG-138: selfhost re-emit divergence — a class `str`/`List(str)` field used with `.split` emits `.items` on `[]const u8`
+## BUG-138: selfhost `.len` dispatch was field-name-based, not class-qualified ✅ FIXED
 
-**Severity:** medium (blocks adding such a field to any selfhost compiler file;
-the bootstrap handles the same source correctly, so it's a selfhost-codegen gap).
-**Status:** OPEN — discovered 2026-06-22 while adding a caret/source-line to
-parser diagnostics. The diagnostic *message* improvement shipped (d9b4ec3); the
-caret was reverted because of this.
+**Severity:** medium (selfhost-codegen gap; the bootstrap was already correct).
+**Status:** ✅ FIXED 2026-06-22. Root cause was narrower than first thought (not
+`.split`): the selfhost's `.len`/`.count` member dispatch looked up "is this a
+List field?" by **field name across all classes**, so when two classes had a
+same-named field of different types (`source: str` on `Parser` vs `source:
+List(PNode)` on `PInScope`), `self.source.len` on the str field wrongly emitted
+`self.source.items.len` (`.items` on a `[]const u8`).
+
+**Fix** (`selfhost/CodeGen.zbr`, the `.len`/`.count` member path): when the
+member object is a field of the **current** class (`isFieldName`), trust the
+class-scoped `isListField` answer and do NOT fall through to the name-based
+`fieldIsList(.module_types, …)`, which false-positives on a same-named List field
+of another class. Selfhost-only (the bootstrap's symbol-table resolution was
+already right). Round-trip byte-identical; smoke 161/161; regression test
+`test/field_name_collision_test.zbr` (`text=5 list=3`).
+
+**Payoff:** unblocked the **caret/source-line** parser diagnostic — the Parser
+now carries the source text and renders a `^` under the offending column
+(committed alongside the fix), which previously hit this divergence.
+
+### Original report (for context)
+Discovered while adding a caret/source-line to parser diagnostics. The diagnostic
+*message* improvement shipped first (d9b4ec3); the caret was reverted until the
+codegen fix landed.
 
 **What happened:** I added a field to `selfhost/Parser.zbr` to hold the source
 text for caret rendering and used it with `split`:

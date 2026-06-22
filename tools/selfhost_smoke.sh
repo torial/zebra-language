@@ -589,6 +589,10 @@ smoke_run test/nested_namespace_nested_test.zbr "hi"
 smoke_run test/dynlib_export_def_test.zbr "42"
 smoke_run test/dynlib_export_class_test.zbr "dynlib_export_class OK"
 
+# BUG-138: same-named field of different types across classes (`source: str`
+# vs `source: List`) — `.len` must use each class's own field type.
+smoke_run test/field_name_collision_test.zbr "text=5 list=3"
+
 # Module-level var/const: file-scope mutable state + named constants, mutated
 # across functions and read via interpolation / int-method dispatch.
 smoke_run test/module_var_test.zbr "module_var_test: OK"

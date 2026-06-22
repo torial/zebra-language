@@ -647,13 +647,15 @@ class Parser
     var file_name: str
     var parse_errors: List(str)
     var collected_decls: List(PNode)
+    var source: str
 
-    cue init(tokens: List(Token.Token), file_name: str)
+    cue init(tokens: List(Token.Token), file_name: str, source: str = "")
         .tokens = tokens
         .pos = 0
         .file_name = file_name
         .parse_errors = List(str)()
         .collected_decls = List(PNode)()
+        .source = source
 
     # -- Cursor ----------------------------------------------------------------
 
@@ -675,8 +677,29 @@ class Parser
     def textIs(s: str): bool
         return .peek().text == s
 
+    def sourceLine(li: int): str
+        if .source.len == 0 or li < 0
+            return ""
+        var idx = 0
+        for ln in .source.split("\n")
+            if idx == li
+                return ln
+            idx = idx + 1
+        return ""
+
     def errorAt(msg: str): str
-        return .file_name + ":" + .peek().line.toString() + ":" + .peek().col.toString() + ": error: " + msg
+        var tok = .peek()
+        var head = .file_name + ":" + tok.line.toString() + ":" + tok.col.toString() + ": error: " + msg
+        var src_line = .sourceLine(tok.line - 1)
+        if src_line.len > 0
+            var caret = StringBuilder()
+            var c = 1
+            while c < tok.col
+                caret.append(" ")
+                c = c + 1
+            caret.append("^")
+            return head + "\n" + src_line + "\n" + caret.build()
+        return head
 
     # A friendlier diagnostic when a token shows up where an expression was
     # expected.  Statement keywords (`def`, `if`, `for`, …) leaking into
@@ -3018,5 +3041,5 @@ class Parser
 
     static def parse(src: str, file_name: str): PNode throws
         var toks = Lexer.tokenize(src)?
-        var p = Parser(toks, file_name)
+        var p = Parser(toks, file_name, src)
         return p.parseModule()

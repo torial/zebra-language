@@ -6723,7 +6723,17 @@ struct Generator
                         var fn2 = fname to!
                         # str_params takes priority — string variables are never lists
                         if not str_params.contains_(fn2)
-                            is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
+                            if isFieldName(fn2)
+                                # BUG-138: a field of the CURRENT class — its declared
+                                # type is authoritative.  Trust isListField (class-
+                                # scoped) and do NOT fall through to the name-based
+                                # fieldIsList, which false-positives when ANOTHER class
+                                # has a same-named List field (e.g. one class's
+                                # `source: str` vs another's `source: List(PNode)` →
+                                # `self.source.items.len` on a `[]const u8`).
+                                is_list_obj = isListField(fn2)
+                            else
+                                is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
                         is_hm_obj = localIsHashMap(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")

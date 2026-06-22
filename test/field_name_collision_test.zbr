@@ -1,0 +1,26 @@
+# BUG-138 regression: two classes with a same-named field of different types
+# (`source: List(int)` vs `source: str`). The selfhost's `.len` dispatch was
+# name-based, so `.source.len` on the str field wrongly emitted `.source.items.len`
+# (`.items` on a `[]const u8`). Now class-qualified: each uses its own field type.
+
+class NodeList
+    var source: List(int)
+    cue init()
+        .source = List(int)()
+    def size(): int
+        return .source.len          # List → .items.len
+
+class TextBuf
+    var source: str
+    cue init(s: str)
+        .source = s
+    def size(): int
+        return .source.len          # str → .len (must NOT use .items)
+
+def main()
+    var t = TextBuf("hello")
+    var nl = NodeList()
+    nl.source.add(1)
+    nl.source.add(2)
+    nl.source.add(3)
+    print("text=${t.size()} list=${nl.size()}")
