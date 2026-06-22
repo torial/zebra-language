@@ -1,6 +1,57 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-137. Next new bug: BUG-138.**
+**Last bug number generated: BUG-138. Next new bug: BUG-139.**
+
+---
+
+## BUG-138: selfhost re-emit divergence — a class `str`/`List(str)` field used with `.split` emits `.items` on `[]const u8`
+
+**Severity:** medium (blocks adding such a field to any selfhost compiler file;
+the bootstrap handles the same source correctly, so it's a selfhost-codegen gap).
+**Status:** OPEN — discovered 2026-06-22 while adding a caret/source-line to
+parser diagnostics. The diagnostic *message* improvement shipped (d9b4ec3); the
+caret was reverted because of this.
+
+**What happened:** I added a field to `selfhost/Parser.zbr` to hold the source
+text for caret rendering and used it with `split`:
+- First as `var source_lines: List(str)` populated via `for ln in source.split("\n"): .source_lines.add(ln)`.
+- Then reformulated as `var source: str` with a `sourceLine(li)` helper doing
+  `for ln in .source.split("\n")`.
+
+Both compile + run correctly when **zebra-bootstrap.exe** (the Zig compiler)
+emits `Parser.zbr` — `zig build`, smoke 159/159 all pass. But the round-trip
+gate fails at **selfhost-B build**: the **selfhost** compiler (selfhost-A)
+re-emits `Parser.zbr` into Zig that references `.items` on a `[]const u8`:
+
+```
+selfhost/Parser.zig:4516:45: error: no member named 'items' in '[]const u8'
+```
+
+i.e. the selfhost codegen treats the `str` field (or the `split` result, or the
+field's element/whole type) as a `List`/`ArrayList` at a use site while its Zig
+type is a string slice — a type-inference inconsistency that only the **selfhost**
+codegen has (the bootstrap gets it right), so it's a genuine bootstrap-vs-selfhost
+divergence.
+
+**Why it matters:** it means a `str`/`List(str)` field interacting with `.split`
+can't currently be added to any of the `selfhost/*.zbr` compiler files (they
+must round-trip). User programs are unaffected (they compile via zebra.exe,
+which is fine — the bug is in *re-emitting* such code).
+
+**To investigate / fix:**
+- Build selfhost-A, have it `--emit-zig selfhost/Parser.zbr` with the reverted
+  caret code re-applied, and inspect the emission around the `.items` site to
+  see which expression's inferred type is wrong.
+- Likely in `selfhost/CodeGen.zbr` / the InferCtx field-type or `split`-result
+  handling — the selfhost infers the field (or the loop var, or `.len`) as a
+  List where it's a str (or vice-versa).
+- The reverted caret code (small) is the reproduction; re-apply from the
+  d9b4ec3 parent's working-tree notes or re-derive (a `var source: str` field +
+  `for ln in .source.split("\n")` + `.source.len`).
+
+**Payoff when fixed:** unblocks the caret/source-line diagnostic (and any future
+selfhost code that wants a split-derived string field) — a clean self-hosting-
+duality fix.
 
 ---
 
