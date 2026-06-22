@@ -1,0 +1,7 @@
+# Diagnostics: a nested function definition must produce a clear, caret-rendered
+# message — NOT the generic "unexpected expression token: 'def'".
+# This fixture is expected to FAIL parsing; the smoke harness asserts the
+# improved wording appears (smoke_tc_fail).
+def main()
+    def inner()
+        pass

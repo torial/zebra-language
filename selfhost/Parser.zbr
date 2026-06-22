@@ -678,6 +678,20 @@ class Parser
     def errorAt(msg: str): str
         return .file_name + ":" + .peek().line.toString() + ":" + .peek().col.toString() + ": error: " + msg
 
+    # A friendlier diagnostic when a token shows up where an expression was
+    # expected.  Statement keywords (`def`, `if`, `for`, …) leaking into
+    # expression position are the most confusing case — name the actual problem
+    # instead of the generic "unexpected expression token".
+    def unexpectedExprMsg(): str
+        var t = .peek().text
+        if t == "def"
+            return .errorAt("a function definition ('def') can't appear in expression position — use a lambda `def(args) body`, or move it to its own statement")
+        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "var" or t == "const" or t == "guard" or t == "with"
+            return .errorAt("'" + t + "' is a statement keyword and can't be used as an expression here")
+        if t.len == 0
+            return .errorAt("unexpected end of input while parsing an expression")
+        return .errorAt("unexpected expression token: '" + t + "'")
+
     def expectText(s: str) throws
         if not .textIs(s)
             raise .errorAt("expected '" + s + "', got '" + .peek().text + "'")
@@ -2834,7 +2848,7 @@ class Parser
             var else_nodes = List(PNode)()
             else_nodes.add(.parseExpr())
             return PNode.expr_if_expr(PIfExpr(cond_nodes, then_nodes, else_nodes))
-        raise .errorAt("unexpected expression token: '" + .peek().text + "'")
+        raise .unexpectedExprMsg()
 
     def parseLambdaExpr(): PNode throws
         # Lambda: expression-body `def(params) [as T] = expr`
