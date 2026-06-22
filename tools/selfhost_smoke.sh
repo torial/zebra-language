@@ -444,6 +444,7 @@ smoke_tc_fail test/visibility_tc_fail.zbr "is private"
 # Diagnostics: nested `def` gives a clear message (not "unexpected expression
 # token: 'def'"). Verifies the friendlier parse-error wording + that it fires.
 smoke_tc_fail test/diag_nested_def_test.zbr "can't appear in expression position"
+smoke_tc_fail test/diag_toplevel_stmt_test.zbr "can't appear at the top level"
 
 # Interface vtable construction: class implementing interface coerced to interface var.
 # Full run (not just emit) to verify vtable dispatch produces correct output.

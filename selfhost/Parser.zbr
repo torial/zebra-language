@@ -692,6 +692,17 @@ class Parser
             return .errorAt("unexpected end of input while parsing an expression")
         return .errorAt("unexpected expression token: '" + t + "'")
 
+    # Friendlier diagnostic for a token that isn't a valid top-level declaration.
+    # The common cause is loose executable code at module scope (Zebra only
+    # allows declarations there) — say so instead of "unexpected top-level token".
+    def unexpectedTopLevelMsg(): str
+        var t = .peek().text
+        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "guard" or t == "with" or t == "print"
+            return .errorAt("'" + t + "' is a statement and can't appear at the top level — only declarations (def, class, struct, enum, union, use, var, const) belong here; move it into a function")
+        if t.len == 0
+            return .errorAt("unexpected end of input at the top level")
+        return .errorAt("unexpected top-level token: '" + t + "' — expected a declaration (def, class, struct, enum, union, use, var, const)")
+
     def expectText(s: str) throws
         if not .textIs(s)
             raise .errorAt("expected '" + s + "', got '" + .peek().text + "'")
@@ -1257,7 +1268,7 @@ class Parser
             return .parseVarStmt(false)
         else if .textIs("const")
             return .parseVarStmt(true)
-        raise .errorAt("unexpected top-level token: '" + .peek().text + "'")
+        raise .unexpectedTopLevelMsg()
 
     def parseNamespaceDecl(): PNode throws
         .expectText("namespace")

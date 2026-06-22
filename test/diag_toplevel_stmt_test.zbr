@@ -1,0 +1,4 @@
+# Diagnostics: loose executable code at the top level must get a clear message
+# (not the generic "unexpected top-level token: 'print'"). Expected to FAIL
+# parsing; the smoke harness asserts the improved wording.
+print("this is a statement, not a declaration")
