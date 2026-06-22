@@ -4789,7 +4789,7 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 // zbr:selfhost/Checker.zbr:719
     const pm_node = try Parser.Parser.parse(src, path);
 // zbr:selfhost/Checker.zbr:720
-    var resolver = Resolver.init(path);
+    var resolver = Resolver.init(path, src);
     try resolver.resolve(pm_node);
 // zbr:selfhost/Checker.zbr:722
     if (_zebra_gt(resolver.errorCount(), 0)) {

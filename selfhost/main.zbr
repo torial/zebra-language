@@ -103,7 +103,7 @@ class MultiCompiler
         sys.errln("  parsed OK")
 
         # Step 2: Resolve names
-        var resolver = Resolver.Resolver(zbr_path)
+        var resolver = Resolver.Resolver(zbr_path, src)
         resolver.resolve(pm_node)?
         if resolver.errorCount() > 0
             sys.errln(resolver.allErrorMessages())
@@ -276,7 +276,7 @@ class MultiCompiler
                     if decl2 is PNode.class_ as cls2
                         dep_class_names.add(cls2.name)
                 # Resolve for name annotations; ignore recorded errors.
-                var resolver = Resolver.Resolver(zbr_path)
+                var resolver = Resolver.Resolver(zbr_path, "")
                 resolver.resolve(pm_node)?
                 var merged_pm = .mergePartials_pmodule(pm, zbr_path)?
                 const module = ASTBuilder.build(merged_pm, zbr_path)?
@@ -509,7 +509,7 @@ def extractConflictSide(src: str, want_ours: bool): str
 # caller gets a clean list regardless. Does not compile to Zig.
 def tcCheckSide(src: str, path: str, diags: List(str))
     var pm_node = Parser.Parser.parse(src, path)?
-    var resolver = Resolver.Resolver(path)
+    var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
         for line in resolver.allErrorMessages().split("\n")
@@ -599,7 +599,7 @@ def dumpMethodVars(owner: str, meth_name: str, stmts: List(Stmt), params: List(P
 def runTypes(path: str) throws
     var src: str = File.read(path)
     const pm_node = Parser.Parser.parse(src, path)?
-    var resolver = Resolver.Resolver(path)
+    var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
         sys.errln(resolver.allErrorMessages())

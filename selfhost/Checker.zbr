@@ -717,7 +717,7 @@ def checkerLoadDeps(path: str, visited: List(str), modules: List(Module)) throws
 
     var src: str = File.read(path)
     const pm_node = Parser.Parser.parse(src, path)?
-    var resolver = Resolver.Resolver(path)
+    var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
         raise "resolver errors in " + path + ":\n" + resolver.allErrorMessages()

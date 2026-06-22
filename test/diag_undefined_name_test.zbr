@@ -1,0 +1,4 @@
+# Diagnostics: an undefined name reports a caret-rendered message from the
+# Resolver. Expected to FAIL; the smoke harness asserts the message appears.
+def main()
+    print(missingThing)

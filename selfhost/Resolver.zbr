@@ -53,14 +53,43 @@ class Resolver
     var errors      : List(ResolveError)
     var symbol_count: int
     var file_name   : str
+    # Full source text for caret-rendered diagnostics; "" → no caret.
+    var source      : str
 
-    cue init(file_name: str)
+    cue init(file_name: str, source: str = "")
         .module_scope  = HashMap()
         .class_scope   = HashMap()
         .method_scope  = HashMap()
         .errors        = List(ResolveError)()
         .symbol_count  = 0
         .file_name     = file_name
+        .source        = source
+
+    # `file:line:col: error: msg`, plus the offending source line and a `^` under
+    # the column when the source is available (li/col are 1-based).
+    def fmtErrAt(line: int, col: int, msg: str): str
+        var head = .file_name + ":" + line.toString() + ":" + col.toString() + ": error: " + msg
+        var src_line = .sourceLine(line - 1)
+        if src_line.len > 0
+            var caret = StringBuilder()
+            var c = 1
+            while c < col
+                caret.append(" ")
+                c = c + 1
+            caret.append("^")
+            return head + "\n" + src_line + "\n" + caret.build()
+        return head
+
+    # Return the (0-based) source line, or "" if out of range / no source.
+    def sourceLine(li: int): str
+        if .source.len == 0 or li < 0
+            return ""
+        var idx = 0
+        for ln in .source.split("\n")
+            if idx == li
+                return ln
+            idx = idx + 1
+        return ""
 
     # -- Result accessors (return primitives for cross-module use) -------------
 
@@ -292,7 +321,7 @@ class Resolver
         branch expr
             on PNode.expr_id as id
                 if not .isInScope(id.name)
-                    .errors.add(ResolveError(.file_name + ":" + id.line.toString() + ":" + id.col.toString() + ": error: undefined name: '" + id.name + "'"))
+                    .errors.add(ResolveError(.fmtErrAt(id.line, id.col, "undefined name: '" + id.name + "'")))
             on PNode.expr_binary as b
                 for e in b.left
                     .resolveExpr(e)

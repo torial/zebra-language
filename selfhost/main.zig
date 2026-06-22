@@ -3542,7 +3542,7 @@ pub const MultiCompiler = struct {
         const pm_node = try Parser.Parser.parse(src, zbr_path);
         std.debug.print("{s}\n", .{"  parsed OK"});
 // zbr:selfhost/main.zbr:106
-        var resolver = Resolver.init(zbr_path);
+        var resolver = Resolver.init(zbr_path, src);
         try resolver.resolve(pm_node);
 // zbr:selfhost/main.zbr:108
         if (_zebra_gt(resolver.errorCount(), 0)) {
@@ -3811,7 +3811,7 @@ pub const MultiCompiler = struct {
                     }
                 }
 // zbr:selfhost/main.zbr:279
-                var resolver = Resolver.init(zbr_path);
+                var resolver = Resolver.init(zbr_path, "");
                 try resolver.resolve(pm_node);
 // zbr:selfhost/main.zbr:281
                 const merged_pm = try self.mergePartials_pmodule(pm, zbr_path);
@@ -4292,7 +4292,7 @@ pub fn tcCheckSide(src: []const u8, path: []const u8, diags: *std.ArrayList([]co
 // zbr:selfhost/main.zbr:511
             const pm_node = Parser.Parser.parse(src, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; };
 // zbr:selfhost/main.zbr:512
-            var resolver = Resolver.init(path);
+            var resolver = Resolver.init(path, src);
             resolver.resolve(pm_node) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; };
 // zbr:selfhost/main.zbr:514
             if (_zebra_gt(resolver.errorCount(), 0)) {
@@ -4441,7 +4441,7 @@ pub fn runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:601
     const pm_node = try Parser.Parser.parse(src, path);
 // zbr:selfhost/main.zbr:602
-    var resolver = Resolver.init(path);
+    var resolver = Resolver.init(path, src);
     try resolver.resolve(pm_node);
 // zbr:selfhost/main.zbr:604
     if (_zebra_gt(resolver.errorCount(), 0)) {
