@@ -45,9 +45,12 @@ restored) while the issue is surfaced.
    `undefined` (it should never reach codegen once the TC errors).
 3. Flip `checkArgCount`'s `addWarn` → `addErr`, re-run the corpus to confirm the
    translator change drove arg-count failures to ~0, then gate + smoke.
-Also: arg-count diagnostics currently report `0:0` in `print`/expr-stmt positions
-because **expression** spans are `zspan()` placeholders (only statement spans
-carry lines). Folds into the precise-span work.
+~~Also: arg-count diagnostics currently report `0:0` in `print`/expr-stmt
+positions because expression spans are `zspan()` placeholders.~~ ✅ RESOLVED
+2026-06-23 — identifier and member expressions now carry real spans (the parser
+captured them; the AST builder was discarding them), so the arg-count /
+forgot-parens / arg-type diagnostics render precise carets. Only literal
+arguments still fall back to the callee position.
 
 ### Original report (for context)
 

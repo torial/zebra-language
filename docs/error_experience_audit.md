@@ -39,9 +39,13 @@ silent wrong run, a cryptic Zig error, or no source location.
    `f(1, "two")` nested inside `print(...)` now reports
    `type mismatch: expected int, got str` instead of a cryptic Zig type error.
    Corpus unaffected (1482/1581 — the TC's inference is lenient enough on
-   translated Luau that extending reach surfaced no new mismatches). Still `0:0`
-   in `print`/expr-stmt positions (the arg-type path uses the statement line and
-   `StmtPrint` has no span line — the one remaining precise-span gap).
+   translated Luau that extending reach surfaced no new mismatches).
+   **Precise spans landed (2026-06-23):** identifiers, members, and method-call
+   callees now carry real source positions (the parser captured them; the AST
+   builder was discarding them to `zspan()`). Arg-type mismatches anchor at the
+   argument itself when it is an identifier/member, else at the callee — no more
+   `0:0`. Only *literal* arguments still fall back to the callee (literal PNodes
+   hold bare text; giving them spans is a deferred payload restructure).
 4. **Method/field-not-found polish** — these have a `.zbr` line but leak Zig type
    names (`[]const u8` → `str`) and emit notes pointing into the generated
    `.zig`. Mapping the receiver type back to its Zebra name and suppressing the
