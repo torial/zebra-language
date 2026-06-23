@@ -1,0 +1,8 @@
+# Precise spans: an arg-type mismatch where the argument is an identifier anchors
+# the caret at the argument, not the callee. Expected TC fail.
+def needsInt(n: int): int
+    return n + 1
+def main()
+    var s = "hello"
+    var r = needsInt(s)
+    print(r.toString())

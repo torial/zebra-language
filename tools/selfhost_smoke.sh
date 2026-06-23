@@ -482,6 +482,8 @@ smoke_warn test/forgot_parens_test.zbr "did you mean to call it"
 smoke_tc_fail test/arg_type_nested_test.zbr "type mismatch: expected int"
 # Precise spans: a method-call arg-type mismatch anchors at the method name.
 smoke_tc_fail test/member_call_diag_test.zbr "type mismatch: expected int"
+# Precise spans: an arg-type mismatch anchors at the argument (an identifier here).
+smoke_tc_fail test/arg_anchor_test.zbr "type mismatch: expected int"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'

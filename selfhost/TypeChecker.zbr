@@ -2454,7 +2454,19 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if expected == nil
             expected = ctx.methodParamTypeAtAny("", lookup_method, idx)
         if expected != nil
-            checkExpr(arg.value, expected, file, cline, ccol, ctx)
+            # Anchor the mismatch at the argument itself when it carries a real
+            # span (ident/member), else fall back to the callee position.
+            var aline: int = cline
+            var acol: int = ccol
+            if arg.value is Expr.ident as aid
+                if aid.span.line > 0
+                    aline = aid.span.line
+                    acol = aid.span.col
+            else if arg.value is Expr.member as amem
+                if amem.span.line > 0
+                    aline = amem.span.line
+                    acol = amem.span.col
+            checkExpr(arg.value, expected, file, aline, acol, ctx)
         idx += 1
 
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
