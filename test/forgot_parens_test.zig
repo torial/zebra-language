@@ -3422,6 +3422,7 @@ pub fn main(_zinit: std.process.Init) void {
     _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
+// zbr:test/forgot_parens_test.zbr:7
     greet;
 }
 
