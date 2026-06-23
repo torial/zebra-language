@@ -466,6 +466,10 @@ smoke_run test/opt_chain_test.zbr "opt_chain: OK"
 # (List.add/count/at/remove/contains/join/sort, StringBuilder.append/build/len) must
 # not be silently rerouted to the stdlib codegen path.
 smoke_run test/dispatch_collision_test.zbr "dispatch_collision: OK"
+# BUG-140: a List field and a HashMap field of the same name in different classes
+# must dispatch by the CURRENT class's declared type (List.len→items.len, not
+# HashMap.count()). Asserts the List-side length resolved correctly at runtime.
+smoke_run test/hashmap_field_collision_test.zbr "list_size=1"
 # HashMap heuristic collision: user class with set/get/contains/remove/count/keys/values
 # methods must not be routed through HashMap codegen.
 smoke_run test/hashmap_dispatch_collision_test.zbr "hashmap_dispatch_collision: OK"

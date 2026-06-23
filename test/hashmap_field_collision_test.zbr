@@ -1,0 +1,37 @@
+# BUG-140 regression: a List field and a HashMap field of the SAME name in two
+# different classes must dispatch by the CURRENT class's declared type, not by a
+# global name-based lookup. Before the fix, operations on ListHolder.bag (a List)
+# mis-dispatched as if `bag` were a HashMap (because MapHolder.bag is one) — e.g.
+# `bag.len` emitting a `.count()` call on a std.ArrayList, which is invalid Zig.
+
+class MapHolder
+    var bag: HashMap(str, int)
+    cue init()
+        bag = HashMap()
+    def set_(k: str, v: int)
+        bag.put(k, v)
+    def get_(k: str): int
+        return bag[k]      # HashMap index-read → .get(k).?
+    def size(): int
+        return bag.count()
+
+class ListHolder
+    var bag: List(int)
+    cue init()
+        bag = List(int)()
+    def add_(v: int)
+        bag.add(v)
+    def first(): int
+        return bag.at(0)   # List accessor
+    def size(): int
+        return bag.len     # List length — must NOT dispatch as HashMap.count()
+
+def main()
+    var lh = ListHolder()
+    lh.add_(42)
+    var mh = MapHolder()
+    mh.set_("a", 7)
+    print("list_first=" + lh.first().toString())
+    print("list_size=" + lh.size().toString())
+    print("map_get=" + mh.get_("a").toString())
+    print("map_size=" + mh.size().toString())

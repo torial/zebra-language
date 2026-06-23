@@ -4330,7 +4330,7 @@ struct Generator
         if target is Expr.index as ix
             var nm = getMemberFieldName(ix.object)
             if nm != nil
-                if localIsHashMap(nm to!) or fieldIsHashMap(.module_types, .dep_types, nm to!)
+                if fieldAwareIsHashMap(nm to!)
                     genExpr(ix.object)
                     w.emit(".put(")
                     genExpr(ix.index)
@@ -4362,6 +4362,29 @@ struct Generator
             if ftype to! is TypeRef.generic as gtr
                 return gtr.name == "List"
         return false
+
+    # BUG-140: class-scoped "is this field of the CURRENT class a HashMap?"
+    # (parallel to isListField). Used by fieldAwareIsHashMap to avoid the
+    # name-based false-positive across classes with same-named fields.
+    def isHashMapField(field_name: str): bool
+        var ftype = lookupFieldType(field_name)
+        if ftype != nil
+            if ftype to! is TypeRef.generic as gtr
+                return gtr.name == "HashMap"
+        return false
+
+    # BUG-140: class-qualified HashMap dispatch (the sibling of the BUG-138 List
+    # fix). A local var shadows any same-named field, so its type wins. Then, if
+    # `name` is a field of the CURRENT class, its declared type is authoritative
+    # — do NOT fall through to the global name-based fieldIsHashMap, which
+    # false-positives on a same-named HashMap field of another class.
+    def fieldAwareIsHashMap(name: str): bool
+        if .infer_ctx != nil
+            if (.infer_ctx to!).hasLocal(name)
+                return localIsHashMap(name)
+        if isFieldName(name)
+            return isHashMapField(name)
+        return localIsHashMap(name) or fieldIsHashMap(.module_types, .dep_types, name)
 
     def localIsHashMap(name: str): bool
         if .infer_ctx != nil
@@ -6734,7 +6757,7 @@ struct Generator
                                 is_list_obj = isListField(fn2)
                             else
                                 is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
-                        is_hm_obj = localIsHashMap(fn2) or fieldIsHashMap(.module_types, .dep_types, fn2)
+                        is_hm_obj = fieldAwareIsHashMap(fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
@@ -6826,7 +6849,7 @@ struct Generator
                 var is_hm_idx = false
                 if idx_obj_nm != nil
                     var idx_nm = idx_obj_nm to!
-                    is_hm_idx = localIsHashMap(idx_nm) or fieldIsHashMap(.module_types, .dep_types, idx_nm)
+                    is_hm_idx = fieldAwareIsHashMap(idx_nm)
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
@@ -9263,7 +9286,7 @@ struct Generator
             if cnt_obj_name != nil
                 var cnt_nm = cnt_obj_name to!
                 is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(.module_types, .dep_types, cnt_nm)
-                is_hashmap_cnt = localIsHashMap(cnt_nm) or fieldIsHashMap(.module_types, .dep_types, cnt_nm)
+                is_hashmap_cnt = fieldAwareIsHashMap(cnt_nm)
             if is_strset_cnt or is_hashmap_cnt
                 w.emit("@as(i64, @intCast(")
                 genExpr(m.object)
@@ -9322,7 +9345,7 @@ struct Generator
             var is_hashmap_rem = false
             if rem_obj_name != nil
                 var rem_nm = rem_obj_name to!
-                is_hashmap_rem = localIsHashMap(rem_nm) or fieldIsHashMap(.module_types, .dep_types, rem_nm)
+                is_hashmap_rem = fieldAwareIsHashMap(rem_nm)
             if is_hashmap_rem
                 w.emit("_ = ")
                 genExpr(m.object)
@@ -9432,7 +9455,7 @@ struct Generator
             var set_recv = getMemberFieldName(m.object)
             if set_recv != nil
                 var sname = set_recv to!
-                if localIsHashMap(sname) or fieldIsHashMap(.module_types, .dep_types, sname)
+                if fieldAwareIsHashMap(sname)
                     var key_is_str = localIsHashMapStrKey(sname)
                     var val_is_str = localIsHashMapStrVal(sname)
                     if not key_is_str or not val_is_str

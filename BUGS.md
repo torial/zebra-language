@@ -1,6 +1,47 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-139. Next new bug: BUG-140.**
+**Last bug number generated: BUG-140. Next new bug: BUG-141.**
+
+---
+
+## BUG-140: selfhost HashMap dispatch was field-name-based, not class-qualified ✅ FIXED
+
+**Severity:** medium (selfhost-codegen gap; the bootstrap was already correct).
+**Status:** ✅ FIXED 2026-06-22. The sibling of BUG-138, for HashMaps: the
+selfhost's HashMap member dispatch (indexing `obj[k]`, `.count()`, `.remove()`,
+`.set()`, and index-assignment) decided "is field `X` a HashMap?" by **field
+name across all classes** (`fieldIsHashMap`), so when two classes had a
+same-named field of different container-ness, the dispatch mis-fired.
+
+**Reproduction** (a `List(int)` field colliding with a same-named `HashMap`
+field of another class, indexed):
+```
+class MapHolder
+    var bag: HashMap(str, int)
+class ListHolder
+    var bag: List(int)
+    def at0(): int
+        return bag[0]
+```
+- **Selfhost** emitted `return self.bag.get(0).?;` — treating the `List` as a
+  HashMap because `fieldIsHashMap("bag")` was globally true (from `MapHolder`).
+- **Bootstrap** emitted `return self.bag[@intCast(0)];` — correct (class-scoped).
+
+The selfhost emit is invalid Zig (`List` has no `.get`), so it was build-caught,
+but it silently blocked any future selfhost code with a same-named List/HashMap
+field pair. The selfhost source already has three such collisions one edge away
+from biting: `enum_names` (StrSet vs HashMap), `union_names` (StrSet vs HashMap),
+`module_fns` (HashMap vs a class type).
+
+**Fix** (`selfhost/CodeGen.zbr`): added a class-scoped `isHashMapField`
+(parallel to `isListField`, via `lookupFieldType` over the current class's
+members) and a `fieldAwareIsHashMap` helper — a local var shadows any same-named
+field (its type wins), then a field of the **current** class is authoritative
+(do NOT fall through to the global name-based `fieldIsHashMap`). Replaced all
+five `localIsHashMap(X) or fieldIsHashMap(…)` dispatch sites with
+`fieldAwareIsHashMap(X)`. Selfhost-only (the bootstrap's symbol-table resolution
+was already right). Round-trip byte-identical; smoke green; regression test
+`test/hashmap_field_collision_test.zbr`.
 
 ---
 
