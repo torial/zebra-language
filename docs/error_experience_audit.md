@@ -33,10 +33,15 @@ silent wrong run, a cryptic Zig error, or no source location.
    downstream Zig "value … ignored" error also appears; promote to a hard error
    (suppressing the Zig fallthrough) once corpus impact is confirmed — same
    staged path as BUG-142.
-3. **Call-arg type mismatch** — the TC already produces caret diagnostics for
-   var-decl and return type mismatches; extend the same check to call arguments
-   in expression position so `f(1, "two")` reports
-   `expected int, got str` with a caret instead of a Zig type error.
+3. **Call-arg type mismatch** ✅ (2026-06-23) — `checkStmts` was reworked so the
+   arg-type check (and the arg-count check) runs over *every* call via a single
+   `checkCallsInExpr` walker, not just direct calls in four statement positions.
+   `f(1, "two")` nested inside `print(...)` now reports
+   `type mismatch: expected int, got str` instead of a cryptic Zig type error.
+   Corpus unaffected (1482/1581 — the TC's inference is lenient enough on
+   translated Luau that extending reach surfaced no new mismatches). Still `0:0`
+   in `print`/expr-stmt positions (the arg-type path uses the statement line and
+   `StmtPrint` has no span line — the one remaining precise-span gap).
 4. **Method/field-not-found polish** — these have a `.zbr` line but leak Zig type
    names (`[]const u8` → `str`) and emit notes pointing into the generated
    `.zig`. Mapping the receiver type back to its Zebra name and suppressing the

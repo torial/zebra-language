@@ -477,6 +477,9 @@ smoke_run test/arg_count_ok_test.zbr "Hello, World"
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.
 smoke_warn test/forgot_parens_test.zbr "did you mean to call it"
+# Audit #3: a type-mismatched argument in a NESTED call is now caught (the
+# arg-type check reaches nested calls, not just direct ones).
+smoke_tc_fail test/arg_type_nested_test.zbr "type mismatch: expected int"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'

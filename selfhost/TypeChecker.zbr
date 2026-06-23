@@ -2383,30 +2383,31 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
 # itself, calls in its arguments, and calls in compound sub-expressions). This is
 # what reaches nested calls like `print(add(1))` that the statement-level
 # checkCallExpr never visited.
-def checkArgCountsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
+def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
+            checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             if c.callee is Expr.member as cm
-                checkArgCountsInExpr(cm.object, file, line, ctx)
+                checkCallsInExpr(cm.object, file, line, ctx)
             for a in c.args
-                checkArgCountsInExpr(a.value, file, line, ctx)
+                checkCallsInExpr(a.value, file, line, ctx)
         on Expr.member as m
-            checkArgCountsInExpr(m.object, file, line, ctx)
+            checkCallsInExpr(m.object, file, line, ctx)
         on Expr.index as ix
-            checkArgCountsInExpr(ix.object, file, line, ctx)
-            checkArgCountsInExpr(ix.index, file, line, ctx)
+            checkCallsInExpr(ix.object, file, line, ctx)
+            checkCallsInExpr(ix.index, file, line, ctx)
         on Expr.binary as b
-            checkArgCountsInExpr(b.left, file, line, ctx)
-            checkArgCountsInExpr(b.right, file, line, ctx)
+            checkCallsInExpr(b.left, file, line, ctx)
+            checkCallsInExpr(b.right, file, line, ctx)
         on Expr.unary as u
-            checkArgCountsInExpr(u.operand, file, line, ctx)
+            checkCallsInExpr(u.operand, file, line, ctx)
         on Expr.to_non_nil as t
-            checkArgCountsInExpr(t.expr, file, line, ctx)
+            checkCallsInExpr(t.expr, file, line, ctx)
         on Expr.try_ as tr
-            checkArgCountsInExpr(tr.expr, file, line, ctx)
+            checkCallsInExpr(tr.expr, file, line, ctx)
         on Expr.cast as cst
-            checkArgCountsInExpr(cst.expr, file, line, ctx)
+            checkCallsInExpr(cst.expr, file, line, ctx)
         else
             pass
 
@@ -2481,11 +2482,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
         branch s
             on Stmt.var_ as dv
                 checkVarDecl(dv, file, ctx)
-                # Also check call-arg types when init expr is a direct call.
+                # Check arg counts + arg types over the whole init expression
+                # (checkCallsInExpr reaches nested calls; audit #3).
                 if dv.init_expr != nil
-                    checkArgCountsInExpr(dv.init_expr to!, file, dv.span.line, ctx)  # BUG-142
-                    if dv.init_expr to! is Expr.call as var_call
-                        checkCallExpr(var_call, file, dv.span.line, ctx)
+                    checkCallsInExpr(dv.init_expr to!, file, dv.span.line, ctx)
                 # Bind the local so later stmts in the same block can infer it.
                 var bt: Type_ = Type_.unknown_
                 if dv.type_ != nil
@@ -2495,17 +2495,17 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         bt = inferExpr(dv.init_expr to!, ctx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
-                checkArgCountsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
+                checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
                 checkStmts(si.then_stmts, file, ctx)
                 for ei in si.else_ifs
                     checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
                     checkStmts(cse, file, ctx)
             on Stmt.while_ as sw
-                checkArgCountsInExpr(sw.cond, file, sw.span.line, ctx)  # BUG-142
+                checkCallsInExpr(sw.cond, file, sw.span.line, ctx)  # BUG-142
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.for_in as sfi
-                checkArgCountsInExpr(sfi.iter, file, sfi.span.line, ctx)  # BUG-142
+                checkCallsInExpr(sfi.iter, file, sfi.span.line, ctx)  # BUG-142
                 checkStmts(sfi.stmts, file, ctx)
             on Stmt.try_catch as stc
                 checkStmts(stc.stmts, file, ctx)
@@ -2515,17 +2515,13 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
                         checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
-                # Also check call-arg types when return value is a direct call.
+                # Arg counts + types over the whole return expression (audit #3).
                 if sr.value != nil
-                    checkArgCountsInExpr(sr.value to!, file, sr.span.line, ctx)  # BUG-142
-                    if sr.value to! is Expr.call as ret_call
-                        checkCallExpr(ret_call, file, sr.span.line, ctx)
+                    checkCallsInExpr(sr.value to!, file, sr.span.line, ctx)
             on Stmt.assign as sasn
-                checkArgCountsInExpr(sasn.value, file, sasn.span.line, ctx)  # BUG-142
-                if sasn.value is Expr.call as assign_call
-                    checkCallExpr(assign_call, file, 0, ctx)
+                checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
             on Stmt.expr as se
-                checkArgCountsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
+                checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.
                 if se is Expr.ident as bare_id
                     var bare_ps: List(Param)? = ctx.fnParamListAny(ctx.current_class, bare_id.name)
@@ -2533,17 +2529,15 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         bare_ps = ctx.fnParamListAny("", bare_id.name)
                     if bare_ps != nil
                         ctx.addWarn(file, bare_id.span.line, bare_id.span.col, "'" + bare_id.name + "' is a function used as a value — did you mean to call it: '" + bare_id.name + "()'?")
-                if se is Expr.call as stmt_call
-                    checkCallExpr(stmt_call, file, 0, ctx)
             on Stmt.print_ as sp
                 for pa in sp.args  # BUG-142: print(...) is a statement, not a call
-                    checkArgCountsInExpr(pa, file, sp.span.line, ctx)
+                    checkCallsInExpr(pa, file, sp.span.line, ctx)
             on Stmt.with_ as sw
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.in_scope as si
                 checkStmts(si.stmts, file, ctx)
             on Stmt.guard_ as sg
-                checkArgCountsInExpr(sg.cond, file, sg.span.line, ctx)  # BUG-142
+                checkCallsInExpr(sg.cond, file, sg.span.line, ctx)  # BUG-142
                 checkStmts(sg.else_stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
