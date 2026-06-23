@@ -4,11 +4,34 @@
 
 ---
 
-## BUG-141: indexing a List with `[i]` miscompiles (needs `.items[i]`)
+## BUG-141: indexing a List with `[i]` miscompiles (needs `.items[i]`) ✅ FIXED
 
-**Severity:** medium (reachable, cryptic failure; both compilers; non-idiomatic
-syntax so likely rare in practice — `.at(i)` is the documented accessor).
-**Status:** OPEN, discovered 2026-06-22 while building the BUG-140 repro.
+**Severity:** medium (reachable, cryptic failure; non-idiomatic syntax so likely
+rare in practice — `.at(i)` is the documented accessor).
+**Status:** ✅ FIXED 2026-06-22 (selfhost-only). Index-read of a List receiver
+(local or current-class/module-type field) now emits `obj.items[i]` instead of
+`obj[i]`.
+
+**Why selfhost-only:** the index-read dispatch already differs between the two
+compilers and the selfhost is the richer (correct) one — the bootstrap's
+`.index =>` arm does NO container dispatch (it emits `self.bag[k]` even for a
+HashMap field, which is also invalid Zig), while the selfhost already turns a
+HashMap `bag[k]` into `.get(k).?`. Adding List handling extends the selfhost's
+existing dispatch and matches the dual-version policy (user-facing-only feature ⇒
+selfhost-only; the bootstrap is the trusted regenerator and the selfhost source
+indexes Lists via `.at()`, so the round-trip is unaffected). Bringing the
+bootstrap index path up to full parity is a separate, larger cleanup if ever
+needed.
+
+**Fix** (`selfhost/CodeGen.zbr`, the `Expr.index` read arm): added
+`fieldAwareIsList` (parallel to `fieldAwareIsHashMap`) and emit `.items` before
+the `[` when the receiver is a List and not a HashMap. Regression test
+`test/list_index_test.zbr` (local + field List index, runs end-to-end). Strings
+/slices unaffected (still plain `[i]`). The index-**write** path (`obj[i] = v`)
+and `.at(i)` were already correct.
+
+### Original report (for context)
+**Discovered** 2026-06-22 while building the BUG-140 repro.
 
 **What happens:** indexing a `List` receiver with the `[i]` postfix operator
 emits raw `obj[i]` instead of `obj.items[i]`. A `std.ArrayList` does not support

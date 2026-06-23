@@ -470,6 +470,8 @@ smoke_run test/dispatch_collision_test.zbr "dispatch_collision: OK"
 # must dispatch by the CURRENT class's declared type (List.len→items.len, not
 # HashMap.count()). Asserts the List-side length resolved correctly at runtime.
 smoke_run test/hashmap_field_collision_test.zbr "list_size=1"
+# BUG-141: indexing a List receiver (local or field) with [i] must emit .items[i].
+smoke_run test/list_index_test.zbr "local=20"
 # HashMap heuristic collision: user class with set/get/contains/remove/count/keys/values
 # methods must not be routed through HashMap codegen.
 smoke_run test/hashmap_dispatch_collision_test.zbr "hashmap_dispatch_collision: OK"

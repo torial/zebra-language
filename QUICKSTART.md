@@ -640,7 +640,8 @@ var nums = [1, 2, 3]                 # type inferred from the first element
 var labels = ["alpha", "beta"]       # → List(str)
 var empty: List(int) = []            # empty literal needs an annotation
 var n = items.count()                # length
-var x = items.at(0)                  # index (bounds-checked)
+var x = items.at(0)                  # index (bounds-checked) — preferred
+var y = items[0]                     # also works (postfix index); .at() is idiomatic
 items.remove(0)                      # remove by index
 var has = items.any(def(x) = x > 2)  # true if any element matches predicate
 var ok  = items.all(def(x) = x > 0)  # true if every element matches predicate

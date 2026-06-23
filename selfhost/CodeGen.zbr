@@ -4386,6 +4386,18 @@ struct Generator
             return isHashMapField(name)
         return localIsHashMap(name) or fieldIsHashMap(.module_types, .dep_types, name)
 
+    # BUG-141: class-qualified List dispatch for index-read (`obj[i]` → `.items[i]`
+    # for a List receiver). Same precedence as fieldAwareIsHashMap: a local var
+    # shadows any same-named field; then a field of the CURRENT class is
+    # authoritative; else fall back to the module-type tables.
+    def fieldAwareIsList(name: str): bool
+        if .infer_ctx != nil
+            if (.infer_ctx to!).hasLocal(name)
+                return localIsList(name)
+        if isFieldName(name)
+            return isListField(name)
+        return localIsList(name) or fieldIsList(.module_types, .dep_types, name)
+
     def localIsHashMap(name: str): bool
         if .infer_ctx != nil
             var lhm_c = .infer_ctx to!
@@ -6847,9 +6859,12 @@ struct Generator
             on Expr.index as ix
                 var idx_obj_nm = getMemberFieldName(ix.object)
                 var is_hm_idx = false
+                var is_list_idx = false
                 if idx_obj_nm != nil
                     var idx_nm = idx_obj_nm to!
                     is_hm_idx = fieldAwareIsHashMap(idx_nm)
+                    if not is_hm_idx
+                        is_list_idx = fieldAwareIsList(idx_nm)
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
@@ -6857,6 +6872,9 @@ struct Generator
                     w.emit(").?")
                 else
                     genExpr(ix.object)
+                    if is_list_idx
+                        # BUG-141: List receiver is a std.ArrayList — index its backing slice.
+                        w.emit(".items")
                     w.emit("[@as(usize, @intCast(")
                     genExpr(ix.index)
                     w.emit("))]")

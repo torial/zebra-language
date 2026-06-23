@@ -1,0 +1,25 @@
+# BUG-141 regression: indexing a List receiver with `[i]` must emit `.items[i]`
+# (a std.ArrayList has no direct `[]` indexing). Covers a local List, a field
+# List, and confirms string indexing is unaffected.
+
+class Holder
+    var xs: List(int)
+    cue init()
+        xs = List(int)()
+    def add_(v: int)
+        xs.add(v)
+    def at(i: int): int
+        return xs[i]       # field List index → xs.items[i]
+
+def main()
+    var nums = List(int)()
+    nums.add(10)
+    nums.add(20)
+    nums.add(30)
+    var s = "hello"
+    var h = Holder()
+    h.add_(99)
+    h.add_(88)
+    print("local=" + nums[1].toString())     # local List index → nums.items[1]
+    print("field=" + h.at(0).toString())     # field List index → xs.items[0]
+    print("str=" + s[1].toString())          # string index stays [1] (no .items)
