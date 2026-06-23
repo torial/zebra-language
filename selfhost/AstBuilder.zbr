@@ -791,12 +791,15 @@ class ASTBuilder
 
             on PNode.expr_member as pm
                 # pm.base has 0 elements for self (.field), 1 element for obj.field
+                # Propagate the member token's real position (precise-span work):
+                # diagnostics on `obj.method(...)` now anchor at `method`.
+                var pm_span = Span(pm.line, pm.col, pm.line, pm.col)
                 if pm.base.len == 0
                     # self-member: .field → Expr.member(this, "field")
                     var this_expr = Expr.this_(zspan())
-                    return Expr.member(ExprMember(zspan(), this_expr, pm.member))
+                    return Expr.member(ExprMember(pm_span, this_expr, pm.member))
                 const base_expr = .buildExpr(pm.base.at(0))?
-                return Expr.member(ExprMember(zspan(), base_expr, pm.member))
+                return Expr.member(ExprMember(pm_span, base_expr, pm.member))
 
             on PNode.expr_call as pc
                 const callee_expr = .buildExpr(pc.callee.at(0))?

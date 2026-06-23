@@ -1,0 +1,11 @@
+# Precise spans: an arg-type mismatch on a METHOD call now anchors the caret at
+# the method name (PMember position), not the statement start. Expected TC fail.
+class Box
+    var w: int
+    cue init()
+        w = 1
+    def scale(factor: int)
+        w = w * factor
+def main()
+    var b = Box()
+    b.scale("big")

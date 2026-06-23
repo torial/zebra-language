@@ -553,9 +553,13 @@ struct PTryCatch
 struct PMember
     var base: List(PNode)
     var member: str
-    cue init(base: List(PNode), member: str)
+    var line: int
+    var col: int
+    cue init(base: List(PNode), member: str, line: int, col: int)
         .base = base
         .member = member
+        .line = line
+        .col = col
 
 struct PCall
     var callee: List(PNode)
@@ -2621,39 +2625,47 @@ class Parser
                 if .isOpenCall()
                     # expr.method(args)
                     const mname = .peek().text
+                    const mline = .peek().line
+                    const mcol = .peek().col
                     .advance()
                     const args = .parseCallArgs()
                     var base = List(PNode)()
                     base.add(expr)
                     var callee = List(PNode)()
-                    callee.add(PNode.expr_member(PMember(base, mname)))
+                    callee.add(PNode.expr_member(PMember(base, mname, mline, mcol)))
                     expr = PNode.expr_call(PCall(callee, args))
                 else if .textIs("to") and .peekAt(1).text == "("
                     # expr.to(args) — `to` is a keyword (used in `expr to T`,
                     # `expr to!`, `expr to?`) but is also allowed as a method
                     # name in postfix call position so numeric range loops
                     # `for i in 0.to(5)` and similar reads naturally.
+                    const to_line = .peek().line
+                    const to_col = .peek().col
                     .advance()  # consume "to"
                     .advance()  # consume "("
                     const args = .parseCallArgs()
                     var base = List(PNode)()
                     base.add(expr)
                     var callee = List(PNode)()
-                    callee.add(PNode.expr_member(PMember(base, "to")))
+                    callee.add(PNode.expr_member(PMember(base, "to", to_line, to_col)))
                     expr = PNode.expr_call(PCall(callee, args))
                 else if .isIntLit()
                     # expr.0 — tuple element access by numeric index
                     const field = .peek().text
+                    const tline = .peek().line
+                    const tcol = .peek().col
                     .advance()
                     var base = List(PNode)()
                     base.add(expr)
-                    expr = PNode.expr_member(PMember(base, field))
+                    expr = PNode.expr_member(PMember(base, field, tline, tcol))
                 else
                     # expr.field
+                    const fline = .peek().line
+                    const fcol = .peek().col
                     const field = .eatId()
                     var base = List(PNode)()
                     base.add(expr)
-                    expr = PNode.expr_member(PMember(base, field))
+                    expr = PNode.expr_member(PMember(base, field, fline, fcol))
             else if .textIs("?.")
                 # Optional chain: expr?.member or expr?.method(args)
                 .advance()  # consume "?."
@@ -2844,16 +2856,20 @@ class Parser
             .advance()
             if .isOpenCall()
                 const mname = .peek().text
+                const smline = .peek().line
+                const smcol = .peek().col
                 .advance()
                 const args = .parseCallArgs()
                 var base = List(PNode)()
                 var callee = List(PNode)()
-                callee.add(PNode.expr_member(PMember(base, mname)))
+                callee.add(PNode.expr_member(PMember(base, mname, smline, smcol)))
                 return PNode.expr_call(PCall(callee, args))
             else
+                const sfline = .peek().line
+                const sfcol = .peek().col
                 const field = .eatId()
                 var base = List(PNode)()
-                return PNode.expr_member(PMember(base, field))
+                return PNode.expr_member(PMember(base, field, sfline, sfcol))
         else if .isId()
             const id_line = .peek().line
             const id_col = .peek().col
