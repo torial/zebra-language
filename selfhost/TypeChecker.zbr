@@ -2418,10 +2418,17 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             return
     var lookup_class: str = ""
     var lookup_method: str = ""
+    # Anchor the diagnostic at the callee (its span is real for identifiers); fall
+    # back to the enclosing statement line when no callee position is available.
+    var cline: int = line
+    var ccol: int = 0
     branch call.callee
         on Expr.ident as cid
             lookup_class = ctx.current_class  # "" at module scope
             lookup_method = cid.name
+            if cid.span.line > 0
+                cline = cid.span.line
+                ccol = cid.span.col
         on Expr.member as mem
             var recv: Type_ = inferExpr(mem.object, ctx)
             if recv is Type_.ref_to as rrt
@@ -2431,6 +2438,9 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             if recv is Type_.named as tn
                 lookup_class = tn
                 lookup_method = mem.member
+                if mem.span.line > 0
+                    cline = mem.span.line
+                    ccol = mem.span.col
             else
                 return
         else
@@ -2444,7 +2454,7 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if expected == nil
             expected = ctx.methodParamTypeAtAny("", lookup_method, idx)
         if expected != nil
-            checkExpr(arg.value, expected, file, line, 0, ctx)
+            checkExpr(arg.value, expected, file, cline, ccol, ctx)
         idx += 1
 
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
