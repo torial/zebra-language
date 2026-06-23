@@ -1,6 +1,54 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-141. Next new bug: BUG-142.**
+**Last bug number generated: BUG-142. Next new bug: BUG-143.**
+
+---
+
+## BUG-142: missing required argument compiles + runs with garbage (no diagnostic)
+
+**Severity:** high (correctness/safety — silent wrong behavior, no error).
+**Status:** OPEN, found 2026-06-22 via the error-experience audit
+(`docs/error_experience_audit.md`).
+
+**What happens:** calling a function with fewer arguments than it has parameters
+is not caught. Codegen pads the missing positional arg with `undefined`:
+```
+def add(a: int, b: int): int
+    return a + b
+def main()
+    print(add(1).toString())   # → emits `add(1, undefined)` → prints garbage
+```
+`add(1)` runs and prints an uninitialized value (e.g. `140701535361921`) instead
+of reporting "expected 2 arguments, found 1". A Zig compile would normally reject
+the arity, but the `undefined` padding makes it type-check and execute.
+
+**Root cause(s):**
+1. Codegen pads omitted positional args with `undefined` (the same mechanism that
+   should fill **defaults** — see BUG-139). For a param **without** a default,
+   `undefined` is never correct.
+2. The TypeChecker does not validate argument **count**. `checkCallExpr` checks
+   arg *types* but (a) doesn't count args vs params, and (b) only runs on
+   `Stmt.var_` init exprs, so a nested call like `print(add(1)…)` is never
+   checked.
+3. `ModuleTypes` stores `method_params` as a CSV of param **types** only — it does
+   **not** record which params have defaults, so "required arg count" can't be
+   computed yet.
+
+**Fix approach (pairs with BUG-139):**
+- Thread per-param default info into `ModuleTypes` (mirror of the bootstrap's
+  BUG-182 Param-list-with-defaults storage), so `required = params without a
+  default`.
+- Add an arg-count check at the `Expr.call` arm of `inferExpr` (the universal
+  expression walker — fires in every position, fixing reach issue 2b) with a
+  caret diagnostic: too few args (< required) and too many (> total, modulo
+  varargs/builtins).
+- Be conservative to avoid corpus false-positives: only fire when the callee's
+  full param list is known (resolved free fn / method in module or dep types);
+  skip builtins/stdlib and unknown callees. **Verify against the full translator
+  corpus** (`tools/corpus_probe.py`) before committing — a false "too few args"
+  would break valid programs.
+
+**Workaround today:** none at the language level; pass all arguments explicitly.
 
 ---
 
