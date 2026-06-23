@@ -91,6 +91,29 @@ smoke_test() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Run a fixture expected to COMPILE (exit 0) but emit a specific warning substring
+# on stderr. Used for non-fatal diagnostics (e.g. BUG-142 arg-count warnings).
+smoke_warn() {
+    local zbr="$1"
+    local expected_msg="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_warn"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+        if grep -qF "$expected_msg" /tmp/smoke-err; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (compiled but warning missing: $expected_msg)" >&2
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (expected compile success, got non-zero exit)" >&2
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Run a fixture expected to FAIL TC with a specific diagnostic substring in stderr.
 smoke_tc_fail() {
     local zbr="$1"
@@ -446,6 +469,11 @@ smoke_tc_fail test/visibility_tc_fail.zbr "is private"
 smoke_tc_fail test/diag_nested_def_test.zbr "can't appear in expression position"
 smoke_tc_fail test/diag_toplevel_stmt_test.zbr "can't appear at the top level"
 smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
+# BUG-142: calling a function with too few args emits a (non-fatal) warning
+# instead of silently padding with `undefined`. Warning, not error, because the
+# Luau translator pervasively produces too-few-arg calls (nil-default pattern).
+smoke_warn test/arg_count_test.zbr "too few arguments"
+smoke_run test/arg_count_ok_test.zbr "Hello, World"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'

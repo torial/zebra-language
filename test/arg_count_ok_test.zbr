@@ -1,0 +1,9 @@
+# BUG-142 negative control: defaulted params + correct arity must still compile.
+def greet(name: str, greeting: str = "Hello"): str
+    return greeting + ", " + name
+def twice(x: int): int
+    return x + x
+def main()
+    print(greet("World"))           # 1 arg, only `name` required — OK
+    print(greet("World", "Hi"))     # 2 args — OK
+    print(twice(21).toString())     # exact arity — OK

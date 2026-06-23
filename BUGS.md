@@ -4,11 +4,52 @@
 
 ---
 
-## BUG-142: missing required argument compiles + runs with garbage (no diagnostic)
+## BUG-142: missing required argument compiles + runs with garbage
 
-**Severity:** high (correctness/safety — silent wrong behavior, no error).
-**Status:** OPEN, found 2026-06-22 via the error-experience audit
-(`docs/error_experience_audit.md`).
+**Severity:** high (correctness/safety — silent wrong behavior).
+**Status:** PARTIAL ✅ 2026-06-23 — now emits a non-fatal **warning**
+(`too few arguments to 'X': expected N, found M`) instead of being silent. The
+garbage run is **not yet prevented** (codegen still pads with `undefined`);
+promoting the warning to a hard error is gated on a translator follow-up (below).
+Found 2026-06-22 via the error-experience audit (`docs/error_experience_audit.md`).
+
+### What shipped (warning)
+A `checkArgCount` + `checkArgCountsInExpr` walker in `selfhost/TypeChecker.zbr`
+runs in `checkStmts` over every statement's expressions (var-init, return,
+assign, expr-stmt, `print`, and if/while/for/guard conditions). It compares the
+provided arg count against the callee's declared params (via new
+`fnParamList`/`fnParamListAny` accessors over the already-stored `fn_param_lists`),
+counting **required = params without a default**. Conservative: only fires when
+the callee's full Param list is known (resolved user free fn / method); builtins,
+stdlib, closures-in-locals, and unresolved receivers are skipped. Reaches nested
+calls like `print(add(1))`. Regression tests: `test/arg_count_test.zbr` (warns),
+`test/arg_count_ok_test.zbr` (defaults + correct arity compile clean).
+Round-trip byte-identical; smoke green.
+
+### Why warning, not error (the corpus finding)
+Making it a hard error regressed the translator corpus by 28 (1482→1454). The
+failures were almost all **off-by-exactly-one** (`expected 4, found 3`) on
+translated Luau functions (`playAnimation`, `Scale`, `CreateSubClass`, …): **Luau
+permits calling with fewer args** (missing become `nil`), so the translator
+pervasively emits too-few-arg calls relying on nil-defaulting. In Zebra those
+calls are genuinely unsafe (they hit the `undefined`-padding), but flagging 28
+pervasive translator outputs as errors is too aggressive. As a warning, the
+corpus is unaffected (warnings are non-fatal → 0 arg-count failures, baseline
+restored) while the issue is surfaced.
+
+### Follow-up to fully close (promote warning → error)
+1. **Translator** (`GameEngine/tools/luau2zebra_ast.py`): for Luau functions
+   called with fewer args than declared, emit the trailing Zebra params as
+   optional/defaulted (or pass explicit `nil`), so the calls are well-typed.
+2. **Codegen**: stop padding a missing **non-defaulted** positional arg with
+   `undefined` (it should never reach codegen once the TC errors).
+3. Flip `checkArgCount`'s `addWarn` → `addErr`, re-run the corpus to confirm the
+   translator change drove arg-count failures to ~0, then gate + smoke.
+Also: arg-count diagnostics currently report `0:0` in `print`/expr-stmt positions
+because **expression** spans are `zspan()` placeholders (only statement spans
+carry lines). Folds into the precise-span work.
+
+### Original report (for context)
 
 **What happens:** calling a function with fewer arguments than it has parameters
 is not caught. Codegen pads the missing positional arg with `undefined`:

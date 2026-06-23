@@ -458,6 +458,13 @@ class ModuleTypes
         var c: ClassTypes = .classes.fetch(class_name)
         return c.methodReturn(method_name)
 
+    # BUG-142: full declared Param list (with defaults) for a method / free fn.
+    def fnParamList(class_name: str, method_name: str): List(Param)?
+        if not .classes.contains(class_name)
+            return nil
+        var c: ClassTypes = .classes.fetch(class_name)
+        return c.fnParamList(method_name)
+
     def methodParamsCsv(class_name: str, method_name: str): str?
         if not .classes.contains(class_name)
             return nil
@@ -1087,6 +1094,23 @@ class InferCtx
             if mr != nil
                 return mr
             return .dep_types.methodReturn(bare, method_name)
+        return nil
+
+    # BUG-142: full Param list for a method / free fn, searching module then deps
+    # then the bare (module-prefix-stripped) class name. Mirrors methodReturnAny.
+    def fnParamListAny(class_name: str, method_name: str): List(Param)?
+        var ps: List(Param)? = .module_types.fnParamList(class_name, method_name)
+        if ps != nil
+            return ps
+        ps = .dep_types.fnParamList(class_name, method_name)
+        if ps != nil
+            return ps
+        var bare: str = stripModulePrefix(class_name)
+        if bare != class_name
+            ps = .module_types.fnParamList(bare, method_name)
+            if ps != nil
+                return ps
+            return .dep_types.fnParamList(bare, method_name)
         return nil
 
     def methodParamTypeAtAny(class_name: str, method_name: str, idx: int): Type_?
@@ -2292,6 +2316,100 @@ def paramTypeFromTag(tag: str): Type_?
 # Only catches primitive-to-primitive mismatches; skips named args, non-primitive
 # params, and calls whose callee type is not statically known. Uses line from
 # the enclosing statement (0 when no span is available — BUG-121).
+# BUG-142: verify a call passes enough arguments. Codegen pads a missing
+# positional arg with `undefined`, so without this check a call like `add(1)` to
+# `def add(a, b)` silently runs reading uninitialized memory. Conservative — only
+# fires when the callee's full Param list is known (a resolved user free fn /
+# method); builtins, stdlib, closures-in-locals, and unresolved receivers are all
+# skipped (fnParamListAny returns nil → no diagnostic). Counts required params as
+# those without a default, so defaulted-param calls are not flagged.
+def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    # Named args reorder positional slots — skip (parity with checkCallExpr).
+    for arg in call.args
+        if arg.name != nil
+            return
+    var lookup_class: str = ""
+    var lookup_method: str = ""
+    var is_ident: bool = false
+    var ccol: int = 0
+    var cline: int = line  # fallback; overridden by the callee's own span below
+    branch call.callee
+        on Expr.ident as cid
+            is_ident = true
+            lookup_class = ctx.current_class
+            lookup_method = cid.name
+            ccol = cid.span.col
+            if cid.span.line > 0
+                cline = cid.span.line
+            # A class name used as a call is a constructor — different arity rules.
+            if ctx.hasClassAny(cid.name)
+                return
+        on Expr.member as mem
+            var recv: Type_ = inferExpr(mem.object, ctx)
+            if recv is Type_.ref_to as rrt
+                recv = rrt
+            if recv is Type_.optional as rot
+                recv = rot
+            if recv is Type_.named as tn
+                lookup_class = tn
+                lookup_method = mem.member
+                ccol = mem.span.col
+                cline = mem.span.line
+            else
+                return
+        else
+            return
+    var params: List(Param)? = ctx.fnParamListAny(lookup_class, lookup_method)
+    if params == nil and is_ident
+        params = ctx.fnParamListAny("", lookup_method)
+    if params == nil
+        return  # unknown callee — do not check (safe default)
+    var ps: List(Param) = params to!
+    var total: int = ps.len
+    var required: int = 0
+    for p in ps
+        if p.default_ == nil
+            required = required + 1
+    var provided: int = call.args.count()
+    if provided < required
+        if required == total
+            ctx.addWarn(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
+        else
+            ctx.addWarn(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected at least " + required.toString() + ", found " + provided.toString())
+    else if provided > total
+        ctx.addWarn(file, cline, ccol, "too many arguments to '" + lookup_method + "': expected at most " + total.toString() + ", found " + provided.toString())
+
+# Walk an expression and run checkArgCount on every call it contains (the call
+# itself, calls in its arguments, and calls in compound sub-expressions). This is
+# what reaches nested calls like `print(add(1))` that the statement-level
+# checkCallExpr never visited.
+def checkArgCountsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
+    branch e
+        on Expr.call as c
+            checkArgCount(c, file, line, ctx)
+            if c.callee is Expr.member as cm
+                checkArgCountsInExpr(cm.object, file, line, ctx)
+            for a in c.args
+                checkArgCountsInExpr(a.value, file, line, ctx)
+        on Expr.member as m
+            checkArgCountsInExpr(m.object, file, line, ctx)
+        on Expr.index as ix
+            checkArgCountsInExpr(ix.object, file, line, ctx)
+            checkArgCountsInExpr(ix.index, file, line, ctx)
+        on Expr.binary as b
+            checkArgCountsInExpr(b.left, file, line, ctx)
+            checkArgCountsInExpr(b.right, file, line, ctx)
+        on Expr.unary as u
+            checkArgCountsInExpr(u.operand, file, line, ctx)
+        on Expr.to_non_nil as t
+            checkArgCountsInExpr(t.expr, file, line, ctx)
+        on Expr.try_ as tr
+            checkArgCountsInExpr(tr.expr, file, line, ctx)
+        on Expr.cast as cst
+            checkArgCountsInExpr(cst.expr, file, line, ctx)
+        else
+            pass
+
 def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Bail if any arg is named — reordering complicates positional indexing.
     for arg in call.args
@@ -2365,6 +2483,7 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkVarDecl(dv, file, ctx)
                 # Also check call-arg types when init expr is a direct call.
                 if dv.init_expr != nil
+                    checkArgCountsInExpr(dv.init_expr to!, file, dv.span.line, ctx)  # BUG-142
                     if dv.init_expr to! is Expr.call as var_call
                         checkCallExpr(var_call, file, dv.span.line, ctx)
                 # Bind the local so later stmts in the same block can infer it.
@@ -2376,14 +2495,17 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         bt = inferExpr(dv.init_expr to!, ctx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
+                checkArgCountsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
                 checkStmts(si.then_stmts, file, ctx)
                 for ei in si.else_ifs
                     checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
                     checkStmts(cse, file, ctx)
             on Stmt.while_ as sw
+                checkArgCountsInExpr(sw.cond, file, sw.span.line, ctx)  # BUG-142
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.for_in as sfi
+                checkArgCountsInExpr(sfi.iter, file, sfi.span.line, ctx)  # BUG-142
                 checkStmts(sfi.stmts, file, ctx)
             on Stmt.try_catch as stc
                 checkStmts(stc.stmts, file, ctx)
@@ -2395,19 +2517,26 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
                 # Also check call-arg types when return value is a direct call.
                 if sr.value != nil
+                    checkArgCountsInExpr(sr.value to!, file, sr.span.line, ctx)  # BUG-142
                     if sr.value to! is Expr.call as ret_call
                         checkCallExpr(ret_call, file, sr.span.line, ctx)
             on Stmt.assign as sasn
+                checkArgCountsInExpr(sasn.value, file, sasn.span.line, ctx)  # BUG-142
                 if sasn.value is Expr.call as assign_call
                     checkCallExpr(assign_call, file, 0, ctx)
             on Stmt.expr as se
+                checkArgCountsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 if se is Expr.call as stmt_call
                     checkCallExpr(stmt_call, file, 0, ctx)
+            on Stmt.print_ as sp
+                for pa in sp.args  # BUG-142: print(...) is a statement, not a call
+                    checkArgCountsInExpr(pa, file, sp.span.line, ctx)
             on Stmt.with_ as sw
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.in_scope as si
                 checkStmts(si.stmts, file, ctx)
             on Stmt.guard_ as sg
+                checkArgCountsInExpr(sg.cond, file, sg.span.line, ctx)  # BUG-142
                 checkStmts(sg.else_stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
