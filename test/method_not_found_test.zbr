@@ -1,0 +1,5 @@
+# Audit #4: a method-not-found error reads in Zebra terms ('str', not
+# '[]const u8') with no generated-.zig leak. Expected to fail at build.
+def main()
+    var s = "hi"
+    print(s.shout())

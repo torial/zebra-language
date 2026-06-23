@@ -46,10 +46,13 @@ silent wrong run, a cryptic Zig error, or no source location.
    argument itself when it is an identifier/member, else at the callee — no more
    `0:0`. Only *literal* arguments still fall back to the callee (literal PNodes
    hold bare text; giving them spans is a deferred payload restructure).
-4. **Method/field-not-found polish** — these have a `.zbr` line but leak Zig type
-   names (`[]const u8` → `str`) and emit notes pointing into the generated
-   `.zig`. Mapping the receiver type back to its Zebra name and suppressing the
-   `.zig` note would make them 🟢.
+4. **Method/field-not-found polish** ✅ (2026-06-23) — `remapZigErrors` now
+   humanizes the message (`[]const u8` → `str`, strips the generated `module.`
+   prefix from struct names) and suppresses Zig-internal noise (unmappable
+   `note:` lines pointing into the generated `.zig`, and the `referenced by:`
+   call-trace). `obj.shout()` / `p.y` now read:
+   `…: error: no field or member function named 'shout' in 'str'` and
+   `…: error: no field named 'y' in struct 'P'` — no `.zig` leak. 🟢
 
 Cases 2–4 are message-quality improvements (the program already fails to
 compile). Case 1 is a behavioral bug and should go first.

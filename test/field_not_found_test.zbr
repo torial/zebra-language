@@ -1,0 +1,9 @@
+# Audit #4: a field-not-found error names the Zebra class ('P', not 'mod.P') and
+# suppresses the generated-.zig note. Expected to fail at build.
+class P
+    var x: int
+    cue init()
+        x = 1
+def main()
+    var p = P()
+    print(p.y.toString())

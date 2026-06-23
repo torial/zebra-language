@@ -1058,9 +1058,21 @@ def findZbrComment(zig_lines: List(str), err_line: int): str
 # Lines that cannot be remapped pass through unchanged.
 # Context lines (indented source + caret) following a remapped error are
 # suppressed since they show Zig internals the user never wrote.
+# Rewrite Zig type spellings in a diagnostic message back to their Zebra names so
+# a method/field-not-found error reads in Zebra terms (`str`, not `[]const u8`;
+# `Foo`, not `module.Foo`) instead of leaking generated-code internals.
+def humanizeZigTypes(msg: str, mod_name: str): str
+    var m: str = msg
+    m = m.replace("[]const u8", "str")
+    m = m.replace("[]u8", "str")
+    if mod_name != ""
+        m = m.replace(mod_name + ".", "")
+    return m
+
 def remapZigErrors(stderr_text: str, zig_path: str): str
     var zig_lines: List(str) = File.readLines(zig_path)
     var zig_base: str = pathBasename(zig_path)
+    var mod_name: str = zig_base.replace(".zig", "")
     var stderr_lines: List(str) = List(str)()
     for sln in stderr_text.split("\n")
         stderr_lines.add(sln)
@@ -1071,10 +1083,19 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
         var line: str = stderr_lines.at(li)
         var emit_raw: bool = true
         if skip_context
-            if line == "" or not line.startsWith(" ")
+            # Skip a suppressed diagnostic's trailing context (source line + caret,
+            # which may be non-indented like `pub const P = struct {`) up to the
+            # next blank line that separates Zig diagnostics.
+            if line == ""
                 skip_context = false
+                emit_raw = false
             else
                 emit_raw = false
+        # Zig's "referenced by:" call-trace points only at std/runtime internals —
+        # pure noise for a Zebra user. Suppress the whole block.
+        if emit_raw and line.startsWith("referenced by:")
+            skip_context = true
+            emit_raw = false
         if emit_raw
             if zig_base in line
                 var marker: str = zig_base + ":"
@@ -1104,7 +1125,14 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
                         if is_diag and zig_line > 0
                             var zbr_loc: str = findZbrComment(zig_lines, zig_line)
                             if zbr_loc != ""
-                                out = out + zbr_loc + ": " + sev_msg_t + "\n"
+                                out = out + zbr_loc + ": " + humanizeZigTypes(sev_msg_t, mod_name) + "\n"
+                                skip_context = true
+                                emit_raw = false
+                            else if sev_msg_t.startsWith("note:")
+                                # An unmappable `note:` pointing into the generated
+                                # .zig (e.g. "struct declared here") is pure noise —
+                                # the user never wrote that file. Suppress it and its
+                                # source/caret context lines.
                                 skip_context = true
                                 emit_raw = false
         if emit_raw

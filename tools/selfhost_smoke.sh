@@ -114,6 +114,29 @@ smoke_warn() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Run a fixture expected to fail at build/run, asserting a Zebra-term message in
+# stderr AND that no generated-`.zig:` path leaks (audit #4 humanization).
+smoke_run_fail() {
+    local zbr="$1"
+    local expected_msg="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_runfail"
+    local got
+    if got=$("$ZEBRA" "$zbr" 2>&1); then
+        echo "  FAIL: $label (expected failure, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+    else
+        if echo "$got" | grep -qF "$expected_msg" && ! echo "$got" | grep -q "\.zig:"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (message missing or .zig leaked)" >&2
+            echo "$got" | grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " | tail -6 >&2
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+}
+
 # Run a fixture expected to FAIL TC with a specific diagnostic substring in stderr.
 smoke_tc_fail() {
     local zbr="$1"
@@ -484,6 +507,9 @@ smoke_tc_fail test/arg_type_nested_test.zbr "type mismatch: expected int"
 smoke_tc_fail test/member_call_diag_test.zbr "type mismatch: expected int"
 # Precise spans: an arg-type mismatch anchors at the argument (an identifier here).
 smoke_tc_fail test/arg_anchor_test.zbr "type mismatch: expected int"
+# Audit #4: method/field-not-found errors read in Zebra terms, no .zig leak.
+smoke_run_fail test/method_not_found_test.zbr "in 'str'"
+smoke_run_fail test/field_not_found_test.zbr "in struct 'P'"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'
