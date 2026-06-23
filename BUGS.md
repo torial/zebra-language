@@ -4,6 +4,29 @@
 
 ---
 
+## Name-based container-dispatch audit (2026-06-22) — COMPLETE
+
+After fixing the field-name-collision class of bug (BUG-138 List `.len`/`.count`,
+BUG-140 HashMap index/`.count`/`.remove`/`.set`, BUG-141 List `[i]` read), the
+remaining name-based container dispatches were swept for the same vulnerability.
+Findings:
+- **List index-write** (`list[i] = v`): already correct — emits `list.items[i] = v`.
+- **StrSet `.count()` collision** (`fieldIsStrSet` is global name-based, and
+  `enum_names`/`union_names` are StrSet in CodeGen but HashMap in TypeChecker):
+  **benign** — the count emit is identical (`@as(i64, @intCast(obj.count()))`)
+  whether classified as StrSet or HashMap, and both Zig types have `.count()`.
+  Not "benign by luck": there is no observable difference, so no fix is warranted
+  (a class-scoped `fieldIsStrSet` would be pure churn).
+- **StrSet at the HashMap dispatch sites** (`.remove()`/`.set()`/index): already
+  protected by BUG-140's class-scoping — `fieldAwareIsHashMap` returns false for
+  a StrSet field (it isn't a `HashMap` generic), so StrSet ops don't mis-route.
+
+Conclusion: the class is closed. The only name-based predicate left
+(`fieldIsStrSet`) is provably harmless. New same-named container-field collisions
+are now structurally safe at every read/count/remove/set/index site.
+
+---
+
 ## BUG-141: indexing a List with `[i]` miscompiles (needs `.items[i]`) ✅ FIXED
 
 **Severity:** medium (reachable, cryptic failure; non-idiomatic syntax so likely
