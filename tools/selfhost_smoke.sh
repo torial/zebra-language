@@ -474,6 +474,9 @@ smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
 # Luau translator pervasively produces too-few-arg calls (nil-default pattern).
 smoke_warn test/arg_count_test.zbr "too few arguments"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
+# Audit #2: a bare function name as a statement warns (forgotten call) instead of
+# a cryptic Zig "value ignored" error.
+smoke_warn test/forgot_parens_test.zbr "did you mean to call it"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'

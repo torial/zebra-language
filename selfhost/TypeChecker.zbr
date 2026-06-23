@@ -2526,6 +2526,13 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallExpr(assign_call, file, 0, ctx)
             on Stmt.expr as se
                 checkArgCountsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
+                # Audit #2: a bare function name as a statement is a forgotten call.
+                if se is Expr.ident as bare_id
+                    var bare_ps: List(Param)? = ctx.fnParamListAny(ctx.current_class, bare_id.name)
+                    if bare_ps == nil
+                        bare_ps = ctx.fnParamListAny("", bare_id.name)
+                    if bare_ps != nil
+                        ctx.addWarn(file, bare_id.span.line, bare_id.span.col, "'" + bare_id.name + "' is a function used as a value — did you mean to call it: '" + bare_id.name + "()'?")
                 if se is Expr.call as stmt_call
                     checkCallExpr(stmt_call, file, 0, ctx)
             on Stmt.print_ as sp

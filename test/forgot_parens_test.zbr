@@ -1,0 +1,7 @@
+# Audit #2: a bare function name used as a statement (forgotten call) emits a
+# (non-fatal) warning suggesting the call form, instead of a cryptic Zig
+# "value ... ignored" error with no source location. Compiles (exit 0).
+def greet()
+    print("hi")
+def main()
+    greet

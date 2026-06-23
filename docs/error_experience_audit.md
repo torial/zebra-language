@@ -27,9 +27,12 @@ silent wrong run, a cryptic Zig error, or no source location.
    (`f(1)` → `f(1, undefined)`), so the program runs reading uninitialized
    memory. Needs arg-count validation in the type-checker (pairs with BUG-139,
    which is the defaulted-param side of the same arity story).
-2. **`forgot_parens`** — a bare function name used as a value should be a Zebra
-   error (`'greet' is a function — did you mean to call it 'greet()'?`), not a
-   Zig "value … ignored" with no `.zbr` location.
+2. **`forgot_parens`** ✅ (warning, 2026-06-23) — a bare function name used as a
+   statement now emits `'greet' is a function used as a value — did you mean to
+   call it: 'greet()'?` at the `.zbr` level. Still a warning (not error) so the
+   downstream Zig "value … ignored" error also appears; promote to a hard error
+   (suppressing the Zig fallthrough) once corpus impact is confirmed — same
+   staged path as BUG-142.
 3. **Call-arg type mismatch** — the TC already produces caret diagnostics for
    var-decl and return type mismatches; extend the same check to call arguments
    in expression position so `f(1, "two")` reports
