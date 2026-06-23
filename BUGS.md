@@ -1,6 +1,68 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-140. Next new bug: BUG-141.**
+**Last bug number generated: BUG-141. Next new bug: BUG-142.**
+
+---
+
+## BUG-141: indexing a List with `[i]` miscompiles (needs `.items[i]`)
+
+**Severity:** medium (reachable, cryptic failure; both compilers; non-idiomatic
+syntax so likely rare in practice — `.at(i)` is the documented accessor).
+**Status:** OPEN, discovered 2026-06-22 while building the BUG-140 repro.
+
+**What happens:** indexing a `List` receiver with the `[i]` postfix operator
+emits raw `obj[i]` instead of `obj.items[i]`. A `std.ArrayList` does not support
+direct indexing, so the generated Zig fails to build:
+```
+error: type 'array_list.Aligned(i64,null)' does not support indexing
+```
+Reproduction (both a local and a field List trigger it; strings are fine):
+```
+def main()
+    var nums = List(int)()
+    nums.add(10)
+    print(nums[1].toString())   # emits nums[@intCast(1)] — invalid; needs nums.items[...]
+    var s = "hello"
+    print(s[1].toString())      # OK — string is []const u8, slice indexing works
+```
+`nums[1]` is a natural thing to write, and the grammar lists `[i]` as a valid
+postfix (QUICKSTART §ops table) even though `.at(i)` is the documented, working
+List accessor (QUICKSTART line ~643). So the operator silently miscompiles rather
+than working or giving a clean Zebra error.
+
+**Scope:** the index-**read** path. Receivers that are a List *local* or a List
+*field* both miscompile; string/slice/array indexing is correct as-is. The
+write/assign path (`obj[i] = v`) and `.at(i)` are unaffected.
+
+**Present in BOTH compilers** (so a fix must touch both, for functional
+equivalence):
+- bootstrap `src/CodeGen.zig` — the `.index =>` arm (~line 12137) emits
+  `genExpr(object)` + `[ … ]` with no List special-case. NOTE: the `Type` union
+  (`src/TypeChecker.zig:44`) has **no dedicated `.list` variant** — Lists are
+  recognised at the `TypeRef` level (`tr.generic.name == "List"`), not as an
+  inferred `Type`, so `tc.expr_types.get(e.object)` won't simply return "list".
+  Detecting a List receiver here needs the declared TypeRef / resolve symbol of
+  the object (field decl type, or the local's declared `List(T)`), not the
+  inferred `Type`. There are also two index-emit paths (~8665 with
+  `[@as(usize, @intCast(`, ~12137 with `[@intCast(`) — confirm which one(s)
+  handle field/local List index reads before editing.
+- selfhost `selfhost/CodeGen.zbr` — the `Expr.index` arm (~line 6824). Add a
+  `fieldAwareIsList` (parallel to the new `fieldAwareIsHashMap`): local List
+  wins, else class-scoped `isListField`, else `isKnownListField`/`fieldIsList`.
+  Emit `.items` before the `[` when the receiver is a List.
+
+**Equivalence note / verification plan:** while building the BUG-140 repro I also
+noticed a *latent* cast-style divergence at this site — post-BUG-140 selfhost
+emits `[@as(usize, @intCast(0))]` while bootstrap emits `[@intCast(0)]` for the
+same `bag[0]`. It never manifests in the round-trip because the selfhost source
+indexes Lists via `.at()`, not `[i]`. Any fix here should reconcile that too, and
+must be verified by: implement both sides → `bootstrap_check.sh --update`
+(bootstrap regen) → plain `bootstrap_check.sh` (selfhost regen) → confirm
+`selfhost/*.zig` is unchanged between the two (proves bootstrap emit == selfhost
+emit on the actual source). Plus a runnable regression fixture (`nums[1]` on a
+local + a field List).
+
+**Workaround today:** use `list.at(i)` (bounds-checked, emits `.items[i]`).
 
 ---
 
