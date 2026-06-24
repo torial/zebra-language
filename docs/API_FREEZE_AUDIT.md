@@ -38,15 +38,24 @@ compilers + gate + smoke. Note: `Reflect.fieldNames`/`fieldTypes` also return
 inconsistency to consider before freeze if reflection is meant to be 1.0-stable.
 
 ### A2. Sentinel returns where an optional is correct
-**Findings.** `File.modtime(path) → int` returns **`-1` on a missing file**;
-`Mime.lookup(name) → str` returns **`""`** on an unknown extension; `Csv` field
-access (`t.row(i).field(name)) → str`) returns **`""`** on a missing column.
-**Why it's regret:** sentinels are the canonical frozen-API trap — callers
-hard-code `== -1` / `== ""` checks, so you can never migrate to `?` without
-breaking them. Zebra already has first-class optionals and leads with them
-elsewhere (`sys.getenv → str?`, `Uri.parse → UriResult?`).
-**Recommendation:** change these to `int?` / `str?` *before* freeze. They are
-the inconsistent outliers in an otherwise optional-first stdlib.
+**CORRECTED 2026-06-24 (two of the three original findings were wrong on inspection):**
+- **`Mime.fromExt(ext) → str`** (the real method; there is no `Mime.lookup`)
+  returns the sensible default **`"application/octet-stream"`** for an unknown
+  extension, *not* `""`. A default mime type is defensible — **no change.**
+- **`Csv` field access** — there is no `.field()` method in the codegen/TC and zero
+  callers. The original finding referenced an API that doesn't exist as described —
+  **nothing to change.** (If a Csv missing-column accessor is added later, return `str?`.)
+- **`File.modtime(path) → int`** genuinely returns **`-1` on a missing file** — a
+  sentinel. But it has **zero callers**, and its siblings share the problem:
+  **`File.size → -1`** (same sentinel) and **`File.read`** emits
+  `... catch @panic("File.read error")` (panics rather than throwing cleanly when
+  called without `?`). So the real pre-freeze question is **"make the `File`
+  error surface consistent,"** not "fix modtime."
+**Recommendation (revised):** decide a single `File`-error policy and apply it to
+read/size/modtime together — Sean ratified **throws** for modtime, which argues for
+`File.read`/`size`/`modtime` all being `throws` (read already half-is). This is a
+small, deliberate File-API sweep, best done as one consistent change rather than
+modtime alone. Mime/Csv drop out of A2.
 
 ### A3. `Random` is process-global mutable state
 **Finding (verified).** `Random.seed/randInt/...` operate on a module-global
