@@ -541,14 +541,6 @@ const Tokenizer = struct {
             return;
         }
 
-        // ── `to?` operator ────────────────────────────────────────────────
-
-        if (std.mem.eql(u8, word, "to") and self.peek() == '?') {
-            self.pos += 1;  // consume ?
-            try self.emit(.toq, self.src[start..self.pos], ln, cl);
-            return;
-        }
-
         // ── Keyword or identifier ─────────────────────────────────────────
 
         const base_kind: TokenKind = tk.keyword_map.get(word) orelse .id;
@@ -1086,13 +1078,6 @@ test "interpolated string" {
 
 test "hex literal" {
     try expectKinds("x = 0xFF", &.{ .id, .assign, .hex_lit, .eol });
-}
-
-test "toq operator" {
-    try expectKinds(
-        "y = x to? int",
-        &.{ .id, .assign, .id, .toq, .kw_int, .eol },
-    );
 }
 
 test "at_id and at_lbracket" {

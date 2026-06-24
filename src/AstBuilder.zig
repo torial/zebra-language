@@ -2476,14 +2476,6 @@ const Builder = struct {
             };
         }
 
-        // `to?` postfix: 2 children, second is .toq
-        if (kids.len == 2 and isLeafKind(kids[1], .toq)) {
-            return .{ .to_nilable = try b.box(Ast.ExprToNilable, .{
-                .span = s,
-                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
-            }) };
-        }
-
         // `expr?` postfix: 2 children, second is .question — sugar for `try expr`
         if (kids.len == 2 and isLeafKind(kids[1], .question)) {
             return .{ .try_ = try b.box(Ast.ExprTry, .{

@@ -316,12 +316,6 @@ class Lexer
             emit(TokenKind.float_size(), word, ln, cl)
             return
 
-        # `to?` operator
-        if word == "to" and peek() == c'?'
-            pos = pos + 1
-            emit(TokenKind.toq(), src[start..pos], ln, cl)
-            return
-
         # Keyword or identifier
         var kw = Token.Keywords.lookup(word)
 
