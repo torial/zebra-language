@@ -3423,7 +3423,7 @@ pub fn main(_zinit: std.process.Init) void {
     _args = _zinit.minimal.args;
     _allocator = _arena.allocator();
     defer _arena.deinit();
-    std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{add(1, undefined)}) catch unreachable)});
+    std.debug.print("{s}\n", .{(std.fmt.allocPrint(_allocator, "{}", .{add(1, std.mem.zeroes(i64))}) catch unreachable)});
 }
 
 

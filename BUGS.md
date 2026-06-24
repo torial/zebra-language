@@ -7,11 +7,14 @@
 ## BUG-142: missing required argument compiles + runs with garbage
 
 **Severity:** high (correctness/safety — silent wrong behavior).
-**Status:** PARTIAL ✅ 2026-06-23 — now emits a non-fatal **warning**
-(`too few arguments to 'X': expected N, found M`) instead of being silent. The
-garbage run is **not yet prevented** (codegen still pads with `undefined`);
-promoting the warning to a hard error is gated on a translator follow-up (below).
-Found 2026-06-22 via the error-experience audit (`docs/error_experience_audit.md`).
+**Status:** PARTIAL ✅ 2026-06-23 — (a) emits a non-fatal **warning**
+(`too few arguments to 'X': expected N, found M`); (b) the **undefined-behavior is
+gone**: codegen now pads an omitted no-default argument with `std.mem.zeroes(T)`
+(a deterministic zero) instead of `undefined`, so a too-few-args call can no
+longer read uninitialized memory. What remains for a full close: promoting the
+warning to a hard **error** (gated on the translator follow-up below, so valid
+Luau-nil-default calls aren't broken). Found 2026-06-22 via the error-experience
+audit (`docs/error_experience_audit.md`).
 
 ### What shipped (warning)
 A `checkArgCount` + `checkArgCountsInExpr` walker in `selfhost/TypeChecker.zbr`

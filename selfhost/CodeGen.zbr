@@ -10837,11 +10837,20 @@ struct Generator
             if not found
                 genParamDefault(p)
 
-    # Emit the default expression for parameter p, or "undefined" if none.
+    # Emit the default expression for an omitted argument to parameter p. With a
+    # declared default, emit it. Otherwise emit a deterministic zero value
+    # (std.mem.zeroes) rather than `undefined`: a too-few-arguments call — which
+    # the type-checker already warns about (BUG-142) — must not read
+    # uninitialized memory (undefined behavior). Falls back to `undefined` only
+    # when the parameter has no type to zero.
     # p must be a named-type parameter so opt_ptr_field_bindings is seeded for p.default_.
     def genParamDefault(p: Param)
         if p.default_ != nil
             genExpr(p.default_ to!)
+        else if p.type_ != nil
+            w.emit("std.mem.zeroes(")
+            genType(p.type_ to!)
+            w.emit(")")
         else
             w.emit("undefined")
 
