@@ -40,14 +40,41 @@ pervasive translator outputs as errors is too aggressive. As a warning, the
 corpus is unaffected (warnings are non-fatal → 0 arg-count failures, baseline
 restored) while the issue is surfaced.
 
-### Follow-up to fully close (promote warning → error)
-1. **Translator** (`GameEngine/tools/luau2zebra_ast.py`): for Luau functions
-   called with fewer args than declared, emit the trailing Zebra params as
-   optional/defaulted (or pass explicit `nil`), so the calls are well-typed.
-2. **Codegen**: stop padding a missing **non-defaulted** positional arg with
-   `undefined` (it should never reach codegen once the TC errors).
-3. Flip `checkArgCount`'s `addWarn` → `addErr`, re-run the corpus to confirm the
-   translator change drove arg-count failures to ~0, then gate + smoke.
+### Follow-up to fully close (promote warning → error) — de-risked 2026-06-23
+
+Investigated in depth (prototyped both sides, then reverted to the clean warning
+state). Key findings for whoever finishes it:
+
+- **All ~28 corpus too-few-args cases are SAME-MODULE** (the function is defined
+  *and* called with fewer args in the same script). So the translator analysis is
+  **per-script**, not cross-module — much more tractable. (Confirmed: a
+  current-module-error vs dep-warn split in `checkArgCount` left the count at 28,
+  proving none are cross-module.)
+- **Lambda param defaults parse fine** (`var f = def(a, b = nil) = …` works), so
+  that is not a blocker.
+
+Remaining work, in order:
+1. **Compiler — severity split** (ready, gate-clean in prototype): in
+   `checkArgCount`, error when the callee is in `ctx.module_types` (same module —
+   the signature is right there, almost certainly a real bug), warn when it
+   resolves only via `dep_types`. On its own this regresses the corpus by the full
+   28 (all same-module), so it must land *with* the translator change below.
+2. **Translator** (`GameEngine/tools/luau2zebra_ast.py`): a per-script pre-pass
+   (`_collect_call_arity`, walk the luaparser AST — **use a visited-id set**, nodes
+   carry cyclic parent refs) records each bare-name callee's min observed arg
+   count; `_emit_params(args, optional_from)` then emits the under-supplied trailing
+   params with `= nil`. Prototype took the corpus 1454→1458 (fixed ~15 of 28) but
+   surfaced two gaps to finish: (a) the **capture-extraction path** in
+   `_emit_func_as_assignment` reuses the `params` string as *call arguments* to the
+   hoisted `_lambda_N`, where `= nil` is invalid — separate the param **decl**
+   string (with defaults) from the param **names** string (for the call); (b) the
+   remaining ~13 are **method** calls (luaparser `Invoke`) and other non-bare-name
+   forms the walk skips — extend the walk + match method defs (offset by the
+   prepended `self`).
+3. **Codegen** (already done): a missing no-default arg is padded with
+   `std.mem.zeroes` not `undefined`, so the UB is gone regardless.
+4. Land 1+2 together, confirm corpus stays ~1482, then gate + smoke; update the
+   `arg_count_test` smoke fixture from `smoke_warn` → `smoke_tc_fail` (same-file).
 ~~Also: arg-count diagnostics currently report `0:0` in `print`/expr-stmt
 positions because expression spans are `zspan()` placeholders.~~ ✅ RESOLVED
 2026-06-23 — identifier and member expressions now carry real spans (the parser
