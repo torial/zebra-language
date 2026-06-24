@@ -67,6 +67,12 @@ discourages `unless ... else`).
 **Verdict:** reconsider dropping both — `if not` / `while not` are barely longer
 and unambiguous. If kept, it's a deliberate ergonomics bet; just know it's
 redundant surface frozen forever.
+**DONE (2026-06-24): both removed.** `unless`/`until` were pure parser desugar
+(`unless C` → `if not C`, `until C` → `while not C`) with one test usage; the
+keywords + grammar + parser support are gone from both compilers. `to?` (the
+"to-optional" wrap operator, 0 usages) is being removed in the same pass — it
+turned out to mean *wrap-in-optional*, which assignment already does implicitly,
+not "try-unwrap" as the name suggested.
 
 ### L8. `with` and `using` are both "scoped context" 🤔
 Two block constructs that both establish a scope: `using EXPR` (resource
@@ -74,13 +80,18 @@ lifecycle, begin/end) and `with obj` (implicit receiver). Distinct purposes, but
 a reader meets two context-block keywords. (The bigger issue is naming — see L10.)
 **Verdict:** the *functions* are both worth having; the *names* need rethought.
 
-### L9. `cue init` — does `cue` earn a keyword? 🤔
-Constructors are `cue init(...)`. The `cue` keyword's meaning is opaque to a
-newcomer (no mainstream language uses it; likely Cobra heritage). Most languages:
-`init` / the class name / `new` / `constructor`. The extra keyword is ceremony
-whose payoff isn't obvious.
-**Verdict:** reconsider whether `init(...)` alone (or another familiar word)
-would carry the same meaning with less mystery. Freezes permanently.
+### L9. `cue` marks dunder / special-protocol methods ✅
+*(Revised 2026-06-24 after Sean clarified the intent.)* `cue` is not
+constructor-specific ceremony — it's the marker for **special-protocol ("dunder")
+methods**, inherited from Cobra's design. `cue init(...)` is the constructor as
+one instance of a special method; the keyword generalizes to other protocol hooks
+(`cue eq`, `cue str`, `cue hash`, …) as they're added. Framed that way it's a
+**deliberate, extensible** choice — and arguably *clearer* than Python's
+`__dunder__` naming convention, because the specialness is a keyword rather than a
+fragile naming trick the reader has to recognize.
+**Verdict:** defensible; keep. The earlier "opaque ceremony" read was wrong — the
+payoff is an explicit, greppable special-method namespace. (Worth a QUICKSTART note
+listing the recognized `cue` hooks so the set is discoverable.)
 
 ---
 

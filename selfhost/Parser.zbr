@@ -1848,12 +1848,8 @@ class Parser
             return .parseReturnStmt()
         else if .textIs("if")
             return .parseIfStmt()
-        else if .textIs("unless")
-            return .parseUnlessStmt()
         else if .textIs("while")
             return .parseWhileStmt()
-        else if .textIs("until")
-            return .parseUntilStmt()
         else if .textIs("for")
             return .parseForInStmt()
         else if .textIs("var")
@@ -1952,35 +1948,6 @@ class Parser
             var cond_list = List(PNode)()
             cond_list.add(cond_expr)
             return PNode.stmt_if(PIf(cond_list, then_stmts, else_stmts, line))
-
-    def parseUnlessStmt(): PNode throws
-        const line = .peek().line
-        .expectText("unless")
-        const cond_expr = .parseExpr()
-        .skipEol()
-        const then_stmts = .parseBlock()
-        if .textIs("else")
-            raise "unless does not support an else clause; use 'if not ...' instead"
-        var not_operand = List(PNode)()
-        not_operand.add(cond_expr)
-        var not_cond = PNode.expr_unary(PUnary("not", not_operand))
-        var cond_list = List(PNode)()
-        cond_list.add(not_cond)
-        var empty_else = List(PNode)()
-        return PNode.stmt_if(PIf(cond_list, then_stmts, empty_else, line))
-
-    def parseUntilStmt(): PNode throws
-        const line = .peek().line
-        .expectText("until")
-        const cond_expr = .parseExpr()
-        .skipEol()
-        const stmts = .parseBlock()
-        var not_operand = List(PNode)()
-        not_operand.add(cond_expr)
-        var not_cond = PNode.expr_unary(PUnary("not", not_operand))
-        var cond_list = List(PNode)()
-        cond_list.add(not_cond)
-        return PNode.stmt_while(PWhile(cond_list, stmts, line))
 
     def parseWhileStmt(): PNode throws
         const line = .peek().line

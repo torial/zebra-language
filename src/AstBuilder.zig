@@ -1319,9 +1319,7 @@ const Builder = struct {
                 .expr = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
             }) },
             .StmtIf       => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtIf(inner)) },
-            .StmtUnless   => .{ .if_    = try b.box(Ast.StmtIf,    try b.buildStmtUnless(inner)) },
             .StmtWhile    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtWhile(inner)) },
-            .StmtUntil    => .{ .while_ = try b.box(Ast.StmtWhile, try b.buildStmtUntil(inner)) },
             .StmtForIn    => .{ .for_in  = try b.box(Ast.StmtForIn,  try b.buildStmtForIn(inner)) },
             .StmtForNum   => .{ .for_num = try b.box(Ast.StmtForNum, try b.buildStmtForNum(inner)) },
             .StmtBranch   => .{ .branch  = try b.box(Ast.StmtBranch, try b.buildStmtBranch(inner)) },
@@ -1596,44 +1594,6 @@ const Builder = struct {
             .cond      = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
             .body      = try b.buildBlock(kids[3]),
             .post_body = if (kids.len > 4) try b.buildBlock(kids[6]) else null,
-        };
-    }
-
-    fn buildStmtUnless(b: Builder, node: TN) anyerror!Ast.StmtIf {
-        // kw_unless Expr eol Block — desugar: negate condition, no else
-        const kids = ch(node);
-        const s = spanOf(kids[1], b.tokens);
-        const raw_cond = try b.buildExpr(kids[1]);
-        const not_cond = Ast.Expr{ .unary = try b.box(Ast.ExprUnary, .{
-            .span    = s,
-            .op      = .not_,
-            .operand = try b.box(Ast.Expr, raw_cond),
-        }) };
-        return .{
-            .span      = spanOf(node, b.tokens),
-            .cond      = try b.box(Ast.Expr, not_cond),
-            .then_body = try b.buildBlock(kids[3]),
-            .else_ifs  = &.{},
-            .else_body = null,
-        };
-    }
-
-    fn buildStmtUntil(b: Builder, node: TN) anyerror!Ast.StmtWhile {
-        // kw_until Expr eol Block — desugar: negate condition
-        const kids = ch(node);
-        const s = spanOf(kids[1], b.tokens);
-        const raw_cond = try b.buildExpr(kids[1]);
-        const not_cond = Ast.Expr{ .unary = try b.box(Ast.ExprUnary, .{
-            .span    = s,
-            .op      = .not_,
-            .operand = try b.box(Ast.Expr, raw_cond),
-        }) };
-        return .{
-            .span      = spanOf(node, b.tokens),
-            .bind      = null,
-            .cond      = try b.box(Ast.Expr, not_cond),
-            .body      = try b.buildBlock(kids[3]),
-            .post_body = null,
         };
     }
 

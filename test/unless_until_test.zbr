@@ -1,23 +1,25 @@
+# Formerly tested `unless`/`until`; those keywords were removed pre-1.0 as
+# redundant sugar. This now exercises their replacements: `if not` / `while not`.
 class UnlessUntilTest
     def run
-        # unless: fires when condition is false
+        # if not: body runs when the condition is false (was `unless x > 10`)
         var x = 5
-        unless x > 10
+        if not (x > 10)
             x = x + 1
         assert x == 6
 
-        # unless: skips when condition is true
-        unless x < 10
+        # if not: body skipped when the condition is true
+        if not (x < 10)
             x = 99
         assert x == 6
 
-        # until: loops while condition is false
+        # while not: loops while the condition is false (was `until n >= 3`)
         var n = 0
-        until n >= 3
+        while not (n >= 3)
             n = n + 1
         assert n == 3
 
-        print "unless/until OK"
+        print "if-not/while-not OK"
 
 def main()
     UnlessUntilTest().run()

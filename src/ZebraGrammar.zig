@@ -144,8 +144,6 @@ pub const NT = enum {
     InlineElse,          // optional inline else chain (recursive)
 
     StmtWhile,
-    StmtUnless,  // unless Expr eol Block — desugar to if not cond
-    StmtUntil,   // until Expr eol Block  — desugar to while not cond
 
     StmtForIn,
     StmtForNum,
@@ -817,8 +815,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtYield) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtIf) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWhile) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtUnless) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtUntil) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtForIn) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtForNum) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtBranch) } },
@@ -901,8 +897,6 @@ const stmt_rules: []const Rule = &.{
 
     // while
     .{ .lhs = .StmtWhile,  .rhs = &.{ t(.kw_while),  n(.Expr), t(.eol), n(.Block) } },
-    .{ .lhs = .StmtUnless, .rhs = &.{ t(.kw_unless), n(.Expr), t(.eol), n(.Block) } },
-    .{ .lhs = .StmtUntil,  .rhs = &.{ t(.kw_until),  n(.Expr), t(.eol), n(.Block) } },
     // while var id = Expr, Expr eol Block — bind-and-guard form
     .{ .lhs = .StmtWhile, .rhs = &.{
         t(.kw_while), t(.kw_var), t(.id), t(.assign), n(.Expr), t(.comma), n(.Expr), t(.eol), n(.Block),
