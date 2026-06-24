@@ -2889,8 +2889,11 @@ fn _hash_hmac256(key: []const u8, data: []const u8) []const u8 {
     std.crypto.auth.hmac.sha2.HmacSha256.create(&out, data, key);
     return _hex_encode(&out);
 }
-var _rng_inst: std.Random.DefaultPrng = undefined;
-var _rng_ready: bool = false;
+// thread-local: each thread lazily seeds its own PRNG, so concurrent
+// Random.* calls from sys.go / ThreadPool tasks can't data-race the shared
+// state (A3, pre-1.0 API audit). Single-threaded behavior is unchanged.
+threadlocal var _rng_inst: std.Random.DefaultPrng = undefined;
+threadlocal var _rng_ready: bool = false;
 fn _rng() std.Random {
     if (!_rng_ready) {
         var seed: u64 = 0;
