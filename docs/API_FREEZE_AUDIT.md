@@ -32,6 +32,10 @@ the value, forever.
 *every* stdlib call that returns a string sequence. This is the single
 highest-value pre-freeze fix. (Moderate compiler change: the three call sites'
 return-type + codegen; verify against smoke + corpus.)
+**STATUS: DONE (2026-06-24).** The three now return `List(str)`. Verified on both
+compilers + gate + smoke. Note: `Reflect.fieldNames`/`fieldTypes` also return
+`[]str` and were *not* swept (out of the ratified A1 scope) — a small remaining
+inconsistency to consider before freeze if reflection is meant to be 1.0-stable.
 
 ### A2. Sentinel returns where an optional is correct
 **Findings.** `File.modtime(path) → int` returns **`-1` on a missing file**;

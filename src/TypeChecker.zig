@@ -3091,7 +3091,7 @@ const TypeChecker = struct {
                 // Net.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Net")) {
                     _ = try tc.inferExpr(mem.object);
-                    if (std.mem.eql(u8, mem.member, "resolve")) return .str_slice;
+                    if (std.mem.eql(u8, mem.member, "resolve")) return .unknown; // List(str) (A1) — like readLines/listDir
                     return .void_;
                 }
                 // CodeEditor.* static factory methods.

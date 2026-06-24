@@ -10115,6 +10115,19 @@ const Generator = struct {
             }
         }
 
+        // for x in re.findAll(s) / re.groups(s) / Net.resolve(host) — these return
+        // List(str) (A1, 1.0 freeze); iterate with .items like any List. Element
+        // string-ness comes from the TC for-loop element inference.
+        if (s.iter.* == .call and s.iter.call.callee.* == .member) {
+            const m = s.iter.call.callee.member;
+            if (std.mem.eql(u8, m.member, "findAll") or std.mem.eql(u8, m.member, "groups")) {
+                const obj_tc = if (g.tc) |tc| tc.expr_types.get(m.object) orelse .unknown else .unknown;
+                if (obj_tc == .regex) return g.genForInList(s);
+            }
+            if (std.mem.eql(u8, m.member, "resolve") and m.object.* == .ident and
+                std.mem.eql(u8, m.object.ident.name, "Net")) return g.genForInList(s);
+        }
+
         // Fallback for struct field accesses (e.g. `m.decls` where `m` is a
         // branch-binding payload from a cross-module union).  The TC cannot
         // infer the type through catch_binding symbols, but in Zebra struct

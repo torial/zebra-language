@@ -764,7 +764,7 @@ fn _dt_format(dt: _DateTime, pattern: []const u8) []const u8 {
     const _lm = [_][]const u8{"","January","February","March","April","May","June","July","August","September","October","November","December"};
     const _sw = [_][]const u8{"","Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     const _lw = [_][]const u8{"","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"};
-    var out: std.ArrayListUnmanaged(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     var tmp: [32]u8 = undefined;
     var i: usize = 0;
     while (i < pattern.len) {
@@ -1801,17 +1801,19 @@ fn _udp_bind(port: u16) UdpSocket {
     return s;
 }
 
-fn _net_resolve(host: []const u8) []const []const u8 {
+fn _net_resolve(host: []const u8) std.ArrayList([]const u8) {
+    // A1 (1.0 API freeze): returns List(str), not a raw []str slice, so it shares
+    // the .count()/.at()/iterate API with every other string-sequence stdlib call.
     var _result: std.ArrayList([]const u8) = .empty;
-    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return &.{};
+    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return _result;
     switch (addr) {
         .ip4 => |a| {
-            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return &.{};
-            _result.append(std.heap.page_allocator, _ip) catch return &.{};
+            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return _result;
+            _result.append(std.heap.page_allocator, _ip) catch return _result;
         },
         .ip6 => {},
     }
-    return _result.toOwnedSlice(std.heap.page_allocator) catch &.{};
+    return _result;
 }
 // ─── Thompson NFA regex engine ───────────────────────────────────────────────
 const _RNodeKind = enum(u8) { match, lit, dot, cls, split, save, bol, eol_a, wb };
@@ -2103,8 +2105,9 @@ fn _regex_find(re: Regex, input: []const u8) []const u8 {
     }
     return "";
 }
-fn _regex_find_all(re: Regex, input: []const u8) []const []const u8 {
-    var out: std.ArrayListUnmanaged([]const u8) = .{};
+fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    // A1: returns List(str) (see _net_resolve note).
+    var out: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
@@ -2112,10 +2115,10 @@ fn _regex_find_all(re: Regex, input: []const u8) []const []const u8 {
             i = if (e > i) e else i + 1;
         } else i += 1;
     }
-    return out.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
+    return out;
 }
 fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
-    var out: std.ArrayListUnmanaged(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
@@ -2199,22 +2202,23 @@ fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX
     }
     return last;
 }
-fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
+fn _regex_groups(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    // A1: returns List(str) (see _net_resolve note).
     const alloc = std.heap.page_allocator;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayListUnmanaged([]const u8) = .{ .items = &.{}, .capacity = 0 };
+            var out: std.ArrayList([]const u8) = .empty;
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
                 if (s == 0xFFFF_FFFF_FFFF_FFFF) break;
                 if (e != 0xFFFF_FFFF_FFFF_FFFF and e >= s) out.append(alloc, input[s..e]) catch {};
             }
-            return out.toOwnedSlice(alloc) catch &.{};
+            return out;
         }
     }
-    return &.{};
+    return .empty;
 }
 // ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
 // Detects ArrayList by method presence, not field names, to avoid false-positives

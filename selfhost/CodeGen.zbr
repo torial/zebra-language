@@ -5028,16 +5028,30 @@ struct Generator
                     ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
-            else if isRegexSliceIter(fi.iter) or isItemsMemberAccess(fi.iter)
-                # findAll/groups or .items accessor: native Zig for; for-else uses native `} else {`
+            else if isItemsMemberAccess(fi.iter)
+                # `.items` accessor: already a slice; native Zig for, no extra .items.
                 writeIndent()
                 w.emit("for (")
                 genExpr(fi.iter)
                 w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
-                # Regex groups/findAll yield []const u8 elements — mark loop var as string
-                if isRegexSliceIter(fi.iter)
-                    str_params.add(vname)
+                ig.emitForGuard(fi)
+                ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_ to!)
+                writeIndent()
+                w.emit("}\n")
+            else if isStrListIter(fi.iter)
+                # findAll/groups/Net.resolve return List(str) (A1, 1.0 freeze): iterate
+                # .items like any List; elements are []const u8 → mark loop var a string.
+                writeIndent()
+                w.emit("for (")
+                genExpr(fi.iter)
+                w.emit(".items) |" + vname + "| {\n")
+                for_loop_vars.add(vname)
+                str_params.add(vname)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -5227,8 +5241,7 @@ struct Generator
             return m.member == "items"
         return false
 
-    # True if the iterable is a Regex method returning a raw slice (not ArrayList).
-    # findAll/groups return []const []const u8 — iterate without .items.
+    # True if the iterable is a Regex findAll/groups call (receiver is a Regex).
     def isRegexSliceIter(e: Expr): bool
         if e is Expr.call as c
             if c.callee is Expr.member as m
@@ -5240,6 +5253,19 @@ struct Generator
                                 return true
                             else
                                 pass
+        return false
+
+    # True if the iterable is a stdlib call returning List(str) that needs `.items`
+    # iteration with string elements: re.findAll/re.groups or Net.resolve (A1).
+    def isStrListIter(e: Expr): bool
+        if isRegexSliceIter(e)
+            return true
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                if m.member == "resolve"
+                    if m.object is Expr.ident as oid
+                        if oid.name == "Net"
+                            return true
         return false
 
     # Emit just the object part of a split call: str.split(sep) → str
