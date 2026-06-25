@@ -22119,7 +22119,7 @@ pub const Generator = struct {
         }
 // zbr:selfhost/CodeGen.zbr:11241
         if (std.mem.eql(u8, mname, "cwd")) {
-            self.w.emit("(std.Io.Dir.cwd().realpathAlloc(_io, \".\", _allocator) catch @panic(\"sys.cwd error\"))");
+            self.w.emit("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))");
 // zbr:selfhost/CodeGen.zbr:11243
             return;
         }
@@ -24138,7 +24138,7 @@ pub const Generator = struct {
             } else {
                 self.w.emit("\"\"");
             }
-            self.w.emit("; break :blk_pa std.Io.Dir.cwd().realpathAlloc(_io, _pp, _allocator) catch _pp; })");
+            self.w.emit("; break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })");
 // zbr:selfhost/CodeGen.zbr:12570
             return;
         }

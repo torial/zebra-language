@@ -11239,7 +11239,7 @@ struct Generator
             w.emit(")) * std.time.ns_per_ms)")
             return
         if mname == "cwd"
-            w.emit("(std.Io.Dir.cwd().realpathAlloc(_io, \".\", _allocator) catch @panic(\"sys.cwd error\"))")
+            w.emit("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))")
             return
         if mname == "setenv"
             w.emit("_sys_setenv(")
@@ -12566,7 +12566,7 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit("; break :blk_pa std.Io.Dir.cwd().realpathAlloc(_io, _pp, _allocator) catch _pp; })")
+            w.emit("; break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })")
             return
         w.emit("@compileError(\"selfhost: unknown Path.")
         w.emit(mname)

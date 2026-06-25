@@ -1222,7 +1222,9 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "join" or name == "toString"
         return Type_.string_
-    if name == "tokenize" or name == "encodeBase64"
+    if name == "tokenize"
+        return Type_.list_(Type_.string_)
+    if name == "encodeBase64"
         return Type_.string_
     if name == "count" or name == "len"
         return Type_.int_

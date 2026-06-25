@@ -1006,6 +1006,8 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "eqlIgnoreCase" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase"
         return true
+    if name == "indexOfIgnoreCase" or name == "tokenize"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)
