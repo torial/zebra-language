@@ -2945,6 +2945,7 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "isFile"))    return .bool;
                     if (std.mem.eql(u8, mem.member, "isDir"))     return .bool;
                     if (std.mem.eql(u8, mem.member, "size"))      return .int;
+                    if (std.mem.eql(u8, mem.member, "modtime"))   return .unknown; // ?int (A2)
                     return .void_;
                 }
                 // Dir.* static methods.

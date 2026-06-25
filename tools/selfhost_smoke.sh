@@ -359,6 +359,8 @@ smoke test/for_in_guard_test.zbr
 smoke test/chained_cmp_test.zbr
 # unless/until: parser-level desugar to if-not / while-not.
 smoke test/unless_until_test.zbr
+# A2: File.modtime → int? (nil on missing, not -1 sentinel).
+smoke test/modtime_optional_test.zbr
 # Profile stdlib: start/stop/report/dump_folded/reset (stack-based instrumentation).
 smoke test/profile_test.zbr
 

@@ -1,0 +1,12 @@
+# A2 (1.0 API freeze): File.modtime returns int? — the mtime in milliseconds,
+# or nil when the file is missing (was a -1 sentinel before the freeze).
+def main()
+    # Existing file (run from repo root) → non-nil mtime
+    var mt = File.modtime("QUICKSTART.md")
+    assert mt != nil
+
+    # Missing file → nil (no more -1 sentinel)
+    var missing = File.modtime("does_not_exist_zzz_42.txt")
+    assert missing == nil
+
+    print "modtime int? OK"

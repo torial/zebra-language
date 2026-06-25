@@ -21904,7 +21904,7 @@ pub const Generator = struct {
             } else {
                 self.w.emit("\"\"");
             }
-            self.w.emit(") catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })");
+            self.w.emit(", .{}) catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })");
 // zbr:selfhost/CodeGen.zbr:11102
             return;
         }
@@ -21917,7 +21917,7 @@ pub const Generator = struct {
             } else {
                 self.w.emit("\"\"");
             }
-            self.w.emit(") catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })");
+            self.w.emit(", .{}) catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })");
 // zbr:selfhost/CodeGen.zbr:11110
             return;
         }
@@ -21965,9 +21965,9 @@ pub const Generator = struct {
             } else {
                 self.w.emit("\"\"");
             }
-            self.w.emit(") catch break :blk_mt @as(i64, -1);\n");
+            self.w.emit(", .{}) catch break :blk_mt @as(?i64, null);\n");
             self.writeIndent();
-            self.w.emit("    break :blk_mt @as(i64, @intCast(@divTrunc(_mt_stat.mtime, std.time.ns_per_ms)));\n");
+            self.w.emit("    break :blk_mt @as(?i64, _mt_stat.mtime.toMilliseconds());\n");
             self.writeIndent();
             self.w.emit("})");
 // zbr:selfhost/CodeGen.zbr:11145

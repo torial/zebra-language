@@ -6338,15 +6338,15 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "modtime")) {
-            // File.modtime(path: str) → int  — mtime in milliseconds since epoch, or -1 if missing
+            // File.modtime(path: str) → int?  — mtime in ms since epoch, or nil if missing (A2)
             try g.w.writeAll("(blk: {\n");
             const bg = g.indented();
             try bg.writeIndent();
             try bg.w.writeAll("const _mt_stat = std.Io.Dir.cwd().statFile(_io, ");
             if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
-            try bg.w.writeAll(") catch break :blk @as(i64, -1);\n");
+            try bg.w.writeAll(", .{}) catch break :blk @as(?i64, null);\n");
             try bg.writeIndent();
-            try bg.w.writeAll("break :blk @as(i64, @intCast(@divTrunc(_mt_stat.mtime, std.time.ns_per_ms)));\n");
+            try bg.w.writeAll("break :blk @as(?i64, _mt_stat.mtime.toMilliseconds());\n");
             try g.writeIndent();
             try g.w.writeAll("})");
             return true;
@@ -6355,14 +6355,14 @@ const Generator = struct {
             // File.size(path) → i64 bytes, or -1 if missing
             try g.w.writeAll("(blk: { const _fs_stat = std.Io.Dir.cwd().statFile(_io, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(") catch break :blk @as(i64, -1); break :blk @as(i64, @intCast(_fs_stat.size)); })");
+            try g.w.writeAll(", .{}) catch break :blk @as(i64, -1); break :blk @as(i64, @intCast(_fs_stat.size)); })");
             return true;
         }
         if (std.mem.eql(u8, method, "isFile")) {
             // File.isFile(path) → bool
             try g.w.writeAll("(blk: { const _fi_stat = std.Io.Dir.cwd().statFile(_io, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(") catch break :blk false; break :blk _fi_stat.kind == .file; })");
+            try g.w.writeAll(", .{}) catch break :blk false; break :blk _fi_stat.kind == .file; })");
             return true;
         }
         if (std.mem.eql(u8, method, "isDir")) {
