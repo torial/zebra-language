@@ -997,6 +997,13 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "format"
         return true
+    # List predicates + extra string queries / codecs (read-only; receiver stays const)
+    if name == "any" or name == "all"
+        return true
+    if name == "lastIndexOf" or name == "indexOfFrom"
+        return true
+    if name == "encodeBase64" or name == "decodeBase64"
+        return true
     return false
 
 def scanMutationsInExpr(expr: Expr, out: StrSet)

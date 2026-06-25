@@ -1295,7 +1295,7 @@ fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8
     state.stream = stream;
     state.stream_reader = stream.reader(_io, &state.sock_rbuf);
     state.stream_writer = stream.writer(_io, &state.sock_wbuf);
-    var ca = std.crypto.Certificate.Bundle{};
+    var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
@@ -3217,18 +3217,18 @@ fn _mime_to_ext(mime: []const u8) []const u8 {
 const TimerHandle = struct {
     _start_ns: i128,
     pub fn elapsed(self: *const TimerHandle) f64 {
-        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .awake).nanoseconds - self._start_ns;
         return @as(f64, @floatFromInt(_ns)) / 1_000_000.0;
     }
     pub fn elapsedMicros(self: *const TimerHandle) i64 {
-        const _ns: i128 = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .awake).nanoseconds - self._start_ns;
         return @intCast(@divFloor(_ns, 1000));
     }
     pub fn reset(self: *TimerHandle) void {
-        self._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds;
+        self._start_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds;
     }
 };
-fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds }; }
+fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds }; }
 // ── Progress stdlib ──────────────────────────────────────────────────────────
 var _progress_root_started: bool = false;
 var _progress_root: std.Progress.Node = undefined;
@@ -3252,11 +3252,11 @@ var _profile_name_stack: std.ArrayList([]const u8) = .empty;
 var _profile_time_stack: std.ArrayList(i128) = .empty;
 fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
-    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .monotonic).nanoseconds) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .awake).nanoseconds) catch @panic("OOM");
 }
 fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
-    const elapsed_ns = std.Io.Timestamp.now(_io, .monotonic).nanoseconds - start_ns;
+    const elapsed_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds - start_ns;
     var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
