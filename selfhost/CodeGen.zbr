@@ -11831,6 +11831,15 @@ struct Generator
                 genExpr(args.at(0).value)
                 w.emit(".items))")
             return
+        if mname == "weighted"
+            w.emit("_random_weighted(")
+            if args.count() > 0
+                genExpr(args.at(0).value)
+            w.emit(", ")
+            if args.count() >= 2
+                genExpr(args.at(1).value)
+            w.emit(")")
+            return
         w.emit("@compileError(\"selfhost: unknown Random.")
         w.emit(mname)
         w.emit("\")")
@@ -12467,7 +12476,7 @@ struct Generator
             writeIndent()
             w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
-            w.emit("    while (_dw_walker.next() catch null) |_dw_entry| {\n")
+            w.emit("    while (_dw_walker.next(_io) catch null) |_dw_entry| {\n")
             writeIndent()
             w.emit("        if (_dw_entry.kind != .file) continue;\n")
             writeIndent()

@@ -1307,7 +1307,7 @@ fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8
     state.stream_writer = stream.writer(_io, &state.sock_wbuf);
     var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
-    ca.rescan(std.heap.page_allocator) catch {};
+    ca.rescan(std.heap.page_allocator, _io, std.Io.Timestamp.now(_io, .real)) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
         &state.stream_reader.interface,
         &state.stream_writer.interface,

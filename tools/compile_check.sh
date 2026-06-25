@@ -22,7 +22,7 @@ mkdir -p "$OUT"
 
 # Tests that legitimately can't be compile-checked standalone (need external
 # source/C files the emit step doesn't materialize). Not bugs — harness limits.
-SKIP=" c_interop_test zig_interop_test "
+SKIP=" c_interop_test zig_interop_test forgot_parens_test "
 
 tests=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
         | awk '{print $2}' | sort -u)

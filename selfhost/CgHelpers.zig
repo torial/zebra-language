@@ -1310,7 +1310,7 @@ fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8
     state.stream_writer = stream.writer(_io, &state.sock_wbuf);
     var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
-    ca.rescan(std.heap.page_allocator) catch {};
+    ca.rescan(std.heap.page_allocator, _io, std.Io.Timestamp.now(_io, .real)) catch {};
     state.tls_client = try std.crypto.tls.Client.init(
         &state.stream_reader.interface,
         &state.stream_writer.interface,
@@ -5519,28 +5519,33 @@ pub fn isReadOnlyMethod(name: []const u8) bool {
         return true;
     }
 // zbr:selfhost/CgHelpers.zbr:1007
+    if ((((std.mem.eql(u8, name, "eqlIgnoreCase") or std.mem.eql(u8, name, "startsWithIgnoreCase")) or std.mem.eql(u8, name, "endsWithIgnoreCase")) or std.mem.eql(u8, name, "containsIgnoreCase"))) {
+// zbr:selfhost/CgHelpers.zbr:1008
+        return true;
+    }
+// zbr:selfhost/CgHelpers.zbr:1009
     return false;
 }
 
 pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
-// zbr:selfhost/CgHelpers.zbr:1010
+// zbr:selfhost/CgHelpers.zbr:1012
     switch (expr) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/CgHelpers.zbr:1012
+// zbr:selfhost/CgHelpers.zbr:1014
             if (c.callee == .member) {
                 const m_ptr = c.callee.member;
                 const m = m_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1013
+// zbr:selfhost/CgHelpers.zbr:1015
                 if ((!isReadOnlyMethod(m.member))) {
-// zbr:selfhost/CgHelpers.zbr:1014
+// zbr:selfhost/CgHelpers.zbr:1016
                     if (m.object.* == .ident) {
                         const id = m.object.*.ident;
                         out.add(id.name);
                     }
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1016
+// zbr:selfhost/CgHelpers.zbr:1018
             for (c.args.items) |arg| {
                 scanMutationsInExpr(arg.value, out);
             }
@@ -5584,7 +5589,7 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .dict_lit => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1040
+// zbr:selfhost/CgHelpers.zbr:1042
             for (d.entries.items) |entry| {
                 scanMutationsInExpr(entry.key.*, out);
                 scanMutationsInExpr(entry.value.*, out);
@@ -5592,9 +5597,9 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1044
+// zbr:selfhost/CgHelpers.zbr:1046
             for (si.parts.items) |part| {
-// zbr:selfhost/CgHelpers.zbr:1045
+// zbr:selfhost/CgHelpers.zbr:1047
                 if (part == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
@@ -5604,7 +5609,7 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/CgHelpers.zbr:1048
+// zbr:selfhost/CgHelpers.zbr:1050
             for (cc.operands.items) |op| {
                 scanMutationsInExpr(op, out);
             }
@@ -5616,20 +5621,20 @@ pub fn scanMutationsInExpr(expr: Expr, out: *StrSet) void {
 }
 
 pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
-// zbr:selfhost/CgHelpers.zbr:1056
+// zbr:selfhost/CgHelpers.zbr:1058
     for (stmts.items) |s| {
-// zbr:selfhost/CgHelpers.zbr:1057
+// zbr:selfhost/CgHelpers.zbr:1059
         switch (s) {
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1059
+// zbr:selfhost/CgHelpers.zbr:1061
                 switch (a.target.*) {
                     .ident => |id| {
                         out.add(id.name);
                     },
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
-// zbr:selfhost/CgHelpers.zbr:1063
+// zbr:selfhost/CgHelpers.zbr:1065
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
                             out.add(id.name);
@@ -5637,7 +5642,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
                     },
                     .index => |_ptr_ix| {
                         const ix = _ptr_ix.*;
-// zbr:selfhost/CgHelpers.zbr:1067
+// zbr:selfhost/CgHelpers.zbr:1069
                         if (ix.object.* == .ident) {
                             const id = ix.object.*.ident;
                             out.add(id.name);
@@ -5651,11 +5656,11 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
                 scanMutationsInto(si.then_stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1073
+// zbr:selfhost/CgHelpers.zbr:1075
                 for (si.else_ifs.items) |ei| {
                     scanMutationsInto(ei.stmts, out);
                 }
-// zbr:selfhost/CgHelpers.zbr:1075
+// zbr:selfhost/CgHelpers.zbr:1077
                 if (si.else_stmts) |se| {
                     scanMutationsInto(se, out);
                 }
@@ -5667,7 +5672,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
                 scanMutationsInto(f.stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1081
+// zbr:selfhost/CgHelpers.zbr:1083
                 if (f.else_) |fe| {
                     scanMutationsInto(fe, out);
                 }
@@ -5678,25 +5683,25 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1086
+// zbr:selfhost/CgHelpers.zbr:1088
                 for (b.cases.items) |c| {
                     scanMutationsInto(c.stmts, out);
                 }
-// zbr:selfhost/CgHelpers.zbr:1088
+// zbr:selfhost/CgHelpers.zbr:1090
                 if (b.else_) |be| {
                     scanMutationsInto(be, out);
                 }
             },
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
-// zbr:selfhost/CgHelpers.zbr:1091
+// zbr:selfhost/CgHelpers.zbr:1093
                 if ((n.init_expr != null)) {
                     scanMutationsInExpr(n.init_expr.?.*, out);
                 }
             },
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1094
+// zbr:selfhost/CgHelpers.zbr:1096
                 if ((r.value != null)) {
                     scanMutationsInExpr(r.value.?.*, out);
                 }
@@ -5707,7 +5712,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1099
+// zbr:selfhost/CgHelpers.zbr:1101
                 if (w.target.* == .ident) {
                     const id = w.target.*.ident;
                     out.add(id.name);
@@ -5720,16 +5725,16 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .copy_out => |_ptr_co| {
                 const co = _ptr_co.*;
-// zbr:selfhost/CgHelpers.zbr:1105
+// zbr:selfhost/CgHelpers.zbr:1107
                 if (co.target == .ident) {
                     const id = co.target.ident;
                     out.add(id.name);
                 } else {
-// zbr:selfhost/CgHelpers.zbr:1107
+// zbr:selfhost/CgHelpers.zbr:1109
                     if (co.target == .member) {
                         const m_ptr = co.target.member;
                         const m = m_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1108
+// zbr:selfhost/CgHelpers.zbr:1110
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
                             out.add(id.name);
@@ -5740,7 +5745,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
                 scanMutationsInto(tc.stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1112
+// zbr:selfhost/CgHelpers.zbr:1114
                 for (tc.clauses.items) |cl| {
                     scanMutationsInto(cl.stmts, out);
                 }
@@ -5777,12 +5782,12 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
             },
             .print_ => |_ptr_p| {
                 const p = _ptr_p.*;
-// zbr:selfhost/CgHelpers.zbr:1131
+// zbr:selfhost/CgHelpers.zbr:1133
                 var pi: i64 = 0;
-// zbr:selfhost/CgHelpers.zbr:1132
+// zbr:selfhost/CgHelpers.zbr:1134
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
                     scanMutationsInExpr(p.args.items[@intCast(pi)], out);
-// zbr:selfhost/CgHelpers.zbr:1134
+// zbr:selfhost/CgHelpers.zbr:1136
                     pi += 1;
                 }
             },
@@ -5794,46 +5799,46 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet) void {
 }
 
 pub fn scanMutations(stmts: std.ArrayList(Stmt)) *StrSet {
-// zbr:selfhost/CgHelpers.zbr:1139
+// zbr:selfhost/CgHelpers.zbr:1141
     const out = StrSet.init();
     scanMutationsInto(stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1141
+// zbr:selfhost/CgHelpers.zbr:1143
     return out;
 }
 
 pub fn isContainerTypeRef(tr: TypeRef) bool {
-// zbr:selfhost/CgHelpers.zbr:1155
+// zbr:selfhost/CgHelpers.zbr:1157
     switch (tr) {
         .generic => |g| {
-// zbr:selfhost/CgHelpers.zbr:1157
+// zbr:selfhost/CgHelpers.zbr:1159
             return (std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap"));
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1159
+// zbr:selfhost/CgHelpers.zbr:1161
             return false;
         },
     }
 }
 
 pub fn paramNeedsAddrOf(p: Param, body: ?std.ArrayList(Stmt)) bool {
-// zbr:selfhost/CgHelpers.zbr:1169
-    if ((p.type_ == null)) {
-// zbr:selfhost/CgHelpers.zbr:1169
-        return false;
-    }
-// zbr:selfhost/CgHelpers.zbr:1170
-    if ((!isContainerTypeRef(p.type_.?))) {
-// zbr:selfhost/CgHelpers.zbr:1170
-        return false;
-    }
 // zbr:selfhost/CgHelpers.zbr:1171
-    if (body) |b| {
+    if ((p.type_ == null)) {
+// zbr:selfhost/CgHelpers.zbr:1171
+        return false;
+    }
 // zbr:selfhost/CgHelpers.zbr:1172
-        const ms: *StrSet = scanMutations(b);
+    if ((!isContainerTypeRef(p.type_.?))) {
+// zbr:selfhost/CgHelpers.zbr:1172
+        return false;
+    }
 // zbr:selfhost/CgHelpers.zbr:1173
+    if (body) |b| {
+// zbr:selfhost/CgHelpers.zbr:1174
+        const ms: *StrSet = scanMutations(b);
+// zbr:selfhost/CgHelpers.zbr:1175
         return ms.contains_(p.name);
     }
-// zbr:selfhost/CgHelpers.zbr:1174
+// zbr:selfhost/CgHelpers.zbr:1176
     return false;
 }
 
