@@ -1311,14 +1311,28 @@ fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8
     var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator, _io, std.Io.Timestamp.now(_io, .real)) catch {};
+    // 0.16 TLS Options: `ca` became a tagged union whose `.bundle` variant carries the
+    // allocator/io/lock alongside the bundle; `entropy` + `realtime_now` are now caller-
+    // supplied. The bundle/lock/entropy are only read during the handshake (init), so
+    // these locals are sufficient (matches the defer-deinit-after-init lifetime).
+    var _ca_lock: std.Io.RwLock = .init;
+    var _tls_entropy: [std.crypto.tls.Client.Options.entropy_len]u8 = undefined;
+    _io.random(&_tls_entropy);
     state.tls_client = try std.crypto.tls.Client.init(
         &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
-            .ca          = .{ .bundle = ca },
+            .ca          = .{ .bundle = .{
+                .gpa = std.heap.page_allocator,
+                .io = _io,
+                .lock = &_ca_lock,
+                .bundle = &ca,
+            } },
             .read_buffer = &state.rbuf,
             .write_buffer = &state.wbuf,
+            .entropy = &_tls_entropy,
+            .realtime_now = std.Io.Timestamp.now(_io, .real),
             .allow_truncation_attacks = true,
         },
     );
