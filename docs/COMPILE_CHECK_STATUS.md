@@ -15,7 +15,17 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 ### Remaining 6
 - **tc_iface_i2i**, **tc_iface_generic** — deeper language-feature gaps (see table).
 - **ws_smoke** — 0.16 TLS `Client.Options.ca` union shape.
-- **allocate_slice5** — allocate/copy-out `_saved_alloc_N` uid mismatch.
+- **allocate_slice5** — allocate/copy-out `_saved_alloc_N` uid mismatch. **Root cause
+  confirmed:** a copy-out (`<-`) *after* a nested allocate block dupes to the inner
+  block's (out-of-scope) `_saved_alloc_N` because `genCopyOut` reads the most-recent
+  uid (`arena_counter - 1`), not the lexically-enclosing block's. The right fix is a
+  save/restore of an enclosing-block uid around `genAllocate`'s `ig.genStmts`.
+  **Blocked (2026-06-26):** the save/restore was written in CodeGen.zbr but the
+  bootstrap **did not regenerate** the bare field-writes (`cur_alloc_uid = n` /
+  `= _saved_cur_alloc`) into CodeGen.zig — only the member-access write
+  (`ig.cur_alloc_uid = n`) survived. That's a *separate* codegen quirk (bare
+  field-assignment after a local `var` decl appears to be dropped/shadowed) and must
+  be understood before the allocate fix can land. Reverted to keep the tree clean.
 - **bug091_dispatch** — List passed to a method that fills it via pointer; mutation-
   via-arg not detected (var emitted but never directly mutated).
 - **method_chain** — chained temp is `*const T` where callee wants `*T`.
