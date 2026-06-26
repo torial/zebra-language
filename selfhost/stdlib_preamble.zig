@@ -1543,9 +1543,11 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(*_WsConn) void;
+    const _fn: _HFn = handler;
     const _Ctx = struct {
         conn: std.Io.net.Stream,
-        handler_fn: @TypeOf(handler),
+        handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
@@ -1615,7 +1617,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     while (true) {
         const _c = _srv.accept(_io) catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
-        _ctx.* = .{ .conn = _c, .handler_fn = handler };
+        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }

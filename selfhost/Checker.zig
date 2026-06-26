@@ -1208,7 +1208,7 @@ fn _http_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1311,14 +1311,28 @@ fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8
     var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
     ca.rescan(std.heap.page_allocator, _io, std.Io.Timestamp.now(_io, .real)) catch {};
+    // 0.16 TLS Options: `ca` became a tagged union whose `.bundle` variant carries the
+    // allocator/io/lock alongside the bundle; `entropy` + `realtime_now` are now caller-
+    // supplied. The bundle/lock/entropy are only read during the handshake (init), so
+    // these locals are sufficient (matches the defer-deinit-after-init lifetime).
+    var _ca_lock: std.Io.RwLock = .init;
+    var _tls_entropy: [std.crypto.tls.Client.Options.entropy_len]u8 = undefined;
+    _io.random(&_tls_entropy);
     state.tls_client = try std.crypto.tls.Client.init(
         &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
-            .ca          = .{ .bundle = ca },
+            .ca          = .{ .bundle = .{
+                .gpa = std.heap.page_allocator,
+                .io = _io,
+                .lock = &_ca_lock,
+                .bundle = &ca,
+            } },
             .read_buffer = &state.rbuf,
             .write_buffer = &state.wbuf,
+            .entropy = &_tls_entropy,
+            .realtime_now = std.Io.Timestamp.now(_io, .real),
             .allow_truncation_attacks = true,
         },
     );
@@ -1532,9 +1546,11 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(*_WsConn) void;
+    const _fn: _HFn = handler;
     const _Ctx = struct {
         conn: std.Io.net.Stream,
-        handler_fn: @TypeOf(handler),
+        handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
@@ -1596,7 +1612,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     };
     const _pa = std.heap.page_allocator;
     var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
+    var _srv = _waddr.listen(_io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1604,7 +1620,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     while (true) {
         const _c = _srv.accept(_io) catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
-        _ctx.* = .{ .conn = _c, .handler_fn = handler };
+        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
@@ -1766,7 +1782,7 @@ fn _tcp_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };

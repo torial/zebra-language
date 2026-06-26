@@ -1208,7 +1208,7 @@ fn _http_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1546,9 +1546,11 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
 fn _ws_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(*_WsConn) void;
+    const _fn: _HFn = handler;
     const _Ctx = struct {
         conn: std.Io.net.Stream,
-        handler_fn: @TypeOf(handler),
+        handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
@@ -1610,7 +1612,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     };
     const _pa = std.heap.page_allocator;
     var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
+    var _srv = _waddr.listen(_io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1618,7 +1620,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     while (true) {
         const _c = _srv.accept(_io) catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
-        _ctx.* = .{ .conn = _c, .handler_fn = handler };
+        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
@@ -1780,7 +1782,7 @@ fn _tcp_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
