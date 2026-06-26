@@ -5,16 +5,33 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 135 passed, **6 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 136 passed, **5 FAILED**, 1 skipped (down from 16 at discovery)
 
-*Update 2026-06-25: cleared 10 of the 16. Also fixed since the table below: ws_smoke's
-sibling layers, stdlib_misc (Windows setenv extern + DateTime.timestamp),
+*Update 2026-06-26: ws_smoke FIXED (commit caf477c) — all three of its 0.16 layers
+are now clear: TLS Client.Options (ca union + entropy/realtime_now, 339f145),
+Io.net.listen→IpAddress.listen method (a379b30), and the WS handler stored as a
+`*const fn(*_WsConn) void` pointer instead of a comptime-only `fn` type (caf477c,
+mirrors the working _http_serve pattern). compile-check 6→5; bootstrap gate
+byte-identical; pushed to origin/main.*
+
+*Update 2026-06-25: cleared 10 of the 16. Also fixed since the table below:
+stdlib_misc (Windows setenv extern + DateTime.timestamp),
 stdlib_str/stdlib_additions (tokenize→List(str), timestamp/weekday read-only),
 tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 
-### Remaining 6
+> **ENVIRONMENT NOTE (2026-06-26, post-reboot relevant):** builds began failing with
+> `lld-link: could not open '…\AppData\Local\zig\o\<hash>\compiler_rt.lib / ntdll.lib /
+> kernel32.lib': No such file or directory`. This is **global-cache corruption**, not a
+> code problem. Deleting only the cache's `o/` (outputs) subdir does **not** fix it —
+> the `h/` **manifests** still claim those import-libs exist, so Zig skips regenerating
+> them and goes straight to link. **Fix:** delete the *entire* global cache dir
+> `rm -rf "C:/Users/Sean/AppData/Local/zig"` (plus local `.zig-cache`), then rebuild
+> (first build is a full std recompile, a few minutes). Likely the same condition behind
+> the laptop's degraded/locked-up network state that prompted the reboot. After reboot,
+> the cache is already gone/fresh, so the first `zig build` will just be slow, not broken.
+
+### Remaining 5
 - **tc_iface_i2i**, **tc_iface_generic** — deeper language-feature gaps (see table).
-- **ws_smoke** — 0.16 TLS `Client.Options.ca` union shape.
 - **allocate_slice5** — allocate/copy-out `_saved_alloc_N` uid mismatch. **Root cause
   confirmed:** a copy-out (`<-`) *after* a nested allocate block dupes to the inner
   block's (out-of-scope) `_saved_alloc_N` because `genCopyOut` reads the most-recent
@@ -31,7 +48,7 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 - **method_chain** — chained temp is `*const T` where callee wants `*T`.
 
 Run: `bash tools/compile_check.sh` (selfhost) — not yet wired into `zig build`
-(would block) until the 9 are green.
+(would block) until the remaining 5 are green.
 
 ### Fixed this session (16 → 9), all gated (round-trip byte-identical + smoke 174/174)
 - Zig 0.16 API: `Io.Clock.monotonic`→`.awake`; `Certificate.Bundle{}`→`.empty`;
