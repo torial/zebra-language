@@ -2416,6 +2416,21 @@ struct Generator
                     return ifc
         return nil
 
+    # Concrete class name of an expr being assigned to an interface-typed var
+    # (constructor, ident, or method-call RHS), or nil if the expr is not a
+    # concrete-class value (e.g. it is itself an interface — an i2i upcast, which
+    # this fat-pointer representation can't synthesize without the concrete type).
+    def concreteClassOf(e: Expr): str?
+        if .infer_ctx == nil
+            return nil
+        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        if t is Type_.ref_to as rt
+            t = rt
+        if t is Type_.named as nm
+            if findInterfaceDecl(nm) == nil
+                return nm
+        return nil
+
     def genIfaceVtable(class_name: str, ifc: DeclInterface)
         var iname = ifc.name
         for m in ifc.members
@@ -2539,12 +2554,27 @@ struct Generator
             w.emit("}\n")
         writeIndent()
         w.emit("};\n")
-        # Emit shim functions + vtable const for each implemented interface.
+        # Emit shim functions + vtable const for each implemented interface,
+        # including transitively-implemented super-interfaces: a class implementing
+        # IFoo (where IFoo implements IBase) also needs the class×IBase vtable so
+        # `var b: IBase = <classInstance>` can build the IBase fat-pointer. BFS over
+        # the interface closure, deduped by name.
+        var _vt_seen = StrSet()
+        var _vt_work = List(TypeRef)()
         for tr in n.ifaces
-            if tr is TypeRef.named as nt
-                var ifc = findInterfaceDecl(nt.name)
-                if ifc as ifc_decl
-                    genIfaceVtable(n.name, ifc_decl)
+            _vt_work.add(tr)
+        var _vti = 0
+        while _vti < _vt_work.count()
+            var _vt_tr = _vt_work.at(_vti)
+            _vti = _vti + 1
+            if _vt_tr is TypeRef.named as nt
+                if not _vt_seen.contains_(nt.name)
+                    _vt_seen.add(nt.name)
+                    var ifc = findInterfaceDecl(nt.name)
+                    if ifc as ifc_decl
+                        genIfaceVtable(n.name, ifc_decl)
+                        for _super_tr in ifc_decl.ifaces
+                            _vt_work.add(_super_tr)
         w.emit("const _ttag_")
         w.emit(n.name)
         w.emit(": u64 = _zbr_hash(\"")
@@ -3767,6 +3797,22 @@ struct Generator
                                     writeIndent()
                                     w.emit(ikw2 + " " + n.name + ": *" + irtn.name + " = _iface_" + iuid.toString() + ";\n")
                                     return
+                # Generalized concrete→interface coercion for an ident or method-call
+                # RHS (the constructor RHS is handled above). e.g. `var b: IBase = d`
+                # where d is a concrete class, or `var b: I = Box(i64).init(42)`.
+                var itr2 = n.type_ to!
+                if itr2 is TypeRef.named as itn2
+                    if findInterfaceDecl(itn2.name) != nil
+                        var cc: str? = concreteClassOf(iinit)
+                        if cc != nil
+                            var ikw3: str = "const"
+                            if is_mut
+                                ikw3 = "var"
+                            writeIndent()
+                            w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
+                            genExpr(iinit)
+                            w.emit(", .vtable = &_vtable_" + cc to! + "_" + itn2.name + " };\n")
+                            return
         writeIndent()
         # const vs var already computed above
         if is_mut
