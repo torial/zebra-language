@@ -3400,7 +3400,11 @@ fn _sys_setenv(key: []const u8, val: []const u8) void {
         defer _allocator.free(key_w);
         const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
         defer _allocator.free(val_w);
-        _ = std.os.windows.kernel32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
+        const _k32 = struct {
+            // 0.16 dropped SetEnvironmentVariableW from std.os.windows.kernel32 — declare it.
+            extern "kernel32" fn SetEnvironmentVariableW(name: [*:0]const u16, value: ?[*:0]const u16) callconv(.winapi) std.os.windows.BOOL;
+        };
+        _ = _k32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
     } else {
         std.posix.setenv(key, val) catch {};
     }

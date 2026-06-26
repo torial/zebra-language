@@ -8336,6 +8336,14 @@ struct Generator
                 w.emit("\"UTC\"")
             w.emit(")")
             return
+        # DateTime.timestamp → Unix seconds (epoch_ms / 1000). Gated on a DateTime
+        # receiver since `timestamp` is a common method name.
+        if mname == "timestamp"
+            if isDateTimeExpr(m.object)
+                w.emit("@divFloor(")
+                genExpr(m.object)
+                w.emit(".epoch_ms, 1000)")
+                return
         # Regex instance methods: re.match/find/findAll/replace/groups
         if .infer_ctx != nil
             var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
