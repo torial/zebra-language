@@ -991,6 +991,8 @@ def isReadOnlyMethod(name: str): bool
     # DateTime methods — all return a new value, never mutate the receiver
     if name == "inZone" or name == "inCalendar" or name == "toEpoch" or name == "toIso8601"
         return true
+    if name == "timestamp" or name == "weekday"
+        return true
     if name == "addDays" or name == "addHours" or name == "addMinutes" or name == "addSeconds"
         return true
     if name == "addMonths" or name == "addYears" or name == "daysBetween" or name == "secondsBetween"

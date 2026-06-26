@@ -5,7 +5,20 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 132 passed, **9 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 135 passed, **6 FAILED**, 1 skipped (down from 16 at discovery)
+
+*Update 2026-06-25: cleared 10 of the 16. Also fixed since the table below: ws_smoke's
+sibling layers, stdlib_misc (Windows setenv extern + DateTime.timestamp),
+stdlib_str/stdlib_additions (tokenize→List(str), timestamp/weekday read-only),
+tc_iface_transitive (concreteClassOf + transitive vtable closure).*
+
+### Remaining 6
+- **tc_iface_i2i**, **tc_iface_generic** — deeper language-feature gaps (see table).
+- **ws_smoke** — 0.16 TLS `Client.Options.ca` union shape.
+- **allocate_slice5** — allocate/copy-out `_saved_alloc_N` uid mismatch.
+- **bug091_dispatch** — List passed to a method that fills it via pointer; mutation-
+  via-arg not detected (var emitted but never directly mutated).
+- **method_chain** — chained temp is `*const T` where callee wants `*T`.
 
 Run: `bash tools/compile_check.sh` (selfhost) — not yet wired into `zig build`
 (would block) until the 9 are green.
