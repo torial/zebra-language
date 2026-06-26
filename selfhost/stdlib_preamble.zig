@@ -1205,7 +1205,7 @@ fn _http_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1607,7 +1607,7 @@ fn _ws_serve(port: u16, handler: anytype) void {
     };
     const _pa = std.heap.page_allocator;
     var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_waddr, _io, .{}) catch |e| {
+    var _srv = _waddr.listen(_io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
@@ -1777,7 +1777,7 @@ fn _tcp_serve(port: u16, handler: anytype) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
-    var _srv = std.Io.net.listen(&_addr, _io, .{}) catch |e| {
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
