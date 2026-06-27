@@ -5,7 +5,33 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 136 passed, **5 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 137 passed, **4 FAILED**, 1 skipped (down from 16 at discovery)
+
+*Update 2026-06-26: tc_iface_i2i FIXED (interface→interface upcast in var-init).
+Both compilers now give every sub-interface vtable an `__as_<Super>: *const
+<Super>.VTable` pointer (wired by the transitive `implements` closure) plus
+inherited base-method forwarders, so an erased `IFoo` value re-projects to any
+super-interface `IBase` in O(1): `var b: IBase = f` →
+`.{ .ptr = f.ptr, .vtable = f.vtable.__as_IBase }`. Bootstrap round-trip
+byte-identical; gate green.*
+
+> **Two findings from the i2i work (correcting earlier notes):**
+> 1. The claim below that "the 3 `tc_iface_*` share one root cause" is **wrong**.
+>    `tc_iface_i2i` (erased interface→interface upcast — needs the vtable
+>    representation change above) and `tc_iface_generic` (generic classes never
+>    emit interface vtables at all) are **independent** fixes. `tc_iface_transitive`
+>    was a third, already fixed.
+> 2. There was a **bootstrap/selfhost divergence**: the d79ab68 transitive
+>    concrete→interface coercion (`var b: IBase = d` for concrete `d`) lived only
+>    in selfhost/CodeGen.zbr; the bootstrap (src/) could not compile
+>    `tc_iface_transitive`. The i2i work added the transitive concrete-class vtable
+>    emission to src/ too, narrowing that gap (the bootstrap now emits the super
+>    vtables; full concrete→interface ident coercion in src/ is still selfhost-only).
+> 3. **Selfhost codegen gotcha (recorded for future ports):** values obtained from
+>    `List.at()` are not tracked as `str` for `${}` string interpolation (they
+>    format via Zig's `{any}` → byte-array), and `Type_.named` in the selfhost AST
+>    carries the name string directly (not a Symbol). Use separate `w.emit()` calls
+>    for `.at()`-derived names.
 
 *Update 2026-06-26: ws_smoke FIXED (commit caf477c) — all three of its 0.16 layers
 are now clear: TLS Client.Options (ca union + entropy/realtime_now, 339f145),

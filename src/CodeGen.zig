@@ -348,6 +348,43 @@ fn findInterfaceDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclInter
     return null;
 }
 
+/// Collect the transitive super-interfaces of `iface` (the `implements` closure),
+/// into the caller-provided fixed `buf` (avoids allocation; interface hierarchies
+/// are shallow — depth past `buf.len` is silently dropped). De-duplicated. Returns
+/// the filled prefix slice.
+///
+/// Used to wire interface→interface upcasts: a sub-interface's vtable carries an
+/// `__as_<Super>: *const <Super>.VTable` pointer per super-interface, so an erased
+/// sub-interface value can be re-projected to any super-interface in O(1).
+fn collectSuperIfaces(
+    module: Ast.Module,
+    iface: *const Ast.DeclInterface,
+    buf: []*const Ast.DeclInterface,
+) []*const Ast.DeclInterface {
+    var n: usize = 0;
+    collectSuperIfacesInto(module, iface, buf, &n);
+    return buf[0..n];
+}
+
+fn collectSuperIfacesInto(
+    module: Ast.Module,
+    iface: *const Ast.DeclInterface,
+    buf: []*const Ast.DeclInterface,
+    n: *usize,
+) void {
+    for (iface.implements) |tr| {
+        const sname = typeRefSimpleName(tr) orelse continue;
+        const sdecl = findInterfaceDecl(module, sname) orelse continue;
+        var dup = false;
+        for (buf[0..n.*]) |existing| if (existing == sdecl) { dup = true; break; };
+        if (dup) continue;
+        if (n.* >= buf.len) return;
+        buf[n.*] = sdecl;
+        n.* += 1;
+        collectSuperIfacesInto(module, sdecl, buf, n);
+    }
+}
+
 /// Emit shim functions + vtable const for `class_name implements iface_name`.
 /// Shims cast `*anyopaque` → `*ClassName` so Zig's strict fn-pointer types are satisfied.
 fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclInterface) anyerror!void {
@@ -373,6 +410,13 @@ fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclIn
     for (iface.members) |m| {
         const meth = switch (m) { .method => |x| x, else => continue };
         try g.w.print(" .{s} = &_shim_{s}_{s}_{s},", .{ meth.name, class_name, iname, meth.name });
+    }
+    // Wire the `__as_<Super>` pointers so an erased value of this interface can be
+    // re-projected to any super-interface. `_vtable_<Class>_<Super>` is emitted by
+    // the transitive `implements` closure, so it is always available here.
+    var super_buf: [16]*const Ast.DeclInterface = undefined;
+    for (collectSuperIfaces(g.module, iface, &super_buf)) |s| {
+        try g.w.print(" .__as_{s} = &_vtable_{s}_{s},", .{ s.name, class_name, s.name });
     }
     try g.w.writeAll(" };\n");
 }
@@ -4476,11 +4520,26 @@ const Generator = struct {
             try g.genJsonParseStrictFn(n);
         }
 
-        // Emit shim + vtable const for each implemented interface.
+        // Emit shim + vtable const for each implemented interface, plus the
+        // transitive super-interfaces it inherits. The supers are required so the
+        // `__as_<Super>` pointers wired into the sub-interface vtable resolve, and
+        // so the class is directly usable as any super-interface.
+        var emitted_ifaces: [32]*const Ast.DeclInterface = undefined;
+        var emitted_n: usize = 0;
         for (n.implements) |tr| {
             const iname = typeRefSimpleName(tr) orelse continue;
-            if (findInterfaceDecl(g.module, iname)) |iface| {
-                try genIfaceVtable(g, n.name, iface);
+            const iface = findInterfaceDecl(g.module, iname) orelse continue;
+            var to_emit_buf: [17]*const Ast.DeclInterface = undefined;
+            to_emit_buf[0] = iface;
+            var sb: [16]*const Ast.DeclInterface = undefined;
+            const supers = collectSuperIfaces(g.module, iface, &sb);
+            for (supers, 0..) |s, i| to_emit_buf[i + 1] = s;
+            for (to_emit_buf[0 .. supers.len + 1]) |ifc| {
+                var dup = false;
+                for (emitted_ifaces[0..emitted_n]) |e| if (e == ifc) { dup = true; break; };
+                if (dup) continue;
+                if (emitted_n < emitted_ifaces.len) { emitted_ifaces[emitted_n] = ifc; emitted_n += 1; }
+                try genIfaceVtable(g, n.name, ifc);
             }
         }
 
@@ -4649,6 +4708,14 @@ const Generator = struct {
             if (meth.return_type) |rt| try g.genType(rt) else try vtig.w.writeAll("void");
             try vtig.w.writeAll(",\n");
         }
+        // Super-interface re-projection pointers: one `__as_<Super>` per (transitive)
+        // implemented interface, enabling O(1) interface→interface upcasts.
+        var super_buf: [16]*const Ast.DeclInterface = undefined;
+        const supers = collectSuperIfaces(g.module, n, &super_buf);
+        for (supers) |s| {
+            try vtig.writeIndent();
+            try vtig.w.print("__as_{s}: *const {s}.VTable,\n", .{ s.name, s.name });
+        }
         try ig.writeIndent();
         try ig.w.writeAll("};\n");
 
@@ -4674,6 +4741,41 @@ const Generator = struct {
             try mig.w.writeAll(");\n");
             try ig.writeIndent();
             try ig.w.writeAll("}\n");
+        }
+
+        // ── inherited forwarding methods (super-interface members) ─────────
+        // A sub-interface IS-A super-interface, so its methods are callable
+        // directly; they dispatch through the `__as_<Super>` vtable pointer.
+        for (supers) |s| {
+            for (s.members) |m| {
+                const meth = switch (m) { .method => |x| x, else => continue };
+                // Skip if this interface (or a nearer super) already declares the name.
+                var shadowed = false;
+                for (n.members) |om| {
+                    const oname: []const u8 = switch (om) { .method => |x| x.name, else => continue };
+                    if (std.mem.eql(u8, oname, meth.name)) { shadowed = true; break; }
+                }
+                if (shadowed) continue;
+                try ig.w.writeAll("\n");
+                try ig.writeIndent();
+                try ig.w.print("pub fn {s}(self: @This()", .{meth.name});
+                for (meth.params) |p| {
+                    try ig.w.print(", {s}: ", .{p.name});
+                    if (p.type_) |tr| try g.genType(tr) else try ig.w.writeAll("anytype");
+                }
+                try ig.w.writeAll(") ");
+                if (meth.throws) try ig.w.writeAll("anyerror!");
+                if (meth.return_type) |rt| try g.genType(rt) else try ig.w.writeAll("void");
+                try ig.w.writeAll(" {\n");
+                try mig.writeIndent();
+                if (meth.throws) try mig.w.writeAll("return try self.vtable.__as_")
+                else             try mig.w.writeAll("return self.vtable.__as_");
+                try mig.w.print("{s}.{s}(self.ptr", .{ s.name, meth.name });
+                for (meth.params) |p| try mig.w.print(", {s}", .{p.name});
+                try mig.w.writeAll(");\n");
+                try ig.writeIndent();
+                try ig.w.writeAll("}\n");
+            }
         }
 
         // ── check() — comptime conformance verifier ────────────────────────
@@ -5711,6 +5813,41 @@ const Generator = struct {
                     }
                 }
             }
+        }
+
+        // Interface → interface upcast: `var b: IBase = f` where `f: IFoo` and
+        // `IFoo implements IBase`. The two fat-pointer structs are distinct Zig
+        // types, so we rebuild the target from the source's erased `ptr` and the
+        // `__as_IBase` vtable pointer wired into the source's vtable. Bind the
+        // source to a temp first so a side-effecting init isn't evaluated twice.
+        if (n.init) |init_e| {
+            if (n.type_) |tr| if (tr == .named) {
+                const dst_name = tr.named.name;
+                if (findInterfaceDecl(g.module, dst_name) != null) {
+                    if (g.tc) |tc| if (tc.expr_types.get(init_e)) |rhs_ty| if (rhs_ty == .named) {
+                        const src_name = rhs_ty.named.name;
+                        if (!std.mem.eql(u8, src_name, dst_name)) {
+                            if (findInterfaceDecl(g.module, src_name)) |src_iface| {
+                                var sb: [16]*const Ast.DeclInterface = undefined;
+                                var is_super = false;
+                                for (collectSuperIfaces(g.module, src_iface, &sb)) |s| {
+                                    if (std.mem.eql(u8, s.name, dst_name)) { is_super = true; break; }
+                                }
+                                if (is_super) {
+                                    const uid = g.nextUid();
+                                    try g.writeIndent();
+                                    try g.w.print("const _ifsrc_{x} = ", .{uid});
+                                    try g.genExpr(init_e);
+                                    try g.w.writeAll(";\n");
+                                    try g.writeIndent();
+                                    try g.w.print("{s} {s}: {s} = .{{ .ptr = _ifsrc_{x}.ptr, .vtable = _ifsrc_{x}.vtable.__as_{s} }};\n", .{ kw, n.name, dst_name, uid, uid, dst_name });
+                                    return;
+                                }
+                            }
+                        }
+                    };
+                }
+            };
         }
 
         // Track DynLib handle variables for instance method dispatch.

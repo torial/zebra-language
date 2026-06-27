@@ -2431,6 +2431,36 @@ struct Generator
                 return nm
         return nil
 
+    # True if `target` is among `ifc`'s transitive super-interfaces (the
+    # `implements`/`ifaces` closure). Self-contained BFS over a locally-constructed
+    # `List(TypeRef)` worklist — the selfhost compiler tracks list-ness only for
+    # locally-constructed lists (not for List values returned from a function), so
+    # the transitive-super traversal is inlined at each use site rather than
+    # factored into a List-returning helper.
+    #
+    # Supports interface→interface upcasts: a sub-interface vtable carries an
+    # `__as_<Super>: *const <Super>.VTable` pointer per super so an erased
+    # sub-interface value can be re-projected to any super in O(1).
+    def superIfacesContains(ifc: DeclInterface, target: str): bool
+        var seen = StrSet()
+        var work = List(TypeRef)()
+        for tr in ifc.ifaces
+            work.add(tr)
+        var i = 0
+        while i < work.count()
+            var wtr = work.at(i)
+            i = i + 1
+            if wtr is TypeRef.named as nt
+                if not seen.contains_(nt.name)
+                    seen.add(nt.name)
+                    if nt.name == target
+                        return true
+                    var sd = findInterfaceDecl(nt.name)
+                    if sd as sdecl
+                        for st in sdecl.ifaces
+                            work.add(st)
+        return false
+
     def genIfaceVtable(class_name: str, ifc: DeclInterface)
         var iname = ifc.name
         for m in ifc.members
@@ -2460,6 +2490,33 @@ struct Generator
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${class_name}_${iname}_${meth.name},")
+        # Wire `__as_<Super>` pointers; `_vtable_<Class>_<Super>` is emitted by the
+        # transitive `implements` closure in genClass, so it is always available.
+        # Inline BFS over the super-interface closure (see superIfacesContains).
+        var vt_seen = StrSet()
+        var vt_work = List(TypeRef)()
+        for vtr in ifc.ifaces
+            vt_work.add(vtr)
+        var vti = 0
+        while vti < vt_work.count()
+            var vt_tr = vt_work.at(vti)
+            vti = vti + 1
+            if vt_tr is TypeRef.named as vnt
+                if not vt_seen.contains_(vnt.name)
+                    vt_seen.add(vnt.name)
+                    # Separate emits: vnt.name comes via List.at()+branch-bind, whose
+                    # str-ness the selfhost does not track for `${}` interpolation.
+                    w.emit(" .__as_")
+                    w.emit(vnt.name)
+                    w.emit(" = &_vtable_")
+                    w.emit(class_name)
+                    w.emit("_")
+                    w.emit(vnt.name)
+                    w.emit(",")
+                    var vsd = findInterfaceDecl(vnt.name)
+                    if vsd as vsdecl
+                        for vst in vsdecl.ifaces
+                            vt_work.add(vst)
         w.emit(" };\n")
 
     # ── genClass ──────────────────────────────────────────────────────────────
@@ -3233,6 +3290,41 @@ struct Generator
                 else
                     w.emit("void")
                 w.emit(",\n")
+        # Collect the transitive super-interface names once (inline BFS into a
+        # locally-constructed List, which the selfhost tracks), reused for the
+        # `__as_<Super>` vtable fields here and the forwarding methods below.
+        var if_supers = List(str)()
+        var if_seen = StrSet()
+        var if_work = List(TypeRef)()
+        for itr in ifc.ifaces
+            if_work.add(itr)
+        var ifw = 0
+        while ifw < if_work.count()
+            var if_tr = if_work.at(ifw)
+            ifw = ifw + 1
+            if if_tr is TypeRef.named as ifnt
+                if not if_seen.contains_(ifnt.name)
+                    if_seen.add(ifnt.name)
+                    if_supers.add(ifnt.name)
+                    var if_sd = findInterfaceDecl(ifnt.name)
+                    if if_sd as if_sdecl
+                        for if_st in if_sdecl.ifaces
+                            if_work.add(if_st)
+        # Super-interface re-projection pointers: one `__as_<Super>` per (transitive)
+        # implemented interface, enabling O(1) interface→interface upcasts.
+        # Use separate emits (not string interpolation): `sname` comes from a
+        # List.at() whose element type the selfhost does not track as str, so
+        # `${sname}` would format via Zig's `{any}` (byte-array) path.
+        var ifi = 0
+        while ifi < if_supers.count()
+            var sname = if_supers.at(ifi)
+            ifi = ifi + 1
+            vtig.writeIndent()
+            w.emit("__as_")
+            w.emit(sname)
+            w.emit(": *const ")
+            w.emit(sname)
+            w.emit(".VTable,\n")
         ig.writeIndent()
         w.emit("};\n")
 
@@ -3273,6 +3365,60 @@ struct Generator
                 w.emit(");\n")
                 ig.writeIndent()
                 w.emit("}\n")
+
+        # ── inherited forwarding methods (super-interface members) ────────
+        # A sub-interface IS-A super-interface, so its methods are callable
+        # directly; they dispatch through the `__as_<Super>` vtable pointer.
+        var fwi = 0
+        while fwi < if_supers.count()
+            var sname = if_supers.at(fwi)
+            fwi = fwi + 1
+            var sdopt = findInterfaceDecl(sname)
+            if sdopt as s
+                for smem in s.members
+                    if smem is Decl.method as smth
+                        var shadowed = false
+                        for omem in ifc.members
+                            if omem is Decl.method as omth
+                                if omth.name == smth.name
+                                    shadowed = true
+                        if not shadowed
+                            w.emit("\n")
+                            ig.writeIndent()
+                            w.emit("pub fn ")
+                            w.emit(smth.name)
+                            w.emit("(self: @This()")
+                            for p in smth.params
+                                w.emit(", ")
+                                w.emit(p.name)
+                                w.emit(": ")
+                                if p.type_ != nil
+                                    genType(p.type_ to!)
+                                else
+                                    w.emit("anytype")
+                            w.emit(") ")
+                            if smth.throws_
+                                w.emit("anyerror!")
+                            if smth.return_type != nil
+                                genType(smth.return_type to!)
+                            else
+                                w.emit("void")
+                            w.emit(" {\n")
+                            mig.writeIndent()
+                            if smth.throws_
+                                w.emit("return try self.vtable.__as_")
+                            else
+                                w.emit("return self.vtable.__as_")
+                            w.emit(sname)
+                            w.emit(".")
+                            w.emit(smth.name)
+                            w.emit("(self.ptr")
+                            for p in smth.params
+                                w.emit(", ")
+                                w.emit(p.name)
+                            w.emit(");\n")
+                            ig.writeIndent()
+                            w.emit("}\n")
 
         # ── check() — comptime conformance verifier ──────────────────────
         w.emit("\n")
@@ -3813,6 +3959,29 @@ struct Generator
                             genExpr(iinit)
                             w.emit(", .vtable = &_vtable_" + cc to! + "_" + itn2.name + " };\n")
                             return
+                        # Interface→interface upcast: `var b: IBase = f` where f: IFoo
+                        # and IFoo implements IBase. The two fat-pointer structs are
+                        # distinct Zig types; rebuild the target from the source's
+                        # erased ptr + the `__as_<Base>` vtable pointer. Bind the source
+                        # to a temp so a side-effecting init isn't evaluated twice.
+                        if .infer_ctx as ictx
+                            var rty = inferExpr(iinit, ictx)
+                            if rty is Type_.named as rnm
+                                if rnm != itn2.name
+                                    var rifc = findInterfaceDecl(rnm)
+                                    if rifc as rifc_decl
+                                        if superIfacesContains(rifc_decl, itn2.name)
+                                            var iiuid = w.nextUid()
+                                            var ikw4: str = "const"
+                                            if is_mut
+                                                ikw4 = "var"
+                                            writeIndent()
+                                            w.emit("const _ifsrc_" + iiuid.toString() + " = ")
+                                            genExpr(iinit)
+                                            w.emit(";\n")
+                                            writeIndent()
+                                            w.emit(ikw4 + " " + n.name + ": " + itn2.name + " = .{ .ptr = _ifsrc_" + iiuid.toString() + ".ptr, .vtable = _ifsrc_" + iiuid.toString() + ".vtable.__as_" + itn2.name + " };\n")
+                                            return
         writeIndent()
         # const vs var already computed above
         if is_mut
