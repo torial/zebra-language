@@ -3660,7 +3660,7 @@ pub const DeadCodeChecker = struct {
         }
     }
 
-    pub fn fnKey(self: *DeadCodeChecker, file: []const u8, fn_name: []const u8) []const u8 {
+    pub fn fnKey(self: *const DeadCodeChecker, file: []const u8, fn_name: []const u8) []const u8 {
         _ = self;
 // zbr:selfhost/Checker.zbr:111
         return _str_concat(_str_concat(file, "::", _allocator), fn_name, _allocator);

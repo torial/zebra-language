@@ -2973,15 +2973,24 @@ struct Generator
             if has_self or m.params.count() > 0
                 w.emit(", ")
         if has_self
-            # @pure: emit `self: *const Owner` so the method can be called
-            # on by-value/const receivers.  Opt-in; default = `*Owner`.
+            # `@pure` forces `*const`; otherwise auto-detect: a method that does not
+            # mutate self gets `*const Owner` so it is callable on by-value/const/rvalue
+            # receivers (method-chain temps, by-value params). A non-private method of a
+            # class with invariants gets an injected `defer self._check_invariant();`
+            # (takes *self), so it must stay `*` even when the body is non-mutating.
+            var will_inject_invariant = not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts
+            var use_const = m.mods.is_pure
+            if not use_const and not will_inject_invariant
+                if m.stmts as mc_body
+                    if not methodMutatesSelf(mc_body)
+                        use_const = true
             if is_generic
-                if m.mods.is_pure
+                if use_const
                     w.emit("self: *const @This()")
                 else
                     w.emit("self: *@This()")
             else
-                if m.mods.is_pure
+                if use_const
                     w.emit("self: *const ")
                 else
                     w.emit("self: *")
@@ -5201,6 +5210,13 @@ struct Generator
             w.emit("}\n")
         else
             var vname = fi.vars.at(0)
+            # The loop var is registered in `for_loop_vars` (to suppress stale branch
+            # deref) for the DURATION of this loop only. `for_loop_vars` is a shared
+            # StrSet, so it must be cleared on exit or the name leaks into sibling scopes
+            # and wrongly suppresses field-deref there (e.g. a later `g.cond` after a
+            # `for g in …` loop). Guard the removal on prior membership so a shadowing
+            # nested loop with the same name keeps the outer registration intact.
+            var _flv_had = for_loop_vars.contains_(vname)
             if isToRangeIter(fi.iter)
                 # for i in start.to(end) → numeric range loop
                 # Lower to: { var i: i64 = <start>; const _stop_i: i64 = <end>;
@@ -5429,6 +5445,10 @@ struct Generator
                     ig.genStmts(fi.else_ to!)
                 writeIndent()
                 w.emit("}\n")
+            # Loop scope ends: drop the loop var's "active" registration unless an
+            # enclosing scope had already registered it (shadowing).
+            if not _flv_had
+                for_loop_vars.removeOne(vname)
 
     # Emit `for a, b in list_of_pairs` — tuple List destructuring.
     # Generates: for (iter.items) |_zbr_tup| { const a = _zbr_tup.@"0"; ... }

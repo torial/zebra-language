@@ -3733,7 +3733,7 @@ pub const ClassTypes = struct {
         return self.ctor_params.items[@intCast(idx)];
     }
 
-    pub fn ctorParamCount(self: *ClassTypes) i64 {
+    pub fn ctorParamCount(self: *const ClassTypes) i64 {
 // zbr:selfhost/TypeChecker.zbr:244
         return @as(i64, @intCast(self.ctor_params.items.len));
     }
@@ -4976,7 +4976,7 @@ pub const InferCtx = struct {
         self.errors.append(_allocator, Diagnostic.init(file, line, col, message)) catch @panic("OOM");
     }
 
-    pub fn hasErrors(self: *InferCtx) bool {
+    pub fn hasErrors(self: *const InferCtx) bool {
 // zbr:selfhost/TypeChecker.zbr:980
         return _zebra_gt(@as(i64, @intCast(self.errors.items.len)), 0);
     }
@@ -5057,7 +5057,7 @@ pub const InferCtx = struct {
         self.warnings.append(_allocator, Diagnostic.init(file, line, col, message)) catch @panic("OOM");
     }
 
-    pub fn hasWarnings(self: *InferCtx) bool {
+    pub fn hasWarnings(self: *const InferCtx) bool {
 // zbr:selfhost/TypeChecker.zbr:1026
         return _zebra_gt(@as(i64, @intCast(self.warnings.items.len)), 0);
     }

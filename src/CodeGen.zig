@@ -692,6 +692,143 @@ fn bodyHasRaise(stmts: []const Ast.Stmt, tc_opt: ?*const TypeChecker.TypeCheckRe
     return false;
 }
 
+// ── Receiver-mutability analysis (method_chain / auto-`*const`) ──────────────
+// Decides whether a method's `self` can be `*const Owner` (read-only → callable on
+// by-value / const / rvalue receivers like a chained temp) or must be `*Owner`.
+// CONSERVATIVE: any assignment / copy-out / destruct / `return this` / ANY call keeps
+// the method `*` (a callee may take *self, which we cannot resolve without a fixpoint).
+// Only call-free, assignment-free methods relax to `*const`. The only failure mode is
+// being too strict; the round-trip gate validates every method of the compiler itself.
+fn methodMutatesSelf(stmts: []const Ast.Stmt) bool {
+    for (stmts) |s| if (stmtMutatesSelf(s)) return true;
+    return false;
+}
+
+fn stmtMutatesSelf(s: Ast.Stmt) bool {
+    switch (s) {
+        .assign, .copy_out, .destruct => return true,
+        .assign_except => |x| {
+            if (exprMentionsThis(x.target)) return true;
+            for (x.fields) |f| if (exprHasSelfCall(f.value)) return true;
+            return exprHasSelfCall(x.base);
+        },
+        .var_except => |x| {
+            for (x.fields) |f| if (exprHasSelfCall(f.value)) return true;
+            return exprHasSelfCall(x.base);
+        },
+        .var_    => |x| return if (x.init) |e| exprHasSelfCall(e) else false,
+        .return_ => |x| return if (x.value) |v| (v.* == .this or exprHasSelfCall(v)) else false,
+        .expr    => |e| return exprHasSelfCall(e),
+        .print   => |x| { for (x.args) |a| if (exprHasSelfCall(a)) return true; return false; },
+        .if_     => |x| {
+            if (exprHasSelfCall(x.cond)) return true;
+            if (methodMutatesSelf(x.then_body)) return true;
+            for (x.else_ifs) |ei| { if (exprHasSelfCall(ei.cond)) return true; if (methodMutatesSelf(ei.body)) return true; }
+            if (x.else_body) |eb| if (methodMutatesSelf(eb)) return true;
+            return false;
+        },
+        .while_  => |x| {
+            if (x.bind) |b| if (exprHasSelfCall(b.init)) return true;
+            if (exprHasSelfCall(x.cond)) return true;
+            if (methodMutatesSelf(x.body)) return true;
+            if (x.post_body) |pb| if (methodMutatesSelf(pb)) return true;
+            return false;
+        },
+        .for_in  => |x| {
+            if (exprHasSelfCall(x.iter)) return true;
+            if (x.where) |w| if (exprHasSelfCall(w)) return true;
+            if (methodMutatesSelf(x.body)) return true;
+            if (x.else_) |eb| if (methodMutatesSelf(eb)) return true;
+            return false;
+        },
+        .for_num => |x| {
+            if (exprHasSelfCall(x.start) or exprHasSelfCall(x.stop)) return true;
+            if (x.step) |stp| if (exprHasSelfCall(stp)) return true;
+            if (methodMutatesSelf(x.body)) return true;
+            if (x.else_) |eb| if (methodMutatesSelf(eb)) return true;
+            return false;
+        },
+        .branch  => |x| {
+            if (exprHasSelfCall(x.expr)) return true;
+            for (x.on) |on| {
+                for (on.values) |v| if (exprHasSelfCall(v)) return true;
+                if (on.guard) |gd| if (exprHasSelfCall(gd)) return true;
+                if (methodMutatesSelf(on.body)) return true;
+            }
+            if (x.else_) |eb| if (methodMutatesSelf(eb)) return true;
+            return false;
+        },
+        .with        => |x| { if (exprHasSelfCall(x.target)) return true; return methodMutatesSelf(x.body); },
+        .arena_scope => |x| return methodMutatesSelf(x.body),
+        .allocate_   => |x| { if (exprHasSelfCall(x.source)) return true; return methodMutatesSelf(x.body); },
+        .guard   => |x| { if (exprHasSelfCall(x.cond)) return true; return methodMutatesSelf(x.else_body); },
+        .defer_  => |x| return methodMutatesSelf(&.{x.body}),
+        else => return true,
+    }
+}
+
+/// True if `e` contains ANY call (a callee may take *self).
+fn exprHasSelfCall(e: *const Ast.Expr) bool {
+    switch (e.*) {
+        .call => return true,
+        .opt_chain => |x| { if (x.args != null) return true; return exprHasSelfCall(x.base); },
+        .member => |x| return exprHasSelfCall(x.object),
+        .binary => |x| return exprHasSelfCall(x.left) or exprHasSelfCall(x.right),
+        .unary  => |x| return exprHasSelfCall(x.operand),
+        .index  => |x| return exprHasSelfCall(x.object) or exprHasSelfCall(x.index),
+        .slice  => |x| return exprHasSelfCall(x.object) or (if (x.start) |s| exprHasSelfCall(s) else false) or (if (x.stop) |s| exprHasSelfCall(s) else false),
+        .if_expr => |x| return exprHasSelfCall(x.cond) or exprHasSelfCall(x.then_expr) or exprHasSelfCall(x.else_expr),
+        .orelse_ => |x| return exprHasSelfCall(x.expr) or exprHasSelfCall(x.fallback),
+        .catch_  => |x| return exprHasSelfCall(x.expr) or exprHasSelfCall(x.fallback),
+        .to_nilable => |x| return exprHasSelfCall(x.expr),
+        .to_non_nil => |x| return exprHasSelfCall(x.expr),
+        .is_nil  => |x| return exprHasSelfCall(x.expr),
+        .cast    => |x| return exprHasSelfCall(x.expr),
+        .old     => |x| return exprHasSelfCall(x.expr),
+        .try_    => |x| return exprHasSelfCall(x.expr),
+        .type_check => |x| return exprHasSelfCall(x.expr),
+        .chained_cmp => |x| { for (x.operands) |op| if (exprHasSelfCall(op)) return true; return false; },
+        .list_lit  => |x| { for (x.elems) |el| if (exprHasSelfCall(el)) return true; return false; },
+        .array_lit => |x| { for (x.elems) |el| if (exprHasSelfCall(el)) return true; return false; },
+        .tuple_lit => |x| { for (x.elems) |el| if (exprHasSelfCall(el)) return true; return false; },
+        .dict_lit  => |x| { for (x.entries) |en| if (exprHasSelfCall(en.key) or exprHasSelfCall(en.value)) return true; return false; },
+        .string_interp => |x| { for (x.parts) |p| switch (p) { .expr => |ex| if (exprHasSelfCall(ex)) return true, else => {} }; return false; },
+        .lambda => |x| switch (x.body) { .expr => |ex| return exprHasSelfCall(ex), .stmts => |ss| return methodMutatesSelf(ss) },
+        else => return false,
+    }
+}
+
+/// True if `e` (recursively) mentions the receiver `this`.
+fn exprMentionsThis(e: *const Ast.Expr) bool {
+    switch (e.*) {
+        .this => return true,
+        .call => |x| { if (exprMentionsThis(x.callee)) return true; for (x.args) |a| if (exprMentionsThis(a.value)) return true; return false; },
+        .opt_chain => |x| { if (exprMentionsThis(x.base)) return true; if (x.args) |args| for (args) |a| if (exprMentionsThis(a.value)) return true; return false; },
+        .member => |x| return exprMentionsThis(x.object),
+        .binary => |x| return exprMentionsThis(x.left) or exprMentionsThis(x.right),
+        .unary  => |x| return exprMentionsThis(x.operand),
+        .index  => |x| return exprMentionsThis(x.object) or exprMentionsThis(x.index),
+        .slice  => |x| return exprMentionsThis(x.object) or (if (x.start) |s| exprMentionsThis(s) else false) or (if (x.stop) |s| exprMentionsThis(s) else false),
+        .if_expr => |x| return exprMentionsThis(x.cond) or exprMentionsThis(x.then_expr) or exprMentionsThis(x.else_expr),
+        .orelse_ => |x| return exprMentionsThis(x.expr) or exprMentionsThis(x.fallback),
+        .catch_  => |x| return exprMentionsThis(x.expr) or exprMentionsThis(x.fallback),
+        .to_nilable => |x| return exprMentionsThis(x.expr),
+        .to_non_nil => |x| return exprMentionsThis(x.expr),
+        .is_nil  => |x| return exprMentionsThis(x.expr),
+        .cast    => |x| return exprMentionsThis(x.expr),
+        .old     => |x| return exprMentionsThis(x.expr),
+        .try_    => |x| return exprMentionsThis(x.expr),
+        .type_check => |x| return exprMentionsThis(x.expr),
+        .chained_cmp => |x| { for (x.operands) |op| if (exprMentionsThis(op)) return true; return false; },
+        .list_lit  => |x| { for (x.elems) |el| if (exprMentionsThis(el)) return true; return false; },
+        .array_lit => |x| { for (x.elems) |el| if (exprMentionsThis(el)) return true; return false; },
+        .tuple_lit => |x| { for (x.elems) |el| if (exprMentionsThis(el)) return true; return false; },
+        .dict_lit  => |x| { for (x.entries) |en| if (exprMentionsThis(en.key) or exprMentionsThis(en.value)) return true; return false; },
+        .string_interp => |x| { for (x.parts) |p| switch (p) { .expr => |ex| if (exprMentionsThis(ex)) return true, else => {} }; return false; },
+        else => return false,
+    }
+}
+
 /// Returns true if the try block needs a mutable `_try_err` variable — i.e., when
 /// the body contains either a `raise` statement or a `try expr` expression (both of
 /// which route errors through the tracking variable).
@@ -5317,7 +5454,14 @@ const Generator = struct {
             // `@pure` opts the method into `self: *const Owner` so callers can
             // invoke it on by-value/const receivers (e.g. Vector3.len() on a
             // `Vector3` by-value param).  Default: `*Owner` (current behavior).
-            const self_qual: []const u8 = if (n.mods.pure) "*const " else "*";
+            // `@pure` forces `*const`; otherwise auto-detect non-mutating methods so
+            // they take `*const Owner` (callable on by-value/const/rvalue receivers —
+            // method-chain temps, by-value params). A non-private method of a class with
+            // invariants gets an injected `defer self._check_invariant()` (takes *self),
+            // so it must stay `*` even when the source body is non-mutating.
+            const will_inject_invariant = !n.mods.private and g.owner_invariants.len > 0 and !g.strip_contracts;
+            const non_mutating = !will_inject_invariant and (if (n.body) |b| !methodMutatesSelf(b) else false);
+            const self_qual: []const u8 = if (n.mods.pure or non_mutating) "*const " else "*";
             // Generic class methods use *@This() (the struct is anonymous inside the comptime fn).
             if (g.is_generic) {
                 try g.w.print("self: {s}@This()", .{self_qual});

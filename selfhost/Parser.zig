@@ -4735,7 +4735,7 @@ pub const Parser = struct {
         }
     }
 
-    pub fn isRecoveryStarter(self: *Parser, kind: Token.TokenKind) bool {
+    pub fn isRecoveryStarter(self: *const Parser, kind: Token.TokenKind) bool {
         _ = self;
 // zbr:selfhost/Parser.zbr:769
         switch (kind) {
@@ -4852,7 +4852,7 @@ pub const Parser = struct {
         }
     }
 
-    pub fn isStmtKeyword(self: *Parser, text: []const u8) bool {
+    pub fn isStmtKeyword(self: *const Parser, text: []const u8) bool {
         _ = self;
 // zbr:selfhost/Parser.zbr:827
         const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|defer|";

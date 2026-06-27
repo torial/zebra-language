@@ -67,6 +67,15 @@ class StrSet
                 new_items.add(item)
         _items = new_items
 
+    # Named `removeOne` (not `remove`) because the selfhost codegen maps a bare
+    # `.remove()` call to ArrayList's `orderedRemove`, which StrSet does not have.
+    def removeOne(s: str)
+        var new_items = List(str)()
+        for item in _items
+            if item != s
+                new_items.add(item)
+        _items = new_items
+
     def count(): int
         return _items.count()
 
@@ -1145,6 +1154,244 @@ def scanMutations(stmts: List(Stmt)): StrSet
     var out = StrSet()
     scanMutationsInto(stmts, out)
     return out
+
+# ── Receiver-mutability analysis (method_chain) ───────────────────────────────
+# True if a method body mutates the receiver `this`, deciding `*Owner` vs
+# `*const Owner`. CONSERVATIVE: any assignment / copy-out / destruct / `return this`
+# / ANY call keeps the method `*` (a callee may take *self). Only call-free,
+# assignment-free methods relax to `*const`. Mirrors src/CodeGen.zig.
+def isThisReturn(e: Expr): bool
+    branch e
+        on Expr.this_
+            return true
+        else
+            return false
+
+def methodMutatesSelf(stmts: List(Stmt)): bool
+    for s in stmts
+        if stmtMutatesSelf(s)
+            return true
+    return false
+
+def stmtMutatesSelf(s: Stmt): bool
+    branch s
+        on Stmt.assign
+            return true
+        on Stmt.copy_out
+            return true
+        on Stmt.destruct
+            return true
+        on Stmt.var_ as n
+            if n.init_expr != nil
+                return exprHasSelfCall(n.init_expr to!)
+            return false
+        on Stmt.return_ as r
+            if r.value != nil
+                if isThisReturn(r.value to!)
+                    return true
+                return exprHasSelfCall(r.value to!)
+            return false
+        on Stmt.expr as e
+            return exprHasSelfCall(e)
+        on Stmt.print_ as p
+            var pi = 0
+            while pi < p.args.count()
+                if exprHasSelfCall(p.args.at(pi))
+                    return true
+                pi += 1
+            return false
+        on Stmt.if_ as si
+            if exprHasSelfCall(si.cond)
+                return true
+            if methodMutatesSelf(si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if exprHasSelfCall(ei.cond)
+                    return true
+                if methodMutatesSelf(ei.stmts)
+                    return true
+            if si.else_stmts as se
+                if methodMutatesSelf(se)
+                    return true
+            return false
+        on Stmt.while_ as w
+            if exprHasSelfCall(w.cond)
+                return true
+            return methodMutatesSelf(w.stmts)
+        on Stmt.for_in as f
+            if exprHasSelfCall(f.iter)
+                return true
+            if f.filter != nil
+                if exprHasSelfCall(f.filter to!)
+                    return true
+            if methodMutatesSelf(f.stmts)
+                return true
+            if f.else_ as fe
+                if methodMutatesSelf(fe)
+                    return true
+            return false
+        on Stmt.for_num as fnum
+            if exprHasSelfCall(fnum.start)
+                return true
+            if exprHasSelfCall(fnum.stop_)
+                return true
+            if fnum.step != nil
+                if exprHasSelfCall(fnum.step to!)
+                    return true
+            if methodMutatesSelf(fnum.stmts)
+                return true
+            if fnum.else_ as fne
+                if methodMutatesSelf(fne)
+                    return true
+            return false
+        on Stmt.branch_ as b
+            if exprHasSelfCall(b.expr)
+                return true
+            for c in b.cases
+                for v in c.values
+                    if exprHasSelfCall(v)
+                        return true
+                for g in c.guard_expr
+                    if exprHasSelfCall(g)
+                        return true
+                if methodMutatesSelf(c.stmts)
+                    return true
+            if b.else_ as be
+                if methodMutatesSelf(be)
+                    return true
+            return false
+        on Stmt.with_ as w
+            if exprHasSelfCall(w.target)
+                return true
+            return methodMutatesSelf(w.stmts)
+        on Stmt.in_scope as si_m
+            return methodMutatesSelf(si_m.stmts)
+        on Stmt.allocate_ as al
+            if exprHasSelfCall(al.source)
+                return true
+            return methodMutatesSelf(al.stmts)
+        on Stmt.guard_ as g
+            if exprHasSelfCall(g.cond)
+                return true
+            return methodMutatesSelf(g.else_stmts)
+        on Stmt.defer_ as d
+            return stmtMutatesSelf(d.stmt)
+        on Stmt.assert_ as a
+            return exprHasSelfCall(a.cond)
+        on Stmt.assert_eq_ as a
+            return exprHasSelfCall(a.lhs) or exprHasSelfCall(a.rhs)
+        on Stmt.assert_ne_ as a
+            return exprHasSelfCall(a.lhs) or exprHasSelfCall(a.rhs)
+        on Stmt.assert_true_ as a
+            return exprHasSelfCall(a.expr)
+        on Stmt.assert_false_ as a
+            return exprHasSelfCall(a.expr)
+        on Stmt.pass_
+            return false
+        on Stmt.break_
+            return false
+        on Stmt.continue_
+            return false
+        on Stmt.contract
+            return false
+        else
+            return true
+
+# True if `e` contains ANY call (a callee may take *self). Mirrors src/CodeGen.zig.
+def exprHasSelfCall(e: Expr): bool
+    branch e
+        on Expr.call
+            return true
+        on Expr.opt_chain as x
+            if x.has_args
+                return true
+            return exprHasSelfCall(x.base)
+        on Expr.member as m
+            return exprHasSelfCall(m.object)
+        on Expr.binary as b
+            return exprHasSelfCall(b.left) or exprHasSelfCall(b.right)
+        on Expr.unary as u
+            return exprHasSelfCall(u.operand)
+        on Expr.index as ix
+            return exprHasSelfCall(ix.object) or exprHasSelfCall(ix.index)
+        on Expr.slice as sl
+            if exprHasSelfCall(sl.object)
+                return true
+            if sl.start != nil
+                if exprHasSelfCall(sl.start to!)
+                    return true
+            if sl.stop_ != nil
+                if exprHasSelfCall(sl.stop_ to!)
+                    return true
+            return false
+        on Expr.cast as c
+            return exprHasSelfCall(c.expr)
+        on Expr.to_nilable as t
+            return exprHasSelfCall(t.expr)
+        on Expr.to_non_nil as t
+            return exprHasSelfCall(t.expr)
+        on Expr.is_nil as t
+            return exprHasSelfCall(t.expr)
+        on Expr.try_ as t
+            return exprHasSelfCall(t.expr)
+        on Expr.type_check as t
+            return exprHasSelfCall(t.expr)
+        on Expr.old_ as o
+            return exprHasSelfCall(o.operand)
+        on Expr.if_expr as i
+            return exprHasSelfCall(i.cond) or exprHasSelfCall(i.then_expr) or exprHasSelfCall(i.else_expr)
+        on Expr.orelse_ as o
+            return exprHasSelfCall(o.expr) or exprHasSelfCall(o.fallback)
+        on Expr.catch_ as ca
+            return exprHasSelfCall(ca.expr) or exprHasSelfCall(ca.fallback)
+        on Expr.except_ as ex
+            if exprHasSelfCall(ex.base)
+                return true
+            for fld in ex.fields
+                if exprHasSelfCall(fld.value)
+                    return true
+            return false
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if exprHasSelfCall(op)
+                    return true
+            return false
+        on Expr.list_lit as l
+            for el in l.elems
+                if exprHasSelfCall(el)
+                    return true
+            return false
+        on Expr.array_lit as l
+            for el in l.elems
+                if exprHasSelfCall(el)
+                    return true
+            return false
+        on Expr.tuple_lit as l
+            for el in l.elems
+                if exprHasSelfCall(el)
+                    return true
+            return false
+        on Expr.dict_lit as d
+            for entry in d.entries
+                if exprHasSelfCall(entry.key)
+                    return true
+                if exprHasSelfCall(entry.value)
+                    return true
+            return false
+        on Expr.string_interp as si
+            for part in si.parts
+                if part is StringPart.expr_ as pe
+                    if exprHasSelfCall(pe)
+                        return true
+            return false
+        on Expr.lambda as lam
+            branch lam.body_
+                on LambdaBody.expr_ as le
+                    return exprHasSelfCall(le)
+                on LambdaBody.stmts as ls
+                    return methodMutatesSelf(ls)
+        else
+            return false
 
 # ── BUG-091: List(T)/HashMap(K,V) param mutation → addr-of param convention ─
 #

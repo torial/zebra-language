@@ -5,7 +5,12 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 140 passed, **1 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: **141 passed, 0 FAILED**, 1 skipped (down from 16 at discovery)
+
+*Update 2026-06-27: method_chain FIXED — compile-check reaches **0 failures** and the
+bootstrap round-trip is byte-identical. Auto-`*const` for non-mutating methods landed in
+both compilers, AND the selfhost-codegen blocker that reverted the first attempt was
+root-caused and fixed. See the method_chain section below for the full story.*
 
 *Update 2026-06-26: tc_iface_i2i FIXED (interface→interface upcast in var-init).
 Both compilers now give every sub-interface vtable an `__as_<Super>: *const
@@ -56,7 +61,7 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 > the laptop's degraded/locked-up network state that prompted the reboot. After reboot,
 > the cache is already gone/fresh, so the first `zig build` will just be slow, not broken.
 
-### Remaining 1 — method_chain (see below)
+### method_chain — FIXED 2026-06-27 (compile-check → 0)
 
 ### tc_iface_generic — FIXED 2026-06-26
 Generic classes emitted **no** interface vtables, so coercing a generic instance to an
@@ -127,23 +132,39 @@ just the canonical path.
   - **compile-check reached 141 passed / 0 FAILED** — the selfhost binary compiles AND
     runs `method_chain` (109/42/20/30). The fix is *correct*.
 
-  **The blocker (why reverted):** the **self-hosting round-trip** breaks. The bootstrap
-  emits the analysis code (in `CgHelpers.zbr`) to buildable Zig, but the **selfhost
-  compiler miscompiles its own analysis code** — specifically passing a `^Expr` *struct
-  field from a Stmt arm* (e.g. `exprHasSelfCall(w.cond)` where `w` is bound from
-  `Stmt.while_`) to a function taking `Expr` by value: the bootstrap emits the `.*`
-  field-deref, the selfhost does not, yielding `expected Ast.Expr, found *Ast.Expr` when
-  building selfhost-B. `scanMutationsInExpr` never exercises this (it only passes
-  Stmt.expr *payloads* and Expr-arm sub-exprs, never a Stmt struct's `^Expr` field), so
-  the path was untested. Root: the selfhost AST mixes `Expr`-by-value and `^Expr` fields
-  with inconsistent field-read auto-deref. A broken round-trip violates the project's
-  core self-hosting invariant, so the change was reverted to the clean 140/1.
+  **The blocker that reverted attempt-1, and its true root cause (fixed 2026-06-27):**
+  the self-hosting round-trip broke — the selfhost compiler miscompiled *its own* analysis
+  code. The first theory ("`^Expr` struct field passed to a by-value-`Expr` function isn't
+  auto-deref'd") was a **symptom**, not the cause. The actual root cause was a latent
+  **`for_loop_vars` StrSet leak** in the selfhost `genForIn`:
 
-  **Next time:** the analysis + wiring are correct and proven — port them back, but FIRST
-  fix the selfhost codegen so a `^Expr` struct field passed to a by-value-`Expr` function
-  emits `.*` consistently (or restructure the helpers to take `^Expr`/bind the field to a
-  Stmt.expr-style payload before the call). Then the round-trip will hold and compile-check
-  goes to 0. The analysis code itself is recoverable from this session's transcript.
+  - `genForIn` did `for_loop_vars.add(vname)` to suppress stale branch-deref while emitting
+    a loop body, but **never removed it afterward** (StrSet is a shared reference on the
+    generator). The name leaked past the loop.
+  - The analysis helpers happened to reuse `g` as a for-loop variable (`for g in
+    c.guard_expr …`) *and* as a `Stmt.guard_ as g` binding. With `g` stuck in
+    `for_loop_vars`, the later guard-binding field read `g.cond` was emitted **without** its
+    `.*` deref (the suppression meant for loop vars), so selfhost-B saw `expected Ast.Expr,
+    found *Ast.Expr`. The bootstrap (which scopes its arena/loop-var state by nesting depth)
+    emitted `g.cond.*` correctly — hence the divergence.
+
+  **Fix:** scope the loop-var registration in `genForIn` — save whether `vname` was already
+  present, and `for_loop_vars.removeOne(vname)` at the end of the loop if we added it. Added
+  `StrSet.removeOne` to `CgHelpers.zbr` (named `removeOne`, *not* `remove`, because the
+  selfhost codegen rewrites a bare `.remove()` call to ArrayList's `orderedRemove`, which
+  StrSet lacks). With the leak fixed, the analysis helpers round-trip and the full
+  auto-`*const` wiring was re-applied to both compilers.
+
+  **Two further selfhost/bootstrap divergences surfaced once the selfhost emitted `*const`
+  for its own methods** (each caught by the round-trip build, then fixed):
+  1. `exprHasSelfCall` was missing the `Expr.lambda` arm in the selfhost — a method whose
+     only call lived inside a lambda body was mis-classified non-mutating (the bootstrap had
+     the arm). Added the lambda case (recurses into `LambdaBody.expr_` / `.stmts`).
+  2. The `.remove()`→`orderedRemove` rewrite (above) — resolved by the `removeOne` rename.
+
+  **Result:** compile-check **141 / 0**, bootstrap round-trip **byte-identical**
+  (selfhost-B == selfhost-A), selfhost runs `method_chain` (109/42/20/30). The
+  self-hosting invariant holds.
 
 ### allocate_slice5 — FIXED 2026-06-26
 The earlier `cur_alloc_uid` save/restore theory (and its "bare-field-write
@@ -201,8 +222,12 @@ the allow-list would prevent future recurrences — but watch the `sort`/`revers
 divergence (selfhost treats them read-only to avoid never-mutated on sort-only lists).
 
 ## Next steps
-1. Clear the remaining 9 (start with the 3 iface — one fix), each gated by
-   compile-check + bootstrap gate + smoke.
-2. Wire `compile-check` into `zig build` (blocking) once green.
+1. **DONE — compile-check is at 0 failures (141/0/1).** All originally-discovered
+   failures are cleared and the bootstrap round-trip is byte-identical.
+2. Wire `compile-check` into `zig build` (blocking) now that it is green — this is the
+   remaining 1.0 item that keeps it from regressing silently.
 3. Consider extending it to the bootstrap emit (`--bootstrap`) for full parity,
    and to the broader `test/*.zbr` set beyond positive-smoke.
+
+*The 1 skipped is a known intentional skip (a fixture that needs a flag/path the
+positive-smoke harness doesn't supply), not a failure.*

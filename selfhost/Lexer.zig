@@ -3586,12 +3586,12 @@ pub const Lexer = struct {
         return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_allocator, "{}", .{ln}) catch unreachable), ":", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{cl}) catch unreachable), _allocator), ": unexpected character '", _allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(b), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _allocator), "'", _allocator);
     }
 
-    pub fn col(self: *Lexer) i64 {
+    pub fn col(self: *const Lexer) i64 {
 // zbr:selfhost/Lexer.zbr:114
         return ((self.pos - self.lineStart) + 1);
     }
 
-    pub fn peek(self: *Lexer) u21 {
+    pub fn peek(self: *const Lexer) u21 {
 // zbr:selfhost/Lexer.zbr:117
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:118
@@ -3601,7 +3601,7 @@ pub const Lexer = struct {
         return '\x00';
     }
 
-    pub fn peek1(self: *Lexer) u21 {
+    pub fn peek1(self: *const Lexer) u21 {
 // zbr:selfhost/Lexer.zbr:122
         if (_zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:123
@@ -3611,7 +3611,7 @@ pub const Lexer = struct {
         return '\x00';
     }
 
-    pub fn peekAt(self: *Lexer, offset: i64) u21 {
+    pub fn peekAt(self: *const Lexer, offset: i64) u21 {
         if (!(_zebra_ge(offset, 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
 // zbr:selfhost/Lexer.zbr:129
         if (_zebra_lt((self.pos + offset), @as(i64, @intCast(self.src.len)))) {
