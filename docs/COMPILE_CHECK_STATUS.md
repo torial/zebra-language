@@ -224,8 +224,10 @@ divergence (selfhost treats them read-only to avoid never-mutated on sort-only l
 ## Next steps
 1. **DONE — compile-check is at 0 failures (141/0/1).** All originally-discovered
    failures are cleared and the bootstrap round-trip is byte-identical.
-2. Wire `compile-check` into `zig build` (blocking) now that it is green — this is the
-   remaining 1.0 item that keeps it from regressing silently.
+2. **DONE — wired as `zig build compile-check`** (commit 2346025). Kept off the default
+   `test` step (it runs ~144 `build-exe` invocations / minutes); a one-line opt-in
+   (`test_step.dependOn(&compile_check.step)`, documented inline in build.zig) makes it
+   blocking on `zig build test` when desired.
 3. Consider extending it to the bootstrap emit (`--bootstrap`) for full parity,
    and to the broader `test/*.zbr` set beyond positive-smoke.
 
