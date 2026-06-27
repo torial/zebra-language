@@ -107,12 +107,43 @@ just the canonical path.
   **Why deferred to a focused session (not done autonomously 2026-06-26):** it changes
   the method receiver-mutability model and must be wired into the *self-compiling*
   compiler's own `genMethod` — a wrong "pure" verdict on any mutating compiler method
-  makes the regenerated compiler fail to build. The round-trip gate + rebuild ARE a
-  strong safety net (a bad verdict can't silently ship), so this is tractable and
-  bounded — but it warrants deliberate work with the analysis validated against the full
-  compiler, ideally in the loop. A narrow call-arg materialisation alone was tried and
-  reverted: it fixed the chain patterns but not `b.getVal()` (const-param receiver), so
-  it does not close the test.
+  makes the regenerated compiler fail to build. A narrow call-arg materialisation alone
+  was tried and reverted: it fixed the chain patterns but not `b.getVal()` (const-param
+  receiver), so it does not close the test.
+
+  **Auto-`*const` ATTEMPT 2026-06-27 — works for compile-check (141/0) but reverted; one
+  selfhost-codegen blocker remains.** Implemented a conservative `methodMutatesSelf`
+  (mutating iff body has any assignment / copy-out / destruct / `return this` / ANY call
+  — a call may take `*self`; only call-free, assignment-free methods relax to `*const`),
+  plus an invariant guard (a non-private method of a class with invariants gets an
+  injected `defer self._check_invariant()` that needs `*self`, so it stays `*`). Wired
+  into both `genMethod`s. Validation went well:
+  - The analysis is **safe across the whole compiler**: regenerating ALL `selfhost/*.zig`
+    via the bootstrap (with the analysis) built cleanly after iterating the conservative
+    rule to convergence (caught false-pures via the round-trip build: `.append` on a bare
+    field name; the invariant injection; bare instance calls `peek()`; and statement-level
+    subexpressions — branch subject, for-in iter, for-num range, while post-body, branch
+    guards). Each was the gate doing its job.
+  - **compile-check reached 141 passed / 0 FAILED** — the selfhost binary compiles AND
+    runs `method_chain` (109/42/20/30). The fix is *correct*.
+
+  **The blocker (why reverted):** the **self-hosting round-trip** breaks. The bootstrap
+  emits the analysis code (in `CgHelpers.zbr`) to buildable Zig, but the **selfhost
+  compiler miscompiles its own analysis code** — specifically passing a `^Expr` *struct
+  field from a Stmt arm* (e.g. `exprHasSelfCall(w.cond)` where `w` is bound from
+  `Stmt.while_`) to a function taking `Expr` by value: the bootstrap emits the `.*`
+  field-deref, the selfhost does not, yielding `expected Ast.Expr, found *Ast.Expr` when
+  building selfhost-B. `scanMutationsInExpr` never exercises this (it only passes
+  Stmt.expr *payloads* and Expr-arm sub-exprs, never a Stmt struct's `^Expr` field), so
+  the path was untested. Root: the selfhost AST mixes `Expr`-by-value and `^Expr` fields
+  with inconsistent field-read auto-deref. A broken round-trip violates the project's
+  core self-hosting invariant, so the change was reverted to the clean 140/1.
+
+  **Next time:** the analysis + wiring are correct and proven — port them back, but FIRST
+  fix the selfhost codegen so a `^Expr` struct field passed to a by-value-`Expr` function
+  emits `.*` consistently (or restructure the helpers to take `^Expr`/bind the field to a
+  Stmt.expr-style payload before the call). Then the round-trip will hold and compile-check
+  goes to 0. The analysis code itself is recoverable from this session's transcript.
 
 ### allocate_slice5 — FIXED 2026-06-26
 The earlier `cur_alloc_uid` save/restore theory (and its "bare-field-write
