@@ -62,9 +62,31 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
   `_vtable_Box_Printable`. Needs per-instantiation vtable + shims emitted *inside* the
   generic `struct` body (referencing `@This()`), and the coercion site to reference
   `Box(i64)._vtable_Printable`. Touches generic monomorphization in both compilers.
-- **bug091_dispatch** — List passed to a method that fills it via pointer; mutation-
-  via-arg not detected (var emitted but never directly mutated).
-- **method_chain** — chained temp is `*const T` where callee wants `*T`.
+- **bug091_dispatch** — `this.helperList(items)` / `f.helperList(items2)` emit the
+  argument by value (`items`) instead of `&items`, where `helperList` takes
+  `out: *std.ArrayList` (the param side, via `paramNeedsAddrOf`, is already correct).
+  Both a compile error ("never mutated") and a latent runtime bug (appends hit a copy).
+  **Diagnosis (selfhost vs bootstrap convergence, investigated 2026-06-26):** the
+  bootstrap (src/) emits `&items` and compiles+runs. The selfhost has the call-site
+  addr-of logic at `CodeGen.zbr` genMemberCall (~10551-10577), gated on
+  `mc_params != nil` and `paramNeedsAddrOf(mp, mc_body)`. `mc_params`/`mc_body` are
+  resolved at ~10455-10473 from the receiver shape: `Expr.this_` → `owner + "." + mname`;
+  `Expr.ident` non-class → `inferExpr(object)` then `inferred + "." + mname`. Both
+  `lookupFnParams` and `lookupFnBody` *do* cover class methods, so the gap is upstream:
+  the resolution yields nil for these two shapes — most likely `owner == ""` during the
+  `this.helperList` emission and/or `infer_ctx` nil (or `inferExpr(f)` not → `Filler`)
+  for the `f.helperList` emission. **Next step:** instrument those two branches (or log
+  `mc_params == nil`) to confirm which, then ensure `owner`/`infer_ctx` are populated
+  during method/main body emit. Small fix once confirmed; needs one instrument+rebuild
+  cycle.
+- **method_chain** — `acceptBuilder(makeBuilder(5).withVal(30))`: the materialized
+  chain temp is `*const Builder` but `withVal` takes `self: *Builder`. Root is
+  callee-side: `withVal` doesn't mutate self (it uses the `this except` idiom) yet still
+  emits `*Builder` instead of `*const Builder` — the `methodMutatesSelf` analysis likely
+  counts `this except` (a read of self) or doesn't apply to struct methods. Fix: have
+  `methodMutatesSelf` return false for `except`-only methods so the receiver is
+  `*const`, which makes the const chain-temp coerce. (Bootstrap also fails this — NOT a
+  pure convergence fix; both compilers need the analysis change.)
 
 ### allocate_slice5 — FIXED 2026-06-26
 The earlier `cur_alloc_uid` save/restore theory (and its "bare-field-write
