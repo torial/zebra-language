@@ -2370,6 +2370,25 @@ struct Generator
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
+        # Per-instantiation interface vtables inside the struct (implemented ifaces
+        # + their transitive super closure, deduped), so a generic instance coerces
+        # to an interface: `var b: I = Box(i64)(...)`. Inline BFS, deduped by name.
+        var gv_seen = StrSet()
+        var gv_work = List(TypeRef)()
+        for gtr in n.ifaces
+            gv_work.add(gtr)
+        var gvi = 0
+        while gvi < gv_work.count()
+            var gv_tr = gv_work.at(gvi)
+            gvi = gvi + 1
+            if gv_tr is TypeRef.named as gnt
+                if not gv_seen.contains_(gnt.name)
+                    gv_seen.add(gnt.name)
+                    var gv_ifc = findInterfaceDecl(gnt.name)
+                    if gv_ifc as gv_decl
+                        ig.genIfaceVtableInStruct(gv_decl)
+                        for gv_super in gv_decl.ifaces
+                            gv_work.add(gv_super)
         fg.writeIndent()
         fg.w.emit("};\n")
         writeIndent()
@@ -2509,6 +2528,71 @@ struct Generator
                     w.emit(" = &_vtable_")
                     w.emit(class_name)
                     w.emit("_")
+                    w.emit(vnt.name)
+                    w.emit(",")
+                    var vsd = findInterfaceDecl(vnt.name)
+                    if vsd as vsdecl
+                        for vst in vsdecl.ifaces
+                            vt_work.add(vst)
+        w.emit(" };\n")
+
+    # Interface shims + vtable emitted INSIDE a generic class's struct body, so each
+    # instantiation (Box(i64)) gets its own monomorphized `_vtable_<Iface>`. Shims
+    # reference @This() (the instantiated struct), not a class name. Coercion sites
+    # reference these as `Box(i64)._vtable_<Iface>`. Emits at the current generator's
+    # indent (call as `ig.genIfaceVtableInStruct(iface)` with ig = struct body).
+    def genIfaceVtableInStruct(ifc: DeclInterface)
+        var iname = ifc.name
+        for m in ifc.members
+            if m is Decl.method as meth
+                writeIndent()
+                w.emit("fn _shim_${iname}_${meth.name}(ptr: *anyopaque")
+                for p in meth.params
+                    w.emit(", " + p.name + ": ")
+                    if p.type_ != nil
+                        genType(p.type_ to!)
+                    else
+                        w.emit("anytype")
+                w.emit(") ")
+                if meth.throws_
+                    w.emit("anyerror!")
+                if meth.return_type != nil
+                    genType(meth.return_type to!)
+                else
+                    w.emit("void")
+                if meth.throws_
+                    w.emit(" { return try @as(*@This(), @alignCast(@ptrCast(ptr))).")
+                else
+                    w.emit(" { return @as(*@This(), @alignCast(@ptrCast(ptr))).")
+                w.emit(meth.name)
+                w.emit("(")
+                var first = true
+                for p in meth.params
+                    if not first
+                        w.emit(", ")
+                    first = false
+                    w.emit(p.name)
+                w.emit("); }\n")
+        writeIndent()
+        w.emit("const _vtable_${iname} = ${iname}.VTable{")
+        for m in ifc.members
+            if m is Decl.method as meth
+                w.emit(" .${meth.name} = &_shim_${iname}_${meth.name},")
+        # Super-interface __as_ wiring (inline BFS; separate emits for .at()-derived names).
+        var vt_seen = StrSet()
+        var vt_work = List(TypeRef)()
+        for tr in ifc.ifaces
+            vt_work.add(tr)
+        var vti = 0
+        while vti < vt_work.count()
+            var vt_tr = vt_work.at(vti)
+            vti = vti + 1
+            if vt_tr is TypeRef.named as vnt
+                if not vt_seen.contains_(vnt.name)
+                    vt_seen.add(vnt.name)
+                    w.emit(" .__as_")
+                    w.emit(vnt.name)
+                    w.emit(" = &_vtable_")
                     w.emit(vnt.name)
                     w.emit(",")
                     var vsd = findInterfaceDecl(vnt.name)
@@ -3952,6 +4036,29 @@ struct Generator
                             var ikw3: str = "const"
                             if is_mut
                                 ikw3 = "var"
+                            # Generic-class ctor — nested call `Box(int)(42)`: the vtable
+                            # lives inside the monomorphized struct, so reference it as
+                            # `&Box(i64)._vtable_I`, reconstructing the instantiation from
+                            # the inner call's type args.
+                            var did_generic = false
+                            if iinit is Expr.call as g_outer
+                                if g_outer.callee is Expr.call as g_inner
+                                    if g_inner.callee is Expr.ident as g_id
+                                        if g_id.name == cc to!
+                                            writeIndent()
+                                            w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
+                                            genExpr(iinit)
+                                            w.emit(", .vtable = &" + (cc to!) + "(")
+                                            var g_first = true
+                                            for g_ta in g_inner.args
+                                                if not g_first
+                                                    w.emit(", ")
+                                                g_first = false
+                                                genTypeFromExpr(g_ta.value)
+                                            w.emit(")._vtable_" + itn2.name + " };\n")
+                                            did_generic = true
+                            if did_generic
+                                return
                             writeIndent()
                             w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
                             genExpr(iinit)

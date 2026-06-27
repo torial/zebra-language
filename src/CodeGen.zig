@@ -348,6 +348,14 @@ fn findInterfaceDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclInter
     return null;
 }
 
+/// Returns the generic class declaration for `name` (type_params > 0) if one exists.
+fn findGenericClassDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclClass {
+    for (module.decls) |*decl| {
+        if (decl.* == .class and std.mem.eql(u8, decl.class.name, name) and decl.class.type_params.len > 0) return decl.class;
+    }
+    return null;
+}
+
 /// Collect the transitive super-interfaces of `iface` (the `implements` closure),
 /// into the caller-provided fixed `buf` (avoids allocation; interface hierarchies
 /// are shallow — depth past `buf.len` is silently dropped). De-duplicated. Returns
@@ -417,6 +425,49 @@ fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclIn
     var super_buf: [16]*const Ast.DeclInterface = undefined;
     for (collectSuperIfaces(g.module, iface, &super_buf)) |s| {
         try g.w.print(" .__as_{s} = &_vtable_{s}_{s},", .{ s.name, class_name, s.name });
+    }
+    try g.w.writeAll(" };\n");
+}
+
+/// Emit interface shims + vtable INSIDE a generic class's `struct` body, so each
+/// instantiation (`Box(i64)`) gets its own monomorphized `_vtable_<Iface>`. The
+/// shims reference `@This()` (the instantiated struct) rather than a class name,
+/// since a generic class has no single concrete name. Coercion sites reference
+/// these as `Box(i64)._vtable_<Iface>`. `g` is the struct-body generator (indented).
+fn genIfaceVtableInStruct(g: Generator, iface: *const Ast.DeclInterface) anyerror!void {
+    const iname = iface.name;
+    for (iface.members) |m| {
+        const meth = switch (m) { .method => |x| x, else => continue };
+        try g.writeIndent();
+        try g.w.print("fn _shim_{s}_{s}(ptr: *anyopaque", .{ iname, meth.name });
+        for (meth.params) |p| {
+            try g.w.print(", {s}: ", .{p.name});
+            if (p.type_) |pt| try g.genType(pt) else try g.w.writeAll("anytype");
+        }
+        try g.w.writeAll(") ");
+        if (meth.throws) try g.w.writeAll("anyerror!");
+        if (meth.return_type) |rt| try g.genType(rt) else try g.w.writeAll("void");
+        try g.w.print(" {{ {s}@as(*@This(), @alignCast(@ptrCast(ptr))).{s}(", .{
+            if (meth.throws) "return try " else "return ",
+            meth.name,
+        });
+        var first = true;
+        for (meth.params) |p| {
+            if (!first) try g.w.writeAll(", ");
+            first = false;
+            try g.w.print("{s}", .{p.name});
+        }
+        try g.w.writeAll("); }\n");
+    }
+    try g.writeIndent();
+    try g.w.print("const _vtable_{s} = {s}.VTable{{", .{ iname, iname });
+    for (iface.members) |m| {
+        const meth = switch (m) { .method => |x| x, else => continue };
+        try g.w.print(" .{s} = &_shim_{s}_{s},", .{ meth.name, iname, meth.name });
+    }
+    var super_buf: [16]*const Ast.DeclInterface = undefined;
+    for (collectSuperIfaces(g.module, iface, &super_buf)) |s| {
+        try g.w.print(" .__as_{s} = &_vtable_{s},", .{ s.name, s.name });
     }
     try g.w.writeAll(" };\n");
 }
@@ -4374,6 +4425,30 @@ const Generator = struct {
             try ig.w.writeAll("}\n");
         }
 
+        // ⑥ Per-instantiation interface vtables (inside the struct, referencing
+        //    @This()), plus the transitive super-interface closure — so a generic
+        //    instance can be coerced to an interface: `var b: I = Box(i64)(...)`.
+        {
+            var emitted: [32]*const Ast.DeclInterface = undefined;
+            var emitted_n: usize = 0;
+            for (n.implements) |tr| {
+                const iname = typeRefSimpleName(tr) orelse continue;
+                const iface = findInterfaceDecl(g.module, iname) orelse continue;
+                var to_emit: [17]*const Ast.DeclInterface = undefined;
+                to_emit[0] = iface;
+                var sb: [16]*const Ast.DeclInterface = undefined;
+                const supers = collectSuperIfaces(g.module, iface, &sb);
+                for (supers, 0..) |s, i| to_emit[i + 1] = s;
+                for (to_emit[0 .. supers.len + 1]) |ifc| {
+                    var dup = false;
+                    for (emitted[0..emitted_n]) |e| if (e == ifc) { dup = true; break; };
+                    if (dup) continue;
+                    if (emitted_n < emitted.len) { emitted[emitted_n] = ifc; emitted_n += 1; }
+                    try genIfaceVtableInStruct(ig, ifc);
+                }
+            }
+        }
+
         try fg.writeIndent();
         try fg.w.writeAll("};\n");
         try g.writeIndent();
@@ -5780,6 +5855,33 @@ const Generator = struct {
         // timer_handle is opaque with always-mutable state — force var unconditionally.
         const needs_var_for_methods = (tc_init_type == .timer_handle);
         const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods)) "const" else "var";
+
+        // Interface coercion for a generic-class ctor: `var b: I = Box(int)(args)`.
+        // The concrete type is a generic instantiation, so the vtable lives inside the
+        // monomorphized struct body — reference it as `&Box(i64)._vtable_I`. The ctor
+        // is a single `.call` with `type_args` (callee = ident, the generic class).
+        if (n.init) |init_e| {
+            if (init_e.* == .call and init_e.call.callee.* == .ident and init_e.call.type_args.len > 0) {
+                const gclass = init_e.call.callee.ident.name;
+                if (findGenericClassDecl(g.module, gclass) != null) {
+                    if (n.type_) |tr| {
+                        if (tr == .named and findInterfaceDecl(g.module, tr.named.name) != null) {
+                            try g.writeIndent();
+                            try g.w.print("{s} {s}: {s} = .{{ .ptr = ", .{ kw, n.name, tr.named.name });
+                            try g.genExpr(init_e);
+                            // Reconstruct `Box(i64)` for the in-struct vtable reference.
+                            try g.w.print(", .vtable = &{s}(", .{gclass});
+                            for (init_e.call.type_args, 0..) |ta, i| {
+                                if (i > 0) try g.w.writeAll(", ");
+                                try g.genType(ta);
+                            }
+                            try g.w.print(")._vtable_{s} }};\n", .{tr.named.name});
+                            return;
+                        }
+                    }
+                }
+            }
+        }
 
         // Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`.
         // Emits shim-based vtable construction so Zig's strict fn-pointer types are satisfied.

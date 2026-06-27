@@ -5,7 +5,7 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 139 passed, **2 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 140 passed, **1 FAILED**, 1 skipped (down from 16 at discovery)
 
 *Update 2026-06-26: tc_iface_i2i FIXED (interface→interface upcast in var-init).
 Both compilers now give every sub-interface vtable an `__as_<Super>: *const
@@ -56,12 +56,18 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 > the laptop's degraded/locked-up network state that prompted the reboot. After reboot,
 > the cache is already gone/fresh, so the first `zig build` will just be slow, not broken.
 
-### Remaining 2
-- **tc_iface_generic** — generic classes never emit interface vtables at all, so a
-  concrete→interface coercion of a generic instance references an undeclared
-  `_vtable_Box_Printable`. Needs per-instantiation vtable + shims emitted *inside* the
-  generic `struct` body (referencing `@This()`), and the coercion site to reference
-  `Box(i64)._vtable_Printable`. Touches generic monomorphization in both compilers.
+### Remaining 1 — method_chain (see below)
+
+### tc_iface_generic — FIXED 2026-06-26
+Generic classes emitted **no** interface vtables, so coercing a generic instance to an
+interface referenced an undeclared vtable. Fix (both compilers): emit per-instantiation
+shims + `_vtable_<Iface>` *inside* the generic `struct` body (`genIfaceVtableInStruct`,
+shims reference `@This()` so each `Box(i64)` monomorphization gets its own), including
+the transitive super-interface closure; the coercion references `&Box(i64)._vtable_<Iface>`
+(reconstructing the instantiation from the ctor's type args). AST-shape divergence handled
+per compiler: the bootstrap parses `Box(int)(42)` as one `.call` with `type_args`; the
+selfhost as nested calls. Compiles + runs.
+
 ### bug091_dispatch — FIXED 2026-06-26
 The instrumented hunt (the earlier "mc_params resolves nil" theory was wrong) showed the
 call never reached the default arg path at all: `genMemberCall` has an **earlier**
