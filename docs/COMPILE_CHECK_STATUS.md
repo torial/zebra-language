@@ -82,14 +82,37 @@ already `*std.ArrayList` via `paramNeedsAddrOf`; only the call site was wrong.) 
 when only *some* call shapes are wrong, look for an early-return dispatch branch, not
 just the canonical path.
 
-- **method_chain** — `acceptBuilder(makeBuilder(5).withVal(30))`: the materialized
-  chain temp is `*const Builder` but `withVal` takes `self: *Builder`. Root is
-  callee-side: `withVal` doesn't mutate self (it uses the `this except` idiom) yet still
-  emits `*Builder` instead of `*const Builder` — the `methodMutatesSelf` analysis likely
-  counts `this except` (a read of self) or doesn't apply to struct methods. Fix: have
-  `methodMutatesSelf` return false for `except`-only methods so the receiver is
-  `*const`, which makes the const chain-temp coerce. (Bootstrap also fails this — NOT a
-  pure convergence fix; both compilers need the analysis change.)
+- **method_chain** — THE ONLY REMAINING compile-check failure. Root cause (fully
+  diagnosed 2026-06-26): non-mutating methods (`getVal`, `withVal`, `doubled` — the last
+  two use the `this except` idiom, which reads self and returns a *new* value) emit a
+  `self: *Builder` receiver instead of `*const Builder`. Both compilers emit a `*const`
+  receiver **only** for `@pure`-marked methods (selfhost genMethod ~2976; bootstrap
+  src/CodeGen.zig ~5320) — there is no automatic non-mutation analysis. **`methodMutatesSelf`
+  is a dead import**: `use CgHelpers exposing … methodMutatesSelf` resolves to nothing —
+  it is referenced but never defined or called. Tasks #139–141 ("add methodMutatesSelf",
+  "emit *const when not mutating") did not survive.
+
+  The failure surfaces across several patterns once any single one is patched:
+  - call-arg-position chains (`acceptBuilder(makeBuilder(5).withVal(30))`) — the rvalue
+    receiver is `*const`;
+  - `acceptBuilder(b: Builder)` → `b.getVal()` — `b` is a by-value (const) param.
+
+  **The correct fix is auto-`*const`:** define a conservative `methodMutatesSelf` (a
+  method mutates self iff its body assigns a self-field, does `self.* = …`, takes
+  `&self`, or calls a mutating method on self) and emit `*const Owner` when it returns
+  false. This fixes *all* the patterns at once (a `*const` receiver is callable on
+  const values, rvalues, and `var`s alike) and needs no chain materialisation. It must
+  land in **both** compilers (the bootstrap fails too — not a convergence fix).
+
+  **Why deferred to a focused session (not done autonomously 2026-06-26):** it changes
+  the method receiver-mutability model and must be wired into the *self-compiling*
+  compiler's own `genMethod` — a wrong "pure" verdict on any mutating compiler method
+  makes the regenerated compiler fail to build. The round-trip gate + rebuild ARE a
+  strong safety net (a bad verdict can't silently ship), so this is tractable and
+  bounded — but it warrants deliberate work with the analysis validated against the full
+  compiler, ideally in the loop. A narrow call-arg materialisation alone was tried and
+  reverted: it fixed the chain patterns but not `b.getVal()` (const-param receiver), so
+  it does not close the test.
 
 ### allocate_slice5 — FIXED 2026-06-26
 The earlier `cur_alloc_uid` save/restore theory (and its "bare-field-write
