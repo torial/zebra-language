@@ -190,6 +190,17 @@ pub fn build(b: *std.Build) void {
     const escape_check = b.addSystemCommand(&.{ "bash", "tools/escape_hatches_check.sh" });
     test_step.dependOn(&escape_check.step);
 
+    // Compile-check gate: emit every positive-smoke test and type-check the Zig the
+    // selfhost compiler actually produces (`zig build-exe -fno-emit-bin -lc`), which the
+    // emit-only smoke suite never did. Green at 141/0/1 as of 2026-06-27. NOT on the
+    // default `test` step because it runs ~144 `build-exe` invocations (minutes) — that
+    // would slow the inner test loop. Run on demand: `zig build compile-check`. To make it
+    // a blocking part of `zig build test`, add: test_step.dependOn(&compile_check.step);
+    const compile_check = b.addSystemCommand(&.{ "bash", "tools/compile_check.sh" });
+    compile_check.step.dependOn(&exe.step);
+    const compile_check_step = b.step("compile-check", "Type-check the Zig emitted for every positive-smoke test");
+    compile_check_step.dependOn(&compile_check.step);
+
     // ── Selfhost build ────────────────────────────────────────────────────────
     //
     // `zig build selfhost` emits all selfhost/*.zbr files to /tmp/bs-zig via
