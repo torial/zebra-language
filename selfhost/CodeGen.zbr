@@ -9447,11 +9447,35 @@ struct Generator
                         w.emit("try ")
                     genExpr(m.object)
                     w.emit("." + mname + "(")
+                    # BUG-091: this early user-method dispatch must apply the same
+                    # three-case addr-of/pass/deref convention as the default path
+                    # below, or List/HashMap params the callee mutates are passed by
+                    # value (`items` instead of `&items`) — a compile error and a
+                    # latent runtime bug.
+                    var um_params = lookupFnParams(um_cname + "." + mname)
+                    var um_body = lookupFnBody(um_cname + "." + mname)
                     var um_ai: int = 0
                     while um_ai < args.count()
                         if um_ai > 0
                             w.emit(", ")
-                        genExpr(args.at(um_ai).value)
+                        var um_emitted = false
+                        if um_params != nil
+                            var ump = um_params to!
+                            if um_ai < ump.count()
+                                var ump_p = ump.at(um_ai)
+                                if paramNeedsAddrOf(ump_p, um_body)
+                                    if argIdentInCpp(args.at(um_ai).value)
+                                        genExpr(args.at(um_ai).value)   # Case 1: ptr→ptr
+                                        um_emitted = true
+                                    else
+                                        w.emit("&")
+                                else
+                                    if ump_p.type_ != nil and isContainerTypeRef(ump_p.type_ to!) and argIdentInCpp(args.at(um_ai).value)
+                                        genExpr(args.at(um_ai).value)
+                                        w.emit(".*")                    # Case 2: ptr→value
+                                        um_emitted = true
+                        if not um_emitted
+                            genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
                     w.emit(")")
                     return

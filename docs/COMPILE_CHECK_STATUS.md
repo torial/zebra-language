@@ -5,7 +5,7 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 138 passed, **3 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 139 passed, **2 FAILED**, 1 skipped (down from 16 at discovery)
 
 *Update 2026-06-26: tc_iface_i2i FIXED (interface→interface upcast in var-init).
 Both compilers now give every sub-interface vtable an `__as_<Super>: *const
@@ -56,29 +56,26 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 > the laptop's degraded/locked-up network state that prompted the reboot. After reboot,
 > the cache is already gone/fresh, so the first `zig build` will just be slow, not broken.
 
-### Remaining 3
+### Remaining 2
 - **tc_iface_generic** — generic classes never emit interface vtables at all, so a
   concrete→interface coercion of a generic instance references an undeclared
   `_vtable_Box_Printable`. Needs per-instantiation vtable + shims emitted *inside* the
   generic `struct` body (referencing `@This()`), and the coercion site to reference
   `Box(i64)._vtable_Printable`. Touches generic monomorphization in both compilers.
-- **bug091_dispatch** — `this.helperList(items)` / `f.helperList(items2)` emit the
-  argument by value (`items`) instead of `&items`, where `helperList` takes
-  `out: *std.ArrayList` (the param side, via `paramNeedsAddrOf`, is already correct).
-  Both a compile error ("never mutated") and a latent runtime bug (appends hit a copy).
-  **Diagnosis (selfhost vs bootstrap convergence, investigated 2026-06-26):** the
-  bootstrap (src/) emits `&items` and compiles+runs. The selfhost has the call-site
-  addr-of logic at `CodeGen.zbr` genMemberCall (~10551-10577), gated on
-  `mc_params != nil` and `paramNeedsAddrOf(mp, mc_body)`. `mc_params`/`mc_body` are
-  resolved at ~10455-10473 from the receiver shape: `Expr.this_` → `owner + "." + mname`;
-  `Expr.ident` non-class → `inferExpr(object)` then `inferred + "." + mname`. Both
-  `lookupFnParams` and `lookupFnBody` *do* cover class methods, so the gap is upstream:
-  the resolution yields nil for these two shapes — most likely `owner == ""` during the
-  `this.helperList` emission and/or `infer_ctx` nil (or `inferExpr(f)` not → `Filler`)
-  for the `f.helperList` emission. **Next step:** instrument those two branches (or log
-  `mc_params == nil`) to confirm which, then ensure `owner`/`infer_ctx` are populated
-  during method/main body emit. Small fix once confirmed; needs one instrument+rebuild
-  cycle.
+### bug091_dispatch — FIXED 2026-06-26
+The instrumented hunt (the earlier "mc_params resolves nil" theory was wrong) showed the
+call never reached the default arg path at all: `genMemberCall` has an **earlier**
+user-method dispatch branch (`CodeGen.zbr` ~9444, added so a user method named
+`append`/`add`/etc. isn't mis-routed to stdlib heuristics) that emitted the call with
+**inline args and no addr-of**, then returned — bypassing the default path's three-case
+addr-of/pass/deref convention. So `this.helperList(items)` / `f.helperList(items2)`
+passed the `List` by value (compile error + a latent runtime bug — appends hit a copy).
+Fix: apply the same three-case convention in that branch, resolving params/body via the
+`um_cname + "." + mname` key. Now emits `&items`, compiles, runs. (The param side was
+already `*std.ArrayList` via `paramNeedsAddrOf`; only the call site was wrong.) Lesson:
+when only *some* call shapes are wrong, look for an early-return dispatch branch, not
+just the canonical path.
+
 - **method_chain** — `acceptBuilder(makeBuilder(5).withVal(30))`: the materialized
   chain temp is `*const Builder` but `withVal` takes `self: *Builder`. Root is
   callee-side: `withVal` doesn't mutate self (it uses the `this except` idiom) yet still
