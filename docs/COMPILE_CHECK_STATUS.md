@@ -5,7 +5,7 @@ runs `zig build-exe -fno-emit-bin -lc` on the result — i.e. it type-checks the
 that user programs actually emit, which the emit-only smoke suite never did. See
 [[project_smoke_no_compile_check]].*
 
-## Current: 137 passed, **4 FAILED**, 1 skipped (down from 16 at discovery)
+## Current: 138 passed, **3 FAILED**, 1 skipped (down from 16 at discovery)
 
 *Update 2026-06-26: tc_iface_i2i FIXED (interface→interface upcast in var-init).
 Both compilers now give every sub-interface vtable an `__as_<Super>: *const
@@ -56,25 +56,32 @@ tc_iface_transitive (concreteClassOf + transitive vtable closure).*
 > the laptop's degraded/locked-up network state that prompted the reboot. After reboot,
 > the cache is already gone/fresh, so the first `zig build` will just be slow, not broken.
 
-### Remaining 5
-- **tc_iface_i2i**, **tc_iface_generic** — deeper language-feature gaps (see table).
-- **allocate_slice5** — allocate/copy-out `_saved_alloc_N` uid mismatch. **Root cause
-  confirmed:** a copy-out (`<-`) *after* a nested allocate block dupes to the inner
-  block's (out-of-scope) `_saved_alloc_N` because `genCopyOut` reads the most-recent
-  uid (`arena_counter - 1`), not the lexically-enclosing block's. The right fix is a
-  save/restore of an enclosing-block uid around `genAllocate`'s `ig.genStmts`.
-  **Blocked (2026-06-26):** the save/restore was written in CodeGen.zbr but the
-  bootstrap **did not regenerate** the bare field-writes (`cur_alloc_uid = n` /
-  `= _saved_cur_alloc`) into CodeGen.zig — only the member-access write
-  (`ig.cur_alloc_uid = n`) survived. That's a *separate* codegen quirk (bare
-  field-assignment after a local `var` decl appears to be dropped/shadowed) and must
-  be understood before the allocate fix can land. Reverted to keep the tree clean.
+### Remaining 3
+- **tc_iface_generic** — generic classes never emit interface vtables at all, so a
+  concrete→interface coercion of a generic instance references an undeclared
+  `_vtable_Box_Printable`. Needs per-instantiation vtable + shims emitted *inside* the
+  generic `struct` body (referencing `@This()`), and the coercion site to reference
+  `Box(i64)._vtable_Printable`. Touches generic monomorphization in both compilers.
 - **bug091_dispatch** — List passed to a method that fills it via pointer; mutation-
   via-arg not detected (var emitted but never directly mutated).
 - **method_chain** — chained temp is `*const T` where callee wants `*T`.
 
+### allocate_slice5 — FIXED 2026-06-26
+The earlier `cur_alloc_uid` save/restore theory (and its "bare-field-write
+regeneration quirk") was the wrong tree. The real story: the **bootstrap was already
+correct** — it names arena temporaries by *nesting depth* (`_parent_alloc_{depth}`,
+where `depth` rides the indented generator and is therefore naturally scoped), so a
+copy-out in an outer block resolves to the outer allocator after an inner block closes.
+The **selfhost had diverged** to a global counter (`_saved_alloc_{arena_counter}`) and
+`genCopyOut` read `arena_counter - 1` (the most-recently-*opened* block), which is out
+of scope by the time the outer copy-out runs. Fix: converge the selfhost onto the
+bootstrap's depth-based naming (`allocate_depth` was already correctly scoped — only
+the copy-out reached past it) and delete the dead `arena_counter`. No new field, no
+save/restore, no bare-field-write. Selfhost emit is now byte-identical to the bootstrap
+for allocate blocks; the 5-case test compiles and runs.
+
 Run: `bash tools/compile_check.sh` (selfhost) — not yet wired into `zig build`
-(would block) until the remaining 5 are green.
+(would block) until the remaining 3 are green.
 
 ### Fixed this session (16 → 9), all gated (round-trip byte-identical + smoke 174/174)
 - Zig 0.16 API: `Io.Clock.monotonic`→`.awake`; `Certificate.Bundle{}`→`.empty`;

@@ -1323,8 +1323,7 @@ struct Generator
     # Phase 17c addition — per-method inference context. Seeded by genMethod/
     # genInit via walkStmts pre-walk before emit. nil at module scope.
     var infer_ctx            : InferCtx?
-    var arena_counter        : int      # counter for unique arena scope var names
-    var allocate_depth          : int      # nesting depth of scoped allocate blocks (0 = not inside any)
+    var allocate_depth          : int      # nesting depth of scoped allocate blocks (0 = not inside any); also names _parent_alloc_N / _alloc_src_N temporaries
     var throws_methods       : StrSet   # "ClassName.methodName" entries for throws methods
     var module_decls         : List(Decl)   # module-level decls for named/default param lookup
     var in_ensure_emit       : bool     # true while generating the ensure defer block
@@ -1410,7 +1409,6 @@ struct Generator
         .module_types          = module_types
         .dep_types             = dep_types
         .infer_ctx             = nil
-        .arena_counter         = 0
         .allocate_depth           = 0
         .throws_methods        = StrSet()
         .module_decls          = module_decls
@@ -6741,19 +6739,27 @@ struct Generator
     # ── genAllocate ───────────────────────────────────────────────────────────
 
     def genAllocate(al: StmtAllocate)
-        var n = arena_counter
-        arena_counter = arena_counter + 1
-        var saved_name = "_saved_alloc_".concat(n.toString())
+        # Name arena temporaries by nesting *depth*, not a global counter. The
+        # enclosing-block allocator must stay recoverable after an inner block closes:
+        # a copy-out (`<-`) in the outer block resolves to the OUTER `_parent_alloc_N`.
+        # `allocate_depth` is scoped (carried on the indented generator), so this is
+        # automatic. A global counter (the previous scheme) instead picked the most
+        # recently-opened block's name, which is out of scope by then. Matches the
+        # bootstrap (src/CodeGen.zig). Sibling blocks reuse a depth name safely — each
+        # lives in its own `{ }` scope.
+        var depth = allocate_depth + 1
+        var depth_str = depth.toString()
+        var saved_name = "_parent_alloc_".concat(depth_str)
         writeIndent()
         w.emit("{ // allocate\n")
         var ig = indented()
         if al.is_scoped
             var kind = allocKind(al.source)
-            var src_name = "_alloc_src_".concat(n.toString())
+            var src_name = "_alloc_src_".concat(depth_str)
             if kind == "fixed_buffer"
                 # FixedBuffer(N): emit backing buffer line, then init line.
                 # ig.genExpr() writes inline to the shared writer — no temp Writer needed.
-                var backing_name = "_fba_backing_".concat(n.toString())
+                var backing_name = "_fba_backing_".concat(depth_str)
                 ig.writeIndent()
                 ig.w.emit("var ")
                 ig.w.emit(backing_name)
@@ -6796,7 +6802,7 @@ struct Generator
             ig.w.emit(";\n")
             ig.line("defer _allocator = ".concat(saved_name).concat(";"))
         if al.is_scoped
-            ig.allocate_depth = allocate_depth + 1
+            ig.allocate_depth = depth
         ig.genStmts(al.stmts)
         writeIndent()
         w.emit("}\n")
@@ -6837,9 +6843,8 @@ struct Generator
             w.emit(";\n")
             writeIndent()
             genExpr(co.target)
-            w.emit(" = _saved_alloc_")
-            var saved_idx = arena_counter - 1
-            w.emit(saved_idx.toString())
+            w.emit(" = _parent_alloc_")
+            w.emit(allocate_depth.toString())
             w.emit(".dupe(u8, _co_")
             w.emit(uid_str)
             w.emit(") catch _co_")
@@ -6858,9 +6863,8 @@ struct Generator
             genExpr(co.target)
             w.emit(" = _zbr_deep_copy(@TypeOf(_co_")
             w.emit(uid_str)
-            w.emit("), _saved_alloc_")
-            var saved_idx2 = arena_counter - 1
-            w.emit(saved_idx2.toString())
+            w.emit("), _parent_alloc_")
+            w.emit(allocate_depth.toString())
             w.emit(", _co_")
             w.emit(uid_str)
             w.emit(", 0) catch @panic(\"OOM copy-out\");\n")
