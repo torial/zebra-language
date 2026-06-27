@@ -15665,7 +15665,7 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     errdefer out.deinit(alloc);
 
     var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &out);
-    _ = try generate(module, &resolve, null, alloc, &aw.writer, .stub, null, false, null, false, false, false, false, null);
+    _ = try generate(module, &resolve, null, alloc, &aw.writer, .stub, null, false, null, false, false, false, false, null, false);
     out = aw.toArrayList();
     return out.toOwnedSlice(alloc);
 }
@@ -15708,8 +15708,10 @@ test "codegen: method params and return type" {
     const out = try generateSnippet(src, testing.allocator);
     defer testing.allocator.free(out);
 
+    // `greet` does not mutate self (it only reads `name` and returns it), so the
+    // auto-`*const` analysis emits a `*const` receiver — callable on const Greeters.
     try testing.expect(std.mem.indexOf(u8, out,
-        "pub fn greet(self: *Greeter, name: []const u8) []const u8") != null);
+        "pub fn greet(self: *const Greeter, name: []const u8) []const u8") != null);
     try testing.expect(std.mem.indexOf(u8, out, "return name;") != null);
 }
 

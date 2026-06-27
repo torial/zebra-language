@@ -51,7 +51,10 @@ cd "$REPO"
 #         for program duration and must not be reclaimed by arena rewinds
 #   - 1× Atomic(T) stdlib (2026-05-25): page_allocator.create(_Atomic(T)); atomic cells
 #         are cross-thread shared state that must outlive any per-request arena
-EXPECTED_PREAMBLE=73
+# 2026-06-27: reconciled 73→70 — the preamble's actual count had dropped to 70 (three
+#   escape hatches removed during earlier 0.16 stdlib work) while this baseline stayed at
+#   73. Lowering to match is safe: it only tightens the gate (fewer uses allowed).
+EXPECTED_PREAMBLE=70
 
 # src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
 #   - 1× docstring comment (AstBuilder.zig)
