@@ -293,24 +293,36 @@ class MultiCompiler
             for s in zbr_path.split(".zbr")
                 stem = s
                 break
+        # Extract just the filename part (after the last path separator).
+        # Handle both '/' and Windows '\' so a backslash source path
+        # (e.g. C:\dir\file.zbr) doesn't leave the whole path as the
+        # basename — which produced a garbage "out/C:\dir\file.zig".
+        var base: str = stem
+        if base.contains("/")
+            var parts: List(str) = List(str)()
+            for p in base.split("/")
+                parts.add(p)
+            base = parts.at(parts.len - 1)
+        if base.contains("\\")
+            var bparts: List(str) = List(str)()
+            for bp in base.split("\\")
+                bparts.add(bp)
+            base = bparts.at(bparts.len - 1)
         if output_dir != ""
-            # Extract just the filename part (after the last path separator).
-            # Handle both '/' and Windows '\' so a backslash source path
-            # (e.g. C:\dir\file.zbr) doesn't leave the whole path as the
-            # basename — which produced a garbage "out/C:\dir\file.zig".
-            var base: str = stem
-            if base.contains("/")
-                var parts: List(str) = List(str)()
-                for p in base.split("/")
-                    parts.add(p)
-                base = parts.at(parts.len - 1)
-            if base.contains("\\")
-                var bparts: List(str) = List(str)()
-                for bp in base.split("\\")
-                    bparts.add(bp)
-                base = bparts.at(bparts.len - 1)
             return output_dir + "/" + base + ".zig"
-        return stem + ".zig"
+        # No --output-dir: write the intermediate .zig to a temp dir rather
+        # than next to the source. Run-mode smoke tests (`zebra file.zbr`)
+        # otherwise drop a generated test/<name>.zig beside every fixture,
+        # polluting the source tree (#230). All deps land in the same temp
+        # dir, so basename @import("Dep.zig") references still resolve.
+        var tdir: str = "."
+        if sys.getenv("TEMP") as te
+            tdir = te
+        else if sys.getenv("TMPDIR") as tm
+            tdir = tm
+        else if sys.getenv("TMP") as tp
+            tdir = tp
+        return tdir + "/" + base + ".zig"
 
     def moduleNameOf(zbr_path: str): str
         # Return the Zig module basename for a .zbr path: strip any dir prefix
