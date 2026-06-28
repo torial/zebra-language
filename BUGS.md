@@ -11,8 +11,16 @@ primary compiler, but is still reachable via `zebra --zig-backend` and is the
 authority that regenerates `selfhost/*.zig`). Found 2026-06-27 by a bootstrap-emit
 parity sweep run after compile-check reached 141/0 on the selfhost.
 
-**Status:** OPEN — discovery + repeatable gate landed; the `src/` codegen fixes
-are scoped for a focused, round-trip-gated session (not done yet).
+**Status:** OPEN — IN PROGRESS (task #231). Discovery + repeatable gate landed.
+Convergence underway, cluster by cluster:
+- ✅ **0.16 stdlib API / realpath (2/14 closed, 2026-06-27):** `src/CodeGen.zig`
+  `sys.cwd` → `std.process.currentPathAlloc(_io, _allocator)`; `Path.absolute` →
+  `std.fs.path.resolve(_allocator, &[_][]const u8{_pp})`. Round-trip stayed
+  **byte-identical** (the compiler never *calls* these builtins — it only emits the
+  strings, which pass through verbatim — so zero round-trip risk).
+  `stdlib_additions_test`, `stdlib_misc_test` now pass under `--bootstrap`.
+- ⬜ Remaining 12: ArrayList `.items` indexing (5), HashMap emission (4),
+  concrete→interface coercion (1), dir_walk (1), ws_smoke (1).
 
 ### What it is
 `tools/compile_check.sh` type-checks the Zig the **selfhost** emits (141/0/1 green).

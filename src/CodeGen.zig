@@ -6966,7 +6966,7 @@ const Generator = struct {
             // Path.absolute(p) → resolved absolute path; returns p unchanged on error
             try g.w.writeAll("(blk: { const _pp = ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll("; break :blk std.Io.Dir.cwd().realpathAlloc(_io, _pp, _allocator) catch _pp; })");
+            try g.w.writeAll("; break :blk std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })");
             return true;
         }
         return false;
@@ -7311,7 +7311,7 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "cwd")) {
             // sys.cwd() → current working directory as str
-            try g.w.writeAll("(std.Io.Dir.cwd().realpathAlloc(_io, \".\", _allocator) catch \"\")");
+            try g.w.writeAll("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))");
             return true;
         }
         if (std.mem.eql(u8, method, "setenv")) {
