@@ -2477,6 +2477,9 @@ var present  = args.contains("--dry-run")    # bool
 
 ### `Random` — random numbers
 
+Process-global statics (backed by a thread-local PRNG, so concurrent
+`sys.go`/`ThreadPool` tasks don't race):
+
 | Call                              | Returns | Notes                              |
 |-----------------------------------|---------|-------------------------------------|
 | `Random.randInt(low, high)`       | int     | `[low, high]`, inclusive            |
@@ -2484,6 +2487,23 @@ var present  = args.contains("--dry-run")    # bool
 | `Random.randBool()`               | bool    |                                     |
 | `Random.bytes(n)`                 | List(byte) | Random bytes                     |
 | `Random.seed(s)`                  | void    | Seed the PRNG                       |
+
+Instance form — `Random.new(seed)` returns an **independent**, seedable PRNG
+stream. Use this to seed a deterministic sub-computation without disturbing
+global state, or to give each worker its own stream:
+
+| Call                              | Returns | Notes                              |
+|-----------------------------------|---------|-------------------------------------|
+| `Random.new(seed)`                | Random  | New PRNG stream seeded with `seed`  |
+| `rng.nextInt(low, high)`          | int     | `[low, high]`, inclusive            |
+| `rng.nextFloat()`                 | float   | `[0.0, 1.0)`                        |
+| `rng.nextBool()`                  | bool    |                                     |
+| `rng.bytes(n)`                    | str     | `n` random bytes, hex-encoded       |
+
+```
+var rng = Random.new(42)
+var roll = rng.nextInt(1, 6)        # same seed → same sequence, every run
+```
 
 ### `Regex` — regular expressions
 

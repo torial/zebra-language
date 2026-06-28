@@ -424,6 +424,10 @@ smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 # `zebra test` subcommand: assert_eq/ne/true/false + test runner.
 smoke_test test/test_module_test.zbr
 
+# Random instance form (A3, #216): Random.new(seed) → independent PRNG stream;
+# verifies determinism + range bounds via the `zebra test` runner.
+smoke_test test/random_instance_test.zbr
+
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 

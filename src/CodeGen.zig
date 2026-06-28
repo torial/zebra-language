@@ -7755,6 +7755,12 @@ const Generator = struct {
 
     // ── Random static calls ──────────────────────────────────────────────────
     fn genRandomCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        if (std.mem.eql(u8, method, "new")) {
+            try g.w.writeAll("_Random.init(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "randInt")) {
             try g.w.writeAll("_random_int(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
@@ -7825,6 +7831,25 @@ const Generator = struct {
     fn genArgCall(g: Generator, method: []const u8, _: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "parse")) {
             try g.w.writeAll("_arg_parse()");
+            return true;
+        }
+        return false;
+    }
+
+    // ── Random instance method calls (rng = Random.new(seed)) ────────────────
+    fn genRandomMethod(g: Generator, obj: *const Ast.Expr, method: []const u8, args: []const Ast.Arg) anyerror!bool {
+        const pass_methods = std.StaticStringMap(void).initComptime(&.{
+            .{ "nextInt", {} }, .{ "nextFloat", {} }, .{ "nextBool", {} }, .{ "bytes", {} },
+        });
+        if (pass_methods.get(method) != null) {
+            // Emit obj.method(args) — these map directly to _Random struct pub fns.
+            try g.genExpr(obj);
+            try g.w.print(".{s}(", .{method});
+            for (args, 0..) |a, i| {
+                if (i > 0) try g.w.writeAll(", ");
+                try g.genExpr(a.value);
+            }
+            try g.w.writeAll(")");
             return true;
         }
         return false;
@@ -14423,6 +14448,7 @@ const Generator = struct {
                     .csv_writer    => if (try g.genCsvWriterMethod(mem.object, mem.member, e.args)) return,
                     .csv_row       => if (try g.genListMethod(mem.object, false, null, mem.member, e.args)) return,
                     .arg_result    => if (try g.genArgResultMethod(mem.object, mem.member, e.args)) return,
+                    .random_inst   => if (try g.genRandomMethod(mem.object, mem.member, e.args)) return,
                     .timer_handle  => if (try g.genTimerResultMethod(mem.object, mem.member, e.args)) return,
                     .progress_bar  => if (try g.genProgressBarMethod(mem.object, mem.member, e.args)) return,
                     .simd          => if (try g.genSimdInstanceCall(mem.object, mem.member, e.args)) return,
@@ -15579,6 +15605,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .sqlite_db,
         .sqlite_row,
         .arg_result,
+        .random_inst,
         .uri_result,
         .timer_handle,
         .progress_bar,

@@ -2936,6 +2936,28 @@ fn _random_seed(s: i64) void {
     _rng_inst = std.Random.DefaultPrng.init(@bitCast(s));
     _rng_ready = true;
 }
+// Random instance form (A3): `var rng = Random.new(seed)` → an independent,
+// seedable PRNG stream that doesn't touch the process-global state. The PRNG
+// lives behind a pointer so methods take `self` by value (a pointer copy) yet
+// still advance the stream — this keeps `const rng = Random.new(..)` legal
+// (no `&rng` needed at the call site).
+const _Random = struct {
+    prng: *std.Random.DefaultPrng,
+    pub fn init(seed: i64) _Random {
+        const p = _allocator.create(std.Random.DefaultPrng) catch @panic("OOM");
+        p.* = std.Random.DefaultPrng.init(@bitCast(seed));
+        return .{ .prng = p };
+    }
+    pub fn nextInt(self: _Random, mn: i64, mx: i64) i64 { return self.prng.random().intRangeAtMost(i64, mn, mx); }
+    pub fn nextFloat(self: _Random) f64 { return self.prng.random().float(f64); }
+    pub fn nextBool(self: _Random) bool { return self.prng.random().boolean(); }
+    pub fn bytes(self: _Random, n: i64) []const u8 {
+        const len: usize = @intCast(if (n < 0) 0 else n);
+        const buf = _allocator.alloc(u8, len) catch return "";
+        self.prng.random().bytes(buf);
+        return _hex_encode(buf);
+    }
+};
 // ── Crypto.encrypt / Crypto.decrypt — AES-256-GCM ────────────────────────────
 // Wire format (hex-encoded): 12-byte nonce | 16-byte tag | N-byte ciphertext
 const _AESGCM = std.crypto.aead.aes_gcm.Aes256Gcm;

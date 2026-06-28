@@ -114,6 +114,8 @@ pub const Type = union(enum) {
     csv_row,
     /// `ArgResult` — parsed command-line arguments from `Arg.parse()`.
     arg_result,
+    /// `Random` instance — an independent PRNG stream from `Random.new(seed)`.
+    random_inst,
     /// `UriResult` — parsed URI from `Uri.parse(url)`.
     uri_result,
     /// `TimerHandle` — high-resolution timer from `Timer.start()`.
@@ -278,6 +280,7 @@ pub const Type = union(enum) {
             .csv_writer     => b == .csv_writer,
             .csv_row        => b == .csv_row,
             .arg_result     => b == .arg_result,
+            .random_inst    => b == .random_inst,
             .uri_result     => b == .uri_result,
             .timer_handle   => b == .timer_handle,
             .progress_bar   => b == .progress_bar,
@@ -366,6 +369,7 @@ pub const Type = union(enum) {
             .csv_writer     => "CsvWriter",
             .csv_row        => "CsvRow",
             .arg_result     => "ArgResult",
+            .random_inst    => "Random",
             .uri_result     => "UriResult",
             .timer_handle   => "TimerHandle",
             .progress_bar   => "ProgressBar",
@@ -3201,10 +3205,11 @@ const TypeChecker = struct {
                     boxed.* = .string;
                     return .{ .optional = boxed };
                 }
-                // Random.* static methods.
+                // Random.* static methods + Random.new() instance constructor.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Random")) {
                     _ = try tc.inferExpr(mem.object);
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "new"))       return .random_inst;
                     if (std.mem.eql(u8, mem.member, "randInt"))   return .int;
                     if (std.mem.eql(u8, mem.member, "randFloat") or
                         std.mem.eql(u8, mem.member, "gaussian"))  return .float;
@@ -3212,6 +3217,15 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "bytes") or
                         std.mem.eql(u8, mem.member, "weighted"))  return .string;
                     return .void_; // shuffle, seed; choice returns unknown element type
+                }
+                // Random instance methods — `rng = Random.new(seed)`.
+                if (try tc.inferExpr(mem.object) == .random_inst) {
+                    for (e.args) |a| _ = try tc.inferExpr(a.value);
+                    if (std.mem.eql(u8, mem.member, "nextInt"))   return .int;
+                    if (std.mem.eql(u8, mem.member, "nextFloat")) return .float;
+                    if (std.mem.eql(u8, mem.member, "nextBool"))  return .bool;
+                    if (std.mem.eql(u8, mem.member, "bytes"))     return .string;
+                    return .void_;
                 }
                 // Base64.* static methods.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "Base64")) {
