@@ -10519,6 +10519,11 @@ const Generator = struct {
         // are already handled above; a bare member access here is always a List.
         if (s.iter.* == .member) return g.genForInList(s);
 
+        // BUG-143: positively-identified List iterables (a `[...]` literal, a
+        // `List()` ctor, or a var/field declared/inferred `List(T)`) iterate the
+        // `.items` backing slice.  Placed after all specific dispatches so they win.
+        if (g.objIsList(s.iter)) return g.genForInList(s);
+
         // Default: standard Zig for-loop over a slice / range.
         try g.writeIndent();
         try g.w.writeAll("for (");
@@ -12531,16 +12536,26 @@ const Generator = struct {
             .call  => |e| try g.genCall(e),
 
             .index => |e| {
+                const obj_is_list = g.objIsList(e.object);
                 try g.genExpr(e.object);
+                // BUG-143: a List is a std.ArrayList — index its `.items` backing
+                // slice (str/array index directly).
+                if (obj_is_list) try g.w.writeAll(".items");
                 try g.w.writeAll("[");
-                // str ([]const u8) requires usize index; i64 variables need a cast.
-                const idx_needs_cast = if (g.tc) |tc| blk: {
-                    const t = tc.expr_types.get(e.index) orelse .unknown;
-                    break :blk t == .int or t == .uint;
-                } else false;
-                if (idx_needs_cast) try g.w.writeAll("@intCast(");
-                try g.genExpr(e.index);
-                if (idx_needs_cast) try g.w.writeAll(")");
+                if (obj_is_list) {
+                    try g.w.writeAll("@as(usize, @intCast(");
+                    try g.genExpr(e.index);
+                    try g.w.writeAll("))");
+                } else {
+                    // str ([]const u8) requires usize index; i64 variables need a cast.
+                    const idx_needs_cast = if (g.tc) |tc| blk: {
+                        const t = tc.expr_types.get(e.index) orelse .unknown;
+                        break :blk t == .int or t == .uint;
+                    } else false;
+                    if (idx_needs_cast) try g.w.writeAll("@intCast(");
+                    try g.genExpr(e.index);
+                    if (idx_needs_cast) try g.w.writeAll(")");
+                }
                 try g.w.writeAll("]");
             },
             .slice => |e| {
@@ -12922,6 +12937,53 @@ const Generator = struct {
             }
         }
         return null;
+    }
+
+    /// Root ident name of a (possibly nested) call/ident expression.
+    /// `List(int)()` → "List";  `Dir.list(x)` → null (member callee).
+    fn exprRootIdentName(e: *const Ast.Expr) ?[]const u8 {
+        return switch (e.*) {
+            .ident => |i| i.name,
+            .call  => |c| exprRootIdentName(c.callee),
+            else   => null,
+        };
+    }
+
+    /// Whether an expression syntactically *produces* a List: a `[...]` literal
+    /// or a `List(...)()` constructor call.
+    fn exprProducesList(e: *const Ast.Expr) bool {
+        if (e.* == .list_lit) return true;
+        if (e.* == .call) {
+            if (exprRootIdentName(e)) |nm| if (std.mem.eql(u8, nm, "List")) return true;
+        }
+        return false;
+    }
+
+    /// BUG-143: positive-only "is this expression a List receiver?".  Used to
+    /// decide `.items` insertion for `[i]` subscript (genExpr `.index`) and
+    /// `for x in list` (genForIn).  Returns true ONLY for definitely-List exprs —
+    /// a `[...]` literal, a `List()` ctor, a var/field declared `List(T)`, or a
+    /// local var whose initialiser produces a List — so strings and arrays never
+    /// match.  That keeps the change round-trip-safe: the selfhost compiler's own
+    /// `spec[i]` *string* subscripts stay untouched (and it accesses its Lists via
+    /// `.at()`, not `[i]`), so regenerating the compiler is unaffected.
+    fn objIsList(g: Generator, e: *const Ast.Expr) bool {
+        if (exprProducesList(e)) return true;
+        if (g.getExprDeclaredType(e)) |tr| {
+            if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List")) return true;
+        }
+        if (e.* == .ident) {
+            if (g.resolve.exprs.get(&e.ident)) |sym| {
+                if (sym.decl == .var_) {
+                    const dv = sym.decl.var_;
+                    if (dv.type_) |tr| {
+                        if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List")) return true;
+                    }
+                    if (dv.init) |ini| if (exprProducesList(ini)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     fn genIdent(g: Generator, e: *const Ast.ExprIdent) anyerror!void {
