@@ -53,10 +53,14 @@ pub fn build(b: *std.Build) void {
         .name        = "zebra-bootstrap",
         .root_module = compiler_mod,
     });
-    // NOTE: the bootstrap (src/) is kept on LLVM even in Debug. The self-hosted
-    // backend currently MISCOMPILES it (the built binary runs but emits nothing) —
-    // a real backend gap that src/ hits and selfhost/ does not. The primary
-    // zebra.exe (selfhost) is fast; zebra-bootstrap.exe stays correct on LLVM.
+    // The bootstrap stays on LLVM even in Debug. It is the regeneration authority — it
+    // produces the committed selfhost/*.zig fixed point (via `update-selfhost`) — so it
+    // uses the battle-tested LLVM backend, not the newer self-hosted one.  (#234 found the
+    // self-hosted backend compiles the bootstrap *correctly* — full --bootstrap parity is
+    // identical to LLVM — so this is conservatism about committed artifacts, NOT a
+    // miscompile.  Note: self-hosted-built binaries on Windows have a stdout-to-pipe bug —
+    // they write correctly to a file/redirect but nothing to a pipe; harmless here since
+    // every gate uses redirect/--output-dir, but pipe `zebra ... | x` needs -Dfast-backend=false.)
     b.installArtifact(bootstrap_exe);
 
     // ── Primary zebra binary: selfhost pipeline (Phase 22 cutover) ──────────
