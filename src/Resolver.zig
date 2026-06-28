@@ -852,9 +852,14 @@ const Resolver = struct {
             .expr    => |e| try r.collectFreeVars(e, local, out, seen),
             .if_     => |s| {
                 try r.collectFreeVars(s.cond, local, out, seen);
+                // BUG-143: `if cond as m` binds `m` inside then_body — add it to the
+                // local set before scanning, so a use of `m` there is not mis-counted
+                // as a free variable (which would wrongly capture it into a closure).
+                if (s.is_capture) |bind| try local.put(bind, {});
                 for (s.then_body) |st| try r.collectFreeVarsStmt(st, local, out, seen);
                 for (s.else_ifs)  |ei| {
                     try r.collectFreeVars(ei.cond, local, out, seen);
+                    if (ei.is_capture) |bind| try local.put(bind, {});
                     for (ei.body) |st| try r.collectFreeVarsStmt(st, local, out, seen);
                 }
                 if (s.else_body) |eb| for (eb) |st| try r.collectFreeVarsStmt(st, local, out, seen);
@@ -994,9 +999,13 @@ const Resolver = struct {
             .expr    => |e| try r.checkCaptureBoundary(e, lambda_local),
             .if_     => |s| {
                 try r.checkCaptureBoundary(s.cond, lambda_local);
+                // BUG-143: `if cond as m` binds `m` locally — register it so a use of
+                // `m` in then_body isn't flagged as an un-captured outer reference.
+                if (s.is_capture) |bind| try lambda_local.put(bind, {});
                 for (s.then_body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
                 for (s.else_ifs)  |ei| {
                     try r.checkCaptureBoundary(ei.cond, lambda_local);
+                    if (ei.is_capture) |bind| try lambda_local.put(bind, {});
                     for (ei.body) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
                 }
                 if (s.else_body) |eb| for (eb) |st| try r.checkCaptureBoundaryStmt(st, lambda_local);
