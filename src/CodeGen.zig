@@ -12537,6 +12537,14 @@ const Generator = struct {
             .call  => |e| try g.genCall(e),
 
             .index => |e| {
+                // BUG-143: a HashMap subscript `m[k]` lowers to `m.get(k).?`.
+                if (g.objIsHashMap(e.object)) {
+                    try g.genExpr(e.object);
+                    try g.w.writeAll(".get(");
+                    try g.genExpr(e.index);
+                    try g.w.writeAll(").?");
+                    return;
+                }
                 const obj_is_list = g.objIsList(e.object);
                 try g.genExpr(e.object);
                 // BUG-143: a List is a std.ArrayList — index its `.items` backing
@@ -12896,11 +12904,26 @@ const Generator = struct {
     fn getExprDeclaredType(g: Generator, expr: *const Ast.Expr) ?Ast.TypeRef {
         if (expr.* == .ident) {
             const sym = g.resolve.exprs.get(&expr.ident) orelse return null;
-            return switch (sym.decl) {
-                .var_  => |v| v.type_,
-                .param => |p| p.type_,
-                else   => null,
-            };
+            switch (sym.decl) {
+                .var_  => |v| {
+                    if (v.type_) |t| return t;
+                    // BUG-143: inferred `var m = HashMap(K, V)()` — derive the type from
+                    // the stdlib ctor init so `m.put(...)` routes to the HashMap method
+                    // codegen (catch + key intern), not a bare literal call.  HashMap-only:
+                    // inferred *list* vars already dispatch correctly via TC inference, and
+                    // perturbing them risks the self-host round-trip.
+                    if (v.init) |ini| {
+                        if (ini.* == .call and ini.call.callee.* == .ident and ini.call.type_args.len > 0) {
+                            if (std.mem.eql(u8, ini.call.callee.ident.name, "HashMap")) {
+                                return .{ .generic = .{ .span = ini.call.span, .name = "HashMap", .args = ini.call.type_args } };
+                            }
+                        }
+                    }
+                    return null;
+                },
+                .param => |p| return p.type_,
+                else   => return null,
+            }
         }
         // Handle `this.fieldName` — look up the field in the current class's member list.
         if (expr.* == .member) {
@@ -13025,6 +13048,37 @@ const Generator = struct {
                         if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List")) return true;
                     }
                     if (dv.init) |ini| if (exprProducesList(ini)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// BUG-143: positive-only "is this expression a HashMap receiver?".  Used to
+    /// decide `[k]` subscript lowering to `.get(k).?`.  Mirrors `objIsList`: a
+    /// `HashMap()` ctor, or a var/field declared `HashMap(K, V)` (incl. localVar.field
+    /// via getExprDeclaredType).  Positive-only ⇒ strings/lists never match.
+    fn objIsHashMap(g: Generator, e: *const Ast.Expr) bool {
+        if (e.* == .call) {
+            if (exprRootIdentName(e)) |nm| if (std.mem.eql(u8, nm, "HashMap")) return true;
+        }
+        if (g.getExprDeclaredType(e)) |tr| {
+            if (tr == .generic and std.mem.eql(u8, tr.generic.name, "HashMap")) return true;
+        }
+        if (e.* == .ident) {
+            if (g.resolve.exprs.get(&e.ident)) |sym| {
+                if (sym.decl == .var_) {
+                    const dv = sym.decl.var_;
+                    if (dv.type_) |tr| {
+                        if (tr == .generic and std.mem.eql(u8, tr.generic.name, "HashMap")) return true;
+                    }
+                    if (dv.init) |ini| {
+                        if (ini.* == .call) {
+                            if (exprRootIdentName(ini)) |nm| {
+                                if (std.mem.eql(u8, nm, "HashMap")) return true;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -13601,6 +13655,17 @@ const Generator = struct {
             try g.w.writeAll("_thread_pool_create(");
             if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("4");
             try g.w.writeAll(")");
+            return;
+        }
+        // BUG-143: HashMap(K, V)() stdlib constructor (explicit type args, no ctor
+        // args).  The generic-construction path below treats the callee as a user
+        // class and emits a literal `HashMap(...).init()` (undeclared identifier).
+        // Route to genStdlibInit, which emits std.StringHashMap(V)/std.AutoHashMap(K,V)
+        // .init(_allocator).  (List(T)() is already handled correctly upstream.)
+        if (e.type_args.len > 0 and e.args.len == 0 and e.callee.* == .ident and
+            std.mem.eql(u8, e.callee.ident.name, "HashMap"))
+        {
+            try g.genStdlibInit(.{ .span = e.span, .name = "HashMap", .args = e.type_args });
             return;
         }
         // Generic construction: Stack(int)(42) → Stack(i64).init(42)
