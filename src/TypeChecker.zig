@@ -2604,6 +2604,16 @@ const TypeChecker = struct {
     }
 
     /// Infer the element type that loop variables will have when iterating `iter`.
+    /// True if `e` is a `Dir.walk(path)` call (returns List(str) of file paths).
+    fn isDirWalkCall(e: *const Ast.Expr) bool {
+        if (e.* != .call) return false;
+        const callee = e.call.callee;
+        if (callee.* != .member) return false;
+        if (callee.member.object.* != .ident) return false;
+        if (!std.mem.eql(u8, callee.member.object.ident.name, "Dir")) return false;
+        return std.mem.eql(u8, callee.member.member, "walk");
+    }
+
     fn inferForInElemType(tc: TypeChecker, iter: *const Ast.Expr) Type {
         // for tag in v.getList("key")  — []JsonValue call → json_value elements
         if (iter.* == .call) {
@@ -2690,6 +2700,21 @@ const TypeChecker = struct {
                                 if (obj_t == .sqlite_db) return .sqlite_row;
                             }
                         }
+                    }
+                }
+            }
+        }
+        // Dir.walk(path) → each element is a string path (List(str)). Handles
+        // both the direct-call form `for f in Dir.walk(p)` and the common
+        // `var files = Dir.walk(p); for f in files` form (init-expr inspection).
+        // The bootstrap needs this so `f.endsWith(..)` dispatches as a string
+        // method (std.mem.endsWith), matching the selfhost emit.
+        if (isDirWalkCall(iter)) return .string;
+        if (iter.* == .ident) {
+            if (tc.resolve.exprs.get(&iter.ident)) |sym| {
+                if (sym.decl == .var_) {
+                    if (sym.decl.var_.init) |init_expr| {
+                        if (isDirWalkCall(init_expr)) return .string;
                     }
                 }
             }

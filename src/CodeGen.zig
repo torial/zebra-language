@@ -6502,6 +6502,12 @@ const Generator = struct {
                 if (std.mem.eql(u8, n.name, "CodeEditor")) return g.genCodeEditorMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "JsonValue"))  return g.genJsonMethod(object, method, args);
                 if (std.mem.eql(u8, n.name, "DateTime"))   return g.genDateTimeMethod(object, method, args);
+                // WsConn: a `def(ws: WsConn)` handler param has an explicit type
+                // annotation, so dispatch reaches here (not the TC-inferred path
+                // the narrowed `conn as ws` client binding uses). Route to the
+                // WsConn method codegen so `ws.recv()/send()/close()` emit as
+                // `_ws_recv/_ws_send/_ws_close`, matching the selfhost emit.
+                if (std.mem.eql(u8, n.name, "WsConn"))     return g.genWsConnMethod(object, method, args);
                 // toString() on int/float/bool — format as string.
                 if (std.mem.eql(u8, method, "toString")) {
                     const fmt = if (std.mem.eql(u8, n.name, "float") or
@@ -12942,6 +12948,11 @@ const Generator = struct {
     /// Look up the declared type of an expression.  Only works for direct
     /// identifier references (local vars and parameters that have a type
     /// annotation).  Returns null for everything else.
+    /// Synthesized `List(str)` element args for an inferred `Dir.walk(..)` var.
+    const _dir_walk_str_args = [_]Ast.TypeRef{
+        .{ .named = .{ .span = .{ .line = 0, .col = 0, .end_line = 0, .end_col = 0 }, .name = "str" } },
+    };
+
     fn getExprDeclaredType(g: Generator, expr: *const Ast.Expr) ?Ast.TypeRef {
         if (expr.* == .ident) {
             const sym = g.resolve.exprs.get(&expr.ident) orelse return null;
@@ -12957,6 +12968,18 @@ const Generator = struct {
                         if (ini.* == .call and ini.call.callee.* == .ident and ini.call.type_args.len > 0) {
                             if (std.mem.eql(u8, ini.call.callee.ident.name, "HashMap")) {
                                 return .{ .generic = .{ .span = ini.call.span, .name = "HashMap", .args = ini.call.type_args } };
+                            }
+                        }
+                        // Inferred `var files = Dir.walk(path)` → List(str), so
+                        // `files.count()` / `files.items` route through the List
+                        // method/prop codegen (matching the selfhost emit). objIsList
+                        // already covers the for-in via the init expr.
+                        if (ini.* == .call and ini.call.callee.* == .member) {
+                            const m = ini.call.callee.member;
+                            if (m.object.* == .ident and std.mem.eql(u8, m.object.ident.name, "Dir") and
+                                std.mem.eql(u8, m.member, "walk"))
+                            {
+                                return .{ .generic = .{ .span = ini.call.span, .name = "List", .args = &_dir_walk_str_args } };
                             }
                         }
                     }
