@@ -11,40 +11,36 @@ primary compiler, but is still reachable via `zebra --zig-backend` and is the
 authority that regenerates `selfhost/*.zig`). Found 2026-06-27 by a bootstrap-emit
 parity sweep run after compile-check reached 141/0 on the selfhost.
 
-**Status:** OPEN — IN PROGRESS (task #231). Discovery + repeatable gate landed.
-Convergence underway, cluster by cluster:
-- ✅ **0.16 stdlib API / realpath (2 tests closed, 2026-06-27):** `src/CodeGen.zig`
-  `sys.cwd` → `std.process.currentPathAlloc(_io, _allocator)`; `Path.absolute` →
-  `std.fs.path.resolve(_allocator, &[_][]const u8{_pp})`. Round-trip stayed
-  **byte-identical** (the compiler never *calls* these builtins — it only emits the
-  strings, which pass through verbatim — so zero round-trip risk).
-  `stdlib_additions_test`, `stdlib_misc_test` now pass under `--bootstrap` (120→122).
-- ✅ **Dir.walk `.next(_io)` (2026-06-27):** `src/` emitted the 0.16-broken
-  `_dw_walker.next()` (the Dir.**list** path at line 6852 already had `_io`; only the
-  Dir.**walk** path lagged). Round-trip byte-identical (the compiler uses `Dir.list`,
-  not `Dir.walk`). This is a *partial* fix for `dir_walk_test` — see below.
+**Status:** IN PROGRESS (task #231) — **12 of 14 closed, parity 120→132 / 14→2**.
+Round-trip byte-identical after every fix; selfhost steady at 141/0. The bootstrap is
+the **non-primary** compiler, so this is equivalence-restoration, not active-feature work.
 
-### Remaining 12 — all need deeper infra than a string mirror (for an attended session)
-The realpath/walker fixes were isolated emit-string swaps. The rest are not:
-- **ArrayList `.items` (the biggest lever — blocks ~6 tests):** the bootstrap's `Type`
-  union has **no `.list` variant**, so its `.index` arm (src/CodeGen.zig:12533) and its
-  for-loop-over-call-result codegen can't tell a List from a `[]const u8` string and so
-  never insert `.items`. The selfhost solved this with name-based `fieldAwareIsList` /
-  `getMemberFieldName` tracking (BUG-141), which `src/` lacks entirely. Manifests as both
-  `list[i]` subscript (`list_index`, `module_var_shadow`, `list_ref_autobox`, `for_else`,
-  `bug119_list_field_param`) **and** `for x in <call returning List>` (the *second*
-  `dir_walk_test` error — `for (files)` needs `for (files.items)`). Round-trip risk is
-  real: the compiler uses `spec[i]` *string* subscripts that must NOT get `.items`, so any
-  port must detect list-ness accurately (name-based, like the selfhost).
-- **HashMap emission (4):** bootstrap emits a bogus `HashMap(K,V).init()` (undeclared)
-  vs the selfhost's `std.StringHashMap(V).init(_allocator)` + `_intern`/`catch` — needs
-  the selfhost's HashMap-aware constructor/method codegen ported to `src/`.
-- **ws_smoke (1):** capture-block free-variable analysis — the bootstrap captures `m`
-  into the closure struct (`m: @TypeOf(m)`) even though `m` is bound *inside* the lambda
-  body by `if msg as m` (not a free var). The selfhost's free-var scan excludes inner
-  pattern-bindings; `src/` does not.
-- **tc_iface_transitive (1):** concrete→interface coercion in var-init — known
-  selfhost-only (see COMPILE_CHECK_STATUS.md).
+**Closed (12):** realpath (sys.cwd/Path.absolute → 0.16 API); Dir.walk `.next(_io)`;
+the **ArrayList `.items` cluster** (list_index, for_else, module_var_shadow,
+list_ref_autobox, bug119) via a positive-only `objIsList(expr)` helper (list_lit |
+`List()` ctor | declared/inferred `List(T)`) wired into the `.index` arm + genForIn, plus
+`getExprDeclaredType` generalised to `localVar.field` (module-decls field lookup) and a
+list-lit-init `.empty` fix; the **HashMap cluster** (remove, set, field_collision,
+param_field) via a `HashMap(K,V)()` ctor → `genStdlibInit` intercept, an `objIsHashMap`
+helper lowering `m[k]`→`m.get(k).?`, and inferred-HashMap-var type derivation; and
+**tc_iface_transitive** (concrete→interface var-init fat-pointer coercion).
+
+Key design point: all list/hashmap detection is **positive-only** (matches only
+definitely-List/HashMap exprs), so strings never match and the compiler's own `spec[i]`
+string subscripts / `.at()` list access are untouched → the round-trip stays byte-identical.
+
+### Remaining 2 — kitchen-sink tests, each with further stacked layers
+- **dir_walk_test** (parity not yet flipped): walker.next + for-over-Dir.walk-list are
+  fixed, but the loop var `f` (element of `List(str)`) isn't typed `str`, so
+  `f.endsWith(".zbr")` emits a literal `.endsWith` instead of `std.mem.endsWith`. Needs a
+  **TypeChecker** change: infer the for-loop element type for a `Dir.walk`-initialised
+  list var (the bootstrap relies on TC element inference for str-method dispatch). Likely
+  more layers after (`files.count()`).
+- **ws_smoke_test** (parity not yet flipped): the spurious closure capture is **fixed**
+  (capture free-var analysis now excludes `if as` bindings — collectFreeVarsStmt +
+  checkCaptureBoundaryStmt). Next layer: `ws.recv()` inside the closure doesn't dispatch
+  as a `WsConn` method (`_WsConn` has no `recv`; needs `_ws_recv(ws)` — the closure body
+  loses the param's `WsConn` type for stdlib-method dispatch).
 
 ### What it is
 `tools/compile_check.sh` type-checks the Zig the **selfhost** emits (141/0/1 green).
