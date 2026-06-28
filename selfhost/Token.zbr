@@ -92,7 +92,6 @@ union TokenKind
     double_gt_equals
     question_equals
     bang_equals
-    toq
     open_call
     kw_use
     kw_exposing

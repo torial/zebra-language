@@ -689,7 +689,6 @@ pub const Expr = union(enum) {
     binary: *ExprBinary,
     unary: *ExprUnary,
     cast: *ExprCast,
-    to_nilable: *ExprToNilable,
     to_non_nil: *ExprToNonNil,
     is_nil: *ExprIsNil,
     orelse_: *ExprOrelse,
@@ -876,12 +875,6 @@ pub const ExprTypeCheck = struct {
     expr: *Expr,
     type_name: []const u8,
     variant_name: ?[]const u8 = null,
-};
-
-/// `expr to?` — return nilable, nil if cast fails.
-pub const ExprToNilable = struct {
-    span: Span,
-    expr: *Expr,
 };
 
 /// `expr to !` — assert non-nil / non-zero.

@@ -10,7 +10,7 @@
 #   2. Phantoms   — union variants constructed but never matched (forgotten handler).
 #   3. Unreachable — module-level def functions unreachable from any root.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprToNilable, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
 use Parser exposing PNode, PUse, PModule
 use Resolver
 use AstBuilder exposing ASTBuilder
@@ -460,8 +460,6 @@ class DeadCodeChecker
                     .walkExpr(esl.stop_ to!, file, false)
             on Expr.cast as ec2
                 .walkExpr(ec2.expr, file, false)
-            on Expr.to_nilable as etn
-                .walkExpr(etn.expr, file, false)
             on Expr.to_non_nil as etnn
                 .walkExpr(etnn.expr, file, false)
             on Expr.is_nil as ein

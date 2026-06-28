@@ -233,8 +233,6 @@ def exprHasTry(expr: Expr): bool
             if exprHasTry(ca.expr)
                 return true
             return exprHasTry(ca.fallback)
-        on Expr.to_nilable as t
-            return exprHasTry(t.expr)
         on Expr.to_non_nil as t
             return exprHasTry(t.expr)
         on Expr.is_nil as t
@@ -460,8 +458,6 @@ def nameUsedInExpr(name: str, expr: Expr): bool
             if nameUsedInExpr(name, i.then_expr)
                 return true
             return nameUsedInExpr(name, i.else_expr)
-        on Expr.to_nilable as t
-            return nameUsedInExpr(name, t.expr)
         on Expr.to_non_nil as t
             return nameUsedInExpr(name, t.expr)
         on Expr.is_nil as t
@@ -786,8 +782,6 @@ def collectAllIdents(expr: Expr, out: StrSet)
             collectAllIdents(b.right, out)
         on Expr.unary as u
             collectAllIdents(u.operand, out)
-        on Expr.to_nilable as t
-            collectAllIdents(t.expr, out)
         on Expr.to_non_nil as t
             collectAllIdents(t.expr, out)
         on Expr.is_nil as t
@@ -1326,8 +1320,6 @@ def exprHasSelfCall(e: Expr): bool
             return false
         on Expr.cast as c
             return exprHasSelfCall(c.expr)
-        on Expr.to_nilable as t
-            return exprHasSelfCall(t.expr)
         on Expr.to_non_nil as t
             return exprHasSelfCall(t.expr)
         on Expr.is_nil as t

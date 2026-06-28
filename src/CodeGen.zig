@@ -780,7 +780,6 @@ fn exprHasSelfCall(e: *const Ast.Expr) bool {
         .if_expr => |x| return exprHasSelfCall(x.cond) or exprHasSelfCall(x.then_expr) or exprHasSelfCall(x.else_expr),
         .orelse_ => |x| return exprHasSelfCall(x.expr) or exprHasSelfCall(x.fallback),
         .catch_  => |x| return exprHasSelfCall(x.expr) or exprHasSelfCall(x.fallback),
-        .to_nilable => |x| return exprHasSelfCall(x.expr),
         .to_non_nil => |x| return exprHasSelfCall(x.expr),
         .is_nil  => |x| return exprHasSelfCall(x.expr),
         .cast    => |x| return exprHasSelfCall(x.expr),
@@ -812,7 +811,6 @@ fn exprMentionsThis(e: *const Ast.Expr) bool {
         .if_expr => |x| return exprMentionsThis(x.cond) or exprMentionsThis(x.then_expr) or exprMentionsThis(x.else_expr),
         .orelse_ => |x| return exprMentionsThis(x.expr) or exprMentionsThis(x.fallback),
         .catch_  => |x| return exprMentionsThis(x.expr) or exprMentionsThis(x.fallback),
-        .to_nilable => |x| return exprMentionsThis(x.expr),
         .to_non_nil => |x| return exprMentionsThis(x.expr),
         .is_nil  => |x| return exprMentionsThis(x.expr),
         .cast    => |x| return exprMentionsThis(x.expr),
@@ -1019,7 +1017,6 @@ fn exprHasTry(expr: *const Ast.Expr, tc_opt: ?*const TypeChecker.TypeCheckResult
         .orelse_   => |e| exprHasTry(e.expr, tc_opt) or exprHasTry(e.fallback, tc_opt),
         .catch_    => |e| exprHasTry(e.expr, tc_opt) or exprHasTry(e.fallback, tc_opt),
         .to_non_nil => |e| exprHasTry(e.expr, tc_opt),
-        .to_nilable => |e| exprHasTry(e.expr, tc_opt),
         .is_nil    => |e| exprHasTry(e.expr, tc_opt),
         else => false,
     };
@@ -1055,7 +1052,6 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .if_expr     => |e| { try refsInExpr(e.cond, r, o);    try refsInExpr(e.then_expr, r, o); try refsInExpr(e.else_expr, r, o); },
         .orelse_     => |e| { try refsInExpr(e.expr, r, o);    try refsInExpr(e.fallback, r, o); },
         .catch_      => |e| { try refsInExpr(e.expr, r, o);    try refsInExpr(e.fallback, r, o); },
-        .to_nilable  => |e| try refsInExpr(e.expr, r, o),
         .to_non_nil  => |e| try refsInExpr(e.expr, r, o),
         .is_nil      => |e| try refsInExpr(e.expr, r, o),
         .cast        => |e| try refsInExpr(e.expr, r, o),
@@ -1098,7 +1094,6 @@ fn containsResultRef(expr: *const Ast.Expr) bool {
         .if_expr       => |e| containsResultRef(e.cond) or containsResultRef(e.then_expr) or containsResultRef(e.else_expr),
         .orelse_       => |e| containsResultRef(e.expr) or containsResultRef(e.fallback),
         .catch_        => |e| containsResultRef(e.expr) or containsResultRef(e.fallback),
-        .to_nilable    => |e| containsResultRef(e.expr),
         .to_non_nil    => |e| containsResultRef(e.expr),
         .is_nil        => |e| containsResultRef(e.expr),
         .cast          => |e| containsResultRef(e.expr),
@@ -1139,7 +1134,6 @@ fn collectOldExprs(expr: *const Ast.Expr, alloc: Allocator, out: *std.ArrayListU
         .if_expr     => |e| { try collectOldExprs(e.cond, alloc, out);   try collectOldExprs(e.then_expr, alloc, out); try collectOldExprs(e.else_expr, alloc, out); },
         .orelse_     => |e| { try collectOldExprs(e.expr, alloc, out);   try collectOldExprs(e.fallback, alloc, out); },
         .catch_      => |e| { try collectOldExprs(e.expr, alloc, out);   try collectOldExprs(e.fallback, alloc, out); },
-        .to_nilable  => |e| try collectOldExprs(e.expr, alloc, out),
         .to_non_nil  => |e| try collectOldExprs(e.expr, alloc, out),
         .is_nil      => |e| try collectOldExprs(e.expr, alloc, out),
         .cast        => |e| try collectOldExprs(e.expr, alloc, out),
@@ -1186,7 +1180,6 @@ fn collectAllIdents(expr: *const Ast.Expr, set: *std.StringHashMap(void)) anyerr
         .member        => |m|  try collectAllIdents(m.object, set),
         .binary        => |b|  { try collectAllIdents(b.left, set); try collectAllIdents(b.right, set); },
         .unary         => |u|  try collectAllIdents(u.operand, set),
-        .to_nilable    => |u|  try collectAllIdents(u.expr, set),
         .to_non_nil    => |u|  try collectAllIdents(u.expr, set),
         .is_nil        => |u|  try collectAllIdents(u.expr, set),
         .orelse_       => |o|  { try collectAllIdents(o.expr, set); try collectAllIdents(o.fallback, set); },
@@ -5820,7 +5813,6 @@ const Generator = struct {
             .binary        => |x| x.span,
             .unary         => |x| x.span,
             .cast          => |x| x.span,
-            .to_nilable    => |x| x.span,
             .to_non_nil    => |x| x.span,
             .is_nil        => |x| x.span,
             .orelse_       => |x| x.span,
@@ -12631,10 +12623,6 @@ const Generator = struct {
                 try g.w.writeAll(", ");
                 try g.genExpr(e.expr);
                 try g.w.writeAll(")");
-            },
-            .to_nilable => |e| {
-                // `expr to?` — we don't know the target type here; pass through.
-                try g.genExpr(e.expr);
             },
             .to_non_nil => |e| {
                 // If the inner ident is already nil-narrowed, genIdent will emit

@@ -793,7 +793,6 @@ union Expr
     binary: ^ExprBinary
     unary: ^ExprUnary
     cast: ^ExprCast
-    to_nilable: ^ExprToNilable
     to_non_nil: ^ExprToNonNil
     is_nil: ^ExprIsNil
     orelse_: ^ExprOrelse
@@ -1103,14 +1102,6 @@ struct ExprOptChain
         .args = args
 
 # nilable / nil-check operators
-
-struct ExprToNilable
-    var span: Span
-    var expr: ^Expr
-
-    cue init(span: Span, expr: ^Expr)
-        .span = span
-        .expr = expr
 
 struct ExprToNonNil
     var span: Span

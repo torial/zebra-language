@@ -487,8 +487,6 @@ def exprMentionsThis(e: Expr): bool
             return exprMentionsThis(t.expr)
         on Expr.cast as ca
             return exprMentionsThis(ca.expr)
-        on Expr.to_nilable as t
-            return exprMentionsThis(t.expr)
         on Expr.to_non_nil as t
             return exprMentionsThis(t.expr)
         on Expr.is_nil as t
@@ -1130,8 +1128,6 @@ def exprLine(e: Expr): int
         on Expr.unary as x
             return x.span.line
         on Expr.cast as x
-            return x.span.line
-        on Expr.to_nilable as x
             return x.span.line
         on Expr.to_non_nil as x
             return x.span.line
@@ -6563,8 +6559,6 @@ struct Generator
                 return containsResultRef(i.object) or containsResultRef(i.index)
             on Expr.cast as cx
                 return containsResultRef(cx.expr)
-            on Expr.to_nilable as tn
-                return containsResultRef(tn.expr)
             on Expr.to_non_nil as tnn
                 return containsResultRef(tnn.expr)
             on Expr.is_nil as inl
@@ -6640,8 +6634,6 @@ struct Generator
                 collectAndEmitOldSnapshots(ix.index)
             on Expr.cast as ca
                 collectAndEmitOldSnapshots(ca.expr)
-            on Expr.to_nilable as tn
-                collectAndEmitOldSnapshots(tn.expr)
             on Expr.to_non_nil as tnn
                 collectAndEmitOldSnapshots(tnn.expr)
             on Expr.is_nil as isn
@@ -7273,9 +7265,6 @@ struct Generator
                 w.emit(", ")
                 genExpr(ca.expr)
                 w.emit(")")
-            on Expr.to_nilable as tn
-                # Just emit the inner expression (optional wrapping is implicit)
-                genExpr(tn.expr)
             on Expr.to_non_nil as tnn
                 genExpr(tnn.expr)
                 w.emit(".?")

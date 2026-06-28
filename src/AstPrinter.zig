@@ -512,7 +512,6 @@ const Printer = struct {
             .binary     => |n| try p.printBinary(n.*),
             .unary      => |n| try p.printUnary(n.*),
             .cast       => |n| { try p.w("(to ", .{}); try p.printExpr(n.expr.*); try p.w(" ", .{}); try p.printTypeRef(n.target); try p.w(")", .{}); },
-            .to_nilable => |n| { try p.w("(to? ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .to_non_nil => |n| { try p.w("(to! ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .is_nil     => |n| { try p.w("(nil? ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .orelse_    => |n| { try p.w("(orelse ", .{}); try p.printExpr(n.expr.*); try p.w(" ", .{}); try p.printExpr(n.fallback.*); try p.w(")", .{}); },

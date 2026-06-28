@@ -2200,7 +2200,6 @@ const TypeChecker = struct {
                 }
                 break :blk tgt;
             },
-            .to_nilable     => |e| blk: { _ = try tc.inferExpr(e.expr); break :blk .context_dependent; },
             .to_non_nil     => |e| blk: {
                 // `expr to!` — force-unwrap optional; result is the inner type.
                 const inner = try tc.inferExpr(e.expr);
@@ -4152,7 +4151,6 @@ fn spanOf(expr: *const Ast.Expr) Ast.Span {
         .binary        => |e| e.span,
         .unary         => |e| e.span,
         .cast          => |e| e.span,
-        .to_nilable    => |e| e.span,
         .to_non_nil    => |e| e.span,
         .is_nil        => |e| e.span,
         .orelse_       => |e| e.span,

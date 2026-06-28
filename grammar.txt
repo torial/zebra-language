@@ -389,7 +389,6 @@ Expr9                → Expr9 dot id
                      |  Expr9 dot open_call ArgList rparen
                      |  Expr9 lbracket Expr rbracket
                      |  Expr9 kw_to TypeRef
-                     |  Expr9 toq
                      |  Expr9 kw_to bang
                      |  Atom
 

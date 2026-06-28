@@ -616,7 +616,6 @@ const Resolver = struct {
                 try r.walkExpr(e.expr, scope);
                 try r.resolveTypeRef(&e.target, scope);
             },
-            .to_nilable    => |e| try r.walkExpr(e.expr, scope),
             .to_non_nil    => |e| try r.walkExpr(e.expr, scope),
             .is_nil        => |e| try r.walkExpr(e.expr, scope),
             .orelse_       => |e| {
@@ -791,7 +790,6 @@ const Resolver = struct {
             },
             .unary         => |e| try r.collectFreeVars(e.operand, local, out, seen),
             .cast          => |e| try r.collectFreeVars(e.expr, local, out, seen),
-            .to_nilable    => |e| try r.collectFreeVars(e.expr, local, out, seen),
             .to_non_nil    => |e| try r.collectFreeVars(e.expr, local, out, seen),
             .is_nil        => |e| try r.collectFreeVars(e.expr, local, out, seen),
             .orelse_       => |e| {
@@ -940,7 +938,6 @@ const Resolver = struct {
             },
             .unary         => |e| try r.checkCaptureBoundary(e.operand, lambda_local),
             .cast          => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
-            .to_nilable    => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
             .to_non_nil    => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
             .is_nil        => |e| try r.checkCaptureBoundary(e.expr, lambda_local),
             .orelse_       => |e| {

@@ -172,9 +172,6 @@ pub const TokenKind = enum {
     question_equals,      // ?=
     bang_equals,          // !=
 
-    /// `to?` — cast-or-nil operator (tokenized as a single token)
-    toq,
-
     /// `identifier(` — identifier immediately followed by `(`, no space.
     /// Signals a call vs. a reference.
     open_call,
