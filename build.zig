@@ -4,6 +4,21 @@ pub fn build(b: *std.Build) void {
     const target   = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // Self-hosted-backend fast path for DEBUG builds (#233): Zig's self-hosted x86_64
+    // backend + linker builds the primary zebra.exe (selfhost) ~6x faster than LLVM+LLD
+    // (≈1.4s vs 8.5s here) with byte-identical output (validated via the bootstrap
+    // round-trip, which rebuilds the selfhost compiler and diffs its full self-emit).
+    // Default ON for Debug; release builds keep LLVM for codegen quality.  Applied only
+    // to zebra.exe — the bootstrap (src/) is miscompiled by the self-hosted backend (see
+    // below), so it stays on LLVM.  `-Dfast-backend=false` forces LLVM (cross-check).
+    const fast_backend = (b.option(bool, "fast-backend",
+        "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only)") orelse true) and optimize == .Debug;
+    const setFastBackend = struct {
+        fn apply(c: *std.Build.Step.Compile, on: bool) void {
+            if (on) { c.use_llvm = false; c.use_lld = false; }
+        }
+    }.apply;
+
     const earley_dep = b.dependency("earley", .{ .target = target, .optimize = optimize });
     const earley_mod = earley_dep.module("earley");
 
@@ -38,6 +53,10 @@ pub fn build(b: *std.Build) void {
         .name        = "zebra-bootstrap",
         .root_module = compiler_mod,
     });
+    // NOTE: the bootstrap (src/) is kept on LLVM even in Debug. The self-hosted
+    // backend currently MISCOMPILES it (the built binary runs but emits nothing) —
+    // a real backend gap that src/ hits and selfhost/ does not. The primary
+    // zebra.exe (selfhost) is fast; zebra-bootstrap.exe stays correct on LLVM.
     b.installArtifact(bootstrap_exe);
 
     // ── Primary zebra binary: selfhost pipeline (Phase 22 cutover) ──────────
@@ -55,6 +74,7 @@ pub fn build(b: *std.Build) void {
         .name        = "zebra",
         .root_module = selfhost_mod,
     });
+    setFastBackend(exe, fast_backend);
     b.installArtifact(exe);
 
     // Install sqlite3.c alongside zebra.exe so programs using Sqlite can compile.
