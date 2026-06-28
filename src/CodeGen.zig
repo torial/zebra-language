@@ -13051,6 +13051,12 @@ const Generator = struct {
         if (e.* == .list_lit) return true;
         if (e.* == .call) {
             if (exprRootIdentName(e)) |nm| if (std.mem.eql(u8, nm, "List")) return true;
+            // Known List-returning stdlib call: `Dir.walk(path)` → List(str).
+            if (e.call.callee.* == .member) {
+                const m = e.call.callee.member;
+                if (m.object.* == .ident and std.mem.eql(u8, m.object.ident.name, "Dir") and
+                    std.mem.eql(u8, m.member, "walk")) return true;
+            }
         }
         return false;
     }
