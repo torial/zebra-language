@@ -2,23 +2,23 @@ def main()
     # Basic nil check: str? variable (postfix ? = nilable)
     var name: str? = "Alice"
     if name != nil
-        print name
+        print(name)
 
     # Nil case
     var empty: str? = nil
     if empty != nil
-        print empty
+        print(empty)
     else
-        print "got nil"
+        print("got nil")
 
     # else-branch narrowing: if x == nil else
     var val: str? = "hello"
     if val == nil
-        print "nil"
+        print("nil")
     else
-        print val
+        print(val)
 
     # Integer optional
     var n: int? = 42
     if n != nil
-        print n
+        print(n)

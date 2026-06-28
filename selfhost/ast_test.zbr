@@ -17,7 +17,7 @@ class AstTest
         .testDeclVar()
         .testUnionTypeRef()
         .testNilableTypeRef()
-        print "ast_test: all assertions passed"
+        print("ast_test: all assertions passed")
     catch |_e|
         assert false, "testNilableTypeRef raised unexpectedly"
 

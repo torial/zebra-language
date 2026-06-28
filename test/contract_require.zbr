@@ -27,4 +27,4 @@ def main()
     c.reset(2)
     var b = Box()
     b.set(10)
-    print "ok"
+    print("ok")

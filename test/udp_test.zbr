@@ -6,5 +6,5 @@ def main()
     send_sock.close()
     var data: str = recv_sock.recv(1024)
     recv_sock.close()
-    print data
-    print "udp_test OK"
+    print(data)
+    print("udp_test OK")

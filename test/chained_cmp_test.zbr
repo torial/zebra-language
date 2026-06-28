@@ -22,4 +22,4 @@ def main()
     assert x < 10, "plain comparison should still work"
     assert not (x < 3), "plain comparison false case"
 
-    print "chained_cmp tests passed"
+    print("chained_cmp tests passed")

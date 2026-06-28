@@ -25,4 +25,4 @@ def main()
     File.delete(path)
     assert not File.exists(path)
 
-    print "stdlib_file OK"
+    print("stdlib_file OK")

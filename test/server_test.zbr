@@ -5,7 +5,7 @@ def main()
     # didn't shut down — last incident left 4 instances coexisting.
     if Tcp.connect("127.0.0.1", 8080) as probe
         probe.close()
-        print "Port 8080 is already in use; exiting."
+        print("Port 8080 is already in use; exiting.")
     else
         var handler = def(req: HttpRequest): HttpResponse
             if req.path == "/"
@@ -16,5 +16,5 @@ def main()
             if req.path == "/echo"
                 return HttpResponse.ok(req.content)
             return HttpResponse.notFound("<h1>404 Not Found</h1>")
-        print "Listening on http://localhost:8080"
+        print("Listening on http://localhost:8080")
         Http.serve(8080, handler)

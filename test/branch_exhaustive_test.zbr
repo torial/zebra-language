@@ -8,22 +8,22 @@ def main()
     var s = Shape.circle(3.14)
     branch s
         on Shape.circle as r
-            print r
+            print(r)
         on Shape.rect as n
-            print n
+            print(n)
         on Shape.point
-            print "point"
+            print("point")
 
     # else clause covers the rest - no exhaustiveness error
     branch s
         on Shape.circle as r
-            print r
+            print(r)
         else
-            print "not circle"
+            print("not circle")
 
     # Inline else form
     var s2 = Shape.rect(42)
     branch s2
         on Shape.rect as n
-            print n
+            print(n)
         else, print "other"

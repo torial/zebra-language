@@ -14,4 +14,4 @@ class Box(T) implements Printable
 
 def main()
     var b: Printable = Box(int)(42)
-    print b.label()
+    print(b.label())

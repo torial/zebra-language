@@ -11,6 +11,6 @@ extend String
 def main()
     var s: str = "hello"
     var t: str = "world"
-    print s.shout()
-    print s.isLong()
-    print t.greet()
+    print(s.shout())
+    print(s.isLong())
+    print(t.greet())

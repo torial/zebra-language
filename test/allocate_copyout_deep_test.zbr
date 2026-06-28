@@ -19,10 +19,10 @@ class Main
             words <- inner
         if words.count() != 2
             ok = false
-            print "Test 1 FAIL: count"
+            print("Test 1 FAIL: count")
         else if words.at(0) != "hello" or words.at(1) != "world"
             ok = false
-            print "Test 1 FAIL: values"
+            print("Test 1 FAIL: values")
 
         # Test 2: List(int) copy-out survives arena deinit
         var nums: List(int) = List()
@@ -34,10 +34,10 @@ class Main
             nums <- inner2
         if nums.count() != 3
             ok = false
-            print "Test 2 FAIL: count"
+            print("Test 2 FAIL: count")
         else if nums.at(0) != 10 or nums.at(1) != 20 or nums.at(2) != 30
             ok = false
-            print "Test 2 FAIL: values"
+            print("Test 2 FAIL: values")
 
         # Test 3: class instance with recursive ^T? field (3-node linked list)
         var head: ^Node? = nil
@@ -48,34 +48,34 @@ class Main
             head <- n1
         if head == nil
             ok = false
-            print "Test 3 FAIL: head nil"
+            print("Test 3 FAIL: head nil")
         else
             var h = head!
             if h.name != "a"
                 ok = false
-                print "Test 3 FAIL: head name"
+                print("Test 3 FAIL: head name")
             else
                 var mid = h.next
                 if mid == nil
                     ok = false
-                    print "Test 3 FAIL: mid nil"
+                    print("Test 3 FAIL: mid nil")
                 else
                     var m = mid!
                     if m.name != "b"
                         ok = false
-                        print "Test 3 FAIL: mid name"
+                        print("Test 3 FAIL: mid name")
                     else
                         var tail = m.next
                         if tail == nil
                             ok = false
-                            print "Test 3 FAIL: tail nil"
+                            print("Test 3 FAIL: tail nil")
                         else
                             var t = tail!
                             if t.name != "c"
                                 ok = false
-                                print "Test 3 FAIL: tail name"
+                                print("Test 3 FAIL: tail name")
 
         if ok
-            print "allocate_copyout_deep: OK"
+            print("allocate_copyout_deep: OK")
         else
-            print "allocate_copyout_deep: FAIL"
+            print("allocate_copyout_deep: FAIL")

@@ -11,4 +11,4 @@ union Wrap
 
 def main()
     var w: int = Wrap.unit
-    print w
+    print(w)

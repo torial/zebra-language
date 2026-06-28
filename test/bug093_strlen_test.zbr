@@ -21,4 +21,4 @@ def main()
     var stem: str = s[0..s.len - 3]
     assert stem == "hello", "stem"
 
-    print "ok"
+    print("ok")

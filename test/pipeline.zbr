@@ -9,9 +9,9 @@ class Math
         def main
             # Pipeline: 3 -> add(10) -> double() = double(add(3, 10)) = 26
             var result = 3 -> Math.add(10) -> Math.double()
-            print result
+            print(result)
 
             # Expression-body lambda with explicit return type
             var triple = def(x: int): int = x + x + x
             var t = triple(7)
-            print t
+            print(t)

@@ -89,7 +89,7 @@ def main()
     test2ContextForkingWithSharedWriter()
     test3OptionalStrField()
     test4NestedIndentation()
-    print "selfhost_probe7: all OK"
+    print("selfhost_probe7: all OK")
 
 def test1SharedClassViaStructCopy
     var st  = SharedState()
@@ -106,7 +106,7 @@ def test1SharedClassViaStructCopy
     assert g1.state.count == 3, "shared count via g1 should be 3"
     assert g2.state.count == 3, "shared count via g2 should be 3"
     assert g3.state.count == 3, "shared count via g3 should be 3"
-    print "test1 OK"
+    print("test1 OK")
 
 def test2ContextForkingWithSharedWriter
     var wr   = Writer()
@@ -125,7 +125,7 @@ def test2ContextForkingWithSharedWriter
 
     var out = wr.result()
     assert out == "// module\npub const MyClass = struct {\n        x: i64 = 0,\n};\n", "output mismatch: '${out}'"
-    print "test2 OK"
+    print("test2 OK")
 
 def test3OptionalStrField
     var wr = Writer()
@@ -141,7 +141,7 @@ def test3OptionalStrField
 
     # Original unchanged
     assert g.try_label == nil, "g.try_label should still be nil"
-    print "test3 OK"
+    print("test3 OK")
 
 def test4NestedIndentation
     var wr = Writer()
@@ -162,4 +162,4 @@ def test4NestedIndentation
 
     var out = wr.result()
     assert out == "level0\n    level1\n        level2\n", "indentation mismatch: '${out}'"
-    print "test4 OK"
+    print("test4 OK")

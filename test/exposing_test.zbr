@@ -6,14 +6,14 @@ class Main
         var c = Color.green()
         branch c
             on expose_lib.Color.red
-                print "red"
+                print("red")
             on expose_lib.Color.green
-                print "green"
+                print("green")
             on expose_lib.Color.blue
-                print "blue"
+                print("blue")
 
         # Use the exposed class type directly (no expose_lib. prefix)
         var p = Palette("warm")
         assert p.describe() == "Palette:warm"
 
-        print "exposing_test: all OK"
+        print("exposing_test: all OK")

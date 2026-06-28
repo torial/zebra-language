@@ -21,23 +21,23 @@ def main()
     var x = 7
     branch x
         on 7 if x > 5
-            print "seven big"
+            print("seven big")
         on 7
-            print "seven small"
+            print("seven small")
         else
-            print "other"
+            print("other")
 
     # Guard fails, falls through to next matching clause
     var y = 7
     branch y
         on 7 if y > 100
-            print "seven huge"
+            print("seven huge")
         on 7
-            print "seven ok"
+            print("seven ok")
 
     # --- binding guard: on Variant: name if condition ---
-    print checkShape(Shape.circle(8.0))
-    print checkShape(Shape.circle(3.0))
-    print checkShape(Shape.square(12.0))
-    print checkShape(Shape.square(4.0))
-    print checkShape(Shape.point())
+    print(checkShape(Shape.circle(8.0)))
+    print(checkShape(Shape.circle(3.0)))
+    print(checkShape(Shape.square(12.0)))
+    print(checkShape(Shape.square(4.0)))
+    print(checkShape(Shape.point()))

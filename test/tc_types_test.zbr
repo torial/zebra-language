@@ -13,14 +13,14 @@ def main()
     assert not TcTypes.eql(TcType.int_(), TcType.unknown_())
     assert TcTypes.eql(TcType.bool_(), TcType.bool_())
     assert TcTypes.eql(TcType.void_(), TcType.void_())
-    print "1. unit primitive eql OK"
+    print("1. unit primitive eql OK")
 
     # 2. Sized numeric eql
     assert TcTypes.eql(TcType.int_n(32), TcType.int_n(32))
     assert not TcTypes.eql(TcType.int_n(32), TcType.int_n(64))
     assert not TcTypes.eql(TcType.int_n(32), TcType.uint_n(32))
     assert TcTypes.eql(TcType.float_n(64), TcType.float_n(64))
-    print "2. sized numeric eql OK"
+    print("2. sized numeric eql OK")
 
     # 3. Named type eql
     var sym_int  = TcSymRef("MyInt",  TcSymbolKind.class_)
@@ -30,7 +30,7 @@ def main()
     assert     TcTypes.eql(TcType.named(sym_int),  TcType.named(sym_int2))
     assert not TcTypes.eql(TcType.named(sym_int),  TcType.named(sym_str))
     assert not TcTypes.eql(TcType.named(sym_int),  TcType.named(sym_uni))
-    print "3. named eql OK"
+    print("3. named eql OK")
 
     # 4. Optional (recursive ^TcType) eql
     var opt_int  = TcType.optional(TcType.int_())
@@ -43,7 +43,7 @@ def main()
     var opt_opt_int  = TcType.optional(TcType.optional(TcType.int_()))
     var opt_opt_int2 = TcType.optional(TcType.optional(TcType.int_()))
     assert TcTypes.eql(opt_opt_int, opt_opt_int2)
-    print "4. optional eql OK"
+    print("4. optional eql OK")
 
     # 5. Tuple (List(TcType)) eql
     var ta = List(TcType)()
@@ -57,7 +57,7 @@ def main()
     tc.add(TcType.int_())
     assert     TcTypes.eql(TcType.tuple(ta), TcType.tuple(tb))
     assert not TcTypes.eql(TcType.tuple(ta), TcType.tuple(tc))
-    print "5. tuple eql OK"
+    print("5. tuple eql OK")
 
     # 6. Cross-module eql
     var ca = TcCrossRef("Ast", "Expr")
@@ -65,7 +65,7 @@ def main()
     var cc = TcCrossRef("Ast", "Stmt")
     assert     TcTypes.eql(TcType.cross_module(ca), TcType.cross_module(cb))
     assert not TcTypes.eql(TcType.cross_module(ca), TcType.cross_module(cc))
-    print "6. cross_module eql OK"
+    print("6. cross_module eql OK")
 
     # 7. isNumeric predicates
     assert TcTypes.isIntFamily(TcType.int_())
@@ -82,7 +82,7 @@ def main()
     assert TcTypes.isNumeric(TcType.float_())
     assert not TcTypes.isNumeric(TcType.bool_())
     assert not TcTypes.isNumeric(TcType.string_())
-    print "7. numeric predicates OK"
+    print("7. numeric predicates OK")
 
     # 8. isAssignable
     assert TcTypes.isAssignable(TcType.int_(), TcType.unknown_())
@@ -102,7 +102,7 @@ def main()
     assert TcTypes.isAssignable(TcType.fn_ref("foo"), TcType.fn_sig("MySig"))
     assert TcTypes.isAssignable(TcType.fn_ref("foo"), TcType.fn_ref("bar"))
     assert TcTypes.isAssignable(TcType.fn_sig("A"), TcType.fn_sig("B"))
-    print "8. isAssignable OK"
+    print("8. isAssignable OK")
 
     # 9. typeName
     assert TcTypes.typeName(TcType.int_())    == "int"
@@ -117,7 +117,7 @@ def main()
     assert TcTypes.typeName(TcType.cross_module(cross)) == "DeclMethod"
     assert TcTypes.typeName(TcType.fn_ref("myFn")) == "myFn"
     assert TcTypes.typeName(TcType.regex()) == "Regex"
-    print "9. typeName OK"
+    print("9. typeName OK")
 
     # 10. Generic TcGenericRef eql
     var ga_args = List(TcType)()
@@ -133,6 +133,6 @@ def main()
     assert     TcTypes.eql(TcType.generic_named(ga), TcType.generic_named(gb))
     assert not TcTypes.eql(TcType.generic_named(ga), TcType.generic_named(gc))
     assert not TcTypes.eql(TcType.generic_named(ga), TcType.generic_named(gd))
-    print "10. generic_named eql OK"
+    print("10. generic_named eql OK")
 
-    print "tc_types_test: all OK"
+    print("tc_types_test: all OK")

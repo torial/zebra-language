@@ -51,8 +51,8 @@ class Program
         def main
             var mark_verses: List(str) = Program.loadVerses("test/texts/MAR.csv")
             var mat_verses: List(str) = Program.loadVerses("test/texts/MAT.csv")
-            print "Mark: ${mark_verses.count()} verses"
-            print "Mat: ${mat_verses.count()} verses"
+            print("Mark: ${mark_verses.count()} verses")
+            print("Mat: ${mat_verses.count()} verses")
 
             # Pre-build all Matthew ngrams once (avoids 643× redundant rebuilds)
             var mat_ngrams: List(HashMap(str, int)) = List()
@@ -67,7 +67,7 @@ class Program
                     mat_totals.add(ptotal)
                     mat_idx.add(pi)
                 pi = pi + 1
-            print "Mat ngrams cached: ${mat_ngrams.count()}"
+            print("Mat ngrams cached: ${mat_ngrams.count()}")
 
             var mi = 0
             while mi < mark_verses.count()
@@ -83,6 +83,6 @@ class Program
                         # score >= 0.7  ↔  20*inter >= 7*(total_m + total_t)
                         if 20 * inter >= 7 * (total_m + total_t)
                             var orig_ti: int = mat_idx.at(ti)
-                            print "MAR[${mi}] ~ MAT[${orig_ti}] inter=${inter} total=${total_m + total_t}"
+                            print("MAR[${mi}] ~ MAT[${orig_ti}] inter=${inter} total=${total_m + total_t}")
                         ti = ti + 1
                 mi = mi + 1

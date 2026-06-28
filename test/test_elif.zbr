@@ -9,6 +9,6 @@ def check(x: str): int
     return result
 
 def main()
-    print check("apple")
-    print check("bat")
-    print check("cat")
+    print(check("apple"))
+    print(check("bat"))
+    print(check("cat"))

@@ -29,4 +29,4 @@ def main()
     proc2.kill()
     assert not proc2.isRunning(), "expected killed process to not be running"
 
-    print "sys_spawn_test: ok"
+    print("sys_spawn_test: ok")

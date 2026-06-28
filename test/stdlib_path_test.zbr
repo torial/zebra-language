@@ -27,4 +27,4 @@ def main()
     assert not Path.isAbsolute("rel/path")
     assert not Path.isAbsolute(".")
 
-    print "path tests passed"
+    print("path tests passed")

@@ -8,7 +8,7 @@ def main()
     # 1. Empty scope chain
     var sc = TcScope()
     assert sc.depth() == 0
-    print "1. empty scope OK"
+    print("1. empty scope OK")
 
     # 2. push/pop and depth tracking
     sc.push(TcScopeKind.module_)
@@ -26,7 +26,7 @@ def main()
     sc.pop()
     sc.pop()
     assert sc.depth() == 0
-    print "2. push/pop depth OK"
+    print("2. push/pop depth OK")
 
     # 3. define and hasLocal
     sc.push(TcScopeKind.module_)
@@ -36,13 +36,13 @@ def main()
     assert not sc.hasLocal("Missing")
     # duplicate define returns false
     assert not sc.define("MyClass", sym_a)
-    print "3. define/hasLocal OK"
+    print("3. define/hasLocal OK")
 
     # 4. getLocal
     var got = sc.getLocal("MyClass")
     assert got.name == "MyClass"
     assert got.kind == TcSymKind.class_
-    print "4. getLocal OK"
+    print("4. getLocal OK")
 
     # 5. hasSymbol / lookup across frames
     var sym_x = TcSymbol("x", TcSymKind.local, TcType.int_())
@@ -60,7 +60,7 @@ def main()
     var lc = sc.lookup("MyClass")
     assert lc.name == "MyClass"
     assert lc.kind == TcSymKind.class_
-    print "5. cross-frame lookup OK"
+    print("5. cross-frame lookup OK")
 
     # 6. shadowing: inner x hides outer x
     sc.push(TcScopeKind.block_)
@@ -72,7 +72,7 @@ def main()
     # after pop, original x visible again
     var lx3 = sc.lookup("x")
     assert TcTypes.eql(lx3.type_, TcType.int_())
-    print "6. shadowing OK"
+    print("6. shadowing OK")
 
     # 7. pop removes symbols
     sc.pop()   # pop method frame (removes x)
@@ -81,7 +81,7 @@ def main()
     sc.pop()   # pop module frame
     assert not sc.hasSymbol("MyClass")
     assert sc.depth() == 0
-    print "7. pop removes symbols OK"
+    print("7. pop removes symbols OK")
 
     # 8. re-use after full pop
     sc.push(TcScopeKind.module_)
@@ -89,6 +89,6 @@ def main()
     assert sc.define("int", sym_b)
     assert sc.hasLocal("int")
     sc.pop()
-    print "8. reuse after pop OK"
+    print("8. reuse after pop OK")
 
-    print "tc_scope_test: all OK"
+    print("tc_scope_test: all OK")

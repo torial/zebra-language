@@ -27,14 +27,14 @@ def main()
     const p  = Pair(int, str)(7, "hi")
 
     # toString() should dispatch to user method, not allocPrint
-    print bi.toString()    # Box
-    print bf.toString()    # Box
-    print p.toString()     # Pair
+    print(bi.toString())    # Box
+    print(bf.toString())    # Box
+    print(p.toString())     # Pair
 
     # get() should return typed values
-    print bi.get()         # 42
-    print bf.get()         # 1.5
+    print(bi.get())         # 42
+    print(bf.get())         # 1.5
 
     # fields should be accessible
-    print p.first          # 7
-    print p.second         # hi
+    print(p.first)          # 7
+    print(p.second)         # hi

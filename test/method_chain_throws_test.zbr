@@ -38,11 +38,11 @@ def testNestedChain(): str throws
 
 def main()
     var a = testCallArgChain()
-    print a
+    print(a)
     var b = testVarInitChain()
-    print b
+    print(b)
     var c = testNestedChain()
-    print c
-    print "ok"
+    print(c)
+    print("ok")
 catch |e|
-    print "ERROR: " + e.message
+    print("ERROR: " + e.message)

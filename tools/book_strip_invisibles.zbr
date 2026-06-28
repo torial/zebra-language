@@ -32,5 +32,5 @@ def main()
                 File.write(path, cleaned)
                 var removed = countOcc(text, bom) + countOcc(text, vs16)
                 total = total + removed
-                print part + "/" + entry + ": removed " + removed.toString()
-    print "total: " + total.toString()
+                print(part + "/" + entry + ": removed " + removed.toString())
+    print("total: " + total.toString())

@@ -8,4 +8,4 @@ def main()
     var exe2 = b.exe("smoke_exe2", "test/toplevel_main_test.zbr")
     exe2.linkLib(lib)
     # Intentionally NO b.run() -- declarative mode
-    print "build declarative: ok"
+    print("build declarative: ok")

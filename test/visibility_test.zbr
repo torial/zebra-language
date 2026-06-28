@@ -31,17 +31,17 @@ class Counter
 def main()
     var acc = BankAccount(balance: 100, owner: "Alice")
     acc.deposit(50)
-    print acc.getBalance()
-    print acc.owner
+    print(acc.getBalance())
+    print(acc.owner)
 
     var a = BankAccount(balance: 200, owner: "Bob")
     var b = BankAccount(balance: 0, owner: "Carol")
     a.transfer(b, 75)
-    print a.getBalance()
-    print b.getBalance()
+    print(a.getBalance())
+    print(b.getBalance())
 
     var c = Counter()
     c.inc()
     c.inc()
     c.inc()
-    print c.value()
+    print(c.value())

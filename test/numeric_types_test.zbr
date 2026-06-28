@@ -6,23 +6,23 @@ def main()
     var d: byte = 200
     var e: int64 = 9000000000
 
-    print a
-    print b
-    print c
-    print d
-    print e
+    print(a)
+    print(b)
+    print(c)
+    print(d)
+    print(e)
 
     # uint default (u64)
     var f: uint = 100
-    print f
+    print(f)
 
     # Sized arithmetic
     var x: int16 = 1000
     var y: int16 = 24
-    print x + y
+    print(x + y)
 
     # Arbitrary-width via int(N) syntax
     var p: int(8) = 127
     var q: uint(16) = 65000
-    print p
-    print q
+    print(p)
+    print(q)

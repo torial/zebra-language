@@ -57,7 +57,7 @@ union PNode
     stmt_raise: ^PRaise
     stmt_try_catch: ^PTryCatch
     stmt_expr: ^PNode
-    stmt_print: ^PNode
+    stmt_print: List(PNode)
     stmt_allocate: ^PAllocate
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
@@ -1888,10 +1888,12 @@ class Parser
         else if .textIs("ensure")
             return .parseContractStmt("ensure")
         else if .textIs("print")
+            # print is a function: `print( ExprList )` (statement form dropped, #220)
             .advance()
-            const expr = .parseExpr()
+            .expectText("(")
+            const args = .parseCallArgs()
             .skipEol()
-            return PNode.stmt_print(expr)
+            return PNode.stmt_print(args)
         else
             return .parseExprOrAssignStmt()
 

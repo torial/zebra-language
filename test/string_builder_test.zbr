@@ -4,14 +4,14 @@ def main()
     sb.append("hello")
     sb.append(", ")
     sb.append("world")
-    print sb.build()         # hello, world
+    print(sb.build())         # hello, world
 
     # ── len() ─────────────────────────────────────────────────────
-    print sb.len()           # 12
+    print(sb.len())           # 12
 
     # ── clear() + reuse ───────────────────────────────────────────
     sb.clear()
-    print sb.len()           # 0
+    print(sb.len())           # 0
 
     # ── Build a string in a loop (O(n), not O(n²)) ────────────────
     var words: List(str) = List()
@@ -25,10 +25,10 @@ def main()
             sb2.append(", ")
         sb2.append(w)
         first = false
-    print sb2.build()        # one, two, three
+    print(sb2.build())        # one, two, three
 
     # ── appendChar ────────────────────────────────────────────────
     var sb3: StringBuilder = StringBuilder()
     sb3.append("abc")
     sb3.appendChar(33)       # '!' = ASCII 33
-    print sb3.build()        # abc!
+    print(sb3.build())        # abc!

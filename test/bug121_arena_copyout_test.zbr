@@ -6,14 +6,14 @@ class Main
             var tmp = "hello" + " " + "world"
             result <- tmp
         if result == "hello world"
-            print "BUG-121 <- arena copy-out: OK"
+            print("BUG-121 <- arena copy-out: OK")
         else
-            print "BUG-121 <- arena copy-out: FAIL got: " + result
+            print("BUG-121 <- arena copy-out: FAIL got: " + result)
 
         # No-op form: <- outside any arena is a plain assign.
         var x: str = ""
         x <- "plain"
         if x == "plain"
-            print "BUG-121 <- outside arena: OK"
+            print("BUG-121 <- outside arena: OK")
         else
-            print "BUG-121 <- outside arena: FAIL"
+            print("BUG-121 <- outside arena: FAIL")

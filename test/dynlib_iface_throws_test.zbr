@@ -13,4 +13,4 @@ def main()
     assert r1 == 5, "expected 5"
     var r2: int = p.parse("") catch -1
     assert r2 == -1, "expected -1 from throw path"
-    print "dynlib_iface_throws: OK"
+    print("dynlib_iface_throws: OK")

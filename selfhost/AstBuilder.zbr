@@ -625,10 +625,11 @@ class ASTBuilder
                 const expr = .buildExpr(inner)?
                 return Stmt.expr(expr)
 
-            on PNode.stmt_print as inner
-                const expr = .buildExpr(inner)?
+            on PNode.stmt_print as arg_nodes
+                var arg_list: List(PNode) = arg_nodes
                 var args = List(Expr)()
-                args.add(expr)
+                for an in arg_list
+                    args.add(.buildExpr(an)?)
                 return Stmt.print_(StmtPrint(zspan(), args, true))
 
             on PNode.stmt_require as cond_nodes
@@ -1234,4 +1235,4 @@ class ASTBuilder
         return TypeRef.void_()
 
 def main()
-    print "AstBuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"
+    print("AstBuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')")

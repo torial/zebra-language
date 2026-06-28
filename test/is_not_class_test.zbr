@@ -16,23 +16,23 @@ def main()
     var d = Dog("Rex")
 
     # Cat instance is not Dog — true
-    print c is not Dog
+    print(c is not Dog)
 
     # Cat instance is not Cat — false
-    print c is not Cat
+    print(c is not Cat)
 
     # Dog instance is not Cat — true
-    print d is not Cat
+    print(d is not Cat)
 
     # Dog instance is not Dog — false
-    print d is not Dog
+    print(d is not Dog)
 
     # in an if condition
     if c is not Dog
-        print "cat is not a dog"
+        print("cat is not a dog")
 
     # in a function call position (expression context)
     var r: bool = d is not Cat
-    print r
+    print(r)
 
-    print "is_not_class: OK"
+    print("is_not_class: OK")

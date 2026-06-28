@@ -16,9 +16,9 @@ class ErrorPropTest
     def run()
         .outer()
     catch |_e|
-        print "caught: OK"
+        print("caught: OK")
 
 def main()
     var t = ErrorPropTest()
     t.run()
-    print "throws_autoprop_test: passed"
+    print("throws_autoprop_test: passed")

@@ -42,4 +42,4 @@ def test_bytes_deterministic()
     assert_eq a.bytes(8), b.bytes(8)
 
 def main()
-    print "random_instance_test: run with 'zebra test'"
+    print("random_instance_test: run with 'zebra test'")

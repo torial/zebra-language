@@ -8,4 +8,4 @@ def compute(): int
 
 def main()
     var v = compute()
-    print v
+    print(v)

@@ -64,4 +64,4 @@ def main()
     assert buf.build() == "hello world", "build: expected 'hello world'"
     assert buf.len() == 11, "len: expected 11"
 
-    print "dispatch_collision: OK"
+    print("dispatch_collision: OK")

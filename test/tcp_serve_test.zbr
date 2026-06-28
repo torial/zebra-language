@@ -8,4 +8,4 @@ def startServer()
 
 def main()
     # Compile smoke: exercises Tcp.serve codegen path without binding
-    print "tcp_serve_test OK"
+    print("tcp_serve_test OK")

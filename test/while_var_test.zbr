@@ -30,4 +30,4 @@ class Main
         assert t.testScanAlpha()  == "hello"
         assert t.testScanDigits() == "42"
         assert t.testEmpty()      == 0
-        print "while_var_test: all OK"
+        print("while_var_test: all OK")

@@ -1,17 +1,17 @@
 def main()
     # ── isValidUtf8 ───────────────────────────────────────────────
     var s: str = "hello"
-    print s.isValidUtf8()       # true
+    print(s.isValidUtf8())       # true
 
     # ── codePointCount ────────────────────────────────────────────
     # ASCII: codepoints == bytes
-    print s.codePointCount()    # 5
+    print(s.codePointCount())    # 5
 
     # ── chars() — Unicode codepoint iteration ─────────────────────
     # Each iteration yields a u21 codepoint
     var word: str = "abc"
     for c in word.chars()
-        print c                 # 97, 98, 99  (codepoint values)
+        print(c)                 # 97, 98, 99  (codepoint values)
 
     # ── Char predicates (ASCII-aware) ─────────────────────────────
     var ca: char = c'A'
@@ -19,14 +19,14 @@ def main()
     var c0: char = c'0'
     var sp: char = c' '
 
-    print ca.isAlpha()          # true
-    print c0.isAlpha()          # false
-    print c0.isDigit()          # true
-    print ca.isDigit()          # false
-    print sp.isWhitespace()     # true
-    print ca.isUpper()          # true
-    print cz.isLower()          # true
+    print(ca.isAlpha())          # true
+    print(c0.isAlpha())          # false
+    print(c0.isDigit())          # true
+    print(ca.isDigit())          # false
+    print(sp.isWhitespace())     # true
+    print(ca.isUpper())          # true
+    print(cz.isLower())          # true
 
     # ── Char transforms ───────────────────────────────────────────
-    print ca.toLower()          # 97 (= 'a')
-    print cz.toUpper()          # 90 (= 'Z')
+    print(ca.toLower())          # 97 (= 'a')
+    print(cz.toUpper())          # 90 (= 'Z')

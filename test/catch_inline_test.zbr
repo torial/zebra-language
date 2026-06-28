@@ -12,4 +12,4 @@ def main()
     var c = risky(5) catch 99
     assert c == 10, "expected 10 from risky(5)"
 
-    print "catch_inline: OK"
+    print("catch_inline: OK")

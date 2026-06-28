@@ -4,41 +4,41 @@ def main()
 
     # UTC: no change
     var utc = epoch.inZone("UTC")
-    print utc.year    # 1970
-    print utc.month   # 1
-    print utc.day     # 1
-    print utc.hour    # 0
+    print(utc.year)    # 1970
+    print(utc.month)   # 1
+    print(utc.day)     # 1
+    print(utc.hour)    # 0
 
     # Eastern Standard Time = UTC-5 (January → standard time)
     var est = epoch.inZone("America/New_York")
-    print est.year    # 1969
-    print est.month   # 12
-    print est.day     # 31
-    print est.hour    # 19
+    print(est.year)    # 1969
+    print(est.month)   # 12
+    print(est.day)     # 31
+    print(est.hour)    # 19
 
     # Japan = UTC+9 (no DST)
     var jst = epoch.inZone("Asia/Tokyo")
-    print jst.year    # 1970
-    print jst.month   # 1
-    print jst.day     # 1
-    print jst.hour    # 9
+    print(jst.year)    # 1970
+    print(jst.month)   # 1
+    print(jst.day)     # 1
+    print(jst.hour)    # 9
 
     # EU DST test: 2024-07-15 12:00 UTC → Paris CEST = UTC+2
     var summer = DateTime.of(2024, 7, 15, 12, 0, 0)
     var paris_summer = summer.inZone("Europe/Paris")
-    print paris_summer.hour   # 14
+    print(paris_summer.hour)   # 14
 
     # EU standard: 2024-01-15 12:00 UTC → Paris CET = UTC+1
     var winter = DateTime.of(2024, 1, 15, 12, 0, 0)
     var paris_winter = winter.inZone("Europe/Paris")
-    print paris_winter.hour   # 13
+    print(paris_winter.hour)   # 13
 
     # US DST test: 2024-07-04 12:00 UTC → New York EDT = UTC-4
     var july4 = DateTime.of(2024, 7, 4, 12, 0, 0)
     var ny_summer = july4.inZone("America/New_York")
-    print ny_summer.hour   # 8
+    print(ny_summer.hour)   # 8
 
     # Unknown zone returns UTC unchanged
     var unknown = epoch.inZone("Etc/Unknown")
-    print unknown.year   # 1970
-    print unknown.hour   # 0
+    print(unknown.year)   # 1970
+    print(unknown.hour)   # 0

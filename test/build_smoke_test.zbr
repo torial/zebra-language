@@ -12,4 +12,4 @@ def main()
     var lib = b.lib("smoke_lib", "test/arena_scope_test.zbr")
     var exe2 = b.exe("smoke_exe2", "test/toplevel_main_test.zbr")
     exe2.linkLib(lib)
-    print "build api: ok"
+    print("build api: ok")

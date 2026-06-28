@@ -10,5 +10,5 @@ def main()
         )
         i = i + 1
     pool.wait()
-    print counter.load()
-    print "thread_pool_test OK"
+    print(counter.load())
+    print("thread_pool_test OK")

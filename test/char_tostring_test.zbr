@@ -5,21 +5,21 @@ def main()
     for c in word.chars()
         chars_list.add(c.toString())
     for s in chars_list
-        print s    # a, b, c
+        print(s)    # a, b, c
 
     # Greek char
     var greek: str = "λόγος"
     var gchars: List(str) = List()
     for c in greek.chars()
         gchars.add(c.toString())
-    print gchars.count()    # 5
+    print(gchars.count())    # 5
 
     # list.at(i) with runtime index
     var i = 0
     while i < chars_list.count()
-        print chars_list.at(i)
+        print(chars_list.at(i))
         i = i + 1
 
     # codePointCount returns int (usable in arithmetic)
     var n = word.codePointCount()
-    print n - 2    # 1
+    print(n - 2)    # 1

@@ -61,7 +61,7 @@ def testWriter
     w.emit("hello")
     w.emit(" world")
     assert w.output() == "hello world", "Writer basic"
-    print "1. Writer: OK"
+    print("1. Writer: OK")
 
 # ── Part 2: Generator context-forking ────────────────────────────────────────
 
@@ -83,7 +83,7 @@ def testGenerator
     assert g4.in_method
     assert not g3.in_method  # original unchanged
 
-    print "2. Generator context-forking: OK"
+    print("2. Generator context-forking: OK")
 
 # ── Part 3: genType primitives ────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ def testGenTypePrimitive
     g8.genType(namedTr("MyClass"))
     assert g8.w.output() == "*MyClass", "class -> *ClassName"
 
-    print "3. genType primitives: OK"
+    print("3. genType primitives: OK")
 
 # ── Part 4: genType generics ─────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ def testGenTypeGenerics
     g2.genType(hashTr(namedTr("str"), namedTr("int")))
     assert g2.w.output() == "std.StringHashMap(i64)", "HashMap(str, int)"
 
-    print "4. genType generics: OK"
+    print("4. genType generics: OK")
 
 # ── Part 5: genType nilable / ref_to / error_union ───────────────────────────
 
@@ -155,7 +155,7 @@ def testGenTypeCompound
     g3.genType(refToTr(namedTr("Node")))
     assert g3.w.output() == "*Node", "ref_to Node"
 
-    print "5. genType compound: OK"
+    print("5. genType compound: OK")
 
 # ── Part 6: genEnum ───────────────────────────────────────────────────────────
 
@@ -170,7 +170,7 @@ def testGenEnum
     g.genEnum(n)
     var out = g.w.output()
     assert out == "pub const Color = enum {\n    red,\n    green,\n    blue,\n};\n\n", "genEnum output: '${out}'"
-    print "6. genEnum: OK"
+    print("6. genEnum: OK")
 
 # ── Part 7: genUnion ──────────────────────────────────────────────────────────
 
@@ -185,7 +185,7 @@ def testGenUnion
     g.genUnion(n)
     var out = g.w.output()
     assert out == "pub const Value = union(enum) {\n    int_: i64,\n    str_: []const u8,\n    void_,\n};\n\n", "genUnion output: '${out}'"
-    print "7. genUnion: OK"
+    print("7. genUnion: OK")
 
 # ── Part 8: genStruct (fields) ────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ def testGenStruct
     assert "x: i64," in out, "field x"
     assert "name: []const u8," in out, "field name"
     assert "};\n\n" in out, "struct footer"
-    print "8. genStruct: OK"
+    print("8. genStruct: OK")
 
 # ── Part 9: genClass (_type_tag + fields) ────────────────────────────────────
 
@@ -223,7 +223,7 @@ def testGenClass
     assert "_ttag_Counter: u64 = _zbr_hash" in out, "type tag constant"
     # After genClass, Counter should be in class_names
     assert g.class_names.contains_("Counter"), "class registered"
-    print "9. genClass: OK"
+    print("9. genClass: OK")
 
 # ── Part 10: genFieldDecl StringBuilder ──────────────────────────────────────
 
@@ -234,7 +234,7 @@ def testGenFieldDeclSB
     ig.genFieldDecl(fld)
     var out = g.w.output()
     assert out == "    buf: std.ArrayList(u8) = .{},\n", "StringBuilder field: '${out}'"
-    print "10. genFieldDecl StringBuilder: OK"
+    print("10. genFieldDecl StringBuilder: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -249,4 +249,4 @@ def main()
     testGenStruct()
     testGenClass()
     testGenFieldDeclSB()
-    print "codegen_test: all OK"
+    print("codegen_test: all OK")

@@ -34,5 +34,5 @@ def main()
     s.store(Tag(1))
     s.store(Tag(2))
     s.clear()
-    print s.full()
-    print "ok"
+    print(s.full())
+    print("ok")

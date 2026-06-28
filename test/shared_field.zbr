@@ -6,4 +6,4 @@ class Program
         def main
             Counter.count = Counter.count + 1
             Counter.count = Counter.count + 1
-            print Counter.count
+            print(Counter.count)

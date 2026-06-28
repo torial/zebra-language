@@ -25,4 +25,4 @@ def main()
     assert color.g == 128, "expected g=128, got " + color.g.toString()
     assert color.b == 0,   "expected b=0, got " + color.b.toString()
 
-    print "bug118_struct_ctor_test: ok"
+    print("bug118_struct_ctor_test: ok")

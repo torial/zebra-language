@@ -1,4 +1,4 @@
 def main()
     var n: int = 42
     var s = n.toString()
-    print s
+    print(s)

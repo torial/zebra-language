@@ -19,7 +19,7 @@ class UnlessUntilTest
             n = n + 1
         assert n == 3
 
-        print "if-not/while-not OK"
+        print("if-not/while-not OK")
 
 def main()
     UnlessUntilTest().run()

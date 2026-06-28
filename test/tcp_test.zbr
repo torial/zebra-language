@@ -5,5 +5,5 @@ def main()
         c.write("GET /get HTTP/1.0\r\nHost: httpbin.org\r\n\r\n")
         var data: str = c.read()
         c.close()
-        print data.len              # some positive number
-        print data.startsWith("HTTP/1")   # true
+        print(data.len)              # some positive number
+        print(data.startsWith("HTTP/1"))   # true

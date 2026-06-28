@@ -20,11 +20,11 @@ def main()
     #    so string concatenation (" " + g) is valid.
     var g = DottedLib.greet()
     assert g == "hello from dotted lib", "greet failed"
-    print "1. dotted.lib static str call: OK"
+    print("1. dotted.lib static str call: OK")
 
     # 2. Static method returning int — arithmetic on result.
     var sum = DottedLib.add(7, 3)
     assert sum == 10, "add failed"
-    print "2. dotted.lib static int call: OK"
+    print("2. dotted.lib static int call: OK")
 
-    print "expose_dotted_test: all OK"
+    print("expose_dotted_test: all OK")

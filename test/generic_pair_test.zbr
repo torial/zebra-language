@@ -11,15 +11,15 @@ class Pair(A, B)
 
 def main()
     var p = Pair(str, int)("hello", 42)
-    print p.second     # 42
+    print(p.second)     # 42
 
     var q = Pair(int, bool)(100, true)
-    print q.first      # 100
-    print q.second     # true
+    print(q.first)      # 100
+    print(q.second)     # true
 
     var r = Pair(int, str)(1, "one")
-    print r.first      # 1
+    print(r.first)      # 1
 
     # swap: Pair(int, str) → Pair(str, int)
     var s = r.swap()
-    print s.second     # 1
+    print(s.second)     # 1

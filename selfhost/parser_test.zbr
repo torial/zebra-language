@@ -21,7 +21,7 @@ class ParserTest
         .testExprComparison()
         .testMethodCall()
         .testVarStmt()
-        print "parser_test: all assertions passed"
+        print("parser_test: all assertions passed")
 
     # -- Helpers ---------------------------------------------------------------
 
@@ -47,7 +47,7 @@ class ParserTest
                 assert u.exposed.len == 0, "use: expected 0 exposed"
             else
                 assert false, "use: expected use_ variant"
-        print "testUseDecl: OK"
+        print("testUseDecl: OK")
 
     def testEmptyClass() throws
         const decls = .moduleDecls("class Empty\n")
@@ -58,7 +58,7 @@ class ParserTest
                 assert c.members.len == 0, "empty class: expected 0 members"
             else
                 assert false, "empty class: expected class_ variant"
-        print "testEmptyClass: OK"
+        print("testEmptyClass: OK")
 
     def testClassWithField() throws
         const src = "class Point\n    var x: int\n    var y: int\n"
@@ -77,7 +77,7 @@ class ParserTest
                         assert false, "field class: expected field_ for first member"
             else
                 assert false, "field class: expected class_ variant"
-        print "testClassWithField: OK"
+        print("testClassWithField: OK")
 
     def testClassWithMethod() throws
         const src = "class Calc\n    def double(n: int): int\n        return n\n"
@@ -97,7 +97,7 @@ class ParserTest
                         assert false, "method class: expected method_ for member"
             else
                 assert false, "method class: expected class_ variant"
-        print "testClassWithMethod: OK"
+        print("testClassWithMethod: OK")
 
     def testReturnStmt() throws
         const src = "class R\n    def fetch(): int\n        return 42\n"
@@ -121,7 +121,7 @@ class ParserTest
                         assert false, "return: expected method_"
             else
                 assert false, "return: expected class_"
-        print "testReturnStmt: OK"
+        print("testReturnStmt: OK")
 
     def testIfStmt() throws
         const src = "class C\n    def check(x: int)\n        if x\n            pass\n"
@@ -142,7 +142,7 @@ class ParserTest
                         assert false, "if: expected method_"
             else
                 assert false, "if: expected class_"
-        print "testIfStmt: OK"
+        print("testIfStmt: OK")
 
     def testExprArith() throws
         # Parse `1 + 2` via a method return statement
@@ -177,7 +177,7 @@ class ParserTest
                         assert false, "arith: expected method_"
             else
                 assert false, "arith: expected class_"
-        print "testExprArith: OK"
+        print("testExprArith: OK")
 
     def testExprComparison() throws
         # Parse `x == 0` comparison
@@ -200,7 +200,7 @@ class ParserTest
                         assert false, "cmp: expected method_"
             else
                 assert false, "cmp: expected class_"
-        print "testExprComparison: OK"
+        print("testExprComparison: OK")
 
     def testMethodCall() throws
         # Parse `print x.toString()` - verifies it parses: stmt_print.
@@ -216,14 +216,14 @@ class ParserTest
                         assert m.stmts.len == 1, "call: expected 1 stmt"
                         branch m.stmts.at(0)
                             on PNode.stmt_print
-                                pass  # confirmed: print statement parsed correctly
+                                pass  # confirmed: print(statement parsed correctly)
                             else
                                 assert false, "call: expected stmt_print"
                     else
                         assert false, "call: expected method_"
             else
                 assert false, "call: expected class_"
-        print "testMethodCall: OK"
+        print("testMethodCall: OK")
 
     def testVarStmt() throws
         # Parse `var count: int = 0`
@@ -251,10 +251,10 @@ class ParserTest
                         assert false, "var: expected method_"
             else
                 assert false, "var: expected class_"
-        print "testVarStmt: OK"
+        print("testVarStmt: OK")
 
 def main()
     var t = ParserTest()
     t.run()?
 catch |e|
-    print "FAILED: " + e.message
+    print("FAILED: " + e.message)

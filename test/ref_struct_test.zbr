@@ -18,4 +18,4 @@ class Main
         var h = Holder(pt)
         assert h.p.x == 3
         assert h.p.y == 4
-        print "ref_struct_test OK"
+        print("ref_struct_test OK")

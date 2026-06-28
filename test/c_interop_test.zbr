@@ -4,22 +4,22 @@ class Program
     static
         def testArithmetic
             var sum = CUtils.c_add(10, 32)
-            print sum
+            print(sum)
             var product = CUtils.c_mul(6, 7)
-            print product
+            print(product)
             var diff = CUtils.c_add(100, -30)
-            print diff
+            print(diff)
 
         def testBoundaryValues
             var zero = CUtils.c_add(0, 0)
-            print zero
+            print(zero)
             var large = CUtils.c_mul(1000, 1000)
-            print large
+            print(large)
             var negative = CUtils.c_add(-50, -25)
-            print negative
+            print(negative)
 
         def main
-            print "C Interop Tests"
+            print("C Interop Tests")
             testArithmetic()
             testBoundaryValues()
-            print "C interop tests completed"
+            print("C interop tests completed")

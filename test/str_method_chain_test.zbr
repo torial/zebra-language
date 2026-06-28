@@ -64,4 +64,4 @@ def main()
     var inner = "  spaces  ".trim()
     assert inner.len == 6, "trim().len: expected 6"
 
-    print "str_method_chain: OK"
+    print("str_method_chain: OK")

@@ -7,4 +7,4 @@ class App
 
         def main
             var result: int = App.risky(5) catch -1
-            print result
+            print(result)

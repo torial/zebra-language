@@ -9,4 +9,4 @@ def main()
     var missing = File.modtime("does_not_exist_zzz_42.txt")
     assert missing == nil
 
-    print "modtime int? OK"
+    print("modtime int? OK")

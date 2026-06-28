@@ -7,4 +7,4 @@ class HelloGreeter implements IGreeter
         return "Hello, " + name
 
 def main()
-    print "dynlib_export_class OK"
+    print("dynlib_export_class OK")

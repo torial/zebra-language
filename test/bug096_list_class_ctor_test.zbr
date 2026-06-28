@@ -18,4 +18,4 @@ def main()
     assert c.items.count() == 2, "count"
     assert c.items.at(0).label == "alpha", "first"
     assert c.items.at(1).label == "beta", "second"
-    print "ok"
+    print("ok")

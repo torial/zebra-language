@@ -5,9 +5,9 @@ def main()
     argv.add("/c")
     argv.add("echo hello")
     var result: SysRunResult = sys.run(argv)
-    print result.exit_code == 0              # true
-    print result.stdout.contains("hello")    # true
-    print result.stderr.len == 0             # true
+    print(result.exit_code == 0)              # true
+    print(result.stdout.contains("hello"))    # true
+    print(result.stderr.len == 0)             # true
 
     # Bad command should give non-zero exit code
     var bad: List(str) = List()
@@ -15,4 +15,4 @@ def main()
     bad.add("/c")
     bad.add("exit 42")
     var bad_result: SysRunResult = sys.run(bad)
-    print bad_result.exit_code == 42         # true
+    print(bad_result.exit_code == 42)         # true

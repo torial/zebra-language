@@ -17,4 +17,4 @@ enum Color
 
 def main()
     var c: int = Color.red
-    print c
+    print(c)

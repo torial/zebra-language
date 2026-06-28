@@ -18,5 +18,5 @@ def main()
 =======
     var label: str = "updated label"
 >>>>>>> fix-branch
-    print count
-    print label
+    print(count)
+    print(label)

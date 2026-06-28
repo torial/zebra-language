@@ -23,19 +23,19 @@ def main()
     # Basic x! force-unwrap on a local optional
     var a: int? = 42
     var v1: int = a!
-    print v1  # 42
+    print(v1)  # 42
 
     # x! on a function return value
     var v2: int = maybeInt(7)!
-    print v2  # 7
+    print(v2)  # 7
 
     # x!.method() — force-unwrap then chain
     var v3: int = maybeCounter(5)!.doubled()
-    print v3  # 10
+    print(v3)  # 10
 
     #! legacy syntax still works
     var b: int? = 99
     var v4: int = b!
-    print v4  # 99
+    print(v4)  # 99
 
-    print "postfix_bang_test PASS"
+    print("postfix_bang_test PASS")

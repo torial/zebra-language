@@ -36,4 +36,4 @@ def main()
             y = a.value() + b.value()
 
     assert y == 3
-    print "allocate Arena() scope OK"
+    print("allocate Arena() scope OK")

@@ -104,4 +104,4 @@ def main()
         on Op.mul, print "matched mul"
         on Op.neg, print "unexpected"
 
-    print "branch inline return OK"
+    print("branch inline return OK")

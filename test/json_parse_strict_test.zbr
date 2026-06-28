@@ -42,4 +42,4 @@ def main()
     else
         assert false
 
-    print "json_parse_strict_test OK"
+    print("json_parse_strict_test OK")

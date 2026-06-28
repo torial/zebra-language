@@ -364,18 +364,18 @@ def runOne(src: str)
     var ast = p.parseExpr(0)?
     # If anything follows the top-level expression, that's a parse error.
     if p.cur.kind != TokKind.eof
-        print "  ${src}  -> error: trailing tokens"
+        print("  ${src}  -> error: trailing tokens")
         return
     var v = evalExpr(ast)
     var fv: str = formatFloat(v)
     var fa: str = formatExpr(ast)
-    print "  ${src}  =  ${fv}    [ ${fa} ]"
+    print("  ${src}  =  ${fv}    [ ${fa} ]")
 catch |e|
-    print "  ${src}  -> error: ${e.message}"
+    print("  ${src}  -> error: ${e.message}")
 
 def main()
-    print "pratt_calc — operator-precedence parsing demo"
-    print "---"
+    print("pratt_calc — operator-precedence parsing demo")
+    print("---")
     runOne("1 + 2 * 3")
     runOne("(1 + 2) * 3")
     runOne("2 ^ 3 ^ 2")              # right-assoc:  2^(3^2) = 2^9 = 512

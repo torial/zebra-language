@@ -19,4 +19,4 @@ def main()
     var empty_joined = empty.join("-")
     assert empty_joined == "", "expected empty string, got '" + empty_joined + "'"
 
-    print "bug117_list_join_test: ok"
+    print("bug117_list_join_test: ok")

@@ -56,4 +56,4 @@ def main()
     assert Math.clz(1) == 63
     assert Math.ctz(8) == 3
 
-    print "stdlib_math OK"
+    print("stdlib_math OK")

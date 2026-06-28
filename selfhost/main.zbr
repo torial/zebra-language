@@ -681,7 +681,7 @@ def runFmt(path: str, check_only: bool, print_only: bool) throws
             sys.exit(1)
         sys.exit(0)
     if print_only
-        print formatted
+        print(formatted)
         sys.exit(0)
     if original == formatted
         sys.errln("fmt: " + path + " already formatted")
@@ -922,10 +922,10 @@ def main()
         mc.compileDep(path, true)?
 
         if mode_emit
-            # --emit-zig: print root file's Zig source to stdout
+            # --emit-zig: print(root file's Zig source to stdout)
             var zig_path: str = mc.zbrToZig(path)
             var zig_src: str = File.read(zig_path)
-            print zig_src
+            print(zig_src)
             sys.exit(0)
 
         # --selfhost-compile: invoke zig to compile/run the generated file
@@ -1024,7 +1024,7 @@ def main()
 
     var r = sys.run(argv)
     if r.stdout != ""
-        print r.stdout
+        print(r.stdout)
     if r.stderr != ""
         sys.errln(r.stderr)
     if r.exit_code != 0

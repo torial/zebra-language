@@ -18,4 +18,4 @@ def test_assert_true_false()
     assert_true not false
 
 def main()
-    print "test_module_test: run with 'zebra test'"
+    print("test_module_test: run with 'zebra test'")

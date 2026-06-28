@@ -5,4 +5,4 @@ class App
             for n in 0:5
                 pb.tick()
             pb.done()
-            print "done"
+            print("done")

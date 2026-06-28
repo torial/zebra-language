@@ -15,19 +15,19 @@ class Program
             p.x = 10
             p.y = 20
             var {x, y} = p
-            print x
-            print y
+            print(x)
+            print(y)
 
             # Struct destructuring with string field
             var alice = Person()
             alice.name = "Alice"
             alice.age = 30
             var {name, age} = alice
-            print name
-            print age
+            print(name)
+            print(age)
 
             # Partial extraction — only the z field
             var p2 = Point()
             p2.z = 99
             var {z} = p2
-            print z
+            print(z)

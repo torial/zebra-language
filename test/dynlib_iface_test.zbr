@@ -8,4 +8,4 @@ class HelloGreeter implements IGreeter
 def main()
     var g: IGreeter = HelloGreeter()
     var msg: str = g.greet("World")
-    print msg
+    print(msg)

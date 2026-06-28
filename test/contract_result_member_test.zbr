@@ -25,4 +25,4 @@ def main()
     nums.add(42)
     nums.add(99)
     assert takeFirst(nums) == 42
-    print "contract_result_member_test OK"
+    print("contract_result_member_test OK")

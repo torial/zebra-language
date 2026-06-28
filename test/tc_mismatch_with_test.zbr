@@ -9,4 +9,4 @@ def makeInt(): int
         return "inside with"
 
 def main()
-    print makeInt().toString()
+    print(makeInt().toString())

@@ -6,5 +6,5 @@ def main() throws
     var greeter: ^IGreeter? = lib.lookup(IGreeter, "plugin_create")
     if greeter as g
         var msg: str = g.greet("World")
-        print msg
+        print(msg)
     lib.close()

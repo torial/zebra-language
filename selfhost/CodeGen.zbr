@@ -6699,7 +6699,7 @@ struct Generator
             if containsResultRef(ens)
                 uses_result = true
         if uses_result and return_type == nil
-            print "selfhost codegen: ensure in '${context}' references 'result' but function has no return type"
+            print("selfhost codegen: ensure in '${context}' references 'result' but function has no return type")
             uses_result = false
         # Single pass: emit const _old_N snapshots for every old() in each ensure expr
         for ens in ensure_list

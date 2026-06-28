@@ -20,4 +20,4 @@ def main()
     var hmac = Hash.hmac512("key", "message")
     assert hmac.len == 128   # 64 bytes = 128 hex chars
 
-    print "stdlib_hash OK"
+    print("stdlib_hash OK")

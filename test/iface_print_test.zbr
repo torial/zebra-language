@@ -18,8 +18,8 @@ class StepCounter implements ICounter
 
 def main()
     var g: IGreeter = HelloGreeter()
-    print g.greet("World")
+    print(g.greet("World"))
     var c: ICounter = StepCounter()
-    print c.count()
-    print c.count()
-    print "iface_print: OK"
+    print(c.count())
+    print(c.count())
+    print("iface_print: OK")

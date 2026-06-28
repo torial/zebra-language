@@ -98,4 +98,4 @@ def main()
     var ts = now.timestamp()
     assert ts > 1000000000
 
-    print "stdlib_additions OK"
+    print("stdlib_additions OK")

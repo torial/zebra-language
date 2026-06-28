@@ -12,22 +12,22 @@ class Program
         def main
             # Test pipeline operator
             var nums: int = 42
-            print nums
+            print(nums)
 
             # Test with block (contextual self)
             var c: Counter = zig"Counter{}"
             c.increment()
             c.increment()
             c.increment()
-            print c.value()
+            print(c.value())
 
             # Test expression-body lambda
             var double = def(x: int) = x + x
             var result = double(5)
-            print result
+            print(result)
 
             # Test except struct update
             var c2: Counter = zig"Counter{}"
             var c3 = c2 except
                 count = 99
-            print c3.count
+            print(c3.count)

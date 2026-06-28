@@ -1286,7 +1286,8 @@ const Builder = struct {
             },
             .StmtPrint    => .{ .print = try b.box(Ast.StmtPrint, .{
                 .span = s,
-                .args = try b.buildExprListPtrs(kids[1]),
+                // grammar: kw_print lparen ExprList rparen eol → ExprList is kids[2]
+                .args = try b.buildExprListPtrs(kids[2]),
             }) },
             .StmtPass     => .{ .pass      = s },
             .StmtBreak    => .{ .break_    = s },
@@ -1440,7 +1441,8 @@ const Builder = struct {
         }
         if (isLeafKind(first, .kw_print)) return .{ .print = try b.box(Ast.StmtPrint, .{
             .span = s,
-            .args = try b.buildExprListPtrs(kids[1]),
+            // grammar: kw_print lparen ExprList rparen → ExprList is kids[2]
+            .args = try b.buildExprListPtrs(kids[2]),
         }) };
         if (isLeafKind(first, .kw_pass))     return .{ .pass      = s };
         if (isLeafKind(first, .kw_break))    return .{ .break_    = s };

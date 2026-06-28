@@ -19,10 +19,10 @@ class Main
         def runOne(m: Main, n: int)
             var v: int = Main.safeAbs(n)?
             m.ok_count = m.ok_count + 1
-            print "ok=${v}"
+            print("ok=${v}")
         catch
             m.caught_count = m.caught_count + 1
-            print "caught"
+            print("caught")
 
         def main
             var m = Main()
@@ -33,4 +33,4 @@ class Main
             Main.runOne(m, -2000)
             assert m.ok_count == 2
             assert m.caught_count == 1
-            print "contract_result_throws_test OK"
+            print("contract_result_throws_test OK")

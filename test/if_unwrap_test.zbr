@@ -30,56 +30,56 @@ def makeTag(b: bool): Tag
 def main()
     var v1 = tryParse("42")
     if v1 as n
-        print "got: " + n.toString()
+        print("got: " + n.toString())
     else
-        print "none"
+        print("none")
     var v2 = tryParse("bad")
     if v2 as n
-        print "got: " + n.toString()
+        print("got: " + n.toString())
     else
-        print "none"
+        print("none")
     var a = tryParse("bad")
     var b = tryParse("42")
     if a as x
-        print "a: " + x.toString()
+        print("a: " + x.toString())
     else if b as y
-        print "b: " + y.toString()
+        print("b: " + y.toString())
     else
-        print "neither"
+        print("neither")
     var s1 = tryParseStr("hello")
     if s1 as ss
-        print "str: " + ss
+        print("str: " + ss)
     if tryParseStr("") as ss
-        print "str: " + ss
+        print("str: " + ss)
     else
-        print "empty"
+        print("empty")
     var w1 = tryWrap("ok")
     if w1 is Wrapper as w
-        print "wrap: " + w.value.toString()
+        print("wrap: " + w.value.toString())
     var w2 = tryWrap("nope")
     if w2 is Wrapper as w
-        print "wrap: " + w.value.toString()
+        print("wrap: " + w.value.toString())
     else
-        print "no wrap"
+        print("no wrap")
     # BUG-132: mixed if-chains - clauses in one chain need not share a form.
     # union-variant-check head + optional-unwrap else-if:
     var t1 = makeTag(true)
     if t1 is Tag.hot as h
-        print "hot: " + h.toString()
+        print("hot: " + h.toString())
     else if tryParse("42") as n
-        print "n: " + n.toString()
+        print("n: " + n.toString())
     else
-        print "none-mixed"
+        print("none-mixed")
     # optional-unwrap head + union-variant-check else-if:
     if tryParse("bad") as n
-        print "n: " + n.toString()
+        print("n: " + n.toString())
     else if t1 is Tag.hot as h
-        print "hot2: " + h.toString()
+        print("hot2: " + h.toString())
     else
-        print "none-mixed2"
+        print("none-mixed2")
     # plain head + optional-unwrap else-if:
     if false
-        print "never"
+        print("never")
     else if tryParse("42") as n
-        print "plain-elseif: " + n.toString()
-    print "ok"
+        print("plain-elseif: " + n.toString())
+    print("ok")

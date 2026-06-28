@@ -17,4 +17,4 @@ class Main
         assert r3 == 42
         # body ran exactly once — count is 1
         assert c.count == 1
-        print "BUG-119 @once: OK"
+        print("BUG-119 @once: OK")

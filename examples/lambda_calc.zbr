@@ -358,9 +358,9 @@ def runOne(src: str)
     p.start()?
     var t = p.parseTerm()?
     if p.cur.kind != TokKind.eof
-        print "  ${src}  -> error: trailing tokens"
+        print("  ${src}  -> error: trailing tokens")
         return
-    print "  ${src}"
+    print("  ${src}")
     var steps: List(str) = []
     steps.add(show(t))
     var step_cap = 64
@@ -377,18 +377,18 @@ def runOne(src: str)
     while k < steps.count()
         var line: str = steps.at(k)
         if k == 0
-            print "    = ${line}"
+            print("    = ${line}")
         else
-            print "    → ${line}"
+            print("    → ${line}")
         k = k + 1
     if i == step_cap
-        print "    (stopped after ${step_cap} steps — no normal form found)"
+        print("    (stopped after ${step_cap} steps — no normal form found)")
 catch |e|
-    print "  ${src}  -> error: ${e.message}"
+    print("  ${src}  -> error: ${e.message}")
 
 def main()
-    print "lambda_calc — untyped lambda calculus"
-    print "---"
+    print("lambda_calc — untyped lambda calculus")
+    print("---")
     # Identity applied to a variable.
     runOne("(\\x.x) y")
     # K combinator — first projection.

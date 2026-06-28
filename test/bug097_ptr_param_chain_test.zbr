@@ -37,4 +37,4 @@ def main()
     assert out.at(0) == "seed", "first"
     assert out.at(1) == "alpha", "second"
     assert hasValue(out, "beta"), "hasValue direct"
-    print "ok"
+    print("ok")

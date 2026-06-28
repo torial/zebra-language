@@ -6,4 +6,4 @@ class App
             return x * 2
 
         def main
-            print "throws annotation compiles"
+            print("throws annotation compiles")

@@ -7,4 +7,4 @@ class Vault
 
 def main()
     var v = Vault(secret: 42)
-    print v.secret
+    print(v.secret)

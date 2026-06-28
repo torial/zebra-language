@@ -49,4 +49,4 @@ class Main
     static def main()
         var t = SigTest()
         t.run()
-        print "sig_test: all OK"
+        print("sig_test: all OK")

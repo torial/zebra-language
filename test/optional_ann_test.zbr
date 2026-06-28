@@ -17,14 +17,14 @@ def main()
     # Optional result — should annotate: ?[]const u8 when mutable
     var found = findFirst(items, "ban")
     if found != nil
-        print "found"
+        print("found")
     else
-        print "not found"
+        print("not found")
 
     var missing = findFirst(items, "xyz")
     if missing == nil
-        print "correctly nil"
+        print("correctly nil")
     else
-        print "unexpected"
+        print("unexpected")
 
-    print "optional_ann_test: done"
+    print("optional_ann_test: done")

@@ -7,10 +7,10 @@ class App
 
         def testRiskyFail()
             var result: int = App.risky(-3)?
-            print result
+            print(result)
         catch
-            print "caught an error"
+            print("caught an error")
 
         def main
             testRiskyFail()
-            print "after try"
+            print("after try")

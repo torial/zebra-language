@@ -12,34 +12,34 @@ class Main
         File.append(path, "\nline3")
 
         var content = File.read(path)
-        print content
+        print(content)
 
         var exists = File.exists(path)
-        print exists
+        print(exists)
 
         File.copy(path, copy_path)
-        print File.exists(copy_path)
+        print(File.exists(copy_path))
 
         File.rename(copy_path, renamed_path)
-        print File.exists(renamed_path)
-        print File.exists(copy_path)
+        print(File.exists(renamed_path))
+        print(File.exists(copy_path))
 
         File.delete(path)
         File.delete(renamed_path)
-        print File.exists(path)
+        print(File.exists(path))
 
         # ── Dir basics ───────────────────────────────────────────────────────────
         var dir_path = "/tmp/zebra_dir_test"
         Dir.create(dir_path)
-        print Dir.exists(dir_path)
+        print(Dir.exists(dir_path))
         Dir.delete(dir_path)
-        print Dir.exists(dir_path)
+        print(Dir.exists(dir_path))
 
         # ── Path basics ──────────────────────────────────────────────────────────
         var full_path = "/home/user/documents/report.txt"
-        print Path.basename(full_path)
-        print Path.dirname(full_path)
-        print Path.ext(full_path)
-        print Path.stem(full_path)
-        print Path.isAbsolute(full_path)
-        print Path.isAbsolute("relative/path")
+        print(Path.basename(full_path))
+        print(Path.dirname(full_path))
+        print(Path.ext(full_path))
+        print(Path.stem(full_path))
+        print(Path.isAbsolute(full_path))
+        print(Path.isAbsolute("relative/path"))

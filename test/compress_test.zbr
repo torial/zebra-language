@@ -3,12 +3,12 @@ def main()
     const original: str = "hello world"
     const compressed: str = Compress.gzip(original)
     assert compressed.len > 0
-    print "gzip produces output: OK"
+    print("gzip produces output: OK")
 
     var recovered = Compress.gunzip(compressed)
     assert recovered != nil
     assert recovered! == original
-    print "gzip round-trip: OK"
+    print("gzip round-trip: OK")
 
     # Larger input to exercise real compression
     const big: str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -18,11 +18,11 @@ def main()
     var big_back = Compress.gunzip(big_gz)
     assert big_back != nil
     assert big_back! == big
-    print "gzip compressible data round-trip: OK"
+    print("gzip compressible data round-trip: OK")
 
     # gunzip on invalid data returns nil
     var bad = Compress.gunzip("not valid gzip")
     assert bad == nil
-    print "gunzip bad input: OK"
+    print("gunzip bad input: OK")
 
-    print "All compress tests passed."
+    print("All compress tests passed.")

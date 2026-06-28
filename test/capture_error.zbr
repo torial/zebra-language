@@ -3,4 +3,4 @@ class Program
         def main
             var offset: int = 10
             var bad = def(x: int)
-                print x + offset
+                print(x + offset)

@@ -5,5 +5,5 @@ class App
         def main
             var d: int = MathUtils.double(7)
             var s: int = MathUtils.square(4)
-            print d
-            print s
+            print(d)
+            print(s)

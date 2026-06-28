@@ -157,12 +157,12 @@ def main()
             changed = changed + 1
             if not dry_run
                 File.write(path, rewritten!)
-                print "  converted: " + path
+                print("  converted: " + path)
             else
-                print "  [dry-run] would convert: " + path
+                print("  [dry-run] would convert: " + path)
 
-    print ""
+    print("")
     var verb = ""
     if dry_run
         verb = "would be "
-    print changed.toString() + " files " + verb + "converted, " + skipped.toString() + " already clean or skipped."
+    print(changed.toString() + " files " + verb + "converted, " + skipped.toString() + " already clean or skipped.")

@@ -7,30 +7,30 @@ class RandomTest
         var n = Random.randInt(1, 100)
         assert n >= 1
         assert n <= 100
-        print "randInt in range: OK"
+        print("randInt in range: OK")
 
         # randFloat — should be in [0, 1)
         var f = Random.randFloat()
         assert f >= 0.0
         assert f < 1.0
-        print "randFloat in range: OK"
+        print("randFloat in range: OK")
 
         # randBool — just run it
-        print Random.randBool()
-        print "randBool: OK"
+        print(Random.randBool())
+        print("randBool: OK")
 
         # bytes(n) — hex encoded, 16 bytes → 32 hex chars
         var byt = Random.bytes(16)
         assert byt.len == 32
-        print "bytes length: OK"
+        print("bytes length: OK")
 
         # choice(list) — pick from list
         var fruits: List(str) = List()
         fruits.add("apple")
         fruits.add("banana")
         fruits.add("cherry")
-        print Random.choice(fruits)
-        print "choice: OK"
+        print(Random.choice(fruits))
+        print("choice: OK")
 
         # shuffle(list) — mutates in place, just verify it doesn't crash
         var nums: List(int) = List()
@@ -41,6 +41,6 @@ class RandomTest
         nums.add(5)
         Random.shuffle(nums)
         assert nums.len == 5
-        print "shuffle: OK"
+        print("shuffle: OK")
 
-        print "All random tests passed."
+        print("All random tests passed.")

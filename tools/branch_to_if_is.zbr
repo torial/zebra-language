@@ -203,7 +203,7 @@ def transformFile(path: str, dry_run: bool): int
         var new_text = out.join("\n")
         if not dry_run
             File.write(path, new_text)
-        print "  " + path + ": " + changes.toString() + " branch(es) converted"
+        print("  " + path + ": " + changes.toString() + " branch(es) converted")
     return changes
 
 def main()
@@ -225,7 +225,7 @@ def main()
                 continue
             total = total + transformFile(path, dry_run)
 
-    print ""
-    print "Total branches converted: " + total.toString()
+    print("")
+    print("Total branches converted: " + total.toString())
     if dry_run
-        print "(dry run)"
+        print("(dry run)")

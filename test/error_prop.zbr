@@ -2,6 +2,6 @@ class App
     static
         def main
             var x: int = 42
-            print x
+            print(x)
         catch
-            print "caught error"
+            print("caught error")

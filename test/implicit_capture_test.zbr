@@ -5,24 +5,24 @@ class Program
             var base: int = 10
             var adder = def(x: int): int
                 return x + base
-            print adder(5)    # 15
+            print(adder(5))    # 15
 
             # Implicit capture in expr-body (single-line) lambda
             var scale: int = 3
             var triple = def(n: int) = n * scale
-            print triple(4)   # 12
+            print(triple(4))   # 12
 
             # Multiple implicit captures
             var a: int = 100
             var b: int = 7
             var combine = def(x: int): int
                 return x + a - b
-            print combine(0)  # 93
+            print(combine(0))  # 93
 
             # Explicit capture still works alongside
             var offset: int = 20
             var shifted = def(x: int)
                 capture
                     var offset: int = offset
-                print x + offset
+                print(x + offset)
             shifted(5)        # 25

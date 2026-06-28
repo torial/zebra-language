@@ -12,19 +12,19 @@ def main()
     # Json.parse(T, src) — typed overload, same machinery as parseStrict
     var p = Json.parse(Point, "{\"x\":3,\"y\":7}")
     if p as pt
-        print pt.x
-        print pt.y
+        print(pt.x)
+        print(pt.y)
 
     var q = Json.parse(Person, "{\"name\":\"Alice\",\"age\":30}")
     if q as person
-        print person.name
-        print person.age
+        print(person.name)
+        print(person.age)
 
     # Json.parse(src) — untyped form still works
     var raw = Json.parse("{\"key\":\"val\"}")
     if raw as rv
         var s = rv.getString("key")
         if s as sv
-            print sv
+            print(sv)
 
-    print "done"
+    print("done")

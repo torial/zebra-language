@@ -11,4 +11,4 @@ class Dog implements IFoo
 def main()
     var d: Dog = Dog()
     var b: IBase = d
-    print b.id()
+    print(b.id())

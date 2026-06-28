@@ -6,4 +6,4 @@ class Program
             nums.add(20)
             nums.add(30)
             for x in nums.items
-                print x
+                print(x)

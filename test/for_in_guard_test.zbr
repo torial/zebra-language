@@ -62,4 +62,4 @@ def main()
     var not_found = scores.find(def(x) = x > 100)
     assert not_found == nil, "find on no-match returns nil"
 
-    print "ok"
+    print("ok")

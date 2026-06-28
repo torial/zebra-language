@@ -7,4 +7,4 @@ class Dog implements Printable
 
 def main()
     var p: Printable = Dog()
-    print p.describe()
+    print(p.describe())

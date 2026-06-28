@@ -10,8 +10,8 @@ def main()
     var c: Color = Color.red
     branch c
         on Color.red
-            print "red"
+            print("red")
         on Color.green
-            print "green"
+            print("green")
         on Color.blue
-            print "blue"
+            print("blue")

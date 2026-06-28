@@ -1,17 +1,17 @@
 def main()
     var counter: Atomic(int) = Atomic(int)(0)
     counter.store(5)
-    print counter.load()          # 5
+    print(counter.load())          # 5
     var old: int = counter.add(3)
-    print old                     # 5 (previous value)
-    print counter.load()          # 8
+    print(old)                     # 5 (previous value)
+    print(counter.load())          # 8
     var swapped: int = counter.swap(0)
-    print swapped                 # 8
-    print counter.load()          # 0
+    print(swapped)                 # 8
+    print(counter.load())          # 0
     var ok: bool = counter.cas(0, 42)
-    print ok                      # true
-    print counter.load()          # 42
+    print(ok)                      # true
+    print(counter.load())          # 42
     var flag: Atomic(bool) = Atomic(bool)(false)
     flag.store(true)
-    print flag.load()             # true
-    print "atomic_test OK"
+    print(flag.load())             # true
+    print("atomic_test OK")

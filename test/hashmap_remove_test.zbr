@@ -27,4 +27,4 @@ def main()
     assert tags.count() == 1, "str-str count after remove"
     assert tags.contains("lang"), "lang still there"
 
-    print "ok"
+    print("ok")

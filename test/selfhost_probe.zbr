@@ -89,4 +89,4 @@ def main()
     var d = Diag("unexpected token", 3, 7)
     assert d.show() == "unexpected token"
 
-    print "self-hosting probe OK"
+    print("self-hosting probe OK")

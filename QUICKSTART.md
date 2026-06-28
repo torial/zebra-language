@@ -89,7 +89,7 @@ Save the following as `hello.zbr`:
 
 ```zebra
 def main
-    print "Hello, Zebra!"
+    print("Hello, Zebra!")
 ```
 
 Compile and run:
@@ -118,9 +118,9 @@ use sys
 def main
     var args = Arg.all()
     if args.len == 0
-        print "Usage: hello <name>"
+        print("Usage: hello <name>")
     else
-        print "Hello, ${args[0]}!"
+        print("Hello, ${args[0]}!")
 ```
 
 ```bash
@@ -284,7 +284,7 @@ def add(a: int, b: int): int
     return a + b
 
 def greet(name: str)             # void return — no annotation
-    print "Hello, ${name}"
+    print("Hello, ${name}")
 
 def divide(a: int, b: int): int throws
     if b == 0
@@ -397,7 +397,7 @@ class Registry
 # Usage:
 var r1 = Registry()
 var r2 = Registry()
-print Registry.total()            # → 2
+print(Registry.total())            # → 2
 ```
 
 **Two forms of static declaration:**
@@ -406,14 +406,14 @@ print Registry.total()            # → 2
 class Foo
     # Inline form — one member at a time:
     static def hello()
-        print "hello from Foo"
+        print("hello from Foo")
 
     static var greeting: str = "hi"
 
     # Group form — preferred when there are multiple statics:
     static
         def bye()
-            print "bye"
+            print("bye")
         var farewell: str = "goodbye"
 ```
 
@@ -565,11 +565,11 @@ var v = Expr.void_()
 # Pattern matching:
 branch e
     on Expr.int_ as n
-        print "int: ${n}"
+        print("int: ${n}")
     on Expr.str_ as s
-        print "str: ${s}"
+        print("str: ${s}")
     on Expr.void_
-        print "void"
+        print("void")
     else
         pass
 ```
@@ -586,9 +586,9 @@ branch e
 # Single-variant check with payload binding:
 var e = Expr.int_(42)
 if e is Expr.int_ as n
-    print "got int: ${n}"     # n is the int payload
+    print("got int: ${n}")     # n is the int payload
 else
-    print "not int"
+    print("not int")
 
 # Standalone `is` check (no binding):
 var ok  = e is Expr.int_      # true — union variant check
@@ -597,7 +597,7 @@ var ok2 = e is MyClass        # true — class type-tag check
 # Negated check — `is not`:
 var not_int = e is not Expr.int_     # true when e is any variant except int_
 if e is not Expr.str_
-    print "not a string"
+    print("not a string")
 ```
 
 **Precedence of `is not`:** `is not` and `not in` are comparisons (higher precedence
@@ -661,24 +661,24 @@ var present = s.contains("hello")
 
 # Iteration
 for item in items
-    print item
+    print(item)
 
 for k, v in m
-    print "${k} = ${v}"
+    print("${k} = ${v}")
 
 # Tuple list destructuring — `for a, b in list_of_pairs`
 # The list must be declared as List((T1, T2)) (explicit type annotation required).
 var pairs: List((int, str)) = List((int, str))()
 pairs.add((1, "one"))
 for n, s in pairs           # n: int, s: str
-    print "${n}: ${s}"
+    print("${n}: ${s}")
 for n, s in pairs if n > 0 # where clause supported
-    print n
+    print(n)
 
 # Array literal
 var nums = @[3, 1, 4, 1, 5]
 if 3 in nums
-    print "three is present"
+    print("three is present")
 ```
 
 Field declarations use the type without an initializer; the constructor (or
@@ -694,16 +694,16 @@ var y: int? = 42
 
 # Nil check + force-unwrap:
 if x != nil
-    print x!                         # `x!` = force-unwrap (panics if nil)
+    print(x!)                         # `x!` = force-unwrap (panics if nil)
 
 # Optional-unwrap binding form:
 if y as n
-    print "y is ${n}"                # n is non-optional int
+    print("y is ${n}")                # n is non-optional int
 
 # Combined with type check (LHS must be optional):
 var maybeUser: User? = lookup()
 if maybeUser is User as u            # binds u: User (non-optional)
-    print u.name
+    print(u.name)
 
 # Nil-coalescing with orelse:
 var z = x orelse 0                   # use 0 if nil (also works on error unions)
@@ -745,9 +745,9 @@ def caller(): int throws
 # Method-level catch (catch clauses after the method body):
 def risky()
     var r = divide(10, 0)
-    print r
+    print(r)
 catch |e|
-    print "Error: ${e.message}"
+    print("Error: ${e.message}")
 
 # Inline postfix catch — fallback value on error:
 var r = divide(10, 0) catch 0
@@ -779,14 +779,14 @@ var r = someObj.method()?            # propagates if method throws
 ```zebra
 # if / else if / else (block form)
 if x > 0
-    print "positive"
+    print("positive")
 else if x < 0
-    print "negative"
+    print("negative")
 else
-    print "zero"
+    print("zero")
 
 # Inline single-line if: `if cond: stmt` — colon required
-if x > 0: print "positive"
+if x > 0: print("positive")
 
 # Inline with else (same line or next line)
 if x > 0: label = "pos" else: label = "non-pos"
@@ -829,7 +829,7 @@ var abs_n: int = if n >= 0: n else: -n
 # while
 var i = 0
 while i < 10
-    print i
+    print(i)
     i += 1
 
 # while with bind-and-guard:
@@ -838,17 +838,17 @@ while line = reader.readLine() != nil
 
 # for-in (list)
 for item in items
-    print item
+    print(item)
 
 # for-in with index
 for i, item in items
-    print "${i}: ${item}"
+    print("${i}: ${item}")
 
 # for-in with numeric range
 for i in 0 to 10                     # 0..9
-    print i
+    print(i)
 for i in 0 to 10 step 2
-    print i
+    print(i)
 
 # for-in with inline guard (filter condition; skip non-matching elements)
 for item in items if item > 0
@@ -884,11 +884,11 @@ branch expr
 # branch with struct field patterns (0.7+)
 branch p
     on Point(x: 0, y: 0)             # exact field match
-        print "origin"
+        print("origin")
     on Point(x: 0)                   # partial — only x must equal 0
-        print "on Y axis"
+        print("on Y axis")
     else
-        print "elsewhere"
+        print("elsewhere")
 ```
 
 - `for x in list if cond` — the inline guard skips non-matching elements via
@@ -1142,7 +1142,7 @@ use math_utils exposing square, Vec2
 def main
     var n = square(5)                # direct call
     var v = Vec2(3.0, 4.0)
-    print v.length()
+    print(v.length())
 ```
 
 ```zebra
@@ -1187,7 +1187,7 @@ class Dog implements Printable adds Describable
 
 # `is` check:
 if obj is Printable
-    print obj.show()
+    print(obj.show())
 ```
 
 - `implements` declares interface conformance — the compiler verifies all
@@ -1252,8 +1252,8 @@ class Circle
 
 # Use:
 var c = Circle(5.0)
-print c.radius                    # field access — no parens
-print c.area()                    # method call — parens required
+print(c.radius)                    # field access — no parens
+print(c.area())                    # method call — parens required
 ```
 
 **Field visibility** — use `public`, `private`, `internal`, or `protected` on
@@ -1280,7 +1280,7 @@ var double = (x: int) -> x * 2
 
 # Statement-body lambda:
 var consume = def(x: int)
-    print "got ${x}"
+    print("got ${x}")
     log("seen", x)
 
 # Implicit closure capture:
@@ -1316,10 +1316,10 @@ var make_counter = def(): def(): int
 
 var c1 = make_counter()
 var c2 = make_counter()
-print c1()   # → 1
-print c1()   # → 2
-print c2()   # → 1  (independent from c1)
-print c1()   # → 3
+print(c1())   # → 1
+print(c1())   # → 2
+print(c2())   # → 1  (independent from c1)
+print(c1())   # → 3
 ```
 
 **How it works:** The `capture` block's variables become fields of an anonymous Zig
@@ -1349,7 +1349,7 @@ def view(g: Gui, model: Model)
         capture
             var clicks: int = 0
         clicks += 1
-        print "Clicked ${clicks} times"
+        print("Clicked ${clicks} times")
     if g.button("Click me")
         click_count()
 ```
@@ -1459,7 +1459,7 @@ def main
 sig Callback()
 
 var cb: Callback = def()
-    print "called"
+    print("called")
 
 cb()    # invoke the stored callback
 ```
@@ -1483,7 +1483,7 @@ class Button
 ```zebra
 # Runtime type check (returns bool):
 if obj is Dog
-    print "is a dog"                  # `obj` is still typed as the original
+    print("is a dog")                  # `obj` is still typed as the original
 
 # Force-unwrap optional:
 var x: int? = 42
@@ -1492,7 +1492,7 @@ var y = x!                            # panics if nil
 # Combined type check + binding (requires LHS to be optional):
 var maybe: Animal? = lookup()
 if maybe is Animal as a
-    print a.name                      # `a: Animal` (non-optional)
+    print(a.name)                      # `a: Animal` (non-optional)
 
 # Numeric conversions are methods, not cast operators:
 var i = 3
@@ -1550,7 +1550,7 @@ root.left = child                     # allocates *TreeNode, copies child into i
 
 # Nil check:
 if root.left as n
-    print n.value                     # n: TreeNode (deref'd — pointer transparent)
+    print(n.value)                     # n: TreeNode (deref'd — pointer transparent)
 ```
 
 ### Union with `^T` payload
@@ -1564,9 +1564,9 @@ var e = Expr.add(left: Expr.num(1), right: Expr.num(2))
 branch e
     on Expr.add as a
         # a.left: Expr (transparent — ^Expr auto-deref'd)
-        print a.left
+        print(a.left)
     on Expr.num as n
-        print n.value
+        print(n.value)
 ```
 
 ### Iterating `List(^T)`
@@ -1578,7 +1578,7 @@ stripped):
 var nodes: List(^Node) = List(^Node)()
 # ... populate
 for n in nodes
-    print n.value    # n: Node (not ^Node)
+    print(n.value)    # n: Node (not ^Node)
 ```
 
 ---
@@ -1682,9 +1682,9 @@ class Main
     static
         def main
             var u = User()
-            print Reflect.className(u)        # "User"
+            print(Reflect.className(u))        # "User"
             for name in Reflect.fieldNames(u)
-                print name                    # "name", "age"
+                print(name)                    # "name", "age"
 ```
 
 ### Tier 3 — `@reflectable` + `Json.parseStrict(T, src): ?T`
@@ -1705,9 +1705,9 @@ class Main
         def main
             var src = "{\"name\":\"Alice\",\"age\":30,\"rate\":1.5,\"ok\":true}"
             if Json.parseStrict(User, src) as u
-                print u.name                  # "Alice"
+                print(u.name)                  # "Alice"
             else
-                print "parse failed"
+                print("parse failed")
 ```
 
 **Why `@reflectable` is required:** The annotation is an explicit opt-in signal to the
@@ -1855,7 +1855,7 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
     allocate Arena()
         var src = File.read("data.txt")
         summary = summarise(src)     # copies result into outer arena
-    print summary                    # safe
+    print(summary)                    # safe
     ```
     The old `arena { }` keyword is removed.  Use `allocate Arena()` instead
     (the compiler will print a helpful error if you use the old form).
@@ -1928,7 +1928,7 @@ var ptr_into_block: str
 allocate Arena()
     var src = File.read("config.txt")
     ptr_into_block = src              # WRONG: src freed when block exits
-print ptr_into_block                  # dangling slice — undefined behaviour
+print(ptr_into_block)                  # dangling slice — undefined behaviour
 ```
 
 Non-scoped wrappers (`Page()`, `Smp()`, `C()`) do not free on exit, so values
@@ -2568,12 +2568,12 @@ fall back to UTC (no crash).  The zone table is dead-stripped by the linker when
 ```zebra
 var epoch = DateTime.fromEpoch(0)
 var ny    = epoch.inZone("America/New_York")
-print ny.year   # 1969
-print ny.hour   # 19   (UTC-5 winter)
+print(ny.year)   # 1969
+print(ny.hour)   # 19   (UTC-5 winter)
 
 var summer = DateTime.of(2024, 7, 4, 12, 0, 0)
 var ny_edt = summer.inZone("America/New_York")
-print ny_edt.hour   # 8   (UTC-4 summer DST)
+print(ny_edt.hour)   # 8   (UTC-4 summer DST)
 ```
 
 Supported DST rules: US (post-2007 EESA), EU, AU Eastern, New Zealand.
@@ -2753,7 +2753,7 @@ var total = Atomic(int)(0)
 sys.go(lambda  var _ = total.add(1) )
 sys.go(lambda  var _ = total.add(1) )
 sys.sleep(50)
-print total.load()   # 2 (both increments visible)
+print(total.load())   # 2 (both increments visible)
 
 # One-shot "done" flag:
 var done = Atomic(bool)(false)
@@ -3035,13 +3035,13 @@ def minmax(a: int, b: int): (int, int)
 def main()
     # Positional destructure
     var (lo, hi) = minmax(7, 3)
-    print lo   # 3
-    print hi   # 7
+    print(lo)   # 3
+    print(hi)   # 7
 
     # Hold as a tuple value, then index
     var t = minmax(1, 9)
-    print t.0  # 1
-    print t.1  # 9
+    print(t.0)  # 1
+    print(t.1)  # 9
 ```
 
 ### Rules
@@ -3149,7 +3149,7 @@ while i < 8
     i = i + 1
 
 pool.wait()              # blocks until all submitted tasks complete
-print counter.load()     # 8
+print(counter.load())     # 8
 ```
 
 **Notes:**
@@ -3196,7 +3196,7 @@ while not done
         sum = sum + n
     else
         done = true
-print sum    # 0+1+4+9+16+25+36+49 = 140
+print(sum)    # 0+1+4+9+16+25+36+49 = 140
 ```
 
 ## 36. Type aliases with constraints
@@ -3335,7 +3335,7 @@ class CountGroup
 def main(): void
     var g = CountGroup()
     using g
-        print "inside"
+        print("inside")
     # g.entered == 1, g.exited == 1 here
 ```
 
@@ -3475,7 +3475,7 @@ Parameters are bound positionally via `[...]` list literals. Supported types: `i
 ```zebra
 var rows = d.query("SELECT * FROM users ORDER BY id")
 for row in rows
-    print row.asInt("id").toString() + " " + row.asStr("name")
+    print(row.asInt("id").toString() + " " + row.asStr("name"))
 ```
 
 `db.query(sql)` returns a snapshot list; `for row in rows` iterates over it.
@@ -3511,14 +3511,14 @@ d.close()
 def main()
     var maybe_db: SqliteDb? = Sqlite.open("app.db")
     if maybe_db == nil
-        print "could not open database"
+        print("could not open database")
         return
     var db: SqliteDb = maybe_db!
     db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER, body TEXT)")
     db.exec("INSERT INTO notes VALUES (?, ?)", [1, "hello world"])
     var rows = db.query("SELECT * FROM notes")
     for row in rows
-        print row.asInt("id").toString() + ": " + row.asStr("body")
+        print(row.asInt("id").toString() + ": " + row.asStr("body"))
     db.close()
 ```
 
@@ -3576,7 +3576,7 @@ namespace Outer.Inner
         return "hi"
 
 def main()
-    print Outer.Inner.greet()   # prints "hi"
+    print(Outer.Inner.greet())   # prints "hi"
 ```
 
 **Nested body** — `namespace Outer { namespace Inner { ... } }`:
@@ -3587,7 +3587,7 @@ namespace Outer
             return "hi"
 
 def main()
-    print Outer.Inner.greet()   # prints "hi"
+    print(Outer.Inner.greet())   # prints "hi"
 ```
 
 Both emit identical Zig — nested `pub const` structs:
@@ -3615,7 +3615,7 @@ namespace Sql
             pass
 
 # Usage:
-print Sql.version()
+print(Sql.version())
 var db = Sql.Sqlite.open("mydb.db")
 var pg = Sql.Postgres.connect("postgresql://localhost/mydb")
 ```
@@ -3638,8 +3638,8 @@ extend str
 
 # Usage (after the extend block):
 var s = "hello world"
-print s.shout()       # → HELLO WORLD!
-print s.wordCount()   # → 2
+print(s.shout())       # → HELLO WORLD!
+print(s.wordCount())   # → 2
 ```
 
 - `this` inside an `extend` body refers to the receiver value.
@@ -3713,13 +3713,13 @@ def main()
     var red2  = Color(r: 255, g: 0,   b: 0)
     var green = Color(r: 0,   g: 255, b: 0)
 
-    print red.toString()          # → Color(r=255, g=0, b=0)
-    print red.eql(red2)           # → true
-    print red.eql(green)          # → false
+    print(red.toString())          # → Color(r=255, g=0, b=0)
+    print(red.eql(red2))           # → true
+    print(red.eql(green))          # → false
 
     var seen = HashMap(Color, bool)()
     seen.set(red, true)
-    print seen.get(red)           # → true  (uses derived hash + eql)
+    print(seen.get(red))           # → true  (uses derived hash + eql)
 ```
 
 **Notes:**
@@ -3758,8 +3758,8 @@ interface IGreeter
 
 var lib = DynLib.open("greeter.dll")
 var g = lib.lookup(IGreeter, "greeter")   # "greeter" = factory symbol name
-print g.greet("World")
-print g.version()
+print(g.greet("World"))
+print(g.version())
 lib.close()
 ```
 

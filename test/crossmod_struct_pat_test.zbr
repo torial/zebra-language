@@ -20,4 +20,4 @@ def main()
             label = "other"
     assert label == "origin"
 
-    print "crossmod_struct_pat_test OK"
+    print("crossmod_struct_pat_test OK")

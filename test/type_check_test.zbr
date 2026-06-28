@@ -16,14 +16,14 @@ def main()
 
     # is checks — same-type always true
     if d is Dog
-        print "d is Dog: true"
+        print("d is Dog: true")
 
     if c is Cat
-        print "c is Cat: true"
+        print("c is Cat: true")
 
     # cross-type is false (different _type_id)
     if not (d is Cat)
-        print "d is not Cat: correct"
+        print("d is not Cat: correct")
 
     if not (c is Dog)
-        print "c is not Dog: correct"
+        print("c is not Dog: correct")

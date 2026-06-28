@@ -41,7 +41,7 @@ class PipelineTest
         .testResolverClean()
         .testResolverError()
         .testFullRoundTrip()
-        print "pipeline_test: all OK"
+        print("pipeline_test: all OK")
 
     # -- Phase 10: declarations-only tests -------------------------------------
 
@@ -50,7 +50,7 @@ class PipelineTest
         const zig = runPipeline(src)?
         assert zig.contains("pub const Foo"), "expected 'pub const Foo' in output"
         assert zig.contains("_type_tag"), "expected _type_tag in class output"
-        print "testEmptyClass: OK"
+        print("testEmptyClass: OK")
 
     def testClassWithField() throws
         const src = "class Point\n    var x: int\n    var y: int\n"
@@ -58,21 +58,21 @@ class PipelineTest
         assert zig.contains("pub const Point"), "expected Point struct"
         assert zig.contains("x: i64"), "expected x: i64 field"
         assert zig.contains("y: i64"), "expected y: i64 field"
-        print "testClassWithField: OK"
+        print("testClassWithField: OK")
 
     def testMethodWithReturn() throws
         const src = "class Calc\n    def double(n: int): int\n        return n\n"
         const zig = runPipeline(src)?
         assert zig.contains("pub fn double"), "expected pub fn double"
         assert zig.contains("return"), "expected return in output"
-        print "testMethodWithReturn: OK"
+        print("testMethodWithReturn: OK")
 
     def testVarWithInit() throws
         const src = "class Counter\n    def reset()\n        var count = 0\n"
         const zig = runPipeline(src)?
         assert zig.contains("pub fn reset"), "expected pub fn reset"
         assert zig.contains("count"), "expected count in output"
-        print "testVarWithInit: OK"
+        print("testVarWithInit: OK")
 
     def testEnumDecl() throws
         const src = "enum Color\n    red\n    green\n    blue\n"
@@ -80,7 +80,7 @@ class PipelineTest
         assert zig.contains("pub const Color"), "expected pub const Color"
         assert zig.contains("red"), "expected red variant"
         assert zig.contains("blue"), "expected blue variant"
-        print "testEnumDecl: OK"
+        print("testEnumDecl: OK")
 
     # -- Phase 11: entry point generation tests --------------------------------
 
@@ -97,7 +97,7 @@ class PipelineTest
                 assert not ("catch" in entry), "non-throws main should not have catch"
             else
                 raise "expected module"
-        print "testEntryPointNonThrowing: OK"
+        print("testEntryPointNonThrowing: OK")
 
     def testEntryPointThrowing() throws
         const src = "class App\n    static def main() throws\n        pass\n"
@@ -110,7 +110,7 @@ class PipelineTest
                 assert "ZebraError" in entry, "expected ZebraError handler"
             else
                 raise "expected module"
-        print "testEntryPointThrowing: OK"
+        print("testEntryPointThrowing: OK")
 
     def testEntryPointNoMain() throws
         const src = "class Util\n    def helper()\n        pass\n"
@@ -122,7 +122,7 @@ class PipelineTest
                 assert entry == "", "no entry point for class without static main"
             else
                 raise "expected module"
-        print "testEntryPointNoMain: OK"
+        print("testEntryPointNoMain: OK")
 
     # -- Phase 11: Resolver wiring tests ---------------------------------------
 
@@ -132,7 +132,7 @@ class PipelineTest
         var resolver = Resolver.Resolver("<test>")
         resolver.resolve(pm_node)?
         assert resolver.errorCount() == 0, "clean program should have 0 resolver errors"
-        print "testResolverClean: OK"
+        print("testResolverClean: OK")
 
     def testResolverError() throws
         # 'undeclaredVar' is not declared — resolver should catch it
@@ -141,7 +141,7 @@ class PipelineTest
         var resolver = Resolver.Resolver("<test>")
         resolver.resolve(pm_node)?
         assert resolver.errorCount() > 0, "expected resolver error for undeclared name"
-        print "testResolverError: OK"
+        print("testResolverError: OK")
 
     # -- Phase 11: full round-trip test ----------------------------------------
     # Generates a complete Zig file and verifies it has all three parts:
@@ -150,7 +150,7 @@ class PipelineTest
     def testFullRoundTrip() throws
         const preamble_path = "selfhost/stdlib_preamble.zig"
         if not File.exists(preamble_path)
-            print "testFullRoundTrip: SKIP (preamble file not found at " + preamble_path + ")"
+            print("testFullRoundTrip: SKIP (preamble file not found at " + preamble_path + ")")
             return
         const src = "class Main\n    static def main()\n        pass\n"
         const zig = runPipelineFull(src, preamble_path)?
@@ -162,10 +162,10 @@ class PipelineTest
         # Verify entry point section
         assert zig.contains("pub fn main()"), "expected entry thunk"
         assert zig.contains("Main.main()"), "expected Main.main() call in entry"
-        print "testFullRoundTrip: OK"
+        print("testFullRoundTrip: OK")
 
 def main()
     var t = PipelineTest()
     t.run()?
 catch |e|
-    print "FAILED: " + e.message
+    print("FAILED: " + e.message)

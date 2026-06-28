@@ -27,4 +27,4 @@ def main()
     g.bump()
     g.idle()
     assert g.x == 1
-    print "turbo: OK"
+    print("turbo: OK")

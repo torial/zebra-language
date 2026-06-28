@@ -16,4 +16,4 @@ def main()
     c.bump()
     c.bump()
     assert c.value == 2
-    print "contract_ensure_falloff_test OK"
+    print("contract_ensure_falloff_test OK")

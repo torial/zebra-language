@@ -841,7 +841,7 @@ const stmt_rules: []const Rule = &.{
     // Simple one-liner statements
     .{ .lhs = .StmtReturn,   .rhs = &.{ t(.kw_return), t(.eol) } },
     .{ .lhs = .StmtReturn,   .rhs = &.{ t(.kw_return), n(.Expr), t(.eol) } },
-    .{ .lhs = .StmtPrint,    .rhs = &.{ t(.kw_print), n(.ExprList), t(.eol) } },
+    .{ .lhs = .StmtPrint,    .rhs = &.{ t(.kw_print), t(.lparen), n(.ExprList), t(.rparen), t(.eol) } },
     .{ .lhs = .StmtPass,     .rhs = &.{ t(.kw_pass), t(.eol) } },
     .{ .lhs = .StmtBreak,    .rhs = &.{ t(.kw_break), t(.eol) } },
     .{ .lhs = .StmtContinue, .rhs = &.{ t(.kw_continue), t(.eol) } },
@@ -874,7 +874,7 @@ const stmt_rules: []const Rule = &.{
     // InlineThen — single statement body without trailing eol
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_return) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_return), n(.Expr) } },
-    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_print), n(.ExprList) } },
+    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_print), t(.lparen), n(.ExprList), t(.rparen) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_pass) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_break) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_continue) } },

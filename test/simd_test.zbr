@@ -41,4 +41,4 @@ def main()
     var sq_sum: float32 = b2.sum()
     assert sq_sum == 204.0, "expected b2.sum=204.0, got " + sq_sum.toString()
 
-    print "simd_test: ok"
+    print("simd_test: ok")

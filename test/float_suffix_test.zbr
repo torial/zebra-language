@@ -3,7 +3,7 @@ def main()
     var b: float = 2.5_f64
     var c: float = 0.5f32
     var d: float = 3.0f64
-    print a
-    print b
-    print c
-    print d
+    print(a)
+    print(b)
+    print(c)
+    print(d)

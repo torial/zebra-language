@@ -49,10 +49,10 @@ class Program
         def main
             var mark_verses: List(str) = Program.loadVerses("test/texts/MAR.csv")
             var mat_verses: List(str) = Program.loadVerses("test/texts/MAT.csv")
-            print "Mark verses: "
-            print mark_verses.count()
-            print "Mat verses: "
-            print mat_verses.count()
+            print("Mark verses: ")
+            print(mark_verses.count())
+            print("Mat verses: ")
+            print(mat_verses.count())
 
             var mat_ngrams = List(HashMap(str, int))()
             var mat_totals: List(int) = List()
@@ -66,8 +66,8 @@ class Program
                     mat_totals.add(ptotal)
                     mat_idx.add(pi)
                 pi = pi + 1
-            print "Mat ngrams cached: "
-            print mat_ngrams.count()
+            print("Mat ngrams cached: ")
+            print(mat_ngrams.count())
 
             var mi = 0
             while mi < mark_verses.count()
@@ -82,8 +82,8 @@ class Program
                         var inter = Program.intersection(ngrams_m, ngrams_t)
                         if 20 * inter >= 7 * (total_m + total_t)
                             var orig_ti: int = mat_idx.at(ti)
-                            print "MAR~MAT match"
-                            print mi
-                            print orig_ti
+                            print("MAR~MAT match")
+                            print(mi)
+                            print(orig_ti)
                         ti = ti + 1
                 mi = mi + 1

@@ -3,4 +3,4 @@ def makeInt(): int
 
 def main()
     var n: int = makeInt()
-    print n.toString()
+    print(n.toString())

@@ -13,13 +13,13 @@ def main()
     var s = "hi"
     var b = true
     var wgt = Widget()
-    print Reflect.hostKind(n)        # int
-    print Reflect.hostKind(f)        # float
-    print Reflect.hostKind(s)        # string
-    print Reflect.hostKind(b)        # bool
-    print Reflect.hostKind(wgt)      # ref
+    print(Reflect.hostKind(n))        # int
+    print(Reflect.hostKind(f))        # float
+    print(Reflect.hostKind(s))        # string
+    print(Reflect.hostKind(b))        # bool
+    print(Reflect.hostKind(wgt))      # ref
     # @TypeOf does not evaluate its operand — call-arg is side-effect-safe and
     # still resolves the static category.
-    print Reflect.hostKind(Widget()) # ref
+    print(Reflect.hostKind(Widget())) # ref
     if Reflect.hostKind(s) == "string"
-        print "hostKind: OK"
+        print("hostKind: OK")

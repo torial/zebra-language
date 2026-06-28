@@ -4,4 +4,4 @@ def main()
         capture
             var x: int = x
         return x
-    print get_x()    # 5
+    print(get_x())    # 5

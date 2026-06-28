@@ -36,4 +36,4 @@ def main()
     var up = sb.build()
     assert up == "HELLO", "expected HELLO, got " + up
 
-    print "bug116_char_methods_test: ok"
+    print("bug116_char_methods_test: ok")

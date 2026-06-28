@@ -7,7 +7,7 @@ class PartialSharedTest
 
 def main()
     var msg = PartialSharedTest.greet("world")
-    print msg
+    print(msg)
     var desc = PartialSharedTest.describe()
-    print desc
-    print "partial_shared_test: done"
+    print(desc)
+    print("partial_shared_test: done")

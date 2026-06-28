@@ -12,7 +12,7 @@ def main()
             break
     else
         found = 0
-    print found
+    print(found)
 
     # else does NOT run when break occurs
     var found2: int = -1
@@ -22,7 +22,7 @@ def main()
             break
     else
         found2 = 0
-    print found2
+    print(found2)
 
     # else runs when list is empty
     var found3: int = -1
@@ -31,7 +31,7 @@ def main()
         found3 = x
     else
         found3 = 42
-    print found3
+    print(found3)
 
     # ── Path 2: for-num while loop ───────────────────────────────────
     # else runs when no break
@@ -42,7 +42,7 @@ def main()
             break
     else
         found_n = 0
-    print found_n
+    print(found_n)
 
     # else suppressed when break occurs
     var found_n2: int = -1
@@ -52,7 +52,7 @@ def main()
             break
     else
         found_n2 = 0
-    print found_n2
+    print(found_n2)
 
     # ── Path 2: split while loop ─────────────────────────────────────
     # else runs when no break
@@ -64,7 +64,7 @@ def main()
             break
     else
         found_s = "default"
-    print found_s
+    print(found_s)
 
     # else suppressed when break occurs
     var found_s2 = "not found"
@@ -74,7 +74,7 @@ def main()
             break
     else
         found_s2 = "default"
-    print found_s2
+    print(found_s2)
 
     # ── Path 2: chars while loop ─────────────────────────────────────
     # else runs when no break (char not present)
@@ -86,7 +86,7 @@ def main()
             break
     else
         found_c = 42
-    print found_c
+    print(found_c)
 
     # else suppressed when break occurs ('h' = 104)
     var found_c2: int = -1
@@ -96,6 +96,6 @@ def main()
             break
     else
         found_c2 = 42
-    print found_c2
+    print(found_c2)
 
-    print "ok"
+    print("ok")

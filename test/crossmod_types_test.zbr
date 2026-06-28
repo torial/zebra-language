@@ -24,4 +24,4 @@ def main()
     assert s.end_.x == 3
     assert s.label() == "(0, 0) to (3, 4)"
 
-    print "crossmod_types_test OK"
+    print("crossmod_types_test OK")

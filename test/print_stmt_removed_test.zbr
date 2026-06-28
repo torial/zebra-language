@@ -1,0 +1,4 @@
+# `print X` statement form removed (#220) — print is now a function: `print(X)`.
+# This fixture MUST fail to parse: a bare `print` without parentheses is invalid.
+def main()
+    print "legacy statement form"

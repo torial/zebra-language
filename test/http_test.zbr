@@ -2,10 +2,10 @@ def main()
     # Http.get returns ?HttpResponse — nil on network error
     var response = Http.get("http://httpbin.org/get")
     if response != nil
-        print response.status       # 200
-        print response.text.len     # some positive number
+        print(response.status)       # 200
+        print(response.text.len)     # some positive number
 
     # Http.post
     var r2 = Http.post("http://httpbin.org/post", "hello=world")
     if r2 != nil
-        print r2.status             # 200
+        print(r2.status)             # 200

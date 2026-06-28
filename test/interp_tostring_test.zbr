@@ -20,17 +20,17 @@ def main()
     var p = Point()
     p.x = 3
     p.y = 4
-    print "point: ${p}"
+    print("point: ${p}")
     var msg: str = "location is ${p}"
-    print msg
+    print(msg)
 
     var c = Color()
     c.r = 255
     c.g = 128
     c.b = 0
-    print "color: ${c}"
+    print("color: ${c}")
 
     var n = 42
-    print "n = ${n}"
+    print("n = ${n}")
     var s: str = "hi"
-    print "s = ${s}"
+    print("s = ${s}")

@@ -26,4 +26,4 @@ class LogTest
         Log.info("writing to stdout now")
         Log.setOutput("stderr")
 
-        print "All log tests passed."
+        print("All log tests passed.")

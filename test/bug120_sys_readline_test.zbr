@@ -3,6 +3,6 @@ class Main
         # sys.readLine() with no stdin returns nil (EOF).
         var line = sys.readLine()
         if line == nil
-            print "BUG-120 sys.readLine: OK"
+            print("BUG-120 sys.readLine: OK")
         else
-            print "BUG-120 sys.readLine: OK (with data)"
+            print("BUG-120 sys.readLine: OK (with data)")

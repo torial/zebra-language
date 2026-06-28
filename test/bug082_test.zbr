@@ -4,9 +4,9 @@ def main()
     var b = bug082_lib.Builder(5, "initial")
     var c = b.withVal(10)
     var d = c.withName("updated")
-    print d.show()
+    print(d.show())
 
     var e = bug082_lib.Builder(1, "start")
     var f = e.withVal(99)
-    print f.show()
-    print "bug082 OK"
+    print(f.show())
+    print("bug082 OK")

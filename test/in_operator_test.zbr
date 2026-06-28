@@ -42,4 +42,4 @@ def main()
     assert "cat" in @["dog", "cat", "bird"], "array str in: expected true"
     assert not ("fish" in @["dog", "cat"]), "array str not-in: expected false"
 
-    print "in_operator: OK"
+    print("in_operator: OK")

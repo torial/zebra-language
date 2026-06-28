@@ -17,4 +17,4 @@ def main()
     # field order: name, age (declaration order)
     assert names.at(0) == "name", "first field"
     assert names.at(1) == "age",  "second field"
-    print "ok"
+    print("ok")

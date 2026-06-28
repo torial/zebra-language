@@ -12,4 +12,4 @@ def main()
     Profile.report()
     Profile.dump_folded()
     Profile.reset()
-    print "profile OK"
+    print("profile OK")

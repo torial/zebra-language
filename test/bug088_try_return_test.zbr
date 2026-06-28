@@ -12,4 +12,4 @@ def main()
     var o = Outer()
     var got = o.getLabel()
     assert got == "ok:hello", "expected ok:hello, got " + got
-    print "bug088_try_return_test: ok"
+    print("bug088_try_return_test: ok")

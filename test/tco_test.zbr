@@ -20,9 +20,9 @@ class Program
         def main
             # Shared method TCO: sumTo(1_000_000, 0) = 500_000_500_000
             var s = Acc.sumTo(1000000, 0)
-            print s
+            print(s)
 
             # Instance method TCO: countDown 500_000 times
             var c = Counter()
             var result = c.countDown(500000)
-            print result
+            print(result)

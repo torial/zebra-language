@@ -9,4 +9,4 @@ class BankAccount
 def main()
     var acc = BankAccount()
     acc.deposit(100)
-    print acc.balance
+    print(acc.balance)

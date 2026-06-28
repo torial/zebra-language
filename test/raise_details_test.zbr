@@ -15,13 +15,13 @@ def tryRead(path: str) throws
 def testRaiseWithDetails()
     tryRead("data.txt")
 catch |e|
-    print e.message
-    print e.details.toString()
+    print(e.message)
+    print(e.details.toString())
 
 def testSimpleRaise()
     raise "simple error"
 catch |e|
-    print e.message
+    print(e.message)
 
 def main()
     testRaiseWithDetails()

@@ -5,21 +5,21 @@ class Program
             nums.add(10)
             nums.add(20)
             nums.add(30)
-            print nums.len
-            print nums.at(1)
+            print(nums.len)
+            print(nums.at(1))
             nums.remove(0)
-            print nums.len
+            print(nums.len)
 
             var scores: HashMap(str, int) = HashMap()
             scores.put("alice", 95)
             scores.put("bob", 87)
-            print scores.contains("alice")
-            print scores.fetch("alice")
-            print scores.len
+            print(scores.contains("alice"))
+            print(scores.fetch("alice"))
+            print(scores.len)
 
             var greeting: str = "hello"
-            print greeting.contains("ell")
-            print greeting.startsWith("hel")
-            print greeting.endsWith("llo")
+            print(greeting.contains("ell"))
+            print(greeting.startsWith("hel"))
+            print(greeting.endsWith("llo"))
             var full: str = greeting.concat(" world")
-            print full
+            print(full)

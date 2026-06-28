@@ -16,31 +16,31 @@ def main()
     # = not true
     # = false
     var r1: bool = not c is not Color.blue
-    print r1
+    print(r1)
 
     # not (c is not Color.red)
     # = not (red is not red)
     # = not false
     # = true
     var r2: bool = not c is not Color.red
-    print r2
+    print(r2)
 
     # Sanity: plain `is not` still works
     var r3: bool = c is not Color.green
-    print r3
+    print(r3)
 
     # `not` of a plain `is` — existing behavior unchanged
     var r4: bool = not c is Color.blue
-    print r4
+    print(r4)
 
     # `or` is lower precedence than `is not`:
     # x is not A or y is not B  →  (x is not A) or (y is not B)
     var c2 = Color.green
     # (red is not blue) or (green is not red) = true or true = true
     var r5: bool = c is not Color.blue or c2 is not Color.red
-    print r5
+    print(r5)
     # (red is not red) or (green is not green) = false or false = false
     var r6: bool = c is not Color.red or c2 is not Color.green
-    print r6
+    print(r6)
 
-    print "is_not_precedence: OK"
+    print("is_not_precedence: OK")

@@ -1,7 +1,7 @@
 def greet(name: str = "World", times: int = 1)
     var i = 0
     while i < times
-        print "Hello, " + name + "!"
+        print("Hello, " + name + "!")
         i += 1
 
 def add(a: int, b: int = 10): int
@@ -12,7 +12,7 @@ def main()
     greet("Alice")
     greet(name: "Bob", times: 2)
     greet(times: 3, name: "Carol")
-    print add(5)
-    print add(5, 20)
-    print add(b: 7, a: 3)
-    print "ok"
+    print(add(5))
+    print(add(5, 20))
+    print(add(b: 7, a: 3))
+    print("ok")

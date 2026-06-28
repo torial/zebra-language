@@ -37,4 +37,4 @@ def main()
     assert b.v == 10     # original still unchanged
     assert b3.v == 17    # local except produced copy
 
-    print 'BUG-031 verification: OK'
+    print('BUG-031 verification: OK')

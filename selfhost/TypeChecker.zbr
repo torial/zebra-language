@@ -2680,6 +2680,6 @@ def main()
     ct.setField("name", Type_.string_)
     mt.addClass(ct)
     if mt.hasClass("Foo")
-        print "ok"
+        print("ok")
     else
-        print "fail"
+        print("fail")

@@ -10,4 +10,4 @@
 
 def main()
     var xs = [1, "two", 3]
-    print xs
+    print(xs)

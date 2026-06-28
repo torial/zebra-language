@@ -38,4 +38,4 @@ def main()
     Counter.label = "updated"
     assert Counter.label == "updated"
 
-    print "shared_var: OK"
+    print("shared_var: OK")

@@ -8,12 +8,12 @@ class App
         def testRiskyCalc(base: int, multiplier: int)
             var result: int = App.risky(base)?
             var total: int = result * multiplier
-            print total
+            print(total)
         catch
-            print "error"
+            print("error")
 
         def main
             var base: int = 10
             var multiplier: int = 3
             testRiskyCalc(base, multiplier)
-            print base
+            print(base)

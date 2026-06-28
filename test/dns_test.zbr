@@ -1,23 +1,23 @@
 def testLocalhostResolve
     # localhost always resolves (to 127.0.0.1 and/or ::1)
-    print "Resolving localhost:"
+    print("Resolving localhost:")
     for ip in Net.resolve("localhost")
-        print ip
+        print(ip)
 
 def testMultipleHosts
     var hosts: List(str) = List()
     hosts.add("localhost")
     hosts.add("127.0.0.1")
     for hostname in hosts
-        print "Resolving: ".concat(hostname)
+        print("Resolving: ".concat(hostname))
         for ip in Net.resolve(hostname)
-            print "  -> ".concat(ip)
+            print("  -> ".concat(ip))
 
 def testInvalidHost
     # This should fail gracefully or return empty
-    print "Attempting to resolve invalid host:"
+    print("Attempting to resolve invalid host:")
     var results = Net.resolve("invalid.hostname.that.does.not.exist.local")
-    print "Got ".concat(results.count().toString()).concat(" results")
+    print("Got ".concat(results.count().toString()).concat(" results"))
 
 def main()
     testLocalhostResolve()

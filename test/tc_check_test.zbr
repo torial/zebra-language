@@ -20,7 +20,7 @@ def main()
     var ret_ok = TcStmtReturn(TcExpr.int_lit())
     chk1.checkStmt(TcStmt.return_(ret_ok))
     assert chk1.ok(), "valid return should produce no errors"
-    print "1. valid return OK"
+    print("1. valid return OK")
 
     # 2. Bad return — int method returning string
     var chk2 = TcCheck(inf, TcType.int_())
@@ -28,26 +28,26 @@ def main()
     chk2.checkStmt(TcStmt.return_(ret_bad))
     assert not chk2.ok(), "return type mismatch should be reported"
     assert chk2.errors.count() == 1
-    print "2. return type mismatch reported OK"
+    print("2. return type mismatch reported OK")
 
     # 3. return_void in void method — valid
     var chk3 = TcCheck(inf, TcType.void_())
     chk3.checkStmt(TcStmt.return_void())
     assert chk3.ok()
-    print "3. void return in void method OK"
+    print("3. void return in void method OK")
 
     # 4. return_void in non-void method — error
     var chk4 = TcCheck(inf, TcType.int_())
     chk4.checkStmt(TcStmt.return_void())
     assert not chk4.ok()
-    print "4. void return in int method reported OK"
+    print("4. void return in int method reported OK")
 
     # 5. var_decl type match
     var chk5 = TcCheck(inf, TcType.void_())
     var vd_ok = TcStmtVarDecl("x", TcType.int_(), TcExpr.int_lit())
     chk5.checkStmt(TcStmt.var_decl(vd_ok))
     assert chk5.ok()
-    print "5. valid var_decl OK"
+    print("5. valid var_decl OK")
 
     # 6. var_decl type mismatch
     var chk6 = TcCheck(inf, TcType.void_())
@@ -55,7 +55,7 @@ def main()
     chk6.checkStmt(TcStmt.var_decl(vd_bad))
     assert not chk6.ok()
     assert chk6.errors.count() == 1
-    print "6. var_decl mismatch reported OK"
+    print("6. var_decl mismatch reported OK")
 
     # 7. if with bool condition — valid
     var chk7 = TcCheck(inf, TcType.void_())
@@ -63,34 +63,34 @@ def main()
     var if_ok = TcStmtIf(TcExpr.binary(bi_cmp))
     chk7.checkStmt(TcStmt.if_(if_ok))
     assert chk7.ok()
-    print "7. if with bool cond OK"
+    print("7. if with bool cond OK")
 
     # 8. if with non-bool condition — error
     var chk8 = TcCheck(inf, TcType.void_())
     var if_bad = TcStmtIf(TcExpr.int_lit())
     chk8.checkStmt(TcStmt.if_(if_bad))
     assert not chk8.ok()
-    print "8. if with int cond reported OK"
+    print("8. if with int cond reported OK")
 
     # 9. assert with bool condition — valid
     var chk9 = TcCheck(inf, TcType.void_())
     var assert_ok = TcStmtAssert(TcExpr.bool_lit())
     chk9.checkStmt(TcStmt.assert_(assert_ok))
     assert chk9.ok()
-    print "9. assert with bool cond OK"
+    print("9. assert with bool cond OK")
 
     # 10. assert with non-bool — error
     var chk10 = TcCheck(inf, TcType.void_())
     var assert_bad = TcStmtAssert(TcExpr.string_lit())
     chk10.checkStmt(TcStmt.assert_(assert_bad))
     assert not chk10.ok()
-    print "10. assert with string cond reported OK"
+    print("10. assert with string cond reported OK")
 
     # 11. pass_ — always valid
     var chk11 = TcCheck(inf, TcType.void_())
     chk11.checkStmt(TcStmt.pass_())
     assert chk11.ok()
-    print "11. pass_ OK"
+    print("11. pass_ OK")
 
     # 12. checkStmts — accumulates errors across multiple stmts
     var chk12 = TcCheck(inf, TcType.int_())
@@ -100,6 +100,6 @@ def main()
     stmts.add(TcStmt.pass_())
     chk12.checkStmts(stmts)
     assert chk12.errors.count() == 2, "two type mismatches in three stmts"
-    print "12. checkStmts accumulates errors OK"
+    print("12. checkStmts accumulates errors OK")
 
-    print "tc_check_test: all OK"
+    print("tc_check_test: all OK")

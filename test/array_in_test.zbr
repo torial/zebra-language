@@ -4,13 +4,13 @@ def main()
 
     # in @[...] — membership test via _zebra_in + inline-for
     if name in @["match", "find", "findAll", "groups"]
-        print "is regex method"
+        print("is regex method")
     else
-        print "not regex method"
+        print("not regex method")
 
     # negative case
     var other = "unknown"
     if other in @["match", "find", "findAll", "groups"]
-        print "found"
+        print("found")
     else
-        print "not found"
+        print("not found")

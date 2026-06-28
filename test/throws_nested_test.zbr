@@ -50,4 +50,4 @@ catch |_e|
 def main()
     testCase1()
     testCase3()
-    print "throws_nested_test: passed"
+    print("throws_nested_test: passed")

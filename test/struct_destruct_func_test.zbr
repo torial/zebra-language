@@ -15,5 +15,5 @@ class Program
             # Tests that inferExpr resolves module-level def return types so
             # the string field gets {s} format spec, not {any}.
             var {name, age} = makePerson()
-            print name
-            print age
+            print(name)
+            print(age)

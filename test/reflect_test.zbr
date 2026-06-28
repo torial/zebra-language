@@ -32,4 +32,4 @@ def main()
         joined = joined + f + ";"
     assert joined == "name;price;qty;", "for-in fieldNames"
 
-    print "reflect_test: all assertions passed"
+    print("reflect_test: all assertions passed")

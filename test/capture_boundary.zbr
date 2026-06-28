@@ -6,6 +6,6 @@ class Program
             var adder = def(x: int)
                 capture
                     var offset: int = offset
-                print x + offset
-            print double(7)
+                print(x + offset)
+            print(double(7))
             adder(5)

@@ -23,5 +23,5 @@ def main()
     var e = Env()
     e.define("hello", Sym("world"))
     var s = e.lookup("hello")
-    print s.name
-    print "ok"
+    print(s.name)
+    print("ok")

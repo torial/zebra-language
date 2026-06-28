@@ -74,4 +74,4 @@ def main()
     assert mid_parts.count() == 2, "nested split count: expected 2"
     assert mid_parts.at(0) == "c", "nested split at(0): expected 'c'"
 
-    print "type_infer_chain: OK"
+    print("type_infer_chain: OK")

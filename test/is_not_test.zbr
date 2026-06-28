@@ -16,27 +16,27 @@ def main()
     # Basic is not on union variant
     var c = Color.red
     if c is not Color.blue
-        print "not blue"
+        print("not blue")
     else
-        print "blue"
+        print("blue")
 
     # is not in function
-    print classify(Color.green)
-    print classify(Color.red)
+    print(classify(Color.green))
+    print(classify(Color.red))
 
     # is not with payloaded variant
     var s = Shape.square(5)
     if s is not Shape.circle
-        print "not a circle"
+        print("not a circle")
 
     # is not in expression position
     var c2 = Color.blue
     var result: bool = c2 is not Color.red
-    print result
+    print(result)
 
     # plain is still works
     var c3 = Color.green
     if c3 is Color.green
-        print "is green"
+        print("is green")
 
-    print "is_not: OK"
+    print("is_not: OK")

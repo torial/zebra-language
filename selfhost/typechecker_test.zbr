@@ -9,9 +9,9 @@ use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclI
 
 def check(ok: bool, label: str)
     if ok
-        print "PASS " + label
+        print("PASS " + label)
     else
-        print "FAIL " + label
+        print("FAIL " + label)
 
 # ── Type_ construction and equality ──────────────────────────────────────────
 # Equality at the variant level is by-shape (branch match); structural equality
@@ -542,4 +542,4 @@ def main()
     testNarrowPayloadFromOnValue()
     testInferModuleFuncCall()
     testInferDepModuleFuncCall()
-    print "typechecker_test: done"
+    print("typechecker_test: done")

@@ -81,4 +81,4 @@ def main()
     assert holder.p.a == 7
     assert holder.p.b == 13
 
-    print "recursive_type_test OK"
+    print("recursive_type_test OK")

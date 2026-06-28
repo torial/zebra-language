@@ -6,4 +6,4 @@ class Program
             nums.add(2)
             nums.add(3)
             for x in nums
-                print x
+                print(x)

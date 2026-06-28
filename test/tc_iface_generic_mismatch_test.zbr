@@ -10,4 +10,4 @@ class Box(T)
 
 def main()
     var b: Printable = Box(int)(42)
-    print b.label()
+    print(b.label())

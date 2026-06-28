@@ -8,10 +8,10 @@ def testOptionalTypes()
     var nested = TcType.optional(TcType.optional(TcType.int_()))
     assert TcTypes.describe(nested) == "??int"
 catch |e|
-    print "FAIL: " + e.message
+    print("FAIL: " + e.message)
 
 def main()
     assert TcTypes.describe(TcType.int_())    == "int"
     assert TcTypes.describe(TcType.unknown()) == "unknown"
     testOptionalTypes()
-    print "multi-file selfhost smoke: OK"
+    print("multi-file selfhost smoke: OK")

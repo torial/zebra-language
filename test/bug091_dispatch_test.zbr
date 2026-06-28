@@ -22,4 +22,4 @@ def main()
     f.helperList(items2)
     assert items2.count() == 2, "instance count"
 
-    print "ok"
+    print("ok")

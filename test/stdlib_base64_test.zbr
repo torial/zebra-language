@@ -24,4 +24,4 @@ def main()
     var s_dec = s_enc.decodeBase64()   # non-optional: panics on invalid base64
     assert s_dec == "hello"
 
-    print "stdlib_base64 OK"
+    print("stdlib_base64 OK")

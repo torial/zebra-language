@@ -22,4 +22,4 @@ def main()
     assert r3 == 14
     Profile.report()
     Profile.reset()
-    print "profile_attr OK"
+    print("profile_attr OK")

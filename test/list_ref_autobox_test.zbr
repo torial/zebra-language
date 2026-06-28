@@ -24,4 +24,4 @@ def main()
     assert rects.at(0).h == 4
     assert rects.at(1).w == 5
     assert rects.at(1).h == 6
-    print "list_ref_autobox_test OK"
+    print("list_ref_autobox_test OK")

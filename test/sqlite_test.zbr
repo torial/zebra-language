@@ -1,7 +1,7 @@
 def main()
     var db: SqliteDb? = Sqlite.open(":memory:")
     if db == nil
-        print "sqlite_test SKIP (no sqlite3)"
+        print("sqlite_test SKIP (no sqlite3)")
         return
     var d: SqliteDb = db!
     d.exec("CREATE TABLE t (id INTEGER, name TEXT)")
@@ -9,12 +9,12 @@ def main()
     d.exec("INSERT INTO t VALUES (?, ?)", [2, "bob"])
     var rows = d.query("SELECT * FROM t ORDER BY id")
     for row in rows
-        print row.asInt("id").toString() + " " + row.asStr("name")
+        print(row.asInt("id").toString() + " " + row.asStr("name"))
     d.begin()
     d.exec("INSERT INTO t VALUES (?, ?)", [3, "carol"])
     d.commit()
     var rows2 = d.query("SELECT id, name FROM t ORDER BY id")
     for row2 in rows2
-        print row2.asInt("id").toString() + " " + row2.asStr("name")
+        print(row2.asInt("id").toString() + " " + row2.asStr("name"))
     d.close()
-    print "sqlite_test OK"
+    print("sqlite_test OK")

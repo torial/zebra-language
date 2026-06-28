@@ -13,14 +13,14 @@ class App
             var b: int? = App.findPositive(-1)
 
             if a == nil
-                print "a is nil"
+                print("a is nil")
             else
-                print a!
+                print(a!)
 
             if b == nil
-                print "b is nil"
+                print("b is nil")
 
             var c: int = App.orDefault(a, 99)
             var d: int = App.orDefault(b, 99)
-            print c
-            print d
+            print(c)
+            print(d)

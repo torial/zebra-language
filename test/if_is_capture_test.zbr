@@ -18,41 +18,41 @@ class Program
 
             # ── plain payload: circle ───────────────────────────────────────
             if s is Shape.circle as r
-                print r          # 3.14
+                print(r)          # 3.14
             else
-                print "not circle"
+                print("not circle")
 
             # ── non-matching variant falls to else ──────────────────────────
             var s2: Shape = Shape.rect(10.0)
             if s2 is Shape.circle as r
-                print r
+                print(r)
             else
-                print "is rect"  # is rect
+                print("is rect")  # is rect
 
             # ── else-if chain: first match wins ─────────────────────────────
             if s2 is Shape.circle as r
-                print r
+                print(r)
             else if s2 is Shape.rect as r
-                print r          # 10.0
+                print(r)          # 10.0
             else
-                print "unknown"
+                print("unknown")
 
             # ── standalone `is` without capture still works ─────────────────
             var ok = s is Shape.circle
-            print ok             # true
+            print(ok)             # true
 
             var ok2 = s2 is Shape.circle
-            print ok2            # false
+            print(ok2)            # false
 
             # ── boxed variant: ^T struct payload ────────────────────────────
             var b: Wrap = Wrap.item(Payload(7))
             if b is Wrap.item as p
-                print p.n        # 7
+                print(p.n)        # 7
             else
-                print "none"
+                print("none")
 
             var e: Wrap = Wrap.empty_()
             if e is Wrap.item as p
-                print p.n
+                print(p.n)
             else
-                print "empty"    # empty
+                print("empty")    # empty

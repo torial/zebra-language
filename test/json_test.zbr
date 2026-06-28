@@ -70,4 +70,4 @@ def main()
     var rt_str = Json.stringify(rt)
     assert rt_str.contains("\"x\""), "roundtrip contains x key"
 
-    print "json_test: all assertions passed"
+    print("json_test: all assertions passed")

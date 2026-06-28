@@ -16,4 +16,4 @@ def main()
     if v2 is Val.int_val as n2
         assert n2 == 99
 
-    print "val_test: OK"
+    print("val_test: OK")

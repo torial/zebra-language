@@ -18,4 +18,4 @@ class Main
         assert a.value == 1
         assert b.value == 2
         assert c.value == 3
-        print "ctor_arg_ref_test OK"
+        print("ctor_arg_ref_test OK")

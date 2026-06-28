@@ -16,4 +16,4 @@ def main()
     assert r.val == 3
     r.advance(7)
     assert r.val == 7
-    print "contract_old_compound: OK"
+    print("contract_old_compound: OK")

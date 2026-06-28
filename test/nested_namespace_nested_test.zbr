@@ -4,4 +4,4 @@ namespace Outer
             return "hi"
 
 def main()
-    print Outer.Inner.greet()
+    print(Outer.Inner.greet())

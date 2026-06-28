@@ -7,15 +7,15 @@ class Math
 
 def testSafeDiv()
     var quotient = Math.safeDiv(10, 2)?
-    print quotient
+    print(quotient)
 catch |e|
-    print "unexpected error: ".concat(e.message)
+    print("unexpected error: ".concat(e.message))
 
 def testSafeDivFail()
     var result2 = Math.safeDiv(10, 0)?
-    print result2
+    print(result2)
 catch |e|
-    print "caught: ".concat(e.message)
+    print("caught: ".concat(e.message))
 
 def main()
     # try prefix propagates errors on failure
@@ -24,4 +24,4 @@ def main()
     # division by zero — verify error is raised with correct message
     testSafeDivFail()
 
-    print "ok"
+    print("ok")

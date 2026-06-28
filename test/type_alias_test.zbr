@@ -13,7 +13,7 @@ def main()
     var doubled: int = count * 2
     var combined: str = name + " world"
 
-    print name
-    print combined
-    print doubled
-    print raw
+    print(name)
+    print(combined)
+    print(doubled)
+    print(raw)

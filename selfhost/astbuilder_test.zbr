@@ -40,7 +40,7 @@ class ASTBuilderTest
         .testVarInit()
         .testAssertMessage()
         .testRaiseMessage()
-        print "astbuilder_test: all assertions passed"
+        print("astbuilder_test: all assertions passed")
 
     # -- Helpers -------------------------------------------------------------------
 
@@ -94,7 +94,7 @@ class ASTBuilderTest
                 assert c.members.len == 0, "expected 0 members"
             else
                 assert false, "expected class_ decl"
-        print "testEmptyClass: OK"
+        print("testEmptyClass: OK")
 
     def testClassWithField() throws
         const d = .firstDecl("class Foo\n    var x: int\n")?
@@ -116,7 +116,7 @@ class ASTBuilderTest
                         assert false, "expected var_ decl for field"
             else
                 assert false, "expected class_ decl"
-        print "testClassWithField: OK"
+        print("testClassWithField: OK")
 
     def testEnumDecl() throws
         const d = .firstDecl("enum Color\n    red\n    green\n    blue\n")?
@@ -129,7 +129,7 @@ class ASTBuilderTest
                 assert e.members.at(2).name == "blue", "expected member 'blue'"
             else
                 assert false, "expected enum_ decl"
-        print "testEnumDecl: OK"
+        print("testEnumDecl: OK")
 
     def testSimpleMethod() throws
         const src = "class Foo\n    def bar()\n        pass\n"
@@ -147,7 +147,7 @@ class ASTBuilderTest
                         assert false, "expected method decl"
             else
                 assert false, "expected class_ decl"
-        print "testSimpleMethod: OK"
+        print("testSimpleMethod: OK")
 
     def testMethodWithParams() throws
         const src = "class Foo\n    def add(x: int, y: int): int\n        pass\n"
@@ -172,7 +172,7 @@ class ASTBuilderTest
                         assert false, "expected method decl"
             else
                 assert false, "expected class_ decl"
-        print "testMethodWithParams: OK"
+        print("testMethodWithParams: OK")
 
     def testIfStmt() throws
         const src = "class Foo\n    def run()\n        if true\n            pass\n"
@@ -183,7 +183,7 @@ class ASTBuilderTest
                 assert si.else_ifs.len == 0, "expected 0 else_ifs"
             else
                 assert false, "expected if_ stmt"
-        print "testIfStmt: OK"
+        print("testIfStmt: OK")
 
     def testWhileStmt() throws
         const src = "class Foo\n    def run()\n        while true\n            pass\n"
@@ -193,7 +193,7 @@ class ASTBuilderTest
                 assert sw.stmts.len == 1, "expected 1 body stmt"
             else
                 assert false, "expected while_ stmt"
-        print "testWhileStmt: OK"
+        print("testWhileStmt: OK")
 
     def testForInStmt() throws
         const src = "class Foo\n    def run()\n        for x in items\n            pass\n"
@@ -206,7 +206,7 @@ class ASTBuilderTest
                 assert sf.stmts.len == 1, "expected 1 body stmt"
             else
                 assert false, "expected for_in stmt"
-        print "testForInStmt: OK"
+        print("testForInStmt: OK")
 
     def testAssignStmt() throws
         const src = "class Foo\n    def run()\n        x = 42\n"
@@ -221,7 +221,7 @@ class ASTBuilderTest
                         assert false, "expected assign op"
             else
                 assert false, "expected assign stmt"
-        print "testAssignStmt: OK"
+        print("testAssignStmt: OK")
 
     def testExprBinary() throws
         # Use Stmt.expr (expression statement) — Expr is a value type, not pointer.
@@ -245,7 +245,7 @@ class ASTBuilderTest
                         assert false, "expected binary expr in arg"
             else
                 assert false, "expected call expr"
-        print "testExprBinary: OK"
+        print("testExprBinary: OK")
 
     def testExprUnary() throws
         # foo(not true) → Stmt.expr → Expr.call → args[0].value → Expr.unary
@@ -268,7 +268,7 @@ class ASTBuilderTest
                         assert false, "expected unary expr in arg"
             else
                 assert false, "expected call expr"
-        print "testExprUnary: OK"
+        print("testExprUnary: OK")
 
     def testExprCall() throws
         # foo(1, 2) → Stmt.expr → Expr.call; ExprCall.callee is Expr (value type)
@@ -286,7 +286,7 @@ class ASTBuilderTest
                         assert false, "expected ident callee"
             else
                 assert false, "expected call expr"
-        print "testExprCall: OK"
+        print("testExprCall: OK")
 
     def testExprMember() throws
         # foo(obj.field) → args[0].value → Expr.member; check member name
@@ -305,7 +305,7 @@ class ASTBuilderTest
                         assert false, "expected member expr in arg"
             else
                 assert false, "expected call expr"
-        print "testExprMember: OK"
+        print("testExprMember: OK")
 
     def testParseTypeRefSimple() throws
         const src = "class Foo\n    var n: int\n"
@@ -326,7 +326,7 @@ class ASTBuilderTest
                         assert false, "expected var_ decl"
             else
                 assert false, "expected class_ decl"
-        print "testParseTypeRefSimple: OK"
+        print("testParseTypeRefSimple: OK")
 
     def testParseTypeRefNilable() throws
         const src = "class Foo\n    var n: str?\n"
@@ -348,7 +348,7 @@ class ASTBuilderTest
                         assert false, "expected var_ decl"
             else
                 assert false, "expected class_ decl"
-        print "testParseTypeRefNilable: OK"
+        print("testParseTypeRefNilable: OK")
 
     def testParseTypeRefGeneric() throws
         const src = "class Foo\n    var items: List(str)\n"
@@ -374,7 +374,7 @@ class ASTBuilderTest
                         assert false, "expected var_ decl"
             else
                 assert false, "expected class_ decl"
-        print "testParseTypeRefGeneric: OK"
+        print("testParseTypeRefGeneric: OK")
 
     # -- Phase 10 tests: ^Expr? fields now populated (TypeChecker fix) -----------
 
@@ -388,7 +388,7 @@ class ASTBuilderTest
                 assert sr.value != nil, "return value should not be nil"
             else
                 assert false, "expected return_ stmt"
-        print "testReturnValue: OK"
+        print("testReturnValue: OK")
 
     # DeclVar.init_expr: ^Expr? should carry the initializer expression.
     def testVarInit() throws
@@ -399,7 +399,7 @@ class ASTBuilderTest
                 assert v.init_expr != nil, "var init_expr should not be nil"
             else
                 assert false, "expected var_ stmt"
-        print "testVarInit: OK"
+        print("testVarInit: OK")
 
     # StmtAssert.message: ^Expr? should carry the message expression.
     def testAssertMessage() throws
@@ -410,7 +410,7 @@ class ASTBuilderTest
                 assert sa.message != nil, "assert message should not be nil"
             else
                 assert false, "expected assert_ stmt"
-        print "testAssertMessage: OK"
+        print("testAssertMessage: OK")
 
     # StmtRaise.message: ^Expr? should carry the message expression.
     def testRaiseMessage() throws
@@ -421,10 +421,10 @@ class ASTBuilderTest
                 assert sr.message != nil, "raise message should not be nil"
             else
                 assert false, "expected raise_ stmt"
-        print "testRaiseMessage: OK"
+        print("testRaiseMessage: OK")
 
 def main()
     var t = ASTBuilderTest()
     t.run()?
 catch |e|
-    print "FAILED: " + e.message
+    print("FAILED: " + e.message)

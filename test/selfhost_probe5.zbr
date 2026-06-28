@@ -197,27 +197,27 @@ def main()
     assert Types.describe(Type.str_())    == "str"
     assert Types.describe(Type.unknown()) == "unknown"
     assert Types.describe(Type.void_())   == "void"
-    print "1. unit variants OK"
+    print("1. unit variants OK")
 
     # 2. Payload variants
     assert Types.describe(Type.int_n(32))  == "int32"
     assert Types.describe(Type.uint_n(64)) == "uint64"
     assert Types.describe(Type.named("Point")) == "Point"
-    print "2. payload variants OK"
+    print("2. payload variants OK")
 
     # 3. Recursive ^T: optional and list
     var opt_int  = Type.optional(Type.int_())
     var list_str = Type.list_(Type.str_())
     assert Types.describe(opt_int)  == "?int"
     assert Types.describe(list_str) == "List(str)"
-    print "3. recursive ^T OK"
+    print("3. recursive ^T OK")
 
     # 4. Doubly nested: ?List(str) and List(?int)
     var opt_list = Type.optional(Type.list_(Type.str_()))
     var list_opt = Type.list_(Type.optional(Type.int_()))
     assert Types.describe(opt_list) == "?List(str)"
     assert Types.describe(list_opt) == "List(?int)"
-    print "4. doubly nested OK"
+    print("4. doubly nested OK")
 
     # 5. Tuple variant (List(Type) inside union)
     var elems = List(Type)()
@@ -225,12 +225,12 @@ def main()
     elems.add(Type.str_())
     var tup = Type.tuple(elems)
     assert Types.describe(tup) == "(int, str)"
-    print "5. tuple (List inside union) OK"
+    print("5. tuple (List inside union) OK")
 
     # 6. cross_module variant (struct payload)
     var xmod = Type.cross_module(CrossModuleRef("math", "Vector"))
     assert Types.describe(xmod) == "math.Vector"
-    print "6. cross_module struct payload OK"
+    print("6. cross_module struct payload OK")
 
     # 7. HashMap(str, Type) storage and retrieval
     var env = TypeEnv()
@@ -242,7 +242,7 @@ def main()
     assert Types.describe(env.lookup("z")) == "List(int)"
     assert env.contains("x")
     assert not env.contains("w")
-    print "7. HashMap(str, Type) OK"
+    print("7. HashMap(str, Type) OK")
 
     # 8. Type.eql
     assert  Types.eql(Type.int_(), Type.int_())
@@ -250,7 +250,7 @@ def main()
     assert  Types.eql(Type.optional(Type.int_()), Type.optional(Type.int_()))
     assert not Types.eql(Type.optional(Type.int_()), Type.optional(Type.str_()))
     assert  Types.eql(Type.list_(Type.str_()), Type.list_(Type.str_()))
-    print "8. Type.eql OK"
+    print("8. Type.eql OK")
 
     # 9. Mutual recursion with throws: inferExpr / checkExpr
     var ch = Checker()
@@ -272,6 +272,6 @@ def main()
     assert Types.eql(t4, Type.int_())
 
     ch.checkExpr(lit, Type.int_())?
-    print "9. mutual recursion + throws OK"
+    print("9. mutual recursion + throws OK")
 
-    print "selfhost_probe5: all OK"
+    print("selfhost_probe5: all OK")

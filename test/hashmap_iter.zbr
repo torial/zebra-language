@@ -7,4 +7,4 @@ class Program
             var total: int = 0
             for k, v in scores
                 total = total + v
-            print total
+            print(total)

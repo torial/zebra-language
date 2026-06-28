@@ -39,4 +39,4 @@ def main()
     var tokens = "one  two   three".tokenize(" ")
     assert tokens.count() == 3
 
-    print "stdlib_str OK"
+    print("stdlib_str OK")

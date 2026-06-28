@@ -16,4 +16,4 @@ def main()
     assert absolute(7) == 7
     assert absolute(-7) == 7
     assert absolute(0) == 0
-    print "contract_result_test OK"
+    print("contract_result_test OK")

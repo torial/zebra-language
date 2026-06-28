@@ -2,12 +2,12 @@ class Program
     static
         def main
             var s: str = "Hello World"
-            print s.upper()
-            print s.lower()
-            print s.indexOf("World")
-            print s.indexOf("xyz")
+            print(s.upper())
+            print(s.lower())
+            print(s.indexOf("World"))
+            print(s.indexOf("xyz"))
             var r: str = s.replace("World", "Zebra")
-            print r
-            print s.len
+            print(r)
+            print(s.len)
             for part in s.split(" ")
-                print part
+                print(part)

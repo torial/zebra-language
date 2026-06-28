@@ -32,4 +32,4 @@ def main()
     assert abs.len > 0
     assert not abs.startsWith(".")
 
-    print "stdlib_misc OK"
+    print("stdlib_misc OK")

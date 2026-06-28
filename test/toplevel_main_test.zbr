@@ -4,4 +4,4 @@ def add(a: int, b: int): int
 def main()
     var sum = add(3, 4)
     assert sum == 7, "expected 7"
-    print "toplevel_main: OK"
+    print("toplevel_main: OK")

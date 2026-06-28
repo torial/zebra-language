@@ -19,17 +19,17 @@ def main()
     var p3 = Point.init(1, 2)
 
     # @derive(Debug) produces toString()
-    print p1.toString()
+    print(p1.toString())
 
     # @derive(Eq) makes == work on structs
     if p1 == p2
-        print "p1 == p2: true"
+        print("p1 == p2: true")
     if p1 != p3
-        print "p1 != p3: true"
+        print("p1 != p3: true")
 
     # @derive(Debug) with str field uses {s} format specifier
     var g = Greeting.init("Alice", 5)
-    print g.toString()
+    print(g.toString())
 
     # @derive(Hash) — hash() callable and consistent with eql
     var k1 = Key.init(42, "hello")
@@ -39,6 +39,6 @@ def main()
     var h2 = k2.hash()
     var h3 = k3.hash()
     if h1 == h2
-        print "hash consistent: ok"
+        print("hash consistent: ok")
     if h1 != h3
-        print "hash distinct: ok"
+        print("hash distinct: ok")

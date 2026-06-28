@@ -2,4 +2,4 @@ export def addTwo(x: int): int
     return x + 2
 
 def main()
-    print addTwo(40).toString()
+    print(addTwo(40).toString())

@@ -24,4 +24,4 @@ class Main
     static def main()
         var t = BranchRangeTest()
         t.run()
-        print "branch_range_test: all OK"
+        print("branch_range_test: all OK")

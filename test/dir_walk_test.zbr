@@ -22,4 +22,4 @@ def main()
             all_rooted = false
     assert all_rooted, "Dir.walk paths should be prefixed with the root argument"
 
-    print "dir_walk_test: ok (" + files.count().toString() + " files found)"
+    print("dir_walk_test: ok (" + files.count().toString() + " files found)")

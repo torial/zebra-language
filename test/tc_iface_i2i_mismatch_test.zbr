@@ -11,4 +11,4 @@ class FooImpl implements IFoo
 def main()
     var f: IFoo = FooImpl()
     var b: IBase = f
-    print b.id()
+    print(b.id())

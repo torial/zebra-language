@@ -42,4 +42,4 @@ def main()
     if Json.parseStrict(User, src) as direct
         assert direct.rate == 1.5
 
-    print "json_parse_strict_tc_test OK"
+    print("json_parse_strict_tc_test OK")

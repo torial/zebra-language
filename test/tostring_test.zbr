@@ -3,7 +3,7 @@ def main()
     var f: float = 3.14
     var s1 = n.toString()
     var s2 = f.toString()
-    print s1
-    print s2
+    print(s1)
+    print(s2)
     var big: int = -100
-    print big.toString()
+    print(big.toString())

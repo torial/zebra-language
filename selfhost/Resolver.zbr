@@ -304,8 +304,10 @@ class Resolver
                 .resolveStmts(br.else_stmts)
             on PNode.stmt_expr as inner
                 .resolveExpr(inner)
-            on PNode.stmt_print as inner
-                .resolveExpr(inner)
+            on PNode.stmt_print as arg_nodes
+                var arg_list: List(PNode) = arg_nodes
+                for an in arg_list
+                    .resolveExpr(an)
             on PNode.stmt_pass
                 pass
             on PNode.stmt_break
@@ -462,4 +464,4 @@ class Resolver
 # -- Main ----------------------------------------------------------------------
 
 def main()
-    print "resolver: loaded (run resolver_test.zbr to exercise)"
+    print("resolver: loaded (run resolver_test.zbr to exercise)")

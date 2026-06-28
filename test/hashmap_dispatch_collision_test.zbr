@@ -72,4 +72,4 @@ def main()
     assert c.put("key", 99), "put valid: expected true"
     assert not c.put("", 99), "put empty key: expected false"
 
-    print "hashmap_dispatch_collision: OK"
+    print("hashmap_dispatch_collision: OK")

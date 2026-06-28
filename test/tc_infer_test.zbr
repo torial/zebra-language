@@ -37,12 +37,12 @@ def main()
     assert TcTypes.eql(inf.inferExpr(TcExpr.char_lit()),   TcType.char_())
     var nil_t = inf.inferExpr(TcExpr.nil_())
     assert TcTypes.eql(nil_t, TcType.optional(TcType.void_()))
-    print "1. literal inference OK"
+    print("1. literal inference OK")
 
     # 2. Identifier lookup — defined vs undefined
     assert TcTypes.eql(inf.inferExpr(TcExpr.ident("x")), TcType.int_())
     assert TcTypes.eql(inf.inferExpr(TcExpr.ident("y")), TcType.unknown_())
-    print "2. identifier lookup OK"
+    print("2. identifier lookup OK")
 
     # 3. Member access on opaque stdlib types (delegates to TcStdlib)
     var resp_expr = TcExpr.ident("resp")
@@ -52,14 +52,14 @@ def main()
     var mem_text = TcExprMember(resp_expr, "text")
     var t_text = inf.inferExpr(TcExpr.member(mem_text))
     assert TcTypes.eql(t_text, TcType.string_())
-    print "3. member inference on http_response OK"
+    print("3. member inference on http_response OK")
 
     # 4. Member access on json_value
     var jv_expr = TcExpr.ident("jv")
     var mem_get = TcExprMember(jv_expr, "get")
     var t_get = inf.inferExpr(TcExpr.member(mem_get))
     assert TcTypes.eql(t_get, TcType.json_value())
-    print "4. member inference on json_value OK"
+    print("4. member inference on json_value OK")
 
     # 5. Static call: Http.get(url) → ?http_response
     var http_ident = TcExpr.ident("Http")
@@ -69,7 +69,7 @@ def main()
     var http_call  = TcExprCall(TcExpr.member(http_mem), http_args)
     var t_http_get = inf.inferExpr(TcExpr.call(http_call))
     assert TcTypes.eql(t_http_get, TcType.optional(TcType.http_response()))
-    print "5. static call Http.get OK"
+    print("5. static call Http.get OK")
 
     # 6. Static call: Timer.start() → timer_handle
     var tm_ident = TcExpr.ident("Timer")
@@ -78,7 +78,7 @@ def main()
     var tm_call  = TcExprCall(TcExpr.member(tm_mem), tm_args)
     var t_timer  = inf.inferExpr(TcExpr.call(tm_call))
     assert TcTypes.eql(t_timer, TcType.timer_handle())
-    print "6. static call Timer.start OK"
+    print("6. static call Timer.start OK")
 
     # 7. Binary operator inference
     var bi_arith = TcExprBinary("+", TcExpr.int_lit(), TcExpr.int_lit())
@@ -89,24 +89,24 @@ def main()
     assert TcTypes.eql(inf.inferExpr(TcExpr.binary(bi_str)), TcType.string_())
     var bi_lt = TcExprBinary("<", TcExpr.float_lit(), TcExpr.float_lit())
     assert TcTypes.eql(inf.inferExpr(TcExpr.binary(bi_lt)), TcType.bool_())
-    print "7. binary operator inference OK"
+    print("7. binary operator inference OK")
 
     # 8. Unary operator inference
     var un_neg = TcExprUnary("-", TcExpr.int_lit())
     assert TcTypes.eql(inf.inferExpr(TcExpr.unary(un_neg)), TcType.int_())
     var un_not = TcExprUnary("not", TcExpr.bool_lit())
     assert TcTypes.eql(inf.inferExpr(TcExpr.unary(un_not)), TcType.bool_())
-    print "8. unary operator inference OK"
+    print("8. unary operator inference OK")
 
     # 9. Explicit cast
     var cast_expr = TcExprCast(TcType.float_())
     assert TcTypes.eql(inf.inferExpr(TcExpr.cast(cast_expr)), TcType.float_())
-    print "9. cast inference OK"
+    print("9. cast inference OK")
 
     # 10. Optional chain unwrapping
     var opt_chain = TcExpr.ident("maybe_resp")
     var chain_expr = TcExpr.optional_chain(opt_chain)
     assert TcTypes.eql(inf.inferExpr(chain_expr), TcType.http_response())
-    print "10. optional_chain inference OK"
+    print("10. optional_chain inference OK")
 
-    print "tc_infer_test: all OK"
+    print("tc_infer_test: all OK")

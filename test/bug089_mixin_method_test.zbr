@@ -15,4 +15,4 @@ def main()
     var f = Foo()
     assert f.hi() == "hi", "mixin str method"
     assert f.count() == 42, "mixin int method"
-    print "ok"
+    print("ok")

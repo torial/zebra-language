@@ -42,4 +42,4 @@ def main()
     a.withdraw(3)
     var g = Gauge(50, 100)
     g.set(75)
-    print "ok"
+    print("ok")

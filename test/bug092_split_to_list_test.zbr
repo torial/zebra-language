@@ -12,4 +12,4 @@ def main()
     var ls: List(str) = content.lines()
     assert ls.count() == 3, "lines count"
 
-    print "ok"
+    print("ok")

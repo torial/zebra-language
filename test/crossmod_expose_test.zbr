@@ -12,7 +12,7 @@ use crossmod_expose_lib exposing Tag, Bag, Shape
 def main()
     test1BranchOnExposedUnion()
     test2ForInOverExposedClassList()
-    print "crossmod_expose: all OK"
+    print("crossmod_expose: all OK")
 
 def test1BranchOnExposedUnion
     var s: Shape = Shape.box(Tag("hello", 5))
@@ -24,7 +24,7 @@ def test1BranchOnExposedUnion
             assert r.weight == 5, "weight: ${r.weight}"
         on Shape.dot
             assert false, "wrong branch"
-    print "test1 OK"
+    print("test1 OK")
 
 def test2ForInOverExposedClassList
     var b = Bag("test-bag")
@@ -42,4 +42,4 @@ def test2ForInOverExposedClassList
             names = names + ","
         names = names + t.name
     assert names == "alpha,beta,gamma", "names: '${names}'"
-    print "test2 OK"
+    print("test2 OK")

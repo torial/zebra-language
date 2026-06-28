@@ -85,4 +85,4 @@ def main()
             true_count = true_count + 1
     assert true_count == 2, "List(bool) true_count: expected 2"
 
-    print "for_in_elem: OK"
+    print("for_in_elem: OK")

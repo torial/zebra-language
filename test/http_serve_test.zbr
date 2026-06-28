@@ -8,4 +8,4 @@ def startServer()
 
 def main()
     # Compile smoke: exercises Http.serve codegen path without starting a server
-    print "http_serve_test OK"
+    print("http_serve_test OK")

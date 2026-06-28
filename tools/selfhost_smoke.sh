@@ -429,7 +429,10 @@ smoke_test test/test_module_test.zbr
 smoke_test test/random_instance_test.zbr
 
 # `expr to!` removed (#218): force-unwrap is `expr!`. `to!` must no longer parse.
-smoke_tc_fail test/to_bang_removed_test.zbr "got 'to'"
+smoke_tc_fail test/to_bang_removed_test.zbr "'to'"
+
+# `print X` statement form removed (#220): print is a function `print(X)`.
+smoke_tc_fail test/print_stmt_removed_test.zbr "expected '('"
 
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"

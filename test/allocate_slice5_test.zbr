@@ -42,4 +42,4 @@ def main()
         r5 <- inner
     assert r5 == "nested inner", "nested allocate Arena() copy-out"
 
-    print "allocate Slice 5: all OK"
+    print("allocate Slice 5: all OK")

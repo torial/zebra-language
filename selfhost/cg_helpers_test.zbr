@@ -35,7 +35,7 @@ def testStrSet()
     s.add("alpha")
     assert s.count() == 2
     assert s.contains_("beta")
-    print "1. StrSet: OK"
+    print("1. StrSet: OK")
 
 # ── Part 2: assignOpStr ───────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ def testAssignOpStr()
     assert assignOpStr(AssignOp.double_gt_eq)    == ">>="
     assert assignOpStr(AssignOp.slashslash_eq)   == "="
     assert assignOpStr(AssignOp.starstar_eq)     == "="
-    print "2. assignOpStr: OK"
+    print("2. assignOpStr: OK")
 
 # ── Part 3: binaryOpStr ───────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ def testBinaryOpStr()
     assert binaryOpStr(BinaryOp.pow)     == "?"
     assert binaryOpStr(BinaryOp.dotdot)  == "?"
     assert binaryOpStr(BinaryOp.in_)     == "?"
-    print "3. binaryOpStr: OK"
+    print("3. binaryOpStr: OK")
 
 # ── Part 4: typeRefStr (non-boxing variants -- no throws) ─────────────────────
 
@@ -90,7 +90,7 @@ def testTypeRefStrSimple()
     assert typeRefStr(TypeRef.named(NamedTypeRef(sp, "bool"))) == "bool"
     assert typeRefStr(TypeRef.void_)  == "void"
     assert typeRefStr(TypeRef.same_)  == "same"
-    print "4a. typeRefStr simple: OK"
+    print("4a. typeRefStr simple: OK")
 
 def testTypeRefStrGeneric()
     var sp = zspan()
@@ -101,7 +101,7 @@ def testTypeRefStrGeneric()
     args2.add(TypeRef.named(NamedTypeRef(sp, "str")))
     args2.add(TypeRef.named(NamedTypeRef(sp, "int")))
     assert typeRefStr(TypeRef.generic(GenericTypeRef(sp, "HashMap", args2))) == "HashMap(str, int)"
-    print "4b. typeRefStr generic: OK"
+    print("4b. typeRefStr generic: OK")
 
 def testTypeRefStrTuple()
     var sp = zspan()
@@ -109,7 +109,7 @@ def testTypeRefStrTuple()
     elems.add(TypeRef.named(NamedTypeRef(sp, "int")))
     elems.add(TypeRef.named(NamedTypeRef(sp, "bool")))
     assert typeRefStr(TypeRef.tuple(TupleTypeRef(sp, elems))) == "(int, bool)"
-    print "4c. typeRefStr tuple: OK"
+    print("4c. typeRefStr tuple: OK")
 
 # typeRefStr with ^TypeRef boxing (nilable, stream, error_union, ref_to)
 
@@ -120,7 +120,7 @@ def testTypeRefStrBoxed() throws
     assert typeRefStr(TypeRef.stream(inner))      == "str*"
     assert typeRefStr(TypeRef.error_union(inner)) == "!str"
     assert typeRefStr(TypeRef.ref_to(inner))      == "^str"
-    print "4d. typeRefStr boxed: OK"
+    print("4d. typeRefStr boxed: OK")
 
 # ── Part 5: nilNarrowVar ──────────────────────────────────────────────────────
 
@@ -130,7 +130,7 @@ def testNilNarrowVarSimple()
     var id_x = Expr.ident(ExprIdent(sp, "x"))
     assert nilNarrowVar(id_x, true)  == nil
     assert nilNarrowVar(id_x, false) == nil
-    print "5a. nilNarrowVar non-binary: OK"
+    print("5a. nilNarrowVar non-binary: OK")
 
 def testNilNarrowVar() throws
     var sp   = zspan()
@@ -151,7 +151,7 @@ def testNilNarrowVar() throws
     var lit = Expr.int_lit(ExprIntLit(sp, "0", IntBase.decimal))
     var add = Expr.binary(ExprBinary(sp, BinaryOp.add, id_x, lit))
     assert nilNarrowVar(add, true) == nil
-    print "5b. nilNarrowVar binary: OK"
+    print("5b. nilNarrowVar binary: OK")
 
 # ── Part 6: exprHasTry ────────────────────────────────────────────────────────
 
@@ -172,7 +172,7 @@ def testExprHasTry() throws
     # Binary without any try -- false
     var rhs = Expr.int_lit(ExprIntLit(sp, "1", IntBase.decimal))
     assert not exprHasTry(Expr.binary(ExprBinary(sp, BinaryOp.add, lhs, rhs)))
-    print "6. exprHasTry: OK"
+    print("6. exprHasTry: OK")
 
 # ── Part 7: bodyHasRaise ─────────────────────────────────────────────────────
 
@@ -199,7 +199,7 @@ def testBodyHasRaise() throws
     var with_return = List(Stmt)()
     with_return.add(Stmt.return_(StmtReturn(sp, ret_lit)))
     assert not bodyHasRaise(with_return)
-    print "7. bodyHasRaise: OK"
+    print("7. bodyHasRaise: OK")
 
 # ── Part 8: nameUsedInExpr / nameUsedInStmts ─────────────────────────────────
 
@@ -211,7 +211,7 @@ def testNameUsedInExprSimple()
     var lit = Expr.int_lit(ExprIntLit(sp, "1", IntBase.decimal))
     assert not nameUsedInExpr("x", lit)
     assert not nameUsedInExpr("x", Expr.nil_(sp))
-    print "8a. nameUsedInExpr simple: OK"
+    print("8a. nameUsedInExpr simple: OK")
 
 def testNameUsedInExprBinary() throws
     var sp   = zspan()
@@ -221,7 +221,7 @@ def testNameUsedInExprBinary() throws
     assert     nameUsedInExpr("x", bin)
     assert     nameUsedInExpr("y", bin)
     assert not nameUsedInExpr("z", bin)
-    print "8b. nameUsedInExpr binary: OK"
+    print("8b. nameUsedInExpr binary: OK")
 
 def testNameUsedInStmts() throws
     var sp   = zspan()
@@ -231,7 +231,7 @@ def testNameUsedInStmts() throws
     assert     nameUsedInStmts("x", stmts)
     assert not nameUsedInStmts("y", stmts)
     assert not nameUsedInStmts("x", List(Stmt)())
-    print "8c. nameUsedInStmts: OK"
+    print("8c. nameUsedInStmts: OK")
 
 # ── Part 9: analyzeEscapes ───────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ def testAnalyzeEscapes() throws
     assert not esc.contains_("y")
     # empty body -> nothing escapes
     assert analyzeEscapes(List(Stmt)()).count() == 0
-    print "9. analyzeEscapes: OK"
+    print("9. analyzeEscapes: OK")
 
 # ── Part 10: scanMutations ────────────────────────────────────────────────────
 
@@ -262,7 +262,7 @@ def testScanMutations() throws
     assert not mut.contains_("y")
     # empty body -> nothing mutated
     assert scanMutations(List(Stmt)()).count() == 0
-    print "10. scanMutations: OK"
+    print("10. scanMutations: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -283,6 +283,6 @@ def main()
     testNameUsedInStmts()
     testAnalyzeEscapes()
     testScanMutations()
-    print "cg_helpers_test: all OK"
+    print("cg_helpers_test: all OK")
 catch |_e|
     assert false, "unexpected error in cg_helpers_test"

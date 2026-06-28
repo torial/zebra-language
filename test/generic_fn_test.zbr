@@ -12,13 +12,13 @@ def first(T)(a: T, b: T): T
     return a
 
 def main()
-    print identity(int)(42)          # 42
-    print identity(str)("hi")        # hi
-    print clamp(int)(5, 0, 10)       # 5
-    print clamp(int)(-3, 0, 10)      # 0
-    print clamp(int)(15, 0, 10)      # 10
-    print first(int)(7, 99)          # 7
-    print first(str)("a", "b")       # a
+    print(identity(int)(42))          # 42
+    print(identity(str)("hi"))        # hi
+    print(clamp(int)(5, 0, 10))       # 5
+    print(clamp(int)(-3, 0, 10))      # 0
+    print(clamp(int)(15, 0, 10))      # 10
+    print(first(int)(7, 99))          # 7
+    print(first(str)("a", "b"))       # a
     var x: int = identity(int)(7) + 1
-    print x                           # 8
-    print "generic functions: OK"
+    print(x)                           # 8
+    print("generic functions: OK")

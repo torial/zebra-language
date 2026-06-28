@@ -47,10 +47,10 @@ def testNestedCallArg(): int
     return acceptBuilder(makeBuilder(10).doubled().withVal(7))   # 7
 
 def main()
-    print testVarInit()        # 109
+    print(testVarInit())        # 109
     var rb = testReturn()
-    print rb.getVal()          # 42
-    print testAssign()         # 20
-    print testCallArg()        # 30
-    print testNestedCallArg()  # 7
-    print "ok"
+    print(rb.getVal())          # 42
+    print(testAssign())         # 20
+    print(testCallArg())        # 30
+    print(testNestedCallArg())  # 7
+    print("ok")

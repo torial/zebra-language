@@ -23,10 +23,10 @@ def main(): void
 
     using outer
         using inner
-            print "inside both"
+            print("inside both")
 
     assert outer.entered == 1
     assert outer.exited  == 1
     assert inner.entered == 1
     assert inner.exited  == 1
-    print "in_scope_test PASS"
+    print("in_scope_test PASS")

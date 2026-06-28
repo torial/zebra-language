@@ -10,4 +10,4 @@ class Anim
 def main()
     var a = Anim()
     a.stop()
-    print "stop-method: OK"
+    print("stop-method: OK")

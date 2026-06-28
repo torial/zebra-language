@@ -4,4 +4,4 @@ def makeInt(n: int): int
     return n
 
 def main()
-    print makeInt(1).toString()
+    print(makeInt(1).toString())

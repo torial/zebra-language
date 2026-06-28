@@ -10,7 +10,7 @@ class Program
             nums.add(9)
             nums.sort()
             for n in nums
-                print n    # 1 2 5 8 9
+                print(n)    # 1 2 5 8 9
 
             # sort() — natural ascending order on strings
             var words: List(str) = List()
@@ -19,7 +19,7 @@ class Program
             words.add("cherry")
             words.sort()
             for w in words
-                print w    # apple banana cherry
+                print(w)    # apple banana cherry
 
             # sortBy() — descending ints
             var desc: List(int) = List()
@@ -30,7 +30,7 @@ class Program
             desc.add(5)
             desc.sortBy(def(a, b) = a > b)
             for n in desc
-                print n    # 5 4 3 1 1
+                print(n)    # 5 4 3 1 1
 
             # sortBy() — sort structs by field (descending score)
             var alice = Person()
@@ -48,7 +48,7 @@ class Program
             people.add(carol)
             people.sortBy(def(a, b) = a.score > b.score)
             for p in people
-                print p.name    # Bob Alice Carol
+                print(p.name)    # Bob Alice Carol
 
             # ── Stability test — preserve order of equal elements ──────────
             var stable: List(int) = List()
@@ -59,7 +59,7 @@ class Program
             stable.add(1)
             stable.sort()
             for n in stable
-                print n             # 1 1 2 3 3 (relative order preserved)
+                print(n)             # 1 1 2 3 3 (relative order preserved)
 
             # ── Reverse sorting ────────────────────────────────────────────
             var reverse_sort: List(str) = List()
@@ -68,18 +68,18 @@ class Program
             reverse_sort.add("bat")
             reverse_sort.sortBy(def(a, b) = a > b)  # reverse order (descending)
             for w in reverse_sort
-                print w             # cat bat ant
+                print(w)             # cat bat ant
 
             # ── Empty list ─────────────────────────────────────────────────
             var empty: List(int) = List()
             empty.sort()
-            print empty.count()     # 0
+            print(empty.count())     # 0
 
             # ── Single element ─────────────────────────────────────────────
             var single: List(int) = List()
             single.add(42)
             single.sort()
-            print single.at(0)      # 42
+            print(single.at(0))      # 42
 
             # ── Already sorted ─────────────────────────────────────────────
             var already: List(int) = List()
@@ -88,7 +88,7 @@ class Program
             already.add(3)
             already.sort()
             for n in already
-                print n
+                print(n)
 
             # ── Reverse sorted ─────────────────────────────────────────────
             var rev_input: List(int) = List()
@@ -97,7 +97,7 @@ class Program
             rev_input.add(1)
             rev_input.sort()
             for n in rev_input
-                print n             # 1 2 3
+                print(n)             # 1 2 3
 
             # ── Duplicates ─────────────────────────────────────────────────
             var dupes: List(int) = List()
@@ -107,7 +107,7 @@ class Program
             dupes.add(5)
             dupes.add(1)
             dupes.sort()
-            print dupes.count()     # 5
+            print(dupes.count())     # 5
 
             # ── Float sorting ──────────────────────────────────────────────
             var floats: List(float) = List()
@@ -116,7 +116,7 @@ class Program
             floats.add(1.41)
             floats.sort()
             for f in floats
-                print f
+                print(f)
 
             # ── Case-sensitive string sort ─────────────────────────────────
             var mixed_case: List(str) = List()
@@ -125,7 +125,7 @@ class Program
             mixed_case.add("Banana")
             mixed_case.sort()
             for w in mixed_case
-                print w
+                print(w)
 
             # ── Multi-key sort (sort by score, then by name) ───────────────
             var people2: List(Person) = List()
@@ -147,7 +147,7 @@ class Program
                 return a.name > b.name
             )
             for p in people2
-                print p.name.concat(": ").concat(p.score.toString())
+                print(p.name.concat(": ").concat(p.score.toString()))
 
 class Person
     var name: str = ""

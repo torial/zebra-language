@@ -19,4 +19,4 @@ class Main
         c.add("world", false)
         assert c.first()     == "hello"
         assert c.firstFlag() == true
-        print "generic_infer_test: all OK"
+        print("generic_infer_test: all OK")
