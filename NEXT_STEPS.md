@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-06-07 (audit pass: §12 closed against BUG-115 fix; §21 REPL framing clarified; book Ch12/Ch13/Ch15/Appendix A reworked for current `throws`/`catch`/pipeline/`sig` syntax)
+**Last updated:** 2026-06-27 (compile-check campaign done — 141/0/1, now blocking `zig build test`; added generated-Zig hygiene cleanup item, task #230)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
@@ -57,6 +57,28 @@ Then either compiler regenerates the same baseline. Not required — the gate
 Note: a single `selfhost/X.zig` still cannot be regenerated alone — emit shape
 (root vs dep) differs and mixing shapes crashes at runtime — so always
 regenerate the whole set via `update-selfhost`.
+
+---
+
+## Generated-Zig hygiene cleanup — TODO (task #230, raised 2026-06-27)
+
+`zig build test` leaves ~48 `test/*.zig` dirty after every run: the selfhost-smoke
+step runs `zebra.exe --emit-zig test/<name>_test.zbr`, and the compiler writes the
+canonical `<source>.zig` **next to the source fixture** in addition to honoring its
+`--output-dir` scratch target. Those `test/*.zig` are **inert reference snapshots** —
+nothing compiles them (`test/main.zig` imports the compiler *modules*, not the
+per-test `.zig`), and 129/144 already drift from a fresh emit — so this is hygiene,
+not correctness. But now that compile-check **gates `zig build test`** (commit
+553a2b7), a dirty tree after each gate run is a real friction.
+
+Decide one policy for version-controlled generated Zig and apply it:
+- (a) make `--emit-zig` honor `--output-dir` *exclusively* (don't also write beside
+  the source) — fixes the pollution at the source;
+- (b) stop committing `test/*.zig` (gitignore; they're regenerable and mostly stale);
+- (c) keep them but have smoke/compile-check emit into a temp copy of `test/`.
+Lean (a)+(b). Tie this to the broader story of which generated Zig is tracked
+(`selfhost/*.zig` is intentionally tracked as the round-trip fixed point; `test/*.zig`
+arguably should not be; `*.exe`/caches are already gitignored).
 
 ---
 
