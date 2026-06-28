@@ -1,8 +1,69 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-142. Next new bug: BUG-143.**
+**Last bug number generated: BUG-143. Next new bug: BUG-144.**
 
 ---
+
+## BUG-143: bootstrap (`src/`) codegen lags the selfhost — 14 user-program emit divergences
+
+**Severity:** medium (equivalence violation; the bootstrap is no longer the
+primary compiler, but is still reachable via `zebra --zig-backend` and is the
+authority that regenerates `selfhost/*.zig`). Found 2026-06-27 by a bootstrap-emit
+parity sweep run after compile-check reached 141/0 on the selfhost.
+
+**Status:** OPEN — discovery + repeatable gate landed; the `src/` codegen fixes
+are scoped for a focused, round-trip-gated session (not done yet).
+
+### What it is
+`tools/compile_check.sh` type-checks the Zig the **selfhost** emits (141/0/1 green).
+Running the same check against the **bootstrap** emit (`--bootstrap`) yields
+**120 passed / 14 FAILED / 8 skipped**: 14 positive-smoke tests where the bootstrap
+emits Zig that does **not** type-check, while the selfhost emits correct Zig for the
+same source. The selfhost is *ahead* of the bootstrap — this session's (and earlier)
+stdlib/0.16 codegen fixes were applied to `selfhost/CodeGen.zbr` and never mirrored
+to `src/CodeGen.zig`. It stayed invisible because no gate exercised the bootstrap's
+**user-program** emit (`bootstrap_check.sh` only exercises the bootstrap emitting the
+*compiler*, which happens not to hit these paths in a breaking way; the
+compiler sources use e.g. `sys.cwd` only once and not the broken `.items`/HashMap
+shapes).
+
+**Proof of direction (sys.cwd):**
+- `src/CodeGen.zig:6969,7314` → `std.Io.Dir.cwd().realpathAlloc(_io, …)` — the
+  **0.16-removed** API (`error: no field … 'realpathAlloc' in 'Io.Dir'`).
+- `selfhost/CodeGen.zbr:11620` → `std.process.currentPathAlloc(_io, _allocator)` — fixed.
+
+### The 14, by root-cause cluster
+- **ArrayList `.items` indexing (5):** `for_else_test`, `list_index_test`,
+  `module_var_shadow_test`, `list_ref_autobox_test`, `bug119_list_field_param_test`.
+  Bootstrap emits `xs[i]` / `xs` where the selfhost emits `xs.items[@as(usize, …)]`
+  (`error: array_list … is not indexable` / `missing struct field: items`).
+- **HashMap emission (4):** `hashmap_remove_test`, `hashmap_set_test`,
+  `hashmap_field_collision_test`, `hashmap_param_field_test`. Bootstrap emits a
+  bogus `HashMap(K,V).init()` (undeclared identifier; no allocator) where the
+  selfhost emits `std.StringHashMap(V).init(_allocator)` + `_intern`/`catch`.
+- **0.16 stdlib API (2):** `stdlib_additions_test`, `stdlib_misc_test` — `realpathAlloc`
+  (above); likely other 0.16 renames in the same region.
+- **Concrete→interface coercion (1):** `tc_iface_transitive_match_test` — known gap
+  (see COMPILE_CHECK_STATUS.md): `var b: IBase = d` for concrete `d` is selfhost-only.
+- **Individual (2):** `dir_walk_test` (`member function expected 1 argument(s), found 0`);
+  `ws_smoke_test` (`use of undeclared identifier 'm'`).
+
+### Repeatable gate (landed)
+`compile_check.sh --bootstrap` was **non-functional** before this (it passed
+`--output-dir` to the bootstrap, whose CLI emits to stdout and rejects the flag, so
+every emit silently `continue`d → `0 passed, 0 FAILED`). Fixed 2026-06-27: bootstrap
+mode now emits each root file to stdout, and skips multi-file dep tests (the bootstrap
+stdout path can't materialize separate-module deps — those pass under the selfhost
+whose `--output-dir` emits the deps too). The gate now reports the real 120/14/8.
+
+### Fix plan (scoped — for a gated session)
+Mirror each cluster's fix from `selfhost/CodeGen.zbr` into `src/CodeGen.zig`, one
+cluster at a time, re-running `bootstrap_check.sh` (round-trip must stay byte-identical)
++ `compile_check.sh --bootstrap` after each. Start with the lowest round-trip risk
+(realpath: the compiler uses `sys.cwd` once; ArrayList/HashMap shapes need checking
+against compiler-internal usage first). Target: `--bootstrap` reaches the same
+141/0 as the selfhost, restoring full equivalence. Then wire `--bootstrap` into the
+parity gate so this can't silently regress again.
 
 ## BUG-142: missing required argument compiles + runs with garbage
 
