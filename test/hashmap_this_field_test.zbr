@@ -17,7 +17,7 @@ class Env
         vars.set(k, v)
 
     def lookup(k: str): Sym
-        return vars.get(k) to!
+        return vars.get(k)!
 
 def main()
     var e = Env()

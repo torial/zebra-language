@@ -208,7 +208,7 @@ class DeadCodeChecker
                 if v.init_expr != nil
                     var saved: str = .current_fn_key
                     .current_fn_key = ""
-                    .walkExpr(v.init_expr to!, file, false)
+                    .walkExpr(v.init_expr!, file, false)
                     .current_fn_key = saved
             on Decl.namespace_ as ns
                 var ni: int = 0
@@ -232,7 +232,7 @@ class DeadCodeChecker
                         .walkStmts(stmts, file)
                 on Decl.var_ as v
                     if v.init_expr != nil
-                        .walkExpr(v.init_expr to!, file, false)
+                        .walkExpr(v.init_expr!, file, false)
                 else
                     pass
             i = i + 1
@@ -263,7 +263,7 @@ class DeadCodeChecker
             on Stmt.for_in as fi
                 .walkExpr(fi.iter, file, false)
                 if fi.filter != nil
-                    .walkExpr(fi.filter to!, file, false)
+                    .walkExpr(fi.filter!, file, false)
                 .walkStmts(fi.stmts, file)
                 if fi.else_ as fe
                     .walkStmts(fe, file)
@@ -271,7 +271,7 @@ class DeadCodeChecker
                 .walkExpr(fn2.start, file, false)
                 .walkExpr(fn2.stop_, file, false)
                 if fn2.step != nil
-                    .walkExpr(fn2.step to!, file, false)
+                    .walkExpr(fn2.step!, file, false)
                 .walkStmts(fn2.stmts, file)
                 if fn2.else_ as fne
                     .walkStmts(fne, file)
@@ -287,13 +287,13 @@ class DeadCodeChecker
                     .walkStmts(sbe, file)
             on Stmt.return_ as sr
                 if sr.value != nil
-                    .walkExpr(sr.value to!, file, false)
+                    .walkExpr(sr.value!, file, false)
             on Stmt.assign as sa
                 .walkExpr(sa.target, file, false)
                 .walkExpr(sa.value, file, false)
             on Stmt.var_ as sv
                 if sv.init_expr != nil
-                    .walkExpr(sv.init_expr to!, file, false)
+                    .walkExpr(sv.init_expr!, file, false)
             on Stmt.expr as se
                 .walkExpr(se, file, false)
             on Stmt.defer_ as sd
@@ -303,9 +303,9 @@ class DeadCodeChecker
                 .walkStmts(sw2.stmts, file)
             on Stmt.raise_ as sr2
                 if sr2.message != nil
-                    .walkExpr(sr2.message to!, file, false)
+                    .walkExpr(sr2.message!, file, false)
                 if sr2.details != nil
-                    .walkExpr(sr2.details to!, file, false)
+                    .walkExpr(sr2.details!, file, false)
             on Stmt.try_catch as stc
                 .walkStmts(stc.stmts, file)
                 var cli: int = 0
@@ -332,7 +332,7 @@ class DeadCodeChecker
             on Stmt.assert_ as sa2
                 .walkExpr(sa2.cond, file, false)
                 if sa2.message != nil
-                    .walkExpr(sa2.message to!, file, false)
+                    .walkExpr(sa2.message!, file, false)
             on Stmt.assert_eq_ as saeq
                 .walkExpr(saeq.lhs, file, false)
                 .walkExpr(saeq.rhs, file, false)
@@ -359,9 +359,9 @@ class DeadCodeChecker
 
     def walkCapture(cap: DeclVar, file: str)
         # DeclVar.init_expr: ^Expr? — passing cap as a named-type param causes
-        # selfhost to seed opt_ptr_field_bindings, so cap.init_expr to! generates .?.* .
+        # selfhost to seed opt_ptr_field_bindings, so cap.init_expr! generates .?.* .
         if cap.init_expr != nil
-            .walkExpr(cap.init_expr to!, file, false)
+            .walkExpr(cap.init_expr!, file, false)
 
     def walkDictEntry(entry: DictEntry, file: str)
         # DictEntry.key/value: ^Expr — passing entry as a named-type param causes
@@ -455,9 +455,9 @@ class DeadCodeChecker
             on Expr.slice as esl
                 .walkExpr(esl.object, file, false)
                 if esl.start != nil
-                    .walkExpr(esl.start to!, file, false)
+                    .walkExpr(esl.start!, file, false)
                 if esl.stop_ != nil
-                    .walkExpr(esl.stop_ to!, file, false)
+                    .walkExpr(esl.stop_!, file, false)
             on Expr.cast as ec2
                 .walkExpr(ec2.expr, file, false)
             on Expr.to_non_nil as etnn

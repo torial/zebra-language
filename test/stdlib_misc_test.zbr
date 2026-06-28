@@ -7,7 +7,7 @@ def main()
     sys.setenv("ZEBRA_TEST_VAR", "hello_zebra")
     var val = sys.getenv("ZEBRA_TEST_VAR")
     assert val != nil
-    assert val to! == "hello_zebra"
+    assert val! == "hello_zebra"
 
     # Random.gaussian() — normal distribution (mean=0, stddev=1)
     var g = Random.gaussian()

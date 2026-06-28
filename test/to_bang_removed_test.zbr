@@ -1,0 +1,6 @@
+# `expr to!` was removed (#218) — force-unwrap is spelled `expr!`.
+# This fixture MUST fail to parse: `to!` is no longer a valid postfix form
+# (the `to` keyword now only introduces a cast, `expr to T`).
+def main()
+    var x: int? = 5
+    print(x to!)

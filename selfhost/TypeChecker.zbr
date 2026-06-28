@@ -645,7 +645,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if v.mods.is_private
                     mt.addPrivateMemberKey(ct.name, v.name)
                 if v.type_ != nil
-                    var vt = v.type_ to!
+                    var vt = v.type_!
                     var ft: Type_ = typeFromRef(vt)
                     ct.setField(v.name, ft)
                     if isStrSetOrWrapped(ft)
@@ -668,7 +668,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if m.mods.is_private
                     mt.addPrivateMemberKey(ct.name, m.name)
                 if m.return_type != nil
-                    ct.setMethodReturn(m.name, typeFromRef(m.return_type to!))
+                    ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
                 else
                     ct.setMethodReturn(m.name, Type_.void_)
                 # Collect param names as CSV for named-arg reordering in codegen.
@@ -690,7 +690,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     if pti > 0
                         ptypes_pipe = ptypes_pipe + "|"
                     if p2.type_ != nil
-                        ptypes_pipe = ptypes_pipe + typeTag(typeFromRef(p2.type_ to!))
+                        ptypes_pipe = ptypes_pipe + typeTag(typeFromRef(p2.type_!))
                     else
                         ptypes_pipe = ptypes_pipe + "?"
                     pti += 1
@@ -703,7 +703,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 if ct.ctorParamCount() == 0
                     for p in ini.params
                         if p.type_ != nil
-                            ct.addCtorParam(typeFromRef(p.type_ to!))
+                            ct.addCtorParam(typeFromRef(p.type_!))
                         else
                             ct.addCtorParam(Type_.unknown_)
                 ct.setFnParamList("init", ini.params)
@@ -717,7 +717,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
     # last dep's functions would shadow all earlier ones.
     if mt.classOf("") == nil
         mt.addClass(ClassTypes(""))
-    var module_fns: ClassTypes = mt.classOf("") to!  # safe: ensured above
+    var module_fns: ClassTypes = mt.classOf("")!  # safe: ensured above
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
         branch decl
@@ -788,14 +788,14 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 mt.addUnion(uname)
                 for variant in u.variants
                     if variant.payload != nil
-                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload to!))
+                        mt.addVariantPayload(uname, variant.name, typeFromRef(variant.payload!))
                     else
                         mt.addVariantPayload(uname, variant.name, Type_.unknown_)
             on Decl.method as topfn
                 # Top-level def: register under "" sentinel so bare calls inside
                 # class methods can resolve the return type via methodReturnAny.
                 if topfn.return_type != nil
-                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type to!))
+                    module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type!))
                 else
                     module_fns.setMethodReturn(topfn.name, Type_.void_)
                 # Collect param types for call-arg checking at call sites.
@@ -806,7 +806,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     if tl_pti > 0
                         tl_ptypes = tl_ptypes + "|"
                     if tl_p.type_ != nil
-                        tl_ptypes = tl_ptypes + typeTag(typeFromRef(tl_p.type_ to!))
+                        tl_ptypes = tl_ptypes + typeTag(typeFromRef(tl_p.type_!))
                     else
                         tl_ptypes = tl_ptypes + "?"
                     tl_pti += 1
@@ -823,10 +823,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # dispatch on `counter.str()`). Untyped literal inits are inferred
                 # the same way genFieldDecl annotates an untyped static.
                 if mv.type_ != nil
-                    module_fns.setField(mv.name, typeFromRef(mv.type_ to!))
+                    module_fns.setField(mv.name, typeFromRef(mv.type_!))
                 else if mv.init_expr != nil
                     var mv_t: Type_ = Type_.unknown_
-                    branch mv.init_expr to!
+                    branch mv.init_expr!
                         on Expr.int_lit
                             mv_t = Type_.int_
                         on Expr.float_lit
@@ -862,11 +862,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     if mt.classOf(ns_cur) == nil
                         mt.addClass(ClassTypes(ns_cur))
                     if ns_prev != ""
-                        var ns_par: ClassTypes = mt.classOf(ns_prev) to!
+                        var ns_par: ClassTypes = mt.classOf(ns_prev)!
                         ns_par.setField(ns_part, Type_.named(ns_cur))
                     ns_pi += 1
                 # Register methods from the leaf namespace.
-                var ns_leaf: ClassTypes = mt.classOf(ns_cur) to!
+                var ns_leaf: ClassTypes = mt.classOf(ns_cur)!
                 addClassMembers(mt, ns_leaf, ns_decl.decls)
                 # Handle directly nested namespace decls (nested syntax).
                 for ns_d2 in ns_decl.decls
@@ -875,7 +875,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         if mt.classOf(inner_path) == nil
                             mt.addClass(ClassTypes(inner_path))
                         ns_leaf.setField(inner_ns.name, Type_.named(inner_path))
-                        var inner_ct: ClassTypes = mt.classOf(inner_path) to!
+                        var inner_ct: ClassTypes = mt.classOf(inner_path)!
                         addClassMembers(mt, inner_ct, inner_ns.decls)
             else
                 pass
@@ -1733,7 +1733,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # control flow (error propagation).
             return inferExpr(et.expr, ctx)
         on Expr.to_non_nil as etn
-            # `expr to!` — strip an outer optional wrapper if present.
+            # `expr!` — strip an outer optional wrapper if present.
             var inner: Type_ = inferExpr(etn.expr, ctx)
             branch inner
                 on Type_.optional as opt
@@ -1869,7 +1869,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             return Type_.optional(flat_t)
         on Expr.list_lit as ll
             if ll.elem_type != nil
-                return Type_.list_(typeFromRef(ll.elem_type to!))
+                return Type_.list_(typeFromRef(ll.elem_type!))
             if ll.elems.count() > 0
                 var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
                 return Type_.list_(elem_t)
@@ -2076,7 +2076,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkExpr(fnum.start, ctx)
             walkExpr(fnum.stop_, ctx)
             if fnum.step != nil
-                walkExpr(fnum.step to!, ctx)
+                walkExpr(fnum.step!, ctx)
             ctx.bind(fnum.var_, Type_.int_)
             walkStmts(fnum.stmts, ctx)
         on Stmt.branch_ as sb
@@ -2107,11 +2107,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 walkStmts(sb_else, ctx)
         on Stmt.return_ as sr
             if sr.value != nil
-                walkExpr(sr.value to!, ctx)
+                walkExpr(sr.value!, ctx)
         on Stmt.assert_ as sa
             walkExpr(sa.cond, ctx)
             if sa.message != nil
-                walkExpr(sa.message to!, ctx)
+                walkExpr(sa.message!, ctx)
         on Stmt.assert_eq_ as sac
             walkExpr(sac.lhs, ctx)
             walkExpr(sac.rhs, ctx)
@@ -2136,10 +2136,10 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # when the declaration omits the type annotation.
             var t: Type_ = Type_.unknown_
             if dv.type_ != nil
-                t = typeFromRef(dv.type_ to!)
+                t = typeFromRef(dv.type_!)
             else
                 if dv.init_expr != nil
-                    t = inferExpr(dv.init_expr to!, ctx)
+                    t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
         on Stmt.expr as e
             walkExpr(e, ctx)
@@ -2172,9 +2172,9 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkStmts(si2.stmts, ctx)
         on Stmt.raise_ as sra
             if sra.message != nil
-                walkExpr(sra.message to!, ctx)
+                walkExpr(sra.message!, ctx)
             if sra.details != nil
-                walkExpr(sra.details to!, ctx)
+                walkExpr(sra.details!, ctx)
         on Stmt.try_catch as stc
             walkStmts(stc.stmts, ctx)
             for cc in stc.clauses
@@ -2272,7 +2272,7 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     var inferred: Type_ = inferExpr(e, ctx)
     if expected == nil
         return inferred
-    var exp: Type_ = expected to!  # safe: nil checked above
+    var exp: Type_ = expected!  # safe: nil checked above
     if inferred is Type_.context_dependent
         return exp
     if exp is Type_.named as exp_class
@@ -2362,7 +2362,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
         params = ctx.fnParamListAny("", lookup_method)
     if params == nil
         return  # unknown callee — do not check (safe default)
-    var ps: List(Param) = params to!
+    var ps: List(Param) = params!
     var total: int = ps.len
     var required: int = 0
     for p in ps
@@ -2470,13 +2470,13 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
-    var declared: Type_ = typeFromRef(dv.type_ to!)  # safe: nil returned above
+    var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
     if declared is Type_.named as dec_class
         # Type aliases are transparent — skip the conformance check; codegen resolves to base.
         if ctx.isTypeAlias(dec_class)
             return
         if dv.init_expr != nil
-            var cv_inferred: Type_ = inferExpr(dv.init_expr to!, ctx)
+            var cv_inferred: Type_ = inferExpr(dv.init_expr!, ctx)
             if cv_inferred is Type_.named as inf_class
                 if dec_class != inf_class
                     if not ctx.classConformsToAny(inf_class, dec_class)
@@ -2486,7 +2486,7 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         return
     if dv.init_expr == nil
         return
-    var inferred: Type_ = inferExpr(dv.init_expr to!, ctx)  # safe: nil returned above
+    var inferred: Type_ = inferExpr(dv.init_expr!, ctx)  # safe: nil returned above
     # Strict mode (typecheck-merge only): flag inference gaps — TC should have
     # known the init-expr type for a primitive-annotated var but didn't.
     if ctx.strict and inferred is Type_.unresolved
@@ -2505,14 +2505,14 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # Check arg counts + arg types over the whole init expression
                 # (checkCallsInExpr reaches nested calls; audit #3).
                 if dv.init_expr != nil
-                    checkCallsInExpr(dv.init_expr to!, file, dv.span.line, ctx)
+                    checkCallsInExpr(dv.init_expr!, file, dv.span.line, ctx)
                 # Bind the local so later stmts in the same block can infer it.
                 var bt: Type_ = Type_.unknown_
                 if dv.type_ != nil
-                    bt = typeFromRef(dv.type_ to!)
+                    bt = typeFromRef(dv.type_!)
                 else
                     if dv.init_expr != nil
-                        bt = inferExpr(dv.init_expr to!, ctx)
+                        bt = inferExpr(dv.init_expr!, ctx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
@@ -2534,10 +2534,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
             on Stmt.return_ as sr
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
-                        checkExpr(sr.value to!, ret_type, file, sr.span.line, sr.span.col, ctx)
+                        checkExpr(sr.value!, ret_type, file, sr.span.line, sr.span.col, ctx)
                 # Arg counts + types over the whole return expression (audit #3).
                 if sr.value != nil
-                    checkCallsInExpr(sr.value to!, file, sr.span.line, ctx)
+                    checkCallsInExpr(sr.value!, file, sr.span.line, ctx)
             on Stmt.assign as sasn
                 checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
             on Stmt.expr as se
@@ -2631,22 +2631,22 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             if dm.stmts as dm_stmts
                 var saved_class: str = ctx.current_class
                 if dm.return_type != nil
-                    ctx.withReturnType(typeFromRef(dm.return_type to!))
+                    ctx.withReturnType(typeFromRef(dm.return_type!))
                 for p in dm.params
                     var pt: Type_ = Type_.unknown_
                     if p.type_ != nil
-                        pt = typeFromRef(p.type_ to!)
+                        pt = typeFromRef(p.type_!)
                     ctx.bind(p.name, pt)
                 checkStmts(dm_stmts, file, ctx)
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
                 scope_ctx.withDepTypes(ctx.dep_types)
                 scope_ctx.withFile(file)
                 if dm.return_type != nil
-                    scope_ctx.withReturnType(typeFromRef(dm.return_type to!))
+                    scope_ctx.withReturnType(typeFromRef(dm.return_type!))
                 for pp in dm.params
                     var ppt: Type_ = Type_.unknown_
                     if pp.type_ != nil
-                        ppt = typeFromRef(pp.type_ to!)
+                        ppt = typeFromRef(pp.type_!)
                     scope_ctx.bind(pp.name, ppt)
                 walkStmts(dm_stmts, scope_ctx)
                 for scp_err in scope_ctx.errors

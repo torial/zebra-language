@@ -1,7 +1,7 @@
 use val_lib exposing Val, Container, makeContainer
 
 def extractFromParam(c: Container): Val
-    return c.opt_val to!
+    return c.opt_val!
 
 def main()
     # Parameter path (should already work)
@@ -12,7 +12,7 @@ def main()
 
     # Local var path (BUG-122)
     var c2 = makeContainer(99)
-    var v2: Val = c2.opt_val to!
+    var v2: Val = c2.opt_val!
     if v2 is Val.int_val as n2
         assert n2 == 99
 

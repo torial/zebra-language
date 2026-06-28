@@ -50,7 +50,7 @@ class Main
             ok = false
             print "Test 3 FAIL: head nil"
         else
-            var h = head to!
+            var h = head!
             if h.name != "a"
                 ok = false
                 print "Test 3 FAIL: head name"
@@ -60,7 +60,7 @@ class Main
                     ok = false
                     print "Test 3 FAIL: mid nil"
                 else
-                    var m = mid to!
+                    var m = mid!
                     if m.name != "b"
                         ok = false
                         print "Test 3 FAIL: mid name"
@@ -70,7 +70,7 @@ class Main
                             ok = false
                             print "Test 3 FAIL: tail nil"
                         else
-                            var t = tail to!
+                            var t = tail!
                             if t.name != "c"
                                 ok = false
                                 print "Test 3 FAIL: tail name"

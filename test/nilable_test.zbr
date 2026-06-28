@@ -15,7 +15,7 @@ class App
             if a == nil
                 print "a is nil"
             else
-                print a to!
+                print a!
 
             if b == nil
                 print "b is nil"

@@ -694,7 +694,7 @@ var y: int? = 42
 
 # Nil check + force-unwrap:
 if x != nil
-    print x!                         # `x!` = force-unwrap (panics if nil); alias: `x to!`
+    print x!                         # `x!` = force-unwrap (panics if nil)
 
 # Optional-unwrap binding form:
 if y as n
@@ -714,7 +714,7 @@ var s = node?.toString()             # method call — nil if node is nil
 var v = node?.value! + 1             # unwrap result of optional chain
 ```
 
-- `x!` is the force-unwrap operator.  Panics if nil.  `x to!` is a legacy alias.
+- `x!` is the force-unwrap operator.  Panics if nil.
 - `x orelse fallback` — evaluates `fallback` when `x` is nil (for `T?`) or an error
   (for `anyerror!T`).  This is the Zebra equivalent of Zig's `orelse`.  There is no
   `??` operator in Zebra.
@@ -724,7 +724,7 @@ var v = node?.value! + 1             # unwrap result of optional chain
 - `if x as n` (when `x: T?`) binds `n: T` in the then-branch.
 - **Boxed-optional edge case:** `if x as n` on a `^T?` (heap-indirected optional) binds
   `n: ^T` (the pointer), not `T` (the value).  If you need the value, use
-  `if x != nil` + `x to!` — the `to!` operator unwraps *and* dereferences.
+  `if x != nil` + `x!` — the `!` operator unwraps *and* dereferences.
 - **`orelse` vs `catch`**: use `orelse` on optionals (`T?`), use `catch` on error
   results (`throws`).  Both can appear in the same expression for chained recovery.
 
@@ -1487,7 +1487,7 @@ if obj is Dog
 
 # Force-unwrap optional:
 var x: int? = 42
-var y = x!                            # panics if nil  (`x to!` is a legacy alias)
+var y = x!                            # panics if nil
 
 # Combined type check + binding (requires LHS to be optional):
 var maybe: Animal? = lookup()
@@ -1741,7 +1741,7 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 
 | Pattern              | Zebra                          | Notes                                    |
 |----------------------|--------------------------------|------------------------------------------|
-| Force-unwrap optional | `x!`                          | panics if nil; `x to!` is a legacy alias |
+| Force-unwrap optional | `x!`                          | panics if nil |
 | Nil-coalescing       | `x orelse default`             | also works on error unions               |
 | Optional unwrap bind | `if x as n`                    | `n: T` when `x: T?`                      |
 | Type-check + bind    | `if obj is Dog as d`           | combined `is` + `as`                     |
@@ -3513,7 +3513,7 @@ def main()
     if maybe_db == nil
         print "could not open database"
         return
-    var db: SqliteDb = maybe_db to!
+    var db: SqliteDb = maybe_db!
     db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER, body TEXT)")
     db.exec("INSERT INTO notes VALUES (?, ?)", [1, "hello world"])
     var rows = db.query("SELECT * FROM notes")

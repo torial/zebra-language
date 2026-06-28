@@ -64,11 +64,11 @@ def testClassTypesFields()
     var ft: Type_? = ct.fieldType("name")
     check(ft != nil, "ClassTypes.fieldType(name) found")
     if ft != nil
-        check(typeIsString(ft to!), "ClassTypes.fieldType(name) is string")
+        check(typeIsString(ft!), "ClassTypes.fieldType(name) is string")
 
     var ft2: Type_? = ct.fieldType("count")
     if ft2 != nil
-        check(typeIsInt(ft2 to!), "ClassTypes.fieldType(count) is int")
+        check(typeIsInt(ft2!), "ClassTypes.fieldType(count) is int")
 
     var miss: Type_? = ct.fieldType("absent")
     check(miss == nil, "ClassTypes.fieldType(absent) is nil")
@@ -79,7 +79,7 @@ def testClassTypesMethods()
     var rt: Type_? = ct.methodReturn("greet")
     check(rt != nil, "ClassTypes.methodReturn(greet) found")
     if rt != nil
-        check(typeIsString(rt to!), "ClassTypes.methodReturn(greet) is string")
+        check(typeIsString(rt!), "ClassTypes.methodReturn(greet) is string")
 
 def testClassTypesCtorParams()
     var ct: ClassTypes = ClassTypes("Baz")
@@ -89,11 +89,11 @@ def testClassTypesCtorParams()
 
     var p0: Type_? = ct.ctorParamAt(0)
     if p0 != nil
-        check(typeIsInt(p0 to!), "ctorParamAt(0) is int")
+        check(typeIsInt(p0!), "ctorParamAt(0) is int")
 
     var p1: Type_? = ct.ctorParamAt(1)
     if p1 != nil
-        check(typeIsString(p1 to!), "ctorParamAt(1) is string")
+        check(typeIsString(p1!), "ctorParamAt(1) is string")
 
     var pn: Type_? = ct.ctorParamAt(2)
     check(pn == nil, "ctorParamAt(2) is nil (out of range)")
@@ -115,7 +115,7 @@ def testModuleTypesFields()
     var ft: Type_? = mt.fieldType("Foo", "name")
     check(ft != nil, "ModuleTypes.fieldType(Foo, name) found")
     if ft != nil
-        check(typeIsString(ft to!), "ModuleTypes.fieldType(Foo, name) is string")
+        check(typeIsString(ft!), "ModuleTypes.fieldType(Foo, name) is string")
 
     var miss_cls: Type_? = mt.fieldType("Missing", "name")
     check(miss_cls == nil, "ModuleTypes.fieldType(Missing, name) is nil")
@@ -132,7 +132,7 @@ def testModuleTypesMethods()
     var rt: Type_? = mt.methodReturn("Bar", "go")
     check(rt != nil, "ModuleTypes.methodReturn(Bar, go) found")
     if rt != nil
-        check(typeIsInt(rt to!), "ModuleTypes.methodReturn(Bar, go) is int")
+        check(typeIsInt(rt!), "ModuleTypes.methodReturn(Bar, go) is int")
 
     var miss: Type_? = mt.methodReturn("Bar", "absent")
     check(miss == nil, "ModuleTypes.methodReturn(Bar, absent) is nil")
@@ -146,11 +146,11 @@ def testModuleTypesCtorParams()
 
     var p0: Type_? = mt.ctorParamAt("Baz", 0)
     if p0 != nil
-        check(typeIsString(p0 to!), "ModuleTypes.ctorParamAt(Baz, 0) is string")
+        check(typeIsString(p0!), "ModuleTypes.ctorParamAt(Baz, 0) is string")
 
     var p1: Type_? = mt.ctorParamAt("Baz", 1)
     if p1 != nil
-        check(typeIsInt(p1 to!), "ModuleTypes.ctorParamAt(Baz, 1) is int")
+        check(typeIsInt(p1!), "ModuleTypes.ctorParamAt(Baz, 1) is int")
 
     var miss: Type_? = mt.ctorParamAt("Missing", 0)
     check(miss == nil, "ModuleTypes.ctorParamAt(Missing, 0) is nil")
@@ -240,10 +240,10 @@ def testBuildModuleTypesClass()
     var ft: Type_? = mt.fieldType("Foo", "name")
     check(ft != nil, "buildModuleTypes: field `name` present")
     if ft != nil
-        check(typeIsString(ft to!), "buildModuleTypes: field `name` is string")
+        check(typeIsString(ft!), "buildModuleTypes: field `name` is string")
     var ft2: Type_? = mt.fieldType("Foo", "count")
     if ft2 != nil
-        check(typeIsInt(ft2 to!), "buildModuleTypes: field `count` is int")
+        check(typeIsInt(ft2!), "buildModuleTypes: field `count` is int")
 
 def testBuildModuleTypesInit()
     # class Bar { cue init(x: int, y: str) { ... } }
@@ -259,10 +259,10 @@ def testBuildModuleTypesInit()
 
     var p0: Type_? = mt.ctorParamAt("Bar", 0)
     if p0 != nil
-        check(typeIsInt(p0 to!), "buildModuleTypes: ctor param 0 is int")
+        check(typeIsInt(p0!), "buildModuleTypes: ctor param 0 is int")
     var p1: Type_? = mt.ctorParamAt("Bar", 1)
     if p1 != nil
-        check(typeIsString(p1 to!), "buildModuleTypes: ctor param 1 is string")
+        check(typeIsString(p1!), "buildModuleTypes: ctor param 1 is string")
 
 # ── Phase 16b: inferExpr ────────────────────────────────────────────────────
 # Construct Expr literals directly; module_types is an empty ModuleTypes.
@@ -402,16 +402,16 @@ def testUnionVariantIndex()
     var p_circle: Type_? = mt.variantPayload("Shape", "circle")
     check(p_circle != nil, "variantPayload(Shape.circle) present")
     if p_circle != nil
-        check(typeIsInt(p_circle to!), "variantPayload(Shape.circle) is int")
+        check(typeIsInt(p_circle!), "variantPayload(Shape.circle) is int")
 
     var p_square: Type_? = mt.variantPayload("Shape", "square")
     if p_square != nil
-        check(typeIsString(p_square to!), "variantPayload(Shape.square) is string")
+        check(typeIsString(p_square!), "variantPayload(Shape.square) is string")
 
     var p_dot: Type_? = mt.variantPayload("Shape", "dot")
     check(p_dot != nil, "variantPayload(Shape.dot) present (payload-less)")
     if p_dot != nil
-        check(typeIsUnknown(p_dot to!), "variantPayload(Shape.dot) is unknown_ (payload-less)")
+        check(typeIsUnknown(p_dot!), "variantPayload(Shape.dot) is unknown_ (payload-less)")
 
     var p_missing: Type_? = mt.variantPayload("Shape", "missing")
     check(p_missing == nil, "variantPayload(Shape.missing) is nil")
@@ -437,7 +437,7 @@ def testNarrowPayloadFromOnValue()
     var nt: Type_? = narrowPayloadFromOnValue(mt, circle_val)
     check(nt != nil, "narrowPayloadFromOnValue(Shape.circle) is not nil")
     if nt != nil
-        check(typeIsInt(nt to!), "narrowPayloadFromOnValue(Shape.circle) is int")
+        check(typeIsInt(nt!), "narrowPayloadFromOnValue(Shape.circle) is int")
 
     # `Shape.dot` — payload-less → nil (not bound).
     var shape_ident2: Expr = Expr.ident(ExprIdent(mkSpan(), "Shape"))

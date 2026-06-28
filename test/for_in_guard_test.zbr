@@ -57,7 +57,7 @@ def main()
     scores.add(5)
     var found = scores.find(def(x) = x > 6)
     assert found != nil, "find should succeed"
-    assert found to! == 7, "find value"
+    assert found! == 7, "find value"
 
     var not_found = scores.find(def(x) = x > 100)
     assert not_found == nil, "find on no-match returns nil"

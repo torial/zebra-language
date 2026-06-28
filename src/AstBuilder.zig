@@ -2539,16 +2539,6 @@ const Builder = struct {
             return try b.buildPipeline(s, kids[0], kids[2]);
         }
 
-        // `to!` — 3 children: Expr kw_to bang  (must be checked BEFORE generic binary
-        // handler because that handler eagerly calls buildExpr on kids[2], which would
-        // panic on a bare `bang` leaf)
-        if (kids.len == 3 and isLeafKind(kids[1], .kw_to) and isLeafKind(kids[2], .bang)) {
-            return .{ .to_non_nil = try b.box(Ast.ExprToNonNil, .{
-                .span = s,
-                .expr = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
-            }) };
-        }
-
         // Binary: 3 children, middle is a leaf operator
         if (kids.len == 3 and kids[1] == .leaf) {
             const op_tok = kids[1].leaf.token;

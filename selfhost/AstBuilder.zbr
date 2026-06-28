@@ -733,7 +733,7 @@ class ASTBuilder
                         return nil
                 var fields = List(StructFieldPat)()
                 for a in call.args
-                    fields.add(StructFieldPat(a.name to!, a.value))
+                    fields.add(StructFieldPat(a.name!, a.value))
                 return StructPat(tname, fields)
             else
                 return nil

@@ -294,14 +294,14 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                 return true
             on Stmt.var_ as n
                 if n.init_expr != nil
-                    if exprHasTry(n.init_expr to!)
+                    if exprHasTry(n.init_expr!)
                         return true
             on Stmt.assign as a
                 if exprHasTry(a.value)
                     return true
             on Stmt.return_ as r
                 if r.value != nil
-                    if exprHasTry(r.value to!)
+                    if exprHasTry(r.value!)
                         return true
             on Stmt.expr as e
                 if exprHasTry(e)
@@ -436,10 +436,10 @@ def nameUsedInExpr(name: str, expr: Expr): bool
             if nameUsedInExpr(name, sl.object)
                 return true
             if sl.start != nil
-                if nameUsedInExpr(name, sl.start to!)
+                if nameUsedInExpr(name, sl.start!)
                     return true
             if sl.stop_ != nil
-                if nameUsedInExpr(name, sl.stop_ to!)
+                if nameUsedInExpr(name, sl.stop_!)
                     return true
             return false
         on Expr.try_ as t
@@ -515,7 +515,7 @@ def nameUsedInExpr(name: str, expr: Expr): bool
             #      same name shadows the outer ident
             for cap in lam.captures
                 if cap.init_expr != nil
-                    if nameUsedInExpr(name, cap.init_expr to!)
+                    if nameUsedInExpr(name, cap.init_expr!)
                         return true
             # Shadowing check: does a lambda param shadow `name`?
             for p in lam.params
@@ -609,7 +609,7 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
     branch stmt
         on Stmt.var_ as n
             if n.init_expr != nil
-                return mightUseNameInExpr(name, n.init_expr to!)
+                return mightUseNameInExpr(name, n.init_expr!)
             return false
         on Stmt.assign as a
             if mightUseNameInExpr(name, a.target)
@@ -617,7 +617,7 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             return mightUseNameInExpr(name, a.value)
         on Stmt.return_ as r
             if r.value != nil
-                return mightUseNameInExpr(name, r.value to!)
+                return mightUseNameInExpr(name, r.value!)
             return false
         on Stmt.expr as e
             return mightUseNameInExpr(name, e)
@@ -674,7 +674,7 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
     branch stmt
         on Stmt.var_ as n
             if n.init_expr != nil
-                return nameUsedInExpr(name, n.init_expr to!)
+                return nameUsedInExpr(name, n.init_expr!)
             return false
         on Stmt.assign as a
             if nameUsedInExpr(name, a.target)
@@ -682,7 +682,7 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             return nameUsedInExpr(name, a.value)
         on Stmt.return_ as r
             if r.value != nil
-                return nameUsedInExpr(name, r.value to!)
+                return nameUsedInExpr(name, r.value!)
             return false
         on Stmt.expr as e
             return nameUsedInExpr(name, e)
@@ -690,7 +690,7 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             if nameUsedInExpr(name, a.cond)
                 return true
             if a.message != nil
-                return nameUsedInExpr(name, a.message to!)
+                return nameUsedInExpr(name, a.message!)
             return false
         on Stmt.if_ as si
             if nameUsedInExpr(name, si.cond)
@@ -753,10 +753,10 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             return false
         on Stmt.raise_ as r
             if r.message != nil
-                if nameUsedInExpr(name, r.message to!)
+                if nameUsedInExpr(name, r.message!)
                     return true
             if r.details != nil
-                return nameUsedInExpr(name, r.details to!)
+                return nameUsedInExpr(name, r.details!)
             return false
         on Stmt.defer_ as d
             return nameUsedInStmt(name, d.stmt)
@@ -828,7 +828,7 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
         branch s
             on Stmt.return_ as r
                 if r.value != nil
-                    collectAllIdents(r.value to!, out)
+                    collectAllIdents(r.value!, out)
             on Stmt.if_ as si
                 seedEscapedFromReturns(si.then_stmts, out)
                 for ei in si.else_ifs
@@ -873,7 +873,7 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 if out.contains_(n.name)
                     if n.init_expr != nil
                         var before = out.count()
-                        collectAllIdents(n.init_expr to!, out)
+                        collectAllIdents(n.init_expr!, out)
                         if out.count() > before
                             grew = true
             on Stmt.assign as a
@@ -1098,10 +1098,10 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                     scanMutationsInto(be, out)
             on Stmt.var_ as n
                 if n.init_expr != nil
-                    scanMutationsInExpr(n.init_expr to!, out)
+                    scanMutationsInExpr(n.init_expr!, out)
             on Stmt.return_ as r
                 if r.value != nil
-                    scanMutationsInExpr(r.value to!, out)
+                    scanMutationsInExpr(r.value!, out)
             on Stmt.expr as e
                 scanMutationsInExpr(e, out)
             on Stmt.with_ as w
@@ -1177,13 +1177,13 @@ def stmtMutatesSelf(s: Stmt): bool
             return true
         on Stmt.var_ as n
             if n.init_expr != nil
-                return exprHasSelfCall(n.init_expr to!)
+                return exprHasSelfCall(n.init_expr!)
             return false
         on Stmt.return_ as r
             if r.value != nil
-                if isThisReturn(r.value to!)
+                if isThisReturn(r.value!)
                     return true
-                return exprHasSelfCall(r.value to!)
+                return exprHasSelfCall(r.value!)
             return false
         on Stmt.expr as e
             return exprHasSelfCall(e)
@@ -1216,7 +1216,7 @@ def stmtMutatesSelf(s: Stmt): bool
             if exprHasSelfCall(f.iter)
                 return true
             if f.filter != nil
-                if exprHasSelfCall(f.filter to!)
+                if exprHasSelfCall(f.filter!)
                     return true
             if methodMutatesSelf(f.stmts)
                 return true
@@ -1230,7 +1230,7 @@ def stmtMutatesSelf(s: Stmt): bool
             if exprHasSelfCall(fnum.stop_)
                 return true
             if fnum.step != nil
-                if exprHasSelfCall(fnum.step to!)
+                if exprHasSelfCall(fnum.step!)
                     return true
             if methodMutatesSelf(fnum.stmts)
                 return true
@@ -1312,10 +1312,10 @@ def exprHasSelfCall(e: Expr): bool
             if exprHasSelfCall(sl.object)
                 return true
             if sl.start != nil
-                if exprHasSelfCall(sl.start to!)
+                if exprHasSelfCall(sl.start!)
                     return true
             if sl.stop_ != nil
-                if exprHasSelfCall(sl.stop_ to!)
+                if exprHasSelfCall(sl.stop_!)
                     return true
             return false
         on Expr.cast as c
@@ -1412,7 +1412,7 @@ def isContainerTypeRef(tr: TypeRef): bool
 # "Class.method" (the same key shape used by lookupFnParams/lookupFnBody).
 def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
     if p.type_ == nil: return false
-    if not isContainerTypeRef(p.type_ to!): return false
+    if not isContainerTypeRef(p.type_!): return false
     if body as b
         var ms: StrSet = scanMutations(b)
         return ms.contains_(p.name)

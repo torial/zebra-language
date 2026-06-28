@@ -1,5 +1,5 @@
 # BUG-122: opt_ptr_field_bindings not seeded for local variable declarations.
-# When a local var has a named struct type (explicit or inferred), `field to!`
+# When a local var has a named struct type (explicit or inferred), `field!`
 # on a ^T? field must emit `.?.*` not `.?` — same as the parameter path.
 
 class Node
@@ -13,7 +13,7 @@ def makeNode(v: int): Node
     return Node(v, nil)
 
 def head(n: Node): Node
-    return n.next to!
+    return n.next!
 
 def main()
     # Sub-problem 1: explicit type annotation — var n: Node = ...
@@ -21,14 +21,14 @@ def main()
     # via function parameter (already works)
     assert head(n1).value == 99
 
-    # Direct to! on local var with explicit type annotation
+    # Direct! on local var with explicit type annotation
     var n2: Node = Node(2, makeNode(77))
-    var tail2: Node = n2.next to!
+    var tail2: Node = n2.next!
     assert tail2.value == 77
 
     # Sub-problem 2: inferred type — var n = ...
     var n3 = Node(3, makeNode(55))
-    var tail3: Node = n3.next to!
+    var tail3: Node = n3.next!
     assert tail3.value == 55
 
     # if-binding on ^Node? field via local var (explicit)

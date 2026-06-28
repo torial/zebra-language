@@ -136,7 +136,7 @@ def test3OptionalStrField
     assert g.catch_var == "", "catch_var should start empty"
 
     var g2 = g.withTryLabel("blk_try", "_err")
-    assert g2.try_label to! == "blk_try", "try_label after withTryLabel"
+    assert g2.try_label! == "blk_try", "try_label after withTryLabel"
     assert g2.catch_var == "_err", "catch_var after withTryLabel"
 
     # Original unchanged

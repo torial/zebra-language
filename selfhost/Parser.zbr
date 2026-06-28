@@ -2603,7 +2603,7 @@ class Parser
                     expr = PNode.expr_call(PCall(callee, args))
                 else if .textIs("to") and .peekAt(1).text == "("
                     # expr.to(args) — `to` is a keyword (used in `expr to T`,
-                    # `expr to!`, `expr to?`) but is also allowed as a method
+                    # `expr!`, `expr to?`) but is also allowed as a method
                     # name in postfix call position so numeric range loops
                     # `for i in 0.to(5)` and similar reads naturally.
                     const to_line = .peek().line
@@ -2655,13 +2655,8 @@ class Parser
                 .advance()
                 expr = PNode.expr_try(expr)
             else if .textIs("!")
-                # x! force-unwrap — alias for x to!
+                # x! force-unwrap / non-nil assert
                 .advance()
-                expr = PNode.expr_to_bang(expr)
-            else if .textIs("to")
-                # to! force-unwrap (legacy syntax — kept as alias)
-                .advance()
-                .expectText("!")
                 expr = PNode.expr_to_bang(expr)
             else if .textIs("except")
                 # struct update: expr except \n field = value \n ...

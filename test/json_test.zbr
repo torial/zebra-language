@@ -4,7 +4,7 @@ def main()
     var data = Json.parse(json)
     assert data != nil, "parse returned nil"
 
-    var d = data to!
+    var d = data!
     assert d.getStr("name") == "Alice", "getStr name"
     assert d.getInt("age") == 30, "getInt age"
     assert d.getFloat("score") > 9.4, "getFloat score"
@@ -17,14 +17,14 @@ def main()
 
     # --- Nested object ---
     var nested = '{"user": {"id": 42, "tag": "admin"}}'
-    var nd = Json.parse(nested) to!
+    var nd = Json.parse(nested)!
     var user = nd.getObj("user")
     assert user.getInt("id") == 42, "nested getInt"
     assert user.getStr("tag") == "admin", "nested getStr"
 
     # --- Array iteration ---
     var arr_json = '{"tags": ["alpha", "beta", "gamma"]}'
-    var ad = Json.parse(arr_json) to!
+    var ad = Json.parse(arr_json)!
     var tags = ad.getList("tags")
     var count: int = 0
     for tag in tags
@@ -66,7 +66,7 @@ def main()
 
     # --- Round-trip ---
     var rt_json = '{"x": 1, "y": 2}'
-    var rt = Json.parse(rt_json) to!
+    var rt = Json.parse(rt_json)!
     var rt_str = Json.stringify(rt)
     assert rt_str.contains("\"x\""), "roundtrip contains x key"
 

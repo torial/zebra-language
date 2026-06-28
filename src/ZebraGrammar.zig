@@ -209,7 +209,7 @@ pub const NT = enum {
     Expr6,    // *  /  //  %
     Expr7,    // **
     Expr8,    // unary -  ~
-    Expr9,    // postfix: .member  .call()  [index]  to T  to?  to!
+    Expr9,    // postfix: .member  .call()  [index]  to T  expr!  expr?
     Atom,     // literals, identifiers, grouped expr, string, array
 
     // ── pipeline operator (->)  ────────────────────────────────────────────
@@ -1130,8 +1130,7 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.rbracket) } },        // obj[index]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.lbracket), n(.Expr), t(.dotdot), n(.Expr), t(.rbracket) } }, // obj[start..stop]
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), n(.TypeRef) } },                       // expr to T
-    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.kw_to), t(.bang) } },                          // expr to!  (non-nil assert)
-    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.bang) } },                                     // expr!  (force-unwrap — alias for expr to!)
+    .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.bang) } },                                     // expr!  (force-unwrap / non-nil assert)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question) } },                                 // expr?  (propagate error — sugar for try expr)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.id) } },                    // expr?.member  (optional chain — member access)
     .{ .lhs = .Expr9, .rhs = &.{ n(.Expr9), t(.question_dot), t(.open_call), n(.ArgList), t(.rparen) } }, // expr?.method(args)  (optional chain — method call)

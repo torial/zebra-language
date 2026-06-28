@@ -596,7 +596,7 @@ def dumpMethodVars(owner: str, meth_name: str, stmts: List(Stmt), params: List(P
     ctx.withDepTypes(dep_mt)
     for pp in params
         if pp.type_ != nil
-            ctx.bind(pp.name, typeFromRef(pp.type_ to!))
+            ctx.bind(pp.name, typeFromRef(pp.type_!))
     # Walk all statements first to populate ctx with all local variable types.
     walkStmts(stmts, ctx)
     # Then iterate top-level statements and print var declarations with their types.
@@ -782,7 +782,7 @@ def main()
                 var dp = args.positional(dpi)
                 if dp == nil
                     break
-                var dpv: str = dp to!
+                var dpv: str = dp!
                 if dpv.endsWith(".zbr")
                     dbg_file = dpv
                     break
@@ -848,7 +848,7 @@ def main()
         var candidate = args.positional(pi)
         if candidate == nil
             break
-        var cval: str = candidate to!
+        var cval: str = candidate!
         if cval.endsWith(".zbr") or cval.endsWith(".cobra")
             src_path = cval
             break
@@ -880,7 +880,7 @@ def main()
         sys.errln("  zebra fmt --print <file.zbr>             print normalized output to stdout")
         sys.exit(1)
 
-    var path = src_path to!
+    var path = src_path!
 
     # -- Validate file exists ----------------------------------------------
 

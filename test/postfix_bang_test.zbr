@@ -1,4 +1,4 @@
-# Test `x!` postfix force-unwrap — alias for `x to!`.
+# Test `x!` postfix force-unwrap — alias for `x!`.
 
 def maybeInt(x: int): int?
     if x > 0
@@ -33,9 +33,9 @@ def main()
     var v3: int = maybeCounter(5)!.doubled()
     print v3  # 10
 
-    # to! legacy syntax still works
+    #! legacy syntax still works
     var b: int? = 99
-    var v4: int = b to!
+    var v4: int = b!
     print v4  # 99
 
     print "postfix_bang_test PASS"

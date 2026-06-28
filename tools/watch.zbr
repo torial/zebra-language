@@ -21,7 +21,7 @@ def main()
         sys.errln("usage: watch.zbr <file.zbr> [--interval N] [--check]")
         sys.exit(1)
 
-    var path: str = path_opt to!
+    var path: str = path_opt!
 
     if not File.exists(path)
         sys.errln("watch: file not found: ${path}")

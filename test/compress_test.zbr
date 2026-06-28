@@ -7,7 +7,7 @@ def main()
 
     var recovered = Compress.gunzip(compressed)
     assert recovered != nil
-    assert recovered to! == original
+    assert recovered! == original
     print "gzip round-trip: OK"
 
     # Larger input to exercise real compression
@@ -17,7 +17,7 @@ def main()
     assert big_gz.len < big.len   # highly compressible — should shrink
     var big_back = Compress.gunzip(big_gz)
     assert big_back != nil
-    assert big_back to! == big
+    assert big_back! == big
     print "gzip compressible data round-trip: OK"
 
     # gunzip on invalid data returns nil

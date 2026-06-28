@@ -3,7 +3,7 @@ def main()
     if db == nil
         print "sqlite_test SKIP (no sqlite3)"
         return
-    var d: SqliteDb = db to!
+    var d: SqliteDb = db!
     d.exec("CREATE TABLE t (id INTEGER, name TEXT)")
     d.exec("INSERT INTO t VALUES (?, ?)", [1, "alice"])
     d.exec("INSERT INTO t VALUES (?, ?)", [2, "bob"])

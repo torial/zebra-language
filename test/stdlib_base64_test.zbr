@@ -4,14 +4,14 @@ def main()
     assert encoded == "aGVsbG8gd29ybGQ="
     var decoded = Base64.decode("aGVsbG8gd29ybGQ=")
     assert decoded != nil
-    assert decoded to! == "hello world"
+    assert decoded! == "hello world"
 
     # URL-safe Base64
     var enc_url = Base64.encodeUrl("hello world")
     assert enc_url == "aGVsbG8gd29ybGQ"
     var dec_url = Base64.decodeUrl("aGVsbG8gd29ybGQ")
     assert dec_url != nil
-    assert dec_url to! == "hello world"
+    assert dec_url! == "hello world"
 
     # Invalid decode returns nil
     var bad = Base64.decode("!!!invalid!!!")

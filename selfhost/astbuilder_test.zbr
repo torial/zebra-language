@@ -6,9 +6,9 @@
 #   - ^Expr pointer fields (si.cond, sa.target, sa.value, eb.left, eb.right,
 #     eu.operand, em.object) cannot be branched directly — use Stmt.expr path
 #     (expression-statement Expr is a value type) or skip deep inspection.
-#   - DeclVar.type_ is ?TypeRef — must unwrap with to! before branching.
-#   - DeclMethod.stmts is ?List(Stmt) — must unwrap with to!.
-#   - DeclMethod.return_type is ?TypeRef — must unwrap with to!.
+#   - DeclVar.type_ is ?TypeRef — must unwrap with! before branching.
+#   - DeclMethod.stmts is ?List(Stmt) — must unwrap with!.
+#   - DeclMethod.return_type is ?TypeRef — must unwrap with!.
 #   - StmtForIn.vars (not var_names), ExprMember.object (not base).
 #   - TypeRef.nilable payload is ^TypeRef — just confirm the variant.
 
@@ -67,7 +67,7 @@ class ASTBuilderTest
                 const meth_decl = c.members.at(0)
                 branch meth_decl
                     on Decl.method as meth
-                        var stmts: List(Stmt) = meth.stmts to!
+                        var stmts: List(Stmt) = meth.stmts!
                         assert stmts.len > 0, "expected method stmts"
                         return stmts.at(0)
                     else
@@ -106,7 +106,7 @@ class ASTBuilderTest
                 branch m
                     on Decl.var_ as v
                         assert v.name == "x", "field name should be 'x'"
-                        var tr = v.type_ to!
+                        var tr = v.type_!
                         branch tr
                             on TypeRef.named as nr
                                 assert nr.name == "int", "field type should be 'int'"
@@ -162,7 +162,7 @@ class ASTBuilderTest
                         assert meth.params.len == 2, "expected 2 params"
                         assert meth.params.at(0).name == "x", "first param should be 'x'"
                         assert meth.params.at(1).name == "y", "second param should be 'y'"
-                        var ret = meth.return_type to!
+                        var ret = meth.return_type!
                         branch ret
                             on TypeRef.named as nr
                                 assert nr.name == "int", "return type should be 'int'"
@@ -316,7 +316,7 @@ class ASTBuilderTest
                 branch m
                     on Decl.var_ as v
                         # DeclVar.type_ is ?TypeRef — must unwrap
-                        var tr = v.type_ to!
+                        var tr = v.type_!
                         branch tr
                             on TypeRef.named as nr
                                 assert nr.name == "int", "expected 'int'"
@@ -336,7 +336,7 @@ class ASTBuilderTest
                 const m = c.members.at(0)
                 branch m
                     on Decl.var_ as v
-                        var tr = v.type_ to!
+                        var tr = v.type_!
                         branch tr
                             on TypeRef.nilable
                                 # TypeRef.nilable payload is ^TypeRef (pointer) —
@@ -358,7 +358,7 @@ class ASTBuilderTest
                 const m = c.members.at(0)
                 branch m
                     on Decl.var_ as v
-                        var tr = v.type_ to!
+                        var tr = v.type_!
                         branch tr
                             on TypeRef.generic as g
                                 assert g.name == "List", "expected 'List'"

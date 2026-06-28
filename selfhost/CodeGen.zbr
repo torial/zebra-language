@@ -39,7 +39,7 @@ def getMemberFieldName(e: Expr): str?
             # In init context, bare field names like `out = List()` become Expr.ident
             return id.name
         on Expr.to_non_nil as tnn
-            # x to! — unwrap and check inner
+            # x! — unwrap and check inner
             return getMemberFieldName(tnn.expr)
         else
             pass
@@ -262,7 +262,7 @@ def ctorParamAtIsRefTo(mt: ModuleTypes, dep_mt: ModuleTypes, class_name: str, id
         t = dep_mt.ctorParamAt(class_name, idx)
     if t == nil
         return false
-    var tv: Type_ = t to!
+    var tv: Type_ = t!
     branch tv
         on Type_.ref_to
             return true
@@ -520,11 +520,11 @@ def stmtMentionsThis(s: Stmt): bool
             return exprMentionsThis(a.target) or exprMentionsThis(a.value)
         on Stmt.return_ as r
             if r.value != nil
-                return exprMentionsThis(r.value to!)
+                return exprMentionsThis(r.value!)
             return false
         on Stmt.var_ as v
             if v.init_expr != nil
-                return exprMentionsThis(v.init_expr to!)
+                return exprMentionsThis(v.init_expr!)
             return false
         on Stmt.expr as e
             return exprMentionsThis(e)
@@ -685,7 +685,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.union_names.add(u.name)
                 for v in u.variants
                     if v.payload != nil
-                        branch v.payload to!
+                        branch v.payload!
                             on TypeRef.ref_to
                                 g.boxed_variants.add(makeDottedKey(u.name, v.name))
                             else
@@ -1550,7 +1550,7 @@ struct Generator
     def isStringWalker(e: Expr): bool
         if .infer_ctx == nil
             return false
-        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        var t: Type_ = inferExpr(e, .infer_ctx!)
         return isString(t)
 
     # Phase 17d — walker-derived string detection replaces the name-pattern
@@ -1567,7 +1567,7 @@ struct Generator
     def isPrimType(e: Expr): bool
         if .infer_ctx == nil
             return false
-        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        var t: Type_ = inferExpr(e, .infer_ctx!)
         branch t
             on Type_.int_   return true
             on Type_.uint_  return true
@@ -1615,9 +1615,9 @@ struct Generator
         # Inside a try block: emit `catch |_e| { _try_err = _e; break :_try_blk; }`
         # instead of using `try` which propagates to the enclosing function
         w.emit(" catch |_tc_e| { ")
-        w.emit(try_err_var to!)
+        w.emit(try_err_var!)
         w.emit(" = _tc_e; break :")
-        w.emit(try_block_label to!)
+        w.emit(try_block_label!)
         w.emit("; }")
 
     def writeIndent
@@ -1646,7 +1646,7 @@ struct Generator
                 # Transparent alias: emit base type instead.
                 var maybe_alias = findTypeAlias(n.name)
                 if maybe_alias != nil
-                    genType(maybe_alias to!.base)
+                    genType(maybe_alias!.base)
                     return
                 if isSimdTypeName(n.name)
                     var sparts: List(str) = n.name.split("x")
@@ -1789,7 +1789,7 @@ struct Generator
                 else
                     var maybe_alias = findTypeAlias(aa.name)
                     if maybe_alias != nil
-                        genType(maybe_alias to!.base)
+                        genType(maybe_alias!.base)
                     else
                         w.emit("i64")
 
@@ -1986,10 +1986,10 @@ struct Generator
             # is invalid).
             if n.type_ != nil
                 w.emit(": ")
-                genType(n.type_ to!)
+                genType(n.type_!)
             else
                 if n.init_expr != nil
-                    branch n.init_expr to!
+                    branch n.init_expr!
                         on Expr.int_lit
                             w.emit(": i64")
                         on Expr.float_lit
@@ -2009,7 +2009,7 @@ struct Generator
                             pass
             w.emit(" = ")
             if n.init_expr != nil
-                genExpr(n.init_expr to!)
+                genExpr(n.init_expr!)
             else
                 w.emit("undefined")
             w.emit(";\n")
@@ -2017,7 +2017,7 @@ struct Generator
         w.emit(n.name)
         w.emit(": ")
         if n.type_ != nil
-            var tr = n.type_ to!
+            var tr = n.type_!
             if tr is TypeRef.named as nt
                 if nt.name == "StringBuilder"
                     w.emit("std.ArrayList(u8) = .empty,\n")
@@ -2027,7 +2027,7 @@ struct Generator
             w.emit("anytype")
         if n.init_expr != nil
             w.emit(" = ")
-            genExpr(n.init_expr to!)
+            genExpr(n.init_expr!)
         w.emit(",\n")
 
     # ── genEnum ───────────────────────────────────────────────────────────────
@@ -2040,7 +2040,7 @@ struct Generator
         w.emit(" = enum")
         if n.base != nil
             w.emit("(")
-            genType(n.base to!)
+            genType(n.base!)
             w.emit(")")
         w.emit(" {\n")
         var ig = indented()
@@ -2058,7 +2058,7 @@ struct Generator
         # Track boxed variants (^T payloads)
         for v in n.variants
             if v.payload != nil
-                branch v.payload to!
+                branch v.payload!
                     on TypeRef.ref_to
                         boxed_variants.add(makeDottedKey(n.name, v.name))
                     else
@@ -2073,7 +2073,7 @@ struct Generator
             ig.w.emit(v.name)
             if v.payload != nil
                 ig.w.emit(": ")
-                ig.genType(v.payload to!)
+                ig.genType(v.payload!)
             ig.w.emit(",\n")
         writeIndent()
         w.emit("};\n\n")
@@ -2090,7 +2090,7 @@ struct Generator
         for decl in n.members
             if decl is Decl.var_ as fld
                 if fld.type_ != nil
-                    branch fld.type_ to!
+                    branch fld.type_!
                         on TypeRef.ref_to
                             ref_fields.add(makeDottedKey(n.name, fld.name))
                         else
@@ -2133,7 +2133,7 @@ struct Generator
                     w.emit(si_fld.name)
                     w.emit(": ")
                     if si_fld.type_ != nil
-                        ig.genType(si_fld.type_ to!)
+                        ig.genType(si_fld.type_!)
                     else
                         w.emit("anytype")
             w.emit(") ")
@@ -2184,7 +2184,7 @@ struct Generator
     def isStrFieldType(tr: TypeRef?): bool
         if tr == nil
             return false
-        var t = tr to!
+        var t = tr!
         if t is TypeRef.named as n
             return n.name == "str" or n.name == "String"
         return false
@@ -2192,7 +2192,7 @@ struct Generator
     def isFloatFieldType(tr: TypeRef?): bool
         if tr == nil
             return false
-        var t = tr to!
+        var t = tr!
         if t is TypeRef.named as n
             return n.name == "float" or n.name == "num"
         return false
@@ -2436,7 +2436,7 @@ struct Generator
     def concreteClassOf(e: Expr): str?
         if .infer_ctx == nil
             return nil
-        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        var t: Type_ = inferExpr(e, .infer_ctx!)
         if t is Type_.ref_to as rt
             t = rt
         if t is Type_.named as nm
@@ -2482,14 +2482,14 @@ struct Generator
                 for p in meth.params
                     w.emit(", " + p.name + ": ")
                     if p.type_ != nil
-                        genType(p.type_ to!)
+                        genType(p.type_!)
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if meth.throws_
                     w.emit("anyerror!")
                 if meth.return_type != nil
-                    genType(meth.return_type to!)
+                    genType(meth.return_type!)
                 else
                     w.emit("void")
                 if meth.throws_
@@ -2546,14 +2546,14 @@ struct Generator
                 for p in meth.params
                     w.emit(", " + p.name + ": ")
                     if p.type_ != nil
-                        genType(p.type_ to!)
+                        genType(p.type_!)
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if meth.throws_
                     w.emit("anyerror!")
                 if meth.return_type != nil
-                    genType(meth.return_type to!)
+                    genType(meth.return_type!)
                 else
                     w.emit("void")
                 if meth.throws_
@@ -2660,7 +2660,7 @@ struct Generator
                             dig.w.emit("self.")
                             dig.w.emit(fld.name)
                             dig.w.emit(" = ")
-                            dig.genExpr(fld.init_expr to!)
+                            dig.genExpr(fld.init_expr!)
                             dig.w.emit(";\n")
             # Initialize @once cache fields to null (not present in AST; emitted by genMethod).
             for odecl in n.members
@@ -2723,7 +2723,7 @@ struct Generator
                 if not fld.mods.is_static
                     rf_names.add(fld.name)
                     if fld.type_ != nil
-                        rf_types.add(typeRefStr(fld.type_ to!))
+                        rf_types.add(typeRefStr(fld.type_!))
                     else
                         rf_types.add("unknown")
         w.emit("const _reflect_")
@@ -2816,7 +2816,7 @@ struct Generator
                     continue
                 if fld.type_ == nil
                     continue
-                var tr = fld.type_ to!
+                var tr = fld.type_!
                 var kind: str = primitiveKindName(tr)
                 if kind == ""
                     w.emit("comptime { @compileError(\"Json.parseStrict on ")
@@ -2913,7 +2913,7 @@ struct Generator
             w.emit(m.name)
             w.emit("_val: ?")
             if m.return_type != nil
-                genType(m.return_type to!)
+                genType(m.return_type!)
             w.emit(" = null,\n")
             # Public wrapper
             writeIndent()
@@ -2926,7 +2926,7 @@ struct Generator
                 w.emit(owner)
             w.emit(") ")
             if m.return_type != nil
-                genType(m.return_type to!)
+                genType(m.return_type!)
             w.emit(" {\n")
             var wg = indented()
             wg.writeIndent()
@@ -3001,11 +3001,11 @@ struct Generator
             w.emit("_zinit: std.process.Init")
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
-        var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre to!))
+        var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre!))
         if auto_throws
             w.emit("anyerror!")
         if m.return_type != nil
-            genType(m.return_type to!)
+            genType(m.return_type!)
         else
             w.emit("void")
         if m.stmts as mstmts
@@ -3015,7 +3015,7 @@ struct Generator
             for p in m.params
                 ps.add(p.name)
                 if p.type_ != nil
-                    var ptype = p.type_ to!
+                    var ptype = p.type_!
                     if ptype is TypeRef.named as nt
                         if nt.name == "str" or nt.name == "String"
                             sp.add(p.name)
@@ -3069,16 +3069,16 @@ struct Generator
             var ctx17c = InferCtx(.module_types, owner)
             ctx17c.withDepTypes(.dep_types)
             if m.return_type != nil
-                ctx17c.withReturnType(typeFromRef(m.return_type to!))
+                ctx17c.withReturnType(typeFromRef(m.return_type!))
             for pp in m.params
                 if pp.type_ != nil
-                    ctx17c.bind(pp.name, typeFromRef(pp.type_ to!))
+                    ctx17c.bind(pp.name, typeFromRef(pp.type_!))
                 else
                     ctx17c.bind(pp.name, Type_.unknown_)
             walkStmts(mstmts, ctx17c)
             bg = bg.withInferCtx(ctx17c)
             if m.return_type != nil
-                bg = bg.withMethodReturnType(m.return_type to!)
+                bg = bg.withMethodReturnType(m.return_type!)
             # BUG-097: record which params are emitted as *ArrayList so arg-emit
             # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
             for pptr in m.params
@@ -3087,7 +3087,7 @@ struct Generator
             # Track List-tuple and StrSet params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
-                    var p2t = p2.type_ to!
+                    var p2t = p2.type_!
                     branch p2t
                         on TypeRef.generic as gt
                             if gt.name == "List"
@@ -3202,7 +3202,7 @@ struct Generator
             ctx17ci.withDepTypes(.dep_types)
             for pp in ini.params
                 if pp.type_ != nil
-                    ctx17ci.bind(pp.name, typeFromRef(pp.type_ to!))
+                    ctx17ci.bind(pp.name, typeFromRef(pp.type_!))
                 else
                     ctx17ci.bind(pp.name, Type_.unknown_)
             walkStmts(istmts, ctx17ci)
@@ -3224,7 +3224,7 @@ struct Generator
                         bg.w.emit("_self.")
                         bg.w.emit(fld.name)
                         bg.w.emit(" = ")
-                        bg.genExpr(fld.init_expr to!)
+                        bg.genExpr(fld.init_expr!)
                         bg.w.emit(";\n")
             bg.genStmts(istmts)
             if ec_i1.armed
@@ -3241,7 +3241,7 @@ struct Generator
                         ig.w.emit("_self.")
                         ig.w.emit(fld.name)
                         ig.w.emit(" = ")
-                        ig.genExpr(fld.init_expr to!)
+                        ig.genExpr(fld.init_expr!)
                         ig.w.emit(";\n")
             if ec_i2.armed
                 ig.writeIndent()
@@ -3267,12 +3267,12 @@ struct Generator
                 w.emit(", ")
             first = false
             if p.type_ != nil
-                genType(p.type_ to!)
+                genType(p.type_!)
             else
                 w.emit("anytype")
         w.emit(") ")
         if sd.return_type != nil
-            genType(sd.return_type to!)
+            genType(sd.return_type!)
         else
             w.emit("void")
         w.emit(";\n")
@@ -3366,14 +3366,14 @@ struct Generator
                     w.emit(p.name)
                     w.emit(": ")
                     if p.type_ != nil
-                        genType(p.type_ to!)
+                        genType(p.type_!)
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if mth.throws_
                     w.emit("anyerror!")
                 if mth.return_type != nil
-                    genType(mth.return_type to!)
+                    genType(mth.return_type!)
                 else
                     w.emit("void")
                 w.emit(",\n")
@@ -3428,14 +3428,14 @@ struct Generator
                     w.emit(p.name)
                     w.emit(": ")
                     if p.type_ != nil
-                        genType(p.type_ to!)
+                        genType(p.type_!)
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if mth.throws_
                     w.emit("anyerror!")
                 if mth.return_type != nil
-                    genType(mth.return_type to!)
+                    genType(mth.return_type!)
                 else
                     w.emit("void")
                 w.emit(" {\n")
@@ -3480,14 +3480,14 @@ struct Generator
                                 w.emit(p.name)
                                 w.emit(": ")
                                 if p.type_ != nil
-                                    genType(p.type_ to!)
+                                    genType(p.type_!)
                                 else
                                     w.emit("anytype")
                             w.emit(") ")
                             if smth.throws_
                                 w.emit("anyerror!")
                             if smth.return_type != nil
-                                genType(smth.return_type to!)
+                                genType(smth.return_type!)
                             else
                                 w.emit("void")
                             w.emit(" {\n")
@@ -3575,14 +3575,14 @@ struct Generator
             w.emit(p.name)
             w.emit(": ")
             if p.type_ != nil
-                genType(p.type_ to!)
+                genType(p.type_!)
             else
                 w.emit("anytype")
         w.emit(") ")
         if mth.throws_
             w.emit("anyerror!")
         if mth.return_type != nil
-            genType(mth.return_type to!)
+            genType(mth.return_type!)
         else
             w.emit("void")
         if mth.stmts as mstmts
@@ -3609,7 +3609,7 @@ struct Generator
             if paramNeedsAddrOf(p, body)
                 w.emit("*")
             if p.type_ != nil
-                genType(p.type_ to!)
+                genType(p.type_!)
             else
                 w.emit("anytype")
 
@@ -3669,10 +3669,10 @@ struct Generator
                     addAddrOfMutationsInStmts(g2.else_stmts, out)
                 on Stmt.var_ as n
                     if n.init_expr != nil
-                        addAddrOfMutationsInExpr(n.init_expr to!, out)
+                        addAddrOfMutationsInExpr(n.init_expr!, out)
                 on Stmt.return_ as r
                     if r.value != nil
-                        addAddrOfMutationsInExpr(r.value to!, out)
+                        addAddrOfMutationsInExpr(r.value!, out)
                 on Stmt.expr as e
                     addAddrOfMutationsInExpr(e, out)
                 on Stmt.assign as a3
@@ -3716,7 +3716,7 @@ struct Generator
                         if class_names.contains_(obj_id.name)
                             key = "${obj_id.name}.${mem.member}"
                         else if .infer_ctx != nil
-                            var rt_a: Type_ = inferExpr(mem.object, .infer_ctx to!)
+                            var rt_a: Type_ = inferExpr(mem.object, .infer_ctx!)
                             if rt_a is Type_.named as cn_a
                                 key = "${cn_a}.${mem.member}"
                     else
@@ -3726,7 +3726,7 @@ struct Generator
                 if ps != nil
                     var body = lookupFnBody(key)
                     if body != nil
-                        var psl: List(Param) = ps to!
+                        var psl: List(Param) = ps!
                         var pi = 0
                         var args_count = c.args.count()
                         var pli = 0
@@ -3887,7 +3887,7 @@ struct Generator
                         # types that typeFromRef maps to unknown_ (Atomic, etc.).
                         var needs_discard = false
                         if .infer_ctx != nil
-                            var stmt_t: Type_ = inferExpr(e, .infer_ctx to!)
+                            var stmt_t: Type_ = inferExpr(e, .infer_ctx!)
                             if not stmt_t is Type_.void_ and not stmt_t is Type_.unknown_ and not stmt_t is Type_.unresolved and not stmt_t is Type_.context_dependent
                                 needs_discard = true
                         # Atomic non-void methods: add/sub/swap return the prior
@@ -3911,7 +3911,7 @@ struct Generator
                 line("// pass")
             on Stmt.break_
                 if for_else_label != nil
-                    line("break :${for_else_label to!} false;")
+                    line("break :${for_else_label!} false;")
                 else
                     line("break;")
             on Stmt.continue_
@@ -3930,10 +3930,10 @@ struct Generator
         if .infer_ctx as ic_lv
             var var_t: Type_ = Type_.unknown_
             if n.type_ != nil
-                var_t = typeFromRef(n.type_ to!)
+                var_t = typeFromRef(n.type_!)
             else
                 if n.init_expr != nil
-                    var_t = inferExpr(n.init_expr to!, ic_lv)
+                    var_t = inferExpr(n.init_expr!, ic_lv)
             if not (var_t is Type_.unknown_) and not (var_t is Type_.unresolved)
                 ic_lv.bind(n.name, var_t)
             else
@@ -3947,7 +3947,7 @@ struct Generator
                 lv_struct_name = lv_cm.type_name
         if lv_struct_name == ""
             if n.type_ != nil
-                var nvt2 = n.type_ to!
+                var nvt2 = n.type_!
                 if nvt2 is TypeRef.named as lv_tn
                     lv_struct_name = lv_tn.name
         # BUG-122: seed opt_ptr_field_bindings / ptr_field_bindings for ^T? / ^T fields
@@ -3974,13 +3974,13 @@ struct Generator
         var mc_field = ""
         var mc_throws: bool = false
         if n.init_expr != nil
-            var ch = tryChain(n.init_expr to!)
+            var ch = tryChain(n.init_expr!)
             if ch != nil
-                var chain = ch to!
+                var chain = ch!
                 mc_recv = hoistCallChain(chain.recv)
                 mc_field = chain.method
                 if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx to!)
+                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx!)
                     if recv_t is Type_.named as cn
                         if isClassMethodThrows(cn, chain.method)
                             mc_throws = true
@@ -3989,11 +3989,11 @@ struct Generator
         # and emit `var pred: @TypeOf(&isAlpha) = &isAlpha;` instead.
         var is_mut = false
         if mut_set != nil
-            is_mut = mut_set to!.contains_(n.name)
+            is_mut = mut_set!.contains_(n.name)
         if n.is_const
             is_mut = false
         if is_mut and n.init_expr != nil and not n.is_const
-            if n.init_expr to! is Expr.ident as fid
+            if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name)
                     writeIndent()
                     w.emit("var " + n.name + ": @TypeOf(&" + fid.name + ") = &" + fid.name + ";\n")
@@ -4001,11 +4001,11 @@ struct Generator
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
             if n.type_ != nil
-                var iinit = n.init_expr to!
+                var iinit = n.init_expr!
                 if iinit is Expr.call as ic
                     if ic.callee is Expr.ident as iid
                         var iclass_name = iid.name
-                        var itr = n.type_ to!
+                        var itr = n.type_!
                         if itr is TypeRef.named as itn
                             var ifc = findInterfaceDecl(itn.name)
                             if ifc != nil
@@ -4033,7 +4033,7 @@ struct Generator
                 # Generalized concrete→interface coercion for an ident or method-call
                 # RHS (the constructor RHS is handled above). e.g. `var b: IBase = d`
                 # where d is a concrete class, or `var b: I = Box(i64).init(42)`.
-                var itr2 = n.type_ to!
+                var itr2 = n.type_!
                 if itr2 is TypeRef.named as itn2
                     if findInterfaceDecl(itn2.name) != nil
                         var cc: str? = concreteClassOf(iinit)
@@ -4049,11 +4049,11 @@ struct Generator
                             if iinit is Expr.call as g_outer
                                 if g_outer.callee is Expr.call as g_inner
                                     if g_inner.callee is Expr.ident as g_id
-                                        if g_id.name == cc to!
+                                        if g_id.name == cc!
                                             writeIndent()
                                             w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
                                             genExpr(iinit)
-                                            w.emit(", .vtable = &" + (cc to!) + "(")
+                                            w.emit(", .vtable = &" + (cc!) + "(")
                                             var g_first = true
                                             for g_ta in g_inner.args
                                                 if not g_first
@@ -4067,7 +4067,7 @@ struct Generator
                             writeIndent()
                             w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
                             genExpr(iinit)
-                            w.emit(", .vtable = &_vtable_" + cc to! + "_" + itn2.name + " };\n")
+                            w.emit(", .vtable = &_vtable_" + cc! + "_" + itn2.name + " };\n")
                             return
                         # Interface→interface upcast: `var b: IBase = f` where f: IFoo
                         # and IFoo implements IBase. The two fat-pointer structs are
@@ -4102,7 +4102,7 @@ struct Generator
         # Track local str/List-tuple/StrSet variables for type-aware codegen
         # Must happen BEFORE early-return paths (StringBuilder, generic stdlib ctor)
         if n.type_ != nil
-            branch n.type_ to!
+            branch n.type_!
                 on TypeRef.named as tn
                     if tn.name == "str" or tn.name == "String"
                         str_params.add(n.name)
@@ -4131,7 +4131,7 @@ struct Generator
                     pass
         # Track DynLib handle variables for instance method dispatch.
         if n.init_expr != nil
-            var dynlib_ie = n.init_expr to!
+            var dynlib_ie = n.init_expr!
             if dynlib_ie is Expr.call as dynlib_c
                 if dynlib_c.callee is Expr.member as dynlib_m
                     if dynlib_m.object is Expr.ident as dynlib_id
@@ -4139,26 +4139,26 @@ struct Generator
                             dynlib_vars.add(n.name)
         # Track DateTime variables so field access (.year/.month etc.) emits _dt_to_gregorian(v.epoch_ms).field
         if n.init_expr != nil
-            if isDateTimeExpr(n.init_expr to!)
+            if isDateTimeExpr(n.init_expr!)
                 .datetime_vars.add(n.name)
         # Detect StrSet from init expression (StrSet() has no type annotation)
         if n.init_expr != nil
-            if isStrSetCtor(n.init_expr to!)
+            if isStrSetCtor(n.init_expr!)
                 strset_locals.add(n.name)
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
-            if .isStringBoth(n.init_expr to!, "var_decl")
+            if .isStringBoth(n.init_expr!, "var_decl")
                 str_params.add(n.name)
         # Track capture-lambda vars for .call() dispatch at call sites
         # AND for Gap 1 closure-to-sig thunking.
         if n.init_expr != nil
-            if n.init_expr to! is Expr.lambda as lam
+            if n.init_expr! is Expr.lambda as lam
                 if lam.captures.count() > 0
                     closure_vars.add(n.name)
                     closure_lambdas.set(n.name, lam)
         # Special-case: StringBuilder() constructor
         if n.init_expr != nil
-            var ie = n.init_expr to!
+            var ie = n.init_expr!
             if isStringBuilderCtor(ie)
                 w.emit(" = std.ArrayList(u8).empty;\n")
                 return
@@ -4172,13 +4172,13 @@ struct Generator
             # position emit can't see.  We emit the var with its declared
             # type, then a chain of `.append(...)` calls.
             if n.type_ != nil
-                if (n.type_ to!) is TypeRef.generic as gtll
+                if (n.type_!) is TypeRef.generic as gtll
                     if gtll.name == "List"
                         if ie is Expr.list_lit as ll_init
                             w.emit(": ")
-                            genType(n.type_ to!)
+                            genType(n.type_!)
                             w.emit(" = ")
-                            genType(n.type_ to!)
+                            genType(n.type_!)
                             w.emit(".empty;\n")
                             var lli = 0
                             while lli < ll_init.elems.count()
@@ -4194,7 +4194,7 @@ struct Generator
             # the block's local _ll_N is mutated then break-returned).
             if n.type_ != nil
                 if ie is Expr.call as ec092
-                    if (n.type_ to!) is TypeRef.generic as gt092
+                    if (n.type_!) is TypeRef.generic as gt092
                         if gt092.name == "List"
                             if ec092.callee is Expr.member as mem092
                                 if mem092.member == "split" or mem092.member == "lines"
@@ -4204,15 +4204,15 @@ struct Generator
                                     var sname092: str = "_split_iter_${uid092.toString()}"
                                     var ename092: str = "_se_${uid092.toString()}"
                                     w.emit(": ")
-                                    genType(n.type_ to!)
+                                    genType(n.type_!)
                                     w.emit(" = ")
                                     w.emit(lbl092)
                                     w.emit(": { var ")
                                     w.emit(lname092)
                                     w.emit(": ")
-                                    genType(n.type_ to!)
+                                    genType(n.type_!)
                                     w.emit(" = ")
-                                    genType(n.type_ to!)
+                                    genType(n.type_!)
                                     w.emit(".empty; var ")
                                     w.emit(sname092)
                                     w.emit(" = ")
@@ -4234,27 +4234,27 @@ struct Generator
         # Type annotation if present
         if n.type_ != nil and n.init_expr == nil
             w.emit(": ")
-            genType(n.type_ to!)
+            genType(n.type_!)
             w.emit(" = undefined;\n")
             return
         # When init is a zig literal and declared type is a class, skip the type annotation.
         # zig"Greeter{}" returns a value; emitting `: *Greeter` would cause a type mismatch.
         var skip_type_ann = false
         if n.type_ != nil and n.init_expr != nil
-            branch n.init_expr to!
+            branch n.init_expr!
                 on Expr.zig_lit
-                    if n.type_ to! is TypeRef.named as tn
+                    if n.type_! is TypeRef.named as tn
                         if class_names.contains_(tn.name)
                             skip_type_ann = true
                 else
                     pass
         if n.type_ != nil and not skip_type_ann
             w.emit(": ")
-            genType(n.type_ to!)
+            genType(n.type_!)
         else if n.init_expr != nil
             # No type annotation — if init is a literal, emit explicit type
             # to avoid comptime_int/comptime_float or *const [N:0]u8 issues in Zig.
-            branch n.init_expr to!
+            branch n.init_expr!
                 on Expr.int_lit
                     w.emit(": i64")
                 on Expr.float_lit
@@ -4285,17 +4285,17 @@ struct Generator
                 w.emit("try ")
             w.emit("${mc_recv}.${mc_field}(")
             if n.init_expr != nil
-                var ch2 = tryChain(n.init_expr to!)
+                var ch2 = tryChain(n.init_expr!)
                 if ch2 != nil
-                    var chain2 = ch2 to!
+                    var chain2 = ch2!
                     genArgList(chain2.args)
             w.emit(")")
         else if n.init_expr != nil
-            genExpr(n.init_expr to!)
+            genExpr(n.init_expr!)
             # Inside a try block: if init is a direct throws call, redirect the error.
             if try_block_label != nil and not in_try_expr
                 var init_is_throws = false
-                if n.init_expr to! is Expr.call as ic
+                if n.init_expr! is Expr.call as ic
                     if ic.callee is Expr.ident as iid
                         if isTopLevelMethodThrows(iid.name)
                             init_is_throws = true
@@ -4309,7 +4309,7 @@ struct Generator
             if n.type_ != nil
                 var alias_lookup_name: str = ""
                 var alias_value_args: List(Expr) = List(Expr)()
-                branch n.type_ to!
+                branch n.type_!
                     on TypeRef.named as alias_tn
                         alias_lookup_name = alias_tn.name
                     on TypeRef.alias_applied as aa
@@ -4320,7 +4320,7 @@ struct Generator
                 if alias_lookup_name != ""
                     var alias_decl = findTypeAlias(alias_lookup_name)
                     if alias_decl != nil
-                        genTypeAliasConstraint(alias_decl to!, alias_lookup_name, n.name, alias_value_args)
+                        genTypeAliasConstraint(alias_decl!, alias_lookup_name, n.name, alias_value_args)
 
     # Emits the constraint-check block for a type alias local variable.
     # value_args: the literal args from TypeRef.alias_applied (empty for non-parametric aliases).
@@ -4334,7 +4334,7 @@ struct Generator
         if base_t is Type_.string_
             ig.str_params.add("value")
         if ig.infer_ctx != nil
-            ig.infer_ctx to!.bind("value", base_t)
+            ig.infer_ctx!.bind("value", base_t)
         writeIndent()
         w.emit("{\n")
         # Emit const bindings for value params (e.g. `const lo: i64 = 0;`)
@@ -4344,7 +4344,7 @@ struct Generator
             var p = alias_decl.params.at(pi)
             w.emit("const " + p.name + ": ")
             if p.type_ != nil
-                ig.genType(p.type_ to!)
+                ig.genType(p.type_!)
             else
                 w.emit("i64")
             w.emit(" = ")
@@ -4355,7 +4355,7 @@ struct Generator
         w.emit("const value = " + var_name + ";\n")
         ig.writeIndent()
         w.emit("if (!(")
-        ig.genExpr(alias_decl.constraint to!)
+        ig.genExpr(alias_decl.constraint!)
         w.emit(")) std.debug.panic(\"type constraint '" + alias_name + "' failed\\n\", .{});\n")
         writeIndent()
         w.emit("}\n")
@@ -4482,7 +4482,7 @@ struct Generator
                     if id.name == "List"
                         w.emit("std.ArrayList(")
                         if type_hint != nil
-                            branch type_hint to!
+                            branch type_hint!
                                 on TypeRef.generic as gtr
                                     if gtr.args.count() > 0
                                         genType(gtr.args.at(0))
@@ -4496,7 +4496,7 @@ struct Generator
                         return
                     if id.name == "HashMap"
                         if type_hint != nil
-                            branch type_hint to!
+                            branch type_hint!
                                 on TypeRef.generic as gtr
                                     var key_is_str = gtr.args.count() > 0 and isStringTypeRef(gtr.args.at(0))
                                     if key_is_str
@@ -4586,7 +4586,7 @@ struct Generator
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
             if ch != nil
-                var chain = ch to!
+                var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
                 genExpr(a.target)
@@ -4625,7 +4625,7 @@ struct Generator
                             if vid.name == "List" or vid.name == "HashMap" or vid.name == "StrSet"
                                 genExpr(a.target)
                                 w.emit(" = ")
-                                genCallWithTypeHint(a.value, field_type to!)
+                                genCallWithTypeHint(a.value, field_type!)
                                 w.emit(";\n")
                                 return
         genExpr(a.target)
@@ -4655,7 +4655,7 @@ struct Generator
         if target is Expr.index as ix
             var nm = getMemberFieldName(ix.object)
             if nm != nil
-                if fieldAwareIsHashMap(nm to!)
+                if fieldAwareIsHashMap(nm!)
                     genExpr(ix.object)
                     w.emit(".put(")
                     genExpr(ix.index)
@@ -4669,22 +4669,22 @@ struct Generator
         # If target is a member expression (self.field), extract field name and look up type
         var fname = getMemberFieldName(a.target)
         if fname != nil
-            return lookupFieldType(fname to!)
+            return lookupFieldType(fname!)
         return nil
 
     def isStringField(e: Expr): bool
         var fname = getMemberFieldName(e)
         if fname != nil
-            var ftype = lookupFieldType(fname to!)
+            var ftype = lookupFieldType(fname!)
             if ftype != nil
-                if ftype to! is TypeRef.named as nt
+                if ftype! is TypeRef.named as nt
                     return nt.name == "str" or nt.name == "String"
         return false
 
     def isListField(field_name: str): bool
         var ftype = lookupFieldType(field_name)
         if ftype != nil
-            if ftype to! is TypeRef.generic as gtr
+            if ftype! is TypeRef.generic as gtr
                 return gtr.name == "List"
         return false
 
@@ -4694,7 +4694,7 @@ struct Generator
     def isHashMapField(field_name: str): bool
         var ftype = lookupFieldType(field_name)
         if ftype != nil
-            if ftype to! is TypeRef.generic as gtr
+            if ftype! is TypeRef.generic as gtr
                 return gtr.name == "HashMap"
         return false
 
@@ -4705,7 +4705,7 @@ struct Generator
     # false-positives on a same-named HashMap field of another class.
     def fieldAwareIsHashMap(name: str): bool
         if .infer_ctx != nil
-            if (.infer_ctx to!).hasLocal(name)
+            if (.infer_ctx!).hasLocal(name)
                 return localIsHashMap(name)
         if isFieldName(name)
             return isHashMapField(name)
@@ -4717,7 +4717,7 @@ struct Generator
     # authoritative; else fall back to the module-type tables.
     def fieldAwareIsList(name: str): bool
         if .infer_ctx != nil
-            if (.infer_ctx to!).hasLocal(name)
+            if (.infer_ctx!).hasLocal(name)
                 return localIsList(name)
         if isFieldName(name)
             return isListField(name)
@@ -4725,21 +4725,21 @@ struct Generator
 
     def localIsHashMap(name: str): bool
         if .infer_ctx != nil
-            var lhm_c = .infer_ctx to!
+            var lhm_c = .infer_ctx!
             if lhm_c.hasLocal(name)
                 return lhm_c.localType(name) is Type_.hashmap_
         return false
 
     def localIsList(name: str): bool
         if .infer_ctx != nil
-            var ll_c = .infer_ctx to!
+            var ll_c = .infer_ctx!
             if ll_c.hasLocal(name)
                 return ll_c.localType(name) is Type_.list_
         return false
 
     def localIsListStr(name: str): bool
         if .infer_ctx != nil
-            var lls_c = .infer_ctx to!
+            var lls_c = .infer_ctx!
             if lls_c.hasLocal(name)
                 var lls_t: Type_ = lls_c.localType(name)
                 if lls_t is Type_.list_ as lls_elem
@@ -4748,7 +4748,7 @@ struct Generator
 
     def localIsHashMapStrKey(name: str): bool
         if .infer_ctx != nil
-            var lhsk_c = .infer_ctx to!
+            var lhsk_c = .infer_ctx!
             if lhsk_c.hasLocal(name)
                 var lhsk_t: Type_ = lhsk_c.localType(name)
                 if lhsk_t is Type_.hashmap_ as lhsk_hm
@@ -4757,7 +4757,7 @@ struct Generator
 
     def localIsHashMapStrVal(name: str): bool
         if .infer_ctx != nil
-            var lhsv_c = .infer_ctx to!
+            var lhsv_c = .infer_ctx!
             if lhsv_c.hasLocal(name)
                 var lhsv_t: Type_ = lhsv_c.localType(name)
                 if lhsv_t is Type_.hashmap_ as lhsv_hm
@@ -4766,7 +4766,7 @@ struct Generator
 
     def localIsListRef(name: str): bool
         if .infer_ctx != nil
-            var llr_c = .infer_ctx to!
+            var llr_c = .infer_ctx!
             if llr_c.hasLocal(name)
                 var llr_t: Type_ = llr_c.localType(name)
                 if llr_t is Type_.list_ as llr_elem
@@ -4779,7 +4779,7 @@ struct Generator
 
     def localListRefType(name: str): str
         if .infer_ctx != nil
-            var llrt_c = .infer_ctx to!
+            var llrt_c = .infer_ctx!
             if llrt_c.hasLocal(name)
                 var llrt_t: Type_ = llrt_c.localType(name)
                 if llrt_t is Type_.list_ as llrt_elem
@@ -4884,9 +4884,9 @@ struct Generator
             writeIndent()
             w.emit("{ _result = ")
             if method_return_type != nil
-                genCallWithTypeHint(r.value to!, method_return_type to!)
+                genCallWithTypeHint(r.value!, method_return_type!)
             else
-                genExpr(r.value to!)
+                genExpr(r.value!)
             w.emit("; _ensure_armed = true; return _result; }\n")
             return
         # Plain ensure-armed path (no result capture): arm before existing return logic.
@@ -4897,12 +4897,12 @@ struct Generator
         # Only applies to named class types — string/list/hashmap stdlib chains must
         # go through genMemberCall (which dispatches to std.mem.replaceOwned etc.).
         if r.value != nil
-            var ch = tryChain(r.value to!)
+            var ch = tryChain(r.value!)
             if ch != nil
-                var chain = ch to!
+                var chain = ch!
                 var should_hoist = true
                 if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx to!)
+                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx!)
                     if not (recv_t is Type_.named)
                         should_hoist = false
                 if should_hoist
@@ -4915,12 +4915,12 @@ struct Generator
         # Interface pointer coercion: `return ClassCtor()` when ret type is `^IFace`
         if r.value != nil
             if method_return_type != nil
-                var ret = method_return_type to!
+                var ret = method_return_type!
                 if ret is TypeRef.ref_to as rtr
                     if rtr is TypeRef.named as rtn
                         var rfc = findInterfaceDecl(rtn.name)
                         if rfc != nil
-                            var rv = r.value to!
+                            var rv = r.value!
                             if rv is Expr.call as rvc
                                 if rvc.callee is Expr.ident as rvid
                                     var ruid = w.nextUid()
@@ -4935,9 +4935,9 @@ struct Generator
         if r.value != nil
             w.emit("return ")
             if method_return_type != nil
-                genCallWithTypeHint(r.value to!, method_return_type to!)
+                genCallWithTypeHint(r.value!, method_return_type!)
             else
-                genExpr(r.value to!)
+                genExpr(r.value!)
             w.emit(";\n")
         else
             w.emit("return;\n")
@@ -4957,7 +4957,7 @@ struct Generator
                 writeIndent()
                 var stmt_is_throws: bool = false
                 if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(obj, .infer_ctx to!)
+                    var recv_t: Type_ = inferExpr(obj, .infer_ctx!)
                     if recv_t is Type_.named as recv_cn
                         if isClassMethodThrows(recv_cn, method_name)
                             stmt_is_throws = true
@@ -4977,7 +4977,7 @@ struct Generator
     def hoistCallChain(expr: Expr): String
         var ch = tryChain(expr)
         if ch != nil
-            var chain = ch to!
+            var chain = ch!
             var inner = hoistCallChain(chain.recv)
             var uid = w.nextUid()
             var mc = "_mc_${uid.toString()}"
@@ -5006,7 +5006,7 @@ struct Generator
             on Expr.type_check as tc
                 if tc.variant_name != nil
                     # Union-variant check: `if x is Union.Variant as cap`
-                    var variant = tc.variant_name to!
+                    var variant = tc.variant_name!
                     var union_nm = tc.type_name
                     w.emit("if (")
                     genExpr(tc.expr)
@@ -5033,11 +5033,11 @@ struct Generator
                             vp_ = .dep_types.variantPayload(union_nm, variant)
                         if vp_ != nil
                             # Seed str_params so str methods work on the binding
-                            if isString(vp_ to!)
+                            if isString(vp_!)
                                 ig.str_params.add(cap)
-                            var sname = structNameFromType(vp_ to!)
+                            var sname = structNameFromType(vp_!)
                             if sname != nil
-                                var st_dot = sname to! + "."
+                                var st_dot = sname! + "."
                                 var rf_items = ref_fields.items()
                                 var rfi: int = 0
                                 while rfi < rf_items.count()
@@ -5083,7 +5083,7 @@ struct Generator
         if si.is_capture != nil
             # `if x is Union.Variant as r` or `if x as r` — capture form
             # si.cond is ^Expr; auto-deref passes Expr value to genIsCaptureThen
-            genIsCaptureThen(si.cond, si.is_capture to!, si.then_stmts)
+            genIsCaptureThen(si.cond, si.is_capture!, si.then_stmts)
             writeIndent()
             w.emit("}")
         else
@@ -5096,7 +5096,7 @@ struct Generator
         for ei in si.else_ifs
             if ei.is_capture != nil
                 w.emit(" else ")
-                genIsCaptureThen(ei.cond, ei.is_capture to!, ei.stmts)
+                genIsCaptureThen(ei.cond, ei.is_capture!, ei.stmts)
                 writeIndent()
                 w.emit("}")
             else
@@ -5107,7 +5107,7 @@ struct Generator
                 writeIndent()
                 w.emit("}")
         if si.else_stmts != nil
-            var es = si.else_stmts to!
+            var es = si.else_stmts!
             w.emit(" else {\n")
             ig.genStmts(es)
             writeIndent()
@@ -5164,10 +5164,10 @@ struct Generator
                 var uid = w.nextUid()
                 label = "_fels_" + uid.toString()
                 ig.writeIndent()
-                ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                ig.w.emit("const " + label! + " = " + label! + ": {\n")
                 wg = ig.indented()
                 bg = wg.indented()
-                bg.for_else_label = label to!
+                bg.for_else_label = label!
             wg.writeIndent()
             wg.w.emit("while (_it_" + kname + ".next()) |_ent_" + kname + "| {\n")
             bg.writeIndent()
@@ -5194,12 +5194,12 @@ struct Generator
             wg.w.emit("}\n")
             if label != nil
                 wg.writeIndent()
-                wg.w.emit("break :" + label to! + " true;\n")
+                wg.w.emit("break :" + label! + " true;\n")
                 ig.writeIndent()
                 ig.w.emit("};\n")
                 ig.writeIndent()
-                ig.w.emit("if (" + label to! + ") {\n")
-                wg.genStmts(fi.else_ to!)
+                ig.w.emit("if (" + label! + ") {\n")
+                wg.genStmts(fi.else_!)
                 ig.writeIndent()
                 ig.w.emit("}\n")
             writeIndent()
@@ -5239,10 +5239,10 @@ struct Generator
                     var uid_to = w.nextUid()
                     label_to = "_fels_" + uid_to.toString()
                     ig.writeIndent()
-                    ig.w.emit("const " + label_to to! + " = " + label_to to! + ": {\n")
+                    ig.w.emit("const " + label_to! + " = " + label_to! + ": {\n")
                     wg_to = ig.indented()
                     bg_to = wg_to.indented()
-                    bg_to.for_else_label = label_to to!
+                    bg_to.for_else_label = label_to!
                 wg_to.writeIndent()
                 wg_to.w.emit("while (" + vname + " < _stop_" + vname + ") : (" + vname + " += 1) {\n")
                 bg_to.emitForGuard(fi)
@@ -5251,12 +5251,12 @@ struct Generator
                 wg_to.w.emit("}\n")
                 if label_to != nil
                     wg_to.writeIndent()
-                    wg_to.w.emit("break :" + label_to to! + " true;\n")
+                    wg_to.w.emit("break :" + label_to! + " true;\n")
                     ig.writeIndent()
                     ig.w.emit("};\n")
                     ig.writeIndent()
-                    ig.w.emit("if (" + label_to to! + ") {\n")
-                    wg_to.genStmts(fi.else_ to!)
+                    ig.w.emit("if (" + label_to! + ") {\n")
+                    wg_to.genStmts(fi.else_!)
                     ig.writeIndent()
                     ig.w.emit("}\n")
                 writeIndent()
@@ -5284,10 +5284,10 @@ struct Generator
                     var uid = w.nextUid()
                     label = "_fels_" + uid.toString()
                     ig.writeIndent()
-                    ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                    ig.w.emit("const " + label! + " = " + label! + ": {\n")
                     wg = ig.indented()
                     bg = wg.indented()
-                    bg.for_else_label = label to!
+                    bg.for_else_label = label!
                 wg.writeIndent()
                 wg.w.emit("while (_it_" + vname + ".next()) |" + vname + "| {\n")
                 # split() elements are []const u8 — mark loop var as string for printFmtSpec
@@ -5298,12 +5298,12 @@ struct Generator
                 wg.w.emit("}\n")
                 if label != nil
                     wg.writeIndent()
-                    wg.w.emit("break :" + label to! + " true;\n")
+                    wg.w.emit("break :" + label! + " true;\n")
                     ig.writeIndent()
                     ig.w.emit("};\n")
                     ig.writeIndent()
-                    ig.w.emit("if (" + label to! + ") {\n")
-                    wg.genStmts(fi.else_ to!)
+                    ig.w.emit("if (" + label! + ") {\n")
+                    wg.genStmts(fi.else_!)
                     ig.writeIndent()
                     ig.w.emit("}\n")
                 writeIndent()
@@ -5323,10 +5323,10 @@ struct Generator
                     var uid = w.nextUid()
                     label = "_fels_" + uid.toString()
                     ig.writeIndent()
-                    ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+                    ig.w.emit("const " + label! + " = " + label! + ": {\n")
                     wg = ig.indented()
                     bg = wg.indented()
-                    bg.for_else_label = label to!
+                    bg.for_else_label = label!
                 wg.writeIndent()
                 wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + vname + "| {\n")
                 bg.emitForGuard(fi)
@@ -5335,12 +5335,12 @@ struct Generator
                 wg.w.emit("}\n")
                 if label != nil
                     wg.writeIndent()
-                    wg.w.emit("break :" + label to! + " true;\n")
+                    wg.w.emit("break :" + label! + " true;\n")
                     ig.writeIndent()
                     ig.w.emit("};\n")
                     ig.writeIndent()
-                    ig.w.emit("if (" + label to! + ") {\n")
-                    wg.genStmts(fi.else_ to!)
+                    ig.w.emit("if (" + label! + ") {\n")
+                    wg.genStmts(fi.else_!)
                     ig.writeIndent()
                     ig.w.emit("}\n")
                 writeIndent()
@@ -5357,7 +5357,7 @@ struct Generator
                 if fi.else_ != nil
                     writeIndent()
                     w.emit("} else {\n")
-                    ig.genStmts(fi.else_ to!)
+                    ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
             else if isItemsMemberAccess(fi.iter)
@@ -5372,7 +5372,7 @@ struct Generator
                 if fi.else_ != nil
                     writeIndent()
                     w.emit("} else {\n")
-                    ig.genStmts(fi.else_ to!)
+                    ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
             else if isStrListIter(fi.iter)
@@ -5389,7 +5389,7 @@ struct Generator
                 if fi.else_ != nil
                     writeIndent()
                     w.emit("} else {\n")
-                    ig.genStmts(fi.else_ to!)
+                    ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
             else if isSqliteQueryIter(fi.iter)
@@ -5402,7 +5402,7 @@ struct Generator
                 # Track for-loop variable deref fields based on element type
                 var iter_member = getMemberFieldName(fi.iter)
                 if iter_member != nil
-                    if iter_member to! == "entries"
+                    if iter_member! == "entries"
                         # List(DictEntry): key and value are ^Expr
                         for_loop_deref.add(makeDottedKey(vname, "key"))
                         for_loop_deref.add(makeDottedKey(vname, "value"))
@@ -5414,8 +5414,8 @@ struct Generator
                 for_loop_vars.add(vname)
                 # Seed opt-ptr field bindings for the loop var's optional ref
                 # (^T?) fields, derived from the iterable's element struct type.
-                # Without this, `loopvar.optRefField to!` (e.g. a capture's
-                # `cap.init_expr to!`, ^Expr?) emits `.?` without the `.*`
+                # Without this, `loopvar.optRefField!` (e.g. a capture's
+                # `cap.init_expr!`, ^Expr?) emits `.?` without the `.*`
                 # deref in the selfhost — diverging from the bootstrap, which
                 # auto-derefs.  Mirrors the branch-binding seeding (see the
                 # `on Expr.is_capture`/branch path).  Round-trip fix.
@@ -5424,7 +5424,7 @@ struct Generator
                     if iter_t is Type_.list_ as for_elem_t
                         var for_sname = structNameFromType(for_elem_t)
                         if for_sname != nil
-                            var for_st_dot = for_sname to! + "."
+                            var for_st_dot = for_sname! + "."
                             var for_orf = opt_ref_fields.items()
                             var for_oi: int = 0
                             while for_oi < for_orf.count()
@@ -5438,7 +5438,7 @@ struct Generator
                     # for-else: Zig native for...else runs when no break occurred
                     writeIndent()
                     w.emit("} else {\n")
-                    ig.genStmts(fi.else_ to!)
+                    ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
             # Loop scope ends: drop the loop var's "active" registration unless an
@@ -5475,7 +5475,7 @@ struct Generator
         if fi.else_ != nil
             writeIndent()
             w.emit("} else {\n")
-            ig.genStmts(fi.else_ to!)
+            ig.genStmts(fi.else_!)
         writeIndent()
         w.emit("}\n")
 
@@ -5498,7 +5498,7 @@ struct Generator
         sqb.for_else_label = nil
         # Seed infer_ctx so row.asInt/asStr/asFloat resolve via sqlite_row dispatch
         if sqb.infer_ctx != nil
-            sqb.infer_ctx to!.bind(vname, Type_.sqlite_row)
+            sqb.infer_ctx!.bind(vname, Type_.sqlite_row)
         sqb.emitForGuard(fi)
         sqb.genStmts(fi.stmts)
         sqi.writeIndent()
@@ -5513,7 +5513,7 @@ struct Generator
             return
         writeIndent()
         w.emit("if (!(")
-        genExpr(fi.filter to!)
+        genExpr(fi.filter!)
         w.emit(")) continue;\n")
 
     # Detect `str.bytes()`: a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
@@ -5583,7 +5583,7 @@ struct Generator
             if c.callee is Expr.member as m
                 if m.member == "findAll" or m.member == "groups"
                     if .infer_ctx != nil
-                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                         branch recv_t
                             on Type_.regex
                                 return true
@@ -5638,13 +5638,13 @@ struct Generator
             if c.callee is Expr.member as m
                 if m.member == "query"
                     if .infer_ctx != nil
-                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                        var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                         if recv_t is Type_.sqlite_db
                             return true
         # Indirect: var rows = db.query(...) — rows typed as sqlite_row_list.
         if e is Expr.ident as id
             if .infer_ctx != nil
-                var it: Type_ = .infer_ctx to!.localType(id.name)
+                var it: Type_ = .infer_ctx!.localType(id.name)
                 if it is Type_.sqlite_row_list
                     return true
         return false
@@ -5675,7 +5675,7 @@ struct Generator
         if fn_.step != nil
             ig.writeIndent()
             ig.w.emit("const _step_" + fn_.var_ + ": i64 = ")
-            ig.genExpr(fn_.step to!)
+            ig.genExpr(fn_.step!)
             ig.w.emit(";\n")
         var step_clause = " += 1"
         if fn_.step != nil
@@ -5687,10 +5687,10 @@ struct Generator
             var uid = w.nextUid()
             label = "_fels_" + uid.toString()
             ig.writeIndent()
-            ig.w.emit("const " + label to! + " = " + label to! + ": {\n")
+            ig.w.emit("const " + label! + " = " + label! + ": {\n")
             wg = ig.indented()
             bg = wg.indented()
-            bg.for_else_label = label to!
+            bg.for_else_label = label!
         wg.writeIndent()
         wg.w.emit("while (" + fn_.var_ + " < _stop_" + fn_.var_ + ") : (" + fn_.var_ + step_clause + ") {\n")
         bg.genStmts(fn_.stmts)
@@ -5698,12 +5698,12 @@ struct Generator
         wg.w.emit("}\n")
         if label != nil
             wg.writeIndent()
-            wg.w.emit("break :" + label to! + " true;\n")
+            wg.w.emit("break :" + label! + " true;\n")
             ig.writeIndent()
             ig.w.emit("};\n")
             ig.writeIndent()
-            ig.w.emit("if (" + label to! + ") {\n")
-            wg.genStmts(fn_.else_ to!)
+            ig.w.emit("if (" + label! + ") {\n")
+            wg.genStmts(fn_.else_!)
             ig.writeIndent()
             ig.w.emit("}\n")
         writeIndent()
@@ -5714,7 +5714,7 @@ struct Generator
     def genBranch(b: StmtBranch)
         if b.cases.count() == 0
             if b.else_ != nil
-                genStmts(b.else_ to!)
+                genStmts(b.else_!)
             return
         # Detect struct field pattern dispatch: any case has struct_pat set.
         var is_struct_pat = false
@@ -5767,7 +5767,7 @@ struct Generator
                 ig.w.emit("} else ")
             first = false
             if cas.struct_pat != nil
-                var sp = cas.struct_pat to!
+                var sp = cas.struct_pat!
                 ig.w.emit("if (")
                 var fi = 0
                 for f in sp.fields
@@ -5806,7 +5806,7 @@ struct Generator
                 var iig = ig.indented()
                 iig.writeIndent()
                 iig.w.emit("const ")
-                iig.w.emit(cas.binding to!)
+                iig.w.emit(cas.binding!)
                 iig.w.emit(" = ")
                 iig.w.emit(tmp)
                 iig.w.emit(";\n")
@@ -5816,7 +5816,7 @@ struct Generator
         if b.else_ != nil
             ig.writeIndent()
             ig.w.emit("} else {\n")
-            ig.indented().genStmts(b.else_ to!)
+            ig.indented().genStmts(b.else_!)
         if b.cases.count() > 0
             ig.writeIndent()
             ig.w.emit("}\n")
@@ -5852,7 +5852,7 @@ struct Generator
         if b.else_ != nil
             w.emit(" else {\n")
             var ig = indented()
-            ig.genStmts(b.else_ to!)
+            ig.genStmts(b.else_!)
             writeIndent()
             w.emit("}")
         w.emit("\n")
@@ -5900,7 +5900,7 @@ struct Generator
                 if cas.binding != nil
                     ig.writeIndent()
                     ig.w.emit("const ")
-                    ig.w.emit(cas.binding to!)
+                    ig.w.emit(cas.binding!)
                     ig.w.emit(" = ")
                     ig.w.emit(bv)
                     ig.w.emit(".")
@@ -5914,7 +5914,7 @@ struct Generator
                     if cas.guard_expr.count() == 0
                         ig.writeIndent()
                         ig.w.emit("_ = ")
-                        ig.w.emit(cas.binding to!)
+                        ig.w.emit(cas.binding!)
                         ig.w.emit(";\n")
                 if cas.guard_expr.count() > 0
                     ig.writeIndent()
@@ -5978,7 +5978,7 @@ struct Generator
             w.emit(bd)
             w.emit(") {\n")
             var ig = indented()
-            ig.genStmts(b.else_ to!)
+            ig.genStmts(b.else_!)
             writeIndent()
             w.emit("}\n")
         else
@@ -6016,8 +6016,8 @@ struct Generator
             # BUG-137: a branch-case binding (`on V as r`) shadows any same-named
             # module var inside the arm.
             if cas.binding != nil
-                if cas.binding to! != "_"
-                    .noteShadowLocal(cas.binding to!)
+                if cas.binding! != "_"
+                    .noteShadowLocal(cas.binding!)
             ig.writeIndent()
             var fi = true
             var vi = 0
@@ -6033,10 +6033,10 @@ struct Generator
             if has_binding and cas.binding != nil and cas.values.count() > 0
                 var vkey = getVariantKey(cas.values.at(0))
                 if vkey != nil
-                    needs_deref = boxed_variants.contains_(vkey to!)
+                    needs_deref = boxed_variants.contains_(vkey!)
             if has_binding
                 if cas.binding != nil
-                    var bnd = cas.binding to!
+                    var bnd = cas.binding!
                     if needs_deref and bnd != "_"
                         ig.w.emit("|_ptr_")
                         ig.w.emit(bnd)
@@ -6049,19 +6049,19 @@ struct Generator
                 # else nil binding: no capture
             ig.w.emit("{\n")
             var iig = ig.indented()
-            if needs_deref and (cas.binding == nil or cas.binding to! != "_")
+            if needs_deref and (cas.binding == nil or cas.binding! != "_")
                 iig.writeIndent()
                 iig.w.emit("const ")
-                iig.w.emit(cas.binding to!)
+                iig.w.emit(cas.binding!)
                 iig.w.emit(" = _ptr_")
-                iig.w.emit(cas.binding to!)
+                iig.w.emit(cas.binding!)
                 iig.w.emit(".*;\n")
             # Track ^T fields for this binding to enable auto-deref
             if cas.binding != nil and cas.values.count() > 0
                 var vkey2 = getVariantKey(cas.values.at(0))
                 if vkey2 != nil
                     # Parse "Union.variant" into union_name and variant_name
-                    var vk = vkey2 to!
+                    var vk = vkey2!
                     # Extract union and variant names from dotted key
                     var vname = extractAfterDot(vk)
                     var uname: str = ""
@@ -6077,11 +6077,11 @@ struct Generator
                             vp_ = .dep_types.variantPayload(uname, vname)
                         if vp_ != nil
                             # Seed str_params so str methods work on the binding
-                            if isString(vp_ to!)
-                                iig.str_params.add(cas.binding to!)
-                            var sname = structNameFromType(vp_ to!)
+                            if isString(vp_!)
+                                iig.str_params.add(cas.binding!)
+                            var sname = structNameFromType(vp_!)
                             if sname != nil
-                                var st_dot = sname to! + "."
+                                var st_dot = sname! + "."
                                 # Find all non-optional ref_fields for this struct
                                 var rf_items = ref_fields.items()
                                 var rfi: int = 0
@@ -6089,7 +6089,7 @@ struct Generator
                                     var rf_entry: str = rf_items.at(rfi)
                                     if rf_entry.startsWith(st_dot)
                                         var fname2 = extractAfterDot(rf_entry)
-                                        iig.ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname2))
+                                        iig.ptr_field_bindings.add(makeDottedKey(cas.binding!, fname2))
                                     rfi += 1
                                 # Find all optional ref_fields for this struct
                                 var orf_items = opt_ref_fields.items()
@@ -6098,11 +6098,11 @@ struct Generator
                                     var orf_entry: str = orf_items.at(orfi)
                                     if orf_entry.startsWith(st_dot)
                                         var fname3 = extractAfterDot(orf_entry)
-                                        iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding to!, fname3))
+                                        iig.opt_ptr_field_bindings.add(makeDottedKey(cas.binding!, fname3))
                                     orfi += 1
             iig.genStmts(cas.stmts)
             if cas.binding != nil
-                var bkey = makeDottedKey(cas.binding to!, "")
+                var bkey = makeDottedKey(cas.binding!, "")
                 iig.ptr_field_bindings.removeStartingWith(bkey)
                 iig.opt_ptr_field_bindings.removeStartingWith(bkey)
             ig.writeIndent()
@@ -6113,7 +6113,7 @@ struct Generator
             # Zig 0.16: |_| capture discard not allowed; omit entirely
             ig.w.emit("{\n")
             var iig = ig.indented()
-            iig.genStmts(b.else_ to!)
+            iig.genStmts(b.else_!)
             ig.writeIndent()
             ig.w.emit("},\n")
         writeIndent()
@@ -6166,7 +6166,7 @@ struct Generator
             var parg = p.args.at(ai2)
             var needs_unwrap = false
             if .infer_ctx != nil
-                var pt: Type_ = inferExpr(parg, .infer_ctx to!)
+                var pt: Type_ = inferExpr(parg, .infer_ctx!)
                 if pt is Type_.optional as poi
                     if poi is Type_.string_ or poi is Type_.str_slice
                         needs_unwrap = true
@@ -6195,7 +6195,7 @@ struct Generator
         if isStringLitArg(e)
             return "{s}"
         if .infer_ctx != nil
-            var t: Type_ = inferExpr(e, .infer_ctx to!)
+            var t: Type_ = inferExpr(e, .infer_ctx!)
             # Unwrap one optional layer: inside nil-check bodies the value is
             # guaranteed non-nil; genPrint will emit `.?` on the Zig value.
             if t is Type_.optional as opt_inner
@@ -6256,10 +6256,10 @@ struct Generator
             # Non-primitive details currently raise a selfhost compile error
             # (the object-details path is not ported yet); primitive-only paths
             # cover all current target corpus files (all int details).
-            var det: Expr = r.details to!
+            var det: Expr = r.details!
             var det_t: Type_ = Type_.unknown_
             if .infer_ctx != nil
-                det_t = inferExpr(det, .infer_ctx to!)
+                det_t = inferExpr(det, .infer_ctx!)
             var uid: int = w.nextUid()
             var is_prim: bool = false
             branch det_t
@@ -6325,7 +6325,7 @@ struct Generator
                 w.emit("  } };\n")
                 writeIndent()
                 w.emit("  _error_ctx = .{ .message = ")
-                genExpr(r.message to!)
+                genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
                 w.emit(uid.toString())
                 w.emit("), .toString_fn = _rshim_")
@@ -6359,7 +6359,7 @@ struct Generator
                 w.emit("  } };\n")
                 writeIndent()
                 w.emit("  _error_ctx = .{ .message = ")
-                genExpr(r.message to!)
+                genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
                 w.emit(uid.toString())
                 w.emit("), .toString_fn = _rshim_")
@@ -6404,7 +6404,7 @@ struct Generator
                 w.emit("  } };\n")
                 writeIndent()
                 w.emit("  _error_ctx = .{ .message = ")
-                genExpr(r.message to!)
+                genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_")
                 w.emit(uid.toString())
                 w.emit("), .toString_fn = _rshim_")
@@ -6413,30 +6413,30 @@ struct Generator
                 writeIndent()
                 w.emit("  ")
             if try_block_label != nil
-                w.emit(try_err_var to!)
+                w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
-                w.emit(try_block_label to!)
+                w.emit(try_block_label!)
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
             w.emit("}\n")
         else if r.message != nil
             w.emit("{ _error_ctx = .{ .message = ")
-            genExpr(r.message to!)
+            genExpr(r.message!)
             w.emit(" }; ")
             if try_block_label != nil
-                w.emit(try_err_var to!)
+                w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
-                w.emit(try_block_label to!)
+                w.emit(try_block_label!)
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
             w.emit("}\n")
         else
             if try_block_label != nil
-                w.emit(try_err_var to!)
+                w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
-                w.emit(try_block_label to!)
+                w.emit(try_block_label!)
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
@@ -6489,7 +6489,7 @@ struct Generator
             # withCatchVar so the catch body can reference the error object.
             var catch_gen = iig
             if cl.binding != nil
-                var bname: str = cl.binding to!
+                var bname: str = cl.binding!
                 if not bname.startsWith("_")
                     catch_gen = iig.withCatchVar(bname)
             catch_gen.genStmts(cl.stmts)
@@ -6672,9 +6672,9 @@ struct Generator
             on Expr.slice as sl
                 collectAndEmitOldSnapshots(sl.object)
                 if sl.start != nil
-                    collectAndEmitOldSnapshots(sl.start to!)
+                    collectAndEmitOldSnapshots(sl.start!)
                 if sl.stop_ != nil
-                    collectAndEmitOldSnapshots(sl.stop_ to!)
+                    collectAndEmitOldSnapshots(sl.stop_!)
             on Expr.except_ as ex
                 collectAndEmitOldSnapshots(ex.base)
                 for f in ex.fields
@@ -6708,7 +6708,7 @@ struct Generator
         if uses_result
             writeIndent()
             w.emit("var _result: ")
-            genType(return_type to!)
+            genType(return_type!)
             w.emit(" = undefined;\n")
         # Success-armed flag.
         writeIndent()
@@ -6735,7 +6735,7 @@ struct Generator
             w.emit("if (!(")
             genExpr(a.cond)
             w.emit(")) @panic(")
-            genExpr(a.message to!)
+            genExpr(a.message!)
             w.emit(");\n")
         else
             w.emit("std.debug.assert(")
@@ -6932,7 +6932,7 @@ struct Generator
         # Chan send: ch <- val  (target is a Chan local)
         var co_lhs_nm = getMemberFieldName(co.target)
         if co_lhs_nm != nil
-            if chan_locals.contains_(co_lhs_nm to!)
+            if chan_locals.contains_(co_lhs_nm!)
                 writeIndent()
                 genExpr(co.target)
                 w.emit(".send(")
@@ -6942,7 +6942,7 @@ struct Generator
         # Chan recv: target <- ch  (value is a Chan local)
         var co_rhs_nm = getMemberFieldName(co.value)
         if co_rhs_nm != nil
-            if chan_locals.contains_(co_rhs_nm to!)
+            if chan_locals.contains_(co_rhs_nm!)
                 writeIndent()
                 genExpr(co.target)
                 w.emit(" = ")
@@ -7119,7 +7119,7 @@ struct Generator
                     var is_list_obj = false
                     var is_hm_obj = false
                     if fname != nil
-                        var fn2 = fname to!
+                        var fn2 = fname!
                         # str_params takes priority — string variables are never lists
                         if not str_params.contains_(fn2)
                             if isFieldName(fn2)
@@ -7210,9 +7210,9 @@ struct Generator
                 # Auto-deref ^T fields: if binding.field is a *T, emit .*
                 var obj_name = getIdentName(m.object)
                 if obj_name != nil
-                    var bfkey = makeDottedKey(obj_name to!, m.member)
+                    var bfkey = makeDottedKey(obj_name!, m.member)
                     # For-loop variable deref takes priority over branch-binding deref
-                    if for_loop_vars.contains_(obj_name to!)
+                    if for_loop_vars.contains_(obj_name!)
                         # Variable is a for-loop var: only deref if in for_loop_deref
                         if for_loop_deref.contains_(bfkey)
                             w.emit(".*")
@@ -7225,7 +7225,7 @@ struct Generator
                 var is_hm_idx = false
                 var is_list_idx = false
                 if idx_obj_nm != nil
-                    var idx_nm = idx_obj_nm to!
+                    var idx_nm = idx_obj_nm!
                     is_hm_idx = fieldAwareIsHashMap(idx_nm)
                     if not is_hm_idx
                         is_list_idx = fieldAwareIsList(idx_nm)
@@ -7247,12 +7247,12 @@ struct Generator
                 w.emit("[")
                 if sl2.start != nil
                     w.emit("@as(usize, @intCast(")
-                    genExpr(sl2.start to!)
+                    genExpr(sl2.start!)
                     w.emit("))")
                 w.emit("..")
                 if sl2.stop_ != nil
                     w.emit("@as(usize, @intCast(")
-                    genExpr(sl2.stop_ to!)
+                    genExpr(sl2.stop_!)
                     w.emit("))")
                 w.emit("]")
             on Expr.binary as b
@@ -7272,7 +7272,7 @@ struct Generator
                 if tnn.expr is Expr.member as tnn_m
                     var tnn_obj = getIdentName(tnn_m.object)
                     if tnn_obj != nil
-                        var tnn_key = makeDottedKey(tnn_obj to!, tnn_m.member)
+                        var tnn_key = makeDottedKey(tnn_obj!, tnn_m.member)
                         if opt_ptr_field_bindings.contains_(tnn_key)
                             w.emit(".*")
             on Expr.is_nil as isn
@@ -7288,7 +7288,7 @@ struct Generator
                 w.emit(" catch ")
                 if ca2.err_var != nil
                     w.emit("|")
-                    w.emit(ca2.err_var to!)
+                    w.emit(ca2.err_var!)
                     w.emit("| ")
                 genExpr(ca2.fallback)
             on Expr.if_expr as ie
@@ -7318,12 +7318,12 @@ struct Generator
                 var elem_zig: str = "[]const u8"
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
-                    genType(ll.elem_type to!)
+                    genType(ll.elem_type!)
                     w.emit(") = std.ArrayList(")
-                    genType(ll.elem_type to!)
+                    genType(ll.elem_type!)
                     w.emit(").empty; ")
                 else if ll.elems.count() > 0 and .infer_ctx != nil
-                    var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx to!)
+                    var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx!)
                     # §27a: user class/struct elements render *Class (classes) /
                     # value (structs); cross-module user types are reference (*T).
                     # zigTypeForListElem (free fn) lacks the class registry, so
@@ -7401,7 +7401,7 @@ struct Generator
                     w.emit("(")
                     genExpr(tc2.expr)
                     w.emit(" == .")
-                    w.emit(tc2.variant_name to!)
+                    w.emit(tc2.variant_name!)
                     w.emit(")")
                 else
                     # Class type-tag check: expr._type_tag == _ttag_TypeName
@@ -7486,7 +7486,7 @@ struct Generator
                     w.emit(" = ")
                     var ef_ftype = lookupFieldType(ef.name)
                     if ef_ftype != nil
-                        genCallWithTypeHint(ef.value, ef_ftype to!)
+                        genCallWithTypeHint(ef.value, ef_ftype!)
                     else
                         genExpr(ef.value)
                     w.emit("; ")
@@ -7509,7 +7509,7 @@ struct Generator
                             w.emit(", ")
                         var a = oc.args.at(ai)
                         if a.name != nil
-                            w.emit(a.name to!)
+                            w.emit(a.name!)
                             w.emit(" = ")
                         genExpr(a.value)
                         ai = ai + 1
@@ -7555,7 +7555,7 @@ struct Generator
     # it shadows any same-named module var and must keep its bare Zig name.
     def isLocalOrParamName(name: str): bool
         if param_names != nil
-            if param_names to!.contains_(name)
+            if param_names!.contains_(name)
                 return true
         if .infer_ctx as ic
             if ic.hasLocal(name)
@@ -7583,7 +7583,7 @@ struct Generator
     def isFieldName(name: str): bool
         # Not a field if it's a parameter name (params shadow fields)
         if param_names != nil
-            if param_names to!.contains_(name)
+            if param_names!.contains_(name)
                 return false
         for d in owner_members
             if d is Decl.var_ as fld
@@ -7617,7 +7617,7 @@ struct Generator
             # rejects (or worse, with `int_div` semantics, silently rounds).
             var is_float_div = false
             if b.op == BinaryOp.div and .infer_ctx != nil
-                var lt: Type_ = inferExpr(b.left, .infer_ctx to!)
+                var lt: Type_ = inferExpr(b.left, .infer_ctx!)
                 branch lt
                     on Type_.float_
                         is_float_div = true
@@ -7662,7 +7662,7 @@ struct Generator
                     if localIsList(in_id.name) or localIsHashMap(in_id.name)
                         in_use_zebra_in = true
                     else if .infer_ctx != nil
-                        var rt: Type_ = inferExpr(b.right, .infer_ctx to!)
+                        var rt: Type_ = inferExpr(b.right, .infer_ctx!)
                         # The TC may not yet know the variable's declared
                         # generic type, but the local tracking sets above
                         # cover the common cases.  When TC does know,
@@ -7776,7 +7776,7 @@ struct Generator
                 # Owner field typed: str (bare ident = implicit self.field)
                 var ftype = lookupFieldType(id.name)
                 if ftype != nil
-                    if ftype to! is TypeRef.named as nt
+                    if ftype! is TypeRef.named as nt
                         if nt.name == "str" or nt.name == "String"
                             return true
             on Expr.member as m
@@ -7797,7 +7797,7 @@ struct Generator
                             if localIsListStr(lid.name)
                                 return true
             on Expr.to_non_nil as tnn
-                # x to! where x is a string? → still a string
+                # x! where x is a string? → still a string
                 return isStringExpr(tnn.expr)
             on Expr.binary as bin
                 # s + "x" or s + typeRefStr(...) — concat is a string if either side is
@@ -7814,7 +7814,7 @@ struct Generator
             if c.callee is Expr.member as m
                 var obj_name = getIdentName(m.object)
                 if obj_name != nil
-                    if union_names.contains_(obj_name to!)
+                    if union_names.contains_(obj_name!)
                         return true
         return false
 
@@ -7822,7 +7822,7 @@ struct Generator
         # Detect @derive(Eq) struct variable: ident whose type name is in derive_eq_structs.
         if .infer_ctx == nil
             return false
-        var t: Type_ = inferExpr(e, .infer_ctx to!)
+        var t: Type_ = inferExpr(e, .infer_ctx!)
         if t is Type_.named as tn
             return derive_eq_structs.contains_(tn)
         return false
@@ -7945,7 +7945,7 @@ struct Generator
                     if has_fmt
                         var ex_type: Type_ = Type_.unknown_
                         if .infer_ctx != nil
-                            ex_type = inferExpr(e, .infer_ctx to!)
+                            ex_type = inferExpr(e, .infer_ctx!)
                         var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
                         fmt_str = fmt_str + "{" + zig_spec + "}"
                         cast_types.add(bitCastType(fmt_spec, ex_type))
@@ -7954,7 +7954,7 @@ struct Generator
                         # Implicit toString: named type with toString() method → {s}.
                         var ts: bool = false
                         if .infer_ctx != nil
-                            var et: Type_ = inferExpr(e, .infer_ctx to!)
+                            var et: Type_ = inferExpr(e, .infer_ctx!)
                             if et is Type_.named as tn
                                 if toString_types.contains_(tn)
                                     ts = true
@@ -8116,12 +8116,12 @@ struct Generator
                     dg.w.emit(p.name)
                     dg.w.emit(": ")
                     if p.type_ != nil
-                        dg.genType(p.type_ to!)
+                        dg.genType(p.type_!)
                     else
                         dg.w.emit("anytype")
                 dg.w.emit(") ")
                 if lam.return_type != nil
-                    dg.genType(lam.return_type to!)
+                    dg.genType(lam.return_type!)
                 else
                     dg.w.emit("void")
                 dg.w.emit(" {\n")
@@ -8184,12 +8184,12 @@ struct Generator
                 w.emit(p.name)
                 w.emit(": ")
                 if p.type_ != nil
-                    genType(p.type_ to!)
+                    genType(p.type_!)
                 else
                     w.emit("anytype")
             w.emit(") ")
             if t.lambda.return_type != nil
-                genType(t.lambda.return_type to!)
+                genType(t.lambda.return_type!)
             else
                 w.emit("void")
             w.emit(" = null;")
@@ -8209,13 +8209,13 @@ struct Generator
                     w.emit(pp.name)
                     w.emit(": ")
                     if pp.type_ != nil
-                        genType(pp.type_ to!)
+                        genType(pp.type_!)
                     else
                         w.emit("anytype")
                     pj = pj + 1
                 w.emit(") ")
                 if t.lambda.return_type != nil
-                    genType(t.lambda.return_type to!)
+                    genType(t.lambda.return_type!)
                 else
                     w.emit("void")
                 w.emit(" {")
@@ -8288,16 +8288,16 @@ struct Generator
         var cm_obj = getMemberObjectIdent(c.callee)
         var cm_mem = getMemberName(c.callee)
         if cm_obj != nil and cm_mem != nil
-            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or .dep_types.hasClass(cm_mem to!)
+            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or .dep_types.hasClass(cm_mem!)
             if is_xm_ctor
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
-                if unwrapped_imports.contains_(cm_obj to!)
-                    w.emit(cm_mem to!)
+                if unwrapped_imports.contains_(cm_obj!)
+                    w.emit(cm_mem!)
                 else
-                    w.emit(cm_obj to!)
+                    w.emit(cm_obj!)
                     w.emit(".")
-                    w.emit(cm_mem to!)
+                    w.emit(cm_mem!)
                 w.emit(".init(")
                 var fc = true
                 for a in c.args
@@ -8312,8 +8312,8 @@ struct Generator
         var callee_obj = getMemberObjectIdent(c.callee)
         var callee_mem = getMemberName(c.callee)
         if callee_obj != nil and callee_mem != nil
-            var oname = callee_obj to!
-            var mname2 = callee_mem to!
+            var oname = callee_obj!
+            var mname2 = callee_mem!
             if union_names.contains_(oname) or enum_names.contains_(oname)
                 if enum_names.contains_(oname)
                     # Full form for enum: EnumName{ .variant = {} }
@@ -8366,7 +8366,7 @@ struct Generator
         # Callee shape: member(member(ident(mod), union_name), variant_name)
         var xmu_parts = getXmUnionParts(c.callee)
         if xmu_parts != nil
-            var xmu_list = xmu_parts to!
+            var xmu_list = xmu_parts!
             var xmu_mod = xmu_list.at(0)
             var xmu_union = xmu_list.at(1)
             var xmu_variant = xmu_list.at(2)
@@ -8483,7 +8483,7 @@ struct Generator
                         break
                 var ctor_needs_fill: bool = ctor_has_named
                 if not ctor_needs_fill and ctor_ps != nil
-                    ctor_needs_fill = c.args.count() < ctor_ps to!.count()
+                    ctor_needs_fill = c.args.count() < ctor_ps!.count()
                 if ctor_needs_fill
                     var ctor_body: List(Stmt)? = lookupFnBody(id.name + ".init")
                     genArgListFull(c.args, ctor_ps, ctor_body)
@@ -8515,7 +8515,7 @@ struct Generator
                         var is_ref_param: bool = ctorParamAtIsRefTo(.module_types, .dep_types, id.name, arg_idx)
                         var should_box: bool = false
                         if is_ref_param and .infer_ctx != nil
-                            var wt17c: Type_ = inferExpr(a.value, .infer_ctx to!)
+                            var wt17c: Type_ = inferExpr(a.value, .infer_ctx!)
                             should_box = .isUnionType(wt17c)
                         if is_ref_param and should_box
                             # Box: heap-allocate for ^T parameter
@@ -8531,7 +8531,7 @@ struct Generator
                             # Use param type hint for zero-arg generic ctors (HashMap(), List(), etc.)
                             var ctor_pt = lookupCtorParamType(id.name, a.name, arg_idx)
                             if ctor_pt != nil
-                                genCallWithTypeHint(a.value, ctor_pt to!)
+                                genCallWithTypeHint(a.value, ctor_pt!)
                             else
                                 genExpr(a.value)
                         arg_idx = arg_idx + 1
@@ -8550,12 +8550,12 @@ struct Generator
                     first_sf = false
                     if a.name != nil
                         w.emit(".")
-                        var sf_name = a.name to!
+                        var sf_name = a.name!
                         w.emit(sf_name)
                         w.emit(" = ")
                         var sf_type = lookupStructFieldType(id.name, sf_name)
                         if sf_type != nil
-                            genCallWithTypeHint(a.value, sf_type to!)
+                            genCallWithTypeHint(a.value, sf_type!)
                         else
                             genExpr(a.value)
                     else
@@ -8603,7 +8603,7 @@ struct Generator
         if e is Expr.member as inner
             if inner.member == "details"
                 var obj_name = getIdentName(inner.object)
-                if obj_name != nil and obj_name to! == cv
+                if obj_name != nil and obj_name! == cv
                     return true
         return false
 
@@ -8635,7 +8635,7 @@ struct Generator
                 return
         # Regex instance methods: re.match/find/findAll/replace/groups
         if .infer_ctx != nil
-            var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+            var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
             branch recv_t
                 on Type_.regex
                     if mname == "match"
@@ -9503,7 +9503,7 @@ struct Generator
         # Chan(T) — dispatch send/recv/close via chan_locals tracking
         var chan_obj_name = getMemberFieldName(m.object)
         if chan_obj_name != nil
-            if chan_locals.contains_(chan_obj_name to!)
+            if chan_locals.contains_(chan_obj_name!)
                 if mname == "send"
                     genExpr(m.object)
                     w.emit(".send(")
@@ -9521,7 +9521,7 @@ struct Generator
                     return
         # Atomic(T) — all instance methods pass through directly to Zig
         if chan_obj_name != nil
-            if atomic_locals.contains_(chan_obj_name to!)
+            if atomic_locals.contains_(chan_obj_name!)
                 genExpr(m.object)
                 w.emit("." + mname + "(")
                 var ai: int = 0
@@ -9534,7 +9534,7 @@ struct Generator
                 return
         # ThreadPool(n) — pass through to _ThreadPool struct methods (submit/wait)
         if chan_obj_name != nil
-            if thread_pool_locals.contains_(chan_obj_name to!)
+            if thread_pool_locals.contains_(chan_obj_name!)
                 genExpr(m.object)
                 w.emit("." + mname + "(")
                 var tp_ai: int = 0
@@ -9547,7 +9547,7 @@ struct Generator
                 return
         # DynLib — dispatch close/lookup via dynlib_vars tracking
         if chan_obj_name != nil
-            if dynlib_vars.contains_(chan_obj_name to!)
+            if dynlib_vars.contains_(chan_obj_name!)
                 if genDynLibMethod(m.object, mname, args)
                     return
         # General user-method early-exit: if the receiver is a user-defined class that
@@ -9556,9 +9556,9 @@ struct Generator
         # Stdlib primitives (List, StringBuilder, HashMap, …) are NOT in ModuleTypes, so
         # methodReturnAny returns nil for them and they fall through to the heuristics.
         if .infer_ctx != nil
-            var um_recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+            var um_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
             if um_recv_t is Type_.named as um_cname
-                if .infer_ctx to!.methodReturnAny(um_cname, mname) != nil
+                if .infer_ctx!.methodReturnAny(um_cname, mname) != nil
                     if isClassMethodThrows(um_cname, mname) and current_method_throws and try_block_label == nil and not in_try_expr
                         w.emit("try ")
                     genExpr(m.object)
@@ -9576,7 +9576,7 @@ struct Generator
                             w.emit(", ")
                         var um_emitted = false
                         if um_params != nil
-                            var ump = um_params to!
+                            var ump = um_params!
                             if um_ai < ump.count()
                                 var ump_p = ump.at(um_ai)
                                 if paramNeedsAddrOf(ump_p, um_body)
@@ -9586,7 +9586,7 @@ struct Generator
                                     else
                                         w.emit("&")
                                 else
-                                    if ump_p.type_ != nil and isContainerTypeRef(ump_p.type_ to!) and argIdentInCpp(args.at(um_ai).value)
+                                    if ump_p.type_ != nil and isContainerTypeRef(ump_p.type_!) and argIdentInCpp(args.at(um_ai).value)
                                         genExpr(args.at(um_ai).value)
                                         w.emit(".*")                    # Case 2: ptr→value
                                         um_emitted = true
@@ -9623,7 +9623,7 @@ struct Generator
             # Only apply for StringBuilder instances (lowercase idents like sb, _buf)
             # Skip for class/struct static calls like ASTBuilder.build()
             var build_obj = getMemberFieldName(m.object)
-            var is_sb = build_obj != nil and not isUpperCase(build_obj to!)
+            var is_sb = build_obj != nil and not isUpperCase(build_obj!)
             if is_sb
                 if current_method_throws
                     w.emit("(try ")
@@ -9643,11 +9643,11 @@ struct Generator
             var is_class_ref = false
             var is_class_inst = false
             if add_obj_name != nil
-                var add_nm = add_obj_name to!
+                var add_nm = add_obj_name!
                 is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
             if .infer_ctx != nil and not is_strset and not is_class_ref
-                var add_recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                var add_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if add_recv_t is Type_.named as nc
                     is_class_inst = nc.len > 0
             if not is_strset and not is_class_ref and not is_class_inst
@@ -9655,7 +9655,7 @@ struct Generator
                 var add_item_is_ref = false
                 var add_item_ref_type = ""
                 if add_obj_name != nil
-                    var add_nm2 = add_obj_name to!
+                    var add_nm2 = add_obj_name!
                     if localIsListStr(add_nm2)
                         add_item_is_str = true
                     else if localIsListRef(add_nm2)
@@ -9664,7 +9664,7 @@ struct Generator
                     else
                         var aftype = lookupFieldType(add_nm2)
                         if aftype != nil
-                            if aftype to! is TypeRef.generic as agtr
+                            if aftype! is TypeRef.generic as agtr
                                 if agtr.name == "List" and agtr.args.count() > 0
                                     add_item_is_str = isStringTypeRef(agtr.args.at(0))
                                     if not add_item_is_str and not add_item_is_ref
@@ -9695,7 +9695,7 @@ struct Generator
             var is_strset_cnt = false
             var is_hashmap_cnt = false
             if cnt_obj_name != nil
-                var cnt_nm = cnt_obj_name to!
+                var cnt_nm = cnt_obj_name!
                 is_strset_cnt = strset_locals.contains_(cnt_nm) or fieldIsStrSet(.module_types, .dep_types, cnt_nm)
                 is_hashmap_cnt = fieldAwareIsHashMap(cnt_nm)
             if is_strset_cnt or is_hashmap_cnt
@@ -9716,9 +9716,9 @@ struct Generator
                 # BUG-089: if receiver is a class with a user-defined count(), pass through.
                 var cnt_is_user_method = false
                 if .infer_ctx != nil
-                    var cnt_recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                    var cnt_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                     if cnt_recv_t is Type_.named as cnt_cname
-                        if .infer_ctx to!.methodReturnAny(cnt_cname, "count") != nil
+                        if .infer_ctx!.methodReturnAny(cnt_cname, "count") != nil
                             cnt_is_user_method = true
                 if cnt_is_user_method
                     genExpr(m.object)
@@ -9732,9 +9732,9 @@ struct Generator
             # Check if receiver has a user-defined `at` method (e.g. TupleType_).
             var at_is_user_method = false
             if .infer_ctx != nil
-                var at_recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                var at_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if at_recv_t is Type_.named as at_cname
-                    if .infer_ctx to!.methodReturnAny(at_cname, "at") != nil
+                    if .infer_ctx!.methodReturnAny(at_cname, "at") != nil
                         at_is_user_method = true
             if at_is_user_method
                 genExpr(m.object)
@@ -9755,7 +9755,7 @@ struct Generator
             var rem_obj_name = getMemberFieldName(m.object)
             var is_hashmap_rem = false
             if rem_obj_name != nil
-                var rem_nm = rem_obj_name to!
+                var rem_nm = rem_obj_name!
                 is_hashmap_rem = fieldAwareIsHashMap(rem_nm)
             if is_hashmap_rem
                 w.emit("_ = ")
@@ -9776,11 +9776,11 @@ struct Generator
             var clr_obj_name = getMemberFieldName(m.object)
             var is_list_like = true
             if clr_obj_name != nil
-                var clr_nm = clr_obj_name to!
+                var clr_nm = clr_obj_name!
                 if localIsList(clr_nm)
                     is_list_like = true
                 else if .infer_ctx != nil
-                    var clr_t = inferExpr(m.object, .infer_ctx to!)
+                    var clr_t = inferExpr(m.object, .infer_ctx!)
                     branch clr_t
                         on Type_.string_builder
                             is_list_like = true
@@ -9849,7 +9849,7 @@ struct Generator
             var cont_obj_name = getMemberFieldName(m.object)
             var is_strset_obj = false
             if cont_obj_name != nil
-                var cont_nm = cont_obj_name to!
+                var cont_nm = cont_obj_name!
                 is_strset_obj = strset_locals.contains_(cont_nm) or fieldIsStrSet(.module_types, .dep_types, cont_nm)
             if is_strset_obj
                 w.emit(".contains_(")
@@ -9865,14 +9865,14 @@ struct Generator
         if mname == "set"
             var set_recv = getMemberFieldName(m.object)
             if set_recv != nil
-                var sname = set_recv to!
+                var sname = set_recv!
                 if fieldAwareIsHashMap(sname)
                     var key_is_str = localIsHashMapStrKey(sname)
                     var val_is_str = localIsHashMapStrVal(sname)
                     if not key_is_str or not val_is_str
                         var ftype = lookupFieldType(sname)
                         if ftype != nil
-                            if ftype to! is TypeRef.generic as gtr
+                            if ftype! is TypeRef.generic as gtr
                                 if gtr.name == "HashMap"
                                     if gtr.args.count() > 0
                                         key_is_str = isStringTypeRef(gtr.args.at(0))
@@ -9924,13 +9924,13 @@ struct Generator
             var put_key_is_str = false
             var put_val_is_str = false
             if put_recv != nil
-                var pname = put_recv to!
+                var pname = put_recv!
                 put_key_is_str = localIsHashMapStrKey(pname)
                 put_val_is_str = localIsHashMapStrVal(pname)
                 if not put_key_is_str or not put_val_is_str
                     var pftype = lookupFieldType(pname)
                     if pftype != nil
-                        if pftype to! is TypeRef.generic as pgtr
+                        if pftype! is TypeRef.generic as pgtr
                             if pgtr.name == "HashMap"
                                 if pgtr.args.count() > 0
                                     put_key_is_str = isStringTypeRef(pgtr.args.at(0))
@@ -10071,7 +10071,7 @@ struct Generator
             # Types with a real toString() method (user-defined or @derive(Debug)) — don't intercept.
             var is_real_tostring_recv = false
             if .infer_ctx != nil
-                var recv_dd: Type_ = inferExpr(m.object, .infer_ctx to!)
+                var recv_dd: Type_ = inferExpr(m.object, .infer_ctx!)
                 if recv_dd is Type_.named as tn_dd
                     is_real_tostring_recv = toString_types.contains_(tn_dd)
             if not is_real_tostring_recv
@@ -10079,7 +10079,7 @@ struct Generator
                 # Int/other receivers need decimal string via allocPrint.
                 var is_char_recv = false
                 if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                    var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                     branch recv_t
                         on Type_.char_
                             is_char_recv = true
@@ -10245,7 +10245,7 @@ struct Generator
         if mname == "isAlpha" or mname == "isDigit" or mname == "isWhitespace" or mname == "isUpper" or mname == "isLower" or mname == "toUpper" or mname == "toLower"
             var is_char116 = false
             if .infer_ctx != nil
-                var recv116: Type_ = inferExpr(m.object, .infer_ctx to!)
+                var recv116: Type_ = inferExpr(m.object, .infer_ctx!)
                 branch recv116
                     on Type_.char_
                         is_char116 = true
@@ -10554,7 +10554,7 @@ struct Generator
             var mc_lbl: str = "blk_" + mc_uid.toString()
             var chain_throws: bool = false
             if .infer_ctx != nil
-                var recv_t: Type_ = inferExpr(m.object, .infer_ctx to!)
+                var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if recv_t is Type_.named as recv_cn
                     if isClassMethodThrows(recv_cn, mname)
                         chain_throws = true
@@ -10604,7 +10604,7 @@ struct Generator
                     mc_params = lookupFnParams(sk)
                     mc_body = lookupFnBody(sk)
                 else if .infer_ctx != nil
-                    var rt_m: Type_ = inferExpr(m.object, .infer_ctx to!)
+                    var rt_m: Type_ = inferExpr(m.object, .infer_ctx!)
                     if rt_m is Type_.named as cn_m
                         var ik = cn_m + "." + mname
                         mc_params = lookupFnParams(ik)
@@ -10619,7 +10619,7 @@ struct Generator
                 has_named = true
                 break
         if has_named and .infer_ctx != nil
-            var rt: Type_ = inferExpr(m.object, .infer_ctx to!)
+            var rt: Type_ = inferExpr(m.object, .infer_ctx!)
             if rt is Type_.named as recv_cn
                 var recv_class: str = recv_cn
                 var pcsv: str? = module_types.methodParamsCsv(recv_class, mname)
@@ -10629,7 +10629,7 @@ struct Generator
                     var first2 = true
                     var pos_idx: int = 0
                     var pname_idx: int = 0
-                    for pname in (pcsv to!).split(",")
+                    for pname in (pcsv!).split(",")
                         if not first2
                             w.emit(", ")
                         first2 = false
@@ -10637,18 +10637,18 @@ struct Generator
                         var needs_addr_n: bool = false
                         var is_container_n: bool = false
                         if mc_params != nil
-                            var psr = mc_params to!
+                            var psr = mc_params!
                             if pname_idx < psr.count()
                                 var pn = psr.at(pname_idx)
                                 needs_addr_n = paramNeedsAddrOf(pn, mc_body)
-                                is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_ to!)
+                                is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_!)
                         # Find named arg matching this param first.
                         var found = false
                         var ai: int = 0
                         while ai < args.count()
                             var a = args.at(ai)
                             if a.name != nil
-                                if (a.name to!) == pname
+                                if (a.name!) == pname
                                     if needs_addr_n
                                         if argIdentInCpp(a.value)
                                             genExpr(a.value)    # Case 1: ptr→ptr
@@ -10698,7 +10698,7 @@ struct Generator
                 # BUG-091/097: three-case addr-of/pass/deref for container params.
                 var already_emitted = false
                 if mc_params != nil
-                    var msp = mc_params to!
+                    var msp = mc_params!
                     if ai_p < msp.count()
                         var mp = msp.at(ai_p)
                         if paramNeedsAddrOf(mp, mc_body)
@@ -10708,7 +10708,7 @@ struct Generator
                             else
                                 w.emit("&")
                         else
-                            if mp.type_ != nil and isContainerTypeRef(mp.type_ to!) and argIdentInCpp(a.value)
+                            if mp.type_ != nil and isContainerTypeRef(mp.type_!) and argIdentInCpp(a.value)
                                 genExpr(a.value)
                                 w.emit(".*")            # Case 2: ptr→value, deref
                                 already_emitted = true
@@ -11105,7 +11105,7 @@ struct Generator
         var ps_raw = lookupFnParams(ctor_name + ".init")
         if ps_raw == nil
             return nil
-        return lookupParamType(ps_raw to!, arg_name, arg_idx)
+        return lookupParamType(ps_raw!, arg_name, arg_idx)
 
     # Worker for lookupCtorParamType — `ps` must be a proper List(Param) parameter
     # so that `for p in ps` rewrites to `for (ps.items) |p|` in the bootstrap compiler.
@@ -11113,7 +11113,7 @@ struct Generator
         if arg_name != nil
             for p in ps
                 var pn: str = p.name
-                if pn == arg_name to!
+                if pn == arg_name!
                     return p.type_
             return nil
         if arg_idx < ps.count()
@@ -11164,7 +11164,7 @@ struct Generator
             return
         # Delegate to a typed-parameter helper so .count()/.at() rewrite correctly
         # (the bootstrap compiler only rewrites list methods on function parameters).
-        genArgListNamed(args, params to!, body)
+        genArgListNamed(args, params!, body)
 
     # Inner worker for genArgListFull — ps is a proper parameter so list rewrites apply.
     # Uses `for p in ps` (no .count()/.at() on ps) to avoid selfhost list-rewrite gaps.
@@ -11179,14 +11179,14 @@ struct Generator
                 w.emit(", ")
             first = false
             var needs_addr = paramNeedsAddrOf(p, body)
-            var is_container = p.type_ != nil and isContainerTypeRef(p.type_ to!)
+            var is_container = p.type_ != nil and isContainerTypeRef(p.type_!)
             var p_name_str: str = p.name
             var found = false
             var ai: int = 0
             while ai < args.count()
                 var a = args.at(ai)
                 if a.name != nil
-                    if (a.name to!) == p_name_str
+                    if (a.name!) == p_name_str
                         if needs_addr
                             if argIdentInCpp(a.value)
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
@@ -11199,7 +11199,7 @@ struct Generator
                                 w.emit(".*")            # Case 2: ptr→value, deref
                             else
                                 if p.type_ != nil
-                                    genCallWithTypeHint(a.value, p.type_ to!)
+                                    genCallWithTypeHint(a.value, p.type_!)
                                 else
                                     genExpr(a.value)
                         found = true
@@ -11222,7 +11222,7 @@ struct Generator
                                 w.emit(".*")            # Case 2: ptr→value, deref
                             else
                                 if p.type_ != nil
-                                    genCallWithTypeHint(pa.value, p.type_ to!)
+                                    genCallWithTypeHint(pa.value, p.type_!)
                                 else
                                     genExpr(pa.value)
                         found = true
@@ -11239,10 +11239,10 @@ struct Generator
     # p must be a named-type parameter so opt_ptr_field_bindings is seeded for p.default_.
     def genParamDefault(p: Param)
         if p.default_ != nil
-            genExpr(p.default_ to!)
+            genExpr(p.default_!)
         else if p.type_ != nil
             w.emit("std.mem.zeroes(")
-            genType(p.type_ to!)
+            genType(p.type_!)
             w.emit(")")
         else
             w.emit("undefined")
@@ -11255,7 +11255,7 @@ struct Generator
             if s is Stmt.return_ as ret
                 if ret.value != nil
                     w.emit("@TypeOf(")
-                    genExpr(ret.value to!)
+                    genExpr(ret.value!)
                     w.emit(")")
                     return true
         return false
@@ -11277,13 +11277,13 @@ struct Generator
                 fg.w.emit(cv.name)
                 fg.w.emit(": ")
                 if cv.type_ != nil
-                    fg.genType(cv.type_ to!)
+                    fg.genType(cv.type_!)
                 else if cv.init_expr != nil
                     # BUG-FIX: previously emitted @TypeOf(cv.name) here, but cv.name
                     # is the field name — not in scope at struct definition time.
                     # Use @TypeOf(<init expression>) instead so Zig can infer.
                     fg.w.emit("@TypeOf(")
-                    fg.genExpr(cv.init_expr to!)
+                    fg.genExpr(cv.init_expr!)
                     fg.w.emit(")")
                 else
                     fg.w.emit("anytype")
@@ -11302,13 +11302,13 @@ struct Generator
             w.emit(p.name)
             w.emit(": ")
             if p.type_ != nil
-                genType(p.type_ to!)
+                genType(p.type_!)
             else
                 w.emit("anytype")
         w.emit(") ")
         # Return type
         if lam.return_type != nil
-            genType(lam.return_type to!)
+            genType(lam.return_type!)
         else
             branch lam.body_
                 on LambdaBody.expr_ as ex
@@ -11350,7 +11350,7 @@ struct Generator
                     # when the capture decl's name happened to match an outer-scope
                     # var of the same name.  Emit the actual init expression instead
                     # (matches the bootstrap codegen at src/CodeGen.zig:9205).
-                    genExpr(cv.init_expr to!)
+                    genExpr(cv.init_expr!)
                 else
                     w.emit("undefined")
                 w.emit(", ")
@@ -12578,7 +12578,7 @@ struct Generator
                 first = false
                 var et: Type_ = Type_.unknown_
                 if .infer_ctx != nil
-                    et = inferExpr(elem, .infer_ctx to!)
+                    et = inferExpr(elem, .infer_ctx!)
                 if et is Type_.int_ or elem is Expr.int_lit
                     w.emit(".{ .int = @as(i64, @intCast(")
                     genExpr(elem)

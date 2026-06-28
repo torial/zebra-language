@@ -428,6 +428,9 @@ smoke_test test/test_module_test.zbr
 # verifies determinism + range bounds via the `zebra test` runner.
 smoke_test test/random_instance_test.zbr
 
+# `expr to!` removed (#218): force-unwrap is `expr!`. `to!` must no longer parse.
+smoke_tc_fail test/to_bang_removed_test.zbr "got 'to'"
+
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 

@@ -156,7 +156,7 @@ def main()
                 continue
             changed = changed + 1
             if not dry_run
-                File.write(path, rewritten to!)
+                File.write(path, rewritten!)
                 print "  converted: " + path
             else
                 print "  [dry-run] would convert: " + path

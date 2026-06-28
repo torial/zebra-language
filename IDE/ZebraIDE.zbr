@@ -162,10 +162,10 @@ def ideInit(): Model
     m.outputEditor = CodeEditor()
     m.buildOutputEditor = CodeEditor()
     if File.exists(m.filepath)
-        m.editor to!.setText(File.read(m.filepath))
-    m.outputEditor to!.setReadOnly(true)
-    m.diagEditor to!.setReadOnly(true)
-    m.buildOutputEditor to!.setReadOnly(true)
+        m.editor!.setText(File.read(m.filepath))
+    m.outputEditor!.setReadOnly(true)
+    m.diagEditor!.setReadOnly(true)
+    m.buildOutputEditor!.setReadOnly(true)
     return m
 
 # ── Update ────────────────────────────────────────────────────────────────────
@@ -174,34 +174,34 @@ def update(m: Model, msg: Msg): Model
     branch msg
         on Msg.open_file
             if File.exists(m.filepath)
-                m.editor to!.setText(File.read(m.filepath))
+                m.editor!.setText(File.read(m.filepath))
                 m.diags = List(IDEDiagnostic)()
-                m.diagEditor to!.setText("")
+                m.diagEditor!.setText("")
                 m.output = ""
-                m.outputEditor to!.setText("")
+                m.outputEditor!.setText("")
                 m.dirty = false
         on Msg.save_file
-            File.write(m.filepath, m.editor to!.getText())
+            File.write(m.filepath, m.editor!.getText())
             m.dirty = false
         on Msg.check_requested
             var tmpFile = "_ide_tmp_check.zbr"
-            File.write(tmpFile, m.editor to!.getText())
+            File.write(tmpFile, m.editor!.getText())
             m.diags = CompilerBridge.check(tmpFile)
-            m.diagEditor to!.setText(diagSummary(m.diags))
-            m.editor to!.setErrorMarkers(m.diags)
+            m.diagEditor!.setText(diagSummary(m.diags))
+            m.editor!.setErrorMarkers(m.diags)
             m.dirty = true
         on Msg.run_requested
             m.buildOutput = ""
-            m.buildOutputEditor to!.setText("")
-            File.write(m.filepath, m.editor to!.getText())
+            m.buildOutputEditor!.setText("")
+            File.write(m.filepath, m.editor!.getText())
             m.dirty = false
             m.output = CompilerBridge.runFile(m.filepath)
-            m.outputEditor to!.setText(m.output)
+            m.outputEditor!.setText(m.output)
         on Msg.debug_start
             if m.debugProc != nil
-                if m.debugProc to!.isRunning()
+                if m.debugProc!.isRunning()
                     return m
-            File.write(m.filepath, m.editor to!.getText())
+            File.write(m.filepath, m.editor!.getText())
             m.dirty = false
             m.debugPort = 7777
             var argv = List(str)()
@@ -212,14 +212,14 @@ def update(m: Model, msg: Msg): Model
             argv.add(m.filepath)
             m.debugProc = sys.spawn(argv)
             m.output = "Debug proxy on 127.0.0.1:${m.debugPort} — connect with DAP client."
-            m.outputEditor to!.setText(m.output)
+            m.outputEditor!.setText(m.output)
         on Msg.debug_stop
             if m.debugProc as proc
                 proc.kill()
             m.debugProc = nil
             m.debugPort = 0
             m.output = "Debugger stopped."
-            m.outputEditor to!.setText(m.output)
+            m.outputEditor!.setText(m.output)
         on Msg.debug_exited
             m.debugProc = nil
             m.debugPort = 0
@@ -229,7 +229,7 @@ def update(m: Model, msg: Msg): Model
             m.buildTmpFile = ".ide_build.tmp"
             File.write(m.buildTmpFile, "")
             m.buildOutput = ""
-            m.buildOutputEditor to!.setText("")
+            m.buildOutputEditor!.setText("")
             m.buildLastPos = 0
             m.buildRunning = true
             var cmd = "zebra build"
@@ -264,7 +264,7 @@ def update(m: Model, msg: Msg): Model
         on Msg.build_output_chunk as chunk
             m.buildOutput = m.buildOutput + chunk
             m.buildLastPos = m.buildLastPos + chunk.len
-            m.buildOutputEditor to!.setText(m.buildOutput)
+            m.buildOutputEditor!.setText(m.buildOutput)
     return m
 
 # ── View ──────────────────────────────────────────────────────────────────────
@@ -318,10 +318,10 @@ def view(g: Gui, m: Model)
         # Body: code editor (left, stretches) + right panel (fixed width)
         using g.hbox("##body", true)
             using g.vbox("##editor_col", true)
-                m.editor to!.render(g, "##code", 0, 0)
+                m.editor!.render(g, "##code", 0, 0)
             using g.vbox("##right_col", false)
                 g.text("Diagnostics")
-                m.diagEditor to!.render(g, "##diags", 340, 280)
+                m.diagEditor!.render(g, "##diags", 340, 280)
                 g.separator()
                 g.text("Build file:")
                 var bfVal = g.input("##buildfile", m.buildFile)
@@ -337,10 +337,10 @@ def view(g: Gui, m: Model)
         using g.hbox("##output_row", false)
             using g.vbox("##output_col", true)
                 g.text("Output")
-                m.outputEditor to!.render(g, "##output", 0, 120)
+                m.outputEditor!.render(g, "##output", 0, 120)
             using g.vbox("##buildout_col", true)
                 g.text("Build Output")
-                m.buildOutputEditor to!.render(g, "##buildout", 0, 120)
+                m.buildOutputEditor!.render(g, "##buildout", 0, 120)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
