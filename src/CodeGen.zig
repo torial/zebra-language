@@ -6880,7 +6880,7 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("var _dw_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();
-            try bg.w.writeAll("while (_dw_walker.next() catch null) |_dw_entry| {\n");
+            try bg.w.writeAll("while (_dw_walker.next(_io) catch null) |_dw_entry| {\n");
             const ig = bg.indented();
             try ig.writeIndent();
             try ig.w.writeAll("if (_dw_entry.kind != .file) continue;\n");

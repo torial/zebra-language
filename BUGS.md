@@ -13,14 +13,38 @@ parity sweep run after compile-check reached 141/0 on the selfhost.
 
 **Status:** OPEN — IN PROGRESS (task #231). Discovery + repeatable gate landed.
 Convergence underway, cluster by cluster:
-- ✅ **0.16 stdlib API / realpath (2/14 closed, 2026-06-27):** `src/CodeGen.zig`
+- ✅ **0.16 stdlib API / realpath (2 tests closed, 2026-06-27):** `src/CodeGen.zig`
   `sys.cwd` → `std.process.currentPathAlloc(_io, _allocator)`; `Path.absolute` →
   `std.fs.path.resolve(_allocator, &[_][]const u8{_pp})`. Round-trip stayed
   **byte-identical** (the compiler never *calls* these builtins — it only emits the
   strings, which pass through verbatim — so zero round-trip risk).
-  `stdlib_additions_test`, `stdlib_misc_test` now pass under `--bootstrap`.
-- ⬜ Remaining 12: ArrayList `.items` indexing (5), HashMap emission (4),
-  concrete→interface coercion (1), dir_walk (1), ws_smoke (1).
+  `stdlib_additions_test`, `stdlib_misc_test` now pass under `--bootstrap` (120→122).
+- ✅ **Dir.walk `.next(_io)` (2026-06-27):** `src/` emitted the 0.16-broken
+  `_dw_walker.next()` (the Dir.**list** path at line 6852 already had `_io`; only the
+  Dir.**walk** path lagged). Round-trip byte-identical (the compiler uses `Dir.list`,
+  not `Dir.walk`). This is a *partial* fix for `dir_walk_test` — see below.
+
+### Remaining 12 — all need deeper infra than a string mirror (for an attended session)
+The realpath/walker fixes were isolated emit-string swaps. The rest are not:
+- **ArrayList `.items` (the biggest lever — blocks ~6 tests):** the bootstrap's `Type`
+  union has **no `.list` variant**, so its `.index` arm (src/CodeGen.zig:12533) and its
+  for-loop-over-call-result codegen can't tell a List from a `[]const u8` string and so
+  never insert `.items`. The selfhost solved this with name-based `fieldAwareIsList` /
+  `getMemberFieldName` tracking (BUG-141), which `src/` lacks entirely. Manifests as both
+  `list[i]` subscript (`list_index`, `module_var_shadow`, `list_ref_autobox`, `for_else`,
+  `bug119_list_field_param`) **and** `for x in <call returning List>` (the *second*
+  `dir_walk_test` error — `for (files)` needs `for (files.items)`). Round-trip risk is
+  real: the compiler uses `spec[i]` *string* subscripts that must NOT get `.items`, so any
+  port must detect list-ness accurately (name-based, like the selfhost).
+- **HashMap emission (4):** bootstrap emits a bogus `HashMap(K,V).init()` (undeclared)
+  vs the selfhost's `std.StringHashMap(V).init(_allocator)` + `_intern`/`catch` — needs
+  the selfhost's HashMap-aware constructor/method codegen ported to `src/`.
+- **ws_smoke (1):** capture-block free-variable analysis — the bootstrap captures `m`
+  into the closure struct (`m: @TypeOf(m)`) even though `m` is bound *inside* the lambda
+  body by `if msg as m` (not a free var). The selfhost's free-var scan excludes inner
+  pattern-bindings; `src/` does not.
+- **tc_iface_transitive (1):** concrete→interface coercion in var-init — known
+  selfhost-only (see COMPILE_CHECK_STATUS.md).
 
 ### What it is
 `tools/compile_check.sh` type-checks the Zig the **selfhost** emits (141/0/1 green).
