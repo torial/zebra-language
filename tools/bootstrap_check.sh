@@ -73,6 +73,27 @@ ZEBRA="$REPO/zig-out/bin/zebra-bootstrap.exe"
 SELFHOST_A="$REPO/zig-out/bin/zebra-selfhost.exe"
 SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
 
+# Build the round-trip's verification binaries (selfhost-A/B) with Zig's self-hosted
+# x86_64 backend + linker by default: ~6x faster than LLVM+LLD (1.4s vs 8.5s for the
+# ~25k-line compiler) and verified to emit byte-identically to the LLVM build.  These
+# are ephemeral round-trip *checkers* — the committed selfhost/*.zig is produced by the
+# Zig-compiled bootstrap (LLVM), not by A/B — so the speedup carries no artifact risk.
+# Each build below falls back to LLVM automatically if the self-hosted backend hits a
+# gap (a real codegen error becomes a fallback, never a false gate failure).
+# Set BOOTSTRAP_FAST=0 to force LLVM for both (e.g. to cross-check the backend).
+FAST_BACKEND="${BOOTSTRAP_FAST:-1}"
+FAST_FLAGS=""
+[[ "$FAST_BACKEND" == "1" ]] && FAST_FLAGS="-fno-llvm -fno-lld"
+
+# build_compiler <root.zig> <out.exe> <errfile> — try the fast backend, fall back to LLVM.
+build_compiler() {
+    local root="$1" out="$2" err="$3"
+    if [[ -n "$FAST_FLAGS" ]]; then
+        zig build-exe "$root" -femit-bin="$out" $FAST_FLAGS 2>"$err" && return 0
+    fi
+    zig build-exe "$root" -femit-bin="$out" 2>"$err"
+}
+
 # typechecker is part of the selfhost dep graph as of Phase 16c. It is
 # included here so the round-trip fixed-point check covers it.
 FILES=(Token Lexer Ast Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main)
@@ -122,7 +143,7 @@ done
 
 echo "── Step 2: build selfhost-A (from /tmp/bs-zig)"
 rm -f "$SELFHOST_A"
-if ! zig build-exe "$BS_ZIG/main.zig" -femit-bin="$SELFHOST_A" 2>/tmp/bs-rebuildA.err; then
+if ! build_compiler "$BS_ZIG/main.zig" "$SELFHOST_A" /tmp/bs-rebuildA.err; then
     echo "FAIL: selfhost-A build errors:" >&2
     head -30 /tmp/bs-rebuildA.err >&2
     exit 1
@@ -165,7 +186,7 @@ done
 
 echo "── Step 4: build selfhost-B (level-2 bootstrap)"
 rm -f "$SELFHOST_B"
-if ! zig build-exe selfhost/main.zig -femit-bin="$SELFHOST_B" 2>/tmp/bs-rebuildB.err; then
+if ! build_compiler selfhost/main.zig "$SELFHOST_B" /tmp/bs-rebuildB.err; then
     echo "FAIL: selfhost-B build errors:" >&2
     grep -E "^selfhost[\\\\/].+:[0-9]+:[0-9]+: error:" /tmp/bs-rebuildB.err >&2 || head -30 /tmp/bs-rebuildB.err >&2
     exit 1
