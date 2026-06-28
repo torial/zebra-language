@@ -6163,7 +6163,8 @@ const Generator = struct {
                     try g.genType(tr);
                     try g.w.writeAll(" = ");
                     try g.genType(tr);
-                    try g.w.writeAll("{};\n");
+                    // Zig 0.16: ArrayList has no default field values — `.empty`, not `{}`.
+                    try g.w.writeAll(".empty;\n");
                     for (e.list_lit.elems) |el| {
                         try g.writeIndent();
                         try g.w.print("{s}.append(_allocator, ", .{n.name});
@@ -12921,16 +12922,60 @@ const Generator = struct {
             const mem = expr.member;
             if (mem.object.* == .ident) {
                 const class_sym = g.resolve.exprs.get(&mem.object.ident) orelse return null;
+                // `else` (the ident is a var/param, not a class) falls through to the
+                // `localVar.field` branch below rather than returning null.
                 const members: []const Ast.Decl = switch (class_sym.decl) {
                     .class   => |c| c.members,
                     .struct_ => |s| s.members,
-                    else     => return null,
+                    else     => &[_]Ast.Decl{},
                 };
                 for (members) |decl| {
                     if (decl == .var_) {
                         const field = decl.var_;
                         if (std.mem.eql(u8, field.name, mem.member)) {
                             return field.type_;
+                        }
+                    }
+                }
+            }
+        }
+        // BUG-143: `localVar.field` / `param.field` — the object ident resolves to a
+        // var/param of a user type, not a class, so the `ClassName.field` branch above
+        // (which expects the ident itself to be a class symbol) returns null.  Resolve
+        // the var/param's class name, find that class/struct decl in the module, and
+        // read the field's declared type — so `st.items.add` / `for x in st.items` /
+        // `st.items[i]` route correctly when `st` is a local of a user type.
+        if (expr.* == .member) {
+            const mem = expr.member;
+            if (mem.object.* == .ident) {
+                if (g.resolve.exprs.get(&mem.object.ident)) |obj_sym| {
+                    const cls_tr: ?Ast.TypeRef = switch (obj_sym.decl) {
+                        .var_  => |v| v.type_,
+                        .param => |p| p.type_,
+                        else   => null,
+                    };
+                    if (cls_tr) |ctr| {
+                        const cls_name: ?[]const u8 = switch (ctr) {
+                            .named   => |n| n.name,
+                            .generic => |gn| gn.name,
+                            .ref_to  => |rt| switch (rt.*) { .named => |n| n.name, else => null },
+                            else     => null,
+                        };
+                        if (cls_name) |cn| {
+                            for (g.module.decls) |decl| {
+                                const members: ?[]const Ast.Decl = switch (decl) {
+                                    .class   => |c| if (std.mem.eql(u8, c.name, cn)) c.members else null,
+                                    .struct_ => |s| if (std.mem.eql(u8, s.name, cn)) s.members else null,
+                                    else     => null,
+                                };
+                                if (members) |mems| {
+                                    for (mems) |md| {
+                                        if (md == .var_ and std.mem.eql(u8, md.var_.name, mem.member)) {
+                                            return md.var_.type_;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
