@@ -6096,6 +6096,34 @@ const Generator = struct {
             };
         }
 
+        // BUG-143: concrete → interface coercion in var-init: `var b: IFace = d`
+        // where `d` is a concrete class instance implementing IFace (possibly
+        // transitively). The interface is a fat-pointer struct, so build it
+        // explicitly: `.{ .ptr = d, .vtable = &_vtable_<Concrete>_<IFace> }`. The
+        // ctor-call form (`var b: IFace = Dog()`) is handled above; this covers an
+        // ident/expr rvalue. The interface→interface upcast above already consumed
+        // the case where the rvalue is itself an interface.
+        if (n.init) |init_e| {
+            if (n.type_) |tr| if (tr == .named) {
+                const dst_name = tr.named.name;
+                if (findInterfaceDecl(g.module, dst_name) != null) {
+                    if (g.tc) |tc| if (tc.expr_types.get(init_e)) |rhs_ty| if (rhs_ty == .named) {
+                        const src_name = rhs_ty.named.name;
+                        if (g.class_names.contains(src_name) and
+                            findInterfaceDecl(g.module, src_name) == null and
+                            !std.mem.eql(u8, src_name, dst_name))
+                        {
+                            try g.writeIndent();
+                            try g.w.print("{s} {s}: {s} = .{{ .ptr = ", .{ kw, n.name, dst_name });
+                            try g.genExpr(init_e);
+                            try g.w.print(", .vtable = &_vtable_{s}_{s} }};\n", .{ src_name, dst_name });
+                            return;
+                        }
+                    };
+                }
+            };
+        }
+
         // Track DynLib handle variables for instance method dispatch.
         if (n.init) |e| {
             if (e.* == .call and e.call.callee.* == .member) {
