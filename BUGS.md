@@ -28,7 +28,7 @@ guarded one more cross-map fetch in `Checker.zbr`. So the contract is now explic
 **`fetch` asserts presence; guard with `.contains(k)` where a key may be absent.**
 
 Regression test `test/hashmap_fetch_chain_test.zbr`; gates: round-trip
-byte-identical, smoke 182/182, compile-check (see commit).
+byte-identical, smoke 182/182, compile-check 147/0.
 
 **Residual → BUG-149.** Chained *method* calls (`.fetch(k).at(i)`) now work; the
 `.len` *property* on a fetch result still needs a local.
