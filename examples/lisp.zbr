@@ -1,0 +1,615 @@
+# lisp.zbr — a tiny Scheme-flavoured Lisp interpreter, written in Zebra.
+#
+# A metacircular-style evaluator: read S-expressions into a recursive tagged
+# union, then walk that tree.  It exercises the heart of the language —
+# `union`/`branch`, `^T` heap-indirected recursion, `HashMap` environments,
+# closures that capture their defining scope, and `raise`/`catch` error flow.
+#
+# Supported:
+#   * integers / floats, symbols, booleans (#t / #f), the empty list ()
+#   * special forms:  quote  if  define  lambda  let  begin  set!  and  or
+#   * sugar:          (define (f a b) ...)   and   'x  ≡  (quote x)
+#   * builtins:       + - * /  =  <  >  <=  >=   car cdr cons list
+#                     null?  pair?  not  list?  length  display
+#   * lexical closures + recursion
+#
+#   $ zebra examples/lisp.zbr
+#
+# The programs are baked into main() so the demo is fully reproducible.
+#
+# Runs on the default (self-hosted) compiler. The `--zig-backend` (bootstrap)
+# path currently miscompiles it — see BUG-147. Building this example surfaced and
+# fixed BUG-144 (transitive List-param mutation) and surfaced BUG-145/BUG-146.
+
+# ── Values ────────────────────────────────────────────────────────────────
+#
+# One tagged union for every runtime value.  `pair` is the cons cell — the
+# recursive case — so lists are nil-terminated chains of `^Pair`.  Functions
+# come in two flavours: `builtin` (dispatched by name in applyBuiltin) and
+# `lambda` (a user closure carrying its captured environment).
+
+union Value
+    num:     float
+    sym:     str
+    bool_:   bool
+    nil_:    int          # the empty list / unit; payload is an ignored 0
+    pair:    ^Pair
+    builtin: ^Builtin
+    lambda:  ^Lambda
+
+struct Pair
+    var car: ^Value
+    var cdr: ^Value
+
+    cue init(car: ^Value, cdr: ^Value)
+        .car = car
+        .cdr = cdr
+
+struct Builtin
+    var name: str
+
+    cue init(name: str)
+        .name = name
+
+struct Lambda
+    var params: List(str)
+    var body:   List(Value)   # sequence of body expressions (implicit begin)
+    var env:    Env           # captured (closure) environment
+
+    cue init(params: List(str), body: List(Value), env: Env)
+        .params = params
+        .body = body
+        .env = env
+
+# Constructors — small helpers keep the evaluator readable.
+def mkNil(): Value
+    return Value.nil_(0)
+
+def mkNum(n: float): Value
+    return Value.num(n)
+
+def mkBool(b: bool): Value
+    return Value.bool_(b)
+
+def mkSym(s: str): Value
+    return Value.sym(s)
+
+def cons(a: Value, d: Value): Value
+    return Value.pair(Pair(a, d))
+
+def isNil(v: Value): bool
+    return v is Value.nil_
+
+# Truthiness: only the empty list and #f are false (Scheme treats 0 as true).
+def truthy(v: Value): bool
+    branch v
+        on Value.nil_ as _
+            return false
+        on Value.bool_ as b
+            return b
+        else
+            return true
+
+
+# ── Environment ─────────────────────────────────────────────────────────────
+#
+# A scope is a HashMap plus a link to the enclosing scope.  Lookup walks the
+# chain; define binds in the current frame; setBang rebinds an existing var
+# wherever it lives (Scheme `set!`).  Classes are reference types, so a closure
+# can hold its defining Env and see later mutations.
+
+class Env
+    var vars:   HashMap(str, Value)
+    var parent: Env?
+
+    cue init(parent: Env?)
+        .vars = HashMap()
+        .parent = parent
+
+    def define(name: str, val: Value)
+        .vars.put(name, val)
+
+    def lookup(name: str): Value throws
+        if .vars.contains(name)
+            return .vars.fetch(name)
+        if .parent as p
+            return p.lookup(name)?
+        raise "unbound symbol: " + name
+
+    def setBang(name: str, val: Value) throws
+        if .vars.contains(name)
+            .vars.put(name, val)
+            return
+        if .parent as p
+            p.setBang(name, val)?
+            return
+        raise "set! on unbound symbol: " + name
+
+
+# ── Reader (tokenizer + parser) ──────────────────────────────────────────────
+#
+# Tokenize into a flat list of strings — `(`, `)`, `'`, and atoms — then parse
+# that stream recursively into Values.  A parser position is carried in a
+# one-element List(int) so helpers can advance it by reference.
+
+def tokenize(src: str): List(str)
+    var toks = List(str)()
+    var i = 0
+    var n = src.len
+    while i < n
+        var c = src[i]
+        if c == c' ' or c == c'\t' or c == c'\n' or c == c'\r'
+            i = i + 1
+        else if c == c'('
+            toks.add("(")
+            i = i + 1
+        else if c == c')'
+            toks.add(")")
+            i = i + 1
+        else if c == c'\''
+            toks.add("'")
+            i = i + 1
+        else if c == c';'
+            # line comment — skip to end of line
+            while i < n and src[i] != c'\n'
+                i = i + 1
+        else
+            # an atom: run up to the next delimiter
+            var start = i
+            var scanning = true
+            while scanning and i < n
+                var d = src[i]
+                if d == c' ' or d == c'\t' or d == c'\n' or d == c'\r' or d == c'(' or d == c')' or d == c'\''
+                    scanning = false
+                else
+                    i = i + 1
+            var atom: str = src[start..i]
+            toks.add(atom)
+    return toks
+
+def parseAtom(tok: str): Value
+    if tok == "#t"
+        return mkBool(true)
+    if tok == "#f"
+        return mkBool(false)
+    # NOTE: str.toFloat() returns 0.0 (not nil) for non-numeric input — it can't
+    # signal failure (BUG-146) — so classify the token ourselves before converting.
+    if looksNumeric(tok)
+        return mkNum(tok.toFloat())
+    return mkSym(tok)
+
+# A token is a number iff it begins with a digit, sign, or dot AND contains at
+# least one digit (so "+" / "-" / "..." stay symbols).
+def looksNumeric(tok: str): bool
+    if tok.len == 0
+        return false
+    var first = tok[0]
+    var startsOk = (first >= c'0' and first <= c'9') or first == c'-' or first == c'+' or first == c'.'
+    if not startsOk
+        return false
+    var i = 0
+    while i < tok.len
+        var ch = tok[i]
+        if ch >= c'0' and ch <= c'9'
+            return true
+        i = i + 1
+    return false
+
+# Parse one form starting at position pos[0]; advances pos.
+def parseForm(toks: List(str), pos: List(int)): Value throws
+    if pos.at(0) >= toks.len
+        raise "unexpected end of input"
+    var tok = toks.at(pos.at(0))
+    if tok == "("
+        advance(pos)
+        return parseList(toks, pos)?
+    if tok == ")"
+        raise "unexpected )"
+    if tok == "'"
+        advance(pos)
+        var quoted = parseForm(toks, pos)?
+        # 'x  ≡  (quote x)
+        return cons(mkSym("quote"), cons(quoted, mkNil()))
+    advance(pos)
+    return parseAtom(tok)
+
+# Parse the rest of a list (the opening `(` already consumed).
+def parseList(toks: List(str), pos: List(int)): Value throws
+    if pos.at(0) >= toks.len
+        raise "unterminated list"
+    var tok = toks.at(pos.at(0))
+    if tok == ")"
+        advance(pos)
+        return mkNil()
+    var head = parseForm(toks, pos)?
+    var tail = parseList(toks, pos)?
+    return cons(head, tail)
+
+def advance(pos: List(int))
+    # pos is a one-element mutable cursor cell; bump it by one token.
+    var cur = pos.at(0)
+    pos.clear()
+    pos.add(cur + 1)
+
+
+# ── List helpers ─────────────────────────────────────────────────────────────
+#
+# Walk the cons chain so the evaluator can treat Values as Zebra Lists where
+# that reads more clearly than hand-rolled car/cdr recursion.
+
+def listToVec(v: Value): List(Value) throws
+    var out = List(Value)()
+    var cur = v
+    var go = true
+    while go
+        if cur is Value.pair as p
+            out.add(p.car)
+            cur = p.cdr
+        else
+            go = false
+    if not isNil(cur)
+        raise "improper list in argument position"
+    return out
+
+def vecToList(items: List(Value)): Value
+    var acc = mkNil()
+    var i = items.len - 1
+    while i >= 0
+        acc = cons(items.at(i), acc)
+        i = i - 1
+    return acc
+
+
+# ── Evaluator ────────────────────────────────────────────────────────────────
+
+def eval_(expr: Value, env: Env): Value throws
+    branch expr
+        on Value.num as n
+            return Value.num(n)
+        on Value.bool_ as b
+            return Value.bool_(b)
+        on Value.nil_ as _
+            return mkNil()
+        on Value.sym as s
+            return env.lookup(s)?
+        on Value.pair as p
+            return evalForm(p, env)?
+        else
+            # already a value (builtin / lambda)
+            return expr
+
+# A non-empty list: either a special form or a function application.
+def evalForm(p: Pair, env: Env): Value throws
+    var head = p.car
+    if head is Value.sym as op
+        if op == "quote"
+            return cadr(p)?
+        if op == "if"
+            var tst = eval_(cadr(p)?, env)?
+            if truthy(tst)
+                return eval_(caddr(p)?, env)?
+            # optional else
+            var rest = cdddr(p)?
+            if rest is Value.pair as e
+                return eval_(e.car, env)?
+            return mkNil()
+        if op == "define"
+            return evalDefine(p, env)?
+        if op == "set!"
+            var name = symName(cadr(p)?)?
+            var val = eval_(caddr(p)?, env)?
+            env.setBang(name, val)?
+            return mkNil()
+        if op == "lambda"
+            return makeLambda(cadr(p)?, cddr(p)?, env)?
+        if op == "begin"
+            return evalSeq(restOf(p), env)?
+        if op == "let"
+            return evalLet(p, env)?
+        if op == "and"
+            return evalAnd(restOf(p), env)?
+        if op == "or"
+            return evalOr(restOf(p), env)?
+    # Application: evaluate operator + operands, then apply.
+    var callee = eval_(head, env)?
+    var args = List(Value)()
+    # NOTE: bind the throws-returning listToVec to a local — `for x in f()?`
+    # (for-in directly over a throws-call) has a codegen rough edge (BUG-145).
+    var operands: List(Value) = listToVec(restOf(p))?
+    for a in operands
+        args.add(eval_(a, env)?)
+    return apply(callee, args)?
+
+def apply(callee: Value, args: List(Value)): Value throws
+    branch callee
+        on Value.builtin as b
+            return applyBuiltin(b.name, args)?
+        on Value.lambda as l
+            if args.len != l.params.len
+                raise "arity: " + l.params.len.toString() + " expected, got " + args.len.toString()
+            var call_env = Env(l.env)
+            var i = 0
+            while i < l.params.len
+                call_env.define(l.params.at(i), args.at(i))
+                i = i + 1
+            return evalSeqVec(l.body, call_env)?
+        else
+            raise "not a function"
+
+def makeLambda(formals: Value, body: Value, env: Env): Value throws
+    var params = List(str)()
+    var formal_vec: List(Value) = listToVec(formals)?
+    for f in formal_vec
+        params.add(symName(f)?)
+    var body_vec = listToVec(body)?
+    return Value.lambda(Lambda(params, body_vec, env))
+
+def evalDefine(p: Pair, env: Env): Value throws
+    var target = cadr(p)?
+    # (define (f a b) body...)  → sugar for  (define f (lambda (a b) body...))
+    if target is Value.pair as sg
+        var name = symName(sg.car)?
+        var lam = makeLambda(sg.cdr, cddr(p)?, env)?
+        env.define(name, lam)
+        return mkSym(name)
+    # (define x expr)
+    var name = symName(target)?
+    var val = eval_(caddr(p)?, env)?
+    env.define(name, val)
+    return mkSym(name)
+
+def evalLet(p: Pair, env: Env): Value throws
+    # (let ((a 1) (b 2)) body...)
+    var binds = listToVec(cadr(p)?)?
+    var inner = Env(env)
+    for b in binds
+        var bp = listToVec(b)?
+        inner.define(symName(bp.at(0))?, eval_(bp.at(1), env)?)
+    return evalSeq(cddr(p)?, inner)?
+
+def evalSeq(body: Value, env: Env): Value throws
+    return evalSeqVec(listToVec(body)?, env)?
+
+def evalSeqVec(body: List(Value), env: Env): Value throws
+    var result = mkNil()
+    for e in body
+        result = eval_(e, env)?
+    return result
+
+def evalAnd(body: Value, env: Env): Value throws
+    var result = mkBool(true)
+    var and_vec: List(Value) = listToVec(body)?
+    for e in and_vec
+        result = eval_(e, env)?
+        if not truthy(result)
+            return mkBool(false)
+    return result
+
+def evalOr(body: Value, env: Env): Value throws
+    var or_vec: List(Value) = listToVec(body)?
+    for e in or_vec
+        var result = eval_(e, env)?
+        if truthy(result)
+            return result
+    return mkBool(false)
+
+
+# ── car/cdr accessors (on Value lists) ───────────────────────────────────────
+
+def carOf(v: Value): Value throws
+    if v is Value.pair as p
+        return p.car
+    raise "car: not a pair"
+
+def cdrOf(v: Value): Value throws
+    if v is Value.pair as p
+        return p.cdr
+    raise "cdr: not a pair"
+
+def cadr(p: Pair): Value throws
+    return carOf(p.cdr)?
+
+def caddr(p: Pair): Value throws
+    return carOf(cdrOf(p.cdr)?)?
+
+def restOf(p: Pair): Value
+    return p.cdr
+
+def cddr(p: Pair): Value throws
+    return cdrOf(p.cdr)?
+
+def cdddr(p: Pair): Value throws
+    return cdrOf(cdrOf(p.cdr)?)?
+
+def symName(v: Value): str throws
+    if v is Value.sym as s
+        return s
+    raise "expected a symbol"
+
+
+# ── Builtins ─────────────────────────────────────────────────────────────────
+
+def numOf(v: Value): float throws
+    if v is Value.num as n
+        return n
+    raise "expected a number"
+
+def applyBuiltin(name: str, args: List(Value)): Value throws
+    if name == "+"
+        var acc = 0.0
+        for a in args
+            acc = acc + numOf(a)?
+        return mkNum(acc)
+    if name == "*"
+        var acc = 1.0
+        for a in args
+            acc = acc * numOf(a)?
+        return mkNum(acc)
+    if name == "-"
+        if args.len == 0
+            raise "-: needs at least one argument"
+        var acc = numOf(args.at(0))?
+        if args.len == 1
+            return mkNum(-acc)
+        var i = 1
+        while i < args.len
+            acc = acc - numOf(args.at(i))?
+            i = i + 1
+        return mkNum(acc)
+    if name == "/"
+        if args.len == 0
+            raise "/: needs at least one argument"
+        var acc = numOf(args.at(0))?
+        var i = 1
+        while i < args.len
+            acc = acc / numOf(args.at(i))?
+            i = i + 1
+        return mkNum(acc)
+    if name == "="
+        return mkBool(numOf(args.at(0))? == numOf(args.at(1))?)
+    if name == "<"
+        return mkBool(numOf(args.at(0))? < numOf(args.at(1))?)
+    if name == ">"
+        return mkBool(numOf(args.at(0))? > numOf(args.at(1))?)
+    if name == "<="
+        return mkBool(numOf(args.at(0))? <= numOf(args.at(1))?)
+    if name == ">="
+        return mkBool(numOf(args.at(0))? >= numOf(args.at(1))?)
+    if name == "car"
+        return carOf(args.at(0))?
+    if name == "cdr"
+        return cdrOf(args.at(0))?
+    if name == "cons"
+        return cons(args.at(0), args.at(1))
+    if name == "list"
+        return vecToList(args)
+    if name == "null?"
+        return mkBool(isNil(args.at(0)))
+    if name == "pair?"
+        return mkBool(args.at(0) is Value.pair)
+    if name == "list?"
+        var cur = args.at(0)
+        var go = true
+        while go
+            if cur is Value.pair as p
+                cur = p.cdr
+            else
+                go = false
+        return mkBool(isNil(cur))
+    if name == "not"
+        return mkBool(not truthy(args.at(0)))
+    if name == "length"
+        var v = listToVec(args.at(0))?
+        return mkNum(v.len.toFloat())
+    if name == "display"
+        print(showValue(args.at(0)))
+        return mkNil()
+    raise "unknown builtin: " + name
+
+
+# ── Printer ──────────────────────────────────────────────────────────────────
+
+def showValue(v: Value): str
+    branch v
+        on Value.num as n
+            return showNum(n)
+        on Value.sym as s
+            return s
+        on Value.bool_ as b
+            if b
+                return "#t"
+            return "#f"
+        on Value.nil_ as _
+            return "()"
+        on Value.pair as p
+            return "(" + showList(p) + ")"
+        on Value.builtin as b
+            return "#<builtin " + b.name + ">"
+        on Value.lambda as l
+            return "#<lambda/" + l.params.len.toString() + ">"
+
+def showList(p: Pair): str
+    var out = showValue(p.car)
+    var cur = p.cdr
+    var go = true
+    while go
+        if cur is Value.pair as next
+            out = out + " " + showValue(next.car)
+            cur = next.cdr
+        else
+            go = false
+    if not isNil(cur)
+        out = out + " . " + showValue(cur)
+    return out
+
+def showNum(n: float): str
+    var i: int = n.toInt()
+    var rebuilt: float = i.toFloat()
+    if rebuilt == n
+        return i.toString()
+    return n.toString()
+
+
+# ── Global environment + driver ──────────────────────────────────────────────
+
+def globalEnv(): Env
+    var g = Env(nil)
+    var names = ["+", "-", "*", "/", "=", "<", ">", "<=", ">=", "car", "cdr", "cons", "list", "null?", "pair?", "list?", "not", "length", "display"]
+    for nm in names
+        g.define(nm, Value.builtin(Builtin(nm)))
+    return g
+
+# Read every top-level form in `src` and evaluate it in `env`, returning the
+# value of the last one.
+def runProgram(src: str, env: Env): Value throws
+    var toks = tokenize(src)
+    var pos = List(int)()
+    pos.add(0)
+    var result = mkNil()
+    while pos.at(0) < toks.len
+        var form = parseForm(toks, pos)?
+        result = eval_(form, env)?
+    return result
+
+def runShow(label: str, src: str, env: Env)
+    var v = runProgram(src, env)?
+    print("  " + label + "  =>  " + showValue(v))
+catch |e|
+    print("  " + label + "  =>  error: " + e.message)
+
+def main()
+    print("lisp.zbr — a tiny Scheme in Zebra")
+    print("---")
+    var env = globalEnv()
+
+    runShow("(+ 1 2 3 4)", "(+ 1 2 3 4)", env)
+    runShow("(* 2 (+ 3 4))", "(* 2 (+ 3 4))", env)
+    runShow("nested arithmetic", "(- (* 6 7) (/ 100 10) 2)", env)
+    runShow("if / comparison", "(if (< 3 2) 'yes 'no)", env)
+    runShow("list + quote", "(list 1 2 (+ 1 2) 'four)", env)
+    runShow("car/cdr", "(car (cdr (list 10 20 30)))", env)
+
+    # Lexical closures + recursion: factorial and fibonacci.
+    runProgram("(define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))", env)?
+    runShow("(fact 6)", "(fact 6)", env)
+
+    runProgram("(define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))", env)?
+    runShow("(fib 15)", "(fib 15)", env)
+
+    # A closure that captures its environment (counter via set!).
+    runProgram("(define (make-adder k) (lambda (x) (+ x k)))", env)?
+    runProgram("(define add10 (make-adder 10))", env)?
+    runShow("(add10 5)  — closure", "(add10 5)", env)
+
+    # let + begin.
+    runShow("let", "(let ((a 3) (b 4)) (+ (* a a) (* b b)))", env)
+    runShow("begin / set!", "(begin (define c 1) (set! c (+ c 41)) c)", env)
+
+    # higher-order: build map from primitives.
+    runProgram("(define (map f xs) (if (null? xs) xs (cons (f (car xs)) (map f (cdr xs)))))", env)?
+    runProgram("(define (square x) (* x x))", env)?
+    runShow("(map square (list 1 2 3 4 5))", "(map square (list 1 2 3 4 5))", env)
+
+    # Errors surface cleanly through raise/catch.
+    runShow("unbound var", "(+ 1 undefined-thing)", env)
+    runShow("not a function", "(1 2 3)", env)

@@ -3082,7 +3082,7 @@ struct Generator
             # BUG-097: record which params are emitted as *ArrayList so arg-emit
             # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
             for pptr in m.params
-                if paramNeedsAddrOf(pptr, m.stmts)
+                if paramNeedsAddrOfTx(pptr, m.stmts)
                     bg.caller_ptr_params.add(pptr.name)
             # Track List-tuple and StrSet params for type-aware codegen
             for p2 in m.params
@@ -3606,7 +3606,7 @@ struct Generator
             w.emit(": ")
             # BUG-091: List(T)/HashMap(K,V) param mutated by body → emit *T
             # so .append/.put can take *Self and the caller sees changes.
-            if paramNeedsAddrOf(p, body)
+            if paramNeedsAddrOfTx(p, body)
                 w.emit("*")
             if p.type_ != nil
                 genType(p.type_!)
@@ -3776,6 +3776,26 @@ struct Generator
                     addAddrOfMutationsInExpr(op, out)
             else
                 pass
+
+    # BUG-144: transitive addr-of.  A container param FORWARDED by bare ident to a
+    # callee that (directly) mutates its matching positional param also needs
+    # `*ArrayList` emission (e.g. a `pos` cursor passed to `advance(pos)`).  Reuses
+    # addAddrOfMutationsInStmts — the same forwarding-detector the local var/const
+    # decision uses — which checks callees with the direct-only `paramNeedsAddrOf`,
+    # so there is no recursion back into this wrapper.  Coverage is one forwarding
+    # hop (the common cursor/accumulator pattern).  Mirrors src/CodeGen.zig.
+    def paramNeedsAddrOfTx(p: Param, body: List(Stmt)?): bool
+        if paramNeedsAddrOf(p, body)
+            return true
+        if p.type_ == nil
+            return false
+        if not isContainerTypeRef(p.type_!)
+            return false
+        if body as b
+            var fwd: StrSet = StrSet()
+            addAddrOfMutationsInStmts(b, fwd)
+            return fwd.contains_(p.name)
+        return false
 
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
@@ -9600,7 +9620,7 @@ struct Generator
                             var ump = um_params!
                             if um_ai < ump.len
                                 var ump_p = ump.at(um_ai)
-                                if paramNeedsAddrOf(ump_p, um_body)
+                                if paramNeedsAddrOfTx(ump_p, um_body)
                                     if argIdentInCpp(args.at(um_ai).value)
                                         genExpr(args.at(um_ai).value)   # Case 1: ptr→ptr
                                         um_emitted = true
@@ -10661,7 +10681,7 @@ struct Generator
                             var psr = mc_params!
                             if pname_idx < psr.len
                                 var pn = psr.at(pname_idx)
-                                needs_addr_n = paramNeedsAddrOf(pn, mc_body)
+                                needs_addr_n = paramNeedsAddrOfTx(pn, mc_body)
                                 is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_!)
                         # Find named arg matching this param first.
                         var found = false
@@ -10722,7 +10742,7 @@ struct Generator
                     var msp = mc_params!
                     if ai_p < msp.len
                         var mp = msp.at(ai_p)
-                        if paramNeedsAddrOf(mp, mc_body)
+                        if paramNeedsAddrOfTx(mp, mc_body)
                             if argIdentInCpp(a.value)
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
                                 already_emitted = true
@@ -11199,7 +11219,7 @@ struct Generator
             if not first
                 w.emit(", ")
             first = false
-            var needs_addr = paramNeedsAddrOf(p, body)
+            var needs_addr = paramNeedsAddrOfTx(p, body)
             var is_container = p.type_ != nil and isContainerTypeRef(p.type_!)
             var p_name_str: str = p.name
             var found = false

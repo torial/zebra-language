@@ -1569,7 +1569,11 @@ fn isContainerType(t: Ast.TypeRef) bool {
 // of body size M.  Acceptable for the current corpus (<100ms total impact in
 // bootstrap).  Memoise per-method (HashMap from *Ast.DeclMethod -> StringHashMap)
 // if profiling ever shows this matters.
-fn paramNeedsAddrOf(
+// Direct-only predicate: the param is mutated *in this body* by a mutating
+// container method (`.add`/`.append`/`.put`/…) called on it.  Does NOT consider
+// forwarding to a callee.  Used by the forwarding-detector (addAddrOfMutations*)
+// at the callee-check site, which keeps that detector's recursion a clean DAG.
+fn paramDirectlyNeedsAddrOf(
     param:  Ast.Param,
     body:   ?[]const Ast.Stmt,
     alloc:  Allocator,
@@ -1581,6 +1585,32 @@ fn paramNeedsAddrOf(
     var mut_set = scanMutations(b, alloc, tc_opt) catch return false;
     defer mut_set.deinit();
     return mut_set.contains(param.name);
+}
+
+// Full predicate: a container param needs `*ArrayList` emission if it is either
+// (a) mutated directly in this body, or (b) FORWARDED by bare ident to a callee
+// whose matching positional param is itself mutated (e.g. a `pos` cursor passed
+// to `advance(pos)`).  Case (b) reuses `addAddrOfMutationsInStmts`, the same
+// forwarding-detector the local var/const decision uses; that detector checks
+// callees with the *direct-only* predicate above, so there is no mutual
+// recursion back into this function.  Coverage is one forwarding hop — the
+// common cursor/accumulator pattern; deeper pure-forwarding chains (A→B→C where
+// only C mutates) are not flagged.  See BUG-144.
+fn paramNeedsAddrOf(
+    param:   Ast.Param,
+    body:    ?[]const Ast.Stmt,
+    alloc:   Allocator,
+    tc_opt:  ?*const TypeChecker.TypeCheckResult,
+    resolve: *const Resolver.ResolveResult,
+) bool {
+    if (paramDirectlyNeedsAddrOf(param, body, alloc, tc_opt)) return true;
+    const t = param.type_ orelse return false;
+    if (!isContainerType(t)) return false;
+    const b = body orelse return false;
+    var fwd = std.StringHashMap(void).init(alloc);
+    defer fwd.deinit();
+    addAddrOfMutationsInStmts(b, &fwd, alloc, tc_opt, resolve) catch return false;
+    return fwd.contains(param.name);
 }
 
 /// Walk `stmts` for any call whose ident-arg is passed as `&` to a mutating
@@ -1686,7 +1716,7 @@ fn addAddrOfMutationsInExpr(
             for (e.args, 0..) |a, i| {
                 if (i >= pb.params.len) break;
                 if (a.value.* != .ident) continue;
-                if (!paramNeedsAddrOf(pb.params[i], pb.body, alloc, tc_opt)) continue;
+                if (!paramDirectlyNeedsAddrOf(pb.params[i], pb.body, alloc, tc_opt)) continue;
                 try set.put(a.value.ident.name, {});
             }
         }
@@ -5474,7 +5504,7 @@ const Generator = struct {
             // emit as `*std.ArrayList(T)` so `.append` (which takes *Self) works
             // and the caller sees the changes.  TCO is excluded because the
             // params are shadowed by mutable locals there.
-            const needs_addr_of = !is_tco and paramNeedsAddrOf(p, n.body, g.alloc, g.tc);
+            const needs_addr_of = !is_tco and paramNeedsAddrOf(p, n.body, g.alloc, g.tc, g.resolve);
             if (needs_addr_of) try g.w.writeAll("*");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
         }
@@ -5511,7 +5541,7 @@ const Generator = struct {
             defer cpp.deinit();
             if (!is_tco) {
                 for (n.params) |p| {
-                    if (paramNeedsAddrOf(p, n.body, g.alloc, g.tc))
+                    if (paramNeedsAddrOf(p, n.body, g.alloc, g.tc, g.resolve))
                         try cpp.put(p.name, {});
                 }
             }
@@ -13362,7 +13392,7 @@ const Generator = struct {
                             continue;
                         };
                         // BUG-091/097: addr-of, pass-through, or deref for container params.
-                        if (paramNeedsAddrOf(ps[i], body, g.alloc, g.tc)) {
+                        if (paramNeedsAddrOf(ps[i], body, g.alloc, g.tc, g.resolve)) {
                             if (argIdentInCpp(a.value, g.caller_ptr_params)) {
                                 // Case 1: arg is already *ArrayList, callee wants *ArrayList.
                                 try g.genArgExpr(a.value);
@@ -13409,7 +13439,7 @@ const Generator = struct {
                     const pt = ps[i].type_ orelse break :blk false;
                     break :blk pt == .ref_to;
                 } else false;
-                const param_needs_addr = if (i < ps.len) paramNeedsAddrOf(ps[i], body, g.alloc, g.tc) else false;
+                const param_needs_addr = if (i < ps.len) paramNeedsAddrOf(ps[i], body, g.alloc, g.tc, g.resolve) else false;
                 const param_is_container = if (i < ps.len) if (ps[i].type_) |pt| isContainerType(pt) else false else false;
                 if (maybe_expr) |expr| {
                     if (param_is_ref) {

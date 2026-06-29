@@ -1,0 +1,39 @@
+# BUG-144: a List(T)/HashMap param FORWARDED by bare ident to a mutating callee
+# must itself be emitted as `*ArrayList` (so the caller sees the mutation and Zig
+# accepts the `&` at the forwarding site).  Before the fix, `forward`'s `xs` was
+# passed by value (`*const ArrayList`) and `bump(&xs)` failed to compile with
+# "expected type '*T', found '*const T'".  Surfaced by examples/lisp.zbr, whose
+# parser threads a one-element `pos` cursor List through parseForm → advance.
+
+def bump(xs: List(int))
+    xs.add(99)
+
+# `forward` never mutates `xs` directly — it only forwards it to `bump`.
+def forward(xs: List(int))
+    bump(xs)
+
+# Two hops in the same body: forward both to a direct mutator and via a wrapper.
+def cursorBump(pos: List(int))
+    advance(pos)
+
+def advance(pos: List(int))
+    var cur = pos.at(0)
+    pos.clear()
+    pos.add(cur + 1)
+
+def test_forwarded_list_param_mutates()
+    var ys = List(int)()
+    ys.add(1)
+    forward(ys)
+    assert_eq ys.len, 2
+    assert_eq ys.at(1), 99
+
+def test_cursor_forwarded_through_wrapper()
+    var pos = List(int)()
+    pos.add(0)
+    cursorBump(pos)
+    cursorBump(pos)
+    assert_eq pos.at(0), 2
+
+def main()
+    print("transitive_list_param_test: run with 'zebra test'")

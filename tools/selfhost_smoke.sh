@@ -438,6 +438,10 @@ smoke_tc_fail test/print_stmt_removed_test.zbr "expected '('"
 # a user class; `str.count(sub)` substring method preserved.
 smoke_test test/len_size_test.zbr
 
+# BUG-144: a List param forwarded by bare ident to a mutating callee must emit as
+# `*ArrayList` (transitive addr-of). Regression for the cursor/accumulator pattern.
+smoke_test test/transitive_list_param_test.zbr
+
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 

@@ -1,6 +1,101 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-143. Next new bug: BUG-144.**
+**Last bug number generated: BUG-147. Next new bug: BUG-148.**
+
+---
+
+## BUG-144: a forwarded List/HashMap param emitted `*const` and failed to compile ✅ FIXED
+
+**Severity:** medium (a common cursor/accumulator pattern did not compile).
+Found 2026-06-28 dogfooding `examples/lisp.zbr` (its parser threads a one-element
+`pos` cursor `List(int)` through `parseForm`/`parseList` → `advance(pos)`).
+
+**Symptom:** a `List(T)`/`HashMap` parameter that is **forwarded by bare ident**
+to a mutating callee — but not mutated directly in the body — was emitted by
+value (`*const std.ArrayList`), so the `&` at the forwarding site failed with
+`error: expected type '*T', found '*const T'`.
+
+Minimal repro:
+```
+def bump(xs: List(int))
+    xs.add(99)
+def forward(xs: List(int))   # never mutates xs directly — only forwards it
+    bump(xs)
+```
+
+**Root cause:** `paramNeedsAddrOf` only checked *direct* mutation (a mutating
+method called on the param in this body); it ignored forwarding to a callee that
+mutates its matching positional param.
+
+**Fix:** split the predicate into a direct-only core (`paramDirectlyNeedsAddrOf`)
+plus a transitive wrapper (`paramNeedsAddrOf` / selfhost `paramNeedsAddrOfTx`)
+that reuses the existing forwarding-detector `addAddrOfMutationsInStmts` — the
+same one the local var/const decision uses. That detector checks callees with the
+direct-only predicate, so there is no recursion. Coverage is **one forwarding
+hop** (the common cursor case); deeper pure-forwarding chains (A→B→C where only C
+mutates) are not yet flagged. Mirrored in `src/CodeGen.zig` + `selfhost/CodeGen.zbr`;
+round-trip byte-identical, smoke 178/178, compile-check 143/0. Regression test:
+`test/transitive_list_param_test.zbr`.
+
+---
+
+## BUG-145: `for x in <throws-call>?` (for-in directly over a throws call) miscompiles
+
+**Severity:** low (clean workaround: bind the call to a local first).
+Found 2026-06-28 in `examples/lisp.zbr` (`for a in listToVec(p)?`).
+
+**Symptom:** iterating directly over a `?`-propagated throws-returning `List(T)`
+emits Zig that does field access on the error union before the `try` unwrap:
+`error: error union type 'anyerror!array_list.Aligned(...)' does not support
+field access`. A second shape (`for x in mk()?` where `mk` is nullary) instead
+emits a temp local that shadows the function name.
+
+**Workaround:** bind to a local — `var v = f()?` then `for x in v` — which the
+lisp now does at all four sites.
+
+**Status:** OPEN. Likely in the for-in codegen: the iterable's `?`/`try` must be
+emitted (and bound to a temp) before the `.items` access.
+
+---
+
+## BUG-146: `str.toFloat()` / `str.toInt()` return 0 on parse failure (cannot signal "not a number")
+
+**Severity:** medium (silent wrong-data footgun for any tokenizer/validator).
+Found 2026-06-28 in `examples/lisp.zbr` — `parseAtom` relied on a failing
+`toFloat()` to fall through to "symbol", but every symbol (`+`, `car`, `<=`)
+parsed as the number `0`.
+
+**Symptom:** `toFloat` is emitted as `(std.fmt.parseFloat(f64, s) catch 0.0)` and
+typed as plain `float` (not `float?`); `toInt` is `(… catch 0)`. A non-numeric
+string yields `0`/`0.0` indistinguishable from the literal `"0"`. There is no
+failure channel.
+
+**Proposed fix:** add `tryFloat(): float?` / `tryInt(): int?` (nil on parse
+failure) — non-breaking alongside the existing 0-fallback methods — or change the
+existing methods to return optionals (breaking; ~hundreds of call sites). The
+lisp currently classifies tokens with a local `looksNumeric` helper.
+
+**Status:** OPEN (design decision pending — new optional-returning methods vs.
+changing the contract).
+
+---
+
+## BUG-147: bootstrap (`src/`) miscompiles `examples/lisp.zbr` (3 emit divergences) — BUG-143 family
+
+**Severity:** medium (equivalence violation; selfhost is correct, bootstrap lags).
+Found 2026-06-28 — `zebra --zig-backend run examples/lisp.zbr` fails to compile
+while the default selfhost compiler runs it correctly end-to-end.
+
+**Symptoms (src/ emit only):**
+- `incompatible types: '*lisp.Value' and '@EnumLiteral()'` (a `^Value` field /
+  union-literal site in `makeLambda`).
+- `expected type 'lisp.Value', found '*lisp.Value'` passing a `^Value` to a
+  by-value `showValue(v: Value)`.
+- `no field or member function named 'toInt' in 'f64'` — `float.toInt()` not
+  lowered the way the selfhost lowers it.
+
+**Status:** OPEN. Same "bootstrap lags selfhost" class as BUG-143; the lisp is a
+good multi-pattern repro for a future src/→selfhost convergence pass.
 
 ---
 
