@@ -1,6 +1,55 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-147. Next new bug: BUG-148.**
+**Last bug number generated: BUG-149. Next new bug: BUG-150.**
+
+---
+
+## BUG-148: method chained on a HashMap `.fetch(k)` result miscompiles ⚠ OPEN (fix reverted)
+
+**Severity:** medium. Found 2026-06-29 building GameEngine's `MessagingBroker`
+(`zbra/services_stub.zbr`): `topics.fetch(topic).len` failed to compile.
+
+**Cause:** `.fetch(k)` emits `(map.get(k) orelse undefined)`. The `orelse
+undefined` leaves an `@TypeOf(undefined)` peer in the null branch — fine when
+assigned to a typed local, but when a member is chained on the result
+(`m.fetch(k).at(0)`), Zig can't peer-resolve `*const T` vs `@TypeOf(undefined)`:
+`error: incompatible types: '*const …' and '*const @TypeOf(undefined)'`.
+
+**Attempted fix (reverted):** emitting `(map.get(k).?)` cleanly fixes the
+chaining error (verified: `m.fetch(k).at(1)` then compiles+runs) and gives a
+*defined* panic instead of UB. **But it broke the round-trip** with
+`panic: attempt to use null value` — the **compiler's own source calls
+`.fetch(k)` on a sometimes-absent key** and was silently relying on the old
+`orelse undefined` (UB that happened not to crash). `.?` turns that latent
+misuse into a hard panic during self-compile.
+
+**Real fix (prerequisite first):** audit the selfhost/bootstrap sources for
+`.fetch(k)` on possibly-absent keys and guard them (`if m.contains(k)` /
+`m.get(k)` optional form) **before** switching the `.fetch` emit to `.?`. Sites:
+one in `src/CodeGen.zig`, two in `selfhost/CodeGen.zbr` (24- and 12-space
+indented). Until then `.fetch(k)` chaining needs a local (`var q = m.fetch(k)`).
+Workaround in place in `zbra/services_stub.zbr`.
+
+## BUG-149: `.len` property on a HashMap `.fetch(k)` result (local-inited map) not lowered
+
+## BUG-149: `.len` property on a HashMap `.fetch(k)` result (local-inited map) not lowered
+
+**Severity:** low (workaround: bind to a local — but see the field/local quirk).
+Found 2026-06-29 alongside BUG-148.
+
+**Symptom:** `m.fetch(k).len` (or even `var q = m.fetch(k)`; `q.len`) where `m` is
+a **local-inited** `HashMap(K, List(T))` emits `.len` literally rather than
+`.items.len` → `error: no field named 'len' in struct 'array_list…'`. The
+`.len`-property lowering (#219) doesn't infer that `fetch` returns the map's
+List value type from a local-inited HashMap. **It works when the HashMap is a
+class field** (`this.field.fetch(k)` resolves the value type via the field
+decl), so `zbra/services_stub.zbr`'s `pending()` compiles. Method calls
+(`.at`/`.add`) are unaffected.
+
+**Fix direction:** teach the `.len`-property path (and `getExprDeclaredType`) to
+derive a `.fetch(k)` result's element/value type from a local-inited HashMap, the
+same way it already does for class fields — same family as BUG-147 (call-result
+type inference). Deferred (touches broadly-consulted inference; round-trip risk).
 
 ---
 
