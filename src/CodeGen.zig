@@ -10726,7 +10726,13 @@ const Generator = struct {
     fn genForInList(g: Generator, s: *Ast.StmtForIn) anyerror!void {
         try g.writeIndent();
         try g.w.writeAll("for (");
+        // BUG-145: `for x in f()?` — the iterable is a `try`-expr.  In Zig
+        // `.items` binds tighter than `try`, so `try f().items` reads `.items`
+        // off the error union.  Parenthesize: `(try f()).items`.
+        const iter_needs_paren = s.iter.* == .try_;
+        if (iter_needs_paren) try g.w.writeAll("(");
         try g.genExpr(s.iter);
+        if (iter_needs_paren) try g.w.writeAll(")");
         try g.w.writeAll(".items) |");
         for (s.vars, 0..) |v, i| {
             if (i > 0) try g.w.writeAll(", ");

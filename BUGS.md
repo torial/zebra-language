@@ -39,22 +39,30 @@ round-trip byte-identical, smoke 178/178, compile-check 143/0. Regression test:
 
 ---
 
-## BUG-145: `for x in <throws-call>?` (for-in directly over a throws call) miscompiles
+## BUG-145: `for x in <throws-call>?` (for-in directly over a throws call) ✅ FIXED (selfhost)
 
-**Severity:** low (clean workaround: bind the call to a local first).
-Found 2026-06-28 in `examples/lisp.zbr` (`for a in listToVec(p)?`).
+**Severity:** low. Found 2026-06-28 in `examples/lisp.zbr` (`for a in listToVec(p)?`).
 
 **Symptom:** iterating directly over a `?`-propagated throws-returning `List(T)`
-emits Zig that does field access on the error union before the `try` unwrap:
+emitted Zig that does field access on the error union before the `try` unwrap:
 `error: error union type 'anyerror!array_list.Aligned(...)' does not support
-field access`. A second shape (`for x in mk()?` where `mk` is nullary) instead
-emits a temp local that shadows the function name.
+field access` — because in Zig `.items` binds tighter than `try`, so
+`try f().items` reads `.items` off the error union.
 
-**Workaround:** bind to a local — `var v = f()?` then `for x in v` — which the
-lisp now does at all four sites.
+**Fix:** `genForInList` (and the selfhost str-list / plain-list for-in arms)
+parenthesize the iterable when it is a `try`-expr: `(try f()).items`. Mirrored in
+`src/CodeGen.zig` + `selfhost/CodeGen.zbr`. The Lisp now uses `for x in f()?`
+directly at all four sites. Regression test: `test/forin_throws_test.zbr`.
 
-**Status:** OPEN. Likely in the for-in codegen: the iterable's `?`/`try` must be
-emitted (and bound to a temp) before the `.items` access.
+**Remaining (bootstrap only, BUG-147 family):** the `--zig-backend` bootstrap
+still can't reach `genForInList` for `for x in userFn()?` — its
+`getExprDeclaredType` has no `.call`/`.try_` arm, so the iterable's type isn't
+resolved to `List` and the loop falls through to a native Zig for-loop
+("type ... is not indexable and not a range"). The selfhost's type inference
+already looks through `try`. Closing the bootstrap side means giving
+`getExprDeclaredType` a call-return-type + try-passthrough arm; deferred because
+that function is broadly consulted (round-trip-byte-identity risk on the
+non-primary compiler).
 
 ---
 

@@ -1,0 +1,27 @@
+# BUG-145: `for x in f()?` — a for-in loop directly over a `?`-propagated
+# throws-call.  The iterable is a `try`-expr; in Zig `.items` binds tighter than
+# `try`, so the naive emit `try f().items` reads `.items` off the error union
+# ("error union ... does not support field access").  The fix parenthesizes:
+# `(try f()).items`.  Surfaced by examples/lisp.zbr (which threads parsed lists
+# through `for a in listToVec(...)?`).
+
+def makeNums(): List(int) throws
+    var xs = List(int)()
+    xs.add(1)
+    xs.add(2)
+    xs.add(3)
+    return xs
+
+# The loop is in a throws function so `?` propagates here, not to the caller.
+def sumViaForIn(): int throws
+    var total = 0
+    for a in makeNums()?
+        total = total + a
+    return total
+
+def test_forin_over_throws_call()
+    var got = sumViaForIn() catch 0
+    assert_eq got, 6
+
+def main()
+    print("forin_throws_test: run with 'zebra test'")

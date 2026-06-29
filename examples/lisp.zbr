@@ -22,7 +22,8 @@
 #
 # Runs on the default (self-hosted) compiler. The `--zig-backend` (bootstrap)
 # path currently miscompiles it — see BUG-147. Building this example surfaced and
-# fixed BUG-144 (transitive List-param mutation) and surfaced BUG-145/BUG-146.
+# fixed BUG-144 (transitive List-param mutation) and BUG-145 (`for x in f()?`),
+# and surfaced BUG-146 (str.toFloat can't signal failure).
 
 # ── Values ────────────────────────────────────────────────────────────────
 #
@@ -352,10 +353,7 @@ def evalForm(p: Pair, env: Env): Value throws
     # Application: evaluate operator + operands, then apply.
     var callee = eval_(head, env)?
     var args = List(Value)()
-    # NOTE: bind the throws-returning listToVec to a local — `for x in f()?`
-    # (for-in directly over a throws-call) has a codegen rough edge (BUG-145).
-    var operands: List(Value) = listToVec(restOf(p))?
-    for a in operands
+    for a in listToVec(restOf(p))?
         args.add(eval_(a, env)?)
     return apply(callee, args)?
 
@@ -377,8 +375,7 @@ def apply(callee: Value, args: List(Value)): Value throws
 
 def makeLambda(formals: Value, body: Value, env: Env): Value throws
     var params = List(str)()
-    var formal_vec: List(Value) = listToVec(formals)?
-    for f in formal_vec
+    for f in listToVec(formals)?
         params.add(symName(f)?)
     var body_vec = listToVec(body)?
     return Value.lambda(Lambda(params, body_vec, env))
@@ -483,16 +480,14 @@ def evalSeqVec(body: List(Value), env: Env): Value throws
 
 def evalAnd(body: Value, env: Env): Value throws
     var result = mkBool(true)
-    var and_vec: List(Value) = listToVec(body)?
-    for e in and_vec
+    for e in listToVec(body)?
         result = eval_(e, env)?
         if not truthy(result)
             return mkBool(false)
     return result
 
 def evalOr(body: Value, env: Env): Value throws
-    var or_vec: List(Value) = listToVec(body)?
-    for e in or_vec
+    for e in listToVec(body)?
         var result = eval_(e, env)?
         if truthy(result)
             return result

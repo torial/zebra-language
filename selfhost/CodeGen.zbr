@@ -5400,7 +5400,13 @@ struct Generator
                 # .items like any List; elements are []const u8 → mark loop var a string.
                 writeIndent()
                 w.emit("for (")
-                genExpr(fi.iter)
+                # BUG-145: parenthesize a `try`-expr iterable (see else-branch).
+                if fi.iter is Expr.try_
+                    w.emit("(")
+                    genExpr(fi.iter)
+                    w.emit(")")
+                else
+                    genExpr(fi.iter)
                 w.emit(".items) |" + vname + "| {\n")
                 for_loop_vars.add(vname)
                 str_params.add(vname)
@@ -5417,7 +5423,14 @@ struct Generator
             else
                 writeIndent()
                 w.emit("for (")
-                genExpr(fi.iter)
+                # BUG-145: `for x in f()?` — `.items` binds tighter than `try`
+                # in Zig, so parenthesize the try-expr: `(try f()).items`.
+                if fi.iter is Expr.try_
+                    w.emit("(")
+                    genExpr(fi.iter)
+                    w.emit(")")
+                else
+                    genExpr(fi.iter)
                 w.emit(".items) |" + vname + "| {\n")
                 # Track for-loop variable deref fields based on element type
                 var iter_member = getMemberFieldName(fi.iter)
