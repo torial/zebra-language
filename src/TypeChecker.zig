@@ -3576,6 +3576,12 @@ const TypeChecker = struct {
         return .unknown;
     }
 
+    // Static payloads for the optional return types of `tryFloat`/`tryInt`
+    // (BUG-146): `str.tryFloat(): float?` / `str.tryInt(): int?` — nil on a
+    // parse failure, unlike `toFloat`/`toInt` which fall back to 0.
+    const _opt_float_payload: Type = .float;
+    const _opt_int_payload: Type = .int;
+
     /// Return type of a stdlib method call given the receiver's inferred Type.
     fn inferStdlibMethodType(tc: TypeChecker, obj_type: Type, method: []const u8) Type {
         // String methods
@@ -3605,6 +3611,9 @@ const TypeChecker = struct {
             if (str_int.get(method)    != null) return .int;
             if (str_bool.get(method)   != null) return .bool;
             if (std.mem.eql(u8, method, "toFloat")) return .float;
+            // BUG-146: nil-on-failure parse variants.
+            if (std.mem.eql(u8, method, "tryFloat")) return .{ .optional = &_opt_float_payload };
+            if (std.mem.eql(u8, method, "tryInt"))   return .{ .optional = &_opt_int_payload };
         }
         // StringBuilder methods
         if (obj_type == .string_builder) {

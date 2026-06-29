@@ -1236,6 +1236,11 @@ def stringMethodReturn(name: str): Type_?
         return Type_.int_
     if name == "toFloat"
         return Type_.float_
+    # BUG-146: try* return null on parse failure.
+    if name == "tryInt"
+        return Type_.optional(Type_.int_)
+    if name == "tryFloat"
+        return Type_.optional(Type_.float_)
     if name == "contains" or name == "startsWith" or name == "endsWith"
         return Type_.bool_
     if name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"

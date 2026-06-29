@@ -22,8 +22,8 @@
 #
 # Runs on the default (self-hosted) compiler. The `--zig-backend` (bootstrap)
 # path currently miscompiles it — see BUG-147. Building this example surfaced and
-# fixed BUG-144 (transitive List-param mutation) and BUG-145 (`for x in f()?`),
-# and surfaced BUG-146 (str.toFloat can't signal failure).
+# fixed BUG-144 (transitive List-param mutation), BUG-145 (`for x in f()?`), and
+# BUG-146 (added str.tryFloat/tryInt — nil on parse failure; used in parseAtom).
 
 # ── Values ────────────────────────────────────────────────────────────────
 #
@@ -187,28 +187,12 @@ def parseAtom(tok: str): Value
         return mkBool(true)
     if tok == "#f"
         return mkBool(false)
-    # NOTE: str.toFloat() returns 0.0 (not nil) for non-numeric input — it can't
-    # signal failure (BUG-146) — so classify the token ourselves before converting.
-    if looksNumeric(tok)
-        return mkNum(tok.toFloat())
+    # tryFloat returns nil for non-numeric input (BUG-146), so operators and
+    # names like +, car, <= correctly fall through to a symbol.
+    var num: float? = tok.tryFloat()
+    if num as v
+        return mkNum(v)
     return mkSym(tok)
-
-# A token is a number iff it begins with a digit, sign, or dot AND contains at
-# least one digit (so "+" / "-" / "..." stay symbols).
-def looksNumeric(tok: str): bool
-    if tok.len == 0
-        return false
-    var first = tok[0]
-    var startsOk = (first >= c'0' and first <= c'9') or first == c'-' or first == c'+' or first == c'.'
-    if not startsOk
-        return false
-    var i = 0
-    while i < tok.len
-        var ch = tok[i]
-        if ch >= c'0' and ch <= c'9'
-            return true
-        i = i + 1
-    return false
 
 # Parse one form starting at position pos[0]; advances pos.
 def parseForm(toks: List(str), pos: List(int)): Value throws

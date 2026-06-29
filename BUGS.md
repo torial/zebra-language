@@ -66,25 +66,25 @@ non-primary compiler).
 
 ---
 
-## BUG-146: `str.toFloat()` / `str.toInt()` return 0 on parse failure (cannot signal "not a number")
+## BUG-146: `str.toFloat()` / `str.toInt()` return 0 on parse failure ✅ FIXED (added tryFloat/tryInt)
 
 **Severity:** medium (silent wrong-data footgun for any tokenizer/validator).
 Found 2026-06-28 in `examples/lisp.zbr` — `parseAtom` relied on a failing
 `toFloat()` to fall through to "symbol", but every symbol (`+`, `car`, `<=`)
 parsed as the number `0`.
 
-**Symptom:** `toFloat` is emitted as `(std.fmt.parseFloat(f64, s) catch 0.0)` and
-typed as plain `float` (not `float?`); `toInt` is `(… catch 0)`. A non-numeric
-string yields `0`/`0.0` indistinguishable from the literal `"0"`. There is no
-failure channel.
+**Cause:** `toFloat`/`toInt` are emitted with a `catch 0.0` / `catch 0` fallback
+and typed as plain `float`/`int` — a non-numeric string yields `0` indistinguishable
+from the literal `"0"`, with no failure channel.
 
-**Proposed fix:** add `tryFloat(): float?` / `tryInt(): int?` (nil on parse
-failure) — non-breaking alongside the existing 0-fallback methods — or change the
-existing methods to return optionals (breaking; ~hundreds of call sites). The
-lisp currently classifies tokens with a local `looksNumeric` helper.
-
-**Status:** OPEN (design decision pending — new optional-returning methods vs.
-changing the contract).
+**Fix (non-breaking, additive):** added `str.tryFloat(): float?` and
+`str.tryInt(): int?`, emitted as `(std.fmt.parse… catch null)` (an optional
+`?f64`/`?i64`) and typed as optional in both type checkers. The existing
+0-fallback `toFloat`/`toInt` are unchanged. `examples/lisp.zbr` now classifies
+tokens with `tok.tryFloat()` (the `looksNumeric` workaround is removed).
+QUICKSTART updated (and the stale "toInt panics on bad input" note corrected to
+"0 on bad input"). Mirrored in `src/{CodeGen,TypeChecker}.zig` +
+`selfhost/{CodeGen,TypeChecker}.zbr`. Regression test: `test/try_parse_test.zbr`.
 
 ---
 

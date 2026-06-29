@@ -446,6 +446,9 @@ smoke_test test/transitive_list_param_test.zbr
 # parenthesize the try-expr before `.items`: `(try f()).items`.
 smoke_test test/forin_throws_test.zbr
 
+# BUG-146: str.tryInt()/tryFloat() return nil (not 0) on parse failure.
+smoke_test test/try_parse_test.zbr
+
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 

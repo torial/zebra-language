@@ -1,0 +1,32 @@
+# BUG-146: `str.tryFloat(): float?` / `str.tryInt(): int?` return nil on a parse
+# failure, so callers can tell "not a number" apart from a literal 0 — unlike
+# `toFloat`/`toInt`, which fall back to 0/0.0.  Surfaced by examples/lisp.zbr,
+# whose parser classifies tokens (operators like `+`, names like `car`) by
+# whether `tryFloat` yields a value.
+
+def test_tryFloat_parses_number()
+    var v: float? = "3.14".tryFloat()
+    assert_true v != nil
+    if v as f
+        assert_eq f, 3.14
+
+def test_tryFloat_nil_on_nonnumber()
+    assert_true "car".tryFloat() == nil
+    assert_true "+".tryFloat() == nil
+    assert_true "".tryFloat() == nil
+
+def test_tryInt_parses_and_fails()
+    var n: int? = "42".tryInt()
+    assert_true n != nil
+    if n as i
+        assert_eq i, 42
+    assert_true "xyz".tryInt() == nil
+
+def test_zero_is_a_value_not_failure()
+    # The whole point: "0" parses to 0, distinct from nil.
+    assert_true "0".tryInt() != nil
+    if "0".tryInt() as z
+        assert_eq z, 0
+
+def main()
+    print("try_parse_test: run with 'zebra test'")

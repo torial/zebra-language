@@ -9566,6 +9566,21 @@ const Generator = struct {
             try g.w.writeAll(") catch 0.0)");
             return true;
         }
+        // BUG-146: `tryInt`/`tryFloat` return null on a parse failure (an
+        // optional `?i64`/`?f64`) so callers can distinguish "not a number"
+        // from a literal 0 — unlike `toInt`/`toFloat` which fall back to 0.
+        if (std.mem.eql(u8, method, "tryInt")) {
+            try g.w.writeAll("(std.fmt.parseInt(i64, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(", 10) catch null)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "tryFloat")) {
+            try g.w.writeAll("(std.fmt.parseFloat(f64, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(") catch null)");
+            return true;
+        }
         if (std.mem.eql(u8, method, "format")) {
             // str.format(val) — delegates to std.fmt.allocPrint
             try g.w.writeAll("(std.fmt.allocPrint(_allocator, ");

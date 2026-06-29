@@ -985,9 +985,15 @@ var result = sb.build()              # str (drains the builder)
 | `indexOfFrom(sub, from)` | `(str, int): int?` | Search starting at `from` |
 | `indexOfIgnoreCase(sub)` | `(str): int?` | Case-insensitive `indexOf` |
 | `count(sub)` | `(str): int` | Number of non-overlapping occurrences |
-| `toInt()` | `(): int` | Parse as decimal integer (panics on bad input) |
+| `toInt()` | `(): int` | Parse as decimal integer (**0** on bad input — use `tryInt` to detect failure) |
 | `toIntBase(base)` | `(int): int` | Parse with given base (2, 8, 10, 16) |
+| `tryInt()` | `(): int?` | Parse as decimal integer; **nil** on bad input |
+| `tryFloat()` | `(): float?` | Parse as float; **nil** on bad input |
 | `codePointCount()` | `(): int` | Count Unicode codepoints (not bytes) |
+
+> `toFloat()` / `toInt()` return `0.0` / `0` on unparseable input (they cannot
+> signal failure); prefer `tryFloat()` / `tryInt()` (which return `nil`) when a
+> string might not be numeric — e.g. tokenizers and input validators.
 
 **Returns `bool`:**
 
