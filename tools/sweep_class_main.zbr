@@ -30,7 +30,7 @@ def extractWord(s: str): str
     return parts_s.at(0)
 
 def findClassMainStart(lines: List(str)): int
-    var n = lines.count()
+    var n = lines.len
     var i = 0
     while i < n
         var li: str = lines.at(i)
@@ -40,7 +40,7 @@ def findClassMainStart(lines: List(str)): int
     return -1
 
 def findClassMainEnd(lines: List(str), lo: int): int
-    var n = lines.count()
+    var n = lines.len
     var j = lo + 1
     while j < n
         var lj: str = lines.at(j)
@@ -113,7 +113,7 @@ def transform(content: str): str?
         ci = ci + 1
 
     var di = hi
-    while di < lines.count()
+    while di < lines.len
         out.add(lines.at(di))
         di = di + 1
 

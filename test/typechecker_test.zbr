@@ -47,7 +47,7 @@ def main()
     stmts_bad.add(TcStmt.return_(TcStmtReturn(TcExpr.string_lit())))
     tc.checkMethod(TcType.int_(), stmts_bad)
     assert not tc.ok(), "int method returning string should have error"
-    assert tc.errors.count() == 1
+    assert tc.errors.len == 1
     print("5. checkMethod type mismatch reported OK")
 
     tc.clearErrors()
@@ -66,7 +66,7 @@ def main()
     stmts_if.add(TcStmt.if_(TcStmtIf(TcExpr.int_lit())))    # int cond — error
     tc.checkMethod(TcType.void_(), stmts_if)
     assert not tc.ok()
-    assert tc.errors.count() == 1
+    assert tc.errors.len == 1
     tc.clearErrors()
     print("8. if non-bool condition reported OK")
 
@@ -84,7 +84,7 @@ def main()
     stmts_multi.add(TcStmt.var_decl(TcStmtVarDecl("b", TcType.bool_(), TcExpr.float_lit())))
     stmts_multi.add(TcStmt.pass_())
     tc.checkMethod(TcType.void_(), stmts_multi)
-    assert tc.errors.count() == 2
+    assert tc.errors.len == 2
     tc.clearErrors()
     print("10. multiple errors in checkMethod OK")
 

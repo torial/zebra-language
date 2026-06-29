@@ -3548,35 +3548,33 @@ const _reflect_HashMapType__field_types: []const []const u8 = &.{"Type_", "Type_
 pub const TupleType_ = struct {
     _type_tag: u64 = _ttag_TupleType_,
     elems: std.ArrayList(Type_) = undefined,
+    len: i64 = undefined,
     pub fn init(elems: std.ArrayList(Type_)) *TupleType_ {
         const self = _allocator.create(TupleType_) catch @panic("OOM");
         self._type_tag = _ttag_TupleType_;
-// zbr:selfhost/TypeChecker.zbr:61
+// zbr:selfhost/TypeChecker.zbr:63
         self.elems = elems;
+// zbr:selfhost/TypeChecker.zbr:64
+        self.len = @as(i64, @intCast(elems.items.len));
         return self;
     }
 
     pub fn at(self: *TupleType_, idx: i64) ?Type_ {
-// zbr:selfhost/TypeChecker.zbr:64
+// zbr:selfhost/TypeChecker.zbr:67
         if ((_zebra_lt(idx, 0) or _zebra_ge(idx, @as(i64, @intCast(self.elems.items.len))))) {
-// zbr:selfhost/TypeChecker.zbr:65
+// zbr:selfhost/TypeChecker.zbr:68
             return null;
         }
-// zbr:selfhost/TypeChecker.zbr:66
-        return self.elems.items[@as(usize, @intCast(idx))];
-    }
-
-    pub fn count(self: *TupleType_) i64 {
 // zbr:selfhost/TypeChecker.zbr:69
-        return @as(i64, @intCast(self.elems.items.len));
+        return self.elems.items[@as(usize, @intCast(idx))];
     }
 
 };
 
 const _ttag_TupleType_: u64 = 3889525234;
 const _reflect_TupleType__name: []const u8 = "TupleType_";
-const _reflect_TupleType__fields: []const []const u8 = &.{"elems"};
-const _reflect_TupleType__field_types: []const []const u8 = &.{"List(Type_)"};
+const _reflect_TupleType__fields: []const []const u8 = &.{"elems", "len"};
+const _reflect_TupleType__field_types: []const []const u8 = &.{"List(Type_)", "int"};
 
 pub const Type_ = union(enum) {
     int_,

@@ -25,15 +25,15 @@ def zmods(): Modifiers
 
 def testStrSet()
     var s = StrSet()
-    assert s.count() == 0
+    assert s.len == 0
     assert not s.contains_("a")
     s.add("alpha")
-    assert s.count() == 1
+    assert s.len == 1
     assert s.contains_("alpha")
     assert not s.contains_("beta")
     s.add("beta")
     s.add("alpha")
-    assert s.count() == 2
+    assert s.len == 2
     assert s.contains_("beta")
     print("1. StrSet: OK")
 
@@ -245,7 +245,7 @@ def testAnalyzeEscapes() throws
     assert     esc.contains_("x")
     assert not esc.contains_("y")
     # empty body -> nothing escapes
-    assert analyzeEscapes(List(Stmt)()).count() == 0
+    assert analyzeEscapes(List(Stmt)()).len == 0
     print("9. analyzeEscapes: OK")
 
 # ── Part 10: scanMutations ────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ def testScanMutations() throws
     assert     mut.contains_("x")
     assert not mut.contains_("y")
     # empty body -> nothing mutated
-    assert scanMutations(List(Stmt)()).count() == 0
+    assert scanMutations(List(Stmt)()).len == 0
     print("10. scanMutations: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────

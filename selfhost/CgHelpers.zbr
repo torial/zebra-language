@@ -44,15 +44,21 @@ use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, A
 
 class StrSet
     var _items: List(str)
+    # Maintained element count (#219). Every mutation re-syncs `len` from the
+    # backing list, so callers read the size as a plain field: `set.len` — O(1),
+    # no accessor call in hot loops.
+    var len: int
 
     cue init()
         _items = List(str)()
+        len = 0
 
     def add(s: str)
         require
             s.len > 0
         if not contains_(s)
             _items.add(s)
+            len = _items.len
 
     def contains_(s: str): bool
         for item in _items
@@ -66,6 +72,7 @@ class StrSet
             if not item.startsWith(prefix)
                 new_items.add(item)
         _items = new_items
+        len = _items.len
 
     # Named `removeOne` (not `remove`) because the selfhost codegen maps a bare
     # `.remove()` call to ArrayList's `orderedRemove`, which StrSet does not have.
@@ -75,9 +82,7 @@ class StrSet
             if item != s
                 new_items.add(item)
         _items = new_items
-
-    def count(): int
-        return _items.count()
+        len = _items.len
 
     def items(): List(str)
         return _items
@@ -99,15 +104,16 @@ struct ClosureThunk
 
 class ThunkList
     var _items: List(ClosureThunk)
+    # Maintained element count (#219); read as the plain field `list.len`.
+    var len: int
 
     cue init()
         _items = List(ClosureThunk)()
+        len = 0
 
     def add(t: ClosureThunk)
         _items.add(t)
-
-    def count(): int
-        return _items.count()
+        len = _items.len
 
     def at(i: int): ClosureThunk
         return _items.at(i)
@@ -623,7 +629,7 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             return mightUseNameInExpr(name, e)
         on Stmt.print_ as p
             var pi = 0
-            while pi < p.args.count()
+            while pi < p.args.len
                 if mightUseNameInExpr(name, p.args.at(pi))
                     return true
                 pi += 1
@@ -727,7 +733,7 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             return nameUsedInExpr(name, d.init_expr)
         on Stmt.print_ as p
             var pi = 0
-            while pi < p.args.count()
+            while pi < p.args.len
                 if nameUsedInExpr(name, p.args.at(pi))
                     return true
                 pi += 1
@@ -872,17 +878,17 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
             on Stmt.var_ as n
                 if out.contains_(n.name)
                     if n.init_expr != nil
-                        var before = out.count()
+                        var before = out.len
                         collectAllIdents(n.init_expr!, out)
-                        if out.count() > before
+                        if out.len > before
                             grew = true
             on Stmt.assign as a
                 if a.target is Expr.member as m
                     if m.object is Expr.ident as id
                         if out.contains_(id.name)
-                            var before2 = out.count()
+                            var before2 = out.len
                             collectAllIdents(a.value, out)
-                            if out.count() > before2
+                            if out.len > before2
                                 grew = true
             on Stmt.if_ as si
                 if propagateEscapesOnce(si.then_stmts, out)
@@ -1138,7 +1144,7 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                 scanMutationsInExpr(a.expr, out)
             on Stmt.print_ as p
                 var pi = 0
-                while pi < p.args.count()
+                while pi < p.args.len
                     scanMutationsInExpr(p.args.at(pi), out)
                     pi += 1
             else
@@ -1189,7 +1195,7 @@ def stmtMutatesSelf(s: Stmt): bool
             return exprHasSelfCall(e)
         on Stmt.print_ as p
             var pi = 0
-            while pi < p.args.count()
+            while pi < p.args.len
                 if exprHasSelfCall(p.args.at(pi))
                     return true
                 pi += 1

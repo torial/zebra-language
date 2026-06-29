@@ -6,25 +6,25 @@ def main()
     m.put("a", 1)
     m.put("b", 2)
     m.put("c", 3)
-    assert m.count() == 3, "initial count"
+    assert m.len == 3, "initial count"
 
     m.remove("b")
-    assert m.count() == 2, "count after remove"
+    assert m.len == 2, "count after remove"
     assert not m.contains("b"), "b removed"
     assert m.contains("a"), "a still present"
     assert m.contains("c"), "c still present"
 
     # remove non-existent key is a no-op
     m.remove("z")
-    assert m.count() == 2, "count unchanged after no-op remove"
+    assert m.len == 2, "count unchanged after no-op remove"
 
     # str→str HashMap
     var tags = HashMap(str, str)()
     tags.put("lang", "zebra")
     tags.put("tier", "alpha")
-    assert tags.count() == 2, "str-str count"
+    assert tags.len == 2, "str-str count"
     tags.remove("tier")
-    assert tags.count() == 1, "str-str count after remove"
+    assert tags.len == 1, "str-str count after remove"
     assert tags.contains("lang"), "lang still there"
 
     print("ok")

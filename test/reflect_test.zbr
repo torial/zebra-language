@@ -15,7 +15,7 @@ def main()
 
     # fieldNames
     var fields = Reflect.fieldNames(p)
-    assert fields.count() == 3, "field count"
+    assert fields.len == 3, "field count"
     assert fields.at(0) == "name",  "field 0"
     assert fields.at(1) == "price", "field 1"
     assert fields.at(2) == "qty",   "field 2"

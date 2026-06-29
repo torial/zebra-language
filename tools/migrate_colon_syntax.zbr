@@ -24,11 +24,11 @@ def migrateLine(line: str): str
     if trimmed.startsWith("#")
         return line
     var parts: List(str) = line.split(" as ")
-    if parts.count() <= 1
+    if parts.len <= 1
         return line
     var result = parts.at(0)
     var i = 1
-    while i < parts.count()
+    while i < parts.len
         var part = parts.at(i)
         var sep = " as "
         if part.len > 0

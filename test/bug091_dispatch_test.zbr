@@ -11,7 +11,7 @@ class Filler
     def runSelf
         var items: List(str) = List(str)()
         this.helperList(items)
-        assert items.count() == 2, "self count"
+        assert items.len == 2, "self count"
 
 def main()
     var f = Filler()
@@ -20,6 +20,6 @@ def main()
     # Instance call from outside.
     var items2: List(str) = List(str)()
     f.helperList(items2)
-    assert items2.count() == 2, "instance count"
+    assert items2.len == 2, "instance count"
 
     print("ok")

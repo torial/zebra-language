@@ -54,16 +54,16 @@ def stripStringQuotes(text: str): str
             parts.add(p)
         # Skip first (before opening quote) and last (after closing quote),
         # rejoin interior parts with the original quote char.
-        if parts.count() <= 1
+        if parts.len <= 1
             # No interior content
             return ""
-        if parts.count() == 2
+        if parts.len == 2
             # Only one quote in text — string_start token like "hello or bare ".
             # Return content after the leading quote (parts[1]).
             return parts.at(1)
         var out: str = parts.at(1)
         var i: int = 2
-        while i < parts.count() - 1
+        while i < parts.len - 1
             out = out + quote
             out = out + parts.at(i)
             i = i + 1
@@ -82,11 +82,11 @@ def stripZigQuotes(text: str): str
     for p in text.split(quote)
         parts.add(p)
     # parts[0] = "zig", parts[-1] = ""; content is between.
-    if parts.count() <= 2
+    if parts.len <= 2
         return ""
     var out: str = parts.at(1)
     var i: int = 2
-    while i < parts.count() - 1
+    while i < parts.len - 1
         out = out + quote
         out = out + parts.at(i)
         i = i + 1
@@ -106,12 +106,12 @@ def stripRawAndEscape(text: str): str
     var parts: List(str) = List(str)()
     for p in text.split(quote)
         parts.add(p)
-    if parts.count() <= 2
+    if parts.len <= 2
         return ""
     # Rejoin interior parts with the quote char to preserve embedded quotes.
     var content: str = parts.at(1)
     var i: int = 2
-    while i < parts.count() - 1
+    while i < parts.len - 1
         content = content + quote
         content = content + parts.at(i)
         i = i + 1
@@ -119,11 +119,11 @@ def stripRawAndEscape(text: str): str
     var bs_parts: List(str) = List(str)()
     for bp in content.split("\\")
         bs_parts.add(bp)
-    if bs_parts.count() <= 1
+    if bs_parts.len <= 1
         return content
     var out: str = bs_parts.at(0)
     var j: int = 1
-    while j < bs_parts.count()
+    while j < bs_parts.len
         out = out + "\\\\"
         out = out + bs_parts.at(j)
         j = j + 1
@@ -139,7 +139,7 @@ def stripCharQuotes(text: str): str
     for p in text.split("'")
         parts.add(p)
     # For c'x': parts = ["c", "x", ""]
-    if parts.count() >= 2
+    if parts.len >= 2
         return parts.at(1)
     return text
 
@@ -504,7 +504,7 @@ class ASTBuilder
                 var else_stmts: List(Stmt)? = nil
                 if pfor.else_stmts.len > 0
                     else_stmts = .buildStmts(pfor.else_stmts)?
-                if pfor.filter.count() > 0
+                if pfor.filter.len > 0
                     const filter_expr = .buildExpr(pfor.filter.at(0))?
                     return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, filter_expr, stmts, else_stmts))
                 return Stmt.for_in(StmtForIn(Span(pfor.line, 0, pfor.line, 0), vars, iter_expr, nil, stmts, else_stmts))
@@ -665,7 +665,7 @@ class ASTBuilder
                     var range_parts: List(str) = List(str)()
                     for rp in pat.split("..")
                         range_parts.add(rp)
-                    if range_parts.count() >= 2
+                    if range_parts.len >= 2
                         var left_expr = .patternToExpr(range_parts.at(0))
                         var right_expr = .patternToExpr(range_parts.at(1))
                         values.add(Expr.binary(ExprBinary(zspan(), BinaryOp.dotdot, left_expr, right_expr)))
@@ -681,7 +681,7 @@ class ASTBuilder
                     # For 3 parts (Mod.Union.variant), two nested member accesses.
                     var i_pat: int = 1
                     var built_expr: Expr = base_expr
-                    while i_pat < parts.count()
+                    while i_pat < parts.len
                         built_expr = Expr.member(ExprMember(zspan(), built_expr, parts.at(i_pat)))
                         i_pat = i_pat + 1
                     values.add(built_expr)
@@ -692,12 +692,12 @@ class ASTBuilder
             if arm.binding != ""
                 binding_opt = arm.binding
             var filter_exprs = List(Expr)()
-            if arm.filter_cond.count() > 0
+            if arm.filter_cond.len > 0
                 var gexpr = .buildExpr(arm.filter_cond.at(0))?
                 filter_exprs.add(gexpr)
             var bo = BranchOn(zspan(), values, arm_stmts, binding_opt, filter_exprs)
             # Struct pattern: parser stored the full call node in struct_pat_node.
-            if arm.struct_pat_node.count() > 0
+            if arm.struct_pat_node.len > 0
                 var call_expr = .buildExpr(arm.struct_pat_node.at(0))?
                 var sp_opt = .tryBuildStructPat(call_expr)
                 if sp_opt != nil
@@ -726,7 +726,7 @@ class ASTBuilder
                     return nil
                 if tname[0] < c'A' or tname[0] > c'Z'
                     return nil
-                if call.args.count() == 0
+                if call.args.len == 0
                     return nil
                 # All args must be named
                 for a in call.args
@@ -996,7 +996,7 @@ class ASTBuilder
         if pl.return_type != ""
             ret_type = .parseTypeRef(pl.return_type)
         var lbody: LambdaBody
-        if pl.body_expr.count() > 0
+        if pl.body_expr.len > 0
             const bexpr = .buildExpr(pl.body_expr.at(0))?
             lbody = LambdaBody.expr_(bexpr)
         else
@@ -1116,7 +1116,7 @@ class ASTBuilder
                 name_args_parts.add(args_part)
             var alias_name = name_args_parts.at(0)
             var alias_args: List(Expr) = List(Expr)()
-            if name_args_parts.count() > 1
+            if name_args_parts.len > 1
                 var args_str = name_args_parts.at(1)
                 for a in args_str.split(",")
                     if a != ""
@@ -1126,7 +1126,7 @@ class ASTBuilder
                             var pos_parts: List(str) = List(str)()
                             for neg_part in a2.split("-")
                                 pos_parts.add(neg_part)
-                            if pos_parts.count() > 1
+                            if pos_parts.len > 1
                                 a2 = pos_parts.at(1)
                         if a2.contains(".")
                             alias_args.add(Expr.float_lit(ExprFloatLit(zspan(), a2)))
@@ -1150,20 +1150,20 @@ class ASTBuilder
             var elems: List(TypeRef) = List(TypeRef)()
             # First element has leading "(", last has trailing ")"
             var i: int = 0
-            while i < inner_parts.count()
+            while i < inner_parts.len
                 var part: str = inner_parts.at(i)
                 # Strip leading "(" from first, trailing ")" from last
                 if part.startsWith("(")
                     var stripped: List(str) = List(str)()
                     for sp in part.split("(")
                         stripped.add(sp)
-                    if stripped.count() > 1
+                    if stripped.len > 1
                         part = stripped.at(1)
                 if part.endsWith(")")
                     var stripped: List(str) = List(str)()
                     for sp in part.split(")")
                         stripped.add(sp)
-                    if stripped.count() > 0
+                    if stripped.len > 0
                         part = stripped.at(0)
                 if part != ""
                     elems.add(.parseTypeRefRequired(part))
@@ -1201,7 +1201,7 @@ class ASTBuilder
             # Reconstruct everything after first "(" by joining parts with "("
             var rest = ""
             var ri = 1
-            while ri < name_parts.count()
+            while ri < name_parts.len
                 if ri > 1
                     rest = rest + "("
                 rest = rest + name_parts.at(ri)
@@ -1212,7 +1212,7 @@ class ASTBuilder
                 rparts.add(q)
             var args_str = ""
             var si = 0
-            while si < rparts.count() - 1
+            while si < rparts.len - 1
                 if si > 0
                     args_str = args_str + ")"
                 args_str = args_str + rparts.at(si)

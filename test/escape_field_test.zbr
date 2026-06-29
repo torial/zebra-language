@@ -19,7 +19,7 @@ class Builder
 
 def main()
     var c = Builder.build("test")
-    assert c.items.count() == 2, "item count"
+    assert c.items.len == 2, "item count"
     print(c.items.at(0))   # "alpha" — UAF here if list was freed early
     print(c.label)         # "test"
     print("escape_field_test: all assertions passed")

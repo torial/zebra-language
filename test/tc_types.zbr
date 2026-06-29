@@ -165,10 +165,10 @@ class TcTypes
                         on TcType.generic_named as gb
                             if ga.name != gb.name
                                 return false
-                            if ga.args.count() != gb.args.count()
+                            if ga.args.len != gb.args.len
                                 return false
                             var i = 0
-                            while i < ga.args.count()
+                            while i < ga.args.len
                                 if not TcTypes.eql(ga.args.at(i), gb.args.at(i))
                                     return false
                                 i = i + 1
@@ -188,10 +188,10 @@ class TcTypes
                 on TcType.tuple as ea
                     branch b
                         on TcType.tuple as eb
-                            if ea.count() != eb.count()
+                            if ea.len != eb.len
                                 return false
                             var i = 0
-                            while i < ea.count()
+                            while i < ea.len
                                 if not TcTypes.eql(ea.at(i), eb.at(i))
                                     return false
                                 i = i + 1

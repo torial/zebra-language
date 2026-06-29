@@ -85,7 +85,7 @@ class TcCheck
 
     # True if no errors were recorded.
     def ok(): bool
-        return errors.count() == 0
+        return errors.len == 0
 
     # Append a diagnostic string.
     def report(msg: str)
@@ -136,6 +136,6 @@ class TcCheck
     # Type-check a list of statements.
     def checkStmts(stmts: List(TcStmt))
         var i = 0
-        while i < stmts.count()
+        while i < stmts.len
             checkStmt(stmts.at(i))
             i = i + 1

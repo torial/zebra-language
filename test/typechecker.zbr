@@ -80,18 +80,18 @@ class TypeChecker
         var chk   = TcCheck(infer, ret_type)
         chk.checkStmts(stmts)
         var i = 0
-        while i < chk.errors.count()
+        while i < chk.errors.len
             errors.add(chk.errors.at(i))
             i = i + 1
         _scope.pop()
 
     # True if no errors have been collected.
     def ok(): bool
-        return errors.count() == 0
+        return errors.len == 0
 
     # Clear all collected errors.
     def clearErrors()
-        var i = errors.count() - 1
+        var i = errors.len - 1
         while i >= 0
             errors.remove(i)
             i = i - 1

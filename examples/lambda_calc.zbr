@@ -374,7 +374,7 @@ def runOne(src: str)
         steps.add(show(current))
         i = i + 1
     var k = 0
-    while k < steps.count()
+    while k < steps.len
         var line: str = steps.at(k)
         if k == 0
             print("    = ${line}")

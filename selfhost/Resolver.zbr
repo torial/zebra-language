@@ -448,7 +448,7 @@ class Resolver
         if not name.contains("x")
             return false
         var parts: List(str) = name.split("x")
-        if parts.count() != 2
+        if parts.len != 2
             return false
         if parts.at(1) == ""
             return false

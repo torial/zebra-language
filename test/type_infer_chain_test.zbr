@@ -62,7 +62,7 @@ def main()
     # 5. split → join: result of split used in multiple statements
     var csv = "alpha,beta,gamma,delta"
     var csv_parts: List(str) = csv.split(",")
-    assert csv_parts.count() == 4, "csv_parts.count: expected 4"
+    assert csv_parts.len == 4, "csv_parts.count: expected 4"
     var last = csv_parts.at(3)
     assert last == "delta", "csv_parts.at(3): expected 'delta'"
     assert last.len == 5, "csv_parts.at(3).len: expected 5"
@@ -71,7 +71,7 @@ def main()
     var rows: List(str) = "a b,c d,e f".split(",")
     var mid_row = rows.at(1)
     var mid_parts: List(str) = mid_row.split(" ")
-    assert mid_parts.count() == 2, "nested split count: expected 2"
+    assert mid_parts.len == 2, "nested split count: expected 2"
     assert mid_parts.at(0) == "c", "nested split at(0): expected 'c'"
 
     print("type_infer_chain: OK")

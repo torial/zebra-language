@@ -11,7 +11,7 @@ def main()
     assert hdr.at(0) == "name",  "header col 0"
     assert hdr.at(1) == "score", "header col 1"
     assert hdr.at(2) == "city",  "header col 2"
-    assert hdr.count() == 3, "header count"
+    assert hdr.len == 3, "header count"
 
     # ── Row access by index (0-based, 0 = header row) ─────────────────
     var r1 = csv.row(1)

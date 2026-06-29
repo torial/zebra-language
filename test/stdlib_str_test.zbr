@@ -37,6 +37,6 @@ def main()
 
     # tokenize (skips empty tokens unlike split)
     var tokens = "one  two   three".tokenize(" ")
-    assert tokens.count() == 3
+    assert tokens.len == 3
 
     print("stdlib_str OK")

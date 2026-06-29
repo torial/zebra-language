@@ -13,7 +13,7 @@ class MapHolder
     def get_(k: str): int
         return bag[k]      # HashMap index-read → .get(k).?
     def size(): int
-        return bag.count()
+        return bag.len
 
 class ListHolder
     var bag: List(int)

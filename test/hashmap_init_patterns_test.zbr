@@ -39,17 +39,17 @@ def makeConfig1bPos(): Config2
 def main()
     # Pattern 1a: verify empty map and list are usable
     var c1 = makeConfig1a()
-    assert c1.cache.count() == 0
-    assert c1.tags.count() == 0
+    assert c1.cache.len == 0
+    assert c1.tags.len == 0
 
     # Pattern 1b named: verify empty map/list usable
     var c2 = makeConfig1b()
-    assert c2.cache.count() == 0
-    assert c2.tags.count() == 0
+    assert c2.cache.len == 0
+    assert c2.tags.len == 0
 
     # Pattern 1b positional: verify empty map/list usable
     var c3 = makeConfig1bPos()
-    assert c3.cache.count() == 0
+    assert c3.cache.len == 0
 
     # Mutate through a direct local variable to prove the types are correct
     var m: HashMap(str, str) = HashMap()
@@ -57,16 +57,16 @@ def main()
     assert m.contains("hello")
     var lst: List(str) = List()
     lst.add("abc")
-    assert lst.count() == 1
+    assert lst.len == 1
 
     # Pattern 1c: return-type-hinted bare HashMap()/List()
     var rm = getEmptyMap()
-    assert rm.count() == 0
+    assert rm.len == 0
     rm.put("k", "v")
-    assert rm.count() == 1
+    assert rm.len == 1
     var rl = getEmptyList()
-    assert rl.count() == 0
+    assert rl.len == 0
     rl.add("x")
-    assert rl.count() == 1
+    assert rl.len == 1
 
     print("hashmap_init_patterns: all OK")

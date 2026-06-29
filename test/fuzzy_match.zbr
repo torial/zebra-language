@@ -11,7 +11,7 @@ class Program
             for c in text.chars()
                 clist.add(c.toString())
             var i = 0
-            while i < clist.count() - 2
+            while i < clist.len - 2
                 var tri = clist.at(i).concat(clist.at(i + 1)).concat(clist.at(i + 2))
                 if ngrams.contains(tri)
                     ngrams.put(tri, ngrams.fetch(tri) + 1)
@@ -42,7 +42,7 @@ class Program
                     var parts: List(str) = List()
                     for p in line.split(",")
                         parts.add(p)
-                    if parts.count() >= 3
+                    if parts.len >= 3
                         var text: str = parts.at(2)
                         if text.codePointCount() > 4
                             verses.add(text)
@@ -59,7 +59,7 @@ class Program
             var mat_totals: List(int) = List()
             var mat_idx: List(int) = List()
             var pi = 0
-            while pi < mat_verses.count()
+            while pi < mat_verses.len
                 var ptext: str = mat_verses.at(pi)
                 var ptotal = ptext.codePointCount() - 2
                 if ptotal > 3
@@ -70,13 +70,13 @@ class Program
             print("Mat ngrams cached: ${mat_ngrams.count()}")
 
             var mi = 0
-            while mi < mark_verses.count()
+            while mi < mark_verses.len
                 var mtext: str = mark_verses.at(mi)
                 var total_m = mtext.codePointCount() - 2
                 if total_m > 3
                     var ngrams_m: HashMap(str, int) = Program.buildNgrams(mtext)
                     var ti = 0
-                    while ti < mat_ngrams.count()
+                    while ti < mat_ngrams.len
                         var total_t: int = mat_totals.at(ti)
                         var ngrams_t: HashMap(str, int) = mat_ngrams.at(ti)
                         var inter = Program.intersection(ngrams_m, ngrams_t)

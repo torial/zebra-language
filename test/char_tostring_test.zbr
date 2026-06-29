@@ -12,11 +12,11 @@ def main()
     var gchars: List(str) = List()
     for c in greek.chars()
         gchars.add(c.toString())
-    print(gchars.count())    # 5
+    print(gchars.len)    # 5
 
     # list.at(i) with runtime index
     var i = 0
-    while i < chars_list.count()
+    while i < chars_list.len
         print(chars_list.at(i))
         i = i + 1
 

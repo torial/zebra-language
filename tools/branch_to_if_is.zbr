@@ -44,12 +44,12 @@ def parseOnBinding(content: str): List(str)
         return result
     var rest = content[3..content.len]
     var parts: List(str) = rest.split(" as ")
-    if parts.count() < 2
+    if parts.len < 2
         result.add("")
         result.add("")
         return result
     # Binding is the last segment
-    var last_idx = parts.count() - 1
+    var last_idx = parts.len - 1
     var raw_binding: str = parts.at(last_idx)
     var binding = raw_binding.trimRight()
     # Binding must be a simple word (no spaces, not a bare `_` discard)
@@ -75,7 +75,7 @@ def transformFile(path: str, dry_run: bool): int
     var out: List(str) = List()
     var i = 0
     var changes = 0
-    var n = lines.count()
+    var n = lines.len
 
     while i < n
         var line: str = lines.at(i)
@@ -165,7 +165,7 @@ def transformFile(path: str, dry_run: bool): int
             var el_c = el_r.trimLeft()
             if el_c.len > 0
                 non_blank_else.add(el_c)
-        if non_blank_else.count() != 1
+        if non_blank_else.len != 1
             out.add(line)
             i = i + 1
             continue
@@ -178,7 +178,7 @@ def transformFile(path: str, dry_run: bool): int
         # Trim trailing blank lines from on_body
         var last_non_blank: int = -1
         var kb = 0
-        while kb < on_body.count()
+        while kb < on_body.len
             var bl: str = on_body.at(kb)
             var bl_tr = bl.trimRight()
             if bl_tr.len > 0

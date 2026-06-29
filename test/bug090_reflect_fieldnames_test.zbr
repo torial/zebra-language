@@ -13,7 +13,7 @@ def main()
     var names: List(str) = List(str)()
     for n in Reflect.fieldNames(u)
         names.add(n)
-    assert names.count() == 2, "field count"
+    assert names.len == 2, "field count"
     # field order: name, age (declaration order)
     assert names.at(0) == "name", "first field"
     assert names.at(1) == "age",  "second field"

@@ -27,7 +27,7 @@ def main()
     var ret_bad = TcStmtReturn(TcExpr.string_lit())
     chk2.checkStmt(TcStmt.return_(ret_bad))
     assert not chk2.ok(), "return type mismatch should be reported"
-    assert chk2.errors.count() == 1
+    assert chk2.errors.len == 1
     print("2. return type mismatch reported OK")
 
     # 3. return_void in void method — valid
@@ -54,7 +54,7 @@ def main()
     var vd_bad = TcStmtVarDecl("x", TcType.int_(), TcExpr.string_lit())
     chk6.checkStmt(TcStmt.var_decl(vd_bad))
     assert not chk6.ok()
-    assert chk6.errors.count() == 1
+    assert chk6.errors.len == 1
     print("6. var_decl mismatch reported OK")
 
     # 7. if with bool condition — valid
@@ -99,7 +99,7 @@ def main()
     stmts.add(TcStmt.var_decl(TcStmtVarDecl("b", TcType.string_(), TcExpr.int_lit())))
     stmts.add(TcStmt.pass_())
     chk12.checkStmts(stmts)
-    assert chk12.errors.count() == 2, "two type mismatches in three stmts"
+    assert chk12.errors.len == 2, "two type mismatches in three stmts"
     print("12. checkStmts accumulates errors OK")
 
     print("tc_check_test: all OK")

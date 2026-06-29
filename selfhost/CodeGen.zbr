@@ -409,7 +409,7 @@ def declMembersHaveInit(members: List(Decl)): bool
     # Uses di.params.count() to reference `di` so Zig does not emit unused-const.
     for mem in members
         if mem is Decl.init as di
-            return di.params.count() >= 0
+            return di.params.len >= 0
     return false
 
 def getIdentName(e: Expr): str?
@@ -623,7 +623,7 @@ def typeRefStr(tr: TypeRef): str
         on TypeRef.generic as g
             var s = g.name + "("
             var i = 0
-            while i < g.args.count()
+            while i < g.args.len
                 if i > 0
                     s = s + ", "
                 s = s + typeRefStr(g.args.at(i))
@@ -759,14 +759,14 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     var reflect_classes = List(str)()
     for decl in m.decls
         if decl is Decl.class_ as rc
-            if rc.type_params.count() == 0
+            if rc.type_params.len == 0
                 reflect_classes.add(rc.name)
-    if reflect_classes.count() > 0
+    if reflect_classes.len > 0
         # Emit a wrapper struct so that reflect slices work with .items.len and .items[i]
         w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };\n")
         w.emit("fn _reflect_lookup_name(tag: u64) []const u8 {\n")
         var ri2 = 0
-        while ri2 < reflect_classes.count()
+        while ri2 < reflect_classes.len
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return _reflect_")
@@ -776,7 +776,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
         w.emit("    return \"unknown\";\n}\n")
         w.emit("fn _reflect_lookup_fields(tag: u64) _ReflectStrSlice {\n")
         ri2 = 0
-        while ri2 < reflect_classes.count()
+        while ri2 < reflect_classes.len
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return .{ .items = _reflect_")
@@ -786,7 +786,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
         w.emit("    return .{ .items = &.{} };\n}\n")
         w.emit("fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {\n")
         ri2 = 0
-        while ri2 < reflect_classes.count()
+        while ri2 < reflect_classes.len
             w.emit("    if (tag == _ttag_")
             w.emit(reflect_classes.at(ri2))
             w.emit(") return .{ .items = _reflect_")
@@ -1774,7 +1774,7 @@ struct Generator
             on TypeRef.tuple as ttr
                 w.emit("struct { ")
                 var j = 0
-                while j < ttr.elems.count()
+                while j < ttr.elems.len
                     if j > 0
                         w.emit(", ")
                     genType(ttr.elems.at(j))
@@ -1796,7 +1796,7 @@ struct Generator
     def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN
         if gtr.name == "int" or gtr.name == "uint" or gtr.name == "float"
-            if gtr.args.count() >= 1
+            if gtr.args.len >= 1
                 if gtr.args.at(0) is TypeRef.named as an
                     if gtr.name == "uint"
                         w.emit("u")
@@ -1807,10 +1807,10 @@ struct Generator
                     w.emit(an.name)
                     return
         if gtr.name == "HashMap"
-            var key_str = gtr.args.count() >= 1 and isStringTypeRef(gtr.args.at(0))
+            var key_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args.at(0))
             if key_str
                 w.emit("std.StringHashMap(")
-                if gtr.args.count() >= 2
+                if gtr.args.len >= 2
                     genType(gtr.args.at(1))
                 else
                     w.emit("anytype")
@@ -1818,7 +1818,7 @@ struct Generator
             else
                 w.emit("std.AutoHashMap(")
                 var ai = 0
-                while ai < gtr.args.count()
+                while ai < gtr.args.len
                     if ai > 0
                         w.emit(", ")
                     genType(gtr.args.at(ai))
@@ -1827,7 +1827,7 @@ struct Generator
             return
         if gtr.name == "List"
             w.emit("std.ArrayList(")
-            if gtr.args.count() >= 1
+            if gtr.args.len >= 1
                 genType(gtr.args.at(0))
             else
                 w.emit("[]const u8")
@@ -1835,7 +1835,7 @@ struct Generator
             return
         if gtr.name == "Chan"
             w.emit("*_Chan(")
-            if gtr.args.count() >= 1
+            if gtr.args.len >= 1
                 genType(gtr.args.at(0))
             else
                 w.emit("anytype")
@@ -1843,7 +1843,7 @@ struct Generator
             return
         if gtr.name == "Atomic"
             w.emit("*_Atomic(")
-            if gtr.args.count() >= 1
+            if gtr.args.len >= 1
                 genType(gtr.args.at(0))
             else
                 w.emit("anytype")
@@ -1853,10 +1853,10 @@ struct Generator
             w.emit("*_ThreadPool")
             return
         w.emit(gtr.name)
-        if gtr.args.count() > 0
+        if gtr.args.len > 0
             w.emit("(")
             var bi = 0
-            while bi < gtr.args.count()
+            while bi < gtr.args.len
                 if bi > 0
                     w.emit(", ")
                 genType(gtr.args.at(bi))
@@ -2159,9 +2159,9 @@ struct Generator
                 w.emit(" };\n")
             ig.writeIndent()
             w.emit("}\n\n")
-        if n.invariants.count() > 0 and not strip_contracts
+        if n.invariants.len > 0 and not strip_contracts
             ig.genInvariantCheckFn()
-        if n.ifaces.count() > 0
+        if n.ifaces.len > 0
             w.emit("\n")
             ig.writeIndent()
             w.emit("comptime {\n")
@@ -2311,7 +2311,7 @@ struct Generator
         w.emit(n.name)
         w.emit("(")
         var i = 0
-        while i < n.type_params.count()
+        while i < n.type_params.len
             if i > 0
                 w.emit(", ")
             w.emit("comptime ")
@@ -2353,9 +2353,9 @@ struct Generator
             dig.w.emit("return self;\n")
             ig.writeIndent()
             ig.w.emit("}\n\n")
-        if n.invariants.count() > 0 and not strip_contracts
+        if n.invariants.len > 0 and not strip_contracts
             ig.genInvariantCheckFn()
-        if n.ifaces.count() > 0
+        if n.ifaces.len > 0
             w.emit("\n")
             ig.writeIndent()
             w.emit("comptime {\n")
@@ -2374,7 +2374,7 @@ struct Generator
         for gtr in n.ifaces
             gv_work.add(gtr)
         var gvi = 0
-        while gvi < gv_work.count()
+        while gvi < gv_work.len
             var gv_tr = gv_work.at(gvi)
             gvi = gvi + 1
             if gv_tr is TypeRef.named as gnt
@@ -2404,7 +2404,7 @@ struct Generator
             w.emit(")")
             return true
         if method == "lookup"
-            if args.count() < 2
+            if args.len < 2
                 return false
             var iface_name: str = ""
             if args.at(0).value is Expr.ident as aid
@@ -2460,7 +2460,7 @@ struct Generator
         for tr in ifc.ifaces
             work.add(tr)
         var i = 0
-        while i < work.count()
+        while i < work.len
             var wtr = work.at(i)
             i = i + 1
             if wtr is TypeRef.named as nt
@@ -2511,7 +2511,7 @@ struct Generator
         for vtr in ifc.ifaces
             vt_work.add(vtr)
         var vti = 0
-        while vti < vt_work.count()
+        while vti < vt_work.len
             var vt_tr = vt_work.at(vti)
             vti = vti + 1
             if vt_tr is TypeRef.named as vnt
@@ -2580,7 +2580,7 @@ struct Generator
         for tr in ifc.ifaces
             vt_work.add(tr)
         var vti = 0
-        while vti < vt_work.count()
+        while vti < vt_work.len
             var vt_tr = vt_work.at(vti)
             vti = vti + 1
             if vt_tr is TypeRef.named as vnt
@@ -2600,7 +2600,7 @@ struct Generator
     # ── genClass ──────────────────────────────────────────────────────────────
 
     def genClass(n: DeclClass)
-        if n.type_params.count() > 0
+        if n.type_params.len > 0
             genGenericClass(n)
             return
         class_names.add(n.name)
@@ -2674,9 +2674,9 @@ struct Generator
             dig.w.emit("return self;\n")
             ig.writeIndent()
             ig.w.emit("}\n\n")
-        if n.invariants.count() > 0 and not strip_contracts
+        if n.invariants.len > 0 and not strip_contracts
             ig.genInvariantCheckFn()
-        if n.ifaces.count() > 0
+        if n.ifaces.len > 0
             w.emit("\n")
             ig.writeIndent()
             w.emit("comptime {\n")
@@ -2699,7 +2699,7 @@ struct Generator
         for tr in n.ifaces
             _vt_work.add(tr)
         var _vti = 0
-        while _vti < _vt_work.count()
+        while _vti < _vt_work.len
             var _vt_tr = _vt_work.at(_vti)
             _vti = _vti + 1
             if _vt_tr is TypeRef.named as nt
@@ -2735,7 +2735,7 @@ struct Generator
         w.emit(n.name)
         w.emit("_fields: []const []const u8 = &.{")
         var ri = 0
-        while ri < rf_names.count()
+        while ri < rf_names.len
             if ri > 0
                 w.emit(", ")
             w.emit("\"")
@@ -2747,7 +2747,7 @@ struct Generator
         w.emit(n.name)
         w.emit("_field_types: []const []const u8 = &.{")
         ri = 0
-        while ri < rf_types.count()
+        while ri < rf_types.len
             if ri > 0
                 w.emit(", ")
             w.emit("\"")
@@ -2760,7 +2760,7 @@ struct Generator
             genJsonParseStrictFn(n)
         # @export("sym") class Foo is IFoo → module-static singleton factory.
         if n.export_sym as sym
-            if n.ifaces.count() > 0
+            if n.ifaces.len > 0
                 var iface_tr: TypeRef = n.ifaces.at(0)
                 if iface_tr is TypeRef.named as nr
                     var iface_name: str = nr.name
@@ -2836,13 +2836,13 @@ struct Generator
         w.emit(" {\n")
         w.emit("    const _v = _json_parse(_src) orelse return null;\n")
         w.emit("    if (!_json_is_object(_v)) return null;\n")
-        if f_names.count() > 0
+        if f_names.len > 0
             w.emit("    var _it = _v.object.iterator();\n")
             w.emit("    while (_it.next()) |_e| {\n")
             w.emit("        const _k = _e.key_ptr.*;\n")
             w.emit("        const _known = ")
             var i = 0
-            while i < f_names.count()
+            while i < f_names.len
                 if i > 0
                     w.emit(" or ")
                 w.emit("std.mem.eql(u8, _k, \"")
@@ -2855,7 +2855,7 @@ struct Generator
         else
             w.emit("    if (_v.object.count() != 0) return null;\n")
         var j = 0
-        while j < f_names.count()
+        while j < f_names.len
             var nm = f_names.at(j)
             var kd = f_kinds.at(j)
             w.emit("    { const _x = _v.object.get(\"")
@@ -2879,7 +2879,7 @@ struct Generator
         w.emit(n.name)
         w.emit(";\n")
         j = 0
-        while j < f_names.count()
+        while j < f_names.len
             var nm = f_names.at(j)
             var kd = f_kinds.at(j)
             w.emit("    _r.")
@@ -2956,7 +2956,7 @@ struct Generator
         w.emit(fn_name)
         w.emit("(")
         # Generic function type params: def identity(T)(x: T): T → pub fn identity(comptime T: type, x: T) T
-        var gfn_tp_count: int = m.type_params.count()
+        var gfn_tp_count: int = m.type_params.len
         if gfn_tp_count > 0
             var gfn_tpi: int = 0
             while gfn_tpi < gfn_tp_count
@@ -2966,7 +2966,7 @@ struct Generator
                 w.emit(m.type_params.at(gfn_tpi))
                 w.emit(": type")
                 gfn_tpi += 1
-            if has_self or m.params.count() > 0
+            if has_self or m.params.len > 0
                 w.emit(", ")
         if has_self
             # `@pure` forces `*const`; otherwise auto-detect: a method that does not
@@ -2974,7 +2974,7 @@ struct Generator
             # receivers (method-chain temps, by-value params). A non-private method of a
             # class with invariants gets an injected `defer self._check_invariant();`
             # (takes *self), so it must stay `*` even when the body is non-mutating.
-            var will_inject_invariant = not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts
+            var will_inject_invariant = not m.mods.is_private and owner_invariants.len > 0 and not strip_contracts
             var use_const = m.mods.is_pure
             if not use_const and not will_inject_invariant
                 if m.stmts as mc_body
@@ -2991,12 +2991,12 @@ struct Generator
                 else
                     w.emit("self: *")
                 w.emit(owner)
-            if m.params.count() > 0
+            if m.params.len > 0
                 w.emit(", ")
         genParamList(m.params, m.stmts)
         # Root entry point (Zig 0.16): top-level def main() receives init: std.process.Init
         if owner == "" and m.name == "main"
-            if m.params.count() > 0 or has_self
+            if m.params.len > 0 or has_self
                 w.emit(", ")
             w.emit("_zinit: std.process.Init")
         w.emit(") ")
@@ -3057,7 +3057,7 @@ struct Generator
                 prof_ig.w.emit("defer _profile_end();\n")
             # Invariant exit check — public instance methods only.
             # Private helpers may temporarily break invariants; shared methods have no `self`.
-            if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.count() > 0 and not strip_contracts
+            if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.len > 0 and not strip_contracts
                 var inv_ig = indented()
                 inv_ig.writeIndent()
                 inv_ig.w.emit("defer self._check_invariant();\n")
@@ -3091,7 +3091,7 @@ struct Generator
                     branch p2t
                         on TypeRef.generic as gt
                             if gt.name == "List"
-                                if gt.args.count() > 0
+                                if gt.args.len > 0
                                     if gt.args.at(0) is TypeRef.tuple as pttr
                                         bg.list_tuple_locals.add(p2.name)
                                         var ptpos = 0
@@ -3107,7 +3107,7 @@ struct Generator
                             var nt2_dot = nt2.name + "."
                             var orf3 = opt_ref_fields.items()
                             var orf3i = 0
-                            while orf3i < orf3.count()
+                            while orf3i < orf3.len
                                 var orf3e: str = orf3.at(orf3i)
                                 if orf3e.startsWith(nt2_dot)
                                     bg.opt_ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(orf3e)))
@@ -3115,7 +3115,7 @@ struct Generator
                             # Seed ptr_field_bindings for non-optional ^T fields of named-type params
                             var rf3 = ref_fields.items()
                             var rf3i = 0
-                            while rf3i < rf3.count()
+                            while rf3i < rf3.len
                                 var rf3e: str = rf3.at(rf3i)
                                 if rf3e.startsWith(nt2_dot)
                                     bg.ptr_field_bindings.add(makeDottedKey(p2.name, extractAfterDot(rf3e)))
@@ -3124,7 +3124,7 @@ struct Generator
                             pass
             # Suppress unused-parameter errors for self and params
             # Check explicit Expr.this_ usage AND implicit field access (bare ident matching a field)
-            if has_self and not bodyMentionsThis(mstmts) and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.count() == 0 or strip_contracts)
+            if has_self and not bodyMentionsThis(mstmts) and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.len == 0 or strip_contracts)
                 bg.line("_ = self;")
             for p in m.params
                 if not nameUsedInStmts(p.name, mstmts)
@@ -3246,7 +3246,7 @@ struct Generator
             if ec_i2.armed
                 ig.writeIndent()
                 ig.w.emit("_ensure_armed = true;\n")
-        if owner_invariants.count() > 0 and not strip_contracts
+        if owner_invariants.len > 0 and not strip_contracts
             ig.writeIndent()
             ig.w.emit("_self._check_invariant();\n")
         ig.writeIndent()
@@ -3284,7 +3284,7 @@ struct Generator
         # Emit indent manually (spaces) to avoid needing const-unsafe generators.
         var parts: List(str) = ns.name.split(".")
         var depth: int = 0
-        while depth < parts.count()
+        while depth < parts.len
             var part: str = parts.at(depth)
             var oi: int = 0
             while oi < indent + depth
@@ -3318,7 +3318,7 @@ struct Generator
                 else
                     pass
         # Close in reverse order (innermost first), emitting spaces manually.
-        var close_depth: int = parts.count() - 1
+        var close_depth: int = parts.len - 1
         while close_depth >= 0
             var ci: int = 0
             while ci < indent + close_depth
@@ -3386,7 +3386,7 @@ struct Generator
         for itr in ifc.ifaces
             if_work.add(itr)
         var ifw = 0
-        while ifw < if_work.count()
+        while ifw < if_work.len
             var if_tr = if_work.at(ifw)
             ifw = ifw + 1
             if if_tr is TypeRef.named as ifnt
@@ -3403,7 +3403,7 @@ struct Generator
         # List.at() whose element type the selfhost does not track as str, so
         # `${sname}` would format via Zig's `{any}` (byte-array) path.
         var ifi = 0
-        while ifi < if_supers.count()
+        while ifi < if_supers.len
             var sname = if_supers.at(ifi)
             ifi = ifi + 1
             vtig.writeIndent()
@@ -3457,7 +3457,7 @@ struct Generator
         # A sub-interface IS-A super-interface, so its methods are callable
         # directly; they dispatch through the `__as_<Super>` vtable pointer.
         var fwi = 0
-        while fwi < if_supers.count()
+        while fwi < if_supers.len
             var sname = if_supers.at(fwi)
             fwi = fwi + 1
             var sdopt = findInterfaceDecl(sname)
@@ -3680,7 +3680,7 @@ struct Generator
                     addAddrOfMutationsInExpr(a3.value, out)
                 on Stmt.print_ as pp
                     var ppi = 0
-                    while ppi < pp.args.count()
+                    while ppi < pp.args.len
                         addAddrOfMutationsInExpr(pp.args.at(ppi), out)
                         ppi += 1
                 on Stmt.assert_ as asr
@@ -3728,9 +3728,9 @@ struct Generator
                     if body != nil
                         var psl: List(Param) = ps!
                         var pi = 0
-                        var args_count = c.args.count()
+                        var args_count = c.args.len
                         var pli = 0
-                        while pli < psl.count()
+                        while pli < psl.len
                             if pi >= args_count
                                 break
                             var p = psl.at(pli)
@@ -3956,14 +3956,14 @@ struct Generator
             var lv_dot = lv_struct_name + "."
             var orf_lv = opt_ref_fields.items()
             var orf_lvi = 0
-            while orf_lvi < orf_lv.count()
+            while orf_lvi < orf_lv.len
                 var orf_lve: str = orf_lv.at(orf_lvi)
                 if orf_lve.startsWith(lv_dot)
                     opt_ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(orf_lve)))
                 orf_lvi += 1
             var rf_lv = ref_fields.items()
             var rf_lvi = 0
-            while rf_lvi < rf_lv.count()
+            while rf_lvi < rf_lv.len
                 var rf_lve: str = rf_lv.at(rf_lvi)
                 if rf_lve.startsWith(lv_dot)
                     ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(rf_lve)))
@@ -4112,7 +4112,7 @@ struct Generator
                         thread_pool_locals.add(n.name)
                 on TypeRef.generic as gtn
                     if gtn.name == "List"
-                        if gtn.args.count() > 0
+                        if gtn.args.len > 0
                             if gtn.args.at(0) is TypeRef.tuple as ttr
                                 list_tuple_locals.add(n.name)
                                 var tpos = 0
@@ -4153,7 +4153,7 @@ struct Generator
         # AND for Gap 1 closure-to-sig thunking.
         if n.init_expr != nil
             if n.init_expr! is Expr.lambda as lam
-                if lam.captures.count() > 0
+                if lam.captures.len > 0
                     closure_vars.add(n.name)
                     closure_lambdas.set(n.name, lam)
         # Special-case: StringBuilder() constructor
@@ -4181,7 +4181,7 @@ struct Generator
                             genType(n.type_!)
                             w.emit(".empty;\n")
                             var lli = 0
-                            while lli < ll_init.elems.count()
+                            while lli < ll_init.elems.len
                                 writeIndent()
                                 w.emit(n.name + ".append(_allocator, ")
                                 genExpr(ll_init.elems.at(lli))
@@ -4339,7 +4339,7 @@ struct Generator
         w.emit("{\n")
         # Emit const bindings for value params (e.g. `const lo: i64 = 0;`)
         var pi = 0
-        while pi < alias_decl.params.count() and pi < value_args.count()
+        while pi < alias_decl.params.len and pi < value_args.len
             ig.writeIndent()
             var p = alias_decl.params.at(pi)
             w.emit("const " + p.name + ": ")
@@ -4379,14 +4379,14 @@ struct Generator
 
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
-            if c.args.count() == 0
+            if c.args.len == 0
                 if c.callee is Expr.ident as id
                     return id.name == "StringBuilder"
         return false
 
     def isStrSetCtor(e: Expr): bool
         if e is Expr.call as c
-            if c.args.count() == 0
+            if c.args.len == 0
                 if c.callee is Expr.ident as id
                     return id.name == "StrSet"
         return false
@@ -4417,7 +4417,7 @@ struct Generator
     # Returns nil if the expression is not a HashMap constructor call.
     def getHashMapCtorArgs(e: Expr): List(str)?
         if e is Expr.call as outer
-            if outer.args.count() == 0
+            if outer.args.len == 0
                 if outer.callee is Expr.call as inner
                     if inner.callee is Expr.ident as id
                         if id.name == "HashMap"
@@ -4432,7 +4432,7 @@ struct Generator
         # List(T)() or HashMap(K,V)() or StrSet()
         # Also bare List() / HashMap() where type is inferred from the variable annotation
         if e is Expr.call as outer
-            if outer.args.count() == 0
+            if outer.args.len == 0
                 branch outer.callee
                     on Expr.call as inner
                         if inner.callee is Expr.ident as id
@@ -4450,17 +4450,17 @@ struct Generator
                     if inner.callee is Expr.ident as id
                         if id.name == "List"
                             w.emit("std.ArrayList(")
-                            if inner.args.count() > 0
+                            if inner.args.len > 0
                                 genTypeFromExpr(inner.args.at(0).value)
                             else
                                 w.emit("anytype")
                             w.emit(").empty")
                             return
                         if id.name == "HashMap"
-                            var key_str = inner.args.count() > 0 and isStringArgExpr(inner.args.at(0).value)
+                            var key_str = inner.args.len > 0 and isStringArgExpr(inner.args.at(0).value)
                             if key_str
                                 w.emit("std.StringHashMap(")
-                                if inner.args.count() >= 2
+                                if inner.args.len >= 2
                                     genTypeFromExpr(inner.args.at(1).value)
                                 else
                                     w.emit("anytype")
@@ -4484,7 +4484,7 @@ struct Generator
                         if type_hint != nil
                             branch type_hint!
                                 on TypeRef.generic as gtr
-                                    if gtr.args.count() > 0
+                                    if gtr.args.len > 0
                                         genType(gtr.args.at(0))
                                     else
                                         w.emit("anytype")
@@ -4498,10 +4498,10 @@ struct Generator
                         if type_hint != nil
                             branch type_hint!
                                 on TypeRef.generic as gtr
-                                    var key_is_str = gtr.args.count() > 0 and isStringTypeRef(gtr.args.at(0))
+                                    var key_is_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
                                     if key_is_str
                                         w.emit("std.StringHashMap(")
-                                        if gtr.args.count() >= 2
+                                        if gtr.args.len >= 2
                                             genType(gtr.args.at(1))
                                         else
                                             w.emit("anytype")
@@ -4551,15 +4551,15 @@ struct Generator
                     on Expr.ident as id
                         if id.name == "List"
                             w.emit("std.ArrayList(")
-                            if c.args.count() > 0
+                            if c.args.len > 0
                                 genTypeFromExpr(c.args.at(0).value)
                             w.emit(")")
                             return
                         if id.name == "HashMap"
-                            var ks = c.args.count() > 0 and isStringArgExpr(c.args.at(0).value)
+                            var ks = c.args.len > 0 and isStringArgExpr(c.args.at(0).value)
                             if ks
                                 w.emit("std.StringHashMap(")
-                                if c.args.count() >= 2
+                                if c.args.len >= 2
                                     genTypeFromExpr(c.args.at(1).value)
                                 else
                                     w.emit("anytype")
@@ -4620,7 +4620,7 @@ struct Generator
             var field_type = getAssignFieldType(a)
             if field_type != nil
                 if a.value is Expr.call as vc
-                    if vc.args.count() == 0
+                    if vc.args.len == 0
                         if vc.callee is Expr.ident as vid
                             if vid.name == "List" or vid.name == "HashMap" or vid.name == "StrSet"
                                 genExpr(a.target)
@@ -4834,13 +4834,13 @@ struct Generator
 
     def genCallWithTypeHint(e: Expr, hint: TypeRef)
         if e is Expr.call as c
-            if c.args.count() == 0
+            if c.args.len == 0
                 if c.callee is Expr.ident as id
                     if id.name == "List"
                         w.emit("std.ArrayList(")
                         branch hint
                             on TypeRef.generic as gtr
-                                if gtr.args.count() > 0
+                                if gtr.args.len > 0
                                     genType(gtr.args.at(0))
                                 else
                                     w.emit("anytype")
@@ -4851,10 +4851,10 @@ struct Generator
                     if id.name == "HashMap"
                         branch hint
                             on TypeRef.generic as gtr
-                                var key_is_str = gtr.args.count() > 0 and isStringTypeRef(gtr.args.at(0))
+                                var key_is_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
                                 if key_is_str
                                     w.emit("std.StringHashMap(")
-                                    if gtr.args.count() >= 2
+                                    if gtr.args.len >= 2
                                         genType(gtr.args.at(1))
                                     else
                                         w.emit("anytype")
@@ -5040,7 +5040,7 @@ struct Generator
                                 var st_dot = sname! + "."
                                 var rf_items = ref_fields.items()
                                 var rfi: int = 0
-                                while rfi < rf_items.count()
+                                while rfi < rf_items.len
                                     var rf_entry: str = rf_items.at(rfi)
                                     if rf_entry.startsWith(st_dot)
                                         var fname2 = extractAfterDot(rf_entry)
@@ -5048,7 +5048,7 @@ struct Generator
                                     rfi += 1
                                 var orf_items = opt_ref_fields.items()
                                 var orfi: int = 0
-                                while orfi < orf_items.count()
+                                while orfi < orf_items.len
                                     var orf_entry: str = orf_items.at(orfi)
                                     if orf_entry.startsWith(st_dot)
                                         var fname3 = extractAfterDot(orf_entry)
@@ -5138,7 +5138,7 @@ struct Generator
         for fv in fi.vars
             .noteShadowLocal(fv)
         # for a, b in list_of_pairs — tuple List destructuring takes priority over HashMap dispatch.
-        if fi.vars.count() >= 2
+        if fi.vars.len >= 2
             var is_tuple_list = false
             if fi.iter is Expr.ident as iter_id
                 if list_tuple_locals.contains_(iter_id.name)
@@ -5146,7 +5146,7 @@ struct Generator
             if is_tuple_list
                 genForInTupleList(fi)
                 return
-        if fi.vars.count() == 2
+        if fi.vars.len == 2
             # HashMap two-var iterator: `for k, v in map`
             var kname = fi.vars.at(0)
             var vname = fi.vars.at(1)
@@ -5427,7 +5427,7 @@ struct Generator
                             var for_st_dot = for_sname! + "."
                             var for_orf = opt_ref_fields.items()
                             var for_oi: int = 0
-                            while for_oi < for_orf.count()
+                            while for_oi < for_orf.len
                                 var for_orf_e: str = for_orf.at(for_oi)
                                 if for_orf_e.startsWith(for_st_dot)
                                     ig.opt_ptr_field_bindings.add(makeDottedKey(vname, extractAfterDot(for_orf_e)))
@@ -5528,7 +5528,7 @@ struct Generator
     # loop (Zig: `while (var < stop) : (var += 1)`).
     def isToRangeIter(e: Expr): bool
         if e is Expr.call as c
-            if c.args.count() == 1
+            if c.args.len == 1
                 if c.callee is Expr.member as m
                     return m.member == "to"
         return false
@@ -5617,7 +5617,7 @@ struct Generator
                     if m.member == "lines"
                         w.emit("'\\n'")
                         return
-                if c.args.count() > 0
+                if c.args.len > 0
                     genExpr(c.args.at(0).value)
                 else
                     w.emit("\" \"")
@@ -5712,7 +5712,7 @@ struct Generator
     # ── genBranch ─────────────────────────────────────────────────────────────
 
     def genBranch(b: StmtBranch)
-        if b.cases.count() == 0
+        if b.cases.len == 0
             if b.else_ != nil
                 genStmts(b.else_!)
             return
@@ -5725,13 +5725,13 @@ struct Generator
             genBranchStruct(b)
             return
         var first_case = b.cases.at(0)
-        if first_case.values.count() == 0
+        if first_case.values.len == 0
             genStmts(first_case.stmts)
             return
         # Detect if any case has a guard expression
         var has_guard = false
         for cas in b.cases
-            if cas.guard_expr.count() > 0
+            if cas.guard_expr.len > 0
                 has_guard = true
         # Detect dispatch kind: string literal values → if/else chain
         var fv = first_case.values.at(0)
@@ -5795,7 +5795,7 @@ struct Generator
                         ig.w.emit(" == ")
                         ig.genExpr(fv)
                     fi = fi + 1
-                if cas.guard_expr.count() > 0
+                if cas.guard_expr.len > 0
                     if fi > 0
                         ig.w.emit(" and ")
                     ig.genExpr(cas.guard_expr.at(0))
@@ -5817,7 +5817,7 @@ struct Generator
             ig.writeIndent()
             ig.w.emit("} else {\n")
             ig.indented().genStmts(b.else_!)
-        if b.cases.count() > 0
+        if b.cases.len > 0
             ig.writeIndent()
             ig.w.emit("}\n")
         writeIndent()
@@ -5834,7 +5834,7 @@ struct Generator
             first = false
             var fi = true
             var vi = 0
-            while vi < cas.values.count()
+            while vi < cas.values.len
                 if not fi
                     w.emit(" or ")
                 fi = false
@@ -5885,7 +5885,7 @@ struct Generator
             w.emit("if (!")
             w.emit(bd)
             if is_union
-                if cas.values.count() > 0
+                if cas.values.len > 0
                     var v0 = cas.values.at(0)
                     var tag_name: str = ""
                     if v0 is Expr.member as m
@@ -5904,19 +5904,19 @@ struct Generator
                     ig.w.emit(" = ")
                     ig.w.emit(bv)
                     ig.w.emit(".")
-                    if cas.values.count() > 0
+                    if cas.values.len > 0
                         var v0b = cas.values.at(0)
                         if v0b is Expr.member as mb
                             ig.w.emit(mb.member)
                     ig.w.emit(";\n")
                     # Suppress unused-const warning: emit `_ = binding;` when no guard.
                     # When a guard is present, the guard expression already uses the binding.
-                    if cas.guard_expr.count() == 0
+                    if cas.guard_expr.len == 0
                         ig.writeIndent()
                         ig.w.emit("_ = ")
                         ig.w.emit(cas.binding!)
                         ig.w.emit(";\n")
-                if cas.guard_expr.count() > 0
+                if cas.guard_expr.len > 0
                     ig.writeIndent()
                     ig.w.emit("if (")
                     ig.genExpr(cas.guard_expr.at(0))
@@ -5935,7 +5935,7 @@ struct Generator
                     ig.genStmts(cas.stmts)
             else
                 # Non-union: match by value equality
-                if cas.values.count() > 0
+                if cas.values.len > 0
                     w.emit(" and (")
                     var fv2 = true
                     for v in cas.values
@@ -5953,7 +5953,7 @@ struct Generator
                     w.emit(")")
                 w.emit(") {\n")
                 var ig = indented()
-                if cas.guard_expr.count() > 0
+                if cas.guard_expr.len > 0
                     ig.writeIndent()
                     ig.w.emit("if (")
                     ig.genExpr(cas.guard_expr.at(0))
@@ -5988,10 +5988,10 @@ struct Generator
             w.emit(") unreachable;\n")
             var all_return = true
             for cas in b.cases
-                if cas.stmts.count() == 0
+                if cas.stmts.len == 0
                     all_return = false
                 else
-                    var last = cas.stmts.at(cas.stmts.count() - 1)
+                    var last = cas.stmts.at(cas.stmts.len - 1)
                     branch last
                         on Stmt.return_
                             pass
@@ -6021,7 +6021,7 @@ struct Generator
             ig.writeIndent()
             var fi = true
             var vi = 0
-            while vi < cas.values.count()
+            while vi < cas.values.len
                 if not fi
                     ig.w.emit(", ")
                 fi = false
@@ -6030,7 +6030,7 @@ struct Generator
             ig.w.emit(" => ")
             # Check if this variant has a boxed (^T) payload that needs deref
             var needs_deref = false
-            if has_binding and cas.binding != nil and cas.values.count() > 0
+            if has_binding and cas.binding != nil and cas.values.len > 0
                 var vkey = getVariantKey(cas.values.at(0))
                 if vkey != nil
                     needs_deref = boxed_variants.contains_(vkey!)
@@ -6057,7 +6057,7 @@ struct Generator
                 iig.w.emit(cas.binding!)
                 iig.w.emit(".*;\n")
             # Track ^T fields for this binding to enable auto-deref
-            if cas.binding != nil and cas.values.count() > 0
+            if cas.binding != nil and cas.values.len > 0
                 var vkey2 = getVariantKey(cas.values.at(0))
                 if vkey2 != nil
                     # Parse "Union.variant" into union_name and variant_name
@@ -6085,7 +6085,7 @@ struct Generator
                                 # Find all non-optional ref_fields for this struct
                                 var rf_items = ref_fields.items()
                                 var rfi: int = 0
-                                while rfi < rf_items.count()
+                                while rfi < rf_items.len
                                     var rf_entry: str = rf_items.at(rfi)
                                     if rf_entry.startsWith(st_dot)
                                         var fname2 = extractAfterDot(rf_entry)
@@ -6094,7 +6094,7 @@ struct Generator
                                 # Find all optional ref_fields for this struct
                                 var orf_items = opt_ref_fields.items()
                                 var orfi: int = 0
-                                while orfi < orf_items.count()
+                                while orfi < orf_items.len
                                     var orf_entry: str = orf_items.at(orfi)
                                     if orf_entry.startsWith(st_dot)
                                         var fname3 = extractAfterDot(orf_entry)
@@ -6141,7 +6141,7 @@ struct Generator
     # ── genPrint ──────────────────────────────────────────────────────────────
 
     def genPrint(p: StmtPrint)
-        if p.args.count() == 0
+        if p.args.len == 0
             if p.newline
                 line("std.debug.print(\"\\n\", .{});")
             else
@@ -6150,7 +6150,7 @@ struct Generator
         writeIndent()
         w.emit("std.debug.print(\"")
         var ai = 0
-        while ai < p.args.count()
+        while ai < p.args.len
             if ai > 0
                 w.emit(" ")
             var arg = p.args.at(ai)
@@ -6160,7 +6160,7 @@ struct Generator
             w.emit("\\n")
         w.emit("\", .{")
         var ai2 = 0
-        while ai2 < p.args.count()
+        while ai2 < p.args.len
             if ai2 > 0
                 w.emit(", ")
             var parg = p.args.at(ai2)
@@ -6458,8 +6458,8 @@ struct Generator
         # exits the function directly, so we skip the trailing break and emit
         # `unreachable` after the catch block (BUG-088 fix).
         var last_is_return = false
-        if tc.stmts.count() > 0
-            branch tc.stmts.at(tc.stmts.count() - 1)
+        if tc.stmts.len > 0
+            branch tc.stmts.at(tc.stmts.len - 1)
                 on Stmt.return_ as _
                     last_is_return = true
                 else
@@ -6692,7 +6692,7 @@ struct Generator
     # Returns context the caller threads into the body (so genReturn can arm
     # the flag and capture _result).
     def genEnsureBlock(ensure_list: List(Expr), context: str, return_type: TypeRef?): EnsureCtx
-        if strip_contracts or ensure_list.count() == 0
+        if strip_contracts or ensure_list.len == 0
             return EnsureCtx(false, false)
         var uses_result = false
         for ens in ensure_list
@@ -6838,7 +6838,7 @@ struct Generator
                 # FixedBuffer is handled inline in genAllocate (backing buffer needs depth).
                 if id.name == "StackFallback"
                     w.emit("std.heap.stackFallback(")
-                    if c.args.count() > 0
+                    if c.args.len > 0
                         genExpr(c.args.at(0).value)
                     else
                         w.emit("256")
@@ -6884,7 +6884,7 @@ struct Generator
                 ig.w.emit(backing_name)
                 ig.w.emit(": [")
                 if al.source is Expr.call as fbc
-                    if fbc.args.count() > 0
+                    if fbc.args.len > 0
                         ig.genExpr(fbc.args.at(0).value)
                     else
                         ig.w.emit("4096")
@@ -7018,7 +7018,7 @@ struct Generator
         genExpr(d.init_expr)
         w.emit(";\n")
         var i = 0
-        while i < d.names.count()
+        while i < d.names.len
             writeIndent()
             w.emit("const ")
             w.emit(d.names.at(i))
@@ -7144,6 +7144,27 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".count()))")
                         return
+                    # #219: inferred local List/HashMap vars (Dir.walk results, HashMap
+                    # locals) that the field-name heuristics above miss — fall back to
+                    # the same inferred-type detection the `.count()` method path uses,
+                    # so `.len` dispatches identically to `.count()`. After the field
+                    # checks, so collision-prone fields (BUG-140) keep authoritative
+                    # class-scoped dispatch.
+                    if .infer_ctx != nil
+                        var rt219: Type_ = inferExpr(m.object, .infer_ctx!)
+                        branch rt219
+                            on Type_.list_ as _
+                                w.emit("@as(i64, @intCast(")
+                                genExpr(m.object)
+                                w.emit(".items.len))")
+                                return
+                            on Type_.hashmap_ as _
+                                w.emit("@as(i64, @intCast(")
+                                genExpr(m.object)
+                                w.emit(".count()))")
+                                return
+                            else
+                                pass
                     # str.len or any other .len — always usize in Zig, cast to i64
                     if m.member == "len"
                         w.emit("@as(i64, @intCast(")
@@ -7322,7 +7343,7 @@ struct Generator
                     w.emit(") = std.ArrayList(")
                     genType(ll.elem_type!)
                     w.emit(").empty; ")
-                else if ll.elems.count() > 0 and .infer_ctx != nil
+                else if ll.elems.len > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx!)
                     # §27a: user class/struct elements render *Class (classes) /
                     # value (structs); cross-module user types are reference (*T).
@@ -7347,7 +7368,7 @@ struct Generator
                 else
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 var li = 0
-                while li < ll.elems.count()
+                while li < ll.elems.len
                     w.emit(ll_var + ".append(_allocator, ")
                     genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
@@ -7365,7 +7386,7 @@ struct Generator
             on Expr.array_lit as al
                 w.emit(".{")
                 var ali = 0
-                while ali < al.elems.count()
+                while ali < al.elems.len
                     if ali > 0
                         w.emit(", ")
                     genExpr(al.elems.at(ali))
@@ -7389,7 +7410,7 @@ struct Generator
             on Expr.tuple_lit as tu
                 w.emit(".{")
                 var ti = 0
-                while ti < tu.elems.count()
+                while ti < tu.elems.len
                     if ti > 0
                         w.emit(", ")
                     genExpr(tu.elems.at(ti))
@@ -7420,7 +7441,7 @@ struct Generator
             on Expr.chained_cmp as cc
                 # a < b < c → (_cchain_N: { const _cm0_N = b; break :_cchain_N (_zebra_lt(a, _cm0_N) and _zebra_lt(_cm0_N, c)); })
                 var cc_uid = w.nextUid()
-                var cc_n = cc.ops.count()
+                var cc_n = cc.ops.len
                 w.emit("(_cchain_${cc_uid.toString()}: {")
                 # Emit temps for middle operands (indices 1..n-1)
                 var cc_ti = 0
@@ -7504,7 +7525,7 @@ struct Generator
                     w.emit(oc.member)
                     w.emit("(")
                     var ai = 0
-                    while ai < oc.args.count()
+                    while ai < oc.args.len
                         if ai > 0
                             w.emit(", ")
                         var a = oc.args.at(ai)
@@ -7874,7 +7895,7 @@ struct Generator
         for dqp in text.split("\"\"\"")
             dq_parts.add(dqp)
         var content: str = ""
-        if dq_parts.count() >= 2
+        if dq_parts.len >= 2
             content = dq_parts.at(1)
         # Strip leading newline (right after opening """)
         if content.startsWith("\n")
@@ -7883,7 +7904,7 @@ struct Generator
                 nl_split.add(nsp)
             content = ""
             var nsi = 1
-            while nsi < nl_split.count()
+            while nsi < nl_split.len
                 if nsi > 1
                     content = content + "\n"
                 content = content + nl_split.at(nsi)
@@ -7894,7 +7915,7 @@ struct Generator
             qparts.add(qp)
         var escaped: str = qparts.at(0)
         var qi = 1
-        while qi < qparts.count()
+        while qi < qparts.len
             escaped = escaped + "\\\""
             escaped = escaped + qparts.at(qi)
             qi = qi + 1
@@ -7904,7 +7925,7 @@ struct Generator
             nparts.add(np)
         var final_str: str = nparts.at(0)
         var ni = 1
-        while ni < nparts.count()
+        while ni < nparts.len
             final_str = final_str + "\\n"
             final_str = final_str + nparts.at(ni)
             ni = ni + 1
@@ -7928,7 +7949,7 @@ struct Generator
         var cast_types: List(str) = List(str)()
         var needs_tostring: List(bool) = List(bool)()
         var i: int = 0
-        while i < si.parts.count()
+        while i < si.parts.len
             var part = si.parts.at(i)
             branch part
                 on StringPart.literal as lit
@@ -7936,7 +7957,7 @@ struct Generator
                 on StringPart.expr_ as e
                     var has_fmt: bool = false
                     var fmt_spec: str = ""
-                    if i + 1 < si.parts.count()
+                    if i + 1 < si.parts.len
                         var np = si.parts.at(i + 1)
                         if np is StringPart.format as fs
                             has_fmt = true
@@ -8014,7 +8035,7 @@ struct Generator
     # type mis-round-trips through the selfhost parser — emits `try ExprLambda`).
     def resolveClosureLambda(av: Expr): ExprLambda?
         if av is Expr.lambda as lam0
-            if lam0.captures.count() > 0
+            if lam0.captures.len > 0
                 return lam0
         else if av is Expr.ident as id0
             if closure_vars.contains_(id0.name)
@@ -8047,7 +8068,7 @@ struct Generator
             return false
         for a in c.args
             if a.value is Expr.lambda as lam_chk
-                if lam_chk.captures.count() > 0
+                if lam_chk.captures.len > 0
                     return true
             else if a.value is Expr.ident as id_chk
                 if closure_vars.contains_(id_chk.name)
@@ -8171,7 +8192,7 @@ struct Generator
     # behaviour, which dropped all but the last).
     def flushPendingThunks()
         var i = 0
-        while i < pending_thunks.count()
+        while i < pending_thunks.len
             var t = pending_thunks.at(i)
             var id_s = "${t.id}"
             # State pool + shared dispatcher + monotonic slot counter.
@@ -8202,7 +8223,7 @@ struct Generator
                 var slot_s = "${slot}"
                 w.emit("fn _zbr_thunk_" + id_s + "_" + slot_s + "(")
                 var pj = 0
-                while pj < t.lambda.params.count()
+                while pj < t.lambda.params.len
                     if pj > 0
                         w.emit(", ")
                     var pp = t.lambda.params.at(pj)
@@ -8329,7 +8350,7 @@ struct Generator
                     # For cross-module unions: assume all payload variants are boxed
                     # (most AST unions use ^T for their payloads)
                     var is_boxed = boxed_variants.contains_(variant_key)
-                    if not is_boxed and c.args.count() > 0
+                    if not is_boxed and c.args.len > 0
                         # Cross-module or unknown: assume boxed if it has a payload arg
                         if not union_names.contains_(oname)
                             is_boxed = true
@@ -8337,7 +8358,7 @@ struct Generator
                     w.emit("{ .")
                     w.emit(mname2)
                     w.emit(" = ")
-                    if c.args.count() > 0
+                    if c.args.len > 0
                         if is_boxed
                             # Heap-allocate the value for ^T payloads.
                             # Type _bv to the variant's payload child type so
@@ -8379,7 +8400,7 @@ struct Generator
                 w.emit("{ .")
                 w.emit(xmu_variant)
                 w.emit(" = ")
-                if c.args.count() > 0
+                if c.args.len > 0
                     if xmu_boxed
                         var xmu_box_uid: int = w.nextUid()
                         var xmu_box_lbl: str = "blk_box_" + xmu_box_uid.toString()
@@ -8416,7 +8437,7 @@ struct Generator
                     w.emit(id.name)
                     w.emit("(")
                     var gci = 0
-                    while gci < inner.args.count()
+                    while gci < inner.args.len
                         if gci > 0
                             w.emit(", ")
                         var gca = inner.args.at(gci).value
@@ -8430,7 +8451,7 @@ struct Generator
                         gci += 1
                     w.emit(").init(")
                     var gci2 = 0
-                    while gci2 < c.args.count()
+                    while gci2 < c.args.len
                         if gci2 > 0
                             w.emit(", ")
                         genExpr(c.args.at(gci2).value)
@@ -8439,20 +8460,20 @@ struct Generator
                     return
         # Bare stdlib ctor: HashMap() or StrSet() without type params
         if c.callee is Expr.ident as id
-            if id.name == "HashMap" and c.args.count() == 0
+            if id.name == "HashMap" and c.args.len == 0
                 # No LHS type context — emit anytype so the Zig error points at the
                 # missing annotation rather than producing a misleading type mismatch.
                 w.emit("std.StringHashMap(anytype).init(_allocator)")
                 return
-            if id.name == "StrSet" and c.args.count() == 0
+            if id.name == "StrSet" and c.args.len == 0
                 w.emit("StrSet.init()")
                 return
-            if id.name == "StringBuilder" and c.args.count() == 0
+            if id.name == "StringBuilder" and c.args.len == 0
                 w.emit("std.ArrayList(u8).empty")
                 return
             if id.name == "ThreadPool"
                 w.emit("_thread_pool_create(")
-                if c.args.count() > 0
+                if c.args.len > 0
                     genExpr(c.args.at(0).value)
                 else
                     w.emit("4")
@@ -8483,7 +8504,7 @@ struct Generator
                         break
                 var ctor_needs_fill: bool = ctor_has_named
                 if not ctor_needs_fill and ctor_ps != nil
-                    ctor_needs_fill = c.args.count() < ctor_ps!.count()
+                    ctor_needs_fill = c.args.len < ctor_ps!.len
                 if ctor_needs_fill
                     var ctor_body: List(Stmt)? = lookupFnBody(id.name + ".init")
                     genArgListFull(c.args, ctor_ps, ctor_body)
@@ -8619,7 +8640,7 @@ struct Generator
             w.emit("_dt_in_zone(")
             genExpr(m.object)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"UTC\"")
@@ -8642,7 +8663,7 @@ struct Generator
                         w.emit("_regex_match(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8652,7 +8673,7 @@ struct Generator
                         w.emit("_regex_find(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8662,7 +8683,7 @@ struct Generator
                         w.emit("_regex_find_all(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8672,12 +8693,12 @@ struct Generator
                         w.emit("_regex_replace(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
                         w.emit(", ")
-                        if args.count() >= 2
+                        if args.len >= 2
                             genExpr(args.at(1).value)
                         else
                             w.emit("\"\"")
@@ -8687,7 +8708,7 @@ struct Generator
                         w.emit("_regex_groups(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8715,7 +8736,7 @@ struct Generator
                         w.emit("_ws_send(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8736,7 +8757,7 @@ struct Generator
                         w.emit("_tcp_write(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8756,7 +8777,7 @@ struct Generator
                         w.emit("_tcp_read_bytes(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("1024")
@@ -8771,17 +8792,17 @@ struct Generator
                     if mname == "send"
                         genExpr(m.object)
                         w.emit(".send_(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
                         w.emit(", ")
-                        if args.count() >= 2
+                        if args.len >= 2
                             genExpr(args.at(1).value)
                         else
                             w.emit("0")
                         w.emit(", ")
-                        if args.count() >= 3
+                        if args.len >= 3
                             genExpr(args.at(2).value)
                         else
                             w.emit("\"\"")
@@ -8790,7 +8811,7 @@ struct Generator
                     if mname == "recv"
                         genExpr(m.object)
                         w.emit(".recv_(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("65536")
@@ -8802,7 +8823,7 @@ struct Generator
                         return
                 on Type_.sqlite_db
                     if mname == "exec"
-                        if args.count() >= 2
+                        if args.len >= 2
                             genExpr(m.object)
                             w.emit(".exec_p_(")
                             genExpr(args.at(0).value)
@@ -8812,14 +8833,14 @@ struct Generator
                         else
                             genExpr(m.object)
                             w.emit(".exec_(")
-                            if args.count() > 0
+                            if args.len > 0
                                 genExpr(args.at(0).value)
                             else
                                 w.emit("\"\"")
                             w.emit(")")
                         return
                     if mname == "query"
-                        if args.count() >= 2
+                        if args.len >= 2
                             genExpr(m.object)
                             w.emit(".query_p_(")
                             genExpr(args.at(0).value)
@@ -8829,7 +8850,7 @@ struct Generator
                         else
                             genExpr(m.object)
                             w.emit(".query_(")
-                            if args.count() > 0
+                            if args.len > 0
                                 genExpr(args.at(0).value)
                             else
                                 w.emit("\"\"")
@@ -8855,7 +8876,7 @@ struct Generator
                     if mname == "asInt" or mname == "asBool"
                         genExpr(m.object)
                         w.emit(".int_(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8864,7 +8885,7 @@ struct Generator
                     if mname == "asStr"
                         genExpr(m.object)
                         w.emit(".str_(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8873,7 +8894,7 @@ struct Generator
                     if mname == "asFloat"
                         genExpr(m.object)
                         w.emit(".float_(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8893,7 +8914,7 @@ struct Generator
                         w.emit("(")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -8949,14 +8970,14 @@ struct Generator
                     if mname == "append"
                         genExpr(m.object)
                         w.emit(".appendSlice(_allocator, ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(") catch @panic(\"OOM\")")
                         return
                     if mname == "appendChar"
                         genExpr(m.object)
                         w.emit(".append(_allocator, @as(u8, @intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("0")
@@ -9005,14 +9026,14 @@ struct Generator
                     if mname == "get"
                         genExpr(m.object)
                         w.emit(".get(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")")
                         return
                     if mname == "contains"
                         genExpr(m.object)
                         w.emit(".contains(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")")
                         return
@@ -9020,7 +9041,7 @@ struct Generator
                         w.emit("(")
                         genExpr(m.object)
                         w.emit(".get(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(") orelse undefined)")
                         return
@@ -9028,7 +9049,7 @@ struct Generator
                         w.emit("_ = ")
                         genExpr(m.object)
                         w.emit(".remove(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")")
                         return
@@ -9069,7 +9090,7 @@ struct Generator
                     if mname == "add"
                         genExpr(m.object)
                         w.emit(".append(_allocator, ")
-                        if args.count() > 0
+                        if args.len > 0
                             if item_is_ref
                                 var ref_uid = w.nextUid()
                                 var ref_lbl = "_box_" + ref_uid.toString()
@@ -9092,7 +9113,7 @@ struct Generator
                     if mname == "at"
                         genExpr(m.object)
                         w.emit(".items[@intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")]")
                         return
@@ -9100,7 +9121,7 @@ struct Generator
                         w.emit("_ = ")
                         genExpr(m.object)
                         w.emit(".orderedRemove(@intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit("))")
                         return
@@ -9116,7 +9137,7 @@ struct Generator
                         w.emit(".items)")
                         return
                     if mname == "sortBy"
-                        if args.count() > 0
+                        if args.len > 0
                             w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
                             genExpr(m.object)
                             w.emit(".items)), ")
@@ -9126,7 +9147,7 @@ struct Generator
                             w.emit(".items)")
                         return
                     if mname == "any"
-                        if args.count() > 0
+                        if args.len > 0
                             w.emit("_zebra_list_any(std.meta.Child(@TypeOf(")
                             genExpr(m.object)
                             w.emit(".items)), ")
@@ -9136,7 +9157,7 @@ struct Generator
                             w.emit(")")
                         return
                     if mname == "all"
-                        if args.count() > 0
+                        if args.len > 0
                             w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
                             genExpr(m.object)
                             w.emit(".items)), ")
@@ -9146,7 +9167,7 @@ struct Generator
                             w.emit(")")
                         return
                     if mname == "find"
-                        if args.count() > 0
+                        if args.len > 0
                             w.emit("_zebra_list_find(std.meta.Child(@TypeOf(")
                             genExpr(m.object)
                             w.emit(".items)), ")
@@ -9157,7 +9178,7 @@ struct Generator
                         return
                     if mname == "join"
                         w.emit("(std.mem.join(_allocator, ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
@@ -9167,7 +9188,7 @@ struct Generator
                         return
                     if mname == "contains"
                         w.emit("_zebra_in(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(", ")
                         genExpr(m.object)
@@ -9186,7 +9207,7 @@ struct Generator
                         w.emit("std.mem.startsWith(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")")
                         return
@@ -9194,7 +9215,7 @@ struct Generator
                         w.emit("std.mem.endsWith(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(")")
                         return
@@ -9202,7 +9223,7 @@ struct Generator
                         w.emit("blk: { const _idx = std.mem.indexOf(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit("); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }")
                         return
@@ -9210,7 +9231,7 @@ struct Generator
                         w.emit("std.mem.splitSequence(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\" \"")
@@ -9251,14 +9272,14 @@ struct Generator
                         genExpr(m.object)
                         w.emit(", 10) catch 0)")
                         return
-                    if mname == "count" and args.count() > 0
+                    if mname == "count" and args.len > 0
                         w.emit("@as(i64, @intCast(std.mem.count(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
                         w.emit(")))")
                         return
-                    if mname == "contains" and args.count() > 0
+                    if mname == "contains" and args.len > 0
                         w.emit("(std.mem.indexOf(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
@@ -9273,7 +9294,7 @@ struct Generator
                             genExpr(a.value)
                         w.emit(") catch unreachable)")
                         return
-                    if mname == "repeat" and args.count() > 0
+                    if mname == "repeat" and args.len > 0
                         w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
                         genExpr(args.at(0).value)
                         w.emit(") : (_ri += 1) _rep.append(_allocator, ")
@@ -9294,12 +9315,12 @@ struct Generator
                         w.emit("_pad_left(")
                         genExpr(m.object)
                         w.emit(", @as(usize, @intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("0")
                         w.emit(")), ")
-                        if args.count() > 1
+                        if args.len > 1
                             genExpr(args.at(1).value)
                         else
                             w.emit("' '")
@@ -9309,12 +9330,12 @@ struct Generator
                         w.emit("_pad_right(")
                         genExpr(m.object)
                         w.emit(", @as(usize, @intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("0")
                         w.emit(")), ")
-                        if args.count() > 1
+                        if args.len > 1
                             genExpr(args.at(1).value)
                         else
                             w.emit("' '")
@@ -9324,12 +9345,12 @@ struct Generator
                         w.emit("_pad_center(")
                         genExpr(m.object)
                         w.emit(", @as(usize, @intCast(")
-                        if args.count() > 0
+                        if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("0")
                         w.emit(")), ")
-                        if args.count() > 1
+                        if args.len > 1
                             genExpr(args.at(1).value)
                         else
                             w.emit("' '")
@@ -9352,13 +9373,13 @@ struct Generator
                         genExpr(m.object)
                         w.emit("); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })")
                         return
-                    if mname == "charAt" and args.count() > 0
+                    if mname == "charAt" and args.len > 0
                         genExpr(m.object)
                         w.emit("[@intCast(")
                         genExpr(args.at(0).value)
                         w.emit(")]")
                         return
-                    if mname == "substring" and args.count() >= 2
+                    if mname == "substring" and args.len >= 2
                         genExpr(m.object)
                         w.emit("[@intCast(")
                         genExpr(args.at(0).value)
@@ -9366,14 +9387,14 @@ struct Generator
                         genExpr(args.at(1).value)
                         w.emit(")]")
                         return
-                    if mname == "lastIndexOf" and args.count() > 0
+                    if mname == "lastIndexOf" and args.len > 0
                         w.emit("(if (std.mem.lastIndexOf(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
                         w.emit(")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1))")
                         return
-                    if mname == "eqlIgnoreCase" and args.count() > 0
+                    if mname == "eqlIgnoreCase" and args.len > 0
                         w.emit("std.ascii.eqlIgnoreCase(")
                         genExpr(m.object)
                         w.emit(", ")
@@ -9390,35 +9411,35 @@ struct Generator
                         genExpr(m.object)
                         w.emit("; if (_ipr_s.len == 0) break :blk_ipr false; for (_ipr_s) |_ipr_c| { if (!std.ascii.isPrint(_ipr_c)) break :blk_ipr false; } break :blk_ipr true; })")
                         return
-                    if mname == "startsWithIgnoreCase" and args.count() > 0
+                    if mname == "startsWithIgnoreCase" and args.len > 0
                         w.emit("(blk_swic: { const _swic_s = ")
                         genExpr(m.object)
                         w.emit("; const _swic_p = ")
                         genExpr(args.at(0).value)
                         w.emit("; break :blk_swic _swic_s.len >= _swic_p.len and std.ascii.eqlIgnoreCase(_swic_s[0.._swic_p.len], _swic_p); })")
                         return
-                    if mname == "endsWithIgnoreCase" and args.count() > 0
+                    if mname == "endsWithIgnoreCase" and args.len > 0
                         w.emit("(blk_ewic: { const _ewic_s = ")
                         genExpr(m.object)
                         w.emit("; const _ewic_p = ")
                         genExpr(args.at(0).value)
                         w.emit("; break :blk_ewic _ewic_s.len >= _ewic_p.len and std.ascii.eqlIgnoreCase(_ewic_s[_ewic_s.len - _ewic_p.len..], _ewic_p); })")
                         return
-                    if mname == "containsIgnoreCase" and args.count() > 0
+                    if mname == "containsIgnoreCase" and args.len > 0
                         w.emit("(blk_cic: { const _cic_s = ")
                         genExpr(m.object)
                         w.emit("; const _cic_p = ")
                         genExpr(args.at(0).value)
                         w.emit("; var _cic_i: usize = 0; while (_cic_i + _cic_p.len <= _cic_s.len) : (_cic_i += 1) { if (std.ascii.eqlIgnoreCase(_cic_s[_cic_i.._cic_i + _cic_p.len], _cic_p)) break :blk_cic true; } break :blk_cic false; })")
                         return
-                    if mname == "indexOfIgnoreCase" and args.count() > 0
+                    if mname == "indexOfIgnoreCase" and args.len > 0
                         w.emit("(blk_ioic: { const _ioic_s = ")
                         genExpr(m.object)
                         w.emit("; const _ioic_p = ")
                         genExpr(args.at(0).value)
                         w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
                         return
-                    if mname == "indexOfFrom" and args.count() >= 2
+                    if mname == "indexOfFrom" and args.len >= 2
                         w.emit("(if (std.mem.indexOfPos(u8, ")
                         genExpr(m.object)
                         w.emit(", @intCast(")
@@ -9427,14 +9448,14 @@ struct Generator
                         genExpr(args.at(0).value)
                         w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
                         return
-                    if mname == "toIntBase" and args.count() > 0
+                    if mname == "toIntBase" and args.len > 0
                         w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")
                         genExpr(args.at(0).value)
                         w.emit("); break :blk_tib @as(i64, std.fmt.parseInt(i64, ")
                         genExpr(m.object)
                         w.emit(", _tib_base) catch 0); })")
                         return
-                    if mname == "tokenize" and args.count() > 0
+                    if mname == "tokenize" and args.len > 0
                         w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
@@ -9507,7 +9528,7 @@ struct Generator
                 if mname == "send"
                     genExpr(m.object)
                     w.emit(".send(")
-                    if args.count() > 0
+                    if args.len > 0
                         genExpr(args.at(0).value)
                     w.emit(")")
                     return
@@ -9525,7 +9546,7 @@ struct Generator
                 genExpr(m.object)
                 w.emit("." + mname + "(")
                 var ai: int = 0
-                while ai < args.count()
+                while ai < args.len
                     if ai > 0
                         w.emit(", ")
                     genExpr(args.at(ai).value)
@@ -9538,7 +9559,7 @@ struct Generator
                 genExpr(m.object)
                 w.emit("." + mname + "(")
                 var tp_ai: int = 0
-                while tp_ai < args.count()
+                while tp_ai < args.len
                     if tp_ai > 0
                         w.emit(", ")
                     genExpr(args.at(tp_ai).value)
@@ -9571,13 +9592,13 @@ struct Generator
                     var um_params = lookupFnParams(um_cname + "." + mname)
                     var um_body = lookupFnBody(um_cname + "." + mname)
                     var um_ai: int = 0
-                    while um_ai < args.count()
+                    while um_ai < args.len
                         if um_ai > 0
                             w.emit(", ")
                         var um_emitted = false
                         if um_params != nil
                             var ump = um_params!
-                            if um_ai < ump.count()
+                            if um_ai < ump.len
                                 var ump_p = ump.at(um_ai)
                                 if paramNeedsAddrOf(ump_p, um_body)
                                     if argIdentInCpp(args.at(um_ai).value)
@@ -9599,7 +9620,7 @@ struct Generator
         if mname == "append"
             genExpr(m.object)
             w.emit(".appendSlice(_allocator, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(") catch @panic(\"OOM\")")
             return
@@ -9613,7 +9634,7 @@ struct Generator
             # sb.appendChar(c) → sb.append(_allocator, @as(u8, @intCast(c))) catch @panic("OOM")
             genExpr(m.object)
             w.emit(".append(_allocator, @as(u8, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -9665,7 +9686,7 @@ struct Generator
                         var aftype = lookupFieldType(add_nm2)
                         if aftype != nil
                             if aftype! is TypeRef.generic as agtr
-                                if agtr.name == "List" and agtr.args.count() > 0
+                                if agtr.name == "List" and agtr.args.len > 0
                                     add_item_is_str = isStringTypeRef(agtr.args.at(0))
                                     if not add_item_is_str and not add_item_is_ref
                                         if agtr.args.at(0) is TypeRef.ref_to as ref_inner
@@ -9675,7 +9696,7 @@ struct Generator
                                                     add_item_ref_type = ref_nm.name
                 genExpr(m.object)
                 w.emit(".append(_allocator, ")
-                if args.count() > 0
+                if args.len > 0
                     if add_item_is_ref
                         var ref_uid = w.nextUid()
                         var ref_lbl = "_box_" + ref_uid.toString()
@@ -9707,7 +9728,7 @@ struct Generator
                 w.emit("@as(i64, @intCast(std.mem.count(u8, ")
                 genExpr(m.object)
                 w.emit(", ")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 else
                     w.emit("\"\"")
@@ -9739,13 +9760,13 @@ struct Generator
             if at_is_user_method
                 genExpr(m.object)
                 w.emit(".at(")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 w.emit(")")
             else
                 genExpr(m.object)
                 w.emit(".items[@intCast(")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 w.emit(")]")
             return
@@ -9761,14 +9782,14 @@ struct Generator
                 w.emit("_ = ")
                 genExpr(m.object)
                 w.emit(".remove(")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 w.emit(")")
             else
                 w.emit("_ = ")
                 genExpr(m.object)
                 w.emit(".orderedRemove(@intCast(")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 w.emit("))")
             return
@@ -9802,7 +9823,7 @@ struct Generator
             w.emit(".items)")
             return
         if mname == "sortBy"
-            if args.count() > 0
+            if args.len > 0
                 w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
@@ -9812,7 +9833,7 @@ struct Generator
                 w.emit(".items)")
             return
         if mname == "any"
-            if args.count() > 0
+            if args.len > 0
                 w.emit("_zebra_list_any(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
@@ -9822,7 +9843,7 @@ struct Generator
                 w.emit(")")
             return
         if mname == "all"
-            if args.count() > 0
+            if args.len > 0
                 w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
@@ -9832,7 +9853,7 @@ struct Generator
                 w.emit(")")
             return
         if mname == "find"
-            if args.count() > 0
+            if args.len > 0
                 w.emit("_zebra_list_find(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
@@ -9855,7 +9876,7 @@ struct Generator
                 w.emit(".contains_(")
             else
                 w.emit(".contains(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -9874,9 +9895,9 @@ struct Generator
                         if ftype != nil
                             if ftype! is TypeRef.generic as gtr
                                 if gtr.name == "HashMap"
-                                    if gtr.args.count() > 0
+                                    if gtr.args.len > 0
                                         key_is_str = isStringTypeRef(gtr.args.at(0))
-                                    if gtr.args.count() > 1
+                                    if gtr.args.len > 1
                                         val_is_str = isStringTypeRef(gtr.args.at(1))
                     genExpr(m.object)
                     w.emit(".put(")
@@ -9898,14 +9919,14 @@ struct Generator
         if mname == "get"
             genExpr(m.object)
             w.emit(".get(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
         if mname == "contains" and not .isStringBoth(m.object, "contains_recv")
             genExpr(m.object)
             w.emit(".contains(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -9914,7 +9935,7 @@ struct Generator
             w.emit("(")
             genExpr(m.object)
             w.emit(".get(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(") orelse undefined)")
             return
@@ -9932,9 +9953,9 @@ struct Generator
                     if pftype != nil
                         if pftype! is TypeRef.generic as pgtr
                             if pgtr.name == "HashMap"
-                                if pgtr.args.count() > 0
+                                if pgtr.args.len > 0
                                     put_key_is_str = isStringTypeRef(pgtr.args.at(0))
-                                if pgtr.args.count() > 1
+                                if pgtr.args.len > 1
                                     put_val_is_str = isStringTypeRef(pgtr.args.at(1))
             genExpr(m.object)
             w.emit(".put(")
@@ -10005,7 +10026,7 @@ struct Generator
             w.emit("std.mem.startsWith(u8, ")
             genExpr(m.object)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -10013,7 +10034,7 @@ struct Generator
             w.emit("std.mem.endsWith(u8, ")
             genExpr(m.object)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -10021,7 +10042,7 @@ struct Generator
             w.emit("blk: { const _idx = std.mem.indexOf(u8, ")
             genExpr(m.object)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit("); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }")
             return
@@ -10030,7 +10051,7 @@ struct Generator
             w.emit("std.mem.splitSequence(u8, ")
             genExpr(m.object)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\" \"")
@@ -10039,7 +10060,7 @@ struct Generator
         if mname == "join"
             # BUG-117: std.mem.join(alloc, separator, slices) — separator first, list.items second
             w.emit("(std.mem.join(_allocator, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -10144,7 +10165,7 @@ struct Generator
                 genJsonCall(mname, args)
                 return
             if id.name == "DynLib"
-                if mname == "open" and args.count() > 0
+                if mname == "open" and args.len > 0
                     w.emit("try _dynlib_open(")
                     genExpr(args.at(0).value)
                     w.emit(")")
@@ -10238,7 +10259,7 @@ struct Generator
         if mname == "sum" or mname == "max_element" or mname == "min_element"
             genSimdInstanceCall(m.object, mname, args)
             return
-        if mname == "dot" and args.count() > 0
+        if mname == "dot" and args.len > 0
             genSimdInstanceCall(m.object, mname, args)
             return
         # BUG-116: char methods — dispatch to std.ascii predicates when receiver is char_
@@ -10282,7 +10303,7 @@ struct Generator
                     w.emit("))))")
                 return
         # String methods ([]const u8 has no methods in Zig — use std.mem functions)
-        if mname == "contains" and args.count() > 0
+        if mname == "contains" and args.len > 0
             # str.contains(substr) → (std.mem.indexOf(u8, str, substr) != null)
             w.emit("(std.mem.indexOf(u8, ")
             genExpr(m.object)
@@ -10290,21 +10311,21 @@ struct Generator
             genExpr(args.at(0).value)
             w.emit(") != null)")
             return
-        if mname == "startsWith" and args.count() > 0
+        if mname == "startsWith" and args.len > 0
             w.emit("(std.mem.startsWith(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
             w.emit("))")
             return
-        if mname == "endsWith" and args.count() > 0
+        if mname == "endsWith" and args.len > 0
             w.emit("(std.mem.endsWith(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
             w.emit("))")
             return
-        if mname == "split" and args.count() > 0
+        if mname == "split" and args.len > 0
             # Return an ArrayList from split
             w.emit("blk_split: { var _sp = std.ArrayList([]const u8).empty; var _it = std.mem.splitSequence(u8, ")
             genExpr(m.object)
@@ -10321,7 +10342,7 @@ struct Generator
                 genExpr(a.value)
             w.emit(") catch unreachable)")
             return
-        if mname == "repeat" and args.count() > 0
+        if mname == "repeat" and args.len > 0
             w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
             genExpr(args.at(0).value)
             w.emit(") : (_ri += 1) _rep.append(_allocator, ")
@@ -10342,12 +10363,12 @@ struct Generator
             w.emit("_pad_left(")
             genExpr(m.object)
             w.emit(", @as(usize, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(")), ")
-            if args.count() > 1
+            if args.len > 1
                 genExpr(args.at(1).value)
             else
                 w.emit("' '")
@@ -10357,12 +10378,12 @@ struct Generator
             w.emit("_pad_right(")
             genExpr(m.object)
             w.emit(", @as(usize, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(")), ")
-            if args.count() > 1
+            if args.len > 1
                 genExpr(args.at(1).value)
             else
                 w.emit("' '")
@@ -10372,12 +10393,12 @@ struct Generator
             w.emit("_pad_center(")
             genExpr(m.object)
             w.emit(", @as(usize, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(")), ")
-            if args.count() > 1
+            if args.len > 1
                 genExpr(args.at(1).value)
             else
                 w.emit("' '")
@@ -10400,13 +10421,13 @@ struct Generator
             genExpr(m.object)
             w.emit("); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })")
             return
-        if mname == "charAt" and args.count() > 0
+        if mname == "charAt" and args.len > 0
             genExpr(m.object)
             w.emit("[@intCast(")
             genExpr(args.at(0).value)
             w.emit(")]")
             return
-        if mname == "substring" and args.count() >= 2
+        if mname == "substring" and args.len >= 2
             genExpr(m.object)
             w.emit("[@intCast(")
             genExpr(args.at(0).value)
@@ -10414,14 +10435,14 @@ struct Generator
             genExpr(args.at(1).value)
             w.emit(")]")
             return
-        if mname == "lastIndexOf" and args.count() > 0
+        if mname == "lastIndexOf" and args.len > 0
             w.emit("(if (std.mem.lastIndexOf(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
             w.emit(")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1))")
             return
-        if mname == "eqlIgnoreCase" and args.count() > 0
+        if mname == "eqlIgnoreCase" and args.len > 0
             w.emit("std.ascii.eqlIgnoreCase(")
             genExpr(m.object)
             w.emit(", ")
@@ -10438,35 +10459,35 @@ struct Generator
             genExpr(m.object)
             w.emit("; if (_ipr_s.len == 0) break :blk_ipr false; for (_ipr_s) |_ipr_c| { if (!std.ascii.isPrint(_ipr_c)) break :blk_ipr false; } break :blk_ipr true; })")
             return
-        if mname == "startsWithIgnoreCase" and args.count() > 0
+        if mname == "startsWithIgnoreCase" and args.len > 0
             w.emit("(blk_swic: { const _swic_s = ")
             genExpr(m.object)
             w.emit("; const _swic_p = ")
             genExpr(args.at(0).value)
             w.emit("; break :blk_swic _swic_s.len >= _swic_p.len and std.ascii.eqlIgnoreCase(_swic_s[0.._swic_p.len], _swic_p); })")
             return
-        if mname == "endsWithIgnoreCase" and args.count() > 0
+        if mname == "endsWithIgnoreCase" and args.len > 0
             w.emit("(blk_ewic: { const _ewic_s = ")
             genExpr(m.object)
             w.emit("; const _ewic_p = ")
             genExpr(args.at(0).value)
             w.emit("; break :blk_ewic _ewic_s.len >= _ewic_p.len and std.ascii.eqlIgnoreCase(_ewic_s[_ewic_s.len - _ewic_p.len..], _ewic_p); })")
             return
-        if mname == "containsIgnoreCase" and args.count() > 0
+        if mname == "containsIgnoreCase" and args.len > 0
             w.emit("(blk_cic: { const _cic_s = ")
             genExpr(m.object)
             w.emit("; const _cic_p = ")
             genExpr(args.at(0).value)
             w.emit("; var _cic_i: usize = 0; while (_cic_i + _cic_p.len <= _cic_s.len) : (_cic_i += 1) { if (std.ascii.eqlIgnoreCase(_cic_s[_cic_i.._cic_i + _cic_p.len], _cic_p)) break :blk_cic true; } break :blk_cic false; })")
             return
-        if mname == "indexOfIgnoreCase" and args.count() > 0
+        if mname == "indexOfIgnoreCase" and args.len > 0
             w.emit("(blk_ioic: { const _ioic_s = ")
             genExpr(m.object)
             w.emit("; const _ioic_p = ")
             genExpr(args.at(0).value)
             w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
             return
-        if mname == "indexOfFrom" and args.count() >= 2
+        if mname == "indexOfFrom" and args.len >= 2
             w.emit("(if (std.mem.indexOfPos(u8, ")
             genExpr(m.object)
             w.emit(", @intCast(")
@@ -10475,14 +10496,14 @@ struct Generator
             genExpr(args.at(0).value)
             w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
             return
-        if mname == "toIntBase" and args.count() > 0
+        if mname == "toIntBase" and args.len > 0
             w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")
             genExpr(args.at(0).value)
             w.emit("); break :blk_tib @as(i64, std.fmt.parseInt(i64, ")
             genExpr(m.object)
             w.emit(", _tib_base) catch 0); })")
             return
-        if mname == "tokenize" and args.count() > 0 and isStringBoth(m.object, "tokenize")
+        if mname == "tokenize" and args.len > 0 and isStringBoth(m.object, "tokenize")
             w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
             genExpr(m.object)
             w.emit(", ")
@@ -10638,14 +10659,14 @@ struct Generator
                         var is_container_n: bool = false
                         if mc_params != nil
                             var psr = mc_params!
-                            if pname_idx < psr.count()
+                            if pname_idx < psr.len
                                 var pn = psr.at(pname_idx)
                                 needs_addr_n = paramNeedsAddrOf(pn, mc_body)
                                 is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_!)
                         # Find named arg matching this param first.
                         var found = false
                         var ai: int = 0
-                        while ai < args.count()
+                        while ai < args.len
                             var a = args.at(ai)
                             if a.name != nil
                                 if (a.name!) == pname
@@ -10666,7 +10687,7 @@ struct Generator
                             ai += 1
                         # Fall back to next unfilled positional arg.
                         if not found
-                            while pos_idx < args.count()
+                            while pos_idx < args.len
                                 var pa = args.at(pos_idx)
                                 pos_idx += 1
                                 if pa.name == nil
@@ -10699,7 +10720,7 @@ struct Generator
                 var already_emitted = false
                 if mc_params != nil
                     var msp = mc_params!
-                    if ai_p < msp.count()
+                    if ai_p < msp.len
                         var mp = msp.at(ai_p)
                         if paramNeedsAddrOf(mp, mc_body)
                             if argIdentInCpp(a.value)
@@ -10725,7 +10746,7 @@ struct Generator
         if not name.contains("x")
             return false
         var parts: List(str) = name.split("x")
-        if parts.count() != 2
+        if parts.len != 2
             return false
         if parts.at(1) == ""
             return false
@@ -10794,7 +10815,7 @@ struct Generator
             w.emit("), @splat(@as(")
             w.emit(elem_zig)
             w.emit(", ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10807,7 +10828,7 @@ struct Generator
             w.emit(", ")
             w.emit(elem_zig)
             w.emit("), ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -10826,7 +10847,7 @@ struct Generator
             w.emit("@reduce(.Add, ")
             genExpr(obj)
             w.emit(" * ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -10890,7 +10911,7 @@ struct Generator
             w.emit("std.math.")
             w.emit(mname)
             w.emit("(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10901,7 +10922,7 @@ struct Generator
             w.emit("std.math.")
             w.emit(mname)
             w.emit("(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10910,12 +10931,12 @@ struct Generator
         # Euclidean distance: hypot(a, b)
         if mname == "hypot"
             w.emit("std.math.hypot(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit("), @as(f64, ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
@@ -10924,17 +10945,17 @@ struct Generator
         # Linear interpolation: lerp(a, b, t)
         if mname == "lerp"
             w.emit("std.math.lerp(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit("), @as(f64, ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
             w.emit("), @as(f64, ")
-            if args.count() >= 3
+            if args.len >= 3
                 genExpr(args.at(2).value)
             else
                 w.emit("0")
@@ -10943,12 +10964,12 @@ struct Generator
         # Number theory: gcd/lcm — Euclidean algorithm, returns i64
         if mname == "gcd"
             w.emit("(blk_gcd: { var _ga = @as(i64, @intCast(@abs(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit("))); var _gb = @as(i64, @intCast(@abs(")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
@@ -10956,12 +10977,12 @@ struct Generator
             return
         if mname == "lcm"
             w.emit("(blk_lcm: { const _la = @as(i64, @intCast(@abs(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit("))); const _lb = @as(i64, @intCast(@abs(")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
@@ -10970,7 +10991,7 @@ struct Generator
         # Angle conversion
         if mname == "toRadians"
             w.emit("(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10978,7 +10999,7 @@ struct Generator
             return
         if mname == "toDegrees"
             w.emit("(@as(f64, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10987,7 +11008,7 @@ struct Generator
         # Integer predicates
         if mname == "isPowerOfTwo"
             w.emit("(blk_po2: { const _po2 = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -10996,12 +11017,12 @@ struct Generator
         # wrap(x, r) — Python-style always-non-negative modulo
         if mname == "wrap"
             w.emit("@mod(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("1")
@@ -11010,7 +11031,7 @@ struct Generator
         # Bit operations
         if mname == "popcount"
             w.emit("@as(i64, @intCast(@popCount(@as(u64, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11018,7 +11039,7 @@ struct Generator
             return
         if mname == "clz"
             w.emit("@as(i64, @intCast(@clz(@as(u64, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11026,7 +11047,7 @@ struct Generator
             return
         if mname == "ctz"
             w.emit("@as(i64, @intCast(@ctz(@as(u64, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11087,7 +11108,7 @@ struct Generator
         var cm_parts: List(str) = key.split(".")
         var cm_class: str = ""
         var cm_method: str = key
-        if cm_parts.count() >= 2
+        if cm_parts.len >= 2
             cm_class = cm_parts.at(0)
             cm_method = cm_parts.at(1)
         # classOf/fnParamList are cross-module methods returning optionals; the
@@ -11116,7 +11137,7 @@ struct Generator
                 if pn == arg_name!
                     return p.type_
             return nil
-        if arg_idx < ps.count()
+        if arg_idx < ps.len
             return ps.at(arg_idx).type_
         return nil
 
@@ -11183,7 +11204,7 @@ struct Generator
             var p_name_str: str = p.name
             var found = false
             var ai: int = 0
-            while ai < args.count()
+            while ai < args.len
                 var a = args.at(ai)
                 if a.name != nil
                     if (a.name!) == p_name_str
@@ -11206,7 +11227,7 @@ struct Generator
                         break
                 ai += 1
             if not found
-                while pos_idx < args.count()
+                while pos_idx < args.len
                     var pa = args.at(pos_idx)
                     pos_idx += 1
                     if pa.name == nil
@@ -11264,7 +11285,7 @@ struct Generator
     # Emit anonymous struct with a call method.
     # Without capture:   struct { fn call(params) RetT { body } }.call
     def genLambda(lam: ExprLambda)
-        var has_capture = lam.captures.count() > 0
+        var has_capture = lam.captures.len > 0
         if has_capture
             w.emit("(")
         w.emit("struct {")
@@ -11364,7 +11385,7 @@ struct Generator
     def genFileCall(mname: str, args: List(Arg))
         if mname == "read"
             w.emit("(std.Io.Dir.cwd().readFileAlloc(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11374,7 +11395,7 @@ struct Generator
             w.emit("(blk_fw: {\n")
             writeIndent()
             w.emit("    const _fw_path = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11385,7 +11406,7 @@ struct Generator
             w.emit("    defer _fw_f.close(_io);\n")
             writeIndent()
             w.emit("    _fw_f.writeStreamingAll(_io, ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11397,7 +11418,7 @@ struct Generator
             return
         if mname == "exists"
             w.emit("(blk_fex: { std.Io.Dir.cwd().access(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11407,7 +11428,7 @@ struct Generator
             w.emit("(blk_frl: {\n")
             writeIndent()
             w.emit("    const _fl_content = std.Io.Dir.cwd().readFileAlloc(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11427,7 +11448,7 @@ struct Generator
             w.emit("(blk_fa: {\n")
             writeIndent()
             w.emit("    const _fa_path = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11441,7 +11462,7 @@ struct Generator
             w.emit("    _ = _fa_file.seekFromEnd(_io, 0) catch @panic(\"File.append seek error\");\n")
             writeIndent()
             w.emit("    _fa_file.writeStreamingAll(_io, ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11453,7 +11474,7 @@ struct Generator
             return
         if mname == "delete"
             w.emit("(std.Io.Dir.cwd().deleteFile(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11461,7 +11482,7 @@ struct Generator
             return
         if mname == "size"
             w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11469,7 +11490,7 @@ struct Generator
             return
         if mname == "isFile"
             w.emit("(blk_fif: { const _if_stat = std.Io.Dir.cwd().statFile(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11477,7 +11498,7 @@ struct Generator
             return
         if mname == "isDir"
             w.emit("(blk_fid: { var _fd_dir = std.Io.Dir.cwd().openDir(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11485,12 +11506,12 @@ struct Generator
             return
         if mname == "writeLines"
             w.emit("_file_write_lines(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
@@ -11500,7 +11521,7 @@ struct Generator
             w.emit("(blk_mt: {\n")
             writeIndent()
             w.emit("    const _mt_stat = std.Io.Dir.cwd().statFile(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11521,7 +11542,7 @@ struct Generator
     def genSysCall(mname: str, args: List(Arg))
         if mname == "errln"
             w.emit("std.debug.print(\"{s}\\n\", .{")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11529,7 +11550,7 @@ struct Generator
             return
         if mname == "err"
             w.emit("std.debug.print(\"{s}\", .{")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11537,7 +11558,7 @@ struct Generator
             return
         if mname == "exit"
             w.emit("std.process.exit(@intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11545,7 +11566,7 @@ struct Generator
             return
         if mname == "run"
             w.emit("_sys_run(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -11553,7 +11574,7 @@ struct Generator
             return
         if mname == "exec_inherit"
             w.emit("_sys_exec_inherit(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -11561,7 +11582,7 @@ struct Generator
             return
         if mname == "spawn"
             w.emit("_sys_spawn(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -11582,7 +11603,7 @@ struct Generator
             return
         if mname == "getenv"
             w.emit("_sys_getenv(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11593,13 +11614,13 @@ struct Generator
             return
         if mname == "go"
             w.emit("_sys_go(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
         if mname == "sleep"
             w.emit("std.Thread.sleep(@as(u64, @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11610,12 +11631,12 @@ struct Generator
             return
         if mname == "setenv"
             w.emit("_sys_setenv(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11655,12 +11676,12 @@ struct Generator
             w.emit(", _Build_Kind.")
             w.emit(mname)
             w.emit(", ")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11670,7 +11691,7 @@ struct Generator
             w.emit("_build_target_by_name(")
             genExpr(obj)
             w.emit(", ")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11683,12 +11704,12 @@ struct Generator
             return
         if mname == "dependency"
             w.emit("_build_dep_stub(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11704,7 +11725,7 @@ struct Generator
             w.emit("_build_target_link_lib(")
             genExpr(obj)
             w.emit(", ")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
@@ -11714,7 +11735,7 @@ struct Generator
             w.emit("_build_target_platform(")
             genExpr(obj)
             w.emit(", ")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11724,12 +11745,12 @@ struct Generator
             w.emit("_build_target_option(")
             genExpr(obj)
             w.emit(", ")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11742,7 +11763,7 @@ struct Generator
     def genJsonCall(mname: str, args: List(Arg))
         if mname == "parse"
             # Json.parse(T, src) overload — first arg is a class ident → strict parser.
-            if args.count() >= 2
+            if args.len >= 2
                 var first_arg = args.at(0).value
                 if first_arg is Expr.ident as id_ref
                     var class_name2: str = id_ref.name
@@ -11769,7 +11790,7 @@ struct Generator
                         w.emit(")")
                         return
             w.emit("_json_parse(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"{}\"")
@@ -11777,7 +11798,7 @@ struct Generator
             return
         if mname == "parseStrict"
             # Json.parseStrict(T, src) — T must be a @reflectable class.
-            if args.count() < 2
+            if args.len < 2
                 w.emit("@compileError(\"Json.parseStrict requires (T, src)\")")
                 return
             var first = args.at(0).value
@@ -11815,7 +11836,7 @@ struct Generator
             return
         if mname == "stringify"
             w.emit("_json_stringify(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("_json_object()")
@@ -11835,7 +11856,7 @@ struct Generator
     def genHttpCall(mname: str, args: List(Arg))
         if mname == "get"
             w.emit("_http_get(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11843,12 +11864,12 @@ struct Generator
             return
         if mname == "post"
             w.emit("_http_post(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11856,12 +11877,12 @@ struct Generator
             return
         if mname == "serve"
             w.emit("_http_serve(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("8080")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
@@ -11869,7 +11890,7 @@ struct Generator
             return
         if mname == "json"
             w.emit("_http_json_get(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11877,12 +11898,12 @@ struct Generator
             return
         if mname == "postJson"
             w.emit("_http_json_post(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11896,7 +11917,7 @@ struct Generator
     def genHttpResponseFactory(mname: str, args: List(Arg))
         if mname == "ok"
             w.emit("HttpResponse{ .status = 200, .text = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11904,7 +11925,7 @@ struct Generator
             return
         if mname == "notFound"
             w.emit("HttpResponse{ .status = 404, .text = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"Not Found\"")
@@ -11912,7 +11933,7 @@ struct Generator
             return
         if mname == "err"
             w.emit("HttpResponse{ .status = 500, .text = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"Internal Server Error\"")
@@ -11920,12 +11941,12 @@ struct Generator
             return
         if mname == "new"
             w.emit("HttpResponse{ .status = @intCast(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("200")
             w.emit("), .text = ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11939,7 +11960,7 @@ struct Generator
     def genWsCall(mname: str, args: List(Arg))
         if mname == "connect"
             w.emit("_ws_connect(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -11947,12 +11968,12 @@ struct Generator
             return
         if mname == "serve"
             w.emit("_ws_serve(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
@@ -11966,12 +11987,12 @@ struct Generator
     def genRegexCall(mname: str, args: List(Arg))
         if mname == "compile"
             w.emit("_regex_compile(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -11988,7 +12009,7 @@ struct Generator
             return
         if mname == "fromEpoch"
             w.emit("_DateTime{ .epoch_ms = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -11998,7 +12019,7 @@ struct Generator
             w.emit("_dt_from_gregorian(")
             genArgList(args)
             # Fill missing hour/minute/second with 0
-            var provided = args.count()
+            var provided = args.len
             if provided < 4
                 w.emit(", 0")
             if provided < 5
@@ -12015,7 +12036,7 @@ struct Generator
     def genHashCall(mname: str, args: List(Arg))
         if mname == "sha256"
             w.emit("_hash_sha256(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12023,7 +12044,7 @@ struct Generator
             return
         if mname == "sha512"
             w.emit("_hash_sha512(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12031,7 +12052,7 @@ struct Generator
             return
         if mname == "md5"
             w.emit("_hash_md5(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12039,7 +12060,7 @@ struct Generator
             return
         if mname == "blake3"
             w.emit("_hash_blake3(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12047,12 +12068,12 @@ struct Generator
             return
         if mname == "hmac256"
             w.emit("_hash_hmac256(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -12060,7 +12081,7 @@ struct Generator
             return
         if mname == "crc32"
             w.emit("_hash_crc32(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12068,7 +12089,7 @@ struct Generator
             return
         if mname == "fnv64"
             w.emit("_hash_fnv64(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12076,7 +12097,7 @@ struct Generator
             return
         if mname == "xxHash64"
             w.emit("_hash_xxhash64(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12084,12 +12105,12 @@ struct Generator
             return
         if mname == "hmac512"
             w.emit("_hash_hmac512(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -12103,12 +12124,12 @@ struct Generator
     def genCryptoCall(mname: str, args: List(Arg))
         if mname == "encrypt"
             w.emit("_crypto_encrypt(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -12116,12 +12137,12 @@ struct Generator
             return
         if mname == "decrypt"
             w.emit("_crypto_decrypt(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -12136,7 +12157,7 @@ struct Generator
         if mname == "new"
             # Random.new(seed) → independent PRNG instance (A3).
             w.emit("_Random.init(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -12144,12 +12165,12 @@ struct Generator
             return
         if mname == "randInt"
             w.emit("_random_int(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("100")
@@ -12163,7 +12184,7 @@ struct Generator
             return
         if mname == "bytes"
             w.emit("_random_bytes(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("16")
@@ -12171,14 +12192,14 @@ struct Generator
             return
         if mname == "seed"
             w.emit("_random_seed(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(")")
             return
         if mname == "choice"
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
                 w.emit(".items[_rng().uintLessThan(usize, ")
                 genExpr(args.at(0).value)
@@ -12186,19 +12207,19 @@ struct Generator
             return
         if mname == "gaussian"
             w.emit("_random_gaussian(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0.0")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("1.0")
             w.emit(")")
             return
         if mname == "shuffle"
-            if args.count() > 0
+            if args.len > 0
                 w.emit("(if (")
                 genExpr(args.at(0).value)
                 w.emit(".items.len > 0) _rng().shuffle(@TypeOf(")
@@ -12209,10 +12230,10 @@ struct Generator
             return
         if mname == "weighted"
             w.emit("_random_weighted(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             w.emit(")")
             return
@@ -12234,12 +12255,12 @@ struct Generator
         if mname == "writeln" or mname == "write"
             var is_println = mname == "writeln"
             w.emit("_term_print(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
@@ -12256,7 +12277,7 @@ struct Generator
     def genLogCall(mname: str, args: List(Arg))
         if mname == "debug"
             w.emit("_log_debug(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12264,7 +12285,7 @@ struct Generator
             return
         if mname == "info"
             w.emit("_log_info(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12272,7 +12293,7 @@ struct Generator
             return
         if mname == "warn"
             w.emit("_log_warn(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12280,7 +12301,7 @@ struct Generator
             return
         if mname == "err"
             w.emit("_log_err(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12288,7 +12309,7 @@ struct Generator
             return
         if mname == "setLevel"
             w.emit("_log_set_level(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("1")
@@ -12296,7 +12317,7 @@ struct Generator
             return
         if mname == "setOutput"
             w.emit("_log_set_output_stderr(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("true")
@@ -12304,7 +12325,7 @@ struct Generator
             return
         if mname == "timestamp"
             w.emit("_log_timestamp(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("true")
@@ -12312,7 +12333,7 @@ struct Generator
             return
         if mname == "setFile"
             w.emit("_log_set_file(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12320,17 +12341,17 @@ struct Generator
             return
         if mname == "json"
             w.emit("_log_json(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"info\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 3
+            if args.len >= 3
                 genExpr(args.at(2).value)
             else
                 w.emit("\"\"")
@@ -12344,7 +12365,7 @@ struct Generator
     def genCsvCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_csv_parse(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12352,7 +12373,7 @@ struct Generator
             return
         if mname == "parseFile"
             w.emit("_csv_parse_file(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12375,12 +12396,12 @@ struct Generator
     def genProgressCall(mname: str, args: List(Arg))
         if mname == "bar"
             w.emit("_progress_bar(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
             w.emit(", ")
-            if args.count() > 1
+            if args.len > 1
                 genExpr(args.at(1).value)
             else
                 w.emit("\"progress\"")
@@ -12394,7 +12415,7 @@ struct Generator
     def genProfileCall(mname: str, args: List(Arg))
         if mname == "start"
             w.emit("_profile_start(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12420,7 +12441,7 @@ struct Generator
     def genBase64Call(mname: str, args: List(Arg))
         if mname == "encode"
             w.emit("_base64_encode(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12428,7 +12449,7 @@ struct Generator
             return
         if mname == "decode"
             w.emit("_base64_decode(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12436,7 +12457,7 @@ struct Generator
             return
         if mname == "encodeUrl"
             w.emit("_base64_encode_url(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12444,7 +12465,7 @@ struct Generator
             return
         if mname == "decodeUrl"
             w.emit("_base64_decode_url(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12458,7 +12479,7 @@ struct Generator
     def genUriCall(mname: str, args: List(Arg))
         if mname == "parse"
             w.emit("_uri_parse(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -12470,13 +12491,13 @@ struct Generator
     def genCompressCall(mname: str, args: List(Arg))
         if mname == "gzip"
             w.emit("_compress_gzip(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
         if mname == "gunzip"
             w.emit("_compress_gunzip(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -12488,13 +12509,13 @@ struct Generator
     def genMimeCall(mname: str, args: List(Arg))
         if mname == "fromExt"
             w.emit("_mime_from_ext(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
         if mname == "toExt"
             w.emit("_mime_to_ext(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             w.emit(")")
             return
@@ -12506,12 +12527,12 @@ struct Generator
     def genTcpCall(mname: str, args: List(Arg))
         if mname == "connect"
             w.emit("_tcp_connect(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
@@ -12519,12 +12540,12 @@ struct Generator
             return
         if mname == "serve"
             w.emit("_tcp_serve(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("8080")
             w.emit(", ")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
@@ -12541,7 +12562,7 @@ struct Generator
             return
         if mname == "bind"
             w.emit("_udp_bind(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
@@ -12555,7 +12576,7 @@ struct Generator
     def genSqliteCall(mname: str, args: List(Arg))
         if mname == "open"
             w.emit("_sqlite_open(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12599,7 +12620,7 @@ struct Generator
     def genNetCall(mname: str, args: List(Arg))
         if mname == "resolve"
             w.emit("_net_resolve(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12612,7 +12633,7 @@ struct Generator
     # ── genGuiCall ───────────────────────────────────────────────────────────
     def genGuiCall(mname: str, args: List(Arg))
         if mname == "run"
-            if args.count() >= 6
+            if args.len >= 6
                 w.emit("_gui_mvu_run(")
                 genExpr(args.at(0).value)
                 w.emit(", ")
@@ -12628,22 +12649,22 @@ struct Generator
                 w.emit(")")
             else
                 w.emit("_gui_run(")
-                if args.count() > 0
+                if args.len > 0
                     genExpr(args.at(0).value)
                 else
                     w.emit("\"App\"")
                 w.emit(", ")
-                if args.count() >= 2
+                if args.len >= 2
                     genExpr(args.at(1).value)
                 else
                     w.emit("800")
                 w.emit(", ")
-                if args.count() >= 3
+                if args.len >= 3
                     genExpr(args.at(2).value)
                 else
                     w.emit("600")
                 w.emit(", ")
-                if args.count() >= 4
+                if args.len >= 4
                     genExpr(args.at(3).value)
                 else
                     w.emit("undefined")
@@ -12651,27 +12672,27 @@ struct Generator
             return
         if mname == "setColor"
             w.emit("_gui_active_backend.setColorFn(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", @as(f32, @floatCast(")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
             w.emit(")), @as(f32, @floatCast(")
-            if args.count() >= 3
+            if args.len >= 3
                 genExpr(args.at(2).value)
             else
                 w.emit("0")
             w.emit(")), @as(f32, @floatCast(")
-            if args.count() >= 4
+            if args.len >= 4
                 genExpr(args.at(3).value)
             else
                 w.emit("0")
             w.emit(")), @as(f32, @floatCast(")
-            if args.count() >= 5
+            if args.len >= 5
                 genExpr(args.at(4).value)
             else
                 w.emit("1")
@@ -12682,12 +12703,12 @@ struct Generator
             return
         if mname == "setStyleFloat"
             w.emit("_gui_active_backend.setStyleFloatFn(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", @as(f32, @floatCast(")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
@@ -12695,17 +12716,17 @@ struct Generator
             return
         if mname == "setVec2"
             w.emit("_gui_active_backend.setVec2Fn(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", @as(f32, @floatCast(")
-            if args.count() >= 2
+            if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("0")
             w.emit(")), @as(f32, @floatCast(")
-            if args.count() >= 3
+            if args.len >= 3
                 genExpr(args.at(2).value)
             else
                 w.emit("0")
@@ -12713,7 +12734,7 @@ struct Generator
             return
         if mname == "scaleAllSizes"
             w.emit("_gui_active_backend.scaleAllSizesFn(@as(f32, @floatCast(")
-            if args.count() >= 1
+            if args.len >= 1
                 genExpr(args.at(0).value)
             else
                 w.emit("1")
@@ -12732,7 +12753,7 @@ struct Generator
             w.emit("(blk_sh: {\n")
             writeIndent()
             w.emit("    const _sh_cmd = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12768,7 +12789,7 @@ struct Generator
     def genDirCall(mname: str, args: List(Arg))
         if mname == "create"
             w.emit("(std.Io.Dir.cwd().createDirPath(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12776,7 +12797,7 @@ struct Generator
             return
         if mname == "createAll"
             w.emit("(std.Io.Dir.cwd().createDirPath(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12784,7 +12805,7 @@ struct Generator
             return
         if mname == "delete"
             w.emit("(std.Io.Dir.cwd().deleteDir(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12792,7 +12813,7 @@ struct Generator
             return
         if mname == "deleteAll"
             w.emit("(std.Io.Dir.cwd().deleteTree(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12800,7 +12821,7 @@ struct Generator
             return
         if mname == "exists"
             w.emit("(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12810,7 +12831,7 @@ struct Generator
             w.emit("(blk_dl: {\n")
             writeIndent()
             w.emit("    var _dl_dir = std.Io.Dir.cwd().openDir(_io, ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\".\"")
@@ -12836,7 +12857,7 @@ struct Generator
             w.emit("(blk_dw: {\n")
             writeIndent()
             w.emit("    const _dw_root = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\".\"")
@@ -12876,21 +12897,21 @@ struct Generator
     def genPathCall(mname: str, args: List(Arg))
         if mname == "join"
             w.emit("(std.fs.path.join(_allocator, &.{")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            if args.count() >= 2
+            if args.len >= 2
                 w.emit(", ")
                 genExpr(args.at(1).value)
-            if args.count() >= 3
+            if args.len >= 3
                 w.emit(", ")
                 genExpr(args.at(2).value)
             w.emit("}) catch @panic(\"Path.join error\"))")
             return
         if mname == "basename"
             w.emit("(std.fs.path.basename(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12898,7 +12919,7 @@ struct Generator
             return
         if mname == "dirname"
             w.emit("(std.fs.path.dirname(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12906,7 +12927,7 @@ struct Generator
             return
         if mname == "ext" or mname == "extension"
             w.emit("(std.fs.path.extension(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12916,7 +12937,7 @@ struct Generator
             w.emit("(blk_ps: {\n")
             writeIndent()
             w.emit("    const _ps_base = std.fs.path.basename(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12930,7 +12951,7 @@ struct Generator
             return
         if mname == "isAbsolute"
             w.emit("(std.fs.path.isAbsolute(")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12938,7 +12959,7 @@ struct Generator
             return
         if mname == "absolute"
             w.emit("(blk_pa: { const _pp = ")
-            if args.count() > 0
+            if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
@@ -12950,7 +12971,7 @@ struct Generator
 
     # ── genReflectCall ───────────────────────────────────────────────────────
     def genReflectCall(mname: str, args: List(Arg))
-        if args.count() < 1
+        if args.len < 1
             w.emit("@compileError(\"Reflect requires 1 argument\")")
             return
         # Reflect.hostKind(x): language-neutral substrate category of x's
@@ -12984,12 +13005,12 @@ struct Generator
     def genGenericCtorCall(name: str, type_args: List(Arg), val_args: List(Arg))
         if name == "Chan"
             w.emit("_chan_create(")
-            if type_args.count() > 0
+            if type_args.len > 0
                 genTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
             w.emit(", ")
-            if val_args.count() > 0
+            if val_args.len > 0
                 genExpr(val_args.at(0).value)
             else
                 w.emit("0")
@@ -12997,12 +13018,12 @@ struct Generator
             return
         if name == "Atomic"
             w.emit("_atomic_create(")
-            if type_args.count() > 0
+            if type_args.len > 0
                 genTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
             w.emit(", ")
-            if val_args.count() > 0
+            if val_args.len > 0
                 genExpr(val_args.at(0).value)
             else
                 w.emit("0")
@@ -13010,9 +13031,9 @@ struct Generator
             return
         if name == "ThreadPool"
             w.emit("_thread_pool_create(")
-            if val_args.count() > 0
+            if val_args.len > 0
                 genExpr(val_args.at(0).value)
-            else if type_args.count() > 0
+            else if type_args.len > 0
                 genExpr(type_args.at(0).value)
             else
                 w.emit("4")
@@ -13020,17 +13041,17 @@ struct Generator
             return
         if name == "List"
             w.emit("std.ArrayList(")
-            if type_args.count() > 0
+            if type_args.len > 0
                 genTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
             w.emit(").empty")
             return
         if name == "HashMap"
-            var key_is_str = type_args.count() > 0 and isStringArgExpr(type_args.at(0).value)
+            var key_is_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
             if key_is_str
                 w.emit("std.StringHashMap(")
-                if type_args.count() >= 2
+                if type_args.len >= 2
                     genTypeFromExpr(type_args.at(1).value)
                 else
                     w.emit("anytype")

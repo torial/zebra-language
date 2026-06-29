@@ -37,7 +37,7 @@ class UnionInfo
 
     def hasVariant(v: str): bool
         var i: int = 0
-        while i < .variants.count()
+        while i < .variants.len
             if .variants.at(i) == v
                 return true
             i = i + 1
@@ -45,7 +45,7 @@ class UnionInfo
 
     def lineOf(v: str): int
         var i: int = 0
-        while i < .variants.count()
+        while i < .variants.len
             if .variants.at(i) == v
                 return .variant_lines.at(i)
             i = i + 1
@@ -138,8 +138,8 @@ class DeadCodeChecker
     def extractFnName(fn_key: str): str
         if fn_key.contains("::")
             var parts: List(str) = fn_key.split("::")
-            if parts.count() >= 2
-                return parts.at(parts.count() - 1)
+            if parts.len >= 2
+                return parts.at(parts.len - 1)
         return fn_key
 
     # ── Pass 1: collect declarations ──────────────────────────────────────────
@@ -148,7 +148,7 @@ class DeadCodeChecker
         var file: str = module.file
         .current_file = file
         var i: int = 0
-        while i < module.decls.count()
+        while i < module.decls.len
             .collectDecl(module.decls.at(i), file)
             i = i + 1
 
@@ -157,7 +157,7 @@ class DeadCodeChecker
             on Decl.union_ as u
                 var ui: UnionInfo = UnionInfo(u.name, file, u.span.line)
                 var vi: int = 0
-                while vi < u.variants.count()
+                while vi < u.variants.len
                     var vt: UnionVariant = u.variants.at(vi)
                     ui.addVariant(vt.name, vt.span.line)
                     vi = vi + 1
@@ -169,13 +169,13 @@ class DeadCodeChecker
                         .markAsRoot(.fnKey(file, "main"))
             on Decl.use_ as u
                 var ei: int = 0
-                while ei < u.exposed.count()
+                while ei < u.exposed.len
                     var ename: str = u.exposed.at(ei)
                     .exposed_names.put(ename, true)
                     ei = ei + 1
             on Decl.namespace_ as ns
                 var ni: int = 0
-                while ni < ns.decls.count()
+                while ni < ns.decls.len
                     .collectDecl(ns.decls.at(ni), file)
                     ni = ni + 1
             else
@@ -187,7 +187,7 @@ class DeadCodeChecker
         var file: str = module.file
         .current_file = file
         var i: int = 0
-        while i < module.decls.count()
+        while i < module.decls.len
             .walkTopDecl(module.decls.at(i), file)
             i = i + 1
 
@@ -212,7 +212,7 @@ class DeadCodeChecker
                     .current_fn_key = saved
             on Decl.namespace_ as ns
                 var ni: int = 0
-                while ni < ns.decls.count()
+                while ni < ns.decls.len
                     .walkTopDecl(ns.decls.at(ni), file)
                     ni = ni + 1
             else
@@ -222,7 +222,7 @@ class DeadCodeChecker
         var saved: str = .current_fn_key
         .current_fn_key = ""          # class context is always root
         var i: int = 0
-        while i < members.count()
+        while i < members.len
             branch members.at(i)
                 on Decl.method as m
                     if m.stmts as stmts
@@ -240,7 +240,7 @@ class DeadCodeChecker
 
     def walkStmts(stmts: List(Stmt), file: str)
         var i: int = 0
-        while i < stmts.count()
+        while i < stmts.len
             .walkStmt(stmts.at(i), file)
             i = i + 1
 
@@ -250,7 +250,7 @@ class DeadCodeChecker
                 .walkExpr(si.cond, file, false)
                 .walkStmts(si.then_stmts, file)
                 var ei: int = 0
-                while ei < si.else_ifs.count()
+                while ei < si.else_ifs.len
                     var ef: ElseIf = si.else_ifs.at(ei)
                     .walkExpr(ef.cond, file, false)
                     .walkStmts(ef.stmts, file)
@@ -278,7 +278,7 @@ class DeadCodeChecker
             on Stmt.branch_ as sb
                 .walkExpr(sb.expr, file, false)
                 var ci: int = 0
-                while ci < sb.cases.count()
+                while ci < sb.cases.len
                     var bc: BranchOn = sb.cases.at(ci)
                     .walkBranchValues(bc.values, file)
                     .walkStmts(bc.stmts, file)
@@ -309,7 +309,7 @@ class DeadCodeChecker
             on Stmt.try_catch as stc
                 .walkStmts(stc.stmts, file)
                 var cli: int = 0
-                while cli < stc.clauses.count()
+                while cli < stc.clauses.len
                     var cl: CatchClause = stc.clauses.at(cli)
                     .walkStmts(cl.stmts, file)
                     cli = cli + 1
@@ -326,7 +326,7 @@ class DeadCodeChecker
                 .walkExpr(sco.value, file, false)
             on Stmt.print_ as sp
                 var pi: int = 0
-                while pi < sp.args.count()
+                while pi < sp.args.len
                     .walkExpr(sp.args.at(pi), file, false)
                     pi = pi + 1
             on Stmt.assert_ as sa2
@@ -345,7 +345,7 @@ class DeadCodeChecker
                 .walkExpr(saf.expr, file, false)
             on Stmt.contract as sct
                 var cti: int = 0
-                while cti < sct.exprs.count()
+                while cti < sct.exprs.len
                     .walkExpr(sct.exprs.at(cti), file, false)
                     cti = cti + 1
             else
@@ -353,7 +353,7 @@ class DeadCodeChecker
 
     def walkBranchValues(values: List(Expr), file: str)
         var vi: int = 0
-        while vi < values.count()
+        while vi < values.len
             .walkExpr(values.at(vi), file, true)
             vi = vi + 1
 
@@ -404,7 +404,7 @@ class DeadCodeChecker
                 if ec.callee is Expr.ident as cfn
                     .trackFnCall(cfn.name)
                 var ai: int = 0
-                while ai < ec.args.count()
+                while ai < ec.args.len
                     # Arg.value: Expr (value type) — branch inline to avoid selfhost
                     # boxing divergence on list.at(i).field patterns.
                     var aarg: Arg = ec.args.at(ai)
@@ -476,7 +476,7 @@ class DeadCodeChecker
                 .walkExpr(eif.else_expr, file, false)
             on Expr.lambda as el
                 var ci: int = 0
-                while ci < el.captures.count()
+                while ci < el.captures.len
                     .walkCapture(el.captures.at(ci), file)
                     ci = ci + 1
                 branch el.body_
@@ -486,42 +486,42 @@ class DeadCodeChecker
                         .walkStmts(ls, file)
             on Expr.list_lit as ell
                 var eli: int = 0
-                while eli < ell.elems.count()
+                while eli < ell.elems.len
                     .walkExpr(ell.elems.at(eli), file, false)
                     eli = eli + 1
             on Expr.dict_lit as edl
                 var dli: int = 0
-                while dli < edl.entries.count()
+                while dli < edl.entries.len
                     .walkDictEntry(edl.entries.at(dli), file)
                     dli = dli + 1
             on Expr.array_lit as eal
                 var ali: int = 0
-                while ali < eal.elems.count()
+                while ali < eal.elems.len
                     .walkExpr(eal.elems.at(ali), file, false)
                     ali = ali + 1
             on Expr.string_interp as esi
                 var spi: int = 0
-                while spi < esi.parts.count()
+                while spi < esi.parts.len
                     var part: StringPart = esi.parts.at(spi)
                     if part is StringPart.expr_ as pe
                         .walkExpr(pe, file, false)
                     spi = spi + 1
             on Expr.tuple_lit as etup
                 var ti: int = 0
-                while ti < etup.elems.count()
+                while ti < etup.elems.len
                     .walkExpr(etup.elems.at(ti), file, false)
                     ti = ti + 1
             on Expr.try_ as etr
                 .walkExpr(etr.expr, file, false)
             on Expr.chained_cmp as ecc
                 var cci: int = 0
-                while cci < ecc.operands.count()
+                while cci < ecc.operands.len
                     .walkExpr(ecc.operands.at(cci), file, false)
                     cci = cci + 1
             on Expr.except_ as eex
                 .walkExpr(eex.base, file, false)
                 var exi: int = 0
-                while exi < eex.fields.count()
+                while exi < eex.fields.len
                     # ExceptField.value: Expr (value type) — branch inline to avoid
                     # selfhost boxing divergence on list.at(i).field patterns.
                     var exf: ExceptField = eex.fields.at(exi)
@@ -554,12 +554,12 @@ class DeadCodeChecker
         var pending: List(str) = List(str)()
         # Seed from explicit roots (main, class-method callers)
         var ri: int = 0
-        while ri < .root_key_list.count()
+        while ri < .root_key_list.len
             pending.add(.root_key_list.at(ri))
             ri = ri + 1
         # Seed from exposed names (use X exposing [f, g, ...])
         var mi: int = 0
-        while mi < .module_fn_key_list.count()
+        while mi < .module_fn_key_list.len
             var mfk: str = .module_fn_key_list.at(mi)
             var fn_name: str = .extractFnName(mfk)
             if .exposed_names.contains(fn_name)
@@ -567,14 +567,14 @@ class DeadCodeChecker
             mi = mi + 1
         # BFS
         var qi: int = 0
-        while qi < pending.count()
+        while qi < pending.len
             var key: str = pending.at(qi)
             if not .reachable_set.contains(key)
                 .reachable_set.put(key, true)
                 if .fn_edges.contains(key)
                     var edges: List(str) = .fn_edges.fetch(key)
                     var ei: int = 0
-                    while ei < edges.count()
+                    while ei < edges.len
                         var target: str = edges.at(ei)
                         if not .reachable_set.contains(target)
                             pending.add(target)
@@ -585,17 +585,17 @@ class DeadCodeChecker
 
     def hasIssues(): bool
         var i: int = 0
-        while i < .match_key_list.count()
+        while i < .match_key_list.len
             if not .constructed_set.contains(.match_key_list.at(i))
                 return true
             i = i + 1
         i = 0
-        while i < .constructed_key_list.count()
+        while i < .constructed_key_list.len
             if not .match_sites.contains(.constructed_key_list.at(i))
                 return true
             i = i + 1
         i = 0
-        while i < .module_fn_key_list.count()
+        while i < .module_fn_key_list.len
             if not .reachable_set.contains(.module_fn_key_list.at(i))
                 return true
             i = i + 1
@@ -613,7 +613,7 @@ class DeadCodeChecker
         var dead_count: int = 0
         var dead_sb: StringBuilder = StringBuilder()
         var i: int = 0
-        while i < .match_key_list.count()
+        while i < .match_key_list.len
             var key: str = .match_key_list.at(i)
             if not .constructed_set.contains(key)
                 dead_count = dead_count + 1
@@ -623,7 +623,7 @@ class DeadCodeChecker
                 dead_sb.append("  " + BLD + "[" + uname + "]" + RST + "  " + YLW + vname + RST + "\n")
                 var sites: List(str) = .match_sites.fetch(key)
                 var si: int = 0
-                while si < sites.count()
+                while si < sites.len
                     dead_sb.append("    " + CYN + sites.at(si) + RST + "\n")
                     si = si + 1
                 dead_sb.append("\n")
@@ -633,7 +633,7 @@ class DeadCodeChecker
         var phantom_count: int = 0
         var phantom_sb: StringBuilder = StringBuilder()
         i = 0
-        while i < .constructed_key_list.count()
+        while i < .constructed_key_list.len
             var key: str = .constructed_key_list.at(i)
             if not .match_sites.contains(key)
                 phantom_count = phantom_count + 1
@@ -647,7 +647,7 @@ class DeadCodeChecker
         var unreachable_count: int = 0
         var unreach_sb: StringBuilder = StringBuilder()
         i = 0
-        while i < .module_fn_key_list.count()
+        while i < .module_fn_key_list.len
             var key: str = .module_fn_key_list.at(i)
             if not .reachable_set.contains(key)
                 unreachable_count = unreachable_count + 1
@@ -694,18 +694,18 @@ def checkerDirOf(path: str): str
     if not path.contains("/")
         return ""
     var parts: List(str) = path.split("/")
-    if parts.count() <= 1
+    if parts.len <= 1
         return ""
     var out: str = parts.at(0)
     var i: int = 1
-    while i < parts.count() - 1
+    while i < parts.len - 1
         out = out + "/" + parts.at(i)
         i = i + 1
     return out
 
 def checkerLoadDeps(path: str, visited: List(str), modules: List(Module)) throws
     var vi: int = 0
-    while vi < visited.count()
+    while vi < visited.len
         if visited.at(vi) == path
             return
         vi = vi + 1
@@ -723,7 +723,7 @@ def checkerLoadDeps(path: str, visited: List(str), modules: List(Module)) throws
     if pm_node is PNode.module_ as pm
         # Depth-first: load deps before this module
         var di: int = 0
-        while di < pm.decls.count()
+        while di < pm.decls.len
             if pm.decls.at(di) is PNode.use_ as u
                 var dep_name: str = u.path
                 var src_dir: str = checkerDirOf(path)
@@ -742,20 +742,20 @@ def runCheck(root_path: str): bool throws
     var visited: List(str) = List(str)()
     var modules: List(Module) = List(Module)()
     checkerLoadDeps(root_path, visited, modules)?
-    var n_deps: int = modules.count() - 1
+    var n_deps: int = modules.len - 1
     sys.errln("zebra check: " + root_path + " (+ " + n_deps.toString() + " deps)")
 
     var checker: DeadCodeChecker = DeadCodeChecker()
 
     # Pass 1: register all union types and module-level fn names
     var mi: int = 0
-    while mi < modules.count()
+    while mi < modules.len
         checker.collectDecls(modules.at(mi))
         mi = mi + 1
 
     # Pass 2: walk all bodies — constructions, matches, and fn calls
     mi = 0
-    while mi < modules.count()
+    while mi < modules.len
         checker.walkModule(modules.at(mi))
         mi = mi + 1
 

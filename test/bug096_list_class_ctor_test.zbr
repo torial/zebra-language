@@ -15,7 +15,7 @@ def main()
     var c = Container()
     c.items.add(Item("alpha"))
     c.items.add(Item("beta"))
-    assert c.items.count() == 2, "count"
+    assert c.items.len == 2, "count"
     assert c.items.at(0).label == "alpha", "first"
     assert c.items.at(1).label == "beta", "second"
     print("ok")

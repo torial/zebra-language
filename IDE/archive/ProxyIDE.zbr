@@ -163,7 +163,7 @@ def renderEditor(g as Gui, state as ProxyIDEState)
 def renderDiagnostics(g as Gui, state as ProxyIDEState)
     g.text("═══════ DIAGNOSTICS ═══════")
 
-    if state.diagnostics.count() == 0
+    if state.diagnostics.len == 0
         g.text("✓ No errors")
     else
         for d in state.diagnostics

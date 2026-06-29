@@ -14,7 +14,7 @@ def main()
     var r2 = Rect(w: 5, h: 6)
     rects.add(r1)
     rects.add(r2)
-    assert rects.count() == 2
+    assert rects.len == 2
     # Field access in loop — Zig auto-deref handles *Rect.field
     for r in rects
         assert r.w > 0

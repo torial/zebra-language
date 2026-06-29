@@ -13,7 +13,7 @@
 
 def wordsIn(s: str): int
     var parts: List(str) = s.split(" ")
-    return parts.count()
+    return parts.len
 
 def firstWord(s: str): str
     var parts: List(str) = s.split(" ")
@@ -48,7 +48,7 @@ def main()
 
     # 7. split → stored (typed) → count
     var words: List(str) = "one two three four five".split(" ")
-    assert words.count() == 5, "words count: expected 5"
+    assert words.len == 5, "words count: expected 5"
 
     # 8. split → stored → at() with str method on result
     var tokens: List(str) = "foo:bar:baz".split(":")

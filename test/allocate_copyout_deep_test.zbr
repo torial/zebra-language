@@ -17,7 +17,7 @@ class Main
             inner.add("hello")
             inner.add("world")
             words <- inner
-        if words.count() != 2
+        if words.len != 2
             ok = false
             print("Test 1 FAIL: count")
         else if words.at(0) != "hello" or words.at(1) != "world"
@@ -32,7 +32,7 @@ class Main
             inner2.add(20)
             inner2.add(30)
             nums <- inner2
-        if nums.count() != 3
+        if nums.len != 3
             ok = false
             print("Test 2 FAIL: count")
         else if nums.at(0) != 10 or nums.at(1) != 20 or nums.at(2) != 30

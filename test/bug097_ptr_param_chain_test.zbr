@@ -33,7 +33,7 @@ def main()
     items.add("alpha")
     items.add("beta")
     populate(out, items)
-    assert out.count() == 3, "count (seed+alpha+beta)"
+    assert out.len == 3, "count (seed+alpha+beta)"
     assert out.at(0) == "seed", "first"
     assert out.at(1) == "alpha", "second"
     assert hasValue(out, "beta"), "hasValue direct"

@@ -9,7 +9,7 @@ def main()
     var evens: List(int) = List(int)()
     for n in nums if n % 2 == 0
         evens.add(n)
-    assert evens.count() == 2, "expected 2 evens"
+    assert evens.len == 2, "expected 2 evens"
     assert evens.at(0) == 2, "first even"
     assert evens.at(1) == 4, "second even"
 
@@ -17,7 +17,7 @@ def main()
     var parts = List(str)()
     for p in "a,,b,,c".split(",") if p != ""
         parts.add(p)
-    assert parts.count() == 3, "expected 3 non-empty parts"
+    assert parts.len == 3, "expected 3 non-empty parts"
     assert parts.at(0) == "a", "split[0]"
     assert parts.at(1) == "b", "split[1]"
     assert parts.at(2) == "c", "split[2]"
@@ -26,7 +26,7 @@ def main()
     var letters = List(str)()
     for c in "h3ll0".chars() if c.isAlpha()
         letters.add(c.toString())
-    assert letters.count() == 3, "expected 3 alpha chars"
+    assert letters.len == 3, "expected 3 alpha chars"
     assert letters.at(0) == "h", "char[0]"
     assert letters.at(1) == "l", "char[1]"
     assert letters.at(2) == "l", "char[2]"
@@ -35,7 +35,7 @@ def main()
     var threes = List(int)()
     for i in 0.to(10) if i % 3 == 0
         threes.add(i)
-    assert threes.count() == 4, "expected 4 multiples-of-3 (0,3,6,9)"
+    assert threes.len == 4, "expected 4 multiples-of-3 (0,3,6,9)"
     assert threes.at(0) == 0, "three[0]"
     assert threes.at(3) == 9, "three[3]"
 
@@ -47,7 +47,7 @@ def main()
     var picks: List(int) = List(int)()
     for k, v in m if v > 3
         picks.add(v)
-    assert picks.count() == 2, "hashmap guard count"
+    assert picks.len == 2, "hashmap guard count"
 
     # List.find() — first match or nil
     var scores: List(int) = List(int)()

@@ -106,7 +106,7 @@ class ParityChecker
             var entries_raw = Dir.list("test")
             var names = List(str)()
             var ei: int = 0
-            while ei < entries_raw.count()
+            while ei < entries_raw.len
                 names.add(entries_raw.at(ei))
                 ei = ei + 1
             names.sort()
@@ -118,7 +118,7 @@ class ParityChecker
             var both_fail_count: int = 0
 
             var ni: int = 0
-            while ni < names.count()
+            while ni < names.len
                 var name: str = names.at(ni)
                 ni = ni + 1
                 if not name.endsWith(".zbr")

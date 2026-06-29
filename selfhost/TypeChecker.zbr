@@ -56,17 +56,17 @@ class HashMapType_
 
 class TupleType_
     var elems: List(Type_)
+    # Maintained element count (#219); read as the plain field `tt.len`.
+    var len: int
 
     cue init(elems: List(Type_))
         .elems = elems
+        .len = elems.len
 
     def at(idx: int): Type_?
-        if idx < 0 or idx >= .elems.count()
+        if idx < 0 or idx >= .elems.len
             return nil
         return .elems.at(idx)
-
-    def count(): int
-        return .elems.count()
 
 # ── Type representation ──────────────────────────────────────────────────────
 # Skeleton variant set for Phase 16a. Phases 17–19 add:
@@ -210,7 +210,7 @@ class ClassTypes
             return nil
         var pipe: str = .method_param_types.fetch(method_name)
         var types: List(str) = pipe.split("|")
-        if idx < 0 or idx >= types.count()
+        if idx < 0 or idx >= types.len
             return nil
         var tag: str = types.at(idx)
         return paramTypeFromTag(tag)
@@ -364,11 +364,11 @@ class ModuleTypes
         var result: List(str) = List(str)()
         var prefix: str = enum_name + "."
         var i: int = 0
-        while i < all_enum_member_keys.count()
+        while i < all_enum_member_keys.len
             var k: str = all_enum_member_keys.at(i)
             if k.startsWith(prefix)
                 var parts: List(str) = k.split(".")
-                if parts.count() >= 2
+                if parts.len >= 2
                     result.add(parts.at(1))
             i = i + 1
         return result
@@ -422,12 +422,12 @@ class ModuleTypes
         var result: List(str) = List(str)()
         var prefix: str = union_name + "."
         var i: int = 0
-        while i < all_variant_keys.count()
+        while i < all_variant_keys.len
             var k: str = all_variant_keys.at(i)
             if k.startsWith(prefix)
                 # Key is "UnionName.variantName"; split on "." gives [union, variant].
                 var parts: List(str) = k.split(".")
-                if parts.count() >= 2
+                if parts.len >= 2
                     result.add(parts.at(1))
             i = i + 1
         return result
@@ -573,11 +573,11 @@ def typeFromRef(tr: TypeRef): Type_
             return Type_.void_
         on TypeRef.generic as g
             var gname: str = g.name
-            if gname == "List" and g.args.count() == 1
+            if gname == "List" and g.args.len == 1
                 return Type_.list_(typeFromRef(g.args.at(0)))
-            if gname == "HashMap" and g.args.count() == 2
+            if gname == "HashMap" and g.args.len == 2
                 return Type_.hashmap_(HashMapType_(typeFromRef(g.args.at(0)), typeFromRef(g.args.at(1))))
-            if gname == "Chan" and g.args.count() == 1
+            if gname == "Chan" and g.args.len == 1
                 return Type_.chan_(typeFromRef(g.args.at(0)))
             return Type_.unknown_
         on TypeRef.tuple as tt
@@ -674,7 +674,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 # Collect param names as CSV for named-arg reordering in codegen.
                 var pcsv: str = ""
                 var pi: int = 0
-                while pi < m.params.count()
+                while pi < m.params.len
                     var p = m.params.at(pi)
                     if pi > 0
                         pcsv = pcsv + ","
@@ -685,7 +685,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 # Collect param types as "|"-joined typeTag strings for call-arg checking.
                 var ptypes_pipe: str = ""
                 var pti: int = 0
-                while pti < m.params.count()
+                while pti < m.params.len
                     var p2 = m.params.at(pti)
                     if pti > 0
                         ptypes_pipe = ptypes_pipe + "|"
@@ -725,10 +725,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ct = ClassTypes(c.name)
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
-                if c.ifaces.count() > 0
+                if c.ifaces.len > 0
                     var ci_pipe: str = ""
                     var ci_i: int = 0
-                    while ci_i < c.ifaces.count()
+                    while ci_i < c.ifaces.len
                         var ci_ref: TypeRef = c.ifaces.at(ci_i)
                         if ci_ref is TypeRef.named as ci_nr
                             if ci_i > 0
@@ -741,10 +741,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ct2 = ClassTypes(s.name)
                 addClassMembers(mt, ct2, s.members)
                 mt.addClass(ct2)
-                if s.ifaces.count() > 0
+                if s.ifaces.len > 0
                     var si_pipe: str = ""
                     var si_i: int = 0
-                    while si_i < s.ifaces.count()
+                    while si_i < s.ifaces.len
                         var si_ref: TypeRef = s.ifaces.at(si_i)
                         if si_ref is TypeRef.named as si_nr
                             if si_i > 0
@@ -755,10 +755,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         mt.addClassInterfaces(s.name, si_pipe)
             on Decl.interface_ as iface
                 # Record which interfaces this interface extends for transitive conformance.
-                if iface.ifaces.count() > 0
+                if iface.ifaces.len > 0
                     var ii_pipe: str = ""
                     var ii_i: int = 0
-                    while ii_i < iface.ifaces.count()
+                    while ii_i < iface.ifaces.len
                         var ii_ref: TypeRef = iface.ifaces.at(ii_i)
                         if ii_ref is TypeRef.named as ii_nr
                             if ii_i > 0
@@ -801,7 +801,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Collect param types for call-arg checking at call sites.
                 var tl_ptypes: str = ""
                 var tl_pti: int = 0
-                while tl_pti < topfn.params.count()
+                while tl_pti < topfn.params.len
                     var tl_p = topfn.params.at(tl_pti)
                     if tl_pti > 0
                         tl_ptypes = tl_ptypes + "|"
@@ -815,7 +815,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Full Param list (incl. defaults) for cross-module default-fill (§27b).
                 module_fns.setFnParamList(topfn.name, topfn.params)
                 # Register as generic function if it declares type params.
-                if topfn.type_params.count() > 0
+                if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)
             on Decl.var_ as mv
                 # Module-level var/const: register its type under the "" sentinel
@@ -852,7 +852,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ns_parts: List(str) = ns_decl.name.split(".")
                 var ns_cur: str = ""
                 var ns_pi: int = 0
-                while ns_pi < ns_parts.count()
+                while ns_pi < ns_parts.len
                     var ns_part: str = ns_parts.at(ns_pi)
                     var ns_prev: str = ns_cur
                     if ns_cur == ""
@@ -882,7 +882,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
     # BUG-089 Pass 2: merge mixin methods into each class that `adds` them.
     for decl in m.decls
         if decl is Decl.class_ as c
-            if c.mixins.count() > 0
+            if c.mixins.len > 0
                 var maybe_ct: ClassTypes? = mt.classOf(c.name)
                 if maybe_ct as class_ct
                     for mixin_ref in c.mixins
@@ -1708,11 +1708,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         var gcname: str = gid.name
                         if ctx.hasClassAny(gcname)
                             return Type_.named(gcname)
-                        if gcname == "HashMap" and gc.args.count() == 2
+                        if gcname == "HashMap" and gc.args.len == 2
                             if gc.args.at(0).value is Expr.ident as kn
                                 if gc.args.at(1).value is Expr.ident as vn
                                     return Type_.hashmap_(HashMapType_(typeFromName(kn.name), typeFromName(vn.name)))
-                        if gcname == "List" and gc.args.count() == 1
+                        if gcname == "List" and gc.args.len == 1
                             if gc.args.at(0).value is Expr.ident as tn
                                 return Type_.list_(typeFromName(tn.name))
                         # Generic function call: identity(str)("hi") — the outer call's callee is
@@ -1720,7 +1720,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # function's declared return type with the type param substituted.
                         # Simple single-type-param case: return typeFromName(type_arg).
                         if ctx.module_types.hasGenericFn(gcname) or ctx.dep_types.hasGenericFn(gcname)
-                            if gc.args.count() == 1
+                            if gc.args.len == 1
                                 if gc.args.at(0).value is Expr.ident as targ
                                     var subst_t: Type_ = typeFromName(targ.name)
                                     if subst_t is not Type_.named
@@ -1870,7 +1870,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.list_lit as ll
             if ll.elem_type != nil
                 return Type_.list_(typeFromRef(ll.elem_type!))
-            if ll.elems.count() > 0
+            if ll.elems.len > 0
                 var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
                 return Type_.list_(elem_t)
             return Type_.list_(Type_.unknown_)
@@ -2048,13 +2048,13 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # Exception: `for c in s.chars()` (single var) → c is char_,
             # so c.toString() in the body routes to utf8Encode, not allocPrint.
             var loop_var_t: Type_ = Type_.unknown_
-            if fi.vars.count() == 1 and isCharsCallExpr(fi.iter)
+            if fi.vars.len == 1 and isCharsCallExpr(fi.iter)
                 loop_var_t = Type_.char_
-            else if fi.vars.count() == 1 and isStrListCallExpr(fi.iter)
+            else if fi.vars.len == 1 and isStrListCallExpr(fi.iter)
                 loop_var_t = Type_.string_
-            else if fi.vars.count() == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
+            else if fi.vars.len == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
                 loop_var_t = Type_.sqlite_row
-            else if fi.vars.count() == 1
+            else if fi.vars.len == 1
                 # `for x in obj.field` where field: List(str) on a same-file/dep struct.
                 if fi.iter is Expr.member as iter_mem
                     if iter_mem.object is Expr.ident as iter_obj
@@ -2096,7 +2096,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             for c in sb.cases
                 for v in c.values
                     walkExpr(v, ctx)
-                if c.values.count() == 1
+                if c.values.len == 1
                     if c.binding as bname
                         var val: Expr = c.values.at(0)
                         var payload: Type_? = narrowPayloadFromOnValueDeps(ctx.module_types, ctx.dep_types, val)
@@ -2368,7 +2368,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     for p in ps
         if p.default_ == nil
             required = required + 1
-    var provided: int = call.args.count()
+    var provided: int = call.args.len
     if provided < required
         if required == total
             ctx.addWarn(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
@@ -2574,10 +2574,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # Union exhaustiveness error: no else, not all variants covered.
                 if sb.else_ == nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
                     var sb_vars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)
-                    if sb_vars.count() > 0
+                    if sb_vars.len > 0
                         var sb_cvd: List(str) = List(str)()
                         for bc in sb.cases
-                            if bc.values.count() == 1
+                            if bc.values.len == 1
                                 var bv: Expr = bc.values.at(0)
                                 if bv is Expr.member as bvm
                                     sb_cvd.add(bvm.member)
@@ -2591,10 +2591,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # Enum exhaustiveness error: no else, not all members covered.
                 if sb.else_ == nil and sb_tname != "" and ctx.hasEnumAny(sb_tname)
                     var sb_mems: List(str) = ctx.memberNamesForEnumAny(sb_tname)
-                    if sb_mems.count() > 0
+                    if sb_mems.len > 0
                         var sb_mcvd: List(str) = List(str)()
                         for bc in sb.cases
-                            if bc.values.count() == 1
+                            if bc.values.len == 1
                                 var bv: Expr = bc.values.at(0)
                                 if bv is Expr.member as bvm
                                     sb_mcvd.add(bvm.member)
@@ -2608,10 +2608,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # --warn-non-exhaustive: warn when else silently catches union variants.
                 if ctx.warn_non_exhaustive and sb.else_ != nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
                     var sb_wvars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)
-                    if sb_wvars.count() > 0
+                    if sb_wvars.len > 0
                         var sb_wcvd: List(str) = List(str)()
                         for bc in sb.cases
-                            if bc.values.count() == 1
+                            if bc.values.len == 1
                                 var bv: Expr = bc.values.at(0)
                                 if bv is Expr.member as bvm
                                     sb_wcvd.add(bvm.member)

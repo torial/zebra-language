@@ -12442,6 +12442,18 @@ const Generator = struct {
                 if (g.getExprDeclaredType(e.object)) |tr| {
                     if (try g.genStdlibProp(e.object, tr, e.member)) break :sw;
                 }
+                // #219: `.len`/`.count` size on List/HashMap receivers the declared-type
+                // check missed (inferred Dir.walk vars, HashMap vars) — use the same
+                // positive-only detection as the `.count()` method-call path so `.len`
+                // dispatches identically to `.count()`.
+                if (std.mem.eql(u8, e.member, "len") or std.mem.eql(u8, e.member, "count")) {
+                    if (g.objIsList(e.object)) { try g.writeListLen(e.object); break :sw; }
+                    if (g.objIsHashMap(e.object)) {
+                        try g.genExpr(e.object);
+                        try g.w.writeAll(".count()");
+                        break :sw;
+                    }
+                }
                 // TC-type fallback for List/HashMap/str len/count on unannotated vars.
                 if (g.tc) |tc| {
                     const obj_tc = tc.expr_types.get(e.object) orelse .unknown;

@@ -3,7 +3,7 @@
 # zebra-language-book repo.  Port of tools/book_strip_invisibles.py.
 
 def countOcc(text: str, needle: str): int
-    return text.split(needle).count() - 1
+    return text.split(needle).len - 1
 
 def main()
     var root = "C:/Projects/zebra-language-book"

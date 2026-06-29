@@ -12,7 +12,7 @@ def main()
 
     var newline_joined = parts.join("\n")
     var lines: List(str) = newline_joined.split("\n")
-    assert lines.count() == 3, "expected 3 lines, got " + lines.count().toString()
+    assert lines.len == 3, "expected 3 lines, got " + lines.len.toString()
     assert lines.at(0) == "alpha", "expected alpha, got " + lines.at(0)
 
     var empty: List(str) = List()

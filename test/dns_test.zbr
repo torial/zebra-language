@@ -17,7 +17,7 @@ def testInvalidHost
     # This should fail gracefully or return empty
     print("Attempting to resolve invalid host:")
     var results = Net.resolve("invalid.hostname.that.does.not.exist.local")
-    print("Got ".concat(results.count().toString()).concat(" results"))
+    print("Got ".concat(results.len.toString()).concat(" results"))
 
 def main()
     testLocalhostResolve()

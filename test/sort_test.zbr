@@ -73,7 +73,7 @@ class Program
             # ── Empty list ─────────────────────────────────────────────────
             var empty: List(int) = List()
             empty.sort()
-            print(empty.count())     # 0
+            print(empty.len)     # 0
 
             # ── Single element ─────────────────────────────────────────────
             var single: List(int) = List()
@@ -107,7 +107,7 @@ class Program
             dupes.add(5)
             dupes.add(1)
             dupes.sort()
-            print(dupes.count())     # 5
+            print(dupes.len)     # 5
 
             # ── Float sorting ──────────────────────────────────────────────
             var floats: List(float) = List()

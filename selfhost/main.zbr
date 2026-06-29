@@ -218,7 +218,7 @@ class MultiCompiler
                     c_dir = "."
                 var already_added: bool = false
                 var dchk: int = 0
-                while dchk < c_i_dirs.count()
+                while dchk < c_i_dirs.len
                     if c_i_dirs.at(dchk) == c_dir
                         already_added = true
                     dchk = dchk + 1
@@ -368,7 +368,7 @@ class MultiCompiler
 
     def hasDupMethod(method_name: str, root_members: List(PNode)): bool
         var i: int = 0
-        while i < root_members.count()
+        while i < root_members.len
             if root_members.at(i) is PNode.method_ as rm
                 var rm_name: str = rm.name
                 if rm_name == method_name
@@ -399,7 +399,7 @@ class MultiCompiler
         var partial_paths = List(str)()
         var prefix: str = stem + "."
         var ei = 0
-        while ei < entries.count()
+        while ei < entries.len
             var ename: str = entries.at(ei)
             if ename.startsWith(prefix) and ename.endsWith(".zbr") and ename != base
                 var full_path: str = ename
@@ -407,13 +407,13 @@ class MultiCompiler
                     full_path = list_dir + "/" + ename
                 partial_paths.add(full_path)
             ei = ei + 1
-        if partial_paths.count() == 0
+        if partial_paths.len == 0
             return pm
         partial_paths.sort()
         # Parse each partial into a PModule list
         var partial_pms = List(PModule)()
         var pi = 0
-        while pi < partial_paths.count()
+        while pi < partial_paths.len
             var ppath: str = partial_paths.at(pi)
             var psrc_raw: str = File.read(ppath)
             var psrc: str = psrc_raw
@@ -424,7 +424,7 @@ class MultiCompiler
         # Rebuild root decl list, merging partial class members into matching classes
         var merged_decls = List(PNode)()
         var ri = 0
-        while ri < pm.decls.count()
+        while ri < pm.decls.len
             var rdecl = pm.decls.at(ri)
             branch rdecl
                 on PNode.class_ as rcls
@@ -433,16 +433,16 @@ class MultiCompiler
                     var rcls_name: str = rcls.name
                     var extra_members = List(PNode)()
                     var pmi = 0
-                    while pmi < partial_pms.count()
+                    while pmi < partial_pms.len
                         var partial_pm = partial_pms.at(pmi)
                         var pdi = 0
-                        while pdi < partial_pm.decls.count()
+                        while pdi < partial_pm.decls.len
                             var pdecl = partial_pm.decls.at(pdi)
                             if pdecl is PNode.class_ as pcls
                                 var pcls_name: str = pcls.name
                                 if pcls_name == rcls_name
                                     var memi = 0
-                                    while memi < pcls.members.count()
+                                    while memi < pcls.members.len
                                         var pmem = pcls.members.at(memi)
                                         var keep: bool = true
                                         if pmem is PNode.method_ as pmth
@@ -453,16 +453,16 @@ class MultiCompiler
                                         memi = memi + 1
                             pdi = pdi + 1
                         pmi = pmi + 1
-                    if extra_members.count() == 0
+                    if extra_members.len == 0
                         merged_decls.add(rdecl)
                     else
                         var new_members = List(PNode)()
                         var mi = 0
-                        while mi < rcls.members.count()
+                        while mi < rcls.members.len
                             new_members.add(rcls.members.at(mi))
                             mi = mi + 1
                         mi = 0
-                        while mi < extra_members.count()
+                        while mi < extra_members.len
                             new_members.add(extra_members.at(mi))
                             mi = mi + 1
                         merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable, false, false, false, nil)))
@@ -471,10 +471,10 @@ class MultiCompiler
             ri = ri + 1
         # Append any non-class top-level decls from partials (use_, etc.)
         var pmi = 0
-        while pmi < partial_pms.count()
+        while pmi < partial_pms.len
             var partial_pm = partial_pms.at(pmi)
             var pdi = 0
-            while pdi < partial_pm.decls.count()
+            while pdi < partial_pm.decls.len
                 var pdecl = partial_pm.decls.at(pdi)
                 branch pdecl
                     on PNode.class_
@@ -563,20 +563,20 @@ def runTypecheckMerge(path: str) throws
     tcCheckSide(theirs_src, path, theirs_diags)
 
     sys.errln("typecheck-merge: " + path)
-    if ours_diags.count() == 0
+    if ours_diags.len == 0
         sys.errln("  ours (HEAD): CLEAN")
     else
-        sys.errln("  ours (HEAD): " + ours_diags.count().toString() + " type error(s)")
+        sys.errln("  ours (HEAD): " + ours_diags.len.toString() + " type error(s)")
         var oi: int = 0
-        while oi < ours_diags.count()
+        while oi < ours_diags.len
             sys.errln("    " + ours_diags.at(oi))
             oi = oi + 1
-    if theirs_diags.count() == 0
+    if theirs_diags.len == 0
         sys.errln("  theirs: CLEAN")
     else
-        sys.errln("  theirs: " + theirs_diags.count().toString() + " type error(s)")
+        sys.errln("  theirs: " + theirs_diags.len.toString() + " type error(s)")
         var ti: int = 0
-        while ti < theirs_diags.count()
+        while ti < theirs_diags.len
             sys.errln("    " + theirs_diags.at(ti))
             ti = ti + 1
 
@@ -938,7 +938,7 @@ def main()
         # unresolved C/libc symbols (it emits a crashing exe), so compile-failure
         # fallback can't protect those.  A pure-Zig backend gap is a real compile
         # error, so falling through to the LLVM path below stays safe.
-        if not mode_c and not release and mc.c_sources.count() == 0 and not mc.uses_sqlite
+        if not mode_c and not release and mc.c_sources.len == 0 and not mc.uses_sqlite
             var fast_exe: str = zig_path + ".fast.exe"
             var fargv = List(str)()
             fargv.add("zig")
@@ -975,12 +975,12 @@ def main()
 
         # Append any C source files discovered during dep walk
         var csi: int = 0
-        while csi < mc.c_sources.count()
+        while csi < mc.c_sources.len
             argv2.add(mc.c_sources.at(csi))
             csi = csi + 1
         # -I flags for C deps that have a matching .h header
         var idi: int = 0
-        while idi < mc.c_i_dirs.count()
+        while idi < mc.c_i_dirs.len
             argv2.add("-I" + mc.c_i_dirs.at(idi))
             idi = idi + 1
         # Append sqlite3.c when the program calls Sqlite.open/query
@@ -1044,11 +1044,11 @@ def pathBasename(p: str): str
 # Walk backward from err_line (1-based) through zig_lines to find the
 # nearest // zbr:filename:N marker. Returns "filename:N" or "".
 def findZbrComment(zig_lines: List(str), err_line: int): str
-    if err_line <= 0 or zig_lines.count() == 0
+    if err_line <= 0 or zig_lines.len == 0
         return ""
     var i: int = err_line - 1
-    if i >= zig_lines.count()
-        i = zig_lines.count() - 1
+    if i >= zig_lines.len
+        i = zig_lines.len - 1
     while i >= 0
         var line: str = zig_lines.at(i)
         var trimmed: str = line.trimLeft()
@@ -1091,7 +1091,7 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
     var out: str = ""
     var skip_context: bool = false
     var li: int = 0
-    while li < stderr_lines.count()
+    while li < stderr_lines.len
         var line: str = stderr_lines.at(li)
         var emit_raw: bool = true
         if skip_context
@@ -1122,12 +1122,12 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
                     var colon_parts: List(str) = List(str)()
                     for cp in after.split(":")
                         colon_parts.add(cp)
-                    if colon_parts.count() >= 4
+                    if colon_parts.len >= 4
                         var line_num_str: str = colon_parts.at(0)
                         var zig_line: int = line_num_str.toInt()
                         var sev_msg: str = ""
                         var ai: int = 2
-                        while ai < colon_parts.count()
+                        while ai < colon_parts.len
                             if ai > 2
                                 sev_msg = sev_msg + ":"
                             sev_msg = sev_msg + colon_parts.at(ai)

@@ -18,7 +18,7 @@ def main()
     var keys: List(str) = List(str)()
     for k, v in m
         keys.add(k)
-    assert keys.count() == 2, "k used v unused"
+    assert keys.len == 2, "k used v unused"
 
     # Permutation 3: k unused, v used
     var sum3: int = 0
