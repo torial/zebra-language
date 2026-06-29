@@ -67,3 +67,9 @@ test/**/*.zig
 !test/hello.zig
 !test/mathlib_test.zig
 !test/regex_gaps.zig
+
+# N-API spike build artifacts (the .node + import lib + pdb)
+spike/*.node
+spike/*.lib
+spike/*.pdb
+spike/*.node.o
