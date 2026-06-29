@@ -3477,9 +3477,9 @@ pub const Pair = struct {
     cdr: *Value,
     pub fn init(car: *Value, cdr: *Value) Pair {
         var _self: Pair = undefined;
-// zbr:examples/lisp.zbr:45
+// zbr:examples/lisp.zbr:48
             _self.car = car;
-// zbr:examples/lisp.zbr:46
+// zbr:examples/lisp.zbr:49
             _self.cdr = cdr;
         return _self;
     }
@@ -3490,7 +3490,7 @@ pub const Builtin = struct {
     name: []const u8,
     pub fn init(name: []const u8) Builtin {
         var _self: Builtin = undefined;
-// zbr:examples/lisp.zbr:52
+// zbr:examples/lisp.zbr:55
             _self.name = _intern(name);
         return _self;
     }
@@ -3503,11 +3503,11 @@ pub const Lambda = struct {
     env: *Env,
     pub fn init(params: std.ArrayList([]const u8), body: std.ArrayList(Value), env: *Env) Lambda {
         var _self: Lambda = undefined;
-// zbr:examples/lisp.zbr:60
+// zbr:examples/lisp.zbr:63
             _self.params = params;
-// zbr:examples/lisp.zbr:61
+// zbr:examples/lisp.zbr:64
             _self.body = body;
-// zbr:examples/lisp.zbr:62
+// zbr:examples/lisp.zbr:65
             _self.env = env;
         return _self;
     }
@@ -3515,48 +3515,48 @@ pub const Lambda = struct {
 };
 
 pub fn mkNil() Value {
-// zbr:examples/lisp.zbr:66
+// zbr:examples/lisp.zbr:69
     return Value{ .nil_ = 0 };
 }
 
 pub fn mkNum(n: f64) Value {
-// zbr:examples/lisp.zbr:69
+// zbr:examples/lisp.zbr:72
     return Value{ .num = n };
 }
 
 pub fn mkBool(b: bool) Value {
-// zbr:examples/lisp.zbr:72
+// zbr:examples/lisp.zbr:75
     return Value{ .bool_ = b };
 }
 
 pub fn mkSym(s: []const u8) Value {
-// zbr:examples/lisp.zbr:75
+// zbr:examples/lisp.zbr:78
     return Value{ .sym = s };
 }
 
 pub fn cons(a: Value, d: Value) Value {
-// zbr:examples/lisp.zbr:78
+// zbr:examples/lisp.zbr:81
     return Value{ .pair = blk_box_1: { const _bv: std.meta.Child(@FieldType(Value, "pair")) = Pair.init(_bx0: { const _bv = a; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = d; const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
 }
 
 pub fn isNil(v: Value) bool {
-// zbr:examples/lisp.zbr:81
+// zbr:examples/lisp.zbr:84
     return (v == .nil_);
 }
 
 pub fn truthy(v: Value) bool {
-// zbr:examples/lisp.zbr:85
+// zbr:examples/lisp.zbr:88
     switch (v) {
         .nil_ => {
-// zbr:examples/lisp.zbr:87
+// zbr:examples/lisp.zbr:90
             return false;
         },
         .bool_ => |b| {
-// zbr:examples/lisp.zbr:89
+// zbr:examples/lisp.zbr:92
             return b;
         },
         else => {
-// zbr:examples/lisp.zbr:91
+// zbr:examples/lisp.zbr:94
             return true;
         },
     }
@@ -3569,9 +3569,9 @@ pub const Env = struct {
     pub fn init(parent: ?*Env) *Env {
         const _self = _allocator.create(Env) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Env");
-// zbr:examples/lisp.zbr:106
+// zbr:examples/lisp.zbr:109
             _self.vars = std.StringHashMap(Value).init(_allocator);
-// zbr:examples/lisp.zbr:107
+// zbr:examples/lisp.zbr:110
             _self.parent = parent;
         return _self;
     }
@@ -3581,34 +3581,34 @@ pub const Env = struct {
     }
 
     pub fn lookup(self: *Env, name: []const u8) anyerror!Value {
-// zbr:examples/lisp.zbr:113
+// zbr:examples/lisp.zbr:116
         if (self.vars.contains(name)) {
-// zbr:examples/lisp.zbr:114
+// zbr:examples/lisp.zbr:117
             return (self.vars.get(name) orelse undefined);
         }
-// zbr:examples/lisp.zbr:115
+// zbr:examples/lisp.zbr:118
         if (self.parent) |p| {
-// zbr:examples/lisp.zbr:116
+// zbr:examples/lisp.zbr:119
             return try p.lookup(name);
         }
-// zbr:examples/lisp.zbr:117
+// zbr:examples/lisp.zbr:120
         { _error_ctx = .{ .message = _str_concat("unbound symbol: ", name, _allocator) }; return error.ZebraError; }
     }
 
     pub fn setBang(self: *Env, name: []const u8, val: Value) anyerror!void {
-// zbr:examples/lisp.zbr:120
+// zbr:examples/lisp.zbr:123
         if (self.vars.contains(name)) {
             self.vars.put(_intern(name), val) catch @panic("OOM");
-// zbr:examples/lisp.zbr:122
-            return;
-        }
-// zbr:examples/lisp.zbr:123
-        if (self.parent) |p| {
-            try p.setBang(name, val);
 // zbr:examples/lisp.zbr:125
             return;
         }
 // zbr:examples/lisp.zbr:126
+        if (self.parent) |p| {
+            try p.setBang(name, val);
+// zbr:examples/lisp.zbr:128
+            return;
+        }
+// zbr:examples/lisp.zbr:129
         { _error_ctx = .{ .message = _str_concat("set! on unbound symbol: ", name, _allocator) }; return error.ZebraError; }
     }
 
@@ -3619,865 +3619,1315 @@ const _reflect_Env_fields: []const []const u8 = &.{"vars", "parent"};
 const _reflect_Env_field_types: []const []const u8 = &.{"HashMap(str, Value)", "?Env"};
 
 pub fn tokenize(src: []const u8) std.ArrayList([]const u8) {
-// zbr:examples/lisp.zbr:136
-    var toks = std.ArrayList([]const u8).empty;
-// zbr:examples/lisp.zbr:137
-    var i: i64 = 0;
-// zbr:examples/lisp.zbr:138
-    const n = @as(i64, @intCast(src.len));
 // zbr:examples/lisp.zbr:139
-    while (_zebra_lt(i, n)) {
+    var toks = std.ArrayList([]const u8).empty;
 // zbr:examples/lisp.zbr:140
-        const c = src[@as(usize, @intCast(i))];
+    var i: i64 = 0;
 // zbr:examples/lisp.zbr:141
-        if (((((c == ' ') or (c == '\t')) or (c == '\n')) or (c == '\r'))) {
+    const n = @as(i64, @intCast(src.len));
 // zbr:examples/lisp.zbr:142
+    while (_zebra_lt(i, n)) {
+// zbr:examples/lisp.zbr:143
+        const c = src[@as(usize, @intCast(i))];
+// zbr:examples/lisp.zbr:144
+        if (((((c == ' ') or (c == '\t')) or (c == '\n')) or (c == '\r'))) {
+// zbr:examples/lisp.zbr:145
             i = (i + 1);
         } else {
-// zbr:examples/lisp.zbr:143
+// zbr:examples/lisp.zbr:146
             if ((c == '(')) {
                 toks.append(_allocator, _intern("(")) catch @panic("OOM");
-// zbr:examples/lisp.zbr:145
+// zbr:examples/lisp.zbr:148
                 i = (i + 1);
             } else {
-// zbr:examples/lisp.zbr:146
+// zbr:examples/lisp.zbr:149
                 if ((c == ')')) {
                     toks.append(_allocator, _intern(")")) catch @panic("OOM");
-// zbr:examples/lisp.zbr:148
+// zbr:examples/lisp.zbr:151
                     i = (i + 1);
                 } else {
-// zbr:examples/lisp.zbr:149
+// zbr:examples/lisp.zbr:152
                     if ((c == '\'')) {
                         toks.append(_allocator, _intern("'")) catch @panic("OOM");
-// zbr:examples/lisp.zbr:151
+// zbr:examples/lisp.zbr:154
                         i = (i + 1);
                     } else {
-// zbr:examples/lisp.zbr:152
-                        if ((c == ';')) {
-// zbr:examples/lisp.zbr:154
-                            while ((_zebra_lt(i, n) and (src[@as(usize, @intCast(i))] != '\n'))) {
 // zbr:examples/lisp.zbr:155
-                                i = (i + 1);
-                            }
+                        if ((c == '`')) {
+                            toks.append(_allocator, _intern("`")) catch @panic("OOM");
+// zbr:examples/lisp.zbr:157
+                            i = (i + 1);
                         } else {
 // zbr:examples/lisp.zbr:158
-                            const start = i;
-// zbr:examples/lisp.zbr:159
-                            var scanning = true;
+                            if ((c == ',')) {
 // zbr:examples/lisp.zbr:160
-                            while ((scanning and _zebra_lt(i, n))) {
-// zbr:examples/lisp.zbr:161
-                                const d = src[@as(usize, @intCast(i))];
+                                if ((_zebra_lt((i + 1), n) and (src[@as(usize, @intCast((i + 1)))] == '@'))) {
+                                    toks.append(_allocator, _intern(",@")) catch @panic("OOM");
 // zbr:examples/lisp.zbr:162
-                                if ((((((((d == ' ') or (d == '\t')) or (d == '\n')) or (d == '\r')) or (d == '(')) or (d == ')')) or (d == '\''))) {
-// zbr:examples/lisp.zbr:163
-                                    scanning = false;
+                                    i = (i + 2);
                                 } else {
+                                    toks.append(_allocator, _intern(",")) catch @panic("OOM");
 // zbr:examples/lisp.zbr:165
                                     i = (i + 1);
                                 }
-                            }
+                            } else {
 // zbr:examples/lisp.zbr:166
-                            const atom: []const u8 = src[@as(usize, @intCast(start))..@as(usize, @intCast(i))];
-                            toks.append(_allocator, _intern(atom)) catch @panic("OOM");
+                                if ((c == ';')) {
+// zbr:examples/lisp.zbr:168
+                                    while ((_zebra_lt(i, n) and (src[@as(usize, @intCast(i))] != '\n'))) {
+// zbr:examples/lisp.zbr:169
+                                        i = (i + 1);
+                                    }
+                                } else {
+// zbr:examples/lisp.zbr:172
+                                    const start = i;
+// zbr:examples/lisp.zbr:173
+                                    var scanning = true;
+// zbr:examples/lisp.zbr:174
+                                    while ((scanning and _zebra_lt(i, n))) {
+// zbr:examples/lisp.zbr:175
+                                        const d = src[@as(usize, @intCast(i))];
+// zbr:examples/lisp.zbr:176
+                                        if ((((((((((d == ' ') or (d == '\t')) or (d == '\n')) or (d == '\r')) or (d == '(')) or (d == ')')) or (d == '\'')) or (d == '`')) or (d == ','))) {
+// zbr:examples/lisp.zbr:177
+                                            scanning = false;
+                                        } else {
+// zbr:examples/lisp.zbr:179
+                                            i = (i + 1);
+                                        }
+                                    }
+// zbr:examples/lisp.zbr:180
+                                    const atom: []const u8 = src[@as(usize, @intCast(start))..@as(usize, @intCast(i))];
+                                    toks.append(_allocator, _intern(atom)) catch @panic("OOM");
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
-// zbr:examples/lisp.zbr:168
+// zbr:examples/lisp.zbr:182
     return toks;
 }
 
 pub fn parseAtom(tok: []const u8) Value {
-// zbr:examples/lisp.zbr:171
+// zbr:examples/lisp.zbr:185
     if (std.mem.eql(u8, tok, "#t")) {
-// zbr:examples/lisp.zbr:172
+// zbr:examples/lisp.zbr:186
         return mkBool(true);
     }
-// zbr:examples/lisp.zbr:173
+// zbr:examples/lisp.zbr:187
     if (std.mem.eql(u8, tok, "#f")) {
-// zbr:examples/lisp.zbr:174
+// zbr:examples/lisp.zbr:188
         return mkBool(false);
     }
-// zbr:examples/lisp.zbr:177
+// zbr:examples/lisp.zbr:191
     if (looksNumeric(tok)) {
-// zbr:examples/lisp.zbr:178
+// zbr:examples/lisp.zbr:192
         return mkNum((std.fmt.parseFloat(f64, tok) catch 0.0));
     }
-// zbr:examples/lisp.zbr:179
+// zbr:examples/lisp.zbr:193
     return mkSym(tok);
 }
 
 pub fn looksNumeric(tok: []const u8) bool {
-// zbr:examples/lisp.zbr:184
+// zbr:examples/lisp.zbr:198
     if ((@as(i64, @intCast(tok.len)) == 0)) {
-// zbr:examples/lisp.zbr:185
+// zbr:examples/lisp.zbr:199
         return false;
     }
-// zbr:examples/lisp.zbr:186
+// zbr:examples/lisp.zbr:200
     const first = tok[@as(usize, @intCast(0))];
-// zbr:examples/lisp.zbr:187
+// zbr:examples/lisp.zbr:201
     const startsOk = ((((_zebra_ge(first, '0') and _zebra_le(first, '9')) or (first == '-')) or (first == '+')) or (first == '.'));
-// zbr:examples/lisp.zbr:188
+// zbr:examples/lisp.zbr:202
     if ((!startsOk)) {
-// zbr:examples/lisp.zbr:189
+// zbr:examples/lisp.zbr:203
         return false;
     }
-// zbr:examples/lisp.zbr:190
+// zbr:examples/lisp.zbr:204
     var i: i64 = 0;
-// zbr:examples/lisp.zbr:191
+// zbr:examples/lisp.zbr:205
     while (_zebra_lt(i, @as(i64, @intCast(tok.len)))) {
-// zbr:examples/lisp.zbr:192
+// zbr:examples/lisp.zbr:206
         const ch = tok[@as(usize, @intCast(i))];
-// zbr:examples/lisp.zbr:193
+// zbr:examples/lisp.zbr:207
         if ((_zebra_ge(ch, '0') and _zebra_le(ch, '9'))) {
-// zbr:examples/lisp.zbr:194
+// zbr:examples/lisp.zbr:208
             return true;
         }
-// zbr:examples/lisp.zbr:195
+// zbr:examples/lisp.zbr:209
         i = (i + 1);
     }
-// zbr:examples/lisp.zbr:196
+// zbr:examples/lisp.zbr:210
     return false;
 }
 
 pub fn parseForm(toks: std.ArrayList([]const u8), pos: *std.ArrayList(i64)) anyerror!Value {
-// zbr:examples/lisp.zbr:200
+// zbr:examples/lisp.zbr:214
     if (_zebra_ge(pos.items[@intCast(0)], @as(i64, @intCast(toks.items.len)))) {
-// zbr:examples/lisp.zbr:201
+// zbr:examples/lisp.zbr:215
         { _error_ctx = .{ .message = "unexpected end of input" }; return error.ZebraError; }
     }
-// zbr:examples/lisp.zbr:202
+// zbr:examples/lisp.zbr:216
     const tok = toks.items[@intCast(pos.items[@intCast(0)])];
-// zbr:examples/lisp.zbr:203
+// zbr:examples/lisp.zbr:217
     if (std.mem.eql(u8, tok, "(")) {
         advance(pos);
-// zbr:examples/lisp.zbr:205
+// zbr:examples/lisp.zbr:219
         return try parseList(toks, pos);
     }
-// zbr:examples/lisp.zbr:206
+// zbr:examples/lisp.zbr:220
     if (std.mem.eql(u8, tok, ")")) {
-// zbr:examples/lisp.zbr:207
+// zbr:examples/lisp.zbr:221
         { _error_ctx = .{ .message = "unexpected )" }; return error.ZebraError; }
     }
-// zbr:examples/lisp.zbr:208
+// zbr:examples/lisp.zbr:222
     if (std.mem.eql(u8, tok, "'")) {
         advance(pos);
-// zbr:examples/lisp.zbr:210
+// zbr:examples/lisp.zbr:224
         const quoted = try parseForm(toks, pos);
-// zbr:examples/lisp.zbr:212
+// zbr:examples/lisp.zbr:226
         return cons(mkSym("quote"), cons(quoted, mkNil()));
     }
+// zbr:examples/lisp.zbr:227
+    if (std.mem.eql(u8, tok, "`")) {
+        advance(pos);
+// zbr:examples/lisp.zbr:229
+        return cons(mkSym("quasiquote"), cons(try parseForm(toks, pos), mkNil()));
+    }
+// zbr:examples/lisp.zbr:230
+    if (std.mem.eql(u8, tok, ",")) {
+        advance(pos);
+// zbr:examples/lisp.zbr:232
+        return cons(mkSym("unquote"), cons(try parseForm(toks, pos), mkNil()));
+    }
+// zbr:examples/lisp.zbr:233
+    if (std.mem.eql(u8, tok, ",@")) {
+        advance(pos);
+// zbr:examples/lisp.zbr:235
+        return cons(mkSym("unquote-splicing"), cons(try parseForm(toks, pos), mkNil()));
+    }
     advance(pos);
-// zbr:examples/lisp.zbr:214
+// zbr:examples/lisp.zbr:237
     return parseAtom(tok);
 }
 
 pub fn parseList(toks: std.ArrayList([]const u8), pos: *std.ArrayList(i64)) anyerror!Value {
-// zbr:examples/lisp.zbr:218
+// zbr:examples/lisp.zbr:241
     if (_zebra_ge(pos.items[@intCast(0)], @as(i64, @intCast(toks.items.len)))) {
-// zbr:examples/lisp.zbr:219
+// zbr:examples/lisp.zbr:242
         { _error_ctx = .{ .message = "unterminated list" }; return error.ZebraError; }
     }
-// zbr:examples/lisp.zbr:220
+// zbr:examples/lisp.zbr:243
     const tok = toks.items[@intCast(pos.items[@intCast(0)])];
-// zbr:examples/lisp.zbr:221
+// zbr:examples/lisp.zbr:244
     if (std.mem.eql(u8, tok, ")")) {
         advance(pos);
-// zbr:examples/lisp.zbr:223
+// zbr:examples/lisp.zbr:246
         return mkNil();
     }
-// zbr:examples/lisp.zbr:224
+// zbr:examples/lisp.zbr:247
     const head = try parseForm(toks, pos);
-// zbr:examples/lisp.zbr:225
+// zbr:examples/lisp.zbr:248
     const tail = try parseList(toks, pos);
-// zbr:examples/lisp.zbr:226
+// zbr:examples/lisp.zbr:249
     return cons(head, tail);
 }
 
 pub fn advance(pos: *std.ArrayList(i64)) void {
-// zbr:examples/lisp.zbr:230
+// zbr:examples/lisp.zbr:253
     const cur = pos.items[@intCast(0)];
     pos.clearRetainingCapacity();
     pos.append(_allocator, (cur + 1)) catch @panic("OOM");
 }
 
 pub fn listToVec(v: Value) anyerror!std.ArrayList(Value) {
-// zbr:examples/lisp.zbr:241
+// zbr:examples/lisp.zbr:264
     var out = std.ArrayList(Value).empty;
-// zbr:examples/lisp.zbr:242
+// zbr:examples/lisp.zbr:265
     var cur = v;
-// zbr:examples/lisp.zbr:243
+// zbr:examples/lisp.zbr:266
     var go = true;
-// zbr:examples/lisp.zbr:244
+// zbr:examples/lisp.zbr:267
     while (go) {
-// zbr:examples/lisp.zbr:245
+// zbr:examples/lisp.zbr:268
         if (cur == .pair) {
             const p_ptr = cur.pair;
             const p = p_ptr.*;
             out.append(_allocator, p.car.*) catch @panic("OOM");
-// zbr:examples/lisp.zbr:247
+// zbr:examples/lisp.zbr:270
             cur = p.cdr.*;
         } else {
-// zbr:examples/lisp.zbr:249
+// zbr:examples/lisp.zbr:272
             go = false;
         }
     }
-// zbr:examples/lisp.zbr:250
+// zbr:examples/lisp.zbr:273
     if ((!isNil(cur))) {
-// zbr:examples/lisp.zbr:251
+// zbr:examples/lisp.zbr:274
         { _error_ctx = .{ .message = "improper list in argument position" }; return error.ZebraError; }
     }
-// zbr:examples/lisp.zbr:252
+// zbr:examples/lisp.zbr:275
     return out;
 }
 
 pub fn vecToList(items: std.ArrayList(Value)) Value {
-// zbr:examples/lisp.zbr:255
+// zbr:examples/lisp.zbr:278
     var acc = mkNil();
-// zbr:examples/lisp.zbr:256
+// zbr:examples/lisp.zbr:279
     var i = (@as(i64, @intCast(items.items.len)) - 1);
-// zbr:examples/lisp.zbr:257
+// zbr:examples/lisp.zbr:280
     while (_zebra_ge(i, 0)) {
-// zbr:examples/lisp.zbr:258
+// zbr:examples/lisp.zbr:281
         acc = cons(items.items[@intCast(i)], acc);
-// zbr:examples/lisp.zbr:259
+// zbr:examples/lisp.zbr:282
         i = (i - 1);
     }
-// zbr:examples/lisp.zbr:260
+// zbr:examples/lisp.zbr:283
     return acc;
 }
 
 pub fn eval_(expr: Value, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:266
+// zbr:examples/lisp.zbr:289
     switch (expr) {
         .num => |n| {
-// zbr:examples/lisp.zbr:268
+// zbr:examples/lisp.zbr:291
             return Value{ .num = n };
         },
         .bool_ => |b| {
-// zbr:examples/lisp.zbr:270
+// zbr:examples/lisp.zbr:293
             return Value{ .bool_ = b };
         },
         .nil_ => {
-// zbr:examples/lisp.zbr:272
+// zbr:examples/lisp.zbr:295
             return mkNil();
         },
         .sym => |s| {
-// zbr:examples/lisp.zbr:274
+// zbr:examples/lisp.zbr:297
             return try env.lookup(s);
         },
         .pair => |_ptr_p| {
             const p = _ptr_p.*;
-// zbr:examples/lisp.zbr:276
+// zbr:examples/lisp.zbr:299
             return try evalForm(p, env);
         },
         else => {
-// zbr:examples/lisp.zbr:279
+// zbr:examples/lisp.zbr:302
             return expr;
         },
     }
 }
 
 pub fn evalForm(p: Pair, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:283
+// zbr:examples/lisp.zbr:306
     const head = p.car.*;
-// zbr:examples/lisp.zbr:284
+// zbr:examples/lisp.zbr:307
     if (head == .sym) {
         const op = head.sym;
-// zbr:examples/lisp.zbr:285
+// zbr:examples/lisp.zbr:308
         if (std.mem.eql(u8, op, "quote")) {
-// zbr:examples/lisp.zbr:286
+// zbr:examples/lisp.zbr:309
             return try cadr(p);
         }
-// zbr:examples/lisp.zbr:287
+// zbr:examples/lisp.zbr:310
         if (std.mem.eql(u8, op, "if")) {
-// zbr:examples/lisp.zbr:288
+// zbr:examples/lisp.zbr:311
             const tst = try eval_(try cadr(p), env);
-// zbr:examples/lisp.zbr:289
+// zbr:examples/lisp.zbr:312
             if (truthy(tst)) {
-// zbr:examples/lisp.zbr:290
+// zbr:examples/lisp.zbr:313
                 return try eval_(try caddr(p), env);
             }
-// zbr:examples/lisp.zbr:292
+// zbr:examples/lisp.zbr:315
             const rest = try cdddr(p);
-// zbr:examples/lisp.zbr:293
+// zbr:examples/lisp.zbr:316
             if (rest == .pair) {
                 const e_ptr = rest.pair;
                 const e = e_ptr.*;
-// zbr:examples/lisp.zbr:294
+// zbr:examples/lisp.zbr:317
                 return try eval_(e.car.*, env);
             }
-// zbr:examples/lisp.zbr:295
+// zbr:examples/lisp.zbr:318
             return mkNil();
         }
-// zbr:examples/lisp.zbr:296
+// zbr:examples/lisp.zbr:319
         if (std.mem.eql(u8, op, "define")) {
-// zbr:examples/lisp.zbr:297
+// zbr:examples/lisp.zbr:320
             return try evalDefine(p, env);
         }
-// zbr:examples/lisp.zbr:298
+// zbr:examples/lisp.zbr:321
         if (std.mem.eql(u8, op, "set!")) {
-// zbr:examples/lisp.zbr:299
+// zbr:examples/lisp.zbr:322
             const name = try symName(try cadr(p));
-// zbr:examples/lisp.zbr:300
+// zbr:examples/lisp.zbr:323
             const val = try eval_(try caddr(p), env);
             try env.setBang(name, val);
-// zbr:examples/lisp.zbr:302
+// zbr:examples/lisp.zbr:325
             return mkNil();
         }
-// zbr:examples/lisp.zbr:303
+// zbr:examples/lisp.zbr:326
         if (std.mem.eql(u8, op, "lambda")) {
-// zbr:examples/lisp.zbr:304
+// zbr:examples/lisp.zbr:327
             return try makeLambda(try cadr(p), try cddr(p), env);
         }
-// zbr:examples/lisp.zbr:305
+// zbr:examples/lisp.zbr:328
         if (std.mem.eql(u8, op, "begin")) {
-// zbr:examples/lisp.zbr:306
+// zbr:examples/lisp.zbr:329
             return try evalSeq(restOf(p), env);
         }
-// zbr:examples/lisp.zbr:307
+// zbr:examples/lisp.zbr:330
         if (std.mem.eql(u8, op, "let")) {
-// zbr:examples/lisp.zbr:308
+// zbr:examples/lisp.zbr:331
             return try evalLet(p, env);
         }
-// zbr:examples/lisp.zbr:309
+// zbr:examples/lisp.zbr:332
         if (std.mem.eql(u8, op, "and")) {
-// zbr:examples/lisp.zbr:310
+// zbr:examples/lisp.zbr:333
             return try evalAnd(restOf(p), env);
         }
-// zbr:examples/lisp.zbr:311
+// zbr:examples/lisp.zbr:334
         if (std.mem.eql(u8, op, "or")) {
-// zbr:examples/lisp.zbr:312
+// zbr:examples/lisp.zbr:335
             return try evalOr(restOf(p), env);
         }
+// zbr:examples/lisp.zbr:336
+        if (std.mem.eql(u8, op, "cond")) {
+// zbr:examples/lisp.zbr:337
+            return try evalCond(restOf(p), env);
+        }
+// zbr:examples/lisp.zbr:338
+        if (std.mem.eql(u8, op, "let*")) {
+// zbr:examples/lisp.zbr:339
+            return try evalLetStar(p, env);
+        }
+// zbr:examples/lisp.zbr:340
+        if (std.mem.eql(u8, op, "when")) {
+// zbr:examples/lisp.zbr:341
+            const wc = try eval_(try cadr(p), env);
+// zbr:examples/lisp.zbr:342
+            if (truthy(wc)) {
+// zbr:examples/lisp.zbr:343
+                return try evalSeq(try cddr(p), env);
+            }
+// zbr:examples/lisp.zbr:344
+            return mkNil();
+        }
+// zbr:examples/lisp.zbr:345
+        if (std.mem.eql(u8, op, "unless")) {
+// zbr:examples/lisp.zbr:346
+            const uc = try eval_(try cadr(p), env);
+// zbr:examples/lisp.zbr:347
+            if ((!truthy(uc))) {
+// zbr:examples/lisp.zbr:348
+                return try evalSeq(try cddr(p), env);
+            }
+// zbr:examples/lisp.zbr:349
+            return mkNil();
+        }
+// zbr:examples/lisp.zbr:350
+        if (std.mem.eql(u8, op, "quasiquote")) {
+// zbr:examples/lisp.zbr:351
+            return try qq(try cadr(p), env);
+        }
     }
-// zbr:examples/lisp.zbr:314
+// zbr:examples/lisp.zbr:353
     const callee = try eval_(head, env);
-// zbr:examples/lisp.zbr:315
+// zbr:examples/lisp.zbr:354
     var args = std.ArrayList(Value).empty;
-// zbr:examples/lisp.zbr:318
+// zbr:examples/lisp.zbr:357
     const operands: std.ArrayList(Value) = try listToVec(restOf(p));
-// zbr:examples/lisp.zbr:319
+// zbr:examples/lisp.zbr:358
     for (operands.items) |a| {
         args.append(_allocator, try eval_(a, env)) catch @panic("OOM");
     }
-// zbr:examples/lisp.zbr:321
+// zbr:examples/lisp.zbr:360
     return try apply(callee, args);
 }
 
 pub fn apply(callee: Value, args: std.ArrayList(Value)) anyerror!Value {
-// zbr:examples/lisp.zbr:324
+// zbr:examples/lisp.zbr:363
     switch (callee) {
         .builtin => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:examples/lisp.zbr:326
+// zbr:examples/lisp.zbr:365
             return try applyBuiltin(b.name, args);
         },
         .lambda => |_ptr_l| {
             const l = _ptr_l.*;
-// zbr:examples/lisp.zbr:328
+// zbr:examples/lisp.zbr:367
             if ((@as(i64, @intCast(args.items.len)) != @as(i64, @intCast(l.params.items.len)))) {
-// zbr:examples/lisp.zbr:329
+// zbr:examples/lisp.zbr:368
                 { _error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("arity: ", (std.fmt.allocPrint(_allocator, "{}", .{@as(i64, @intCast(l.params.items.len))}) catch unreachable), _allocator), " expected, got ", _allocator), (std.fmt.allocPrint(_allocator, "{}", .{@as(i64, @intCast(args.items.len))}) catch unreachable), _allocator) }; return error.ZebraError; }
             }
-// zbr:examples/lisp.zbr:330
+// zbr:examples/lisp.zbr:369
             var call_env = Env.init(l.env);
-// zbr:examples/lisp.zbr:331
+// zbr:examples/lisp.zbr:370
             var i: i64 = 0;
-// zbr:examples/lisp.zbr:332
+// zbr:examples/lisp.zbr:371
             while (_zebra_lt(i, @as(i64, @intCast(l.params.items.len)))) {
                 call_env.define(l.params.items[@intCast(i)], args.items[@intCast(i)]);
-// zbr:examples/lisp.zbr:334
+// zbr:examples/lisp.zbr:373
                 i = (i + 1);
             }
-// zbr:examples/lisp.zbr:335
+// zbr:examples/lisp.zbr:374
             return try evalSeqVec(l.body, call_env);
         },
         else => {
-// zbr:examples/lisp.zbr:337
+// zbr:examples/lisp.zbr:376
             { _error_ctx = .{ .message = "not a function" }; return error.ZebraError; }
         },
     }
 }
 
 pub fn makeLambda(formals: Value, body: Value, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:340
+// zbr:examples/lisp.zbr:379
     var params = std.ArrayList([]const u8).empty;
-// zbr:examples/lisp.zbr:341
+// zbr:examples/lisp.zbr:380
     const formal_vec: std.ArrayList(Value) = try listToVec(formals);
-// zbr:examples/lisp.zbr:342
+// zbr:examples/lisp.zbr:381
     for (formal_vec.items) |f| {
         params.append(_allocator, _intern(try symName(f))) catch @panic("OOM");
     }
-// zbr:examples/lisp.zbr:344
+// zbr:examples/lisp.zbr:383
     const body_vec = try listToVec(body);
-// zbr:examples/lisp.zbr:345
+// zbr:examples/lisp.zbr:384
     return Value{ .lambda = blk_box_2: { const _bv: std.meta.Child(@FieldType(Value, "lambda")) = Lambda.init(params, body_vec, env); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
 }
 
 pub fn evalDefine(p: Pair, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:348
+// zbr:examples/lisp.zbr:387
     const target = try cadr(p);
-// zbr:examples/lisp.zbr:350
+// zbr:examples/lisp.zbr:389
     if (target == .pair) {
         const sg_ptr = target.pair;
         const sg = sg_ptr.*;
-// zbr:examples/lisp.zbr:351
+// zbr:examples/lisp.zbr:390
         const name = try symName(sg.car.*);
-// zbr:examples/lisp.zbr:352
+// zbr:examples/lisp.zbr:391
         const lam = try makeLambda(sg.cdr.*, try cddr(p), env);
         env.define(name, lam);
-// zbr:examples/lisp.zbr:354
+// zbr:examples/lisp.zbr:393
         return mkSym(name);
     }
-// zbr:examples/lisp.zbr:356
+// zbr:examples/lisp.zbr:395
     const name = try symName(target);
-// zbr:examples/lisp.zbr:357
+// zbr:examples/lisp.zbr:396
     const val = try eval_(try caddr(p), env);
     env.define(name, val);
-// zbr:examples/lisp.zbr:359
+// zbr:examples/lisp.zbr:398
     return mkSym(name);
 }
 
 pub fn evalLet(p: Pair, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:363
+// zbr:examples/lisp.zbr:402
     const binds = try listToVec(try cadr(p));
-// zbr:examples/lisp.zbr:364
+// zbr:examples/lisp.zbr:403
     var inner = Env.init(env);
-// zbr:examples/lisp.zbr:365
+// zbr:examples/lisp.zbr:404
     for (binds.items) |b| {
-// zbr:examples/lisp.zbr:366
+// zbr:examples/lisp.zbr:405
         const bp = try listToVec(b);
         inner.define(try symName(bp.items[@intCast(0)]), try eval_(bp.items[@intCast(1)], env));
     }
-// zbr:examples/lisp.zbr:368
+// zbr:examples/lisp.zbr:407
     return try evalSeq(try cddr(p), inner);
 }
 
+pub fn evalLetStar(p: Pair, env: *Env) anyerror!Value {
+// zbr:examples/lisp.zbr:411
+    const binds = try listToVec(try cadr(p));
+// zbr:examples/lisp.zbr:412
+    var inner = Env.init(env);
+// zbr:examples/lisp.zbr:413
+    for (binds.items) |b| {
+// zbr:examples/lisp.zbr:414
+        const bp = try listToVec(b);
+        inner.define(try symName(bp.items[@intCast(0)]), try eval_(bp.items[@intCast(1)], inner));
+    }
+// zbr:examples/lisp.zbr:416
+    return try evalSeq(try cddr(p), inner);
+}
+
+pub fn evalCond(clauses: Value, env: *Env) anyerror!Value {
+// zbr:examples/lisp.zbr:420
+    const cv = try listToVec(clauses);
+// zbr:examples/lisp.zbr:421
+    for (cv.items) |clause| {
+// zbr:examples/lisp.zbr:422
+        const parts = try listToVec(clause);
+// zbr:examples/lisp.zbr:423
+        if ((@as(i64, @intCast(parts.items.len)) == 0)) {
+// zbr:examples/lisp.zbr:424
+            { _error_ctx = .{ .message = "cond: empty clause" }; return error.ZebraError; }
+        }
+// zbr:examples/lisp.zbr:425
+        const clauseTest = parts.items[@intCast(0)];
+// zbr:examples/lisp.zbr:426
+        var isElse = false;
+// zbr:examples/lisp.zbr:427
+        if (clauseTest == .sym) {
+            const s = clauseTest.sym;
+// zbr:examples/lisp.zbr:428
+            if (std.mem.eql(u8, s, "else")) {
+// zbr:examples/lisp.zbr:429
+                isElse = true;
+            }
+        }
+// zbr:examples/lisp.zbr:430
+        if (isElse) {
+// zbr:examples/lisp.zbr:431
+            return try evalSeqVec(restVec(parts), env);
+        }
+// zbr:examples/lisp.zbr:432
+        const tv = try eval_(clauseTest, env);
+// zbr:examples/lisp.zbr:433
+        if (truthy(tv)) {
+// zbr:examples/lisp.zbr:434
+            if ((@as(i64, @intCast(parts.items.len)) == 1)) {
+// zbr:examples/lisp.zbr:435
+                return tv;
+            }
+// zbr:examples/lisp.zbr:436
+            return try evalSeqVec(restVec(parts), env);
+        }
+    }
+// zbr:examples/lisp.zbr:437
+    return mkNil();
+}
+
+pub fn qq(t: Value, env: *Env) anyerror!Value {
+// zbr:examples/lisp.zbr:442
+    if (t == .pair) {
+        const p_ptr = t.pair;
+        const p = p_ptr.*;
+// zbr:examples/lisp.zbr:444
+        if (p.car.* == .sym) {
+            const h = p.car.*.sym;
+// zbr:examples/lisp.zbr:445
+            if (std.mem.eql(u8, h, "unquote")) {
+// zbr:examples/lisp.zbr:446
+                return try eval_(try cadr(p), env);
+            }
+        }
+// zbr:examples/lisp.zbr:448
+        if (p.car.* == .pair) {
+            const hp_ptr = p.car.*.pair;
+            const hp = hp_ptr.*;
+// zbr:examples/lisp.zbr:449
+            if (hp.car.* == .sym) {
+                const hs = hp.car.*.sym;
+// zbr:examples/lisp.zbr:450
+                if (std.mem.eql(u8, hs, "unquote-splicing")) {
+// zbr:examples/lisp.zbr:451
+                    const spliced = try eval_(try cadr(hp), env);
+// zbr:examples/lisp.zbr:452
+                    return try appendValues(spliced, try qq(p.cdr.*, env));
+                }
+            }
+        }
+// zbr:examples/lisp.zbr:453
+        return cons(try qq(p.car.*, env), try qq(p.cdr.*, env));
+    }
+// zbr:examples/lisp.zbr:454
+    return t;
+}
+
+pub fn appendValues(a: Value, b: Value) anyerror!Value {
+// zbr:examples/lisp.zbr:458
+    const av = try listToVec(a);
+// zbr:examples/lisp.zbr:459
+    var out = b;
+// zbr:examples/lisp.zbr:460
+    var i = (@as(i64, @intCast(av.items.len)) - 1);
+// zbr:examples/lisp.zbr:461
+    while (_zebra_ge(i, 0)) {
+// zbr:examples/lisp.zbr:462
+        out = cons(av.items[@intCast(i)], out);
+// zbr:examples/lisp.zbr:463
+        i = (i - 1);
+    }
+// zbr:examples/lisp.zbr:464
+    return out;
+}
+
+pub fn restVec(xs: std.ArrayList(Value)) std.ArrayList(Value) {
+// zbr:examples/lisp.zbr:468
+    var out = std.ArrayList(Value).empty;
+// zbr:examples/lisp.zbr:469
+    var i: i64 = 1;
+// zbr:examples/lisp.zbr:470
+    while (_zebra_lt(i, @as(i64, @intCast(xs.items.len)))) {
+        out.append(_allocator, xs.items[@intCast(i)]) catch @panic("OOM");
+// zbr:examples/lisp.zbr:472
+        i = (i + 1);
+    }
+// zbr:examples/lisp.zbr:473
+    return out;
+}
+
 pub fn evalSeq(body: Value, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:371
+// zbr:examples/lisp.zbr:476
     return try evalSeqVec(try listToVec(body), env);
 }
 
 pub fn evalSeqVec(body: std.ArrayList(Value), env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:374
+// zbr:examples/lisp.zbr:479
     var result = mkNil();
-// zbr:examples/lisp.zbr:375
+// zbr:examples/lisp.zbr:480
     for (body.items) |e| {
-// zbr:examples/lisp.zbr:376
+// zbr:examples/lisp.zbr:481
         result = try eval_(e, env);
     }
-// zbr:examples/lisp.zbr:377
+// zbr:examples/lisp.zbr:482
     return result;
 }
 
 pub fn evalAnd(body: Value, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:380
+// zbr:examples/lisp.zbr:485
     var result = mkBool(true);
-// zbr:examples/lisp.zbr:381
+// zbr:examples/lisp.zbr:486
     const and_vec: std.ArrayList(Value) = try listToVec(body);
-// zbr:examples/lisp.zbr:382
+// zbr:examples/lisp.zbr:487
     for (and_vec.items) |e| {
-// zbr:examples/lisp.zbr:383
+// zbr:examples/lisp.zbr:488
         result = try eval_(e, env);
-// zbr:examples/lisp.zbr:384
+// zbr:examples/lisp.zbr:489
         if ((!truthy(result))) {
-// zbr:examples/lisp.zbr:385
+// zbr:examples/lisp.zbr:490
             return mkBool(false);
         }
     }
-// zbr:examples/lisp.zbr:386
+// zbr:examples/lisp.zbr:491
     return result;
 }
 
 pub fn evalOr(body: Value, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:389
+// zbr:examples/lisp.zbr:494
     const or_vec: std.ArrayList(Value) = try listToVec(body);
-// zbr:examples/lisp.zbr:390
+// zbr:examples/lisp.zbr:495
     for (or_vec.items) |e| {
-// zbr:examples/lisp.zbr:391
+// zbr:examples/lisp.zbr:496
         const result = try eval_(e, env);
-// zbr:examples/lisp.zbr:392
+// zbr:examples/lisp.zbr:497
         if (truthy(result)) {
-// zbr:examples/lisp.zbr:393
+// zbr:examples/lisp.zbr:498
             return result;
         }
     }
-// zbr:examples/lisp.zbr:394
+// zbr:examples/lisp.zbr:499
     return mkBool(false);
 }
 
 pub fn carOf(v: Value) anyerror!Value {
-// zbr:examples/lisp.zbr:400
+// zbr:examples/lisp.zbr:505
     if (v == .pair) {
         const p_ptr = v.pair;
         const p = p_ptr.*;
-// zbr:examples/lisp.zbr:401
+// zbr:examples/lisp.zbr:506
         return p.car.*;
     }
-// zbr:examples/lisp.zbr:402
+// zbr:examples/lisp.zbr:507
     { _error_ctx = .{ .message = "car: not a pair" }; return error.ZebraError; }
 }
 
 pub fn cdrOf(v: Value) anyerror!Value {
-// zbr:examples/lisp.zbr:405
+// zbr:examples/lisp.zbr:510
     if (v == .pair) {
         const p_ptr = v.pair;
         const p = p_ptr.*;
-// zbr:examples/lisp.zbr:406
+// zbr:examples/lisp.zbr:511
         return p.cdr.*;
     }
-// zbr:examples/lisp.zbr:407
+// zbr:examples/lisp.zbr:512
     { _error_ctx = .{ .message = "cdr: not a pair" }; return error.ZebraError; }
 }
 
 pub fn cadr(p: Pair) anyerror!Value {
-// zbr:examples/lisp.zbr:410
+// zbr:examples/lisp.zbr:515
     return try carOf(p.cdr.*);
 }
 
 pub fn caddr(p: Pair) anyerror!Value {
-// zbr:examples/lisp.zbr:413
+// zbr:examples/lisp.zbr:518
     return try carOf(try cdrOf(p.cdr.*));
 }
 
 pub fn restOf(p: Pair) Value {
-// zbr:examples/lisp.zbr:416
+// zbr:examples/lisp.zbr:521
     return p.cdr.*;
 }
 
 pub fn cddr(p: Pair) anyerror!Value {
-// zbr:examples/lisp.zbr:419
+// zbr:examples/lisp.zbr:524
     return try cdrOf(p.cdr.*);
 }
 
 pub fn cdddr(p: Pair) anyerror!Value {
-// zbr:examples/lisp.zbr:422
+// zbr:examples/lisp.zbr:527
     return try cdrOf(try cdrOf(p.cdr.*));
 }
 
 pub fn symName(v: Value) anyerror![]const u8 {
-// zbr:examples/lisp.zbr:425
+// zbr:examples/lisp.zbr:530
     if (v == .sym) {
         const s = v.sym;
-// zbr:examples/lisp.zbr:426
+// zbr:examples/lisp.zbr:531
         return s;
     }
-// zbr:examples/lisp.zbr:427
+// zbr:examples/lisp.zbr:532
     { _error_ctx = .{ .message = "expected a symbol" }; return error.ZebraError; }
 }
 
 pub fn numOf(v: Value) anyerror!f64 {
-// zbr:examples/lisp.zbr:433
+// zbr:examples/lisp.zbr:538
     if (v == .num) {
         const n = v.num;
-// zbr:examples/lisp.zbr:434
+// zbr:examples/lisp.zbr:539
         return n;
     }
-// zbr:examples/lisp.zbr:435
+// zbr:examples/lisp.zbr:540
     { _error_ctx = .{ .message = "expected a number" }; return error.ZebraError; }
 }
 
+pub fn valueEqual(a: Value, b: Value) bool {
+// zbr:examples/lisp.zbr:544
+    switch (a) {
+        .num => |an| {
+// zbr:examples/lisp.zbr:546
+            if (b == .num) {
+                const bn = b.num;
+// zbr:examples/lisp.zbr:547
+                return (an == bn);
+            }
+// zbr:examples/lisp.zbr:548
+            return false;
+        },
+        .sym => |asym| {
+// zbr:examples/lisp.zbr:550
+            if (b == .sym) {
+                const bs = b.sym;
+// zbr:examples/lisp.zbr:551
+                return std.mem.eql(u8, asym, bs);
+            }
+// zbr:examples/lisp.zbr:552
+            return false;
+        },
+        .bool_ => |ab| {
+// zbr:examples/lisp.zbr:554
+            if (b == .bool_) {
+                const bb = b.bool_;
+// zbr:examples/lisp.zbr:555
+                return (ab == bb);
+            }
+// zbr:examples/lisp.zbr:556
+            return false;
+        },
+        .nil_ => {
+// zbr:examples/lisp.zbr:558
+            return (b == .nil_);
+        },
+        .pair => |_ptr_ap| {
+            const ap = _ptr_ap.*;
+// zbr:examples/lisp.zbr:560
+            if (b == .pair) {
+                const bp_ptr = b.pair;
+                const bp = bp_ptr.*;
+// zbr:examples/lisp.zbr:561
+                return (valueEqual(ap.car.*, bp.car.*) and valueEqual(ap.cdr.*, bp.cdr.*));
+            }
+// zbr:examples/lisp.zbr:562
+            return false;
+        },
+        else => {
+// zbr:examples/lisp.zbr:564
+            return false;
+        },
+    }
+}
+
 pub fn applyBuiltin(name: []const u8, args: std.ArrayList(Value)) anyerror!Value {
-// zbr:examples/lisp.zbr:438
+// zbr:examples/lisp.zbr:567
     if (std.mem.eql(u8, name, "+")) {
-// zbr:examples/lisp.zbr:439
+// zbr:examples/lisp.zbr:568
         var acc: f64 = 0.0;
-// zbr:examples/lisp.zbr:440
+// zbr:examples/lisp.zbr:569
         for (args.items) |a| {
-// zbr:examples/lisp.zbr:441
+// zbr:examples/lisp.zbr:570
             acc = (acc + try numOf(a));
         }
-// zbr:examples/lisp.zbr:442
+// zbr:examples/lisp.zbr:571
         return mkNum(acc);
     }
-// zbr:examples/lisp.zbr:443
+// zbr:examples/lisp.zbr:572
     if (std.mem.eql(u8, name, "*")) {
-// zbr:examples/lisp.zbr:444
+// zbr:examples/lisp.zbr:573
         var acc: f64 = 1.0;
-// zbr:examples/lisp.zbr:445
+// zbr:examples/lisp.zbr:574
         for (args.items) |a| {
-// zbr:examples/lisp.zbr:446
+// zbr:examples/lisp.zbr:575
             acc = (acc * try numOf(a));
         }
-// zbr:examples/lisp.zbr:447
+// zbr:examples/lisp.zbr:576
         return mkNum(acc);
     }
-// zbr:examples/lisp.zbr:448
+// zbr:examples/lisp.zbr:577
     if (std.mem.eql(u8, name, "-")) {
-// zbr:examples/lisp.zbr:449
+// zbr:examples/lisp.zbr:578
         if ((@as(i64, @intCast(args.items.len)) == 0)) {
-// zbr:examples/lisp.zbr:450
+// zbr:examples/lisp.zbr:579
             { _error_ctx = .{ .message = "-: needs at least one argument" }; return error.ZebraError; }
         }
-// zbr:examples/lisp.zbr:451
+// zbr:examples/lisp.zbr:580
         var acc = try numOf(args.items[@intCast(0)]);
-// zbr:examples/lisp.zbr:452
+// zbr:examples/lisp.zbr:581
         if ((@as(i64, @intCast(args.items.len)) == 1)) {
-// zbr:examples/lisp.zbr:453
+// zbr:examples/lisp.zbr:582
             return mkNum((-acc));
         }
-// zbr:examples/lisp.zbr:454
+// zbr:examples/lisp.zbr:583
         var i: i64 = 1;
-// zbr:examples/lisp.zbr:455
+// zbr:examples/lisp.zbr:584
         while (_zebra_lt(i, @as(i64, @intCast(args.items.len)))) {
-// zbr:examples/lisp.zbr:456
+// zbr:examples/lisp.zbr:585
             acc = (acc - try numOf(args.items[@intCast(i)]));
-// zbr:examples/lisp.zbr:457
+// zbr:examples/lisp.zbr:586
             i = (i + 1);
         }
-// zbr:examples/lisp.zbr:458
+// zbr:examples/lisp.zbr:587
         return mkNum(acc);
     }
-// zbr:examples/lisp.zbr:459
+// zbr:examples/lisp.zbr:588
     if (std.mem.eql(u8, name, "/")) {
-// zbr:examples/lisp.zbr:460
+// zbr:examples/lisp.zbr:589
         if ((@as(i64, @intCast(args.items.len)) == 0)) {
-// zbr:examples/lisp.zbr:461
+// zbr:examples/lisp.zbr:590
             { _error_ctx = .{ .message = "/: needs at least one argument" }; return error.ZebraError; }
         }
-// zbr:examples/lisp.zbr:462
+// zbr:examples/lisp.zbr:591
         var acc = try numOf(args.items[@intCast(0)]);
-// zbr:examples/lisp.zbr:463
+// zbr:examples/lisp.zbr:592
         var i: i64 = 1;
-// zbr:examples/lisp.zbr:464
+// zbr:examples/lisp.zbr:593
         while (_zebra_lt(i, @as(i64, @intCast(args.items.len)))) {
-// zbr:examples/lisp.zbr:465
+// zbr:examples/lisp.zbr:594
             acc = (acc / try numOf(args.items[@intCast(i)]));
-// zbr:examples/lisp.zbr:466
+// zbr:examples/lisp.zbr:595
             i = (i + 1);
         }
-// zbr:examples/lisp.zbr:467
+// zbr:examples/lisp.zbr:596
         return mkNum(acc);
     }
-// zbr:examples/lisp.zbr:468
+// zbr:examples/lisp.zbr:597
     if (std.mem.eql(u8, name, "=")) {
-// zbr:examples/lisp.zbr:469
+// zbr:examples/lisp.zbr:598
         return mkBool((try numOf(args.items[@intCast(0)]) == try numOf(args.items[@intCast(1)])));
     }
-// zbr:examples/lisp.zbr:470
+// zbr:examples/lisp.zbr:599
     if (std.mem.eql(u8, name, "<")) {
-// zbr:examples/lisp.zbr:471
+// zbr:examples/lisp.zbr:600
         return mkBool(_zebra_lt(try numOf(args.items[@intCast(0)]), try numOf(args.items[@intCast(1)])));
     }
-// zbr:examples/lisp.zbr:472
+// zbr:examples/lisp.zbr:601
     if (std.mem.eql(u8, name, ">")) {
-// zbr:examples/lisp.zbr:473
+// zbr:examples/lisp.zbr:602
         return mkBool(_zebra_gt(try numOf(args.items[@intCast(0)]), try numOf(args.items[@intCast(1)])));
     }
-// zbr:examples/lisp.zbr:474
+// zbr:examples/lisp.zbr:603
     if (std.mem.eql(u8, name, "<=")) {
-// zbr:examples/lisp.zbr:475
+// zbr:examples/lisp.zbr:604
         return mkBool(_zebra_le(try numOf(args.items[@intCast(0)]), try numOf(args.items[@intCast(1)])));
     }
-// zbr:examples/lisp.zbr:476
+// zbr:examples/lisp.zbr:605
     if (std.mem.eql(u8, name, ">=")) {
-// zbr:examples/lisp.zbr:477
+// zbr:examples/lisp.zbr:606
         return mkBool(_zebra_ge(try numOf(args.items[@intCast(0)]), try numOf(args.items[@intCast(1)])));
     }
-// zbr:examples/lisp.zbr:478
+// zbr:examples/lisp.zbr:607
     if (std.mem.eql(u8, name, "car")) {
-// zbr:examples/lisp.zbr:479
+// zbr:examples/lisp.zbr:608
         return try carOf(args.items[@intCast(0)]);
     }
-// zbr:examples/lisp.zbr:480
+// zbr:examples/lisp.zbr:609
     if (std.mem.eql(u8, name, "cdr")) {
-// zbr:examples/lisp.zbr:481
+// zbr:examples/lisp.zbr:610
         return try cdrOf(args.items[@intCast(0)]);
     }
-// zbr:examples/lisp.zbr:482
+// zbr:examples/lisp.zbr:611
     if (std.mem.eql(u8, name, "cons")) {
-// zbr:examples/lisp.zbr:483
+// zbr:examples/lisp.zbr:612
         return cons(args.items[@intCast(0)], args.items[@intCast(1)]);
     }
-// zbr:examples/lisp.zbr:484
+// zbr:examples/lisp.zbr:613
     if (std.mem.eql(u8, name, "list")) {
-// zbr:examples/lisp.zbr:485
+// zbr:examples/lisp.zbr:614
         return vecToList(args);
     }
-// zbr:examples/lisp.zbr:486
+// zbr:examples/lisp.zbr:615
     if (std.mem.eql(u8, name, "null?")) {
-// zbr:examples/lisp.zbr:487
+// zbr:examples/lisp.zbr:616
         return mkBool(isNil(args.items[@intCast(0)]));
     }
-// zbr:examples/lisp.zbr:488
+// zbr:examples/lisp.zbr:617
     if (std.mem.eql(u8, name, "pair?")) {
-// zbr:examples/lisp.zbr:489
+// zbr:examples/lisp.zbr:618
         return mkBool((args.items[@intCast(0)] == .pair));
     }
-// zbr:examples/lisp.zbr:490
+// zbr:examples/lisp.zbr:619
     if (std.mem.eql(u8, name, "list?")) {
-// zbr:examples/lisp.zbr:491
+// zbr:examples/lisp.zbr:620
         var cur = args.items[@intCast(0)];
-// zbr:examples/lisp.zbr:492
+// zbr:examples/lisp.zbr:621
         var go = true;
-// zbr:examples/lisp.zbr:493
+// zbr:examples/lisp.zbr:622
         while (go) {
-// zbr:examples/lisp.zbr:494
+// zbr:examples/lisp.zbr:623
             if (cur == .pair) {
                 const p_ptr = cur.pair;
                 const p = p_ptr.*;
-// zbr:examples/lisp.zbr:495
+// zbr:examples/lisp.zbr:624
                 cur = p.cdr.*;
             } else {
-// zbr:examples/lisp.zbr:497
+// zbr:examples/lisp.zbr:626
                 go = false;
             }
         }
-// zbr:examples/lisp.zbr:498
+// zbr:examples/lisp.zbr:627
         return mkBool(isNil(cur));
     }
-// zbr:examples/lisp.zbr:499
+// zbr:examples/lisp.zbr:628
     if (std.mem.eql(u8, name, "not")) {
-// zbr:examples/lisp.zbr:500
+// zbr:examples/lisp.zbr:629
         return mkBool((!truthy(args.items[@intCast(0)])));
     }
-// zbr:examples/lisp.zbr:501
+// zbr:examples/lisp.zbr:630
     if (std.mem.eql(u8, name, "length")) {
-// zbr:examples/lisp.zbr:502
+// zbr:examples/lisp.zbr:631
         const v = try listToVec(args.items[@intCast(0)]);
-// zbr:examples/lisp.zbr:503
+// zbr:examples/lisp.zbr:632
         return mkNum(@as(f64, @floatFromInt(@as(i64, @intCast(v.items.len)))));
     }
-// zbr:examples/lisp.zbr:504
+// zbr:examples/lisp.zbr:633
     if (std.mem.eql(u8, name, "display")) {
         std.debug.print("{s}\n", .{showValue(args.items[@intCast(0)])});
-// zbr:examples/lisp.zbr:506
+// zbr:examples/lisp.zbr:635
         return mkNil();
     }
-// zbr:examples/lisp.zbr:507
+// zbr:examples/lisp.zbr:636
+    if (std.mem.eql(u8, name, "modulo")) {
+// zbr:examples/lisp.zbr:637
+        const mx = try numOf(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:638
+        const my = try numOf(args.items[@intCast(1)]);
+// zbr:examples/lisp.zbr:639
+        const xi = @as(i64, @intFromFloat(mx));
+// zbr:examples/lisp.zbr:640
+        const yi = @as(i64, @intFromFloat(my));
+// zbr:examples/lisp.zbr:641
+        return mkNum(@as(f64, @floatFromInt((xi - (@divTrunc(xi, yi) * yi)))));
+    }
+// zbr:examples/lisp.zbr:642
+    if (std.mem.eql(u8, name, "abs")) {
+// zbr:examples/lisp.zbr:643
+        const ax = try numOf(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:644
+        if (_zebra_lt(ax, 0.0)) {
+// zbr:examples/lisp.zbr:645
+            return mkNum((-ax));
+        }
+// zbr:examples/lisp.zbr:646
+        return mkNum(ax);
+    }
+// zbr:examples/lisp.zbr:647
+    if (std.mem.eql(u8, name, "min")) {
+// zbr:examples/lisp.zbr:648
+        var mn = try numOf(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:649
+        var i: i64 = 1;
+// zbr:examples/lisp.zbr:650
+        while (_zebra_lt(i, @as(i64, @intCast(args.items.len)))) {
+// zbr:examples/lisp.zbr:651
+            const c = try numOf(args.items[@intCast(i)]);
+// zbr:examples/lisp.zbr:652
+            if (_zebra_lt(c, mn)) {
+// zbr:examples/lisp.zbr:653
+                mn = c;
+            }
+// zbr:examples/lisp.zbr:654
+            i = (i + 1);
+        }
+// zbr:examples/lisp.zbr:655
+        return mkNum(mn);
+    }
+// zbr:examples/lisp.zbr:656
+    if (std.mem.eql(u8, name, "max")) {
+// zbr:examples/lisp.zbr:657
+        var mxv = try numOf(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:658
+        var i: i64 = 1;
+// zbr:examples/lisp.zbr:659
+        while (_zebra_lt(i, @as(i64, @intCast(args.items.len)))) {
+// zbr:examples/lisp.zbr:660
+            const c = try numOf(args.items[@intCast(i)]);
+// zbr:examples/lisp.zbr:661
+            if (_zebra_gt(c, mxv)) {
+// zbr:examples/lisp.zbr:662
+                mxv = c;
+            }
+// zbr:examples/lisp.zbr:663
+            i = (i + 1);
+        }
+// zbr:examples/lisp.zbr:664
+        return mkNum(mxv);
+    }
+// zbr:examples/lisp.zbr:665
+    if (std.mem.eql(u8, name, "zero?")) {
+// zbr:examples/lisp.zbr:666
+        return mkBool((try numOf(args.items[@intCast(0)]) == 0.0));
+    }
+// zbr:examples/lisp.zbr:667
+    if (std.mem.eql(u8, name, "number?")) {
+// zbr:examples/lisp.zbr:668
+        return mkBool((args.items[@intCast(0)] == .num));
+    }
+// zbr:examples/lisp.zbr:669
+    if (std.mem.eql(u8, name, "symbol?")) {
+// zbr:examples/lisp.zbr:670
+        return mkBool((args.items[@intCast(0)] == .sym));
+    }
+// zbr:examples/lisp.zbr:671
+    if (std.mem.eql(u8, name, "boolean?")) {
+// zbr:examples/lisp.zbr:672
+        return mkBool((args.items[@intCast(0)] == .bool_));
+    }
+// zbr:examples/lisp.zbr:673
+    if (std.mem.eql(u8, name, "eq?")) {
+// zbr:examples/lisp.zbr:674
+        return mkBool(valueEqual(args.items[@intCast(0)], args.items[@intCast(1)]));
+    }
+// zbr:examples/lisp.zbr:675
+    if (std.mem.eql(u8, name, "equal?")) {
+// zbr:examples/lisp.zbr:676
+        return mkBool(valueEqual(args.items[@intCast(0)], args.items[@intCast(1)]));
+    }
+// zbr:examples/lisp.zbr:677
+    if (std.mem.eql(u8, name, "append")) {
+// zbr:examples/lisp.zbr:678
+        var a1 = try listToVec(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:679
+        const a2 = try listToVec(args.items[@intCast(1)]);
+// zbr:examples/lisp.zbr:680
+        for (a2.items) |x| {
+            a1.append(_allocator, x) catch @panic("OOM");
+        }
+// zbr:examples/lisp.zbr:682
+        return vecToList(a1);
+    }
+// zbr:examples/lisp.zbr:683
+    if (std.mem.eql(u8, name, "reverse")) {
+// zbr:examples/lisp.zbr:684
+        const rv = try listToVec(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:685
+        var out = std.ArrayList(Value).empty;
+// zbr:examples/lisp.zbr:686
+        var i = (@as(i64, @intCast(rv.items.len)) - 1);
+// zbr:examples/lisp.zbr:687
+        while (_zebra_ge(i, 0)) {
+            out.append(_allocator, rv.items[@intCast(i)]) catch @panic("OOM");
+// zbr:examples/lisp.zbr:689
+            i = (i - 1);
+        }
+// zbr:examples/lisp.zbr:690
+        return vecToList(out);
+    }
+// zbr:examples/lisp.zbr:691
+    if (std.mem.eql(u8, name, "list-ref")) {
+// zbr:examples/lisp.zbr:692
+        const lv = try listToVec(args.items[@intCast(0)]);
+// zbr:examples/lisp.zbr:693
+        const idxf = try numOf(args.items[@intCast(1)]);
+// zbr:examples/lisp.zbr:694
+        return lv.items[@intCast(@as(i64, @intFromFloat(idxf)))];
+    }
+// zbr:examples/lisp.zbr:695
+    if (std.mem.eql(u8, name, "apply")) {
+// zbr:examples/lisp.zbr:697
+        const spliced = try listToVec(args.items[@intCast(1)]);
+// zbr:examples/lisp.zbr:698
+        return try apply(args.items[@intCast(0)], spliced);
+    }
+// zbr:examples/lisp.zbr:699
+    if (std.mem.eql(u8, name, "filter")) {
+// zbr:examples/lisp.zbr:700
+        const func = args.items[@intCast(0)];
+// zbr:examples/lisp.zbr:701
+        const items = try listToVec(args.items[@intCast(1)]);
+// zbr:examples/lisp.zbr:702
+        var out = std.ArrayList(Value).empty;
+// zbr:examples/lisp.zbr:703
+        for (items.items) |x| {
+// zbr:examples/lisp.zbr:704
+            var one = std.ArrayList(Value).empty;
+            one.append(_allocator, x) catch @panic("OOM");
+// zbr:examples/lisp.zbr:706
+            if (truthy(try apply(func, one))) {
+                out.append(_allocator, x) catch @panic("OOM");
+            }
+        }
+// zbr:examples/lisp.zbr:708
+        return vecToList(out);
+    }
+// zbr:examples/lisp.zbr:709
+    if (std.mem.eql(u8, name, "foldl")) {
+// zbr:examples/lisp.zbr:711
+        const func = args.items[@intCast(0)];
+// zbr:examples/lisp.zbr:712
+        var acc = args.items[@intCast(1)];
+// zbr:examples/lisp.zbr:713
+        const items = try listToVec(args.items[@intCast(2)]);
+// zbr:examples/lisp.zbr:714
+        for (items.items) |x| {
+// zbr:examples/lisp.zbr:715
+            var call = std.ArrayList(Value).empty;
+            call.append(_allocator, x) catch @panic("OOM");
+            call.append(_allocator, acc) catch @panic("OOM");
+// zbr:examples/lisp.zbr:718
+            acc = try apply(func, call);
+        }
+// zbr:examples/lisp.zbr:719
+        return acc;
+    }
+// zbr:examples/lisp.zbr:720
     { _error_ctx = .{ .message = _str_concat("unknown builtin: ", name, _allocator) }; return error.ZebraError; }
 }
 
 pub fn showValue(v: Value) []const u8 {
-// zbr:examples/lisp.zbr:513
+// zbr:examples/lisp.zbr:726
     switch (v) {
         .num => |n| {
-// zbr:examples/lisp.zbr:515
+// zbr:examples/lisp.zbr:728
             return showNum(n);
         },
         .sym => |s| {
-// zbr:examples/lisp.zbr:517
+// zbr:examples/lisp.zbr:730
             return s;
         },
         .bool_ => |b| {
-// zbr:examples/lisp.zbr:519
+// zbr:examples/lisp.zbr:732
             if (b) {
-// zbr:examples/lisp.zbr:520
+// zbr:examples/lisp.zbr:733
                 return "#t";
             }
-// zbr:examples/lisp.zbr:521
+// zbr:examples/lisp.zbr:734
             return "#f";
         },
         .nil_ => {
-// zbr:examples/lisp.zbr:523
+// zbr:examples/lisp.zbr:736
             return "()";
         },
         .pair => |_ptr_p| {
             const p = _ptr_p.*;
-// zbr:examples/lisp.zbr:525
+// zbr:examples/lisp.zbr:738
             return _str_concat(_str_concat("(", showList(p), _allocator), ")", _allocator);
         },
         .builtin => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:examples/lisp.zbr:527
+// zbr:examples/lisp.zbr:740
             return _str_concat(_str_concat("#<builtin ", b.name, _allocator), ">", _allocator);
         },
         .lambda => |_ptr_l| {
             const l = _ptr_l.*;
-// zbr:examples/lisp.zbr:529
+// zbr:examples/lisp.zbr:742
             return _str_concat(_str_concat("#<lambda/", (std.fmt.allocPrint(_allocator, "{}", .{@as(i64, @intCast(l.params.items.len))}) catch unreachable), _allocator), ">", _allocator);
         },
     }
 }
 
 pub fn showList(p: Pair) []const u8 {
-// zbr:examples/lisp.zbr:532
+// zbr:examples/lisp.zbr:745
     var out = showValue(p.car.*);
-// zbr:examples/lisp.zbr:533
+// zbr:examples/lisp.zbr:746
     var cur = p.cdr.*;
-// zbr:examples/lisp.zbr:534
+// zbr:examples/lisp.zbr:747
     var go = true;
-// zbr:examples/lisp.zbr:535
+// zbr:examples/lisp.zbr:748
     while (go) {
-// zbr:examples/lisp.zbr:536
+// zbr:examples/lisp.zbr:749
         if (cur == .pair) {
             const next_ptr = cur.pair;
             const next = next_ptr.*;
-// zbr:examples/lisp.zbr:537
+// zbr:examples/lisp.zbr:750
             out = _str_concat(_str_concat(out, " ", _allocator), showValue(next.car.*), _allocator);
-// zbr:examples/lisp.zbr:538
+// zbr:examples/lisp.zbr:751
             cur = next.cdr.*;
         } else {
-// zbr:examples/lisp.zbr:540
+// zbr:examples/lisp.zbr:753
             go = false;
         }
     }
-// zbr:examples/lisp.zbr:541
+// zbr:examples/lisp.zbr:754
     if ((!isNil(cur))) {
-// zbr:examples/lisp.zbr:542
+// zbr:examples/lisp.zbr:755
         out = _str_concat(_str_concat(out, " . ", _allocator), showValue(cur), _allocator);
     }
-// zbr:examples/lisp.zbr:543
+// zbr:examples/lisp.zbr:756
     return out;
 }
 
 pub fn showNum(n: f64) []const u8 {
-// zbr:examples/lisp.zbr:546
+// zbr:examples/lisp.zbr:759
     const i: i64 = @as(i64, @intFromFloat(n));
-// zbr:examples/lisp.zbr:547
+// zbr:examples/lisp.zbr:760
     const rebuilt: f64 = @as(f64, @floatFromInt(i));
-// zbr:examples/lisp.zbr:548
+// zbr:examples/lisp.zbr:761
     if ((rebuilt == n)) {
-// zbr:examples/lisp.zbr:549
+// zbr:examples/lisp.zbr:762
         return (std.fmt.allocPrint(_allocator, "{}", .{i}) catch unreachable);
     }
-// zbr:examples/lisp.zbr:550
+// zbr:examples/lisp.zbr:763
     return (std.fmt.allocPrint(_allocator, "{}", .{n}) catch unreachable);
 }
 
 pub fn globalEnv() *Env {
-// zbr:examples/lisp.zbr:556
+// zbr:examples/lisp.zbr:769
     var g = Env.init(null);
-// zbr:examples/lisp.zbr:557
-    const names = (blk_ll_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; _ll_3.append(_allocator, "+") catch @panic("OOM"); _ll_3.append(_allocator, "-") catch @panic("OOM"); _ll_3.append(_allocator, "*") catch @panic("OOM"); _ll_3.append(_allocator, "/") catch @panic("OOM"); _ll_3.append(_allocator, "=") catch @panic("OOM"); _ll_3.append(_allocator, "<") catch @panic("OOM"); _ll_3.append(_allocator, ">") catch @panic("OOM"); _ll_3.append(_allocator, "<=") catch @panic("OOM"); _ll_3.append(_allocator, ">=") catch @panic("OOM"); _ll_3.append(_allocator, "car") catch @panic("OOM"); _ll_3.append(_allocator, "cdr") catch @panic("OOM"); _ll_3.append(_allocator, "cons") catch @panic("OOM"); _ll_3.append(_allocator, "list") catch @panic("OOM"); _ll_3.append(_allocator, "null?") catch @panic("OOM"); _ll_3.append(_allocator, "pair?") catch @panic("OOM"); _ll_3.append(_allocator, "list?") catch @panic("OOM"); _ll_3.append(_allocator, "not") catch @panic("OOM"); _ll_3.append(_allocator, "length") catch @panic("OOM"); _ll_3.append(_allocator, "display") catch @panic("OOM"); break :blk_ll_3 _ll_3; });
-// zbr:examples/lisp.zbr:558
+// zbr:examples/lisp.zbr:770
+    const names = (blk_ll_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; _ll_3.append(_allocator, "+") catch @panic("OOM"); _ll_3.append(_allocator, "-") catch @panic("OOM"); _ll_3.append(_allocator, "*") catch @panic("OOM"); _ll_3.append(_allocator, "/") catch @panic("OOM"); _ll_3.append(_allocator, "=") catch @panic("OOM"); _ll_3.append(_allocator, "<") catch @panic("OOM"); _ll_3.append(_allocator, ">") catch @panic("OOM"); _ll_3.append(_allocator, "<=") catch @panic("OOM"); _ll_3.append(_allocator, ">=") catch @panic("OOM"); _ll_3.append(_allocator, "car") catch @panic("OOM"); _ll_3.append(_allocator, "cdr") catch @panic("OOM"); _ll_3.append(_allocator, "cons") catch @panic("OOM"); _ll_3.append(_allocator, "list") catch @panic("OOM"); _ll_3.append(_allocator, "null?") catch @panic("OOM"); _ll_3.append(_allocator, "pair?") catch @panic("OOM"); _ll_3.append(_allocator, "list?") catch @panic("OOM"); _ll_3.append(_allocator, "not") catch @panic("OOM"); _ll_3.append(_allocator, "length") catch @panic("OOM"); _ll_3.append(_allocator, "display") catch @panic("OOM"); _ll_3.append(_allocator, "modulo") catch @panic("OOM"); _ll_3.append(_allocator, "abs") catch @panic("OOM"); _ll_3.append(_allocator, "min") catch @panic("OOM"); _ll_3.append(_allocator, "max") catch @panic("OOM"); _ll_3.append(_allocator, "zero?") catch @panic("OOM"); _ll_3.append(_allocator, "number?") catch @panic("OOM"); _ll_3.append(_allocator, "symbol?") catch @panic("OOM"); _ll_3.append(_allocator, "boolean?") catch @panic("OOM"); _ll_3.append(_allocator, "eq?") catch @panic("OOM"); _ll_3.append(_allocator, "equal?") catch @panic("OOM"); _ll_3.append(_allocator, "append") catch @panic("OOM"); _ll_3.append(_allocator, "reverse") catch @panic("OOM"); _ll_3.append(_allocator, "list-ref") catch @panic("OOM"); _ll_3.append(_allocator, "apply") catch @panic("OOM"); _ll_3.append(_allocator, "filter") catch @panic("OOM"); _ll_3.append(_allocator, "foldl") catch @panic("OOM"); break :blk_ll_3 _ll_3; });
+// zbr:examples/lisp.zbr:771
     for (names.items) |nm| {
         g.define(nm, Value{ .builtin = blk_box_4: { const _bv: std.meta.Child(@FieldType(Value, "builtin")) = Builtin.init(nm); const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } });
     }
-// zbr:examples/lisp.zbr:560
+// zbr:examples/lisp.zbr:773
     return g;
 }
 
 pub fn runProgram(src: []const u8, env: *Env) anyerror!Value {
-// zbr:examples/lisp.zbr:565
+// zbr:examples/lisp.zbr:778
     const toks = tokenize(src);
-// zbr:examples/lisp.zbr:566
+// zbr:examples/lisp.zbr:779
     var pos = std.ArrayList(i64).empty;
     pos.append(_allocator, 0) catch @panic("OOM");
-// zbr:examples/lisp.zbr:568
+// zbr:examples/lisp.zbr:781
     var result = mkNil();
-// zbr:examples/lisp.zbr:569
+// zbr:examples/lisp.zbr:782
     while (_zebra_lt(pos.items[@intCast(0)], @as(i64, @intCast(toks.items.len)))) {
-// zbr:examples/lisp.zbr:570
+// zbr:examples/lisp.zbr:783
         const form = try parseForm(toks, &pos);
-// zbr:examples/lisp.zbr:571
+// zbr:examples/lisp.zbr:784
         result = try eval_(form, env);
     }
-// zbr:examples/lisp.zbr:572
+// zbr:examples/lisp.zbr:785
     return result;
 }
 
 pub fn runShow(label: []const u8, src: []const u8, env: *Env) void {
-// zbr:examples/lisp.zbr:574
+// zbr:examples/lisp.zbr:787
     {
         var _try_err: ?anyerror = null;
         _ = &_try_err;
         _try_blk: {
-// zbr:examples/lisp.zbr:575
+// zbr:examples/lisp.zbr:788
             const v = runProgram(src, env) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; };
             std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat("  ", label, _allocator), "  =>  ", _allocator), showValue(v), _allocator)});
             break :_try_blk;
@@ -4495,7 +4945,7 @@ pub fn main(_zinit: std.process.Init) anyerror!void {
     defer _arena.deinit();
     std.debug.print("{s}\n", .{"lisp.zbr — a tiny Scheme in Zebra"});
     std.debug.print("{s}\n", .{"---"});
-// zbr:examples/lisp.zbr:583
+// zbr:examples/lisp.zbr:796
     const env = globalEnv();
     runShow("(+ 1 2 3 4)", "(+ 1 2 3 4)", env);
     runShow("(* 2 (+ 3 4))", "(* 2 (+ 3 4))", env);
@@ -4515,6 +4965,29 @@ pub fn main(_zinit: std.process.Init) anyerror!void {
     _ = try runProgram("(define (map f xs) (if (null? xs) xs (cons (f (car xs)) (map f (cdr xs)))))", env);
     _ = try runProgram("(define (square x) (* x x))", env);
     runShow("(map square (list 1 2 3 4 5))", "(map square (list 1 2 3 4 5))", env);
+    runShow("cond", "(define (sign n) (cond ((< n 0) 'neg) ((= n 0) 'zero) (else 'pos)))", env);
+    runShow("(sign -4)", "(sign -4)", env);
+    runShow("(sign 0)", "(sign 0)", env);
+    runShow("(sign 7)", "(sign 7)", env);
+    runShow("let*", "(let* ((a 2) (b (* a a)) (c (* b b))) c)", env);
+    runShow("when", "(when (> 5 3) 'yes)", env);
+    runShow("unless", "(unless (> 5 3) 'no 'never)", env);
+    runShow("(modulo 17 5)", "(modulo 17 5)", env);
+    runShow("(abs -9)", "(abs -9)", env);
+    runShow("(max 3 9 2 7)", "(max 3 9 2 7)", env);
+    runShow("(min 3 9 2 7)", "(min 3 9 2 7)", env);
+    runShow("equal? nested", "(equal? (list 1 (list 2 3)) (list 1 (list 2 3)))", env);
+    runShow("equal? differs", "(equal? (list 1 2) (list 1 3))", env);
+    runShow("append", "(append (list 1 2) (list 3 4 5))", env);
+    runShow("reverse", "(reverse (list 1 2 3 4))", env);
+    runShow("(list-ref ... 2)", "(list-ref (list 'a 'b 'c 'd) 2)", env);
+    _ = try runProgram("(define (even? n) (= (modulo n 2) 0))", env);
+    runShow("filter even?", "(filter even? (list 1 2 3 4 5 6))", env);
+    runShow("foldl + sum", "(foldl + 0 (list 1 2 3 4 5))", env);
+    runShow("apply +", "(apply + (list 10 20 30))", env);
+    _ = try runProgram("(define qx 5)", env);
+    runShow("quasiquote", "`(a b ,qx ,(+ qx 1))", env);
+    runShow("unquote-splicing", "`(1 ,@(list 2 3) 4)", env);
     runShow("unbound var", "(+ 1 undefined-thing)", env);
     runShow("not a function", "(1 2 3)", env);
 }

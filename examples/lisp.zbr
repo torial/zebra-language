@@ -7,11 +7,14 @@
 #
 # Supported:
 #   * integers / floats, symbols, booleans (#t / #f), the empty list ()
-#   * special forms:  quote  if  define  lambda  let  begin  set!  and  or
-#   * sugar:          (define (f a b) ...)   and   'x  ≡  (quote x)
-#   * builtins:       + - * /  =  <  >  <=  >=   car cdr cons list
-#                     null?  pair?  not  list?  length  display
-#   * lexical closures + recursion
+#   * special forms:  quote  if  define  lambda  let  let*  begin  set!  and
+#                     or  cond  when  unless  quasiquote
+#   * sugar:          (define (f a b) ...)   'x  `x  ,x  ,@x
+#   * builtins:       + - * /  =  <  >  <=  >=  modulo abs min max  car cdr
+#                     cons list null? pair? list? not length display zero?
+#                     number? symbol? boolean? eq? equal? append reverse
+#                     list-ref  apply filter foldl  (higher-order)
+#   * lexical closures + recursion; deep structural equality
 #
 #   $ zebra examples/lisp.zbr
 #
@@ -149,6 +152,17 @@ def tokenize(src: str): List(str)
         else if c == c'\''
             toks.add("'")
             i = i + 1
+        else if c == c'`'
+            toks.add("`")
+            i = i + 1
+        else if c == c','
+            # `,@` (unquote-splicing) vs `,` (unquote)
+            if i + 1 < n and src[i + 1] == c'@'
+                toks.add(",@")
+                i = i + 2
+            else
+                toks.add(",")
+                i = i + 1
         else if c == c';'
             # line comment — skip to end of line
             while i < n and src[i] != c'\n'
@@ -159,7 +173,7 @@ def tokenize(src: str): List(str)
             var scanning = true
             while scanning and i < n
                 var d = src[i]
-                if d == c' ' or d == c'\t' or d == c'\n' or d == c'\r' or d == c'(' or d == c')' or d == c'\''
+                if d == c' ' or d == c'\t' or d == c'\n' or d == c'\r' or d == c'(' or d == c')' or d == c'\'' or d == c'`' or d == c','
                     scanning = false
                 else
                     i = i + 1
@@ -210,6 +224,15 @@ def parseForm(toks: List(str), pos: List(int)): Value throws
         var quoted = parseForm(toks, pos)?
         # 'x  ≡  (quote x)
         return cons(mkSym("quote"), cons(quoted, mkNil()))
+    if tok == "`"
+        advance(pos)
+        return cons(mkSym("quasiquote"), cons(parseForm(toks, pos)?, mkNil()))
+    if tok == ","
+        advance(pos)
+        return cons(mkSym("unquote"), cons(parseForm(toks, pos)?, mkNil()))
+    if tok == ",@"
+        advance(pos)
+        return cons(mkSym("unquote-splicing"), cons(parseForm(toks, pos)?, mkNil()))
     advance(pos)
     return parseAtom(tok)
 
@@ -310,6 +333,22 @@ def evalForm(p: Pair, env: Env): Value throws
             return evalAnd(restOf(p), env)?
         if op == "or"
             return evalOr(restOf(p), env)?
+        if op == "cond"
+            return evalCond(restOf(p), env)?
+        if op == "let*"
+            return evalLetStar(p, env)?
+        if op == "when"
+            var wc = eval_(cadr(p)?, env)?
+            if truthy(wc)
+                return evalSeq(cddr(p)?, env)?
+            return mkNil()
+        if op == "unless"
+            var uc = eval_(cadr(p)?, env)?
+            if not truthy(uc)
+                return evalSeq(cddr(p)?, env)?
+            return mkNil()
+        if op == "quasiquote"
+            return qq(cadr(p)?, env)?
     # Application: evaluate operator + operands, then apply.
     var callee = eval_(head, env)?
     var args = List(Value)()
@@ -366,6 +405,72 @@ def evalLet(p: Pair, env: Env): Value throws
         var bp = listToVec(b)?
         inner.define(symName(bp.at(0))?, eval_(bp.at(1), env)?)
     return evalSeq(cddr(p)?, inner)?
+
+# (let* ((a 1) (b (+ a 1))) body...) — each binding sees the previous ones.
+def evalLetStar(p: Pair, env: Env): Value throws
+    var binds = listToVec(cadr(p)?)?
+    var inner = Env(env)
+    for b in binds
+        var bp = listToVec(b)?
+        inner.define(symName(bp.at(0))?, eval_(bp.at(1), inner)?)
+    return evalSeq(cddr(p)?, inner)?
+
+# (cond (test body...) ... (else body...)) — first truthy test wins.
+def evalCond(clauses: Value, env: Env): Value throws
+    var cv = listToVec(clauses)?
+    for clause in cv
+        var parts = listToVec(clause)?
+        if parts.len == 0
+            raise "cond: empty clause"
+        var clauseTest = parts.at(0)
+        var isElse = false
+        if clauseTest is Value.sym as s
+            if s == "else"
+                isElse = true
+        if isElse
+            return evalSeqVec(restVec(parts), env)?
+        var tv = eval_(clauseTest, env)?
+        if truthy(tv)
+            if parts.len == 1
+                return tv
+            return evalSeqVec(restVec(parts), env)?
+    return mkNil()
+
+# Quasiquote expansion (one level): rebuild the template, evaluating `,expr`
+# (unquote) and splicing `,@expr` (unquote-splicing) into the surrounding list.
+def qq(t: Value, env: Env): Value throws
+    if t is Value.pair as p
+        # (unquote x) → eval x
+        if p.car is Value.sym as h
+            if h == "unquote"
+                return eval_(cadr(p)?, env)?
+        # head is (unquote-splicing x) → splice eval(x) onto the rebuilt tail
+        if p.car is Value.pair as hp
+            if hp.car is Value.sym as hs
+                if hs == "unquote-splicing"
+                    var spliced = eval_(cadr(hp)?, env)?
+                    return appendValues(spliced, qq(p.cdr, env)?)?
+        return cons(qq(p.car, env)?, qq(p.cdr, env)?)
+    return t
+
+# Append cons-list `a` in front of value `b` (b need not be a list).
+def appendValues(a: Value, b: Value): Value throws
+    var av = listToVec(a)?
+    var out = b
+    var i = av.len - 1
+    while i >= 0
+        out = cons(av.at(i), out)
+        i = i - 1
+    return out
+
+# Drop the first element of a vector (clause/arg-list tail).
+def restVec(xs: List(Value)): List(Value)
+    var out = List(Value)()
+    var i = 1
+    while i < xs.len
+        out.add(xs.at(i))
+        i = i + 1
+    return out
 
 def evalSeq(body: Value, env: Env): Value throws
     return evalSeqVec(listToVec(body)?, env)?
@@ -433,6 +538,30 @@ def numOf(v: Value): float throws
     if v is Value.num as n
         return n
     raise "expected a number"
+
+# Deep structural equality — recurses through cons cells (^Value fields).
+def valueEqual(a: Value, b: Value): bool
+    branch a
+        on Value.num as an
+            if b is Value.num as bn
+                return an == bn
+            return false
+        on Value.sym as asym
+            if b is Value.sym as bs
+                return asym == bs
+            return false
+        on Value.bool_ as ab
+            if b is Value.bool_ as bb
+                return ab == bb
+            return false
+        on Value.nil_ as _
+            return b is Value.nil_
+        on Value.pair as ap
+            if b is Value.pair as bp
+                return valueEqual(ap.car, bp.car) and valueEqual(ap.cdr, bp.cdr)
+            return false
+        else
+            return false
 
 def applyBuiltin(name: str, args: List(Value)): Value throws
     if name == "+"
@@ -504,6 +633,90 @@ def applyBuiltin(name: str, args: List(Value)): Value throws
     if name == "display"
         print(showValue(args.at(0)))
         return mkNil()
+    if name == "modulo"
+        var mx = numOf(args.at(0))?
+        var my = numOf(args.at(1))?
+        var xi = mx.toInt()
+        var yi = my.toInt()
+        return mkNum((xi - (xi / yi) * yi).toFloat())
+    if name == "abs"
+        var ax = numOf(args.at(0))?
+        if ax < 0.0
+            return mkNum(-ax)
+        return mkNum(ax)
+    if name == "min"
+        var mn = numOf(args.at(0))?
+        var i = 1
+        while i < args.len
+            var c = numOf(args.at(i))?
+            if c < mn
+                mn = c
+            i = i + 1
+        return mkNum(mn)
+    if name == "max"
+        var mxv = numOf(args.at(0))?
+        var i = 1
+        while i < args.len
+            var c = numOf(args.at(i))?
+            if c > mxv
+                mxv = c
+            i = i + 1
+        return mkNum(mxv)
+    if name == "zero?"
+        return mkBool(numOf(args.at(0))? == 0.0)
+    if name == "number?"
+        return mkBool(args.at(0) is Value.num)
+    if name == "symbol?"
+        return mkBool(args.at(0) is Value.sym)
+    if name == "boolean?"
+        return mkBool(args.at(0) is Value.bool_)
+    if name == "eq?"
+        return mkBool(valueEqual(args.at(0), args.at(1)))
+    if name == "equal?"
+        return mkBool(valueEqual(args.at(0), args.at(1)))
+    if name == "append"
+        var a1 = listToVec(args.at(0))?
+        var a2 = listToVec(args.at(1))?
+        for x in a2
+            a1.add(x)
+        return vecToList(a1)
+    if name == "reverse"
+        var rv = listToVec(args.at(0))?
+        var out = List(Value)()
+        var i = rv.len - 1
+        while i >= 0
+            out.add(rv.at(i))
+            i = i - 1
+        return vecToList(out)
+    if name == "list-ref"
+        var lv = listToVec(args.at(0))?
+        var idxf = numOf(args.at(1))?
+        return lv.at(idxf.toInt())
+    if name == "apply"
+        # (apply f arglist) — splice the list into positional arguments.
+        var spliced = listToVec(args.at(1))?
+        return apply(args.at(0), spliced)?
+    if name == "filter"
+        var func = args.at(0)
+        var items = listToVec(args.at(1))?
+        var out = List(Value)()
+        for x in items
+            var one = List(Value)()
+            one.add(x)
+            if truthy(apply(func, one)?)
+                out.add(x)
+        return vecToList(out)
+    if name == "foldl"
+        # (foldl f init list) — left fold: (f elem acc).
+        var func = args.at(0)
+        var acc = args.at(1)
+        var items = listToVec(args.at(2))?
+        for x in items
+            var call = List(Value)()
+            call.add(x)
+            call.add(acc)
+            acc = apply(func, call)?
+        return acc
     raise "unknown builtin: " + name
 
 
@@ -554,7 +767,7 @@ def showNum(n: float): str
 
 def globalEnv(): Env
     var g = Env(nil)
-    var names = ["+", "-", "*", "/", "=", "<", ">", "<=", ">=", "car", "cdr", "cons", "list", "null?", "pair?", "list?", "not", "length", "display"]
+    var names = ["+", "-", "*", "/", "=", "<", ">", "<=", ">=", "car", "cdr", "cons", "list", "null?", "pair?", "list?", "not", "length", "display", "modulo", "abs", "min", "max", "zero?", "number?", "symbol?", "boolean?", "eq?", "equal?", "append", "reverse", "list-ref", "apply", "filter", "foldl"]
     for nm in names
         g.define(nm, Value.builtin(Builtin(nm)))
     return g
@@ -609,6 +822,45 @@ def main()
     runProgram("(define (map f xs) (if (null? xs) xs (cons (f (car xs)) (map f (cdr xs)))))", env)?
     runProgram("(define (square x) (* x x))", env)?
     runShow("(map square (list 1 2 3 4 5))", "(map square (list 1 2 3 4 5))", env)
+
+    # cond + else.
+    runShow("cond", "(define (sign n) (cond ((< n 0) 'neg) ((= n 0) 'zero) (else 'pos)))", env)
+    runShow("(sign -4)", "(sign -4)", env)
+    runShow("(sign 0)", "(sign 0)", env)
+    runShow("(sign 7)", "(sign 7)", env)
+
+    # let* — each binding sees the previous one.
+    runShow("let*", "(let* ((a 2) (b (* a a)) (c (* b b))) c)", env)
+
+    # when / unless.
+    runShow("when", "(when (> 5 3) 'yes)", env)
+    runShow("unless", "(unless (> 5 3) 'no 'never)", env)
+
+    # Arithmetic builtins: modulo, abs, min, max, zero?.
+    runShow("(modulo 17 5)", "(modulo 17 5)", env)
+    runShow("(abs -9)", "(abs -9)", env)
+    runShow("(max 3 9 2 7)", "(max 3 9 2 7)", env)
+    runShow("(min 3 9 2 7)", "(min 3 9 2 7)", env)
+
+    # Deep structural equality through cons cells.
+    runShow("equal? nested", "(equal? (list 1 (list 2 3)) (list 1 (list 2 3)))", env)
+    runShow("equal? differs", "(equal? (list 1 2) (list 1 3))", env)
+
+    # List builtins: append, reverse, list-ref.
+    runShow("append", "(append (list 1 2) (list 3 4 5))", env)
+    runShow("reverse", "(reverse (list 1 2 3 4))", env)
+    runShow("(list-ref ... 2)", "(list-ref (list 'a 'b 'c 'd) 2)", env)
+
+    # Higher-order builtins that call back into apply (filter / foldl / apply).
+    runProgram("(define (even? n) (= (modulo n 2) 0))", env)?
+    runShow("filter even?", "(filter even? (list 1 2 3 4 5 6))", env)
+    runShow("foldl + sum", "(foldl + 0 (list 1 2 3 4 5))", env)
+    runShow("apply +", "(apply + (list 10 20 30))", env)
+
+    # quasiquote / unquote / unquote-splicing.
+    runProgram("(define qx 5)", env)?
+    runShow("quasiquote", "`(a b ,qx ,(+ qx 1))", env)
+    runShow("unquote-splicing", "`(1 ,@(list 2 3) 4)", env)
 
     # Errors surface cleanly through raise/catch.
     runShow("unbound var", "(+ 1 undefined-thing)", env)
