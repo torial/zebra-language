@@ -145,6 +145,11 @@ pub const Modifiers = packed struct {
     /// or const receivers (e.g. function params declared by value).
     /// Opt-in; default behavior unchanged.
     pure: bool = false,
+    /// `@node_export` annotation — under `--target node-addon`, this static
+    /// method gets an N-API wrapper exported to JS.  Set by AstBuilder when a
+    /// preceding `@node_export` directive is consumed; only read by the
+    /// node-addon codegen post-pass (no-op in every other mode).
+    node_export: bool = false,
 };
 
 // ── Type declarations ─────────────────────────────────────────────────────────

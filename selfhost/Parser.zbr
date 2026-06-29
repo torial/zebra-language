@@ -318,7 +318,8 @@ struct PMethod
     var is_export: bool
     var type_params: List(str)
     var is_pure: bool
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false)
+    var is_node_export: bool
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false)
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -333,6 +334,7 @@ struct PMethod
         .is_export = is_export
         .type_params = type_params
         .is_pure = is_pure
+        .is_node_export = is_node_export
 
 struct PInit
     var params: List(PParam)
@@ -1182,6 +1184,7 @@ class Parser
         var pending_profile: bool = false
         var pending_once: bool = false
         var pending_pure: bool = false
+        var pending_node_export: bool = false
         var pending_derive_debug: bool = false
         var pending_derive_eq: bool = false
         var pending_derive_hash: bool = false
@@ -1206,6 +1209,9 @@ class Parser
                     else if dtext == "@pure"
                         .skipEol()
                         pending_pure = true
+                    else if dtext == "@node_export"
+                        .skipEol()
+                        pending_node_export = true
                     else if dtext == "@tag"
                         # Parse optional @tag("str", ...) argument list.
                         if .textIs("(")
@@ -1285,12 +1291,12 @@ class Parser
             return .parseTypeAliasDecl()
         else if .textIs("static")
             .advance()
-            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure)
+            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)
         else if .textIs("export")
             .advance()
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure)
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure, pending_node_export)
         else if .textIs("def")
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure)
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)
         else if .textIs("var")
             return .parseVarStmt(false)
         else if .textIs("const")
@@ -1615,6 +1621,7 @@ class Parser
         var pending_profile: bool = false
         var pending_once: bool = false
         var pending_pure: bool = false
+        var pending_node_export: bool = false
         var pending_tags: List(str) = List(str)()
         while .peek().kind == TokenKind.at_id
             const dtext = .peek().text
@@ -1628,6 +1635,9 @@ class Parser
             else if dtext == "@pure"
                 .skipEol()
                 pending_pure = true
+            else if dtext == "@node_export"
+                .skipEol()
+                pending_node_export = true
             else if dtext == "@tag"
                 if .textIs("(")
                     .advance()
@@ -1647,7 +1657,7 @@ class Parser
                 .skipEol()
                 sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
         if .textIs("def")
-            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false, pending_pure)
+            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)
         else if .textIs("var")
             return .parseDeclField(false, is_static, pending_private, pending_public)
         else if .textIs("const")
@@ -1727,7 +1737,7 @@ class Parser
             stmts = .parseBlock()
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false): PNode throws
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false): PNode throws
         const line = .peek().line
         .expectText("def")
         var name = ""
@@ -1813,7 +1823,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export))
 
     # -- Block and statements --------------------------------------------------
 

@@ -22,6 +22,9 @@ const builtin     = @import("builtin");
 /// Module-level IO context set once from main(init.io).
 /// Used by all internal helpers without threading io through every signature.
 var _io: std.Io = undefined;
+/// Process environment map, captured in `main` from `init.environ_map`.
+/// Used by node-addon mode to read ZEBRA_NODE_* / node-gyp cache locations.
+var _env: ?*const std.process.Environ.Map = null;
 const Ast         = @import("Ast.zig");
 const Tokenizer   = @import("Tokenizer.zig");
 const Parser      = @import("Parser.zig");
@@ -65,6 +68,9 @@ const Mode = enum {
     lib_static,
     /// Compile to a shared library (.so / .dll) with C-export wrappers.
     lib_shared,
+    /// Compile to a Node.js native addon (.node) with N-API wrappers for
+    /// `@node_export` functions.  `--target node-addon`.
+    node_addon,
     /// Compile with debug info, then start a DAP proxy (lldb-dap backend).
     debug,
     /// Interactive read-eval-print loop.
@@ -75,6 +81,7 @@ const Mode = enum {
 
 pub fn main(init: std.process.Init) void {
     _io = init.io;
+    _env = init.environ_map;
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -134,6 +141,22 @@ pub fn main(init: std.process.Init) void {
             mode = .lib_static;
         } else if (std.mem.eql(u8, arg, "--shared")) {
             mode = .lib_shared;
+        } else if (std.mem.eql(u8, arg, "--target") or std.mem.startsWith(u8, arg, "--target=")) {
+            // `--target node-addon` (space) or `--target=node-addon` (equals).
+            const val = if (std.mem.startsWith(u8, arg, "--target=")) arg["--target=".len..] else blk: {
+                i += 1;
+                if (i >= args.len) {
+                    std.debug.print("zebra: --target requires a value (node-addon)\n", .{});
+                    std.process.exit(1);
+                }
+                break :blk args[i];
+            };
+            if (std.mem.eql(u8, val, "node-addon") or std.mem.eql(u8, val, "node_addon")) {
+                mode = .node_addon;
+            } else {
+                std.debug.print("zebra: unknown --target '{s}' (node-addon)\n", .{val});
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "--release")) {
             release = true;
         } else if (std.mem.eql(u8, arg, "--turbo")) {
@@ -430,7 +453,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, (mode == .node_addon));
         buf = aw.toArrayList();
         try std.Io.File.stdout().writeStreamingAll(_io, buf.items);
         return 0;
@@ -446,7 +469,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
+        _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, false);
         buf = aw.toArrayList();
         const zf = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer zf.close(_io);
@@ -999,7 +1022,7 @@ fn compileZbrToZig(
     // Dep modules never get library_mode — only the top-level main entry point
     // should skip the arena deinit.  Deps are library-shaped already; they only
     // expose pub fns and don't emit main().
-    _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null, false);
+    _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, .stub, &dep_native_uses, false, &dep_imported_modules, strip_contracts, false, false, false, null, false, false);
     buf = aw.toArrayList();
 
     const f = try std.Io.Dir.cwd().createFile(_io, zig, .{});
@@ -1037,7 +1060,7 @@ fn backend(
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-        const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter, library_mode);
+        const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, (mode == .node_addon));
         buf = aw.toArrayList();
         const f = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer f.close(_io);
@@ -1087,6 +1110,7 @@ fn backend(
         .run          => compileAndRun(zig_path, final_c_sources, release, cpu, alloc),
         .lib_static   => compileLib(false, zig_path, final_c_sources, release, cpu, alloc),
         .lib_shared   => compileLib(true,  zig_path, final_c_sources, release, cpu, alloc),
+        .node_addon   => compileNodeAddon(module, zig_path, release, cpu, alloc),
         .emit_zig     => unreachable, // handled before backend() is called
         .debug        => unreachable, // handled before backend() is called
         .repl         => unreachable, // handled before backend() is called
@@ -1455,6 +1479,139 @@ fn compileLib(shared: bool, zig_path: []const u8, c_sources: []const []u8, relea
     }
     try argv.append(alloc, "-lc");
     return runChild(argv.items, alloc);
+}
+
+// ── Node.js native addon (.node) ──────────────────────────────────────────────
+
+const NodeApiPaths = struct { include: []const u8, lib: ?[]const u8 };
+
+/// Locate the Node.js N-API headers (and import library on Windows).  Order:
+///   1. `ZEBRA_NODE_INCLUDE` / `ZEBRA_NODE_LIB` env overrides.
+///   2. The node-gyp cache (`npx node-gyp install` populates it):
+///      Windows  %LOCALAPPDATA%\node-gyp\Cache\<ver>\{include\node, x64\node.lib}
+///      Unix     ~/.cache/node-gyp/<ver>/include/node
+/// Returns null when nothing usable is found (caller prints guidance).
+fn resolveNodeApi(alloc: std.mem.Allocator) !?NodeApiPaths {
+    const env = _env orelse return null;
+
+    const env_lib: ?[]const u8 = if (env.get("ZEBRA_NODE_LIB")) |l| try alloc.dupe(u8, l) else null;
+    if (env.get("ZEBRA_NODE_INCLUDE")) |inc| return NodeApiPaths{ .include = try alloc.dupe(u8, inc), .lib = env_lib };
+
+    const is_win = builtin.os.tag == .windows;
+    const base = blk: {
+        if (is_win) {
+            const appdata = env.get("LOCALAPPDATA") orelse break :blk null;
+            break :blk try std.fs.path.join(alloc, &.{ appdata, "node-gyp", "Cache" });
+        } else {
+            const home = env.get("HOME") orelse break :blk null;
+            break :blk try std.fs.path.join(alloc, &.{ home, ".cache", "node-gyp" });
+        }
+    } orelse return null;
+    defer alloc.free(base);
+
+    var dir = std.Io.Dir.cwd().openDir(_io, base, .{ .iterate = true }) catch return null;
+    defer dir.close(_io);
+
+    // Pick the lexically-greatest version dir whose headers are present (Node
+    // majors are ≥ 2 digits, so lexical order tracks numeric order in practice).
+    var best: ?[]const u8 = null;
+    defer if (best) |b| alloc.free(b);
+    var it = dir.iterate();
+    while (try it.next(_io)) |entry| {
+        if (entry.kind != .directory) continue;
+        const hdr = try std.fs.path.join(alloc, &.{ base, entry.name, "include", "node", "node_api.h" });
+        defer alloc.free(hdr);
+        std.Io.Dir.cwd().access(_io, hdr, .{}) catch continue;
+        if (best == null or std.mem.lessThan(u8, best.?, entry.name)) {
+            if (best) |b| alloc.free(b);
+            best = try alloc.dupe(u8, entry.name);
+        }
+    }
+    const ver = best orelse return null;
+
+    const include = try std.fs.path.join(alloc, &.{ base, ver, "include", "node" });
+    var lib: ?[]const u8 = env_lib;
+    if (lib == null and is_win) {
+        const cand = try std.fs.path.join(alloc, &.{ base, ver, "x64", "node.lib" });
+        if (std.Io.Dir.cwd().access(_io, cand, .{})) |_| lib = cand else |_| alloc.free(cand);
+    }
+    return NodeApiPaths{ .include = include, .lib = lib };
+}
+
+/// Build `zig_path` into a loadable `<stem>.node` Node addon.  Recipe proven by
+/// the Phase 0 spike: `zig build-lib -dynamic -lc -I<node/include> [node.lib]
+/// -femit-bin=<stem>.node`.  The `.node` is a shared library Node dlopen()s
+/// directly — no rename step.  Also writes a `<stem>.js` require() shim.
+fn compileNodeAddon(module: Ast.Module, zig_path: []const u8, release: bool, cpu: ?[]const u8, alloc: std.mem.Allocator) !u8 {
+    const stem = if (std.mem.endsWith(u8, zig_path, ".zig")) zig_path[0 .. zig_path.len - ".zig".len] else zig_path;
+
+    const api = (try resolveNodeApi(alloc)) orelse {
+        std.debug.print(
+            \\zebra: could not find the Node.js N-API headers.
+            \\  Fetch them once with:   npx --yes node-gyp install
+            \\  Or point at them with:  set ZEBRA_NODE_INCLUDE=<path-to>/include/node
+            \\                          set ZEBRA_NODE_LIB=<path-to>/node.lib   (Windows)
+            \\
+        , .{});
+        return 1;
+    };
+    defer alloc.free(api.include);
+    defer if (api.lib) |l| alloc.free(l);
+
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    var owned: std.ArrayListUnmanaged([]u8) = .empty;
+    defer { for (owned.items) |f| alloc.free(f); owned.deinit(alloc); }
+
+    try argv.appendSlice(alloc, &.{ "zig", "build-lib", zig_path, "-dynamic", "-lc" });
+    {
+        const inc = try std.fmt.allocPrint(alloc, "-I{s}", .{api.include});
+        try owned.append(alloc, inc);
+        try argv.append(alloc, inc);
+    }
+    if (api.lib) |l| try argv.append(alloc, l);
+    {
+        const emit = try std.fmt.allocPrint(alloc, "-femit-bin={s}.node", .{stem});
+        try owned.append(alloc, emit);
+        try argv.append(alloc, emit);
+    }
+    if (release) try argv.append(alloc, "-OReleaseFast");
+    if (cpu) |c| {
+        const flag = try std.fmt.allocPrint(alloc, "-mcpu={s}", .{c});
+        try owned.append(alloc, flag);
+        try argv.append(alloc, flag);
+    }
+
+    const code = try runChild(argv.items, alloc);
+    if (code != 0) return code;
+
+    // Emit a `<stem>.js` shim so the addon can be require()d by name, plus a
+    // `<stem>.d.ts` with TypeScript declarations for each @node_export function.
+    const base_name = std.fs.path.basename(stem);
+    {
+        const js_path = try std.fmt.allocPrint(alloc, "{s}.js", .{stem});
+        defer alloc.free(js_path);
+        const js = try std.fmt.allocPrint(alloc,
+            "// Auto-generated by zebra --target node-addon. Do not edit.\n'use strict';\nmodule.exports = require('./{s}.node');\n",
+            .{base_name});
+        defer alloc.free(js);
+        const jf = try std.Io.Dir.cwd().createFile(_io, js_path, .{});
+        defer jf.close(_io);
+        try jf.writeStreamingAll(_io, js);
+    }
+    {
+        const dts_path = try std.fmt.allocPrint(alloc, "{s}.d.ts", .{stem});
+        defer alloc.free(dts_path);
+        var dbuf = std.ArrayList(u8).empty;
+        defer dbuf.deinit(alloc);
+        var daw = std.Io.Writer.Allocating.fromArrayList(alloc, &dbuf);
+        try CodeGen.generateNodeDts(module, &daw.writer);
+        dbuf = daw.toArrayList();
+        const df = try std.Io.Dir.cwd().createFile(_io, dts_path, .{});
+        defer df.close(_io);
+        try df.writeStreamingAll(_io, dbuf.items);
+    }
+    return 0;
 }
 
 fn runZigCmd(

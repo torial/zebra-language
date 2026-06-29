@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-06-27 (compile-check campaign done — 141/0/1, now blocking `zig build test`; added generated-Zig hygiene cleanup item, task #230)
+**Last updated:** 2026-06-29 (Node.js addon target `--target node-addon` shipped on the bootstrap, verified end-to-end in Node; selfhost emit-mirror + allocator-lifetime + tests are follow-ups — see "Node.js addon target" below)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
@@ -20,6 +20,34 @@ Authoritative priority queue for the project. Update this file rather than regen
 > shipped + stable, not just the items in §15.  See
 > `wiki/pages/projects/project_zebra.md` milestone table for the
 > authoritative version-by-version breakdown.
+
+---
+
+## Node.js addon target (`--target node-addon`) — bootstrap shipped 2026-06-29; follow-ups open
+
+`@node_export def add(a: int, b: int): int` + `zebra --target node-addon math.zbr`
+→ `math.node` (loadable addon) + `math.js` shim + `math.d.ts`. Verified end-to-end:
+Node `require()`d a Zebra-compiled addon and int/float/bool/str exports returned
+correct values. Round-trip gate green; selfhost AST/Parser parse `@node_export`.
+See QUICKSTART §45 and the SELFHOST_JOURNAL note. Remaining, in priority order:
+
+- [ ] **Selfhost emit parity (functional-equivalence rule).** Mirror
+  `generateNodeAddonGlue`/`emitNapiWrapper`/`generateNodeDts` into
+  `selfhost/CodeGen.zbr` and `--target node-addon` + `compileNodeAddon` +
+  node-gyp discovery into `selfhost/main.zbr`. Today only `zebra-bootstrap.exe`
+  emits the glue; the selfhost binary parses `@node_export` but ignores it.
+- [ ] **Allocator lifetime (Phase 7).** Per-call arena save/restore in each
+  wrapper so string args/returns don't accumulate in the global arena over a
+  long-lived Node process. `napi_create_string_utf8` copies into V8 before the
+  restore, so the ordering is safe. Numeric/bool exports don't allocate.
+- [ ] **Test harness (Phase 8).** `test/node_addon/` — emit-only smoke in
+  `zig build test` (no Node dependency) + an opt-in Node runner for environments
+  that have node + node-gyp headers.
+- [ ] **Cross-platform (Phase 10).** Linux/macOS `.node` build (no `node.lib`;
+  macOS needs `-undefined dynamic_lookup`); the include-path discovery already
+  covers `~/.cache/node-gyp`. Windows is the verified path.
+- Name-collision hazard surfaced: a user top-level fn named `scale` collides
+  with a GUI-stub preamble identifier (pre-existing, not node-addon-specific).
 
 ---
 

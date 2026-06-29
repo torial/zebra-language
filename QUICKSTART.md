@@ -3824,3 +3824,70 @@ not a C pointer, so `str` parameters are not directly C-callable).
 - Platform note: the library path follows the OS convention.  On Windows, `.dll`; on
   Linux, `lib*.so`; on macOS, `*.dylib`.  Use `sys.getenv("PLUGIN_PATH")` to resolve
   paths at runtime.
+
+## 45. `@node_export` — Node.js native addons (`--target node-addon`)
+
+Compile a `.zbr` to a Node.js native addon (`.node`). Annotate any top-level
+`def` (or `static def` class method) with `@node_export`:
+
+```zebra
+# math.zbr
+@node_export
+def add(a: int, b: int): int
+    return a + b
+
+@node_export
+def greet(name: str): str
+    return "Hello, " + name + "!"
+```
+
+```bash
+zebra --target node-addon math.zbr
+```
+
+Produces three files alongside the source:
+
+- `math.node` — the loadable addon (a shared library Node `dlopen`s directly).
+- `math.js`   — a `require('./math.node')` shim.
+- `math.d.ts` — TypeScript declarations for each export.
+
+```js
+const m = require('./math.js');     // or require('./math.node')
+m.add(2, 3);          // 5
+m.greet('Zebra');     // "Hello, Zebra!"
+```
+
+### Exportable types (1.0)
+
+The JS export name is the method name; a name used by more than one
+`@node_export` function is a compile-time error.
+
+| Zebra        | JS          |
+|--------------|-------------|
+| `int` (any width) | `number` |
+| `float` (any width) | `number` |
+| `bool`       | `boolean`   |
+| `str`        | `string`    |
+| `void` (return only) | `undefined` |
+
+Any other type, a `throws` method, an instance method, or a method with no body
+is a **compile-time error** — exports are never silently dropped.
+
+### Finding Node
+
+Headers and (on Windows) the `node.lib` import library come from the node-gyp
+cache. Populate it once:
+
+```bash
+npx --yes node-gyp install
+```
+
+Override the locations with `ZEBRA_NODE_INCLUDE` (path to `include/node`) and,
+on Windows, `ZEBRA_NODE_LIB` (path to `node.lib`).
+
+### Limitations
+
+String arguments/returns currently allocate in the global arena and are not yet
+reclaimed per call (numeric/bool exports do not allocate). Async, JS→Zebra
+callbacks, class-instance handles, and collection marshaling are out of scope
+for 1.0.

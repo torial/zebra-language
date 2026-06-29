@@ -153,6 +153,7 @@ pub fn generate(
     list_targets_mode:    bool,
     tag_filter:           ?[]const u8,
     library_mode:         bool,
+    emit_node_addon:      bool,
 ) anyerror!GenerateResult {
     var mixins = try collectMixins(module, alloc);
     defer mixins.deinit();
@@ -201,6 +202,7 @@ pub fn generate(
         .uses_gui_ptr     = &uses_gui,
         .native_uses      = native_uses,
         .emit_exports     = emit_exports,
+        .emit_node_addon  = emit_node_addon,
         .has_exports_ptr  = &has_exports,
         .uses_sqlite_ptr  = &uses_sqlite,
         .source_file      = module.file,
@@ -2001,6 +2003,11 @@ const Generator = struct {
     /// When true, emit `export fn Owner_method(...)` wrappers after each
     /// class/struct for eligible `shared` methods (lib mode only).
     emit_exports: bool = false,
+    /// When true (`--target node-addon`), emit the N-API preamble plus a
+    /// post-pass of `_napi_w_<name>` wrappers and `napi_register_module_v1`
+    /// for every `@node_export` top-level/static method, and SKIP the normal
+    /// `main` thunk.  No-op in every other mode.
+    emit_node_addon: bool = false,
     /// Points to the `has_exports` bool in `generate()`.  Set to true the
     /// first time an export wrapper is emitted.
     has_exports_ptr: ?*bool = null,
@@ -4204,11 +4211,25 @@ const Generator = struct {
         }
 
         try g.w.writeAll(build_options.stdlib_preamble_post_gui);
+        // N-API preamble (cImport of node_api.h + _napi_throw/_napi_undefined).
+        // Ordering: stdlib preamble → napi preamble → module body → glue post-pass.
+        if (g.emit_node_addon) {
+            try g.w.writeAll("\n");
+            try g.w.writeAll(build_options.napi_preamble);
+            try g.w.writeAll("\n");
+        }
         for (module.decls) |decl| try g.genTopDecl(decl);
 
         // ── Gap 1: emit module-level thunk infrastructure for any closure
         // arguments collected during genCall (see emitCallWithClosureThunks).
         try g.flushPendingThunks();
+
+        // ── node-addon: emit the N-API wrappers + napi_register_module_v1 and
+        // STOP — a `.node` shared library has no `main` entry point.
+        if (g.emit_node_addon) {
+            try g.genNodeAddonGlue(module);
+            return;
+        }
 
         // Test runner: discover all top-level `def test_*()` and emit a main that
         // calls each, catches failures, and prints a summary.
@@ -4512,6 +4533,160 @@ const Generator = struct {
             try g.w.writeAll("); }\n");
             if (g.has_exports_ptr) |p| p.* = true;
         }
+    }
+
+    // ── N-API (node-addon) glue ─────────────────────────────────────────────
+
+    /// True if `tr` is marshalable to/from a JS value as a function PARAMETER.
+    /// `void` is excluded here — it is only valid as a return type.
+    fn isNapiParamType(tr: Ast.TypeRef) bool {
+        return switch (tr) {
+            .named => |n| isNapiTypeName(n.name),
+            else   => false,
+        };
+    }
+
+    /// int*/float*/bool/str map to JS number/boolean/string.  Mirrors the
+    /// genZigPrim widening (int32→i64, float32→f64), so the extracted value's
+    /// Zig type matches the real generated method signature.
+    fn isNapiTypeName(name: []const u8) bool {
+        if (std.mem.startsWith(u8, name, "int"))   return true;
+        if (std.mem.startsWith(u8, name, "float")) return true;
+        if (std.mem.eql(u8, name, "bool"))         return true;
+        if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "String")) return true;
+        return false;
+    }
+
+    /// Validate a `@node_export` method; panic with a clear message when it is
+    /// not exportable (the plan's "never silently skip" rule).  `owner` is the
+    /// class name, or "" for a top-level `def`.
+    fn checkNodeExportEligible(owner: []const u8, n: *const Ast.DeclMethod) void {
+        if (n.throws) std.debug.panic("@node_export '{s}': a `throws` method cannot be exported (1.0)", .{n.name});
+        if (n.body == null) std.debug.panic("@node_export '{s}': method has no body", .{n.name});
+        if (owner.len > 0 and !n.mods.static_)
+            std.debug.panic("@node_export '{s}': a class method must be `static` to export (no instance to bind to)", .{n.name});
+        for (n.params) |p| {
+            const tr = p.type_ orelse std.debug.panic("@node_export '{s}': parameter '{s}' has no type", .{ n.name, p.name });
+            if (!isNapiParamType(tr))
+                std.debug.panic("@node_export '{s}': parameter '{s}' type is not N-API-exportable (int/float/bool/str only)", .{ n.name, p.name });
+        }
+        if (n.return_type) |rt| {
+            if (rt != .void_ and !isNapiParamType(rt))
+                std.debug.panic("@node_export '{s}': return type is not N-API-exportable (int/float/bool/str/void only)", .{n.name});
+        }
+    }
+
+    /// Emit one `fn _napi_w_<name>(env, info) callconv(.c) napi_value` wrapper:
+    /// extract JS args → call the Zebra function → wrap the result.
+    fn emitNapiWrapper(g: Generator, owner: []const u8, n: *const Ast.DeclMethod) anyerror!void {
+        try g.w.print("fn _napi_w_{s}(env: napi.napi_env, info: napi.napi_callback_info) callconv(.c) napi.napi_value {{\n", .{n.name});
+        if (n.params.len == 0) {
+            try g.w.writeAll("    _ = info;\n");
+        } else {
+            try g.w.print("    var _argc: usize = {d};\n", .{n.params.len});
+            try g.w.print("    var _argv: [{d}]napi.napi_value = undefined;\n", .{n.params.len});
+            try g.w.writeAll("    _ = napi.napi_get_cb_info(env, info, &_argc, &_argv, null, null);\n");
+            try g.w.print("    if (_argc < {d}) return _napi_throw(env, \"{s}: expected {d} argument(s)\");\n", .{ n.params.len, n.name, n.params.len });
+            for (n.params, 0..) |p, i| {
+                const tn = p.type_.?.named.name;
+                if (std.mem.startsWith(u8, tn, "int")) {
+                    try g.w.print("    var _a{d}: i64 = 0;\n", .{i});
+                    try g.w.print("    _ = napi.napi_get_value_int64(env, _argv[{d}], &_a{d});\n", .{ i, i });
+                } else if (std.mem.startsWith(u8, tn, "float")) {
+                    try g.w.print("    var _a{d}: f64 = 0;\n", .{i});
+                    try g.w.print("    _ = napi.napi_get_value_double(env, _argv[{d}], &_a{d});\n", .{ i, i });
+                } else if (std.mem.eql(u8, tn, "bool")) {
+                    try g.w.print("    var _a{d}: bool = false;\n", .{i});
+                    try g.w.print("    _ = napi.napi_get_value_bool(env, _argv[{d}], &_a{d});\n", .{ i, i });
+                } else { // str / String
+                    try g.w.print("    var _len{d}: usize = 0;\n", .{i});
+                    try g.w.print("    _ = napi.napi_get_value_string_utf8(env, _argv[{d}], null, 0, &_len{d});\n", .{ i, i });
+                    try g.w.print("    const _buf{d} = _allocator.alloc(u8, _len{d} + 1) catch return _napi_throw(env, \"{s}: out of memory\");\n", .{ i, i, n.name });
+                    try g.w.print("    var _wr{d}: usize = 0;\n", .{i});
+                    try g.w.print("    _ = napi.napi_get_value_string_utf8(env, _argv[{d}], _buf{d}.ptr, _len{d} + 1, &_wr{d});\n", .{ i, i, i, i });
+                    try g.w.print("    const _a{d}: []const u8 = _buf{d}[0.._wr{d}];\n", .{ i, i, i });
+                }
+            }
+        }
+        const ret_void = n.return_type == null or n.return_type.? == .void_;
+        try g.w.writeAll("    ");
+        if (!ret_void) try g.w.writeAll("const _ret = ");
+        if (owner.len > 0) try g.w.print("{s}.{s}(", .{ owner, n.name }) else try g.w.print("{s}(", .{n.name});
+        for (n.params, 0..) |_, i| {
+            if (i > 0) try g.w.writeAll(", ");
+            try g.w.print("_a{d}", .{i});
+        }
+        try g.w.writeAll(");\n");
+        if (ret_void) {
+            try g.w.writeAll("    return _napi_undefined(env);\n");
+        } else {
+            const rn = n.return_type.?.named.name;
+            try g.w.writeAll("    var _out: napi.napi_value = undefined;\n");
+            if (std.mem.startsWith(u8, rn, "int")) {
+                try g.w.writeAll("    _ = napi.napi_create_int64(env, _ret, &_out);\n");
+            } else if (std.mem.startsWith(u8, rn, "float")) {
+                try g.w.writeAll("    _ = napi.napi_create_double(env, _ret, &_out);\n");
+            } else if (std.mem.eql(u8, rn, "bool")) {
+                try g.w.writeAll("    _ = napi.napi_get_boolean(env, _ret, &_out);\n");
+            } else { // str
+                try g.w.writeAll("    _ = napi.napi_create_string_utf8(env, _ret.ptr, _ret.len, &_out);\n");
+            }
+            try g.w.writeAll("    return _out;\n");
+        }
+        try g.w.writeAll("}\n\n");
+    }
+
+    fn emitNapiRegister(g: Generator, name: []const u8) anyerror!void {
+        try g.w.print("    _ = napi.napi_create_function(env, \"{s}\", {d}, _napi_w_{s}, null, &_f);\n", .{ name, name.len, name });
+        try g.w.print("    _ = napi.napi_set_named_property(env, exports, \"{s}\", _f);\n", .{name});
+    }
+
+    /// Post-pass: emit a wrapper per `@node_export` function (top-level `def`
+    /// or class `static def`) plus `napi_register_module_v1` wiring them into
+    /// the module's JS exports.  JS export name = the method name; collisions
+    /// across the module are a compile error.
+    fn genNodeAddonGlue(g: Generator, module: Ast.Module) anyerror!void {
+        var seen = std.StringHashMap(void).init(g.alloc);
+        defer seen.deinit();
+        var count: usize = 0;
+
+        // Pass 1 — wrappers.
+        for (module.decls) |decl| switch (decl) {
+            .method => |m| {
+                if (!m.mods.node_export) continue;
+                checkNodeExportEligible("", m);
+                if (seen.contains(m.name)) std.debug.panic("@node_export name collision: '{s}' exported more than once", .{m.name});
+                try seen.put(m.name, {});
+                try g.emitNapiWrapper("", m);
+                count += 1;
+            },
+            .class => |c| for (c.members) |mem| {
+                const m = switch (mem) { .method => |x| x, else => continue };
+                if (!m.mods.node_export) continue;
+                checkNodeExportEligible(c.name, m);
+                if (seen.contains(m.name)) std.debug.panic("@node_export name collision: '{s}' exported more than once", .{m.name});
+                try seen.put(m.name, {});
+                try g.emitNapiWrapper(c.name, m);
+                count += 1;
+            },
+            else => {},
+        };
+
+        if (count == 0)
+            std.debug.panic("--target node-addon: no @node_export functions found in {s}", .{module.file});
+
+        // Pass 2 — module registration.
+        try g.w.writeAll("export fn napi_register_module_v1(env: napi.napi_env, exports: napi.napi_value) napi.napi_value {\n");
+        try g.w.writeAll("    var _f: napi.napi_value = undefined;\n");
+        for (module.decls) |decl| switch (decl) {
+            .method => |m| { if (m.mods.node_export) try g.emitNapiRegister(m.name); },
+            .class => |c| for (c.members) |mem| {
+                const m = switch (mem) { .method => |x| x, else => continue };
+                if (m.mods.node_export) try g.emitNapiRegister(m.name);
+            },
+            else => {},
+        };
+        try g.w.writeAll("    return exports;\n}\n");
     }
 
     /// Emit a generic class as a Zig comptime function.
@@ -15614,6 +15789,49 @@ fn cTypeName(tr: Ast.TypeRef) []const u8 {
         }).get(n.name) orelse "/* unsupported */",
         else => "/* unsupported */",
     };
+}
+
+// ── TypeScript declaration generation (node-addon) ────────────────────────────
+
+fn tsTypeName(tr: Ast.TypeRef) []const u8 {
+    return switch (tr) {
+        .void_ => "void",
+        .named => |n| blk: {
+            if (std.mem.startsWith(u8, n.name, "int") or std.mem.startsWith(u8, n.name, "float")) break :blk "number";
+            if (std.mem.eql(u8, n.name, "bool")) break :blk "boolean";
+            if (std.mem.eql(u8, n.name, "str") or std.mem.eql(u8, n.name, "String")) break :blk "string";
+            break :blk "unknown";
+        },
+        else => "unknown",
+    };
+}
+
+/// Emit `<stem>.d.ts` TypeScript declarations for every `@node_export`
+/// function (top-level `def` or class `static def`).  Call after `generate()`
+/// in node-addon mode.
+pub fn generateNodeDts(module: Ast.Module, writer: *std.Io.Writer) anyerror!void {
+    try writer.writeAll("// Auto-generated by zebra --target node-addon. Do not edit.\n// Source: ");
+    try Generator.writePathFwd(writer, module.file);
+    try writer.writeAll("\n\n");
+    for (module.decls) |decl| switch (decl) {
+        .method => |m| { if (m.mods.node_export) try emitDtsLine(writer, m); },
+        .class  => |c| for (c.members) |mem| {
+            const m = switch (mem) { .method => |x| x, else => continue };
+            if (m.mods.node_export) try emitDtsLine(writer, m);
+        },
+        else => {},
+    };
+}
+
+fn emitDtsLine(writer: *std.Io.Writer, n: *const Ast.DeclMethod) anyerror!void {
+    try writer.print("export declare function {s}(", .{n.name});
+    for (n.params, 0..) |p, i| {
+        if (i > 0) try writer.writeAll(", ");
+        const ts = if (p.type_) |tr| tsTypeName(tr) else "unknown";
+        try writer.print("{s}: {s}", .{ p.name, ts });
+    }
+    const ret = if (n.return_type) |rt| tsTypeName(rt) else "void";
+    try writer.print("): {s};\n", .{ret});
 }
 
 // ── Print format specifier ────────────────────────────────────────────────────

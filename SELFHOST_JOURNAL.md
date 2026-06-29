@@ -2159,3 +2159,41 @@ All `.zbr` sources were updated along with the bootstrap. Three gaps only surfac
 Bootstrap:  5/5 PASS
 Smoke:      106/106 PASS (opt_chain_test_run added)
 ```
+
+## N-API node-addon target (`--target node-addon`) — bootstrap done, selfhost emit pending
+
+Added `@node_export` and a `--target node-addon` backend that compiles a `.zbr`
+to a Node.js native addon (`.node` + `.js` shim + `.d.ts` declarations), verified
+end-to-end in Node (int/float/bool/str round-trip).
+
+**Implemented in BOTH compilers (round-trip clean):**
+- `Modifiers.node_export` flag — `src/ast.zig` + `selfhost/Ast.zbr` (and the
+  `zmods`/`zstatic` literal `Modifiers(...)` calls in `AstBuilder.zbr` gained the
+  15th `false`; Zebra does not auto-fill trailing default args when emitting Zig).
+- `@node_export` recognition — `src/AstBuilder.zig` (both `processTopDecl` for
+  top-level `def` and `collectMemberDecls` for class members) +
+  `selfhost/Parser.zbr` (`PMethod.is_node_export`, both directive sites,
+  `parseMethodDecl`) + `selfhost/AstBuilder.zbr` (`mods.is_node_export = m.is_node_export`).
+
+**Implemented in the bootstrap (`src/`) ONLY — selfhost gap, tracked here:**
+- `CodeGen.generateNodeAddonGlue` / `emitNapiWrapper` / `generateNodeDts` and the
+  `emit_node_addon` gen path (`src/CodeGen.zig`).
+- `--target node-addon` mode, `compileNodeAddon`, node-gyp cache discovery
+  (`src/main.zig`).
+- `selfhost/napi_preamble.zig` (the cImport + `_napi_throw`/`_napi_undefined`),
+  embedded via `build.zig`.
+
+The selfhost (`selfhost/*.zbr`) compiler therefore **parses** `@node_export`
+(so it round-trips its own sources, none of which use it) but does **not** yet
+emit the N-API glue or accept `--target node-addon`. Closing this requires
+mirroring `generateNodeAddonGlue`/`generateNodeDts` into `selfhost/CodeGen.zbr`
+and the CLI + `compileNodeAddon` into `selfhost/main.zbr`. This is the standard
+"functional-equivalence" follow-up — the feature is reachable today via
+`zebra-bootstrap.exe --target node-addon`.
+
+### Results
+
+```
+Regenerate (--update):  PASS
+Bootstrap round-trip:   PASS (selfhost-B byte-identical to selfhost-A)
+```

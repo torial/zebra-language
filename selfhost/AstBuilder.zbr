@@ -23,10 +23,10 @@ def zspan(): Span
     return Span(0, 0, 0, 0)
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false)
 
 def zstatic(): Modifiers
-    return Modifiers(false, false, false, true, false, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, true, false, false, false, false, false, false, false, false, false, false, false)
 
 # Strip surrounding quote characters from a string token text.
 # The selfhost Lexer captures token text including the surrounding " or '.
@@ -391,6 +391,7 @@ class ASTBuilder
         mods.is_once = m.is_once
         mods.is_export = m.is_export
         mods.is_pure = m.is_pure
+        mods.is_node_export = m.is_node_export
         return Decl.method(DeclMethod(zspan(), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────

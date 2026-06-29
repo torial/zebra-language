@@ -80,10 +80,11 @@ const Builder = struct {
         var pending_derive_hash = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
         var pending_export_sym: ?[]const u8 = null;
-        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags, &pending_export_sym);
+        var pending_node_export = false;
+        return b.collectTopDeclsInner(node, out, &pending_reflectable, &pending_profile, &pending_once, &pending_derive_debug, &pending_derive_eq, &pending_derive_hash, &pending_tags, &pending_export_sym, &pending_node_export);
     }
 
-    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
+    fn collectTopDeclsInner(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8, pending_node_export: *bool) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -91,20 +92,20 @@ const Builder = struct {
                 if (kids.len == 0) return;
                 if (kids.len == 1) {
                     // TopDeclList → TopDecl
-                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
+                    try b.processTopDecl(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym, pending_node_export);
                 } else {
-                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
+                    try b.collectTopDeclsInner(kids[0], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym, pending_node_export);
                     // TopDeclList → TopDeclList eol  (blank line — skip)
                     if (kids[1] == .leaf) return;
                     // TopDeclList → TopDeclList TopDecl
-                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym);
+                    try b.processTopDecl(kids[1], out, pending_reflectable, pending_profile, pending_once, pending_derive_debug, pending_derive_eq, pending_derive_hash, pending_tags, pending_export_sym, pending_node_export);
                 }
             },
             .leaf => unreachable,
         }
     }
 
-    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8) anyerror!void {
+    fn processTopDecl(b: Builder, td: TN, out: *std.ArrayList(Ast.Decl), pending_reflectable: *bool, pending_profile: *bool, pending_once: *bool, pending_derive_debug: *bool, pending_derive_eq: *bool, pending_derive_hash: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8), pending_export_sym: *?[]const u8, pending_node_export: *bool) anyerror!void {
         const decl_node = singleChild(td);
         if (ntOf(decl_node) == .AtDirective) {
             // AtDirective → at_id eol  |  at_id ( ArgList ) eol
@@ -126,6 +127,8 @@ const Builder = struct {
             } else if (std.mem.eql(u8, name, "export")) {
                 // @export("sym") — extract symbol name string literal from ArgList
                 if (at_kids.len > 2) try b.extractExportSym(at_kids[2], pending_export_sym);
+            } else if (std.mem.eql(u8, name, "node_export")) {
+                pending_node_export.* = true;
             } else {
                 std.debug.print("warning: unknown @-directive '@{s}'; ignored\n", .{name});
             }
@@ -182,6 +185,15 @@ const Builder = struct {
                 ),
             };
             pending_export_sym.* = null;
+        }
+        if (pending_node_export.*) {
+            applyNodeExport(&d) catch |err| switch (err) {
+                error.NodeExportOnNonMethod => std.debug.panic(
+                    "@node_export can only precede a top-level `def` declaration",
+                    .{},
+                ),
+            };
+            pending_node_export.* = false;
         }
         try out.append(b.arena, d);
     }
@@ -255,6 +267,13 @@ const Builder = struct {
         switch (d.*) {
             .method => |m| m.mods.pure = true,
             else    => return error.PureOnNonMethod,
+        }
+    }
+
+    fn applyNodeExport(d: *Ast.Decl) error{NodeExportOnNonMethod}!void {
+        switch (d.*) {
+            .method => |m| m.mods.node_export = true,
+            else    => return error.NodeExportOnNonMethod,
         }
     }
 
@@ -660,12 +679,13 @@ const Builder = struct {
         var pending_profile = false;
         var pending_once = false;
         var pending_pure = false;
+        var pending_node_export = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
-        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
+        try b.collectMemberDecls(node, &out, &pending_profile, &pending_once, &pending_pure, &pending_node_export, &pending_tags);
         return out.toOwnedSlice(b.arena);
     }
 
-    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_pure: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectMemberDecls(b: Builder, node: TN, out: *std.ArrayList(Ast.Decl), pending_profile: *bool, pending_once: *bool, pending_pure: *bool, pending_node_export: *bool, pending_tags: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         switch (node) {
             .epsilon => return,
             .inner   => |inner| {
@@ -675,7 +695,7 @@ const Builder = struct {
                     if (kids[0] == .epsilon) return;
                     return;
                 }
-                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_pure, pending_tags);
+                try b.collectMemberDecls(kids[0], out, pending_profile, pending_once, pending_pure, pending_node_export, pending_tags);
                 // MemberDeclList → MemberDeclList eol  (blank line — skip)
                 if (kids[1] == .leaf) return;
                 // MemberDeclList → MemberDeclList MemberDecl
@@ -697,6 +717,8 @@ const Builder = struct {
                             pending_once.* = true;
                         } else if (std.mem.eql(u8, name, "pure")) {
                             pending_pure.* = true;
+                        } else if (std.mem.eql(u8, name, "node_export")) {
+                            pending_node_export.* = true;
                         } else if (std.mem.eql(u8, name, "tag")) {
                             if (at_kids.len > 2) try b.extractAtTagStrings(at_kids[2], pending_tags);
                         } else {
@@ -736,6 +758,15 @@ const Builder = struct {
                             };
                             pending_pure.* = false;
                         }
+                        if (pending_node_export.*) {
+                            applyNodeExport(&d) catch |err| switch (err) {
+                                error.NodeExportOnNonMethod => std.debug.print(
+                                    "warning: @node_export can only precede a method declaration; ignored\n",
+                                    .{},
+                                ),
+                            };
+                            pending_node_export.* = false;
+                        }
                         try out.append(b.arena, d);
                     },
                 }
@@ -752,8 +783,9 @@ const Builder = struct {
         var pending_profile = false;
         var pending_once = false;
         var pending_pure = false;
+        var pending_node_export = false;
         var pending_tags: std.ArrayListUnmanaged([]const u8) = .empty;
-        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_pure, &pending_tags);
+        try b.collectMemberDecls(kids[3], out, &pending_profile, &pending_once, &pending_pure, &pending_node_export, &pending_tags);
         for (out.items[start..]) |*d| setShared(d);
     }
 

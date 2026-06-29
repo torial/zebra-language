@@ -72,8 +72,12 @@ struct Modifiers
     # so the method can be called on by-value or const receivers.
     # Opt-in; default behavior unchanged.
     var is_pure: bool
+    # @node_export — under --target node-addon, this static method gets an
+    # N-API wrapper exported to JS.  Only read by the node-addon codegen
+    # post-pass; no-op in every other mode.
+    var is_node_export: bool
 
-    cue init(is_public: bool = false, is_private: bool = false, is_abstract: bool = false, is_static: bool = false, is_readonly: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false)
+    cue init(is_public: bool = false, is_private: bool = false, is_abstract: bool = false, is_static: bool = false, is_readonly: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false, is_node_export: bool = false)
         .is_public = is_public
         .is_private = is_private
         .is_abstract = is_abstract
@@ -88,6 +92,7 @@ struct Modifiers
         .is_derive_eq = is_derive_eq
         .is_derive_hash = is_derive_hash
         .is_pure = is_pure
+        .is_node_export = is_node_export
 
 # ── Generic type parameter ────────────────────────────────────────────────────
 
