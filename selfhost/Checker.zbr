@@ -651,7 +651,12 @@ class DeadCodeChecker
             var key: str = .module_fn_key_list.at(i)
             if not .reachable_set.contains(key)
                 unreachable_count = unreachable_count + 1
-                var loc: str = .module_fns.fetch(key)
+                # Guard the fetch (the contains check above is on a different
+                # map): `.fetch` unwraps with `.?` (BUG-148), so a key present in
+                # the key-list but absent from module_fns would panic.
+                var loc: str = ""
+                if .module_fns.contains(key)
+                    loc = .module_fns.fetch(key)
                 var fn_name: str = .extractFnName(key)
                 unreach_sb.append("  " + CYN + loc + RST + "  " + YLW + fn_name + RST + "\n")
             i = i + 1

@@ -4,33 +4,34 @@
 
 ---
 
-## BUG-148: method chained on a HashMap `.fetch(k)` result miscompiles ⚠ OPEN (fix reverted)
+## BUG-148: method chained on a HashMap `.fetch(k)` result miscompiled ✅ FIXED
 
 **Severity:** medium. Found 2026-06-29 building GameEngine's `MessagingBroker`
 (`zbra/services_stub.zbr`): `topics.fetch(topic).len` failed to compile.
 
-**Cause:** `.fetch(k)` emits `(map.get(k) orelse undefined)`. The `orelse
+**Cause:** `.fetch(k)` emitted `(map.get(k) orelse undefined)`. The `orelse
 undefined` leaves an `@TypeOf(undefined)` peer in the null branch — fine when
 assigned to a typed local, but when a member is chained on the result
 (`m.fetch(k).at(0)`), Zig can't peer-resolve `*const T` vs `@TypeOf(undefined)`:
 `error: incompatible types: '*const …' and '*const @TypeOf(undefined)'`.
 
-**Attempted fix (reverted):** emitting `(map.get(k).?)` cleanly fixes the
-chaining error (verified: `m.fetch(k).at(1)` then compiles+runs) and gives a
-*defined* panic instead of UB. **But it broke the round-trip** with
-`panic: attempt to use null value` — the **compiler's own source calls
-`.fetch(k)` on a sometimes-absent key** and was silently relying on the old
-`orelse undefined` (UB that happened not to crash). `.?` turns that latent
-misuse into a hard panic during self-compile.
+**Fix:** emit `(map.get(k).?)` — a clean unwrap to the value type (and a *defined*
+panic on a missing key, vs the previous UB). One site in `src/CodeGen.zig`, two in
+`selfhost/CodeGen.zbr` (24- and 12-space indented — the 12-space one was easy to
+miss).
 
-**Real fix (prerequisite first):** audit the selfhost/bootstrap sources for
-`.fetch(k)` on possibly-absent keys and guard them (`if m.contains(k)` /
-`m.get(k)` optional form) **before** switching the `.fetch` emit to `.?`. Sites:
-one in `src/CodeGen.zig`, two in `selfhost/CodeGen.zbr` (24- and 12-space
-indented). Until then `.fetch(k)` chaining needs a local (`var q = m.fetch(k)`).
-Workaround in place in `zbra/services_stub.zbr`.
+`.?` made `fetch`-on-an-absent-key a hard panic, which on the first attempt broke
+the round-trip (`panic: attempt to use null value`) by exposing an **unguarded
+`scope.fetch` in the selfhost TypeChecker's `localType`**. Fixed by guarding it
+(returns `unknown_` for an untracked name — the TC convention), and defensively
+guarded one more cross-map fetch in `Checker.zbr`. So the contract is now explicit:
+**`fetch` asserts presence; guard with `.contains(k)` where a key may be absent.**
 
-## BUG-149: `.len` property on a HashMap `.fetch(k)` result (local-inited map) not lowered
+Regression test `test/hashmap_fetch_chain_test.zbr`; gates: round-trip
+byte-identical, smoke 182/182, compile-check (see commit).
+
+**Residual → BUG-149.** Chained *method* calls (`.fetch(k).at(i)`) now work; the
+`.len` *property* on a fetch result still needs a local.
 
 ## BUG-149: `.len` property on a HashMap `.fetch(k)` result (local-inited map) not lowered
 

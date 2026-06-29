@@ -1,0 +1,33 @@
+# BUG-148: a method chained directly on a HashMap `.fetch(k)` result miscompiled.
+# `.fetch` emitted `(get(k) orelse undefined)`, whose null branch is
+# `@TypeOf(undefined)` — fine assigned to a typed local, but when chained
+# (`m.fetch(k).at(0)`) Zig couldn't peer-resolve `*const T` vs `@TypeOf(undefined)`.
+# Fixed by emitting `(get(k).?)` (clean unwrap; defined panic on a missing key).
+# `.?` made `fetch`-on-an-absent-key a hard panic, which exposed an unguarded
+# `scope.fetch` in the selfhost TypeChecker's `localType` (now guarded — returns
+# `unknown_` for an untracked name).  Surfaced building GameEngine's MessagingBroker.
+
+def test_fetch_method_chain()
+    var m = HashMap(str, List(int))()
+    var ys = List(int)()
+    ys.add(7)
+    ys.add(8)
+    ys.add(9)
+    m.put("k", ys)
+    assert_eq m.fetch("k").at(1), 8
+    assert_eq m.fetch("k").at(2), 9
+
+def test_fetch_scalar_to_local()
+    var m = HashMap(str, int)()
+    m.put("x", 42)
+    var v = m.fetch("x")
+    assert_eq v, 42
+
+def test_fetch_str_value()
+    var m = HashMap(str, str)()
+    m.put("greet", "hello")
+    var g = m.fetch("greet")
+    assert_eq g, "hello"
+
+def main()
+    print("hashmap_fetch_chain_test: run with 'zebra test'")

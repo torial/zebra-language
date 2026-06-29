@@ -9076,7 +9076,7 @@ struct Generator
                         w.emit(".get(")
                         if args.len > 0
                             genExpr(args.at(0).value)
-                        w.emit(") orelse undefined)")
+                        w.emit(").?)")
                         return
                     if mname == "remove"
                         w.emit("_ = ")
@@ -9975,13 +9975,15 @@ struct Generator
             w.emit(")")
             return
         if mname == "fetch"
-            # HashMap.fetch(key) → (obj.get(key) orelse undefined)
+            # HashMap.fetch(key) → (obj.get(key).?) — `.?` not `orelse undefined`
+            # so chaining (`m.fetch(k).at(i)`) peer-types cleanly (BUG-148);
+            # callers guard with `.contains(k)` where a key may be absent.
             w.emit("(")
             genExpr(m.object)
             w.emit(".get(")
             if args.len > 0
                 genExpr(args.at(0).value)
-            w.emit(") orelse undefined)")
+            w.emit(").?)")
             return
         if mname == "put"
             # HashMap.put(key, value) — same dupe logic as .set above.

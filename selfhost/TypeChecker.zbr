@@ -1055,7 +1055,14 @@ class InferCtx
         return scope.contains(name)
 
     def localType(name: str): Type_
-        return scope.fetch(name)
+        # Guard the fetch: an untracked name has no recorded type → `unknown_`
+        # (the TC convention).  Must not assume presence — once `.fetch` unwraps
+        # with `.?` (BUG-148), an unguarded miss would panic instead of silently
+        # yielding undefined.  Callers generally pre-check via hasLocal, but this
+        # keeps localType total.
+        if scope.contains(name)
+            return scope.fetch(name)
+        return Type_.unknown_
 
     # Phase 17d — cross-module field/method lookups. The walker previously
     # consulted only module_types for Expr.member/Expr.call; that missed

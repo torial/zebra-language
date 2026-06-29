@@ -9362,13 +9362,18 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "fetch")) {
-            // map.fetch(k) — note: 'get' is a keyword, use 'fetch'
-            // Returns the value or undefined if missing.
+            // map.fetch(k) — note: 'get' is a keyword, use 'fetch'.
+            // Asserts the key is present, unwrapping with `.?` (not
+            // `orelse undefined`): the latter leaves an `@TypeOf(undefined)`
+            // peer that fails to resolve when fetch is chained, e.g.
+            // `map.fetch(k).at(0)` (BUG-148).  `.?` also gives a defined panic
+            // on a missing key instead of undefined behaviour — callers must
+            // guard with `.contains(k)` where a key may be absent.
             try g.w.writeAll("(");
             try g.genExpr(obj);
             try g.w.writeAll(".get(");
             if (args.len > 0) try g.genExpr(args[0].value);
-            try g.w.writeAll(") orelse undefined)");
+            try g.w.writeAll(").?)");
             return true;
         }
         if (std.mem.eql(u8, method, "contains")) {

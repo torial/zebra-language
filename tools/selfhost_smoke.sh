@@ -449,6 +449,9 @@ smoke_test test/forin_throws_test.zbr
 # BUG-146: str.tryInt()/tryFloat() return nil (not 0) on parse failure.
 smoke_test test/try_parse_test.zbr
 
+# BUG-148: member chained on a HashMap fetch (m.fetch(k).at(i)) compiles via `.?`.
+smoke_test test/hashmap_fetch_chain_test.zbr
+
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 
