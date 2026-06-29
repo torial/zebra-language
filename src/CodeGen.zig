@@ -4557,6 +4557,16 @@ const Generator = struct {
         return false;
     }
 
+    /// True when `tr` is `str`/`String` — used to decide whether a wrapper needs
+    /// a per-call arena (only string marshaling allocates).
+    fn isStrType(tr: ?Ast.TypeRef) bool {
+        const t = tr orelse return false;
+        return switch (t) {
+            .named => |nm| std.mem.eql(u8, nm.name, "str") or std.mem.eql(u8, nm.name, "String"),
+            else   => false,
+        };
+    }
+
     /// Validate a `@node_export` method; panic with a clear message when it is
     /// not exportable (the plan's "never silently skip" rule).  `owner` is the
     /// class name, or "" for a top-level `def`.
@@ -4580,6 +4590,25 @@ const Generator = struct {
     /// extract JS args → call the Zebra function → wrap the result.
     fn emitNapiWrapper(g: Generator, owner: []const u8, n: *const Ast.DeclMethod) anyerror!void {
         try g.w.print("fn _napi_w_{s}(env: napi.napi_env, info: napi.napi_callback_info) callconv(.c) napi.napi_value {{\n", .{n.name});
+
+        // Phase 7 — per-call arena: any string argument copied in, or string
+        // result built by the callee, lands in a child arena that is freed when
+        // the wrapper returns.  `napi_create_string_utf8` copies the result into
+        // V8 *before* the `defer` runs, so the returned value stays valid.  Only
+        // emitted when the wrapper actually allocates (a str param or str return);
+        // numeric/bool wrappers allocate nothing and skip it.  NOTE: this means a
+        // module-level mutable value populated during a call does not persist
+        // across calls in node-addon mode (its allocation is reclaimed) — addons
+        // are synchronous, stateless exports for 1.0.
+        var needs_arena = isStrType(n.return_type);
+        if (!needs_arena) for (n.params) |p| { if (isStrType(p.type_)) { needs_arena = true; break; } };
+        if (needs_arena) {
+            try g.w.writeAll("    const _napi_parent = _allocator;\n");
+            try g.w.writeAll("    var _napi_arena = std.heap.ArenaAllocator.init(_allocator);\n");
+            try g.w.writeAll("    _allocator = _napi_arena.allocator();\n");
+            try g.w.writeAll("    defer { _allocator = _napi_parent; _napi_arena.deinit(); }\n");
+        }
+
         if (n.params.len == 0) {
             try g.w.writeAll("    _ = info;\n");
         } else {
