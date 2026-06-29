@@ -52,3 +52,18 @@ fix_016*.py
 .claude/scheduled_tasks.lock
 .claude
 
+
+# Generated Zig from test/*.zbr fixtures — inert reference snapshots regenerated
+# by smoke / compile-check (the selfhost routes these to a temp dir; the bootstrap
+# still writes beside the source, hence the ignore). Nothing compiles them
+# (test/main.zig imports the compiler *modules*, not per-test .zig). The
+# hand-written harness + standalone .zig are kept via the exceptions below.
+test/**/*.zig
+!test/main.zig
+!test/ZigMath.zig
+!test/bench_zig.zig
+!test/error_map_test.zig
+!test/fuzzy_selfhost_selfhost.zig
+!test/hello.zig
+!test/mathlib_test.zig
+!test/regex_gaps.zig

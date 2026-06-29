@@ -60,25 +60,28 @@ regenerate the whole set via `update-selfhost`.
 
 ---
 
-## Generated-Zig hygiene cleanup — TODO (task #230, raised 2026-06-27)
+## Generated-Zig hygiene cleanup — ✅ DONE 2026-06-29 (task #230)
 
-`zig build test` leaves ~48 `test/*.zig` dirty after every run: the selfhost-smoke
-step runs `zebra.exe --emit-zig test/<name>_test.zbr`, and the compiler writes the
-canonical `<source>.zig` **next to the source fixture** in addition to honoring its
-`--output-dir` scratch target. Those `test/*.zig` are **inert reference snapshots** —
-nothing compiles them (`test/main.zig` imports the compiler *modules*, not the
-per-test `.zig`), and 129/144 already drift from a fresh emit — so this is hygiene,
-not correctness. But now that compile-check **gates `zig build test`** (commit
-553a2b7), a dirty tree after each gate run is a real friction.
+`zig build test` used to leave `test/*.zig` dirty: smoke/compile-check emit each
+fixture's canonical `<source>.zig`, and the compiler wrote it next to the source.
+Those `test/*.zig` are inert reference snapshots — nothing compiles them
+(`test/main.zig` imports the compiler *modules*, not the per-test `.zig`).
 
-Decide one policy for version-controlled generated Zig and apply it:
-- (a) make `--emit-zig` honor `--output-dir` *exclusively* (don't also write beside
-  the source) — fixes the pollution at the source;
-- (b) stop committing `test/*.zig` (gitignore; they're regenerable and mostly stale);
-- (c) keep them but have smoke/compile-check emit into a temp copy of `test/`.
-Lean (a)+(b). Tie this to the broader story of which generated Zig is tracked
-(`selfhost/*.zig` is intentionally tracked as the round-trip fixed point; `test/*.zig`
-arguably should not be; `*.exe`/caches are already gitignored).
+Resolved with **(a) + (b)**:
+- **(a)** the **selfhost** compiler already routes the emitted `.zig` to a temp dir
+  when no `--output-dir` is given (`selfhost/main.zbr` `zigPath`), so selfhost
+  smoke/compile-check no longer write beside the source. *(The bootstrap still
+  writes beside source for its `zig run` — preamble/dep resolution depends on it —
+  but those outputs are now gitignored, so the tree stays clean. A bootstrap
+  temp-routing mirror is possible but deliberately deferred: it touches the
+  load-bearing run flow for a hygiene-only gain.)*
+- **(b)** the 300 generated `test/*.zig` (every fixture with a `.zbr` sibling) are
+  **untracked + gitignored** (`test/**/*.zig`, with `!` exceptions for the 8
+  hand-written standalone `.zig`: `main`, `ZigMath`, `bench_zig`, `error_map_test`,
+  `fuzzy_selfhost_selfhost`, `hello`, `mathlib_test`, `regex_gaps`). `selfhost/*.zig`
+  stays tracked (round-trip fixed point); `examples/*.zig` stays tracked (canonical
+  demos); `tools/*.zig` was already ignored. Verified: regenerating a fixture via
+  either compiler now leaves `git status` clean.
 
 ---
 
