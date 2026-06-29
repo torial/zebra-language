@@ -47,6 +47,17 @@ pub fn build(b: *std.Build) void {
     const preamble_opts = b.addOptions();
     preamble_opts.addOption([]const u8, "stdlib_preamble_pre_gui",  raw_preamble[helpers_start..gui_start_idx]);
     preamble_opts.addOption([]const u8, "stdlib_preamble_post_gui", raw_preamble[gui_end_idx..]);
+
+    // N-API preamble (--target node-addon only).  Kept in a separate file so its
+    // node_api.h @cImport never compiles into the compiler itself — embedded as a
+    // string and only emitted into generated addons.  Phase 1.
+    const raw_napi = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(64 * 1024)) catch @panic("selfhost/napi_preamble.zig missing");
+    const napi_start_marker = "// === NAPI_PREAMBLE_HELPERS_START ===\n";
+    const napi_end_marker   = "// === NAPI_PREAMBLE_HELPERS_END ===\n";
+    const napi_start = std.mem.indexOf(u8, raw_napi, napi_start_marker) orelse @panic("NAPI_PREAMBLE_HELPERS_START marker missing from selfhost/napi_preamble.zig");
+    const napi_end   = std.mem.indexOf(u8, raw_napi, napi_end_marker)   orelse @panic("NAPI_PREAMBLE_HELPERS_END marker missing from selfhost/napi_preamble.zig");
+    preamble_opts.addOption([]const u8, "napi_preamble", raw_napi[napi_start + napi_start_marker.len .. napi_end]);
+
     compiler_mod.addOptions("build_options", preamble_opts);
 
     const bootstrap_exe = b.addExecutable(.{
