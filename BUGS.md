@@ -104,15 +104,19 @@ parenthesize the iterable when it is a `try`-expr: `(try f()).items`. Mirrored i
 `src/CodeGen.zig` + `selfhost/CodeGen.zbr`. The Lisp now uses `for x in f()?`
 directly at all four sites. Regression test: `test/forin_throws_test.zbr`.
 
-**Remaining (bootstrap only, BUG-147 family):** the `--zig-backend` bootstrap
-still can't reach `genForInList` for `for x in userFn()?` — its
-`getExprDeclaredType` has no `.call`/`.try_` arm, so the iterable's type isn't
-resolved to `List` and the loop falls through to a native Zig for-loop
-("type ... is not indexable and not a range"). The selfhost's type inference
-already looks through `try`. Closing the bootstrap side means giving
-`getExprDeclaredType` a call-return-type + try-passthrough arm; deferred because
-that function is broadly consulted (round-trip-byte-identity risk on the
-non-primary compiler).
+**Bootstrap residual — ✅ RESOLVED 2026-06-29.** The `--zig-backend` bootstrap
+previously couldn't reach `genForInList` for `for x in userFn()?` — its
+`getExprDeclaredType` had no `.call`/`.try_` arm, so the iterable's type wasn't
+resolved to `List` and the loop fell through to a native Zig for-loop
+("type ... is not indexable and not a range"). Fixed by adding a `.try_`
+passthrough and a `.call`→declared-return-type arm (ident callees → fn/method
+return type) to `src/CodeGen.zig`'s `getExprDeclaredType`. `--zig-backend run`
+of a `for a in makeNums()?` repro now compiles + runs. The change is additive
+(returns the actual return type where it previously returned null) and produced
+**zero** change to the regenerated `selfhost/*.zig` (the compiler's own source
+has no such pattern), so it's contained to user-program emit. Gates: bootstrap
+emit-check 140/0, round-trip byte-identical, selfhost compile-check 147/0
+(unchanged).
 
 ---
 

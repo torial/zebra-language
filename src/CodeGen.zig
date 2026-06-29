@@ -13022,6 +13022,23 @@ const Generator = struct {
     };
 
     fn getExprDeclaredType(g: Generator, expr: *const Ast.Expr) ?Ast.TypeRef {
+        // BUG-147: a `try`-expr (`f()?`) carries the declared type of its inner
+        // expression — so `for x in f()?`, `f()?[i]`, `f()?.len` see through the
+        // `?` to the call's result type.
+        if (expr.* == .try_) return g.getExprDeclaredType(expr.try_.expr);
+        // BUG-147: a call to a user free function / method resolves to that
+        // function's declared return type, so for-in / `[i]` / `.len` dispatch on
+        // a call result works (e.g. `for x in makeList()` over a `List(T)`-returning
+        // fn).  Only plain ident callees (free fns / same-scope methods) — member
+        // callees (`obj.method()`) are left to the TC's inferExpr path.
+        if (expr.* == .call) {
+            const callee = expr.call.callee;
+            if (callee.* == .ident) {
+                if (g.resolve.exprs.get(&callee.ident)) |sym| {
+                    if (sym.decl == .method) return sym.decl.method.return_type;
+                }
+            }
+        }
         if (expr.* == .ident) {
             const sym = g.resolve.exprs.get(&expr.ident) orelse return null;
             switch (sym.decl) {
