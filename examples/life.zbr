@@ -1,0 +1,105 @@
+# life.zbr — Conway's Game of Life in Zebra.
+#
+# A change of pace from the Lisp: where that exercised recursive tagged unions
+# and closures, this leans on classes-as-reference-types, a HashMap-backed sparse
+# grid, nested loops, and string building.  Each generation is a fresh `Life`
+# computed from the previous one (immutable step), so a glider visibly walks
+# across the board.
+#
+#   $ zebra examples/life.zbr
+
+class Life
+    var width:  int
+    var height: int
+    var alive:  HashMap(int, bool)   # sparse: only live cells are stored
+
+    cue init(width: int, height: int)
+        .width = width
+        .height = height
+        .alive = HashMap(int, bool)()
+
+    def idx(x: int, y: int): int
+        return y * .width + x
+
+    # Out-of-bounds cells are dead (a finite board, no wrap-around).
+    def isAlive(x: int, y: int): bool
+        if x < 0 or x >= .width or y < 0 or y >= .height
+            return false
+        return .alive.contains(.idx(x, y))
+
+    def setAlive(x: int, y: int)
+        .alive.put(.idx(x, y), true)
+
+    # Count the 8 Moore neighbours that are alive.
+    def neighbors(x: int, y: int): int
+        var n = 0
+        var dy = -1
+        while dy <= 1
+            var dx = -1
+            while dx <= 1
+                if not (dx == 0 and dy == 0)
+                    if .isAlive(x + dx, y + dy)
+                        n = n + 1
+                dx = dx + 1
+            dy = dy + 1
+        return n
+
+    # Advance one generation under Conway's rules, returning a new board.
+    def step(): Life
+        var nxt = Life(.width, .height)
+        var y = 0
+        while y < .height
+            var x = 0
+            while x < .width
+                var n = .neighbors(x, y)
+                if .isAlive(x, y)
+                    # A live cell survives with 2 or 3 live neighbours.
+                    if n == 2 or n == 3
+                        nxt.setAlive(x, y)
+                else
+                    # A dead cell is born with exactly 3 live neighbours.
+                    if n == 3
+                        nxt.setAlive(x, y)
+                x = x + 1
+            y = y + 1
+        return nxt
+
+    # Count of live cells (population).
+    def population(): int
+        return .alive.len
+
+    def render(): str
+        var out = ""
+        var y = 0
+        while y < .height
+            var x = 0
+            while x < .width
+                if .isAlive(x, y)
+                    out = out + "#"
+                else
+                    out = out + "."
+                x = x + 1
+            out = out + "\n"
+            y = y + 1
+        return out
+
+def main()
+    var board = Life(10, 10)
+
+    # A glider (walks diagonally) plus a blinker (period-2 oscillator).
+    board.setAlive(1, 0)
+    board.setAlive(2, 1)
+    board.setAlive(0, 2)
+    board.setAlive(1, 2)
+    board.setAlive(2, 2)
+    board.setAlive(6, 4)
+    board.setAlive(6, 5)
+    board.setAlive(6, 6)
+
+    print("Conway's Game of Life — 10x10, glider + blinker")
+    var gen = 0
+    while gen <= 5
+        print("--- generation " + gen.toString() + "  (pop " + board.population().toString() + ") ---")
+        print(board.render())
+        board = board.step()
+        gen = gen + 1
