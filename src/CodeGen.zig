@@ -9557,6 +9557,30 @@ const Generator = struct {
             try g.w.writeAll("))]");
             return true;
         }
+        if (std.mem.eql(u8, method, "set")) {
+            // BUG-155: list.set(i, x) → list.items[i] = x  (in-place element update;
+            // the inverse of `at`).  Mirror `add`'s str-intern / ^T-box handling.
+            try g.genExpr(obj);
+            try g.w.writeAll(".items[@as(usize, @intCast(");
+            if (args.len > 0) try g.genExpr(args[0].value);
+            try g.w.writeAll("))] = ");
+            if (args.len > 1) {
+                const item_is_ptr = blk: {
+                    const itr = item_tr orelse break :blk false;
+                    break :blk itr == .ref_to;
+                };
+                if (item_is_ptr) {
+                    try g.genBoxedArgExpr(args[1].value, item_tr.?.ref_to.*);
+                } else if (item_is_str) {
+                    try g.w.writeAll("_intern(");
+                    try g.genExpr(args[1].value);
+                    try g.w.writeAll(")");
+                } else {
+                    try g.genExpr(args[1].value);
+                }
+            }
+            return true;
+        }
         if (std.mem.eql(u8, method, "remove")) {
             // list.remove(i) → _ = list.orderedRemove(@as(usize, @intCast(i)))
             // Index is i64 in Zebra; orderedRemove takes usize.

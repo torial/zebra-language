@@ -2813,6 +2813,20 @@ const TypeChecker = struct {
         return .unknown;
     }
 
+    /// BUG-156: recover a `List(T)` / `HashMap(K,V)` TypeRef from a stdlib-container
+    /// constructor used as a var initializer (`var sp = List(str)()`), so generic
+    /// method inference (e.g. `sp.at(0): T`) works without an explicit annotation.
+    fn listCtorTypeRef(init: ?*Ast.Expr) ?Ast.TypeRef {
+        const e = init orelse return null;
+        if (e.* == .call and e.call.callee.* == .ident and e.call.type_args.len > 0) {
+            const cn = e.call.callee.ident.name;
+            if (std.mem.eql(u8, cn, "List") or std.mem.eql(u8, cn, "HashMap")) {
+                return Ast.TypeRef{ .generic = .{ .span = e.call.span, .name = cn, .args = e.call.type_args } };
+            }
+        }
+        return null;
+    }
+
     fn inferCall(tc: TypeChecker, e: *Ast.ExprCall) anyerror!Type {
         // SQLite exec/query: the params argument (arg[1]) is a list literal that may
         // contain mixed types (int, str, float) — suppress the homogeneity check by
@@ -3529,7 +3543,10 @@ const TypeChecker = struct {
                     if (mem.object.* == .ident) {
                         if (tc.resolve.exprs.get(&mem.object.ident)) |sym| {
                             break :blk switch (sym.decl) {
-                                .var_   => |v| v.type_,
+                                // BUG-156: fall back to the ctor in the init when there's
+                                // no annotation (`var sp = List(str)()`), so `sp.at(0)`
+                                // still infers the element type (e.g. for `.toInt()`).
+                                .var_   => |v| v.type_ orelse listCtorTypeRef(v.init),
                                 .param  => |p| p.type_,
                                 else    => null,
                             };

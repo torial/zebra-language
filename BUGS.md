@@ -116,21 +116,34 @@ handler path for `Tcp.serve` (store the handler in a per-connection ctx that als
 carries a user state pointer). Until then, document that handlers must be
 stateless or access only single-writer state (one client at a time).
 
-## BUG-155: `List` has no element setter / index assignment
+## BUG-155: `List` has no element setter / index assignment ✅ FIXED
 
 **Severity:** low. `list.set(i, v)` → `error: no field or member function named
-'set'`, and there's no `list[i] = v` lowering. In-place update of a List element
-is currently impossible (workaround: rebuild the list, or use a HashMap). Add a
-`List.set(i, v)` stdlib method (and/or lower indexed assignment).
+'set'`; in-place element update was impossible.
 
-## BUG-156: `str.toInt()` doesn't dispatch on a `List.at()` result
+**FIXED (2026-06-30):** added `List.set(i, x)` to `genListMethod` in both compilers
+— emits `list.items[@intCast(i)] = x` (the inverse of `at`), interning a `str`
+element / boxing a `^T` element to match `add`'s ownership.  (Chose a `.set(i,x)`
+method over new `list[i]=x` syntax — symmetric with the `.at(i)` getter, no parser
+change.)  Regression: `test/list_setter_parse_test.zbr`.
+
+## BUG-156: `str.toInt()` doesn't dispatch on a `List.at()` result ✅ FIXED
 
 **Severity:** low (inference gap). `sp.at(0).toInt()` where `sp: List(str)`
-emits `…toInt()` raw → `error: no field or member function named 'toInt' in
-'[]const u8'`. The numeric/parse method dispatch didn't see the receiver as a
-`str` because `List(str).at(i)`'s result type wasn't propagated at that call
-site. Works on a plain `str` local. Same family as the call-result inference gaps
-(BUG-147/149). Workaround: bind `var s: str = sp.at(0)` first, then `s.toInt()`.
+emitted `…toInt()` raw → `error: no field or member function named 'toInt' in
+'[]const u8'`.
+
+**FIXED (2026-06-30):** two compiler-specific causes.
+- Bootstrap (TypeChecker): generic-method inference (`List(T).at(i): T`) only fired
+  when the receiver var had an explicit annotation. Added `listCtorTypeRef` so an
+  unannotated `var sp = List(str)()` recovers `List(str)` from its init ctor, and
+  `sp.at(0)` infers `str` → the `.toInt()` parse helper dispatches.
+- Selfhost (CodeGen): the method-chain materializer hoisted `sp.at(0)` into
+  `var _mc_N = …`, erasing the element type so `_mc_N.toInt()` mis-dispatched.
+  `tryChain` now skips List index accessors (`at`/`first`/`last`) — they lower to
+  `list.items[i]` (an lvalue, no temp needed), so the chain dispatches inline and
+  sees the `str` element type.
+Regression: `test/list_setter_parse_test.zbr`.
 
 ---
 

@@ -1,0 +1,16 @@
+# Regression for BUG-155 (List element setter) + BUG-156 (str method on a
+# List.at() result).  list.set(i,x) updates an element in place (the inverse of
+# at); `nums.at(i).toInt()` parses a List(str) element without an explicit
+# annotation (the var is `= List(str)()`).
+def main()
+    var nums = List(str)()
+    nums.add("10")
+    nums.add("20")
+    nums.add("30")
+    nums.set(1, "99")                       # BUG-155
+    var first: int = nums.at(0).toInt()     # BUG-156
+    var second: int = nums.at(1).toInt()
+    if first == 10 and second == 99 and nums.len == 3
+        print("list_setter_parse_test OK")
+    else
+        print("list_setter_parse_test FAIL first=" + first.toString() + " second=" + second.toString())

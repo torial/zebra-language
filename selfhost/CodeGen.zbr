@@ -1541,7 +1541,15 @@ struct EnsureCtx
 def tryChain(e: Expr): CallChain?
     if e is Expr.call as c
         if c.callee is Expr.member as m
-            if m.object is Expr.call
+            if m.object is Expr.call as inner
+                # BUG-156: don't materialize when the inner call is a List index
+                # accessor (.at/.first/.last).  Those lower to `list.items[i]` — an
+                # lvalue, not a dangling temporary — so the chained method (e.g.
+                # `.toInt()` on a List(str) element) can dispatch inline and see the
+                # element's type.  Materializing into `var _mc_N = …` erases that type.
+                if inner.callee is Expr.member as inner_m
+                    if inner_m.member == "at" or inner_m.member == "first" or inner_m.member == "last"
+                        return nil
                 return CallChain(m.object, m.member, c.args)
     return nil
 
@@ -10310,6 +10318,32 @@ struct Generator
                         ai += 1
                     w.emit(") catch @panic(\"OOM\")")
                     return
+            # BUG-155: List.set(i, x) → list.items[@intCast(i)] = x  (in-place update,
+            # the inverse of `at`).  Intern a str element to match `add`'s ownership.
+            var set_is_str = false
+            if set_recv != nil
+                var sn2: str = set_recv!
+                if localIsListStr(sn2)
+                    set_is_str = true
+                else
+                    var sft2 = lookupFieldType(sn2)
+                    if sft2 != nil
+                        if sft2! is TypeRef.generic as sg2
+                            if sg2.name == "List" and sg2.args.len > 0
+                                set_is_str = isStringTypeRef(sg2.args.at(0))
+            genExpr(m.object)
+            w.emit(".items[@intCast(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            w.emit(")] = ")
+            if args.len > 1
+                if set_is_str
+                    w.emit("_intern(")
+                    genExpr(args.at(1).value)
+                    w.emit(")")
+                else
+                    genExpr(args.at(1).value)
+            return
         if mname == "get"
             genExpr(m.object)
             w.emit(".get(")

@@ -718,6 +718,9 @@ smoke_run test/module_var_test.zbr "module_var_test: OK"
 # generated _initModuleVars() (declared `= undefined` at container scope).
 smoke_run test/module_global_container_test.zbr "module_global_container_test OK"
 
+# BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
+smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
+
 # BUG-137: module var named like a preamble local/param (`total`, `count`) must
 # compile (emitted as `_zbr_mv_*`); a shadowing local keeps its bare name.
 smoke_run test/module_var_collision_test.zbr "module_var_collision_test: OK"
