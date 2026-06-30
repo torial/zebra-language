@@ -120,13 +120,15 @@ See QUICKSTART §45 and the SELFHOST_JOURNAL note.
 - [x] **Allocator lifetime (Phase 7).** DONE — per-call child arena wraps any
   string-marshaling wrapper in both compilers; `napi_create_string_utf8` copies
   into V8 before the arena is freed. Numeric/bool exports allocate nothing.
-- [ ] **Central fixes for selfhost gaps found during the mirror** (see
-  SELFHOST_JOURNAL "Selfhost-mirror gaps"): optional-field `as` unwrap;
-  str-concat on an `if … as x` capture binding; `for x in Dir.list(...)`
-  for-in over a call result. Worked around in the `.zbr`; worth fixing centrally.
-- [ ] **Parser divergence: explicit `: void` return.** Bootstrap parses it to
-  `TypeRef.named{"void"}`, selfhost to `.void_`. Harmless for node-addon now
-  (both treated as void), but the two ASTs should agree — reconcile in the parser.
+- ↪ **Moved to the general compiler backlog (not an N-API feature).** Three
+  selfhost gaps that merely *surfaced* during the mirror and are worked around in
+  `main.zbr` — they don't affect the node-addon feature: optional-field `as`
+  unwrap; str-concat on an `if … as x` capture binding; `for x in Dir.list(...)`
+  for-in over a call result. Fix centrally + revert the workarounds when convenient.
+- ↪ **Moved to the general compiler backlog.** Latent parser divergence: explicit
+  `: void` return parses to `TypeRef.named{"void"}` (bootstrap) vs `.void_`
+  (selfhost). Harmless for node-addon (both treated as void); reconcile as general
+  parser hygiene.
 - [x] **Test harness (Phase 8).** DONE 2026-06-29 — `test/node_addon/`
   (math/strings/bad fixtures + `*.check.js`) driven by `tools/node_addon_test.sh`:
   builds each fixture to a `.node`, runs Node assertions, and asserts the
@@ -135,9 +137,13 @@ See QUICKSTART §45 and the SELFHOST_JOURNAL note.
   into `zig build test`. Found+fixed: explicit `: void` return parses to
   `.named "void"` (bootstrap) vs `.void_` (selfhost) — both now treated as void
   in the node-addon path (latent parser divergence noted, not yet reconciled).
-- [ ] **Cross-platform (Phase 10).** Linux/macOS `.node` build (no `node.lib`;
-  macOS needs `-undefined dynamic_lookup`); the include-path discovery already
-  covers `~/.cache/node-gyp`. Windows is the verified path.
+- [x] **Cross-platform (Phase 10).** DONE 2026-06-30 — per-platform N-API symbol
+  resolution in both compilers' build-`.node` path: Windows links `node.lib`
+  (verified end-to-end); Linux omits the lib (undefined `.so` symbols resolve at
+  `dlopen`, `resolveNodeApi` returns no lib); macOS adds `-Wl,-undefined,dynamic_lookup`
+  (selfhost gates the flag on `zig"builtin.os.tag == .macos"`; bootstrap on
+  `builtin.os.tag`). Windows is the verified path; Linux/macOS are correct-by-
+  construction (no host to test on). **All N-API-specific items now complete.**
 - Name-collision hazard surfaced: a user top-level fn named `scale` collides
   with a GUI-stub preamble identifier (pre-existing, not node-addon-specific).
 

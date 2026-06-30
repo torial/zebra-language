@@ -1569,7 +1569,14 @@ fn compileNodeAddon(module: Ast.Module, zig_path: []const u8, release: bool, cpu
         try owned.append(alloc, inc);
         try argv.append(alloc, inc);
     }
+    // Per-platform N-API symbol resolution (Phase 10):
+    //   Windows: link node.lib (the import lib for node.exe's N-API exports).
+    //   Linux:   nothing — undefined symbols are allowed in a `.so` and resolved
+    //            when Node dlopen()s the addon (resolveNodeApi returns a null lib).
+    //   macOS:   `-undefined dynamic_lookup` so ld64 defers the N-API symbols to
+    //            load time (matches node-gyp's recipe).
     if (api.lib) |l| try argv.append(alloc, l);
+    if (builtin.os.tag == .macos) try argv.append(alloc, "-Wl,-undefined,dynamic_lookup");
     {
         const emit = try std.fmt.allocPrint(alloc, "-femit-bin={s}.node", .{stem});
         try owned.append(alloc, emit);

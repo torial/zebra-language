@@ -969,6 +969,14 @@ def main()
                 nargv.add("-I" + api.include)
                 if api.lib != ""
                     nargv.add(api.lib)
+                # Phase 10 cross-platform N-API symbol resolution: Windows links
+                # node.lib (above); Linux allows undefined `.so` symbols by default
+                # (resolveNodeApi returns no lib); macOS needs `-undefined
+                # dynamic_lookup` so ld64 defers the N-API symbols to load time.
+                # `builtin` is in scope in the emitted main.zig.
+                var na_is_macos: bool = zig"builtin.os.tag == .macos"
+                if na_is_macos
+                    nargv.add("-Wl,-undefined,dynamic_lookup")
                 nargv.add("-femit-bin=" + na_stem + ".node")
                 if release
                     nargv.add("-OReleaseFast")
