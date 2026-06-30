@@ -23,6 +23,50 @@ Authoritative priority queue for the project. Update this file rather than regen
 
 ---
 
+## Backlog — overnight / idle candidates (compiled 2026-06-29)
+
+A standing menu of self-contained, mostly-autonomous work. Compiler/dogfood/
+cleanup items are gated + deterministic (good unattended); GameEngine items are
+build+headless only when unattended (windowed runs need a human). GameEngine
+polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
+
+**Compiler hardening (gated):**
+- Converge capture-binding `for x in <as-bound List>` → `.items` in the bootstrap
+  (see "Bootstrap lags selfhost" below). Repro: `scratchpad/forin_capture.zbr`.
+- Optional-FIELD `as`-unwrap in the selfhost TC (`if rec.field as x`).
+- `zig"…"` ref-analysis: count idents used inside zig-literals (no spurious `_ = v;`).
+- Reconcile explicit `: void` parse divergence (bootstrap `.named "void"` vs selfhost `.void_`).
+- BUG-147 (3 bootstrap lisp emit divergences); BUG-149 (`.len` on a local-map `fetch`).
+- Audit/regenerate stale engine-style `.zig` with the converged bootstrap (pathfinding.zig
+  was stale — others likely are); add a numeric-conversion compiler test; correct QUICKSTART §21.
+- Run full `compile_check.sh` corpus (JOBS-paced) + triage regressions.
+
+**Dogfood programs (IO + networking + multithreading — surface stdlib/runtime gaps):**
+- Multithreaded TCP key-value store server + load-testing client (`Tcp.serve`/`connect`,
+  `ThreadPool`/`Chan`, SQLite persistence, HashMap).
+- Concurrent web fetcher / link checker (worker threads pull URLs from a `Chan`, HTTP GET, aggregate).
+- Parallel log-processing pipeline (`Dir`/`File` walk → worker threads → merged histogram).
+- Multithreaded Mandelbrot / ray tracer → PPM (compute fan-out + binary file IO).
+- Pub/sub or LAN chat broker (TCP + many client threads + `Chan` broadcast).
+- MapReduce word-count over the Greek NT / a large corpus (threads + IO + Unicode).
+- Tiny HTTP JSON API persisted to SQLite + a concurrent client smoke test.
+- Each ships with assertions so it self-verifies; gaps found become gated compiler fixes.
+
+**N-API follow-ups:** cross-platform `.node` (Linux undefined-symbol default; macOS
+`-undefined dynamic_lookup`) + doc; richer `test/node_addon` matrix.
+
+**IDE / tooling:** advance one stalled ZebraIDE experiment (tree widget / debugger
+button) with tests; `zebra fmt`/`check` pass over the corpus, fix crashes found.
+
+**Environment / repo cleanup (safe):**
+- **MEMORY.md is over its size limit** (was ~34.5KB vs 24.4KB) — trim index lines to
+  one-liners, move detail into topic files.
+- Prune the stale session task list (mostly completed) to the genuinely-open few.
+- Wiki sync (N-API, First Horseman, bootstrap convergence) into `project_zebra.md`; lint dates.
+- Tidy scratchpad repros into `examples/` or delete.
+
+---
+
 ## Bootstrap lags selfhost on numeric conv + capture for-in (found 2026-06-29)
 
 **Corrected diagnosis:** these are NOT missing features — the **selfhost**
