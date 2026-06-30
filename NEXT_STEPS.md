@@ -39,14 +39,21 @@ See QUICKSTART §45 and the SELFHOST_JOURNAL note.
 - [x] **Allocator lifetime (Phase 7).** DONE — per-call child arena wraps any
   string-marshaling wrapper in both compilers; `napi_create_string_utf8` copies
   into V8 before the arena is freed. Numeric/bool exports allocate nothing.
-- [ ] **Central fixes for 3 selfhost gaps found during the mirror** (see
+- [ ] **Central fixes for selfhost gaps found during the mirror** (see
   SELFHOST_JOURNAL "Selfhost-mirror gaps"): optional-field `as` unwrap;
   str-concat on an `if … as x` capture binding; `for x in Dir.list(...)`
-  for-in over a call result. Worked around in the `.zbr`; worth fixing in the
-  TC/codegen centrally.
-- [ ] **Test harness (Phase 8).** `test/node_addon/` — emit-only smoke in
-  `zig build test` (no Node dependency) + an opt-in Node runner for environments
-  that have node + node-gyp headers.
+  for-in over a call result. Worked around in the `.zbr`; worth fixing centrally.
+- [ ] **Parser divergence: explicit `: void` return.** Bootstrap parses it to
+  `TypeRef.named{"void"}`, selfhost to `.void_`. Harmless for node-addon now
+  (both treated as void), but the two ASTs should agree — reconcile in the parser.
+- [x] **Test harness (Phase 8).** DONE 2026-06-29 — `test/node_addon/`
+  (math/strings/bad fixtures + `*.check.js`) driven by `tools/node_addon_test.sh`:
+  builds each fixture to a `.node`, runs Node assertions, and asserts the
+  bad-types fixture is rejected. Passes with BOTH `zebra.exe` and
+  `zebra-bootstrap.exe`. Standalone script (needs Node + node-gyp), not wired
+  into `zig build test`. Found+fixed: explicit `: void` return parses to
+  `.named "void"` (bootstrap) vs `.void_` (selfhost) — both now treated as void
+  in the node-addon path (latent parser divergence noted, not yet reconciled).
 - [ ] **Cross-platform (Phase 10).** Linux/macOS `.node` build (no `node.lib`;
   macOS needs `-undefined dynamic_lookup`); the include-path discovery already
   covers `~/.cache/node-gyp`. Windows is the verified path.

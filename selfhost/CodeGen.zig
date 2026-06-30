@@ -5787,7 +5787,7 @@ pub fn napiWrapperStr(owner: []const u8, mth: DeclMethod) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1160
     const rnm: []const u8 = napiTypeRefName(mth.return_type);
 // zbr:selfhost/CodeGen.zbr:1161
-    const retVoid: bool = std.mem.eql(u8, rnm, "");
+    const retVoid: bool = (std.mem.eql(u8, rnm, "") or std.mem.eql(u8, rnm, "void"));
 // zbr:selfhost/CodeGen.zbr:1162
     sb.appendSlice(_allocator, "    ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1163

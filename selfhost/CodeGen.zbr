@@ -1156,9 +1156,9 @@ def napiWrapperStr(owner: str, mth: DeclMethod): str
                 sb.append(ix)
                 sb.append("];\n")
             pi = pi + 1
-    # A named return type ⇒ non-void (napiTypeRefName returns "" for nil/void_).
+    # Void return: nil/void_ (rnm == "") or an explicit `: void` (named "void").
     var rnm: str = napiTypeRefName(mth.return_type)
-    var retVoid: bool = rnm == ""
+    var retVoid: bool = rnm == "" or rnm == "void"
     sb.append("    ")
     if not retVoid
         sb.append("const _ret = ")

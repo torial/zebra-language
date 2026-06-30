@@ -1,0 +1,11 @@
+# bad.zbr — NEGATIVE fixture: @node_export with a non-exportable parameter type.
+# `--target node-addon` must FAIL to build this (List is not N-API-marshalable).
+# The bootstrap reports a clear compile-time error; the selfhost emit produces
+# Zig that fails to compile — either way the build exits non-zero.
+
+@node_export
+def sumAll(xs: List(int)): int
+    var total: int = 0
+    for x in xs
+        total = total + x
+    return total

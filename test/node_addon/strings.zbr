@@ -1,0 +1,19 @@
+# strings.zbr — N-API string marshaling (exercises the per-call arena path).
+
+@node_export
+def greet(name: str): str
+    return "Hello, " + name + "!"
+
+@node_export
+def echo(s: str): str
+    return s
+
+# empty-string return
+@node_export
+def blank(): str
+    return ""
+
+# two string args + concat
+@node_export
+def join2(a: str, b: str): str
+    return a + "/" + b

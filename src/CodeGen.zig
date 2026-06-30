@@ -4557,6 +4557,12 @@ const Generator = struct {
         return false;
     }
 
+    /// True when `tr` denotes a void return. Explicit `: void` parses to
+    /// `.named{"void"}` (bootstrap) while implicit void is `.void_` — accept both.
+    fn isNapiVoid(tr: Ast.TypeRef) bool {
+        return tr == .void_ or (tr == .named and std.mem.eql(u8, tr.named.name, "void"));
+    }
+
     /// True when `tr` is `str`/`String` — used to decide whether a wrapper needs
     /// a per-call arena (only string marshaling allocates).
     fn isStrType(tr: ?Ast.TypeRef) bool {
@@ -4581,7 +4587,7 @@ const Generator = struct {
                 std.debug.panic("@node_export '{s}': parameter '{s}' type is not N-API-exportable (int/float/bool/str only)", .{ n.name, p.name });
         }
         if (n.return_type) |rt| {
-            if (rt != .void_ and !isNapiParamType(rt))
+            if (!isNapiVoid(rt) and !isNapiParamType(rt))
                 std.debug.panic("@node_export '{s}': return type is not N-API-exportable (int/float/bool/str/void only)", .{n.name});
         }
     }
@@ -4637,7 +4643,7 @@ const Generator = struct {
                 }
             }
         }
-        const ret_void = n.return_type == null or n.return_type.? == .void_;
+        const ret_void = n.return_type == null or isNapiVoid(n.return_type.?);
         try g.w.writeAll("    ");
         if (!ret_void) try g.w.writeAll("const _ret = ");
         if (owner.len > 0) try g.w.print("{s}.{s}(", .{ owner, n.name }) else try g.w.print("{s}(", .{n.name});
@@ -15829,6 +15835,7 @@ fn tsTypeName(tr: Ast.TypeRef) []const u8 {
             if (std.mem.startsWith(u8, n.name, "int") or std.mem.startsWith(u8, n.name, "float")) break :blk "number";
             if (std.mem.eql(u8, n.name, "bool")) break :blk "boolean";
             if (std.mem.eql(u8, n.name, "str") or std.mem.eql(u8, n.name, "String")) break :blk "string";
+            if (std.mem.eql(u8, n.name, "void")) break :blk "void";
             break :blk "unknown";
         },
         else => "unknown",

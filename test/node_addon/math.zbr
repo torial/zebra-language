@@ -1,0 +1,31 @@
+# math.zbr — N-API numeric/bool/void exports (no allocation paths).
+
+@node_export
+def add(a: int, b: int): int
+    return a + b
+
+@node_export
+def mul(x: float, k: float): float
+    return x * k
+
+@node_export
+def negate(b: bool): bool
+    return not b
+
+# no-arg export (exercises the argc==0 wrapper path)
+@node_export
+def answer(): int
+    return 42
+
+# void return (exercises the _napi_undefined path)
+@node_export
+def touch(x: int): void
+    var y: int = x
+    y = y + 1
+
+# class static-block export (exercises the Owner.method call path)
+class Calc
+    static
+        @node_export
+        def square(n: int): int
+            return n * n
