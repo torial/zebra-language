@@ -6700,6 +6700,45 @@ const Generator = struct {
         try g.w.writeAll(".items.len))");
     }
 
+    /// Numeric `int ↔ float` conversion for `.toFloat()` / `.toInt()`.
+    /// `recv_is_float` is the receiver's kind.  int→float emits `@floatFromInt`;
+    /// float→int emits `@intFromFloat` (truncates toward zero, like a
+    /// conventional `int()` cast); same-kind is identity.  Returns false for any
+    /// other method so the caller keeps dispatching.  (`.toFloat`/`.toInt` on a
+    /// `str` are string parsing — handled separately in genStringMethod.)
+    fn genNumericConv(g: Generator, object: *const Ast.Expr, recv_is_float: bool, method: []const u8) anyerror!bool {
+        if (std.mem.eql(u8, method, "toFloat")) {
+            if (recv_is_float) {
+                try g.genExpr(object);
+            } else {
+                try g.w.writeAll("@as(f64, @floatFromInt(");
+                try g.genExpr(object);
+                try g.w.writeAll("))");
+            }
+            return true;
+        }
+        if (std.mem.eql(u8, method, "toInt")) {
+            if (recv_is_float) {
+                try g.w.writeAll("@as(i64, @intFromFloat(");
+                try g.genExpr(object);
+                try g.w.writeAll("))");
+            } else {
+                try g.genExpr(object);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    fn isFloatTypeName(name: []const u8) bool {
+        return std.mem.startsWith(u8, name, "float") or
+               std.mem.eql(u8, name, "num") or std.mem.eql(u8, name, "decimal");
+    }
+    fn isIntTypeName(name: []const u8) bool {
+        return std.mem.startsWith(u8, name, "int") or
+               std.mem.startsWith(u8, name, "uint") or std.mem.eql(u8, name, "byte");
+    }
+
     fn genStdlibMethod(
         g:      Generator,
         object: *const Ast.Expr,
@@ -6748,6 +6787,9 @@ const Generator = struct {
                 // WsConn method codegen so `ws.recv()/send()/close()` emit as
                 // `_ws_recv/_ws_send/_ws_close`, matching the selfhost emit.
                 if (std.mem.eql(u8, n.name, "WsConn"))     return g.genWsConnMethod(object, method, args);
+                // Numeric int↔float conversion on an annotated numeric receiver.
+                if (isFloatTypeName(n.name)) { if (try g.genNumericConv(object, true, method)) return true; }
+                if (isIntTypeName(n.name))   { if (try g.genNumericConv(object, false, method)) return true; }
                 // toString() on int/float/bool — format as string.
                 if (std.mem.eql(u8, method, "toString")) {
                     const fmt = if (std.mem.eql(u8, n.name, "float") or
@@ -14747,6 +14789,10 @@ const Generator = struct {
                 };
                 switch (tc_type) {
                     .string     => if (try g.genStringMethod(mem.object, mem.member, e.args)) return,
+                    // Numeric int↔float conversion (.toFloat/.toInt) on an
+                    // inferred-numeric receiver (e.g. an arithmetic expression).
+                    .int, .uint => if (try g.genNumericConv(mem.object, false, mem.member)) return,
+                    .float      => if (try g.genNumericConv(mem.object, true, mem.member)) return,
                     .char       => if (try g.genCharMethod(mem.object, mem.member, e.args)) return,
                     .tcp_conn      => if (try g.genTcpMethod(mem.object, mem.member, e.args)) return,
                     .udp_socket    => if (try g.genUdpMethod(mem.object, mem.member, e.args)) return,
