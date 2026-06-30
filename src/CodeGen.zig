@@ -6215,6 +6215,15 @@ const Generator = struct {
     }
 
     fn genLocalVar(g: Generator, n: *Ast.DeclVar) anyerror!void {
+        // `var _ = expr` is the discard idiom (QUICKSTART): Zig rejects a `const`/`var`
+        // binding literally named `_`, so emit the bare discard assignment `_ = expr;`.
+        if (std.mem.eql(u8, n.name, "_")) {
+            try g.writeIndent();
+            try g.w.writeAll("_ = ");
+            if (n.init) |init| try g.genExpr(init) else try g.w.writeAll("undefined");
+            try g.w.writeAll(";\n");
+            return;
+        }
         try g.writeIndent();
         // Use `const` unless the variable is actually reassigned somewhere in
         // the body (Zig treats `var` that is never mutated as a compile error).
@@ -7603,10 +7612,11 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "sleep")) {
-            // sys.sleep(ms: int) — sleep for the given number of milliseconds
-            try g.w.writeAll("std.Thread.sleep(@as(u64, @intCast(");
+            // sys.sleep(ms: int) — sleep for the given number of milliseconds.
+            // Zig 0.16 removed std.Thread.sleep; _sysSleep wraps std.Io.sleep.
+            try g.w.writeAll("_sysSleep(@as(i64, @intCast(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
-            try g.w.writeAll(")) * std.time.ns_per_ms)");
+            try g.w.writeAll(")))");
             return true;
         }
         if (std.mem.eql(u8, method, "go")) {

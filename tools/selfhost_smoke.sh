@@ -667,8 +667,16 @@ smoke_run test/log_json_test.zbr "log_json_test OK"
 # Crypto.encrypt/decrypt — AES-256-GCM with SHA-256 key derivation.
 smoke_run test/crypto_test.zbr "crypto_test OK"
 
-# ThreadPool(n) — bounded worker pool with Atomic counter.
+# ThreadPool(n) — bounded worker pool with Atomic counter (capturing lambda).
 smoke_run test/thread_pool_test.zbr "thread_pool_test OK"
+# BUG-152: ThreadPool.submit with a NON-capturing `def() fn()` lambda (fn-ptr path).
+smoke_run test/threadpool_nocapture_test.zbr "threadpool_nocapture_test OK"
+
+# BUG-151: `var _ = expr` discard idiom lowers to a bare `_ = expr;`.
+smoke_run test/discard_var_test.zbr "discard_var_test OK"
+
+# BUG-150: sys.sleep routes through std.Io.sleep on Zig 0.16 (run, not emit-only).
+smoke_run test/sys_sleep_test.zbr "sys_sleep_test OK"
 
 # UDP — Udp.bind(port) + Udp.socket() + send/recv/close round-trip.
 smoke_run test/udp_test.zbr "udp_test OK"
@@ -684,6 +692,11 @@ smoke examples/widget_smoke.zbr
 
 # GUI file dialogs: openFile/saveFile/openFolder/?[]const u8 + msgBox/msgBoxError.
 smoke examples/file_dialog_smoke.zbr
+
+# IO + networking + threads showcase: TCP key-value store (Tcp.serve on a sys.go
+# thread, client round-trips, File persistence).  Emit-only here (binds a port +
+# has timing); see its header for how to run it.
+smoke examples/kv_store.zbr
 
 # Nested namespaces: dotted syntax (Outer.Inner) and nested syntax.
 smoke_run test/nested_namespace_dotted_test.zbr "hi"

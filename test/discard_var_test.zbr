@@ -1,0 +1,10 @@
+# Regression for BUG-151: `var _ = expr` is the discard idiom.  It emitted an
+# invalid `const _ = …` (Zig rejects a binding named `_`); the fix emits the bare
+# discard assignment `_ = expr;`.
+def main()
+    var c: Atomic(int) = Atomic(int)(0)
+    var _ = c.add(1)
+    var _ = c.add(1)
+    var _ = c.add(1)
+    print(c.load())
+    print("discard_var_test OK")

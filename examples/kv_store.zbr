@@ -1,0 +1,142 @@
+# kv_store.zbr — exercises IO + networking + a background thread together.
+#
+# Run it:  zig build run -- examples/kv_store.zbr     (or: zebra examples/kv_store.zbr)
+#
+#   - networking: a TCP key-value server (Tcp.serve) + a TCP client (Tcp.connect)
+#   - threading: the server runs on a background thread (sys.go)
+#   - IO: the store is persisted to a file (File.write) and read back (File.read)
+#
+# Self-checking: 100 SET+CHK round-trips must all match, and the saved file must
+# hold 100 lines.  Prints "kv_dogfood: PASS" on success.
+#
+# IMPORTANT concurrency note (a real finding from dogfooding):
+#   Tcp.serve spawns a NEW thread per accepted connection, so handlers run
+#   concurrently.  The handlers here mutate module-global state (keys/vals/
+#   counters), which would race under concurrent clients.  Zebra cannot currently
+#   express the fix — a module-global Atomic/Mutex can't be initialized at
+#   container scope (init not comptime-known; see BUGS.md "module-global
+#   allocation init"), and the non-capturing handler thunk can't close over a
+#   lock.  So this test uses a SINGLE sequential client: each request completes
+#   (connect → reply → close) before the next begins, so at most one handler is
+#   live at a time and the shared state is never contended.  See pool_dogfood.zbr
+#   for the race-free ThreadPool exercise.
+
+var keys:    List(str) = List(str)()
+var vals:    List(str) = List(str)()
+var next_id: int = 0
+var n_ok:    int = 0
+var n_fail:  int = 0
+
+def storePut(k: str, v: str)
+    # Workers use unique keys, so this is append-only.  (List has no element
+    # setter / index-assignment yet — noted in BUGS.md.)
+    keys.add(k)
+    vals.add(v)
+
+def storeGet(k: str): str
+    var i = 0
+    while i < keys.len
+        if keys.at(i) == k
+            return vals.at(i)
+        i = i + 1
+    return ""
+
+# Server: one command per connection.
+#   ID            -> reply a fresh worker id
+#   SET k v       -> store, reply OK
+#   CHK k v       -> compare stored[k] with v; tally; reply MATCH / MISS
+#   SAVE          -> persist store to file, reply SAVED
+#   STATS         -> reply "<n_ok> <n_fail>"
+def runServer()
+    Tcp.serve(7997, def(conn: TcpConn)
+        var line: str = conn.readLine()
+        if line != ""
+            var parts = List(str)()
+            for p in line.split(" ")
+                parts.add(p)
+            var cmd: str = parts.at(0)
+            if cmd == "ID"
+                conn.write(next_id.toString() + "\n")
+                next_id = next_id + 1
+            else if cmd == "SET" and parts.len >= 3
+                storePut(parts.at(1), parts.at(2))
+                conn.write("OK\n")
+            else if cmd == "CHK" and parts.len >= 3
+                if storeGet(parts.at(1)) == parts.at(2)
+                    n_ok = n_ok + 1
+                    conn.write("MATCH\n")
+                else
+                    n_fail = n_fail + 1
+                    conn.write("MISS\n")
+            else if cmd == "SAVE"
+                var sb: StringBuilder = StringBuilder()
+                var i = 0
+                while i < keys.len
+                    sb.append(keys.at(i))
+                    sb.append("\t")
+                    sb.append(vals.at(i))
+                    sb.append("\n")
+                    i = i + 1
+                File.write("kv_store.txt", sb.build())
+                conn.write("SAVED\n")
+            else if cmd == "STATS"
+                conn.write(n_ok.toString() + " " + n_fail.toString() + "\n")
+            else
+                conn.write("ERR\n")
+        conn.close()
+    )
+
+# Client request: connect, send one command, read one reply, close.
+def request(cmd: str): str
+    var tries = 0
+    while tries < 50
+        if Tcp.connect("127.0.0.1", 7997) as conn
+            conn.write(cmd + "\n")
+            var resp: str = conn.readLine()
+            conn.close()
+            return resp
+        tries = tries + 1
+        sys.sleep(20)
+    return "(noconn)"
+
+# Client worker: asks the server for a unique id, then SETs+CHKs 25 keys.
+def clientWorker()
+    var id: str = request("ID")
+    var j = 0
+    while j < 25
+        var key: str = "w" + id + "_k" + j.toString()
+        var val: str = "v" + id + "_" + j.toString()
+        var _ = request("SET " + key + " " + val)
+        var _ = request("CHK " + key + " " + val)
+        j = j + 1
+
+def main()
+    sys.go(def()
+        runServer()
+    )
+    sys.sleep(500)   # let the server bind + start accepting
+
+    # Four "workers" run sequentially (not concurrently): each completes its 25
+    # round-trips before the next starts, so the server never has two live
+    # handlers contending for the shared store.  100 SET+CHK pairs total.
+    var s = 0
+    while s < 4
+        clientWorker()
+        s = s + 1
+
+    var _ = request("SAVE")
+    var content: str = File.read("kv_store.txt")
+    var nonempty = 0
+    for ln in content.split("\n")
+        if ln != ""
+            nonempty = nonempty + 1
+
+    # STATS replies "<n_ok> <n_fail>".  (str.toInt() doesn't dispatch on a
+    # List.at() result yet — noted in BUGS.md — so compare the reply directly.)
+    var stats: str = request("STATS")
+    print("stats=[" + stats + "] saved_lines=" + nonempty.toString())
+    if stats == "100 0" and nonempty == 100
+        print("kv_dogfood: PASS")
+    else
+        print("kv_dogfood: FAIL")
+    sys.exit(0)

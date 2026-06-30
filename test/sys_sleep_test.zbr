@@ -1,0 +1,8 @@
+# Regression for BUG-150: sys.sleep emitted Zig-0.16-removed std.Thread.sleep.
+# The fix routes through std.Io.sleep via the _sysSleep preamble helper.  This is
+# a RUN test (smoke_run) so the emitted Zig is actually compiled + executed — an
+# emit-only check would not have caught the missing stdlib member.
+def main()
+    sys.sleep(5)
+    sys.sleep(5)
+    print("sys_sleep_test OK")

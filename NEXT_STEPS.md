@@ -42,8 +42,13 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
 - Run full `compile_check.sh` corpus (JOBS-paced) + triage regressions.
 
 **Dogfood programs (IO + networking + multithreading — surface stdlib/runtime gaps):**
-- Multithreaded TCP key-value store server + load-testing client (`Tcp.serve`/`connect`,
-  `ThreadPool`/`Chan`, SQLite persistence, HashMap).
+- ✅ **DONE 2026-06-30** — TCP key-value store + ThreadPool (`scratchpad/kv_dogfood.zbr`,
+  `pool_dogfood.zbr`). Found 7 gaps: fixed BUG-150 (`sys.sleep`→`std.Io.sleep`, Zig 0.16),
+  BUG-151 (`var _ =` discard), BUG-152 (`ThreadPool.submit` comptime-fn); filed BUG-153
+  (module-global `Atomic`/`HashMap` uncompilable — **top concurrency follow-up**), BUG-154
+  (`Tcp.serve` per-connection-concurrent, no expressible lock), BUG-155 (`List` no setter),
+  BUG-156 (`str.toInt()` on `List.at()`). All gates green. **BUG-153 unblocks correct
+  shared-state servers — do it before the next net/thread dogfood.**
 - Concurrent web fetcher / link checker (worker threads pull URLs from a `Chan`, HTTP GET, aggregate).
 - Parallel log-processing pipeline (`Dir`/`File` walk → worker threads → merged histogram).
 - Multithreaded Mandelbrot / ray tracer → PPM (compute fan-out + binary file IO).

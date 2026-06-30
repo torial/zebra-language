@@ -20,6 +20,12 @@ pub fn _initIo(io: std.Io) void {
     @import("Parser.zig")._initIo(io);
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
+// sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
+// Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
+fn _sysSleep(ms: i64) void {
+    // `.awake` is 0.16's monotonic clock (the old CLOCK_MONOTONIC).
+    std.Io.sleep(_io, std.Io.Duration.fromMilliseconds(ms), .awake) catch {};
+}
 fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
@@ -486,9 +492,13 @@ const _ThreadPool = struct {
         const pa = std.heap.page_allocator;
         const task = pa.create(_ThreadTask) catch @panic("OOM");
         if (comptime @typeInfo(T) == .@"fn") {
-            const FnBox = struct { func: T };
+            // A by-value `fn() void` is a comptime-only type, so it can't live in a
+            // heap FnBox.  Coerce to the fn-pointer type first (mirrors _ws/_http/_tcp_serve).
+            const FnPtr = *const T;
+            const fp: FnPtr = f;
+            const FnBox = struct { func: FnPtr };
             const box = pa.create(FnBox) catch @panic("OOM");
-            box.* = .{ .func = f };
+            box.* = .{ .func = fp };
             const Inv = struct {
                 fn invoke(ctx: *anyopaque) void { @as(*FnBox, @ptrCast(@alignCast(ctx))).func(); }
                 fn free(ctx: *anyopaque) void { pa.destroy(@as(*FnBox, @ptrCast(@alignCast(ctx)))); }

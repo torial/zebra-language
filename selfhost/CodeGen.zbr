@@ -4219,6 +4219,17 @@ struct Generator
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
     def genLocalVar(n: DeclVar)
+        # `var _ = expr` is the discard idiom (QUICKSTART): Zig rejects a `const`/`var`
+        # binding literally named `_`, so emit the bare discard assignment `_ = expr;`.
+        if n.name == "_"
+            writeIndent()
+            w.emit("_ = ")
+            if n.init_expr != nil
+                genExpr(n.init_expr!)
+            else
+                w.emit("undefined")
+            w.emit(";\n")
+            return
         # Seed infer_ctx with this variable's type so subsequent statements
         # in the same method body can resolve it via inferExpr(Expr.ident(n.name)).
         # This covers generic class instances (Box(int)(42) → Type_.named("Box"))
@@ -11953,12 +11964,13 @@ struct Generator
             w.emit(")")
             return
         if mname == "sleep"
-            w.emit("std.Thread.sleep(@as(u64, @intCast(")
+            # Zig 0.16 removed std.Thread.sleep; _sysSleep wraps std.Io.sleep.
+            w.emit("_sysSleep(@as(i64, @intCast(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit(")) * std.time.ns_per_ms)")
+            w.emit(")))")
             return
         if mname == "cwd"
             w.emit("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))")

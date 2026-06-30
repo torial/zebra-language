@@ -1,6 +1,106 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-149. Next new bug: BUG-150.**
+**Last bug number generated: BUG-156. Next new bug: BUG-157.**
+
+---
+
+## BUG-150: `sys.sleep` emitted removed `std.Thread.sleep` (Zig 0.16) ✅ FIXED
+
+**Severity:** high (every timing/poll path was uncompilable on Zig 0.16). Found
+2026-06-30 dogfooding a multithreaded TCP server (`scratchpad/kv_dogfood.zbr`).
+
+**Cause:** `sys.sleep(ms)` emitted `std.Thread.sleep(ns)`, which Zig 0.16 removed
+(`error: root source file struct 'Thread' has no member named 'sleep'`). Sleeping
+now goes through the Io interface: `std.Io.sleep(io, duration, clock)`.
+
+**Fix:** new preamble helper `_sysSleep(ms)` → `std.Io.sleep(_io,
+std.Io.Duration.fromMilliseconds(ms), .awake) catch {}` (`.awake` is 0.16's
+monotonic clock; cancellation is benign for a pacing sleep so it's swallowed).
+Both codegens now emit `_sysSleep(@as(i64, @intCast(<ms>)))`. One site in
+`src/CodeGen.zig`, one in `selfhost/CodeGen.zbr`, helper in
+`selfhost/stdlib_preamble.zig` (shared by both compilers).
+
+## BUG-151: `var _ = expr` discard emitted invalid `const _ = expr` ✅ FIXED
+
+**Severity:** medium. The QUICKSTART discard idiom `var _ = total.add(1)` emitted
+`const _ = …;`, which Zig rejects: `error: '_' used as an identifier without @"_"
+syntax`. (Zig only accepts the bare discard-assignment `_ = expr;`, never a
+`const`/`var` binding literally named `_`.)
+
+**Fix:** `genLocalVar` now special-cases name `==` `_` and emits `_ = <expr>;`
+(or `_ = undefined;` when there's no init). One site each in `src/CodeGen.zig`
+and `selfhost/CodeGen.zbr`.
+
+## BUG-152: `ThreadPool.submit(def() …)` stored a comptime-only fn type ✅ FIXED
+
+**Severity:** medium (the documented `pool.submit(def() doWork())` form did not
+compile). `_ThreadPool.submit` boxed a by-value `fn() void` in a heap `FnBox`,
+but a by-value function type is comptime-only: `error: cannot store
+comptime-only type 'fn () void' at runtime`.
+
+**Fix:** coerce to the fn-*pointer* type first — `const FnPtr = *const T; const
+fp: FnPtr = f;` then box `fp` — exactly the pattern `_ws_serve`/`_http_serve`/
+`_tcp_serve` already use (cf. caf477c). `selfhost/stdlib_preamble.zig`, `submit`'s
+`.@"fn"` branch. `sys.go` was already fine (Thread.spawn takes a comptime fn).
+Validated by `scratchpad/pool_dogfood.zbr` (4 workers run, `pool.wait()` joins).
+
+## BUG-153: module-global var with an allocating initializer is uncompilable
+
+**Severity:** high for concurrent/stateful programs (blocks the natural shape of
+a shared store, global ECS/world, counters). Found 2026-06-30 dogfooding.
+
+**Symptom:** a module-level `var m: HashMap(str,str) = HashMap(str,str)()` emits
+`pub var _zbr_mv_m: … = std.StringHashMap(…).init(_allocator);` at container
+scope → `error: unable to resolve comptime value … initializer of container-level
+variable must be comptime-known`. Same for `var a: Atomic(int) = Atomic(int)(0)`
+(emits `_atomic_create(…)`, which calls the page allocator at comptime →
+`error: comptime call of extern function`). **Plain scalars and `List` globals
+DO work** (`= 0`, `= .empty` are comptime-known) — only *allocating* inits fail.
+
+**Why it matters:** a `Tcp.serve` handler is a non-capturing fn (BUG-154), so the
+only state it can reach is module-global. With allocating globals uncompilable,
+you cannot write a correct shared-state TCP server (no global map, no global
+atomic/lock). `kv_dogfood` works around it by keeping all shared state in plain-
+int + `List` globals and serializing access on a single client.
+
+**Fix direction:** deferred init. Emit `pub var _zbr_mv_X: T = undefined;` at
+container scope and run the real `_zbr_mv_X = <init>;` from a generated
+`_initModuleVars()` called once at startup — from the root entry thunk (after
+`_io`/`_allocator` are live) AND from `_initAllocator` (so dep modules init too;
+note the root never receives an `_initAllocator` call, so it needs the entry-thunk
+path). Detect "non-comptime init" by collection/Atomic type. Touches both
+codegens + entry/`_initAllocator` emission; gate carefully (round-trip risk).
+
+## BUG-154: `Tcp.serve` spawns a thread per connection, but no synchronization is expressible
+
+**Severity:** medium (design/ergonomics). `_tcp_serve` spawns a new
+`std.Thread` per accepted connection, so handlers run **concurrently**. A handler
+is coerced to `*const fn(TcpConn) void`, so it cannot capture — its only reachable
+mutable state is module-global, which (BUG-153) cannot hold an `Atomic`/`Mutex`.
+Net effect: **a concurrent TCP server cannot today protect shared state in
+Zebra.** Observed as nondeterministic `panic: integer overflow` / `reached
+unreachable code` under concurrent clients racing on `List.add`/counters.
+
+**Fix direction:** depends on BUG-153 (global atomics/locks) and/or a capturing-
+handler path for `Tcp.serve` (store the handler in a per-connection ctx that also
+carries a user state pointer). Until then, document that handlers must be
+stateless or access only single-writer state (one client at a time).
+
+## BUG-155: `List` has no element setter / index assignment
+
+**Severity:** low. `list.set(i, v)` → `error: no field or member function named
+'set'`, and there's no `list[i] = v` lowering. In-place update of a List element
+is currently impossible (workaround: rebuild the list, or use a HashMap). Add a
+`List.set(i, v)` stdlib method (and/or lower indexed assignment).
+
+## BUG-156: `str.toInt()` doesn't dispatch on a `List.at()` result
+
+**Severity:** low (inference gap). `sp.at(0).toInt()` where `sp: List(str)`
+emits `…toInt()` raw → `error: no field or member function named 'toInt' in
+'[]const u8'`. The numeric/parse method dispatch didn't see the receiver as a
+`str` because `List(str).at(i)`'s result type wasn't propagated at that call
+site. Works on a plain `str` local. Same family as the call-result inference gaps
+(BUG-147/149). Workaround: bind `var s: str = sp.at(0)` first, then `s.toInt()`.
 
 ---
 

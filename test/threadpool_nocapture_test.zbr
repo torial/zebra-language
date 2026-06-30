@@ -1,0 +1,23 @@
+# Regression for BUG-152: ThreadPool.submit with a NON-capturing `def() fn()`
+# lambda.  submit boxed the bare `fn() void` (a comptime-only type) and failed to
+# compile ("cannot store comptime-only type 'fn () void' at runtime"); the fix
+# coerces to `*const fn` first.  The pre-existing thread_pool_test only used a
+# *capturing* lambda (the struct/.call branch), so it never covered this path.
+def crunch()
+    var acc = 0
+    var i = 0
+    while i < 50000
+        acc = acc + (i % 7)
+        i = i + 1
+    print("worker done acc=" + acc.toString())
+
+def main()
+    var pool: ThreadPool = ThreadPool(4)
+    var s = 0
+    while s < 4
+        pool.submit(def()
+            crunch()
+        )
+        s = s + 1
+    pool.wait()
+    print("threadpool_nocapture_test OK")

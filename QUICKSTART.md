@@ -2655,6 +2655,14 @@ Ws.serve(8765, def(ws: WsConn)
 | `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client |
 | `Net.resolve(host)`               | `[]str`         | DNS lookup                          |
 
+> **Concurrency caveat (`Tcp.serve`).** Each accepted connection is handled on its
+> **own thread**, so handlers run *concurrently*. The handler is a non-capturing
+> `fn(TcpConn)`, so the only state it can touch is module-global — and a
+> module-global `Atomic`/`Mutex`/`HashMap` can't be initialized yet (see BUG-153).
+> Until that lands, write handlers that are **stateless** or touch only
+> single-writer state (i.e. drive the server with one client at a time). Sharing
+> mutable state across concurrent connections will race. (BUG-154.)
+
 #### `Udp` — datagram sockets
 
 ```zebra
