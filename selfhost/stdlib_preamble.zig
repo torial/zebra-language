@@ -24,6 +24,9 @@ pub fn _initAllocator(a: std.mem.Allocator) void {
 }
 pub fn _initIo(io: std.Io) void {
     _io = io;
+    // BUG-153: a module's deferred globals (HashMap/Set/Atomic) are assigned here,
+    // after both _allocator (set by the preceding _initAllocator) and _io are live.
+    _initModuleVars();
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the

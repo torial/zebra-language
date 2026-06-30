@@ -28,6 +28,12 @@ pub fn _initIo(io: std.Io) void {
     @import("CodeGen.zig")._initIo(io);
     @import("TypeChecker.zig")._initIo(io);
     @import("Checker.zig")._initIo(io);
+    _initModuleVars();
+}
+var _module_vars_inited: bool = false;
+pub fn _initModuleVars() void {
+    if (_module_vars_inited) return;
+    _module_vars_inited = true;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
@@ -4792,6 +4798,7 @@ pub fn main(_zinit: std.process.Init) void {
     @import("TypeChecker.zig")._initIo(_io);
     @import("Checker.zig")._initAllocator(_allocator);
     @import("Checker.zig")._initIo(_io);
+    _initModuleVars();
 // zbr:selfhost/main.zbr:1093
     var _try_err_6: ?anyerror = null;
     _try_blk_6: {

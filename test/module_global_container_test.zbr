@@ -1,0 +1,28 @@
+# Regression for BUG-153: module-global vars of allocating container types
+# (HashMap, Atomic) could not be initialised at container scope (their init
+# references the runtime _allocator / allocates, neither comptime-known). They are
+# now declared `= undefined` and assigned in a generated _initModuleVars() that
+# runs before any user code. List/scalar globals were always fine.
+var counts: HashMap(str, int) = HashMap(str, int)()
+var hits: Atomic(int) = Atomic(int)(0)
+var names: List(str) = List(str)()
+var total: int = 0
+
+def main()
+    counts.put("a", 10)
+    counts.put("b", 20)
+    var _ = hits.add(5)
+    var _ = hits.add(3)
+    names.add("x")
+    names.add("y")
+    total = total + 7
+    var sum: int = 0
+    if counts.get("a") as a
+        sum = sum + a
+    if counts.get("b") as b
+        sum = sum + b
+    # sum=30, hits=8, names.len=2, total=7
+    if sum == 30 and hits.load() == 8 and names.len == 2 and total == 7
+        print("module_global_container_test OK")
+    else
+        print("module_global_container_test FAIL sum=" + sum.toString() + " hits=" + hits.load().toString())

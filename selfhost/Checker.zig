@@ -22,6 +22,12 @@ pub fn _initIo(io: std.Io) void {
     @import("Parser.zig")._initIo(io);
     @import("Resolver.zig")._initIo(io);
     @import("AstBuilder.zig")._initIo(io);
+    _initModuleVars();
+}
+var _module_vars_inited: bool = false;
+pub fn _initModuleVars() void {
+    if (_module_vars_inited) return;
+    _module_vars_inited = true;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the

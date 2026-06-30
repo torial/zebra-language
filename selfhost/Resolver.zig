@@ -16,6 +16,12 @@ pub fn _initAllocator(a: std.mem.Allocator) void {
 pub fn _initIo(io: std.Io) void {
     _io = io;
     @import("Parser.zig")._initIo(io);
+    _initModuleVars();
+}
+var _module_vars_inited: bool = false;
+pub fn _initModuleVars() void {
+    if (_module_vars_inited) return;
+    _module_vars_inited = true;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
@@ -4363,6 +4369,7 @@ pub fn main(_zinit: std.process.Init) void {
     defer _arena.deinit();
     @import("Parser.zig")._initAllocator(_allocator);
     @import("Parser.zig")._initIo(_io);
+    _initModuleVars();
 // zbr:selfhost/Resolver.zbr:467
     std.debug.print("{s}\n", .{"resolver: loaded (run resolver_test.zbr to exercise)"});
 }

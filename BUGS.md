@@ -44,10 +44,40 @@ fp: FnPtr = f;` then box `fp` — exactly the pattern `_ws_serve`/`_http_serve`/
 `.@"fn"` branch. `sys.go` was already fine (Thread.spawn takes a comptime fn).
 Validated by `scratchpad/pool_dogfood.zbr` (4 workers run, `pool.wait()` joins).
 
-## BUG-153: module-global var with an allocating initializer is uncompilable
+## BUG-153: module-global var with an allocating initializer is uncompilable ✅ FIXED
 
 **Severity:** high for concurrent/stateful programs (blocks the natural shape of
 a shared store, global ECS/world, counters). Found 2026-06-30 dogfooding.
+
+**FIXED (2026-06-30):** deferred init implemented in both compilers. A module-global
+`var m: HashMap(K,V) = …` / `var a: Atomic(int) = …` (and `Set`/`Map`) is now emitted
+`pub var _zbr_mv_m: T = undefined;` at container scope; the real assignment runs in a
+generated `pub fn _initModuleVars()`, called from `_initIo` (so each dep module
+self-initialises) and explicitly from the root entry thunk (whose `_initIo` is never
+invoked). Requires an explicit type annotation (gives the `: T` and keeps the two
+compilers symmetric). Bootstrap emits `_initModuleVars` in the file header; selfhost
+emits it as a module footer (in `generateModuleWith`) with the call wired through the
+`_initIo` preamble + entry thunks. A selfhost-only follow-on: a module-global `Atomic`
+isn't tracked by `inferExpr` (locals/params only), so its `.add` was mis-rewritten to
+`List.append` — the rewrite now consults `isModuleGlobalAtomic(name)` (scans
+`module_decls`). Verified: `scratchpad/repro153.zbr` (bootstrap) +
+`test/module_global_container_test.zbr` (selfhost, smoke 187/187).
+
+**Remaining edge:** an *unannotated* module global (`var m = HashMap(K,V)()`) is not
+deferred; module globals in a *non-root* module rely on the dep's `_initIo` path
+(covered) but transitive-only deps aren't reached (matches the pre-existing
+`_initAllocator`/`_initIo` propagation limitation).
+
+---
+### Original report
+
+**Symptom:** a module-level `var m: HashMap(str,str) = HashMap(str,str)()` emits
+`pub var _zbr_mv_m: … = std.StringHashMap(…).init(_allocator);` at container
+scope → `error: unable to resolve comptime value … initializer of container-level
+variable must be comptime-known`. Same for `var a: Atomic(int) = Atomic(int)(0)`
+(emits `_atomic_create(…)`, which calls the page allocator at comptime →
+`error: comptime call of extern function`). **Plain scalars and `List` globals
+DO work** (`= 0`, `= .empty` are comptime-known) — only *allocating* inits fail.
 
 **Symptom:** a module-level `var m: HashMap(str,str) = HashMap(str,str)()` emits
 `pub var _zbr_mv_m: … = std.StringHashMap(…).init(_allocator);` at container

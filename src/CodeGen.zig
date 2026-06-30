@@ -2324,6 +2324,24 @@ const Generator = struct {
             defer g.alloc.free(imp_path);
             try g.w.print("    @import(\"{s}.zig\")._initIo(io);\n", .{imp_path});
         }
+        // BUG-153: initialise this module's deferred globals once both _allocator and
+        // _io are live.  _initIo runs after _initAllocator (entry thunk + dep loop),
+        // so this is the latest safe point.  The root calls _initModuleVars() directly
+        // from its entry thunk (its _initIo is never invoked).
+        try g.w.writeAll("    _initModuleVars();\n}\n");
+        // _initModuleVars assigns module-global vars whose initializer is not
+        // comptime-known (HashMap/Set/Atomic — they reference the runtime _allocator
+        // or allocate).  They are declared `= undefined` at container scope; the once
+        // guard tolerates _initAllocator/_initIo being reached transitively many times.
+        try g.w.writeAll("var _module_vars_inited: bool = false;\n");
+        try g.w.writeAll("pub fn _initModuleVars() void {\n    if (_module_vars_inited) return;\n    _module_vars_inited = true;\n");
+        for (module.decls) |decl| {
+            const v = switch (decl) { .var_ => |v| v, else => continue };
+            if (g.deferredModuleVarGeneric(v) == null) continue;
+            try g.w.print("    {s}{s} = ", .{ module_var_prefix, v.name });
+            try g.genExpr(v.init.?);
+            try g.w.writeAll(";\n");
+        }
         try g.w.writeAll("}\n");
         try g.w.writeAll(build_options.stdlib_preamble_pre_gui);
         // Recursive error-message walker: each module checks its own
@@ -4279,6 +4297,7 @@ const Generator = struct {
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
+                    "    _initModuleVars();\n" ++
                     "{s}" ++
                     "{s}" ++
                     "{s}" ++
@@ -4300,6 +4319,7 @@ const Generator = struct {
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
                     "    _allocator = _arena.allocator();\n" ++
+                    "    _initModuleVars();\n" ++
                     "{s}" ++
                     "{s}" ++
                     "{s}" ++
@@ -5545,9 +5565,38 @@ const Generator = struct {
 
     // ── Top-level var / const ─────────────────────────────────────────────────
 
+    /// BUG-153: a module-global `var` of an allocating stdlib container type
+    /// (HashMap/Map/Set/Atomic) cannot be initialized at container scope — its
+    /// init references the runtime `_allocator` (HashMap/Set) or allocates
+    /// (Atomic), neither of which is comptime-known. Such vars are emitted
+    /// `= undefined` here and assigned in the generated `_initModuleVars()`.
+    /// Returns the container's GenericTypeRef (for the `: T` annotation), else null.
+    fn isDeferredContainerName(nm: []const u8) bool {
+        return std.mem.eql(u8, nm, "HashMap") or std.mem.eql(u8, nm, "Map") or
+            std.mem.eql(u8, nm, "Set") or std.mem.eql(u8, nm, "Atomic");
+    }
+    fn deferredModuleVarGeneric(g: Generator, n: *Ast.DeclVar) ?Ast.GenericTypeRef {
+        _ = g;
+        if (n.is_const) return null;
+        if (n.init == null) return null;
+        // Requires an explicit annotation `var m: HashMap(K,V) = …` — that gives
+        // the `: T` for the `= undefined` decl, and keeps both compilers symmetric.
+        if (n.type_) |tr| {
+            if (tr == .generic and isDeferredContainerName(tr.generic.name)) return tr.generic;
+        }
+        return null;
+    }
+
     fn genTopVar(g: Generator, n: *Ast.DeclVar) anyerror!void {
         try g.writeIndent();
         const kw: []const u8 = if (n.is_const) "const" else "var";
+        // BUG-153: defer the init of allocating-container globals to _initModuleVars().
+        if (g.deferredModuleVarGeneric(n)) |gtr| {
+            try g.w.print("pub {s} {s}{s}: ", .{ kw, module_var_prefix, n.name });
+            try g.genType(.{ .generic = gtr });
+            try g.w.writeAll(" = undefined;\n\n");
+            return;
+        }
         // BUG-137: module-level vars are file-scope `pub var`/`pub const`. Zig
         // forbids any function-local/param from shadowing a file-scope name, so a
         // module var named like a common local (`total`, `count`, `g`, …) — or
@@ -5781,6 +5830,12 @@ const Generator = struct {
                     try _eg.writeIndent();
                     try _eg.w.print("@import(\"{s}.zig\")._initIo(_io);\n", .{_ep});
                 }
+                // BUG-153: initialise this module's deferred globals (allocating
+                // containers) now that _allocator/_io and all deps are live, before
+                // any user code runs.  The root's own _initIo is never called, so this
+                // explicit call is how the root's module vars get initialised.
+                try _eg.writeIndent();
+                try _eg.w.writeAll("_initModuleVars();\n");
             }
 
             // `zebra build --list-targets`: set flag before any user code so _build_run()
@@ -12065,6 +12120,7 @@ const Generator = struct {
             "    _io = _zinit.io;\n" ++
             "    _args = _zinit.minimal.args;\n" ++
             "    _allocator = _arena.allocator();\n" ++
+            "    _initModuleVars();\n" ++
             "    defer _arena.deinit();\n" ++
             "    var _test_pass: usize = 0;\n" ++
             "    var _test_fail: usize = 0;\n",

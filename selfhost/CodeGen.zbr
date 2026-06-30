@@ -639,6 +639,12 @@ def typeRefStr(tr: TypeRef): str
             return aa.name + "(...)"
     return "unknown"
 
+# BUG-153: stdlib container types whose ctor is not comptime-known (HashMap/Set
+# reference the runtime _allocator; Atomic allocates).  A module-global `var` of
+# such a type is declared `= undefined` and assigned in _initModuleVars().
+def isDeferredContainer(nm: str): bool
+    return nm == "HashMap" or nm == "Map" or nm == "Set" or nm == "Atomic"
+
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
@@ -794,6 +800,26 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             w.emit("_field_types };\n")
             ri2 = ri2 + 1
         w.emit("    return .{ .items = &.{} };\n}\n")
+    # BUG-153: _initModuleVars() assigns module globals whose initializer is not
+    # comptime-known (HashMap/Set/Atomic).  Emitted for every module (even empty) so
+    # the entry thunk's root call and _initIo's per-dep call always resolve.  The
+    # once guard tolerates being reached transitively more than once.
+    w.emit("var _module_vars_inited: bool = false;\n")
+    w.emit("pub fn _initModuleVars() void {\n")
+    w.emit("    if (_module_vars_inited) return;\n")
+    w.emit("    _module_vars_inited = true;\n")
+    for mvd in m.decls
+        if mvd is Decl.var_ as mv
+            if not mv.is_const and not mv.mods.is_static and mv.type_ != nil and mv.init_expr != nil
+                var mvt: TypeRef = mv.type_!
+                if mvt is TypeRef.generic as mvg
+                    if isDeferredContainer(mvg.name)
+                        w.emit("    _zbr_mv_")
+                        w.emit(mv.name)
+                        w.emit(" = ")
+                        g.genExpr(mv.init_expr!)
+                        w.emit(";\n")
+    w.emit("}\n")
     return w.output()
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
@@ -833,6 +859,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
+    sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
     if main_throws
@@ -907,6 +934,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _allocator = _arena.allocator();\n")
+    sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
@@ -1886,6 +1914,19 @@ struct Generator
             caller_ptr_params = StrSet()
         return g
 
+    # BUG-153: true if `nm` is a module-global `var` of type Atomic(T).  A module
+    # global isn't tracked by infer_ctx or the per-method atomic_locals set, so the
+    # `.add` rewrite consults this directly to keep an Atomic's `.add` (vs List's
+    # `.append`).  Non-mutating (returns bool) — safe to call on a const receiver.
+    def isModuleGlobalAtomic(nm: str): bool
+        for gd in module_decls
+            if gd is Decl.var_ as gv
+                if gv.name == nm and gv.type_ != nil
+                    if gv.type_! is TypeRef.generic as gvg
+                        if gvg.name == "Atomic"
+                            return true
+        return false
+
     # ── Output helpers ────────────────────────────────────────────────────────
 
     def emitTryBlockCatch()
@@ -2256,6 +2297,18 @@ struct Generator
             if owner == "" and not n.mods.is_static
                 w.emit("_zbr_mv_")
             w.emit(n.name)
+            # BUG-153: an allocating-container module global (HashMap/Set/Atomic)
+            # cannot be initialised at container scope (its init references the
+            # runtime _allocator or allocates).  Declare it `= undefined` and assign
+            # it in _initModuleVars() (called from _initIo and the entry thunk).
+            if owner == "" and not n.mods.is_static and not n.is_const and n.type_ != nil
+                var dgt: TypeRef = n.type_!
+                if dgt is TypeRef.generic as dgg
+                    if isDeferredContainer(dgg.name)
+                        w.emit(": ")
+                        genType(dgt)
+                        w.emit(" = undefined;\n")
+                        return
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar
             # does for untyped mutable locals.  A typed static uses its annotation;
@@ -3316,6 +3369,10 @@ struct Generator
                         ei.w.emit("@import(\"" + ei_path + ".zig\")._initAllocator(_allocator);\n")
                         ei.writeIndent()
                         ei.w.emit("@import(\"" + ei_path + ".zig\")._initIo(_io);\n")
+                # BUG-153: init this (root) module's deferred globals now that
+                # _allocator/_io and all deps are live, before any user code runs.
+                ei.writeIndent()
+                ei.w.emit("_initModuleVars();\n")
             # @profile: record entry time and defer _profile_end() on any exit path.
             if m.mods.is_profile
                 var prof_ig = indented()
@@ -9995,15 +10052,20 @@ struct Generator
             var is_strset = false
             var is_class_ref = false
             var is_class_inst = false
+            var is_atomic = false
             if add_obj_name != nil
                 var add_nm = add_obj_name!
                 is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
-            if .infer_ctx != nil and not is_strset and not is_class_ref
+                # BUG-153: a module-global Atomic isn't tracked by inferExpr (which
+                # only sees locals/params), so guard the List `.add`→`.append` rewrite
+                # explicitly — an Atomic's `.add` is a real method, not a List append.
+                is_atomic = atomic_locals.contains_(add_nm) or isModuleGlobalAtomic(add_nm)
+            if .infer_ctx != nil and not is_strset and not is_class_ref and not is_atomic
                 var add_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if add_recv_t is Type_.named as nc
                     is_class_inst = nc.len > 0
-            if not is_strset and not is_class_ref and not is_class_inst
+            if not is_strset and not is_class_ref and not is_class_inst and not is_atomic
                 var add_item_is_str = false
                 var add_item_is_ref = false
                 var add_item_ref_type = ""

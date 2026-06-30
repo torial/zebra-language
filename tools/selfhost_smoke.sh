@@ -714,6 +714,10 @@ smoke_run test/field_name_collision_test.zbr "text=5 list=3"
 # across functions and read via interpolation / int-method dispatch.
 smoke_run test/module_var_test.zbr "module_var_test: OK"
 
+# BUG-153: module-global allocating containers (HashMap/Atomic) init via the
+# generated _initModuleVars() (declared `= undefined` at container scope).
+smoke_run test/module_global_container_test.zbr "module_global_container_test OK"
+
 # BUG-137: module var named like a preamble local/param (`total`, `count`) must
 # compile (emitted as `_zbr_mv_*`); a shadowing local keeps its bare name.
 smoke_run test/module_var_collision_test.zbr "module_var_collision_test: OK"
