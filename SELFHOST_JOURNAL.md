@@ -2160,7 +2160,36 @@ Bootstrap:  5/5 PASS
 Smoke:      106/106 PASS (opt_chain_test_run added)
 ```
 
-## N-API node-addon target (`--target node-addon`) — bootstrap done, selfhost emit pending
+## N-API node-addon target (`--target node-addon`) — bootstrap + selfhost BOTH done
+
+> Update (2026-06-29): the selfhost emit-mirror below is now COMPLETE. Both
+> `zebra-bootstrap.exe` and the selfhost `zebra.exe` compile a `.zbr` to a
+> working `.node` + `.js` + `.d.ts` (verified: Node loads either build and
+> int/float/bool/str exports return correct values). The selfhost mirror lives
+> in `selfhost/CodeGen.zbr` (`generateNodeAddon`/`napiWrapperStr`/`napiGlueStr`/
+> `napiRegisterStr`/`generateNodeDts` + helpers) and `selfhost/main.zbr`
+> (`--target node-addon` parse, `MultiCompiler.node_addon` branch, `resolveNodeApi`
+> node-gyp discovery, `zig build-lib` via `sys.run`). Three selfhost-TC/codegen
+> gaps surfaced and were worked around in the `.zbr` (filed below). The original
+> "bootstrap only" framing in the rest of this section is now historical.
+
+### Selfhost-mirror gaps worked around (2026-06-29)
+
+1. **Optional-field `as` unwrap.** `if mth.return_type as rt` (where `return_type:
+   TypeRef?` is a struct FIELD) → "requires an optional type, got 'TypeRef'".
+   Optional *params* unwrap fine; optional *field* access in `as` does not.
+   Worked around by routing through a helper that takes `TypeRef?` as a param.
+2. **Concat on capture binding.** `la + "..."` where `la` is bound by
+   `if sys.getenv(...) as la` emitted `la + "..."` (pointer+pointer) instead of
+   `_str_concat`. Worked around by copying into a typed `var x: str = la` first.
+3. **`for x in Dir.list(...)`** (for-in directly over a `Dir.list` call result)
+   emitted a non-indexable `for` over an ArrayList. Worked around with the
+   `var e = Dir.list(...); while i < e.len` index pattern (matches existing code).
+
+These are real bootstrap-codegen/selfhost-TC gaps worth fixing centrally later;
+NEXT_STEPS tracks them.
+
+### (historical) bootstrap-first implementation
 
 Added `@node_export` and a `--target node-addon` backend that compiles a `.zbr`
 to a Node.js native addon (`.node` + `.js` shim + `.d.ts` declarations), verified

@@ -1022,6 +1022,283 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
         sb.append(entry)
     return sb.build()
 
+# ── N-API node-addon glue (mirror of src/CodeGen.zig generateNodeAddonGlue) ───
+# Emits one `_napi_w_<name>` wrapper per @node_export function (top-level `def`
+# or class `static def`) plus `napi_register_module_v1`.  JS export name = the
+# method name.  Per-call arena (Phase 7) wraps any wrapper that marshals a string.
+
+def napiTypeName(name: str): bool
+    if name.startsWith("int")
+        return true
+    if name.startsWith("float")
+        return true
+    if name == "bool"
+        return true
+    if name == "str" or name == "String"
+        return true
+    return false
+
+def napiTypeRefName(tr: TypeRef?): str
+    if tr as t
+        if t is TypeRef.named as n
+            return n.name
+    return ""
+
+def napiIsStr(tr: TypeRef?): bool
+    var nm: str = napiTypeRefName(tr)
+    return nm == "str" or nm == "String"
+
+def napiTsType(tr: TypeRef?): str
+    var nm: str = napiTypeRefName(tr)
+    if nm.startsWith("int") or nm.startsWith("float")
+        return "number"
+    if nm == "bool"
+        return "boolean"
+    if nm == "str" or nm == "String"
+        return "string"
+    return "void"
+
+def napiNeedsArena(mth: DeclMethod): bool
+    if napiIsStr(mth.return_type)
+        return true
+    var pi: int = 0
+    while pi < mth.params.len
+        if napiIsStr(mth.params.at(pi).type_)
+            return true
+        pi = pi + 1
+    return false
+
+def napiWrapperStr(owner: str, mth: DeclMethod): str
+    var nm: str = mth.name
+    var sb: StringBuilder = StringBuilder()
+    sb.append("fn _napi_w_")
+    sb.append(nm)
+    sb.append("(env: napi.napi_env, info: napi.napi_callback_info) callconv(.c) napi.napi_value {\n")
+    if napiNeedsArena(mth)
+        sb.append("    const _napi_parent = _allocator;\n")
+        sb.append("    var _napi_arena = std.heap.ArenaAllocator.init(_allocator);\n")
+        sb.append("    _allocator = _napi_arena.allocator();\n")
+        sb.append("    defer { _allocator = _napi_parent; _napi_arena.deinit(); }\n")
+    var np: int = mth.params.len
+    if np == 0
+        sb.append("    _ = info;\n")
+    else
+        var nps: str = np.toString()
+        sb.append("    var _argc: usize = ")
+        sb.append(nps)
+        sb.append(";\n    var _argv: [")
+        sb.append(nps)
+        sb.append("]napi.napi_value = undefined;\n")
+        sb.append("    _ = napi.napi_get_cb_info(env, info, &_argc, &_argv, null, null);\n")
+        sb.append("    if (_argc < ")
+        sb.append(nps)
+        sb.append(") return _napi_throw(env, \"")
+        sb.append(nm)
+        sb.append(": expected ")
+        sb.append(nps)
+        sb.append(" argument(s)\");\n")
+        var pi: int = 0
+        while pi < np
+            var pt: str = napiTypeRefName(mth.params.at(pi).type_)
+            var ix: str = pi.toString()
+            if pt.startsWith("int")
+                sb.append("    var _a")
+                sb.append(ix)
+                sb.append(": i64 = 0;\n    _ = napi.napi_get_value_int64(env, _argv[")
+                sb.append(ix)
+                sb.append("], &_a")
+                sb.append(ix)
+                sb.append(");\n")
+            else if pt.startsWith("float")
+                sb.append("    var _a")
+                sb.append(ix)
+                sb.append(": f64 = 0;\n    _ = napi.napi_get_value_double(env, _argv[")
+                sb.append(ix)
+                sb.append("], &_a")
+                sb.append(ix)
+                sb.append(");\n")
+            else if pt == "bool"
+                sb.append("    var _a")
+                sb.append(ix)
+                sb.append(": bool = false;\n    _ = napi.napi_get_value_bool(env, _argv[")
+                sb.append(ix)
+                sb.append("], &_a")
+                sb.append(ix)
+                sb.append(");\n")
+            else
+                sb.append("    var _len")
+                sb.append(ix)
+                sb.append(": usize = 0;\n    _ = napi.napi_get_value_string_utf8(env, _argv[")
+                sb.append(ix)
+                sb.append("], null, 0, &_len")
+                sb.append(ix)
+                sb.append(");\n    const _buf")
+                sb.append(ix)
+                sb.append(" = _allocator.alloc(u8, _len")
+                sb.append(ix)
+                sb.append(" + 1) catch return _napi_throw(env, \"")
+                sb.append(nm)
+                sb.append(": out of memory\");\n    var _wr")
+                sb.append(ix)
+                sb.append(": usize = 0;\n    _ = napi.napi_get_value_string_utf8(env, _argv[")
+                sb.append(ix)
+                sb.append("], _buf")
+                sb.append(ix)
+                sb.append(".ptr, _len")
+                sb.append(ix)
+                sb.append(" + 1, &_wr")
+                sb.append(ix)
+                sb.append(");\n    const _a")
+                sb.append(ix)
+                sb.append(": []const u8 = _buf")
+                sb.append(ix)
+                sb.append("[0.._wr")
+                sb.append(ix)
+                sb.append("];\n")
+            pi = pi + 1
+    # A named return type ⇒ non-void (napiTypeRefName returns "" for nil/void_).
+    var rnm: str = napiTypeRefName(mth.return_type)
+    var retVoid: bool = rnm == ""
+    sb.append("    ")
+    if not retVoid
+        sb.append("const _ret = ")
+    if owner.len > 0
+        sb.append(owner)
+        sb.append(".")
+    sb.append(nm)
+    sb.append("(")
+    var ci: int = 0
+    while ci < np
+        if ci > 0
+            sb.append(", ")
+        sb.append("_a")
+        sb.append(ci.toString())
+        ci = ci + 1
+    sb.append(");\n")
+    if retVoid
+        sb.append("    return _napi_undefined(env);\n")
+    else
+        sb.append("    var _out: napi.napi_value = undefined;\n")
+        if rnm.startsWith("int")
+            sb.append("    _ = napi.napi_create_int64(env, _ret, &_out);\n")
+        else if rnm.startsWith("float")
+            sb.append("    _ = napi.napi_create_double(env, _ret, &_out);\n")
+        else if rnm == "bool"
+            sb.append("    _ = napi.napi_get_boolean(env, _ret, &_out);\n")
+        else
+            sb.append("    _ = napi.napi_create_string_utf8(env, _ret.ptr, _ret.len, &_out);\n")
+        sb.append("    return _out;\n")
+    sb.append("}\n\n")
+    return sb.build()
+
+def napiRegisterStr(name: str): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("    _ = napi.napi_create_function(env, \"")
+    sb.append(name)
+    sb.append("\", ")
+    sb.append(name.len.toString())
+    sb.append(", _napi_w_")
+    sb.append(name)
+    sb.append(", null, &_f);\n    _ = napi.napi_set_named_property(env, exports, \"")
+    sb.append(name)
+    sb.append("\", _f);\n")
+    return sb.build()
+
+def napiGlueStr(m: Module): str
+    var sb: StringBuilder = StringBuilder()
+    for d in m.decls
+        if d is Decl.method as mth
+            if mth.mods.is_node_export
+                sb.append(napiWrapperStr("", mth))
+        if d is Decl.class_ as cls
+            for mem in cls.members
+                if mem is Decl.method as cm
+                    if cm.mods.is_node_export
+                        sb.append(napiWrapperStr(cls.name, cm))
+    sb.append("export fn napi_register_module_v1(env: napi.napi_env, exports: napi.napi_value) napi.napi_value {\n")
+    sb.append("    var _f: napi.napi_value = undefined;\n")
+    for d in m.decls
+        if d is Decl.method as mth
+            if mth.mods.is_node_export
+                sb.append(napiRegisterStr(mth.name))
+        if d is Decl.class_ as cls
+            for mem in cls.members
+                if mem is Decl.method as cm
+                    if cm.mods.is_node_export
+                        sb.append(napiRegisterStr(cm.name))
+    sb.append("    return exports;\n}\n")
+    return sb.build()
+
+# Extract the helpers block of napi_preamble.zig (between the marker comments),
+# so the `//!` file-doc header never lands mid-file.
+def napiExtractHelpers(content: str): str
+    var after_start: str = content
+    for part in content.split("// === NAPI_PREAMBLE_HELPERS_START ===\n")
+        after_start = part
+    var helpers: str = after_start
+    for part in after_start.split("// === NAPI_PREAMBLE_HELPERS_END ===\n")
+        helpers = part
+        break
+    return helpers
+
+# Full node-addon Zig: stdlib preamble + napi preamble + declarations + glue.
+# No entry-point thunk (a .node has no main).
+def generateNodeAddon(m: Module, file: str, preamble_path: str, napi_preamble_path: str, strip_contracts: bool): str throws
+    require
+        preamble_path.len > 0
+        napi_preamble_path.len > 0
+    var preamble: str = File.read(preamble_path)
+    var napi_helpers: str = napiExtractHelpers(File.read(napi_preamble_path))
+    var decls: str = generateModuleWith(m, file, List(str)(), ModuleTypes(), strip_contracts, nil, false)
+    var sb: StringBuilder = StringBuilder()
+    sb.append("// Generated by zebra-selfhost (node-addon).\n// Source: ")
+    sb.append(fwdSlashes(file))
+    sb.append("\n\n")
+    sb.append(preamble)
+    sb.append("\n")
+    sb.append(napi_helpers)
+    sb.append("\n")
+    sb.append(decls)
+    sb.append("\n")
+    sb.append(napiGlueStr(m))
+    return sb.build()
+
+# TypeScript declarations for each @node_export function (`<stem>.d.ts`).
+def generateNodeDts(m: Module, file: str): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("// Auto-generated by zebra --target node-addon. Do not edit.\n// Source: ")
+    sb.append(fwdSlashes(file))
+    sb.append("\n\n")
+    for d in m.decls
+        if d is Decl.method as mth
+            if mth.mods.is_node_export
+                sb.append(napiDtsLine(mth))
+        if d is Decl.class_ as cls
+            for mem in cls.members
+                if mem is Decl.method as cm
+                    if cm.mods.is_node_export
+                        sb.append(napiDtsLine(cm))
+    return sb.build()
+
+def napiDtsLine(mth: DeclMethod): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("export declare function ")
+    sb.append(mth.name)
+    sb.append("(")
+    var pi: int = 0
+    while pi < mth.params.len
+        if pi > 0
+            sb.append(", ")
+        var p: Param = mth.params.at(pi)
+        sb.append(p.name)
+        sb.append(": ")
+        sb.append(napiTsType(p.type_))
+        pi = pi + 1
+    sb.append("): ")
+    sb.append(napiTsType(mth.return_type))
+    sb.append(";\n")
+    return sb.build()
+
 def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, tag_filter: str?): str throws
     require
         preamble_path.len > 0

@@ -29,17 +29,21 @@ Authoritative priority queue for the project. Update this file rather than regen
 → `math.node` (loadable addon) + `math.js` shim + `math.d.ts`. Verified end-to-end:
 Node `require()`d a Zebra-compiled addon and int/float/bool/str exports returned
 correct values. Round-trip gate green; selfhost AST/Parser parse `@node_export`.
-See QUICKSTART §45 and the SELFHOST_JOURNAL note. Remaining, in priority order:
+See QUICKSTART §45 and the SELFHOST_JOURNAL note.
 
-- [ ] **Selfhost emit parity (functional-equivalence rule).** Mirror
-  `generateNodeAddonGlue`/`emitNapiWrapper`/`generateNodeDts` into
-  `selfhost/CodeGen.zbr` and `--target node-addon` + `compileNodeAddon` +
-  node-gyp discovery into `selfhost/main.zbr`. Today only `zebra-bootstrap.exe`
-  emits the glue; the selfhost binary parses `@node_export` but ignores it.
-- [ ] **Allocator lifetime (Phase 7).** Per-call arena save/restore in each
-  wrapper so string args/returns don't accumulate in the global arena over a
-  long-lived Node process. `napi_create_string_utf8` copies into V8 before the
-  restore, so the ordering is safe. Numeric/bool exports don't allocate.
+- [x] **Selfhost emit parity (functional-equivalence rule).** DONE 2026-06-29 —
+  `generateNodeAddon`/glue/`generateNodeDts` mirrored into `selfhost/CodeGen.zbr`;
+  `--target node-addon` + `resolveNodeApi` (node-gyp discovery) + `zig build-lib`
+  in `selfhost/main.zbr`. Both compilers build a working `.node` (verified in Node).
+  Round-trip + smoke green.
+- [x] **Allocator lifetime (Phase 7).** DONE — per-call child arena wraps any
+  string-marshaling wrapper in both compilers; `napi_create_string_utf8` copies
+  into V8 before the arena is freed. Numeric/bool exports allocate nothing.
+- [ ] **Central fixes for 3 selfhost gaps found during the mirror** (see
+  SELFHOST_JOURNAL "Selfhost-mirror gaps"): optional-field `as` unwrap;
+  str-concat on an `if … as x` capture binding; `for x in Dir.list(...)`
+  for-in over a call result. Worked around in the `.zbr`; worth fixing in the
+  TC/codegen centrally.
 - [ ] **Test harness (Phase 8).** `test/node_addon/` — emit-only smoke in
   `zig build test` (no Node dependency) + an opt-in Node runner for environments
   that have node + node-gyp headers.
