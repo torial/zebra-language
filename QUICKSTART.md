@@ -3827,8 +3827,8 @@ not a C pointer, so `str` parameters are not directly C-callable).
 
 ## 45. `@node_export` — Node.js native addons (`--target node-addon`)
 
-Compile a `.zbr` to a Node.js native addon (`.node`). Annotate any top-level
-`def` (or `static def` class method) with `@node_export`:
+Compile a `.zbr` to a Node.js native addon (`.node`). Annotate a top-level `def`
+— or a class method inside a `static` block — with `@node_export`:
 
 ```zebra
 # math.zbr
@@ -3839,6 +3839,14 @@ def add(a: int, b: int): int
 @node_export
 def greet(name: str): str
     return "Hello, " + name + "!"
+
+# Class methods: put @node_export inside a `static` block.
+# (`@node_export static def …` inline does not parse — use the block form.)
+class Calc
+    static
+        @node_export
+        def square(n: int): int
+            return n * n
 ```
 
 ```bash
