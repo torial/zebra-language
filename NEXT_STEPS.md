@@ -23,6 +23,42 @@ Authoritative priority queue for the project. Update this file rather than regen
 
 ---
 
+## Language gaps blocking the GameEngine on current Zebra (found 2026-06-29)
+
+Bringing the GameEngine `zbra/` corpus up to the current compiler surfaced two
+**foundational language gaps** — not corpus-syntax drift, real missing/!broken
+features that any numeric or collection-heavy program hits. Both must land
+before the engine (and the BBAT "First Horseman" slice) can compile end-to-end;
+both are higher-leverage than per-site workarounds and **#1 is arguably a 1.0
+blocker**.
+
+1. **Numeric `int ↔ float` conversion is missing.** `i.toFloat()` on an `int`
+   and `g.toInt()` on a `float` both fail (`no field 'toFloat' in comptime_int`).
+   The `toFloat`/`toInt`/`tryInt`/`tryFloat` method codegen is **string-parse
+   only** (`std.fmt.parseInt`/`parseFloat`) — there is no numeric conversion at
+   all, despite QUICKSTART §21 claiming `i.toFloat()` works (that line is
+   aspirational and should be corrected). Fix: when the receiver is numeric,
+   emit `@floatFromInt`/`@intFromFloat` (with `@floor`/trunc semantics decided)
+   instead of the parse path; keep the string-parse path for `str` receivers.
+   Both compilers + regen + gate. Repro: `scratchpad/numconv.zbr`.
+2. **`for x in <capture binding>` over a `List` omits `.items`.** Pervasive
+   pattern `var c = map.get(k); if c as cs: for x in cs` emits `for (cs)` not
+   `for (cs.items)` → "not indexable". `objIsList`/`getExprDeclaredType` don't
+   recognize an `as`-capture binding as a List (needs HashMap.get return-type
+   inference + `as`-binding type propagation). **Same root as the N-API
+   capture-binding gaps below** — fixing centrally clears both. Repro:
+   `scratchpad/forin_capture.zbr`.
+
+Smaller, related: identifiers used only inside a `zig"…"` literal aren't counted
+by ref-analysis (→ a spurious `_ = v;` discard before the literal); and
+QUICKSTART §21's numeric-conversion claim needs correcting once #1 lands.
+
+GameEngine status: `feat/raylib-6.0-migration` is merged into the **local**
+`master` (kept local-only; never pushed). The corpus is migrated for #217–#221
+but blocked on the two gaps above before the engine compiles on current Zebra.
+
+---
+
 ## Node.js addon target (`--target node-addon`) — bootstrap shipped 2026-06-29; follow-ups open
 
 `@node_export def add(a: int, b: int): int` + `zebra --target node-addon math.zbr`
