@@ -1,0 +1,15 @@
+# Fuzzer finding F3 / BUG-159: a mutated local var with a comptime-numeric
+# *binary-op* init (not a plain literal) must get an explicit `: i64`/`: f64`
+# annotation — otherwise Zig rejects `var v = comptime_int` ("must be const or
+# comptime").  The selfhost previously annotated only literal-shaped inits, so
+# this diverged from the bootstrap.  Covers both int and float.
+
+def main()
+    var v = (8 * 2)          # comptime-int binary op → must emit `var v: i64`
+    v = v + 1                # mutated → Zig `var`, so the annotation is required
+    var f = (2.0 * 3.0)      # comptime-float binary op → `var f: f64`
+    f = f + 1.0
+    if v == 17 and f == 7.0
+        print("fuzz_f3: OK")
+    else
+        print("fuzz_f3: FAIL v=${v} f=${f}")

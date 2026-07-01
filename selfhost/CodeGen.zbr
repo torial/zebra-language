@@ -4323,6 +4323,7 @@ struct Generator
         # This covers generic class instances (Box(int)(42) → Type_.named("Box"))
         # and other locally-declared class vars with no explicit annotation.
         var lv_struct_name: str = ""
+        var lv_infer_t: Type_ = Type_.unknown_   # BUG-159: inferred init type for the untyped-var annotation
         if .infer_ctx as ic_lv
             var var_t: Type_ = Type_.unknown_
             if n.type_ != nil
@@ -4341,6 +4342,7 @@ struct Generator
                 lv_struct_name = lv_vtn
             if var_t is Type_.cross_module as lv_cm
                 lv_struct_name = lv_cm.type_name
+            lv_infer_t = var_t
         if lv_struct_name == ""
             if n.type_ != nil
                 var nvt2 = n.type_!
@@ -4674,7 +4676,15 @@ struct Generator
                             else
                                 pass
                 else
-                    pass
+                    # BUG-159 (fuzzer): a non-literal comptime-numeric init (e.g.
+                    # `var v = (8 * 2)`) stays comptime_int/float without an annotation
+                    # → Zig "must be const or comptime".  The literal-shape checks above
+                    # miss it; fall back to the inferred init type (matches the bootstrap,
+                    # which annotates untyped vars from the TC-inferred type).
+                    if lv_infer_t is Type_.int_
+                        w.emit(": i64")
+                    else if lv_infer_t is Type_.float_
+                        w.emit(": f64")
         w.emit(" = ")
         if mc_recv.len > 0
             if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr

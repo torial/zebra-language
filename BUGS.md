@@ -1,6 +1,35 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-158. Next new bug: BUG-159.**
+**Last bug number generated: BUG-159. Next new bug: BUG-160.**
+
+---
+
+## BUG-159: selfhost omits numeric annotation on a mutated comptime-init local ✅ FIXED
+
+**Severity:** medium (self-hosting equivalence). **Found by the differential
+fuzzer** (`fuzz/`) on its first real run, 2026-07-01 — the first divergence it
+caught (verdict `zig-diverge-B`: the selfhost emit is rejected by `zig`, the
+bootstrap emit compiles).
+
+**Symptom:** a mutated local whose init is a comptime-numeric *binary op* diverged:
+```zebra
+def main()
+    var v = (8 * 2)   # bootstrap: `var v: i64 = (8 * 2);`   selfhost: `var v = (8 * 2);`
+    v = v + 1         # → Zig: variable of type 'comptime_int' must be const or comptime
+```
+`v` is mutated → a Zig `var`; the init stays `comptime_int` unless annotated. The
+bootstrap annotates untyped `var`s from the **TC-inferred type**
+(`tcTypeAnnotation`); the selfhost's `genLocalVar` only special-cased literal
+*syntax* (`int_lit`/`float_lit`/neg-lit), so a binary-op comptime init got no
+annotation. (A plain `var v = 5` did not diverge — both annotate the literal.) The
+round-trip gate never caught it: it compares selfhost-vs-selfhost, and the selfhost
+is internally consistent.
+
+**FIXED (2026-07-01):** `selfhost/CodeGen.zbr genLocalVar` now hoists the inferred
+init type (`lv_infer_t = inferExpr(init)`) and, for a non-literal numeric init,
+falls back to `: i64`/`: f64` — matching the bootstrap. Both compilers;
+round-trip byte-identical; smoke 191/191. Regression:
+`test/fuzz_f3_comptime_local_test.zbr` (int + float). See `fuzz/FINDINGS.md` F3.
 
 ---
 
