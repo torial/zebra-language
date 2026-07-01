@@ -10,9 +10,9 @@ from harness import check
 
 
 def _sig(res):
-    # What we preserve while shrinking.
-    if res.verdict == 'emit-divergence':
-        return ('emit-divergence', res.detail)
+    # Preserve the verdict *category* while shrinking (not the exact detail — a
+    # run-divergence's output changes as lines are removed, but any divergence is
+    # still a divergence worth minimizing).
     return (res.verdict,)
 
 

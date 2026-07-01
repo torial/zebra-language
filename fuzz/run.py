@@ -39,9 +39,6 @@ def main():
         print(f'=== seed {args.seed}: {res.verdict} ===')
         print(res.detail)
         print('--- program ---'); print(src)
-        if res.verdict == 'emit-divergence':
-            print('--- A (bootstrap) ---'); print(res.a)
-            print('--- B (selfhost) ---'); print(res.b)
         return
 
     FIND_DIR.mkdir(exist_ok=True)
@@ -50,7 +47,7 @@ def main():
     for i in range(args.start, args.start + args.n):
         src, res = one(i, zig_check=not args.no_zig)
         buckets[res.verdict] += 1
-        if res.verdict in ('emit-divergence', 'crash-A', 'crash-B'):
+        if res.verdict in ('run-divergence', 'zig-diverge-A', 'zig-diverge-B', 'crash-A', 'crash-B'):
             findings.append((i, res.verdict, res.detail))
             out = src
             if args.shrink:

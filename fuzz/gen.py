@@ -37,7 +37,7 @@ class Gen:
     # ── expressions (typed) ──────────────────────────────────────────────────
     def lit(self, ty):
         if ty == 'int':
-            return str(self.rng.randint(0, 100))
+            return str(self.rng.randint(0, 20))   # small → runtime arithmetic won't overflow i64
         if ty == 'float':
             return f'{self.rng.randint(0, 100)}.{self.rng.randint(0, 9)}'
         if ty == 'bool':
@@ -133,9 +133,14 @@ class Gen:
                 out += [f'{ind}else'] + self.gen_block(dict(env), indent + 1, budget)
             return out
         if k == 'while':
-            cond = self.gen_expr('bool', env, d)
+            # Bounded induction loop so programs always terminate (the run oracle
+            # needs it).  The counter is NOT put in the body's env, so the body can't
+            # reference or reassign it — guaranteeing progress.
+            ctr = self.fresh('k')     # not 'i' — `i{n}` collides with Zig `iN` int types
+            lim = self.rng.randint(1, 4)
             body = self.gen_block(dict(env), indent + 1, budget)
-            return [f'{ind}while {cond}'] + body
+            inc = '    ' * (indent + 1) + f'{ctr} = {ctr} + 1'
+            return [f'{ind}var {ctr} = 0', f'{ind}while {ctr} < {lim}'] + body + [inc]
         return [f'{ind}pass']
 
     # ── program ──────────────────────────────────────────────────────────────
