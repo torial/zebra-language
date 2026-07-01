@@ -728,7 +728,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     # TypeChecker.zbr); the hardcoded isUnionLikeName /
                     # isEnumLikeName lists remain: a fallback for the
                     # generate-single-file path where deps_mt is empty.
-                    if deps_mt.hasUnion(exposed_name)
+                    if deps_mt.hasModuleVar(exposed_name)
+                        # BUG-158: an exposed cross-module module var — genUse skips its
+                        # `const` and genIdent emits `alias._zbr_mv_name` at each use.
+                        g.addExposedModuleVar(exposed_name, imp.path)
+                    else if deps_mt.hasUnion(exposed_name)
                         g.union_names.add(exposed_name)
                     else if isEnumLikeName(exposed_name)
                         g.enum_names.add(exposed_name)
@@ -1618,6 +1622,7 @@ struct Generator
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
     var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
+    var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
     # Phase 7b additions
     var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
     var ret_set              : StrSet?  # variables that escape via return
@@ -1708,6 +1713,7 @@ struct Generator
         .ref_fields            = StrSet()
         .opt_ref_fields        = StrSet()
         .unwrapped_imports     = StrSet()
+        .exposed_module_vars   = HashMap(str, str)()
         # Phase 7b field initializations
         .mut_set               = nil
         .ret_set               = nil
@@ -2293,7 +2299,10 @@ struct Generator
             var i: int = 0
             while i < n.exposed.len
                 var ename: str = n.exposed.at(i)
-                if ename != alias
+                # BUG-158: an exposed cross-module module var has no plain `alias.name`
+                # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
+                # import) — genIdent rewrites each reference, so emit no `const` here.
+                if ename != alias and not .exposed_module_vars.contains(ename)
                     w.emit("const ")
                     w.emit(ename)
                     w.emit(" = ")
@@ -7940,6 +7949,12 @@ struct Generator
                     w.emit(oc.member)
                     w.emit(" else null)")
 
+    # BUG-158: record an exposed cross-module module var (implicit-self `.put` so
+    # codegen emits the HashMap error-catch; an explicit `g.field.put` receiver does
+    # not currently get one).
+    def addExposedModuleVar(name: str, alias: str)
+        .exposed_module_vars.put(name, alias)
+
     # ── genIdent ──────────────────────────────────────────────────────────────
 
     def genIdent(id: ExprIdent)
@@ -7962,6 +7977,14 @@ struct Generator
         # module vars inside methods).
         if isModuleVarName(id.name) and not isLocalOrParamName(id.name)
             w.emit("_zbr_mv_")
+            w.emit(id.name)
+            return
+        # BUG-158: a reference to a cross-module *exposed* module var → the dep's
+        # live prefixed symbol `alias._zbr_mv_name` (no `const` binding was emitted).
+        # Same shadow guard: a local/param of the same name keeps its bare name.
+        if .exposed_module_vars.contains(id.name) and not isLocalOrParamName(id.name)
+            w.emit(.exposed_module_vars.fetch(id.name))
+            w.emit("._zbr_mv_")
             w.emit(id.name)
             return
         w.emit(id.name)

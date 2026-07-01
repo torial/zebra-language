@@ -1,0 +1,21 @@
+# crossmod_modvar_test.zbr — BUG-158: cross-module module-var access.
+#   1. Read an exposed scalar module var (`counter`).
+#   2. Call a method on an exposed class-instance module var (`reg.bump()`),
+#      whose deferred init runs in the dep's _initModuleVars before use.
+#   3. A same-named local (`counter`) shadows the exposed var (genIdent must NOT
+#      rewrite the local to `crossmod_modvar_lib._zbr_mv_counter`).
+
+use crossmod_modvar_lib exposing counter, reg
+
+def main()
+    assert counter == 41, "exposed scalar: ${counter}"
+    var a = reg.bump()          # 1
+    var b = reg.bump()          # 2 (same singleton instance)
+    assert a == 1 and b == 2, "exposed class-instance method: ${a},${b}"
+    shadowCheck()
+    print("crossmod_modvar: all OK")
+
+def shadowCheck()
+    var counter = 100           # shadows the exposed module var
+    counter = counter + 5
+    assert counter == 105, "local shadow: ${counter}"

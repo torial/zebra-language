@@ -1,0 +1,16 @@
+# crossmod_modvar_lib.zbr — library for crossmod_modvar_test.zbr (BUG-158).
+# Exposes module-global vars (a scalar and a class-instance singleton) so the
+# consumer can reference them cross-module.  A module var's Zig symbol is
+# `alias._zbr_mv_name`; genUse skips the `const` binding and genIdent rewrites
+# each reference to that live access (deferred vars are undefined at import).
+
+class Registry
+    var count: int
+    cue init()
+        .count = 0
+    def bump(): int
+        .count = .count + 1
+        return .count
+
+var counter: int = 41
+var reg: Registry = Registry()

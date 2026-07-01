@@ -212,6 +212,8 @@ smoke test/crossmod_types_test.zbr
 smoke test/crossmod_struct_pat_test.zbr
 smoke test/crossmod_hatopt_test.zbr
 smoke test/crossmod_optret_test.zbr
+# BUG-158: exposed cross-module module vars (scalar + class-instance singleton).
+smoke test/crossmod_modvar_test.zbr
 
 # Struct + union features
 smoke test/ctor_arg_ref_test.zbr

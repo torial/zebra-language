@@ -302,6 +302,9 @@ class ModuleTypes
     # Top-level generic function names (def name(T)(...)). Used by codegen to
     # detect call-site pattern name(TypeArg)(valueArgs) and flatten to name(T, args).
     var generic_fn_names: HashMap(str, bool)
+    # BUG-158: names of top-level module `var`/`const` declarations. Used by codegen
+    # so an exposed cross-module module var is referenced as `alias._zbr_mv_name`.
+    var module_vars: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -319,6 +322,13 @@ class ModuleTypes
         enum_names = HashMap()
         all_enum_member_keys = List()
         generic_fn_names = HashMap()
+        module_vars = HashMap()
+
+    def addModuleVar(name: str)
+        .module_vars.put(internString(name), true)
+
+    def hasModuleVar(name: str): bool
+        return .module_vars.contains(name)
 
     def addClass(c: ClassTypes)
         .classes.put(c.name, c)
@@ -818,6 +828,9 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)
             on Decl.var_ as mv
+                # BUG-158: record the module-var name so an exposed cross-module
+                # reference emits `alias._zbr_mv_name`.
+                mt.addModuleVar(mv.name)
                 # Module-level var/const: register its type under the "" sentinel
                 # class so inferExpr resolves bare references (e.g. int-method
                 # dispatch on `counter.str()`). Untyped literal inits are inferred

@@ -165,6 +165,8 @@ pub fn generate(
     defer exposed_unions.deinit();
     var exposed_classes = std.StringHashMap(void).init(alloc);
     defer exposed_classes.deinit();
+    var exposed_module_vars = std.StringHashMap([]const u8).init(alloc);
+    defer exposed_module_vars.deinit();
     var class_names = std.StringHashMap(void).init(alloc);
     defer class_names.deinit();
     // Pre-populate class_names from local class declarations so genType can emit
@@ -197,6 +199,7 @@ pub fn generate(
         .union_decls      = &union_decls,
         .exposed_unions   = &exposed_unions,
         .exposed_classes  = &exposed_classes,
+        .exposed_module_vars = &exposed_module_vars,
         .class_names      = &class_names,
         .gui_backend      = gui_backend,
         .uses_gui_ptr     = &uses_gui,
@@ -1974,6 +1977,12 @@ const Generator = struct {
     /// Populated lazily by `genUse` when the exposed name is a class (non-union) type.
     /// Allows `ClassName(args)` → `ClassName.init(args)` without a class symbol lookup.
     exposed_classes: *std.StringHashMap(void),
+    /// BUG-158: exposed cross-module module-var name → the importing alias.
+    /// Populated in genUse for `use m exposing g` where `g` is a module `var`/`const`
+    /// in `m`.  genIdent rewrites a reference to `g` as `m._zbr_mv_g` (live access —
+    /// no `const g = m.g` binding, which fails: the symbol is prefixed, and a
+    /// deferred var is `undefined` until `m._initModuleVars()` runs).
+    exposed_module_vars: *std.StringHashMap([]const u8),
     /// All class names visible in the current compilation unit — local classes
     /// (populated in genClass) plus exposed cross-module classes (populated in genUse).
     /// Used by genType to emit `*ClassName` (reference semantics) instead of `ClassName`.
@@ -4466,6 +4475,16 @@ const Generator = struct {
             if (n.exposing.len > 0) {
                 const iface_opt = if (g.imported_modules) |im| im.get(alias) else null;
                 for (n.exposing) |exp_name| {
+                    // BUG-158: an exposed module `var`/`const` — don't emit
+                    // `const g = alias.g` (the dep's symbol is `alias._zbr_mv_g`, and a
+                    // deferred var is `undefined` at import time).  Record it so genIdent
+                    // rewrites each reference to the live `alias._zbr_mv_g`.
+                    if (iface_opt) |iface| {
+                        if (iface.module_vars.contains(exp_name)) {
+                            try g.exposed_module_vars.put(exp_name, alias);
+                            continue;
+                        }
+                    }
                     if (!std.mem.eql(u8, exp_name, alias)) {
                         try g.writeIndent();
                         try g.w.print("const {s} = {s}.{s};\n", .{ exp_name, alias, exp_name });
@@ -13649,6 +13668,20 @@ const Generator = struct {
         if (g.resolve.exprs.get(e)) |sym| {
             if (sym.kind == .var_ and sym.decl.var_.is_top_level) {
                 try g.w.print("{s}{s}", .{ module_var_prefix, e.name });
+                return;
+            }
+        }
+        // BUG-158: a reference to a cross-module exposed module var → the dep's live
+        // prefixed symbol `alias._zbr_mv_name`.  Shadow-safe: skip if the reference
+        // actually resolves to a local/param/instance-field of the same name (an
+        // exposed cross-module var is unresolved here — `use` binds no symbol).
+        if (g.exposed_module_vars.get(e.name)) |alias| {
+            const shadowed = if (g.resolve.exprs.get(e)) |sym|
+                (sym.kind == .local or sym.kind == .param or
+                    (sym.kind == .var_ and !sym.decl.var_.is_top_level))
+            else false;
+            if (!shadowed) {
+                try g.w.print("{s}.{s}{s}", .{ alias, module_var_prefix, e.name });
                 return;
             }
         }

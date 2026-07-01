@@ -4,7 +4,37 @@
 
 ---
 
-## BUG-158: a module-global `var` is not accessible cross-module 🔎 DESIGNED (unimplemented)
+## BUG-158: a module-global `var` is not accessible cross-module ✅ FIXED
+
+**Severity:** medium. Found 2026-06-30 building the BBAT Roblox-globals shim.
+Blocked the natural cross-module singleton pattern (`use robloxglobals exposing
+game`) and cross-module data-module access.
+
+**FIXED (2026-07-01):** implemented as designed below, both compilers. A new
+`ModuleInterface.module_vars` (selfhost: `ModuleTypes.module_vars`) records the
+dep's top-level `var`/`const` names; `genUse` skips the `const g = …` binding for
+an exposed module var and records `g → alias` in `exposed_module_vars`; `genIdent`
+rewrites each reference to the live `alias._zbr_mv_g`, shadow-safe (a local/param of
+the same name keeps its bare name — an exposed cross-module var is unresolved, so
+the guard checks the reference doesn't resolve to a local). Verified: scalar +
+class-instance singleton work cross-module (`test/crossmod_modvar_test.zbr`, both
+compilers, in smoke 190/190); round-trip byte-identical.
+
+**Two limitations found (open):**
+- **stdlib-container module vars.** An exposed `HashMap`/`List`/`Atomic` var
+  dispatches a *throwing* method (`.put`) with no `catch` wrapper, because the
+  consumer doesn't know the exposed var's type → `error: error union is ignored`.
+  Class-instance singletons (the shim's use case) and scalars are unaffected;
+  `_G` is a class with HashMap *fields*, so BBAT is covered. Fixing needs the
+  interface to also carry exposed-var *types*.
+- **explicit-receiver field `HashMap.put` misses the auto-`catch`.** Surfaced by
+  the fix itself: `g.someField.put(k, v)` (a HashMap `.put` on a `localvar.field`
+  receiver) does not get the error-catch the codegen adds for implicit-self
+  `.field.put`. Worked around by wrapping in a method (implicit self); the
+  underlying codegen gap remains.
+
+---
+### Original design (as implemented)
 
 **Severity:** medium. Found 2026-06-30 building the BBAT Roblox-globals shim.
 Blocks the natural cross-module singleton pattern (`use robloxglobals exposing

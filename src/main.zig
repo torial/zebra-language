@@ -862,7 +862,13 @@ fn cloneInterface(src: *const TypeChecker.ModuleInterface, alloc: std.mem.Alloca
             try list_field_elem_types.put(k, v);
         }
     }
-    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
+    var module_vars = std.StringHashMap(void).init(alloc);
+    errdefer module_vars.deinit();
+    {
+        var it = src.module_vars.keyIterator();
+        while (it.next()) |k| try module_vars.put(try alloc.dupe(u8, k.*), {});
+    }
+    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types, .module_vars = module_vars };
 }
 
 /// Compile a .zbr file to the corresponding .zig file, first recursively
@@ -911,6 +917,7 @@ fn compileZbrToZig(
             .optional_method_returns      = std.StringHashMap(void).init(alloc),
             .struct_init_ref_params       = std.StringHashMap([]bool).init(alloc),
             .list_field_elem_types        = std.StringHashMap([]const u8).init(alloc),
+            .module_vars                  = std.StringHashMap(void).init(alloc),
         };
     }
 

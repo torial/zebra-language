@@ -492,6 +492,13 @@ pub const ModuleInterface = struct {
     /// Used by TypeChecker's `inferForInElemType` to type loop vars when iterating
     /// cross-module List(T) fields, enabling ref_fields deref for `^T` elements.
     list_field_elem_types: std.StringHashMap([]const u8),
+    /// Names of top-level module `var`/`const` declarations.  Used by CodeGen
+    /// (BUG-158): an exposed module var's Zig symbol is `alias._zbr_mv_name`, so a
+    /// cross-module reference to it must be rewritten to that live access rather
+    /// than a bare name or a `const name = alias.name` binding (which fails — the
+    /// member doesn't exist under the bare name, and deferred vars are `undefined`
+    /// at import time).
+    module_vars: std.StringHashMap(void),
 
     pub fn deinit(self: *ModuleInterface) void {
         const alloc = self.methods.allocator;
@@ -551,6 +558,9 @@ pub const ModuleInterface = struct {
         var lfetv = self.list_field_elem_types.valueIterator();
         while (lfetv.next()) |v| alloc.free(v.*);
         self.list_field_elem_types.deinit();
+        var mvk = self.module_vars.keyIterator();
+        while (mvk.next()) |k| alloc.free(k.*);
+        self.module_vars.deinit();
     }
 };
 
@@ -592,9 +602,17 @@ pub fn extractModuleInterface(
     errdefer struct_init_ref_params.deinit();
     var list_field_elem_types = std.StringHashMap([]const u8).init(alloc);
     errdefer list_field_elem_types.deinit();
+    // BUG-158: top-level module `var`/`const` names (module vars are top-level only,
+    // so a direct pass over module.decls suffices — no need to thread through
+    // extractFromDecls, which recurses into class/struct members).
+    var module_vars = std.StringHashMap(void).init(alloc);
+    errdefer module_vars.deinit();
+    for (module.decls) |decl| {
+        if (decl == .var_) try module_vars.put(try alloc.dupe(u8, decl.var_.name), {});
+    }
 
     try extractFromDecls(module.decls, resolve, alloc, &methods, &fields, &types, &throws_methods, &boxed_variants, &variant_payload_types, &instance_field_types, &instance_method_return_types, &fn_return_types, &ref_fields, &optional_ref_fields, &optional_method_returns, &struct_init_ref_params, &list_field_elem_types);
-    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types };
+    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types, .module_vars = module_vars };
 }
 
 fn extractFromDecls(
