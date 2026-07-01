@@ -1,6 +1,44 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-157. Next new bug: BUG-158.**
+**Last bug number generated: BUG-158. Next new bug: BUG-159.**
+
+---
+
+## BUG-158: a module-global `var` is not accessible cross-module 🔎 DESIGNED (unimplemented)
+
+**Severity:** medium. Found 2026-06-30 building the BBAT Roblox-globals shim.
+Blocks the natural cross-module singleton pattern (`use robloxglobals exposing
+game`) and cross-module data-module access; the shim works around it by declaring
+singletons in the *consuming* module and importing only the service *types*.
+
+**Symptom:** `use m exposing g`, where `g` is a module-global `var` in `m`, emits
+`const g = m.g;` — but the emitted Zig symbol is `m._zbr_mv_g` (the `module_var_prefix`
+that keeps module vars from colliding with locals). Result:
+`error: root source file struct 'm' has no member named 'g'`. (A `def`/`class`
+exposed from `m` resolves fine — only module `var`s hit this.)
+
+**Why the naive fix is wrong:** emitting `const g = m._zbr_mv_g;` binds the value
+at import time (Zig container/global-init = comptime). That works for a
+*non-deferred* module var (scalar/`List` — initialized at global scope), but a
+*deferred* one (HashMap/Set/Atomic per BUG-153, or a class instance per BUG-157)
+is `= undefined` until `_initModuleVars()` runs, so the `const` would capture
+`undefined`.
+
+**Fix direction (both compilers):** exposed cross-module module-var references must
+resolve to `m._zbr_mv_g` **at each use site** (live), not a one-time `const` binding:
+  1. `genUse`: when an exposed name is a module `var` in the dep (consult the dep's
+     interface / `imported_modules`), do NOT emit `const g = …`; instead record
+     `{g → alias m}` in a new `exposed_module_vars` map.
+  2. `genIdent`: when emitting a reference to a name in `exposed_module_vars`, emit
+     `m._zbr_mv_g` instead of the bare name.
+  3. The dep's var is already `pub var _zbr_mv_g` — no dep-side change needed.
+Mirror to `selfhost/CodeGen.zbr`; gate with the full round-trip + smoke. A regression
+fixture should cover both a non-deferred (scalar/List) and a deferred (HashMap/class)
+exposed module var, same-file and cross-module.
+
+**Payoff:** lets `robloxglobals` expose real singleton `var`s (retire the per-script
+injection in `luau2zebra_ast._emit_roblox_globals`), and lets a translated data
+module expose its built table directly instead of a `def <mod>Data()` builder.
 
 ---
 
