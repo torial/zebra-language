@@ -54,12 +54,26 @@ class Gen:
         return [k for k, v in env.items() if v == ty]
 
     def gen_expr(self, ty, env, depth):
+        # optional target `T?`: an in-scope T? var, `nil`, or a bare T (coerces).
+        if ty.endswith('?'):
+            base = ty[:-1]
+            optvars = self.vars_of(env, ty)
+            r = self.rng.random()
+            if optvars and r < 0.4:
+                return self.pick(optvars)
+            if r < 0.65:
+                return 'nil'
+            return self.gen_expr(base, env, max(0, depth - 1))
         # base case: literal or in-scope var
         if depth <= 0 or self.maybe(0.35):
             vs = self.vars_of(env, ty)
             if vs and self.maybe(0.6):
                 return self.pick(vs)
             return self.lit(ty)
+        # `optvar orelse default` — unwrap a T? into a T
+        optcands = self.vars_of(env, ty + '?')
+        if optcands and self.maybe(0.2):
+            return f'({self.pick(optcands)} orelse {self.lit(ty)})'
         # call a helper function that returns `ty`
         callable_here = [f for f in self.funcs if f[2] == ty]
         if callable_here and self.maybe(0.3):
@@ -114,13 +128,20 @@ class Gen:
         assignable = [k for k in env if k not in self._params]  # params are const in Zig
         if assignable:
             choices += ['assign', 'assign']
+        opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
         if indent < self.caps['depth']:
             choices += ['if', 'while']
+            if opt_in_scope:
+                choices += ['ifas']    # `if optvar as bound` — nil-narrowing
         k = self.pick(choices)
         d = self.caps['expr_depth']
         if k == 'decl':
             ty = self.pick(PRIMS)
             name = self.fresh()
+            if self.caps.get('optionals') and self.maybe(0.25):
+                e = self.gen_expr(ty + '?', env, d)   # init BEFORE binding — no self-reference
+                env[name] = ty + '?'
+                return [f'{ind}var {name}: {ty}? = {e}']
             e = self.gen_expr(ty, env, d)
             env[name] = ty
             # annotate sometimes to exercise both inferred + annotated paths
@@ -130,9 +151,16 @@ class Gen:
         if k == 'assign':
             name = self.pick(assignable)
             return [f'{ind}{name} = {self.gen_expr(env[name], env, d)}']
+        if k == 'ifas':
+            ov = self.pick(opt_in_scope)
+            bound = self.fresh('u')
+            env2 = dict(env); env2[bound] = env[ov][:-1]   # narrowed to base type
+            return [f'{ind}if {ov} as {bound}'] + self.gen_block(env2, indent + 1, budget)
         if k == 'print':
-            if env and self.maybe(0.6):
-                name = self.pick(list(env.keys()))
+            # don't interpolate an optional directly (not printable); prefer a base-typed var
+            printable = [x for x, v in env.items() if not v.endswith('?')]
+            if printable and self.maybe(0.6):
+                name = self.pick(printable)
                 return [f'{ind}print("v=${{{name}}}")']
             return [f'{ind}print({self.gen_expr("str", env, d)})']
         if k == 'if':
@@ -213,6 +241,7 @@ DEFAULT_CAPS = {
     'expr_depth': 3,     # max expression tree depth
     'total_stmts': 40,   # global statement budget
     'funcs': 3,          # up to this many top-level helper functions
+    'optionals': True,   # generate T? optionals, nil, `if x as y`, orelse
 }
 
 

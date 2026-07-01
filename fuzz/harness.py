@@ -63,20 +63,24 @@ def _emit(compiler, zbr_path, out_dir, mode):
     return (True, zig_file.read_text(encoding='utf-8', errors='replace'), '')
 
 
-def _zig_build(zig_text, tag):
-    """`zig build-exe` the emitted module.  Return (compiled, exe_path_or_None, err)."""
+def _zig_build(zig_text, tag, exe=False):
+    """Compile the emitted module.  `exe=False` → `build-obj` (fast: semantic check,
+    no linking, no run — enough for the validity differential that caught BUG-159).
+    `exe=True` → `build-exe` (needed to run + compare output).
+    Return (compiled, artifact_path_or_None, err)."""
     d = WORK / f'zc_{tag}'
     d.mkdir(parents=True, exist_ok=True)
     (d / 'm.zig').write_text(zig_text, encoding='utf-8', newline='\n')
-    exe = d / 'm.exe'
+    art = d / ('m.exe' if exe else 'm.o')
+    cmd = 'build-exe' if exe else 'build-obj'
     try:
-        p = subprocess.run([ZIG, 'build-exe', 'm.zig', '-femit-bin=m.exe'],
+        p = subprocess.run([ZIG, cmd, 'm.zig', '-femit-bin=' + art.name],
                            cwd=str(d), capture_output=True, text=True, timeout=90)
     except subprocess.TimeoutExpired:
         return (False, None, 'zig TIMEOUT')
-    if p.returncode != 0 or not exe.exists():
+    if p.returncode != 0 or not art.exists():
         return (False, None, (p.stderr or '')[-400:])
-    return (True, exe, '')
+    return (True, art, '')
 
 
 def _run(exe):
@@ -88,7 +92,7 @@ def _run(exe):
         return (False, 'TIMEOUT', -1)
 
 
-def check(zbr_src, tag='t', zig_check=True):
+def check(zbr_src, tag='t', zig_check=True, run=False):
     # The two compilers embed cosmetically-different preambles, so a byte-identical
     # *emit* comparison is confounded.  The real equivalence checks are: neither
     # compiler crashes; each emit compiles with `zig`; and (when zig_check) both
@@ -107,19 +111,20 @@ def check(zbr_src, tag='t', zig_check=True):
         return Result('crash-B', berr, a=az)
     if not zig_check:
         return Result('ok', a=az)
-    ca, exeA, ea = _zig_build(az, tag + 'A')
-    cb, exeB, eb = _zig_build(bz, tag + 'B')
+    ca, artA, ea = _zig_build(az, tag + 'A', exe=run)
+    cb, artB, eb = _zig_build(bz, tag + 'B', exe=run)
     if ca and not cb:
         return Result('zig-diverge-B', f'selfhost emit rejected by zig: {eb[:120]}', a=az, b=bz)
     if cb and not ca:
         return Result('zig-diverge-A', f'bootstrap emit rejected by zig: {ea[:120]}', a=az, b=bz)
     if not ca and not cb:
         return Result('both-zig-fail', (ea or eb)[:120], a=az)
-    ra, outA, codeA = _run(exeA)
-    rb, outB, codeB = _run(exeB)
-    if (outA, codeA) != (outB, codeB):
-        return Result('run-divergence',
-                      f'A:(code={codeA},out={outA[:40]!r}) B:(code={codeB},out={outB[:40]!r})', a=az, b=bz)
+    if run:
+        ra, outA, codeA = _run(artA)
+        rb, outB, codeB = _run(artB)
+        if (outA, codeA) != (outB, codeB):
+            return Result('run-divergence',
+                          f'A:(code={codeA},out={outA[:40]!r}) B:(code={codeB},out={outB[:40]!r})', a=az, b=bz)
     return Result('ok', a=az)
 
 

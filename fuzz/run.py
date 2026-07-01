@@ -19,9 +19,9 @@ from shrink import shrink
 FIND_DIR = Path(__file__).resolve().parent / 'findings'
 
 
-def one(seed, do_shrink=True, zig_check=True):
+def one(seed, zig_check=True, run=False):
     src = G.gen(seed)
-    res = check(src, tag=f's{seed}', zig_check=zig_check)
+    res = check(src, tag=f's{seed}', zig_check=zig_check, run=run)
     return src, res
 
 
@@ -31,11 +31,12 @@ def main():
     ap.add_argument('--start', type=int, default=0)
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--no-zig', action='store_true', help='skip the zig-compile validity check (faster)')
+    ap.add_argument('--run', action='store_true', help='also build-exe + run + compare output (slower)')
     ap.add_argument('--shrink', action='store_true', help='shrink findings')
     args = ap.parse_args()
 
     if args.seed is not None:
-        src, res = one(args.seed, zig_check=not args.no_zig)
+        src, res = one(args.seed, zig_check=not args.no_zig, run=args.run)
         print(f'=== seed {args.seed}: {res.verdict} ===')
         print(res.detail)
         print('--- program ---'); print(src)
@@ -45,7 +46,7 @@ def main():
     buckets = Counter()
     findings = []
     for i in range(args.start, args.start + args.n):
-        src, res = one(i, zig_check=not args.no_zig)
+        src, res = one(i, zig_check=not args.no_zig, run=args.run)
         buckets[res.verdict] += 1
         if res.verdict in ('run-divergence', 'zig-diverge-A', 'zig-diverge-B', 'crash-A', 'crash-B'):
             findings.append((i, res.verdict, res.detail))
