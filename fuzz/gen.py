@@ -12,6 +12,7 @@ time).  The subset grows over time (see CAPS); start conservative so a clean
 baseline means "both compilers agree", then widen to hunt divergences.
 """
 import random
+import re
 
 PRIMS = ('int', 'float', 'bool', 'str')
 
@@ -22,6 +23,8 @@ class Gen:
         self.seed = seed
         self.n = 0            # unique-name counter
         self.caps = caps or DEFAULT_CAPS
+        self.funcs = []       # [(name, [param_types], ret_type)] — callable helpers
+        self._params = set()  # read-only names in scope (fn params — Zig consts)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def fresh(self, prefix='v'):
@@ -57,6 +60,12 @@ class Gen:
             if vs and self.maybe(0.6):
                 return self.pick(vs)
             return self.lit(ty)
+        # call a helper function that returns `ty`
+        callable_here = [f for f in self.funcs if f[2] == ty]
+        if callable_here and self.maybe(0.3):
+            name, ptypes, _ = self.pick(callable_here)
+            args = ', '.join(self.gen_expr(pt, env, depth - 1) for pt in ptypes)
+            return f'{name}({args})'
         r = self.rng.random()
         if ty == 'int':
             if r < 0.7:
@@ -102,7 +111,8 @@ class Gen:
     def gen_stmt(self, env, indent, budget):
         ind = '    ' * indent
         choices = ['decl', 'print']
-        if env:
+        assignable = [k for k in env if k not in self._params]  # params are const in Zig
+        if assignable:
             choices += ['assign', 'assign']
         if indent < self.caps['depth']:
             choices += ['if', 'while']
@@ -118,7 +128,7 @@ class Gen:
                 return [f'{ind}var {name}: {ty} = {e}']
             return [f'{ind}var {name} = {e}']
         if k == 'assign':
-            name = self.pick(list(env.keys()))
+            name = self.pick(assignable)
             return [f'{ind}{name} = {self.gen_expr(env[name], env, d)}']
         if k == 'print':
             if env and self.maybe(0.6):
@@ -144,11 +154,57 @@ class Gen:
         return [f'{ind}pass']
 
     # ── program ──────────────────────────────────────────────────────────────
+    def _use_unused(self, lines):
+        """Zig (like Rust) rejects an unused local; Zebra surfaces that as a Zig-
+        level error.  Keep the fuzzer testing real equivalence (not unused-var
+        noise) by discarding any generated `var` that is never referenced again —
+        insert `var _ = name` at the same indent right after its declaration."""
+        text = '\n'.join(lines)
+        out = []
+        for ln in lines:
+            out.append(ln)
+            m = re.match(r'(\s*)var (\w+)', ln)
+            if m and not m.group(2).startswith('_'):
+                name = m.group(2)
+                if len(re.findall(r'\b' + re.escape(name) + r'\b', text)) <= 1:
+                    out.append(f'{m.group(1)}var _ = {name}')
+        return out
+
+    def gen_function(self):
+        """A top-level `def h(p0: T, …): R` with a body that returns an R.  Only
+        callable helpers defined *earlier* are visible in its body (registered
+        after emission), so no self-/mutual recursion — programs always terminate."""
+        name = self.fresh('h')
+        np = self.rng.randint(0, 3)
+        ptypes = [self.pick(PRIMS) for _ in range(np)]
+        pnames = [f'p{i}' for i in range(np)]
+        ret = self.pick(PRIMS)
+        env = dict(zip(pnames, ptypes))
+        self._params = set(pnames)     # params are read-only (const in Zig)
+        budget = [self.caps['stmts'] + 2]
+        body = self.gen_block(env, 1, budget)
+        body.append('    return ' + self.gen_expr(ret, env, self.caps['expr_depth']))
+        self._params = set()
+        # discard any never-referenced param (Zig rejects unused params)
+        text = '\n'.join(body)
+        for pn in pnames:
+            if len(re.findall(r'\b' + pn + r'\b', text)) <= 1:
+                body.insert(0, f'    var _ = {pn}')
+        body = self._use_unused(body)
+        sig = ', '.join(f'{pn}: {pt}' for pn, pt in zip(pnames, ptypes))
+        self.funcs.append((name, ptypes, ret))
+        return [f'def {name}({sig}): {ret}'] + body
+
     def program(self):
+        decls = []
+        if self.caps.get('funcs'):
+            for _ in range(self.rng.randint(0, self.caps['funcs'])):
+                decls += self.gen_function() + ['']
         env = {}
         budget = [self.caps['total_stmts']]
         body = self.gen_block(env, 1, budget)
-        return 'def main()\n' + '\n'.join(body) + '\n'
+        body = self._use_unused(body)
+        return '\n'.join(decls) + 'def main()\n' + '\n'.join(body) + '\n'
 
 
 DEFAULT_CAPS = {
@@ -156,6 +212,7 @@ DEFAULT_CAPS = {
     'depth': 3,          # max nesting depth for if/while
     'expr_depth': 3,     # max expression tree depth
     'total_stmts': 40,   # global statement budget
+    'funcs': 3,          # up to this many top-level helper functions
 }
 
 
