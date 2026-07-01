@@ -1,0 +1,39 @@
+# Regression for BUG-157: a module-global var holding a USER CLASS INSTANCE
+# (`var g: Foo = Foo()`) could not be initialised at container scope — Foo.init()
+# allocates via _allocator.create, which Zig cannot evaluate at global comptime
+# ("unable to resolve comptime value").  BUG-153 deferred only containers
+# (HashMap/Set/Atomic); this extends the deferral to named class instances whose
+# initializer is a constructor/factory call.  They are now declared `= undefined`
+# and assigned in _initModuleVars(), in source order — so a global whose init
+# references another deferred global must be declared after it (see `world` below).
+
+class Counter
+    var n: int
+    cue init(start: int)
+        .n = start
+    def bump(): int
+        .n = .n + 1
+        return .n
+
+class World
+    var counter: Counter
+    var label: str
+    cue init(c: Counter, label: str)
+        .counter = c
+        .label = label
+    def tick(): int
+        return .counter.bump()
+
+# class-instance module globals — the second is constructed FROM the first,
+# exercising deferred-init ordering.
+var counter: Counter = Counter(10)
+var world: World = World(counter, "main")
+
+def main()
+    var a = counter.bump()      # 11
+    var b = world.tick()        # 12 (same Counter instance)
+    var c = counter.bump()      # 13
+    if a == 11 and b == 12 and c == 13 and world.label == "main"
+        print("module_global_class_instance_test OK")
+    else
+        print("module_global_class_instance_test FAIL a=" + a.toString() + " b=" + b.toString() + " c=" + c.toString())

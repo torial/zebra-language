@@ -717,6 +717,10 @@ smoke_run test/module_var_test.zbr "module_var_test: OK"
 # BUG-153: module-global allocating containers (HashMap/Atomic) init via the
 # generated _initModuleVars() (declared `= undefined` at container scope).
 smoke_run test/module_global_container_test.zbr "module_global_container_test OK"
+# BUG-157: module-global USER CLASS INSTANCE globals (`var g: Foo = Foo()`) defer
+# their allocating init to _initModuleVars() too (in source order, so a global may
+# be constructed from an earlier-declared one).
+smoke_run test/module_global_class_instance_test.zbr "module_global_class_instance_test OK"
 
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"

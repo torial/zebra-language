@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-156. Next new bug: BUG-157.**
+**Last bug number generated: BUG-157. Next new bug: BUG-158.**
 
 ---
 
@@ -144,6 +144,41 @@ emitted `…toInt()` raw → `error: no field or member function named 'toInt' i
   `list.items[i]` (an lvalue, no temp needed), so the chain dispatches inline and
   sees the `str` element type.
 Regression: `test/list_setter_parse_test.zbr`.
+
+## BUG-157: module-global var holding a user class instance is uncompilable ✅ FIXED
+
+**Severity:** high for the Roblox-globals shim + any singleton pattern. Found
+2026-06-30 while building the BBAT service-global shim (`game`, `Players`, `_G`,
+… as module-global singletons).
+
+**Symptom:** `var g: Foo = Foo()` at module scope emits
+`pub var _zbr_mv_g: *Foo = Foo.init();` at container scope; `Foo.init()` allocates
+via `_allocator.create`, which Zig can't evaluate at global comptime →
+`error: unable to resolve comptime value`. (Same class of failure as BUG-153, which
+only deferred *containers* — HashMap/Set/Atomic.) Same-file cases masked it when the
+global was unused, because Zig dead-strips the unreferenced decl.
+
+**FIXED (2026-06-30):** extended the BUG-153 deferral to named user class instances.
+`deferredModuleVarType`/`isDeferredModuleVar` now also defers a module-global `var`
+whose annotated type is `.named` and whose initializer is a constructor/factory
+*call* — emitted `= undefined`, assigned in `_initModuleVars()` (source order, so a
+global may be constructed from an earlier-declared one). A second fix was required:
+`genModule` now pre-registers cross-module *exposed* classes into `class_names`
+before the `_initModuleVars` body is emitted, so a deferred init `Foo()` lowers to
+`Foo.init()` (not `Foo()` → `type 'type' not a function`). Both compilers; round-trip
+byte-identical; selfhost smoke 188/188. Regression:
+`test/module_global_class_instance_test.zbr` (same-module + inter-global-dependency
+ordering). Deferring is always safe — the assignment runs before any use, and
+`const`/comptime-value globals are excluded.
+
+**Remaining edges (separate gaps, not fixed here):**
+- A module-global `var` is **not** cross-module accessible: `use m exposing g`
+  emits `const g = m.g;` but the symbol is `m._zbr_mv_g` → `has no member named 'g'`.
+  The shim works around this by declaring singletons in the *consuming* module and
+  importing only the service *types* (types are cross-module fine).
+- A module-global `var` may not share a name with an in-scope type
+  (`var Players: Players` → resolver `'Players' is already defined`); use a distinct
+  type name (`var Players: PlayersSvc`).
 
 ---
 

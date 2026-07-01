@@ -645,6 +645,26 @@ def typeRefStr(tr: TypeRef): str
 def isDeferredContainer(nm: str): bool
     return nm == "HashMap" or nm == "Map" or nm == "Set" or nm == "Atomic"
 
+# BUG-157: a module-global `var` whose initializer is not comptime-known must be
+# declared `= undefined` and assigned in _initModuleVars().  Two cases:
+#   • generic container (HashMap/Set/Atomic) — init references the runtime _allocator.
+#   • a named user class instance (`var g: Foo = Foo()`) — Foo.init() allocates via
+#     _allocator.create, which Zig can't evaluate at global comptime.  Signal = a
+#     named type annotation whose init is a constructor/factory *call*.
+# Requires an explicit type annotation (gives the `: T` for the `= undefined` decl).
+# Deferring is safe — assigned before any use; `const`/comptime-value inits excluded.
+def isDeferredModuleVar(mv: DeclVar): bool
+    if mv.is_const or mv.mods.is_static
+        return false
+    if mv.type_ == nil or mv.init_expr == nil
+        return false
+    var t: TypeRef = mv.type_!
+    if t is TypeRef.generic as gg
+        return isDeferredContainer(gg.name)
+    if t is TypeRef.named
+        return mv.init_expr! is Expr.call
+    return false
+
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
@@ -810,15 +830,12 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     w.emit("    _module_vars_inited = true;\n")
     for mvd in m.decls
         if mvd is Decl.var_ as mv
-            if not mv.is_const and not mv.mods.is_static and mv.type_ != nil and mv.init_expr != nil
-                var mvt: TypeRef = mv.type_!
-                if mvt is TypeRef.generic as mvg
-                    if isDeferredContainer(mvg.name)
-                        w.emit("    _zbr_mv_")
-                        w.emit(mv.name)
-                        w.emit(" = ")
-                        g.genExpr(mv.init_expr!)
-                        w.emit(";\n")
+            if isDeferredModuleVar(mv)
+                w.emit("    _zbr_mv_")
+                w.emit(mv.name)
+                w.emit(" = ")
+                g.genExpr(mv.init_expr!)
+                w.emit(";\n")
     w.emit("}\n")
     return w.output()
 
@@ -2309,14 +2326,11 @@ struct Generator
             # cannot be initialised at container scope (its init references the
             # runtime _allocator or allocates).  Declare it `= undefined` and assign
             # it in _initModuleVars() (called from _initIo and the entry thunk).
-            if owner == "" and not n.mods.is_static and not n.is_const and n.type_ != nil
-                var dgt: TypeRef = n.type_!
-                if dgt is TypeRef.generic as dgg
-                    if isDeferredContainer(dgg.name)
-                        w.emit(": ")
-                        genType(dgt)
-                        w.emit(" = undefined;\n")
-                        return
+            if owner == "" and isDeferredModuleVar(n)
+                w.emit(": ")
+                genType(n.type_!)
+                w.emit(" = undefined;\n")
+                return
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar
             # does for untyped mutable locals.  A typed static uses its annotation;
