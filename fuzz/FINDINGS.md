@@ -32,7 +32,15 @@ reserved-prefix rename), in both compilers. Add a regression fixture
 
 **Found:** 2026-07-01, first real fuzz run (seeds 0, 5, …). Caught because the
 generator originally named loop counters `i{n}`; that's masked in the generator
-now (counters use `k{n}`), but the compiler gap is real for user code.
+now, but the compiler gap is real for user code.
+
+**Generator masking (2026-07-02):** all generator prefixes that collide with a
+Zig primitive are now avoided — loop counters `i`→`k`, optional-binding names
+`u`→`ob` (`u{n}` shadowed `uN`). This was the *sole* remaining source of
+`both-zig-fail` noise; masking it lets genuine equivalence divergences surface
+cleanly instead of being buried under F1 hits. The **compiler-side** fix (escape
+primitive-named identifiers to `@"name"` in both emitters) remains open and needs
+a gated session — see fix direction above.
 
 ---
 

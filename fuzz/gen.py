@@ -243,7 +243,7 @@ class Gen:
             return [f'{ind}{name} = {self.gen_expr(env[name], env, d)}']
         if k == 'ifas':
             ov = self.pick(opt_in_scope)
-            bound = self.fresh('u')
+            bound = self.fresh('ob')   # not 'u' — `u{n}` collides with Zig `uN` uint types (F1)
             env2 = dict(env); env2[bound] = env[ov][:-1]   # narrowed to base type
             return [f'{ind}if {ov} as {bound}'] + self.gen_block(env2, indent + 1, budget)
         if k == 'print':
