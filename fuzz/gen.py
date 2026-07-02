@@ -245,7 +245,10 @@ class Gen:
             ov = self.pick(opt_in_scope)
             bound = self.fresh('ob')   # not 'u' — `u{n}` collides with Zig `uN` uint types (F1)
             env2 = dict(env); env2[bound] = env[ov][:-1]   # narrowed to base type
-            return [f'{ind}if {ov} as {bound}'] + self.gen_block(env2, indent + 1, budget)
+            self._params.add(bound)        # `if x as y` capture is read-only (const in Zig) — no reassign
+            body = self.gen_block(env2, indent + 1, budget)
+            self._params.discard(bound)
+            return [f'{ind}if {ov} as {bound}'] + body
         if k == 'print':
             # only interpolate a plain prim var (optionals/lists/structs aren't printable)
             printable = [x for x, v in env.items() if v in PRIMS]

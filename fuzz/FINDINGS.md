@@ -84,6 +84,27 @@ case through `printFmtSpec` (mirror of the bootstrap's `printFmt`). Regression:
 interpolation, before print was restricted to prims — but the bug is real for any
 user program interpolating a non-primitive.)
 
+## F5 — generator reassigned an `if x as y` optional-binding capture  (generator bug, fixed)
+
+**Not a compiler bug.** Verdict `both-zig-fail` (`error: cannot assign to constant`)
+on a program the generator should never have produced:
+```zebra
+var v5: int? = 396
+if v5 as ob6
+    ob6 = 8        # reassigning the narrowing capture
+```
+An `if x as y` binding is an immutable capture (like Zig's `if (opt) |y|`, which
+is `const`); both compilers correctly reject reassigning it. The generator had
+added the bound name to its `assignable` pool, so `assign` sometimes targeted it.
+
+**Fix (generator):** mark the `if…as` binding read-only for the duration of its
+block via `self._params` — the exact pattern already used for `for` loop captures
+(`_params.add(bound)` / `discard` around `gen_block`). Verified seed 9 → `ok`.
+This confirms the *language* behavior is correct (immutable narrowing captures);
+the finding was pure generator over-generation.
+
+---
+
 ## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, investigating)
 
 A never-used generated `var` in some scopes emits `const x = <expr>;`, which Zig
