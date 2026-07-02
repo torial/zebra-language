@@ -74,6 +74,11 @@ class Gen:
         optcands = self.vars_of(env, ty + '?')
         if optcands and self.maybe(0.2):
             return f'({self.pick(optcands)} orelse {self.lit(ty)})'
+        # `list.len` → int
+        if ty == 'int':
+            lists = [k for k, v in env.items() if v.startswith('List(')]
+            if lists and self.maybe(0.2):
+                return f'{self.pick(lists)}.len'
         # call a helper function that returns `ty`
         callable_here = [f for f in self.funcs if f[2] == ty]
         if callable_here and self.maybe(0.3):
@@ -125,16 +130,42 @@ class Gen:
     def gen_stmt(self, env, indent, budget):
         ind = '    ' * indent
         choices = ['decl', 'print']
-        assignable = [k for k in env if k not in self._params]  # params are const in Zig
+        # params are const in Zig; List vars are construct-once (never reassigned —
+        # gen_expr produces no List values, and reassigning a list isn't interesting)
+        assignable = [k for k in env if k not in self._params and not env[k].startswith('List(')]
         if assignable:
             choices += ['assign', 'assign']
         opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
+        list_in_scope = [k for k, v in env.items() if v.startswith('List(')]
+        if self.caps.get('lists'):
+            choices += ['listdecl']
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
                 choices += ['ifas']    # `if optvar as bound` — nil-narrowing
+            if list_in_scope:
+                choices += ['forin']   # `for e in list`
         k = self.pick(choices)
         d = self.caps['expr_depth']
+        if k == 'listdecl':
+            et = self.pick(PRIMS)
+            name = self.fresh('xs')
+            lines = [f'{ind}var {name}: List({et}) = List({et})()']
+            for _ in range(self.rng.randint(0, 3)):
+                lines.append(f'{ind}{name}.add({self.gen_expr(et, env, d)})')
+            env[name] = f'List({et})'
+            return lines
+        if k == 'forin':
+            lv = self.pick(list_in_scope)
+            et = env[lv][5:-1]            # List(T) → T
+            e = self.fresh('e')
+            env2 = dict(env); env2[e] = et
+            self._params.add(e)           # loop capture is read-only
+            body = self.gen_block(env2, indent + 1, budget)
+            self._params.discard(e)
+            if len(re.findall(r'\b' + e + r'\b', '\n'.join(body))) == 0:
+                body.insert(0, '    ' * (indent + 1) + f'var _ = {e}')  # capture must be used
+            return [f'{ind}for {e} in {lv}'] + body
         if k == 'decl':
             ty = self.pick(PRIMS)
             name = self.fresh()
@@ -213,10 +244,12 @@ class Gen:
         body = self.gen_block(env, 1, budget)
         body.append('    return ' + self.gen_expr(ret, env, self.caps['expr_depth']))
         self._params = set()
-        # discard any never-referenced param (Zig rejects unused params)
+        # discard any never-referenced param (Zig rejects unused params).  A param
+        # name appears in the body text only when *used*, so count == 0 ⇒ unused
+        # (unlike a local `var`, whose own declaration line counts as one use).
         text = '\n'.join(body)
         for pn in pnames:
-            if len(re.findall(r'\b' + pn + r'\b', text)) <= 1:
+            if len(re.findall(r'\b' + pn + r'\b', text)) == 0:
                 body.insert(0, f'    var _ = {pn}')
         body = self._use_unused(body)
         sig = ', '.join(f'{pn}: {pt}' for pn, pt in zip(pnames, ptypes))
@@ -242,6 +275,7 @@ DEFAULT_CAPS = {
     'total_stmts': 40,   # global statement budget
     'funcs': 3,          # up to this many top-level helper functions
     'optionals': True,   # generate T? optionals, nil, `if x as y`, orelse
+    'lists': True,       # generate List(T) — construction, .add, .len, for-in
 }
 
 
