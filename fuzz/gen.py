@@ -211,8 +211,8 @@ class Gen:
             self._params.add(e)           # loop capture is read-only
             body = self.gen_block(env2, indent + 1, budget)
             self._params.discard(e)
-            if len(re.findall(r'\b' + e + r'\b', '\n'.join(body))) == 0:
-                body.insert(0, '    ' * (indent + 1) + f'var _ = {e}')  # capture must be used
+            # No unused-var guard: since BUG-164 the compilers discard unused
+            # loop captures themselves — generating them keeps that tested.
             return [f'{ind}for {e} in {lv}'] + body
         if k == 'structdecl':
             sname = self.pick(list(self.structs.keys()))

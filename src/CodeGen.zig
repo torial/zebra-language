@@ -10811,6 +10811,15 @@ const Generator = struct {
                     try bg.genExpr(tc_node.expr);
                     try bg.w.print(".{s};\n", .{variant});
                 }
+                // BUG-164 (fuzz F6): a binding the body never reads is an
+                // unused local constant to Zig — discard it.  mightUseName is
+                // conservative (true when unsure), so this never produces a
+                // pointless discard.  `as _` is Zebra's explicit discard
+                // binding — never re-discard it (`_ = _;` is invalid Zig).
+                if (!std.mem.eql(u8, cap, "_") and !mightUseName(cap, body)) {
+                    try bg.writeIndent();
+                    try bg.w.print("_ = {s};\n", .{cap});
+                }
                 try bg.genStmts(body);
                 try g.writeIndent();
                 try g.w.writeAll("}");
@@ -10823,6 +10832,14 @@ const Generator = struct {
                 try g.w.writeAll(lead);
                 try g.genExpr(inner);
                 try g.w.print(") |{s}| {{\n", .{cap});
+                // BUG-164 (fuzz F6): Zig rejects an unused payload capture —
+                // discard when the body provably never reads it (mightUseName
+                // is conservative, so no pointless-discard risk).  `as _` is
+                // already a discard capture — leave it alone.
+                if (!std.mem.eql(u8, cap, "_") and !mightUseName(cap, body)) {
+                    try g.indented().writeIndent();
+                    try g.indented().w.print("_ = {s};\n", .{cap});
+                }
                 try g.indented().genStmts(body);
                 try g.writeIndent();
                 try g.w.writeAll("}");
@@ -11157,6 +11174,7 @@ const Generator = struct {
         try g.w.writeAll("| {\n");
         var bg = g.indented();
         bg.for_else_label = null;  // don't inherit outer for-else label
+        try discardUnusedLoopVars(bg, s);
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -11227,6 +11245,21 @@ const Generator = struct {
         try g.w.writeAll("}\n");
     }
 
+    /// BUG-164 (fuzz F6): emit `_ = v;` for each loop variable that neither the
+    /// where-clause nor the body provably reads — Zig rejects unused captures.
+    /// mightUseName/-InExpr are conservative (true when unsure), so this never
+    /// produces a pointless discard.  Call at the top of the loop body, before
+    /// the where-clause emission.
+    fn discardUnusedLoopVars(bg: Generator, s: *const Ast.StmtForIn) anyerror!void {
+        for (s.vars) |v| {
+            if (std.mem.eql(u8, v, "_")) continue;
+            if (s.where) |w| if (mightUseNameInExpr(v, w)) continue;
+            if (mightUseName(v, s.body)) continue;
+            try bg.writeIndent();
+            try bg.w.print("_ = {s};\n", .{v});
+        }
+    }
+
     /// `for a, b in list_of_pairs` — destructure each tuple element into named variables.
     /// Emits: for (iter.items) |_zbr_tup| { const a = _zbr_tup.@"0"; const b = _zbr_tup.@"1"; ... }
     fn genForInTuple(g: Generator, s: *Ast.StmtForIn) anyerror!void {
@@ -11240,7 +11273,11 @@ const Generator = struct {
         for (s.vars, 0..) |v, i| {
             try bg.writeIndent();
             try bg.w.print("const {s} = {s}.@\"{d}\";\n", .{ v, elem_var, i });
-            if (!nameUsedInStmts(v, s.body)) {
+            // BUG-164: was nameUsedInStmts (under-approximating — could
+            // wrongly discard a var used in an unmodelled stmt form → Zig
+            // pointless discard) and ignored where-clause uses.
+            const used_in_where = if (s.where) |w| mightUseNameInExpr(v, w) else false;
+            if (!used_in_where and !mightUseName(v, s.body)) {
                 try bg.writeIndent();
                 try bg.w.print("_ = {s};\n", .{v});
             }
@@ -11280,6 +11317,7 @@ const Generator = struct {
         try g.w.writeAll("| {\n");
         var bg = g.indented();
         bg.for_else_label = null;  // don't inherit outer for-else label
+        try discardUnusedLoopVars(bg, s);
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -11498,6 +11536,7 @@ const Generator = struct {
         var bg = wg.indented();
         bg.for_else_label = null;
         if (fels_lbl) |lbl| bg.for_else_label = lbl;
+        try discardUnusedLoopVars(bg, s);
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");
@@ -11570,6 +11609,7 @@ const Generator = struct {
         var bg = wg.indented();
         bg.for_else_label = null;
         if (fels_lbl) |lbl| bg.for_else_label = lbl;
+        try discardUnusedLoopVars(bg, s);
         if (s.where) |w| {
             try bg.writeIndent();
             try bg.w.writeAll("if (!(");

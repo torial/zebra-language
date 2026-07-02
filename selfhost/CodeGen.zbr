@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, isZigPrimitiveName, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -529,8 +529,19 @@ def stmtMentionsThis(s: Stmt): bool
         on Stmt.expr as e
             return exprMentionsThis(e)
         on Stmt.if_ as i
+            # BUG-166 (fuzz F10): must scan else-if and else branches too — a
+            # self-use only in an else branch was invisible, emitting a
+            # pointless `_ = self;` the bootstrap (collectRefs) never emits.
             for st in i.then_stmts
                 if stmtMentionsThis(st)
+                    return true
+            for ei in i.else_ifs
+                if exprMentionsThis(ei.cond)
+                    return true
+                if bodyMentionsThis(ei.stmts)
+                    return true
+            if i.else_stmts as ies
+                if bodyMentionsThis(ies)
                     return true
             return exprMentionsThis(i.cond)
         on Stmt.while_ as w
@@ -5511,6 +5522,12 @@ struct Generator
                                         var fname3 = extractAfterDot(orf_entry)
                                         ig.opt_ptr_field_bindings.add(makeDottedKey(cap, fname3))
                                     orfi += 1
+                    # BUG-164 (fuzz F6): a binding the body never reads is an
+                    # unused local constant to Zig — discard it.  mightUseName
+                    # is conservative (true when unsure): no pointless discard.
+                    if cap != "_" and not mightUseName(cap, stmts)
+                        ig.writeIndent()
+                        ig.w.emit("_ = " + cap + ";\n")
                     ig.genStmts(stmts)
                     var ckey = makeDottedKey(cap, "")
                     ig.ptr_field_bindings.removeStartingWith(ckey)
@@ -5523,6 +5540,10 @@ struct Generator
                     w.emit(cap)
                     w.emit("| {\n")
                     var ig = indented()
+                    # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
+                    if cap != "_" and not mightUseName(cap, stmts)
+                        ig.writeIndent()
+                        ig.w.emit("_ = " + cap + ";\n")
                     ig.genStmts(stmts)
             else
                 # Option B: `if x as n` -- optional unwrap
@@ -5532,6 +5553,10 @@ struct Generator
                 w.emit(cap)
                 w.emit("| {\n")
                 var ig2 = indented()
+                # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
+                if cap != "_" and not mightUseName(cap, stmts)
+                    ig2.writeIndent()
+                    ig2.w.emit("_ = " + cap + ";\n")
                 ig2.genStmts(stmts)
 
     def genIf(si: StmtIf)
@@ -5749,6 +5774,7 @@ struct Generator
                 wg.w.emit("while (_it_" + vname + ".next()) |" + vname + "| {\n")
                 # split() elements are []const u8 — mark loop var as string for printFmtSpec
                 str_params.add(vname)
+                bg.discardUnusedLoopVars(fi)
                 bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
                 wg.writeIndent()
@@ -5786,6 +5812,7 @@ struct Generator
                     bg.for_else_label = label!
                 wg.writeIndent()
                 wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + vname + "| {\n")
+                bg.discardUnusedLoopVars(fi)
                 bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
                 wg.writeIndent()
@@ -5809,6 +5836,7 @@ struct Generator
                 emitBytesIterObject(fi.iter)
                 w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
+                ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -5824,6 +5852,7 @@ struct Generator
                 genExpr(fi.iter)
                 w.emit(") |" + vname + "| {\n")
                 for_loop_vars.add(vname)
+                ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -5847,6 +5876,7 @@ struct Generator
                 w.emit(".items) |" + vname + "| {\n")
                 for_loop_vars.add(vname)
                 str_params.add(vname)
+                ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -5902,6 +5932,7 @@ struct Generator
                                 if for_orf_e.startsWith(for_st_dot)
                                     ig.opt_ptr_field_bindings.add(makeDottedKey(vname, extractAfterDot(for_orf_e)))
                                 for_oi += 1
+                ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
                 if fi.else_ != nil
@@ -5969,6 +6000,7 @@ struct Generator
         # Seed infer_ctx so row.asInt/asStr/asFloat resolve via sqlite_row dispatch
         if sqb.infer_ctx != nil
             sqb.infer_ctx!.bind(vname, Type_.sqlite_row)
+        sqb.discardUnusedLoopVars(fi)
         sqb.emitForGuard(fi)
         sqb.genStmts(fi.stmts)
         sqi.writeIndent()
@@ -5985,6 +6017,23 @@ struct Generator
         w.emit("if (!(")
         genExpr(fi.filter!)
         w.emit(")) continue;\n")
+
+    # BUG-164 (fuzz F6): emit `_ = v;` for each loop variable that neither the
+    # filter (where-clause) nor the body provably reads — Zig rejects unused
+    # payload captures.  mightUseName is conservative (true when unsure), so
+    # this never produces a pointless discard.  Call only in capture-style
+    # arms (`|v|` payloads) — never counter arms (range: the while-header
+    # itself uses the variable) or arms with their own discard handling
+    # (hashmap/tuple).  Mirrors src/CodeGen.zig discardUnusedLoopVars.
+    def discardUnusedLoopVars(fi: StmtForIn)
+        for lv in fi.vars
+            if lv != "_"
+                var lv_used = mightUseName(lv, fi.stmts)
+                if not lv_used and fi.filter != nil
+                    lv_used = mightUseNameInExpr(lv, fi.filter!)
+                if not lv_used
+                    writeIndent()
+                    w.emit("_ = " + lv + ";\n")
 
     # Detect `str.bytes()`: a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
     def isBytesIter(e: Expr): bool

@@ -50,9 +50,21 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
     names (for/if-as), destructuring, field names still bare — extend if hit.
     Regression `test/fuzz_f1_primitive_names_test.zbr`; smoke 192/192,
     round-trip clean.
-  - **F6 (shared, NEW 2026-07-02)**: unused `if x as y` capture → Zig
-    "unused capture" (seeds 3/27) — the `_ = b;` suppression misses a shape.
-    Open; diagnose next fuzz session.
+  - **F6**: ✅ FIXED 2026-07-02 (BUG-164) — no unused-binding suppression
+    existed for `if x as y` at all; for-in arms were a patchwork
+    (list/chars/split/bytes/sqlite leaked; tuple had latent pointless-discard
+    flaws). Both compilers now discard via mightUseName at every
+    capture-style arm (guarded for `as _` explicit discards); generator's
+    for-in usage mask removed. Regression `test/fuzz_f6_unused_capture_test.zbr`.
+  - **F10**: ✅ FIXED 2026-07-02 (BUG-166, selfhost-only, seed 51) —
+    `stmtMentionsThis` was blind to else/else-if branches, emitting a
+    pointless `_ = self;` for methods whose only self-use was in an else.
+    Post-fix batch: **seeds 0–59 all ok** — first fully-clean sweep.
+  - **F9 / BUG-165 (NEW 2026-07-02, OPEN)**: range for-in three-way
+    inconsistency — QUICKSTART §13's `for i in 0 to 10` rejected by BOTH
+    compilers (doc rot); bootstrap parses `0..3`; selfhost parser rejects
+    `..` in for-in entirely. Fix selfhost parser + QUICKSTART §13; decide
+    `to`/`step`. Fuzzer must not gen range loops until reconciled.
   - **F7**: ✅ FIXED 2026-07-02 (BUG-163) — orelse/catch/if-expr/try emitted
     without self-parens; Zig re-associated them (`1 - v orelse 8` ≡
     `(1 - v) orelse 8`). All four arms now self-parenthesize in both

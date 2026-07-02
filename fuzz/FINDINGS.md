@@ -122,15 +122,56 @@ the finding was pure generator over-generation.
 
 ---
 
-## F6 — unused `if x as y` capture emits `if (x) |y|` that Zig rejects  (shared, OPEN)
+## F6 — unused `if x as y` / for-in captures emit payloads Zig rejects  (shared, ✅ FIXED — BUG-164)
 
-Surfaced 2026-07-02 by the first post-F1-unmasking batch: **seeds 3 and 27**
-(`both-zig-fail`, `error: unused capture` on `if (v9) |ob10| {`). The
-generator guards for-in captures with `var _ = e` when unused, but not
-`if…as` bindings — and the compilers' unused-capture suppression (`_ = b;`,
-CodeGen.zbr ~6331 family) misses this shape. Same family as F2 (unused-use
-analysis on binding forms); likely the nested-scope usage check. Repro:
-`fuzz/run.py --seed 3`. NOT yet diagnosed — next fuzz session.
+**Seeds 3 and 27** (`both-zig-fail`, `error: unused capture`). Probing showed
+the gap was total, not shape-specific: NO unused-binding suppression existed
+for the `if x as y` statement form (the `_ = b;` suppression seen in the
+codebase belongs to `branch` codegen), and the for-in story was a patchwork —
+hashmap/tuple/range arms handled it (tuple with two latent flaws: an
+under-approximating `nameUsedInStmts` that could produce *pointless*
+discards, and ignored where-clause uses), while list/chars/split/bytes/
+sqlite arms leaked.
+
+**Fix (both compilers):** `genIfCaptureClause`/`genIsCaptureThen` (all three
+arms: union-variant const binding, `is T as`, plain `as`) and a shared
+`discardUnusedLoopVars` helper wired into every capture-style for-in arm
+emit `_ = v;` when neither the body nor the where-clause provably reads the
+binding. `mightUseName` is conservative (true when unsure) — a modelled use
+always suppresses the discard, so no pointless-discard risk; the F2 modeling
+work (this session) is what makes it precise enough to be useful. Counter
+arms (range) skip it — the while-header itself uses the variable.
+The generator's for-in `var _ = e` usage mask is REMOVED so unused captures
+stay differentially tested. Regression:
+`test/fuzz_f6_unused_capture_test.zbr`. Assigned **BUG-164**.
+
+## F10 — selfhost `_ = self;` blind to else-branch self-uses  (✅ FIXED — BUG-166)
+
+**Seed 51**, first 60-seed batch after BUG-164 (verdict `zig-diverge-B`,
+`pointless discard of function parameter: _ = self;`). A method whose ONLY
+self-use (`.f0 = 61.1`) sat in an `else` branch: the selfhost's
+`stmtMentionsThis` `Stmt.if_` arm scanned then-branch + cond but skipped
+`else_ifs`/`else_stmts` entirely, so the `_ = self;` suppression fired while
+the else branch used self. Bootstrap (`collectRefs`) was correct — a genuine
+selfhost-only equivalence bug. Fixed by scanning all branches; sibling
+walkers (`nameUsedInStmt`, `methodMutatesSelf`) audited clean. Regression:
+the Gauge shape in `test/fuzz_f6_unused_capture_test.zbr` + seed 51.
+Also hardened en route: the BUG-164 discards now skip `as _` (explicit
+discard binding) — caught by crypto_test before commit (`_ = _;`).
+
+## F9 — range for-in: docs claim `to`, bootstrap has `..`, selfhost has neither  (divergence + doc rot, OPEN)
+
+Found while probing F6. Three-way inconsistency around numeric range loops:
+- QUICKSTART §13 documents `for i in 0 to 10` (+ `step`) as the canonical
+  form — **both compilers reject it** (no `to` range operator exists).
+- The bootstrap parses `for i in 0..3` (genForInToRange) — QUICKSTART uses
+  this form in §33/§35 examples.
+- The **selfhost parser rejects `..` in for-in** ("expected indent, got
+  '..'") — its `..` handling is slice-context only.
+- `for i in 0.to(100)` (method form) exists in both (isToRangeIter).
+Reconcile: implement `..` range parsing in the selfhost parser (equivalence
+rule), fix QUICKSTART §13 to the real forms, decide whether `to`/`step`
+should exist at all. Until then the fuzzer must not generate range loops.
 
 ## F7 — low-precedence expressions re-emitted without parens  (shared, ✅ FIXED — BUG-163)
 

@@ -1,0 +1,63 @@
+# Fuzzer finding F6 / BUG-164: an `if x as y` binding or a for-in loop
+# variable that the body never reads emitted a bare Zig payload capture
+# (`if (x) |y|`, `while (it.next()) |v|`), which Zig rejects as an unused
+# capture.  Both compilers now emit a `_ = y;` discard when neither the
+# body nor the where-clause provably reads the binding (mightUseName is
+# conservative, so a modelled use always suppresses the discard).
+# Covers: if-as (plain + inside a helper), for-in over List / chars() /
+# split() / bytes(), and a where-clause-only use (must NOT discard).
+
+def poke(p0: str): int
+    var v: str? = "x"
+    if v as b
+        print("helper hit")
+    return p0.len
+
+# BUG-166 / fuzz F10 (seed 51): a method whose ONLY self-use is in an else
+# branch must not emit `_ = self;` (selfhost stmtMentionsThis was blind to
+# else/else-if).  Also covers `if x as _` (explicit discard binding — the
+# BUG-164 discard must not re-discard it as `_ = _;`).
+class Gauge
+    var level: float
+    cue init(level: float)
+        .level = level
+    def poke2(flag: bool): int
+        if flag
+            print("no self here")
+        else
+            .level = 61.1
+        return 9
+
+def checkGauge(): float
+    var g = Gauge(1.0)
+    var _ = g.poke2(true)
+    var maybe: str? = nil
+    if maybe as _
+        print("never")
+    return g.level
+
+def main()
+    var o: int? = 3
+    if o as b
+        print("main hit")
+    var xs: List(int) = List(int)()
+    xs.add(4)
+    xs.add(-2)
+    var n = 0
+    for e in xs
+        n = n + 1
+    for c in "ab".chars()
+        n = n + 1
+    for part in "a,b,c".split(",")
+        n = n + 1
+    for by in "xyz".bytes()
+        n = n + 1
+    for e2 in xs if e2 > 0
+        n = n + 10
+    var pk = poke("abc")
+    var lvl = checkGauge()
+    print("n=${n} poke=${pk} lvl=${lvl}")
+    if n == 20 and pk == 3 and lvl == 1.0
+        print("fuzz_f6: OK")
+    else
+        print("fuzz_f6: FAIL n=${n} lvl=${lvl}")

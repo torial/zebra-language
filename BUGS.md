@@ -1,6 +1,69 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-163. Next new bug: BUG-164.**
+**Last bug number generated: BUG-166. Next new bug: BUG-167.**
+
+---
+
+## BUG-166: selfhost `stmtMentionsThis` blind to else/else-if branches ✅ FIXED
+
+**Severity:** medium (selfhost-only equivalence bug — a method whose ONLY
+self-use sits in an `else` branch emitted `_ = self;`, which Zig rejects as
+a pointless discard once the else-branch use compiles).
+**Found by the differential fuzzer** (seed 51, verdict `zig-diverge-B`) in
+the first 60-seed batch after the BUG-164 work — fuzz finding **F10**.
+
+**Root cause:** `selfhost/CodeGen.zbr stmtMentionsThis`'s `Stmt.if_` arm
+scanned `then_stmts` + `cond` but skipped `else_ifs` and `else_stmts`
+entirely, so `.field = x` in an else branch was invisible to the
+`_ = self;` suppression. The bootstrap (`collectRefs`) has no such gap.
+Sibling walkers audited clean: `nameUsedInStmt` and `methodMutatesSelf`
+if-arms already cover else/else-if.
+
+**FIXED (2026-07-02):** the arm now scans else-if conds/bodies and the else
+body. Regression: the else-only-self-use method shape added to
+`test/fuzz_f6_unused_capture_test.zbr`; fuzz seed 51 → `ok`.
+
+**Adjacent hardening in the same session:** the BUG-164 if-as discard sites
+gained a `cap != "_"` guard — `if x as _` (Zebra's explicit discard
+binding) previously made the new code emit `_ = _;`, invalid Zig; caught by
+`crypto_test` in the smoke suite before commit.
+
+---
+
+## BUG-164: unused `if-as` / for-in captures emit payloads Zig rejects ✅ FIXED
+
+**Severity:** medium (any legal Zebra program that binds without reading —
+`if x as y` for a presence check, a loop over a list just for its count —
+failed to compile in both compilers with "unused capture").
+**Found by the differential fuzzer** (`fuzz/` finding **F6**, seeds 3/27).
+
+Probing showed no unused-binding suppression existed for `if x as y` at all
+(the suppression in the codebase belongs to `branch` codegen), and for-in
+arms were a patchwork: hashmap/tuple/range handled it (tuple with two latent
+flaws — under-approximating `nameUsedInStmts` risking *pointless* discards,
+and ignored where-clause uses), list/chars/split/bytes/sqlite leaked.
+
+**FIXED (2026-07-02), both compilers:** if-as capture arms (union-variant,
+`is T as`, plain `as`) and a shared `discardUnusedLoopVars` helper in every
+capture-style for-in arm now emit `_ = v;` when neither body nor
+where-clause provably reads the binding (`mightUseName` — conservative, so
+no pointless-discard risk; precise enough thanks to the BUG-161 modeling).
+Tuple arm switched to the same analyzer. Generator's for-in usage mask
+removed so this stays differentially tested.
+Regression: `test/fuzz_f6_unused_capture_test.zbr`. See FINDINGS.md F6.
+
+---
+
+## BUG-165: range for-in — docs say `to`, bootstrap has `..`, selfhost has neither (= fuzz F9)
+
+**Status:** OPEN, found 2026-07-02 while probing BUG-164.
+Three-way inconsistency: QUICKSTART §13's documented `for i in 0 to 10` (+
+`step`) is rejected by BOTH compilers; the bootstrap parses `for i in 0..3`
+(and QUICKSTART §33/§35 use that form); the selfhost parser rejects `..` in
+for-in entirely ("expected indent, got '..'" — its `..` is slice-context
+only). `0.to(n)` method form works in both. Fix: selfhost `..` range
+parsing (equivalence rule) + QUICKSTART §13 correction + a decision on
+whether `to`/`step` should exist. See FINDINGS.md F9.
 
 ---
 
