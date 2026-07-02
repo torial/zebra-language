@@ -744,11 +744,13 @@ struct StmtCopyOut
     var span: Span
     var target: Expr
     var value: Expr
+    var deep: bool           # true = `<<-` copy-out, false = `<-` channel op (§28d)
 
-    cue init(span: Span, target: Expr, value: Expr)
+    cue init(span: Span, target: Expr, value: Expr, deep: bool)
         .span = span
         .target = target
         .value = value
+        .deep = deep
 
 enum ContractKind
     precond

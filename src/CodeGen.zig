@@ -12657,8 +12657,16 @@ const Generator = struct {
     /// Outside a scoped block, `<-` degenerates to a plain assignment.
     fn genCopyOut(g: Generator, s: *Ast.StmtCopyOut) anyerror!void {
         // Type-driven channel disambiguation: check declared types of LHS and RHS.
+        // §28d (2026-07-02): `<-` is channel send/recv ONLY; copy-out uses `<<-`.
+        // Enforced here because Chan-ness is declared-type knowledge the TC
+        // doesn't model; wrong-token use is a compile error with the fix named.
         if (g.getExprDeclaredType(s.target)) |tr| {
             if (tr == .generic and std.mem.eql(u8, tr.generic.name, "Chan")) {
+                if (s.deep) {
+                    try g.writeIndent();
+                    try g.w.print("@compileError(\"line {d}: '<<-' is arena copy-out; channel send uses '<-' (ch <- value)\");\n", .{s.span.line});
+                    return;
+                }
                 try g.writeIndent();
                 try g.genExpr(s.target);
                 try g.w.writeAll(".send(");
@@ -12669,6 +12677,11 @@ const Generator = struct {
         }
         if (g.getExprDeclaredType(s.value)) |tr| {
             if (tr == .generic and std.mem.eql(u8, tr.generic.name, "Chan")) {
+                if (s.deep) {
+                    try g.writeIndent();
+                    try g.w.print("@compileError(\"line {d}: '<<-' is arena copy-out; channel receive uses '<-' (var x <- ch)\");\n", .{s.span.line});
+                    return;
+                }
                 try g.writeIndent();
                 try g.genExpr(s.target);
                 try g.w.writeAll(" = ");
@@ -12676,6 +12689,11 @@ const Generator = struct {
                 try g.w.writeAll(".recv();\n");
                 return;
             }
+        }
+        if (!s.deep) {
+            try g.writeIndent();
+            try g.w.print("@compileError(\"line {d}: '<-' is channel send/receive only; arena copy-out now uses '<<-' (target <<- value)\");\n", .{s.span.line});
+            return;
         }
         const rhs_type = if (g.tc) |tc| (tc.expr_types.get(s.value) orelse .unknown) else .unknown;
         const is_str = rhs_type == .string;

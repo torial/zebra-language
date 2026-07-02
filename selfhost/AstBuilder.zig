@@ -4716,7 +4716,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:599
                 const value_expr = (try self.buildExpr(pco.value.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:600
-                return Stmt{ .copy_out = _box_51: { const _bp_51 = _allocator.create(Ast.StmtCopyOut) catch @panic("OOM"); _bp_51.* = StmtCopyOut.init(Span.init(pco.line, 0, pco.line, 0), target_expr, value_expr); break :_box_51 _bp_51; } };
+                return Stmt{ .copy_out = _box_51: { const _bp_51 = _allocator.create(Ast.StmtCopyOut) catch @panic("OOM"); _bp_51.* = StmtCopyOut.init(Span.init(pco.line, 0, pco.line, 0), target_expr, value_expr, pco.deep); break :_box_51 _bp_51; } };
             },
             .stmt_guard => |pg_ptr| {
                 const pg = pg_ptr.*;

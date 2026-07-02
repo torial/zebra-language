@@ -7460,10 +7460,17 @@ struct Generator
     # ── genCopyOut ────────────────────────────────────────────────────────────
 
     def genCopyOut(co: StmtCopyOut)
+        # §28d (2026-07-02): `<-` is channel send/recv ONLY; copy-out uses
+        # `<<-`.  Wrong-token use is a compile error naming the fix.
+        # Mirrors src/CodeGen.zig genCopyOut.
         # Chan send: ch <- val  (target is a Chan local)
         var co_lhs_nm = getMemberFieldName(co.target)
         if co_lhs_nm != nil
             if chan_locals.contains_(co_lhs_nm!)
+                if co.deep
+                    writeIndent()
+                    w.emit("@compileError(\"line ${co.span.line}: '<<-' is arena copy-out; channel send uses '<-' (ch <- value)\");\n")
+                    return
                 writeIndent()
                 genExpr(co.target)
                 w.emit(".send(")
@@ -7474,12 +7481,20 @@ struct Generator
         var co_rhs_nm = getMemberFieldName(co.value)
         if co_rhs_nm != nil
             if chan_locals.contains_(co_rhs_nm!)
+                if co.deep
+                    writeIndent()
+                    w.emit("@compileError(\"line ${co.span.line}: '<<-' is arena copy-out; channel receive uses '<-' (var x <- ch)\");\n")
+                    return
                 writeIndent()
                 genExpr(co.target)
                 w.emit(" = ")
                 genExpr(co.value)
                 w.emit(".recv();\n")
                 return
+        if not co.deep
+            writeIndent()
+            w.emit("@compileError(\"line ${co.span.line}: '<-' is channel send/receive only; arena copy-out now uses '<<-' (target <<- value)\");\n")
+            return
         var is_str  = .isStringBoth(co.value, "copy_out")
         var is_prim = .isPrimType(co.value)
         if allocate_depth > 0 and is_str

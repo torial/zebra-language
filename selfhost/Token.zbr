@@ -56,6 +56,7 @@ union TokenKind
     minusminus
     arrow
     left_arrow
+    left_arrow_deep
     star
     starstar
     slash

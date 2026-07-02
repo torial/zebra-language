@@ -386,10 +386,12 @@ struct PAllocate
 struct PCopyOut
     var target: List(PNode)
     var value: List(PNode)
+    var deep: bool           # true = `<<-` copy-out, false = `<-` channel op
     var line: int
-    cue init(target: List(PNode), value: List(PNode), line: int)
+    cue init(target: List(PNode), value: List(PNode), deep: bool, line: int)
         .target = target
         .value = value
+        .deep = deep
         .line = line
 
 struct PWith
@@ -2358,7 +2360,11 @@ class Parser
             op = "-="
         else if .textIs("*=")
             op = "*="
-        if .textIs("<-")
+        if .textIs("<-") or .textIs("<<-")
+            # §28d (2026-07-02): `<<-` = arena deep copy-out, `<-` = channel
+            # send/recv only.  One stmt kind; `deep` records the token and
+            # genCopyOut enforces the pairing.
+            var co_deep = .textIs("<<-")
             .advance()
             const value_expr = .parseExpr()
             .skipEol()
@@ -2366,7 +2372,7 @@ class Parser
             tgt.add(target_expr)
             var val = List(PNode)()
             val.add(value_expr)
-            return PNode.stmt_copy_out(PCopyOut(tgt, val, line))
+            return PNode.stmt_copy_out(PCopyOut(tgt, val, co_deep, line))
         if op != ""
             .advance()
             const value_expr = .parseExpr()

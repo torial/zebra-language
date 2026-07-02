@@ -560,13 +560,16 @@ pub const StmtAllocate = struct {
     body:      []const Stmt,
 };
 
-/// `lhs <- rhs` — arena copy-out: duplicate rhs from the current sub-arena into the
-/// parent allocator and assign to lhs.  Outside any arena block this is a plain assign.
-/// Prototype scope: str and primitive types only; class/list/interface deferred to 0.14.
+/// `lhs <<- rhs` — arena copy-out: duplicate rhs from the current sub-arena into
+/// the parent allocator and assign to lhs.  Outside any arena block this is a
+/// plain assign.  `lhs <- rhs` is channel send / receive ONLY (§28d 2026-07-02:
+/// copy-out moved to `<<-`; one stmt kind carries both, `deep` records the token
+/// and genCopyOut enforces the pairing).
 pub const StmtCopyOut = struct {
     span:   Span,
     target: *Expr,  // left-hand side (assignment target)
     value:  *Expr,  // right-hand side (value to copy out)
+    deep:   bool,   // true = `<<-` (copy-out), false = `<-` (channel op)
 };
 
 /// `guard cond else { block | stmt }` — early-exit: if cond is false, run else body.

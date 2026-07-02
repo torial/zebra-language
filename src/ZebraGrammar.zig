@@ -1008,6 +1008,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtArenaScope, .rhs = &.{ t(.kw_arena),    t(.eol), n(.Block) } },
     .{ .lhs = .StmtAllocate,   .rhs = &.{ t(.kw_allocate), n(.Expr), t(.eol), n(.Block) } },
     .{ .lhs = .StmtCopyOut,   .rhs = &.{ n(.Expr), t(.left_arrow), n(.Expr), t(.eol) } },
+    .{ .lhs = .StmtCopyOut,   .rhs = &.{ n(.Expr), t(.left_arrow_deep), n(.Expr), t(.eol) } },
     .{ .lhs = .StmtRequire,   .rhs = &.{ t(.kw_require), t(.eol), n(.Block) } },
     .{ .lhs = .StmtEnsure,    .rhs = &.{ t(.kw_ensure),  t(.eol), n(.Block) } },
 

@@ -597,7 +597,7 @@ class ASTBuilder
             on PNode.stmt_copy_out as pco
                 const target_expr = .buildExpr(pco.target.at(0))?
                 const value_expr = .buildExpr(pco.value.at(0))?
-                return Stmt.copy_out(StmtCopyOut(Span(pco.line, 0, pco.line, 0), target_expr, value_expr))
+                return Stmt.copy_out(StmtCopyOut(Span(pco.line, 0, pco.line, 0), target_expr, value_expr, pco.deep))
 
             on PNode.stmt_guard as pg
                 const cond_expr = .buildExpr(pg.cond.at(0))?

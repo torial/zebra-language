@@ -1948,11 +1948,11 @@ print(ptr_into_block)                  # dangling slice — undefined behaviour
 ```
 
 Non-scoped wrappers (`Page()`, `Smp()`, `C()`) do not free on exit, so values
-allocated inside survive naturally; `<-` degenerates to plain assignment for these.
+allocated inside survive naturally; `<<-` degenerates to plain assignment for these.
 
-### `<-` copy-out operator
+### `<<-` copy-out operator
 
-The `<-` operator deep-copies a value from the inner allocator into the parent
+The `<<-` operator deep-copies a value from the inner allocator into the parent
 allocator and assigns it to an outer variable — surviving the block's deinit:
 
 ```zebra
@@ -1960,12 +1960,12 @@ var result: str = ""
 allocate Arena()
     var src = File.read("big_file.txt")
     var summary = process(src)
-    result <- summary           # deep-copies 'summary' into the parent allocator
+    result <<- summary           # deep-copies 'summary' into the parent allocator
 # src + all temporaries freed here; 'result' is safe
 
-# Outside any allocate block: <- is a plain assignment (no copy needed)
+# Outside any allocate block: <<- is a plain assignment (no copy needed)
 var x: str = ""
-x <- "hello"                    # equivalent to x = "hello"
+x <<- "hello"                    # equivalent to x = "hello"
 
 # List copy-out
 var words: List(str) = List()
@@ -1973,13 +1973,13 @@ allocate Arena()
     var inner: List(str) = List()
     inner.add("hello")
     inner.add("world")
-    words <- inner              # deep-copies all elements into the parent allocator
+    words <<- inner              # deep-copies all elements into the parent allocator
 
 # Class instance copy-out (including recursive ^T? fields)
 var head: ^Node? = nil
 allocate Arena()
     var n = Node("a", Node("b", nil))
-    head <- n                   # recursively copies the entire linked list
+    head <<- n                   # recursively copies the entire linked list
 ```
 
 - **`str`:** duplicated into the parent allocator via `alloc.dupe`.
@@ -3101,7 +3101,8 @@ var ch: Chan(int) = Chan(int)(4)   # capacity 4
 | `ch.recv()` | `int?` | Receive a value; blocks when empty; `nil` when closed + empty |
 | `ch.close()` | `void` | Signal no more values; recv drains remaining then returns nil |
 
-The `<-` operator is syntactic sugar:
+For channels, the `<-` operator is syntactic sugar (`<-` is channel
+send/receive ONLY since 2026-07-02; arena copy-out uses `<<-`):
 
 ```zebra
 ch <- 42          # send: ch.send(42)

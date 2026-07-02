@@ -899,6 +899,9 @@ const Tokenizer = struct {
             if (c == '*' and c1 == '*' and c2 == '=') { self.pos += 3; try self.emit(.starstar_equals,   "**=", ln, cl); return; }
             if (c == '<' and c1 == '<' and c2 == '=') { self.pos += 3; try self.emit(.double_lt_equals,  "<<=", ln, cl); return; }
             if (c == '>' and c1 == '>' and c2 == '=') { self.pos += 3; try self.emit(.double_gt_equals,  ">>=", ln, cl); return; }
+            // `<<-` (deep copy-out, §28d) must out-munch `<<` — only the
+            // unspaced shift-by-negative `x<<-y` re-lexes; corpus has none.
+            if (c == '<' and c1 == '<' and c2 == '-') { self.pos += 3; try self.emit(.left_arrow_deep,   "<<-", ln, cl); return; }
         }
 
         // Two-character compound operators (longest-match)

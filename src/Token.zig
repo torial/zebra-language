@@ -132,7 +132,8 @@ pub const TokenKind = enum {
     minus,         // -
     minusminus,    // --
     arrow,         // ->
-    left_arrow,    // <- (arena copy-out)
+    left_arrow,    // <- (channel send/recv)
+    left_arrow_deep, // <<- (arena deep copy-out; §28d 2026-07-02 — was <-)
     star,          // *
     starstar,      // **
     slash,         // /

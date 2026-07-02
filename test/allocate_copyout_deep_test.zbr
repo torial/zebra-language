@@ -16,7 +16,7 @@ class Main
             var inner: List(str) = List()
             inner.add("hello")
             inner.add("world")
-            words <- inner
+            words <<- inner
         if words.len != 2
             ok = false
             print("Test 1 FAIL: count")
@@ -31,7 +31,7 @@ class Main
             inner2.add(10)
             inner2.add(20)
             inner2.add(30)
-            nums <- inner2
+            nums <<- inner2
         if nums.len != 3
             ok = false
             print("Test 2 FAIL: count")
@@ -45,7 +45,7 @@ class Main
             var n3 = Node("c", nil)
             var n2 = Node("b", n3)
             var n1 = Node("a", n2)
-            head <- n1
+            head <<- n1
         if head == nil
             ok = false
             print("Test 3 FAIL: head nil")

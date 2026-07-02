@@ -612,6 +612,12 @@ class Lexer
                 pos = pos + 3
                 emit(TokenKind.double_lt_equals(), "<<=", ln, cl)
                 return
+            # `<<-` (deep copy-out, §28d) must out-munch `<<` — only the
+            # unspaced shift-by-negative `x<<-y` re-lexes; corpus has none.
+            if c == c'<' and c1 == c'<' and c2 == c'-'
+                pos = pos + 3
+                emit(TokenKind.left_arrow_deep(), "<<-", ln, cl)
+                return
             if c == c'>' and c1 == c'>' and c2 == c'='
                 pos = pos + 3
                 emit(TokenKind.double_gt_equals(), ">>=", ln, cl)

@@ -2028,12 +2028,13 @@ const Builder = struct {
     }
 
     fn buildStmtCopyOut(b: Builder, node: TN) anyerror!Ast.StmtCopyOut {
-        // Expr left_arrow Expr eol
+        // Expr (left_arrow | left_arrow_deep) Expr eol
         const kids = ch(node);
         return .{
             .span   = spanOf(node, b.tokens),
             .target = try b.box(Ast.Expr, try b.buildExpr(kids[0])),
             .value  = try b.box(Ast.Expr, try b.buildExpr(kids[2])),
+            .deep   = isLeafKind(kids[1], .left_arrow_deep),
         };
     }
 

@@ -670,19 +670,42 @@ Zebra-level diagnostic ("cannot infer; annotate")**. Corollary: raise the
 priority of the single method-descriptor table (§24e, currently "defer
 post-1.0") — it converts four heuristic dispatch surfaces into one spec.
 
-**b. [decision] Unify error propagation on always-explicit `?`.** Same-file
+**b. [decision → APPROVED 2026-07-02] Unify error propagation on always-explicit `?`.** Same-file
 throws-to-throws auto-propagates; cross-module needs explicit `expr?` — an
 invisible rule keyed to file boundaries, so moving a function between files
-changes call-site semantics. Recommend always-explicit `?` (visible error
-flow at every call site) + a mechanical corpus sweep while the corpus is
-small.
+changes call-site semantics. Approved: always-explicit `?`.
+**Execution plan (own gated session — the sweep touches every same-file
+throws call in selfhost/ + test/ + examples/, likely hundreds of sites):**
+1. Add `--warn-implicit-try` to the BOOTSTRAP: at every site where codegen
+   auto-inserts `try` for a same-file throws call without `?`, emit
+   `file:line:col: implicit try (add '?')` to stderr. No behavior change.
+2. Run it over selfhost/*.zbr + test/ + examples/; a script consumes the
+   warning lines and inserts `?` at the exact positions (LF-safe writes!).
+3. Re-run until zero warnings; gates (smoke + round-trip — the round-trip
+   is the real test: the compiler compiles itself with the new rule).
+4. Mirror the warning in the selfhost, verify zero warnings there too.
+5. Flip: implicit try becomes a compile error in both (message: "call to
+   throws function needs '?'"); keep the flag as `--allow-implicit-try`
+   escape hatch for one release, then delete.
+6. QUICKSTART §12 rewrite; CHANGELOG entry (this is a breaking change —
+   the biggest since the `arena` keyword removal).
 
 **c. Exhaustiveness default-on.** Flip `--warn-non-exhaustive` to warn **by
 default** for same-module unions pre-1.0 (flag to silence), documented path
 to error-by-default at 2.0. The 108 legacy `else` arms are a sweep, not a
 blocker.
 
-**d. [decision] Give copy-out its own token.** `<-` is channel send
+**d. ✅ DONE 2026-07-02 — copy-out is `<<-`; `<-` is channel-only.**
+Sean approved `<<-` or `<--`; `<<-` chosen — `<--` already lexes as `<-`
+followed by unary minus (`x <- -y` is a valid channel send today). Note:
+`<<` IS a token (shift), so `<<-` out-munches it in both tokenizers; only
+the unspaced shift-by-negative `x<<-y` re-lexes (corpus has none).
+Implementation: `left_arrow_deep` token in both compilers; one StmtCopyOut
+kind with a `deep` flag; genCopyOut enforces the pairing by emitting
+`@compileError("line N: …")` into the generated Zig (identical behavior in
+both compilers, no throws plumbing; message names the fix). Corpus (3 test
+files) + QUICKSTART §28/§35 swept. Regression: bug121/copyout/slice5 tests
+now exercise `<<-`; the wrong-token errors verified by hand. `<-` is channel send
 (`ch <- v`), channel receive (`var v <- ch`), AND allocate-block deep-copy
 (`x <- y`) — a reader can't parse `x <- y` without both types, and copy-out
 has radically different cost semantics (deep recursive copy). Recommend a
