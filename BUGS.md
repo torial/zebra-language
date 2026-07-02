@@ -1,6 +1,29 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-166. Next new bug: BUG-167.**
+**Last bug number generated: BUG-167. Next new bug: BUG-168.**
+
+---
+
+## BUG-167: parsers accepted different ternary syntaxes; literal arms uncompilable ✅ FIXED
+
+**Severity:** medium (front-end equivalence divergence + a feature that was
+unusable with literal arms in runtime contexts).
+**= fuzz finding F8**, found while writing the F7 fixture (2026-07-02).
+
+The bootstrap parsed the ternary as call-form `if(cond, then, else)`; the
+selfhost parsed a colon-form `if c: t else: e`. Each rejected the other's
+syntax. Zero corpus usage, no QUICKSTART documentation — invisible until a
+fixture tried to use one. Separately, literal arms emitted bare
+`comptime_int`/`comptime_float`, which Zig rejects under a runtime
+condition.
+
+**FIXED (2026-07-02):** converged on the **call-form** (bootstrap's):
+selfhost `parseAtom` now parses `if(c, t, e)`; the colon arm is removed.
+(The FINDINGS note initially recommended the colon form; reversed on
+implementation grounds — see FINDINGS.md F8.) Both emitters wrap the
+ternary in `@as(i64/f64, …)` when the TC types it numeric, fixing the
+literal-arms case. Documented in QUICKSTART §13; the fuzz generator now
+produces ternaries. Regression: `test/fuzz_f8_ternary_test.zbr`.
 
 ---
 
@@ -22,6 +45,15 @@ if-arms already cover else/else-if.
 **FIXED (2026-07-02):** the arm now scans else-if conds/bodies and the else
 body. Regression: the else-only-self-use method shape added to
 `test/fuzz_f6_unused_capture_test.zbr`; fuzz seed 51 → `ok`.
+
+**Second face (same day, seeds 61/63/69/75/76/83/89/91):** as soon as the
+generator gained range loops, the same walker failed one arm over —
+`stmtMentionsThis` had NO `Stmt.for_num` arm (its `else` returns false), so
+a self-use only inside a range loop emitted a pointless `_ = self;`. Fixed
+(for_num arm: start/stop/step + body); Gauge.fill regression shape added.
+Design caution: unlike the conservative mightUseName family, this walker
+must be EXACT — both error directions are Zig compile errors (pointless
+discard vs unused parameter) — so any new Stmt form must be added here.
 
 **Adjacent hardening in the same session:** the BUG-164 if-as discard sites
 gained a `cap != "_"` guard — `if x as _` (Zebra's explicit discard

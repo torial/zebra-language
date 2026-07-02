@@ -71,11 +71,12 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
     without self-parens; Zig re-associated them (`1 - v orelse 8` ≡
     `(1 - v) orelse 8`). All four arms now self-parenthesize in both
     compilers. Regression `test/fuzz_f7_precedence_test.zbr`.
-  - **F8 (divergence, NEW 2026-07-02)**: the two parsers accept DIFFERENT
-    ternary syntaxes (bootstrap `if(c,t,e)` vs selfhost `if c: t else: e`);
-    zero corpus usage, undocumented; literal arms also emit bare
-    comptime_int. Reconcile alongside the `: void` parse divergence above —
-    recommend the colon form (matches 0.15 inline-if statements). §28g adjacent.
+  - **F8 / BUG-167**: ✅ FIXED 2026-07-02 — converged on the CALL-form
+    `if(c,t,e)` (bootstrap's; selfhost colon arm removed — reversal of the
+    initial colon recommendation, on implementation grounds). Literal arms
+    now `@as`-typed in both emitters. QUICKSTART §13 documents it; the
+    generator produces ternaries + range loops. Regression
+    `test/fuzz_f8_ternary_test.zbr`.
   - **F2 (shared)**: ✅ FIXED 2026-07-02 (BUG-161) — the unused-local auto-discard
     was suppressed by (1) any type annotation (the skip was meant for
     constrained-alias types only), (2) unmodelled `this` in `mightUseNameInExpr`

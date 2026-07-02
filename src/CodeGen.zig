@@ -13384,7 +13384,15 @@ const Generator = struct {
                 try g.w.writeAll(")");
             },
             .if_expr => |e| {
-                try g.w.writeAll("(if (");
+                // BUG-167 (fuzz F8): literal arms are comptime_int/float — a
+                // runtime cond then fails ("value with comptime-only type
+                // depends on runtime control flow").  Give Zig a result type
+                // via @as when the TC knows the ternary is int/float.
+                const ie_t: TypeChecker.Type = if (g.tc) |tc| tc.expr_types.get(expr) orelse .unknown else .unknown;
+                const ie_cast: ?[]const u8 = switch (ie_t) {
+                    .int => "i64", .float => "f64", else => null,
+                };
+                if (ie_cast) |ct| try g.w.print("@as({s}, if (", .{ct}) else try g.w.writeAll("(if (");
                 try g.genExpr(e.cond);
                 try g.w.writeAll(") ");
                 try g.genExpr(e.then_expr);

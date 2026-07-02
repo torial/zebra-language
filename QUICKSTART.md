@@ -856,6 +856,10 @@ for i in 0 : 10 : 2                  # with step (colon form only)
 for i in 0.to(10)                    # method form (composes with expressions)
     print(i)
 
+# ternary expression — call-form `if(cond, then_val, else_val)`
+var label = if(n > 0, "pos", "non-pos")
+var d = (if(a < 0, 1, 2) + 5)        # composes inside expressions; arms may be literals
+
 # for-in with inline guard (filter condition; skip non-matching elements)
 for item in items if item > 0
     totals.add(item)

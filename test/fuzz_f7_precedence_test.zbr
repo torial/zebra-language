@@ -15,10 +15,9 @@ def main()
     var n: int? = nil
     var b = ((n orelse 3) * (v orelse 1)) # two orelse operands in one binary
     var c = (10 + half(8)?)               # try nested in arithmetic
-    # NOTE: no if-expression (ternary) case here — the two parsers currently
-    # accept DIFFERENT ternary syntaxes (bootstrap `if(c,t,e)`, selfhost
-    # `if c: t else: e`) with zero corpus usage; filed as fuzz F8. The
-    # BUG-163 paren fix covers if_expr in both emitters once reconciled.
+    # Ternary-in-arithmetic (the 4th BUG-163 operator) is covered by
+    # test/fuzz_f8_ternary_test.zbr — the syntaxes were reconciled as
+    # BUG-167 after this fixture originally had to skip it.
     print("a=${a} b=${b} c=${c}")
     if a == -3 and b == 12 and c == 14
         print("fuzz_f7: OK")

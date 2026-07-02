@@ -729,6 +729,19 @@ smoke_run test/fuzz_f3_comptime_local_test.zbr "fuzz_f3: OK"
 # BUG-160 (fuzzer F4): interpolation of a non-string uses the type-appropriate spec
 # ({d} for float, {any} for List/struct) — a hardcoded `{}` diverged from bootstrap.
 smoke_run test/fuzz_f4_interp_fmt_test.zbr "fuzz_f4: OK"
+# BUG-162 (fuzzer F1): identifiers shadowing Zig primitives escape to @"name".
+smoke_run test/fuzz_f1_primitive_names_test.zbr "fuzz_f1: OK"
+# BUG-161 (fuzzer F2): unused-local discard vs annotation / this / interp / orelse.
+smoke_run test/fuzz_f2_unused_local_test.zbr "fuzz_f2: OK"
+# BUG-164 + BUG-166 (fuzzer F6/F10): unused if-as/for-in captures discarded;
+# else-branch self-use seen by the `_ = self;` suppression.
+smoke_run test/fuzz_f6_unused_capture_test.zbr "fuzz_f6: OK"
+# BUG-163 (fuzzer F7): orelse/catch/try/if-expr self-parenthesize.
+smoke_run test/fuzz_f7_precedence_test.zbr "fuzz_f7: OK"
+# BUG-167 (fuzzer F8): call-form ternary if(c,t,e) in both parsers; @as-typed arms.
+smoke_run test/fuzz_f8_ternary_test.zbr "fuzz_f8: OK"
+# BUG-165 (fuzzer F9): range for-in — `:`/`..`/`.to()` all lower to the i64 for_num.
+smoke_run test/fuzz_f9_range_test.zbr "fuzz_f9: OK"
 
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"

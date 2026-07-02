@@ -548,6 +548,18 @@ def stmtMentionsThis(s: Stmt): bool
             return exprMentionsThis(w.cond) or bodyMentionsThis(w.stmts)
         on Stmt.for_in as fi
             return exprMentionsThis(fi.iter) or bodyMentionsThis(fi.stmts)
+        on Stmt.for_num as fnum
+            # BUG-166 follow-up (seeds 61/63/69/…): the for_num arm was
+            # missing entirely — a self-use only inside a range loop was
+            # invisible, emitting a pointless `_ = self;`.
+            if exprMentionsThis(fnum.start)
+                return true
+            if exprMentionsThis(fnum.stop_)
+                return true
+            if fnum.step != nil
+                if exprMentionsThis(fnum.step!)
+                    return true
+            return bodyMentionsThis(fnum.stmts)
         on Stmt.print_ as p
             for a in p.args
                 if exprMentionsThis(a)
@@ -7840,7 +7852,24 @@ struct Generator
                 genExpr(ca2.fallback)
                 w.emit(")")
             on Expr.if_expr as ie
-                w.emit("(if (")
+                # BUG-167 (fuzz F8): literal arms are comptime_int/float — a
+                # runtime cond then fails.  Give Zig a result type via @as
+                # when the TC knows the ternary is int/float.  Mirrors the
+                # bootstrap arm.
+                var ie_cast = ""
+                if .infer_ctx != nil
+                    var ie_t: Type_ = inferExpr(e, .infer_ctx!)
+                    branch ie_t
+                        on Type_.int_
+                            ie_cast = "i64"
+                        on Type_.float_
+                            ie_cast = "f64"
+                        else
+                            pass
+                if ie_cast != ""
+                    w.emit("@as(" + ie_cast + ", if (")
+                else
+                    w.emit("(if (")
                 genExpr(ie.cond)
                 w.emit(") ")
                 genExpr(ie.then_expr)

@@ -159,6 +159,17 @@ the Gauge shape in `test/fuzz_f6_unused_capture_test.zbr` + seed 51.
 Also hardened en route: the BUG-164 discards now skip `as _` (explicit
 discard binding) — caught by crypto_test before commit (`_ = _;`).
 
+**Second face (2026-07-02, seeds 61/63/69/75/76/83/89/91):** the widened
+generator (range loops) immediately exposed the SAME walker one arm over —
+`stmtMentionsThis` had no `Stmt.for_num` arm at all, so a self-use only
+inside a range loop was invisible (`_ = self;` + `self.f0 = …` in the
+while body → pointless discard). Fixed: for_num arm scans start/stop/step
++ body. Design caution recorded: this walker's `else` returns FALSE, and
+BOTH error directions are Zig errors (`_ = self` + use = pointless discard;
+no `_ = self` + no use = unused parameter) — it must be kept exactly in
+sync with statement forms, unlike the conservative mightUseName family.
+The Gauge.fill shape in the F6 fixture is the regression.
+
 ## F9 — range for-in: docs claim `to`, bootstrap has `..`, selfhost has neither  (✅ FIXED — BUG-165)
 
 Found while probing F6; resolved 2026-07-02. The full picture turned out to
@@ -205,21 +216,29 @@ miscompile. Regression: `test/fuzz_f7_precedence_test.zbr` (orelse in
 arithmetic — the seed-7 shape; two orelse operands in one binary; `?` in
 arithmetic). Assigned **BUG-163**.
 
-## F8 — the two parsers accept DIFFERENT ternary syntaxes  (divergence, OPEN)
+## F8 — the two parsers accepted DIFFERENT ternary syntaxes  (✅ FIXED — BUG-167)
 
-Found while writing the F7 fixture. The bootstrap parses the if-expression
-(ternary) as call-form `if(cond, then, else)` (AstBuilder 8-child CST arm);
-the selfhost parses colon-form `if cond: then else: else_val`
-(Parser.zbr `parseAtom` `textIs("if")` arm). Each rejects the other's form.
-**Zero corpus usage of either** — the feature is undocumented (no QUICKSTART
-section) and untested, so the divergence was invisible until now. Also
-latent: literal ternary arms in runtime arithmetic emit bare `comptime_int`
-arms that Zig rejects ("value with comptime-only type depends on runtime
-control flow") — arms need `@as(i64, …)` wrapping once the syntax is
-reconciled. Recommend: pick ONE form (the colon form matches the 0.15
-inline-if statement syntax), implement in both parsers, document in
-QUICKSTART §13, add typed-arm emission. Until then the fuzzer must not
-generate ternaries.
+Found while writing the F7 fixture; resolved 2026-07-02. The bootstrap
+parsed call-form `if(cond, then, else)`; the selfhost parsed colon-form
+`if cond: then else: else_val`. Each rejected the other's form; zero corpus
+usage of either, undocumented, untested.
+
+**Resolution: converged on the CALL-form** (the bootstrap's). The original
+note here recommended the colon form for aesthetic consistency with inline-
+if statements — reversed on implementation grounds: converging to the
+bootstrap needed a ~15-line contained change in the selfhost's `parseAtom`,
+while colon-form would have meant new grammar in the bootstrap's CST parser
+(the regen authority) for an unused feature, and `if(` in expression
+position is unambiguous. The selfhost colon-form arm is removed.
+
+**Also fixed (both compilers):** literal arms are `comptime_int`/`float` —
+with a runtime condition Zig rejected the ternary outright ("value with
+comptime-only type depends on runtime control flow"). Both emitters now
+wrap in `@as(i64, …)`/`@as(f64, …)` when the TC types the ternary numeric.
+
+Documented in QUICKSTART §13; generator now produces ternaries
+(`caps['ternary']`) and range loops (`caps['ranges']`). Regression:
+`test/fuzz_f8_ternary_test.zbr`.
 
 ## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, ✅ FIXED — BUG-161)
 

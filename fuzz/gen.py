@@ -121,6 +121,10 @@ class Gen:
             name, ptypes, _ = self.pick(callable_here)
             args = ', '.join(self.gen_expr(pt, env, depth - 1) for pt in ptypes)
             return f'{name}({args})'
+        # ternary if(cond, a, b) — any prim type (BUG-167/F8 surface)
+        if self.caps.get('ternary') and self.maybe(0.12):
+            c = self.gen_expr('bool', env, depth - 1)
+            return f'if({c}, {self.gen_expr(ty, env, depth-1)}, {self.gen_expr(ty, env, depth-1)})'
         r = self.rng.random()
         if ty == 'int':
             if r < 0.7:
@@ -193,6 +197,8 @@ class Gen:
                 choices += ['ifas']    # `if optvar as bound` — nil-narrowing
             if list_in_scope:
                 choices += ['forin']   # `for e in list`
+            if self.caps.get('ranges'):
+                choices += ['fornum']  # `for i in a : b [: s]` / `a..b` (BUG-165/F9)
         k = self.pick(choices)
         d = self.caps['expr_depth']
         if k == 'listdecl':
@@ -203,6 +209,25 @@ class Gen:
                 lines.append(f'{ind}{name}.add({self.gen_expr(et, env, d)})')
             env[name] = f'List({et})'
             return lines
+        if k == 'fornum':
+            # Numeric range loop — all three spellings lower to the same i64
+            # for_num counter (BUG-165/F9).  Bounds are small literals so the
+            # run oracle terminates; the counter is read-only in the body.
+            v = self.fresh('r')
+            lo = self.rng.randint(-3, 3)
+            hi = lo + self.rng.randint(0, 4)
+            form = self.pick(('colon', 'dotdot', 'step'))
+            if form == 'colon':
+                head = f'{ind}for {v} in {lo} : {hi}'
+            elif form == 'dotdot':
+                head = f'{ind}for {v} in {lo}..{hi}'
+            else:
+                head = f'{ind}for {v} in {lo} : {hi} : {self.rng.randint(1, 3)}'
+            env2 = dict(env); env2[v] = 'int'
+            self._params.add(v)           # counter is read-only in the body
+            body = self.gen_block(env2, indent + 1, budget)
+            self._params.discard(v)
+            return [head] + body
         if k == 'forin':
             lv = self.pick(list_in_scope)
             et = env[lv][5:-1]            # List(T) → T
@@ -416,6 +441,8 @@ DEFAULT_CAPS = {
     'lists': True,       # generate List(T) — construction, .add, .len, for-in
     'structs': 2,        # up to this many struct types (fields, construction, access)
     'classes': 2,        # up to this many class types (fields, methods, dispatch)
+    'ternary': True,     # if(cond, a, b) call-form ternary (BUG-167/F8)
+    'ranges': True,      # for_num range loops: `a : b [: s]` and `a..b` (BUG-165/F9)
 }
 
 

@@ -1,0 +1,26 @@
+# Fuzzer finding F8 / BUG-167: the two parsers accepted DIFFERENT ternary
+# syntaxes (bootstrap `if(c,t,e)` call-form vs selfhost `if c: t else: e`
+# colon-form) — zero corpus usage, undocumented, invisible until the F7
+# fixture tried to use one.  Converged on the bootstrap's call-form; the
+# selfhost colon-form is removed.  Also fixed: literal arms are
+# comptime_int/float in Zig, so a runtime condition failed ("comptime-only
+# type depends on runtime control flow") — both emitters now wrap in
+# @as(i64/f64, ...) when the TC types the ternary numeric.
+
+def pick(flag: bool): str
+    return if(flag, "yes", "no")
+
+def main()
+    var a = 1
+    var lit = (if(a < 0, 1, 2) + 5)            # literal arms in runtime arithmetic
+    var x: int = 7
+    var y: int = 9
+    var vv = (if(a > 0, x, y) * 2)             # var arms
+    var fl = (if(a > 0, 1.5, 2.5) + 1.0)       # float literal arms
+    var nested = if(a > 0, if(a > 5, 10, 20), 30)
+    var s = pick(a > 0)                        # ternary in return position
+    print("lit=${lit} vv=${vv} fl=${fl} nested=${nested} s=${s}")
+    if lit == 7 and vv == 14 and fl == 2.5 and nested == 20 and s == "yes"
+        print("fuzz_f8: OK")
+    else
+        print("fuzz_f8: FAIL")

@@ -27,10 +27,17 @@ class Gauge
         else
             .level = 61.1
         return 9
+    def fill(n: int): int
+        # self-use ONLY inside a range loop — stmtMentionsThis had no
+        # for_num arm (seeds 61/63/69/... cluster), same BUG-166 class.
+        for i in 0 : n
+            .level = .level + 1.0
+        return n
 
 def checkGauge(): float
     var g = Gauge(1.0)
     var _ = g.poke2(true)
+    var _ = g.fill(2)
     var maybe: str? = nil
     if maybe as _
         print("never")
@@ -57,7 +64,7 @@ def main()
     var pk = poke("abc")
     var lvl = checkGauge()
     print("n=${n} poke=${pk} lvl=${lvl}")
-    if n == 20 and pk == 3 and lvl == 1.0
+    if n == 20 and pk == 3 and lvl == 3.0
         print("fuzz_f6: OK")
     else
         print("fuzz_f6: FAIL n=${n} lvl=${lvl}")
