@@ -3621,13 +3621,13 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:103
         std.debug.print("{s}\n", .{"  parsing..."});
 // zbr:selfhost/main.zbr:104
-        const pm_node = try Parser.Parser.parse(src, zbr_path);
+        const pm_node = (try Parser.Parser.parse(src, zbr_path));
 // zbr:selfhost/main.zbr:105
         std.debug.print("{s}\n", .{"  parsed OK"});
 // zbr:selfhost/main.zbr:108
         var resolver = Resolver.Resolver.init(zbr_path, src);
 // zbr:selfhost/main.zbr:109
-        try resolver.resolve(pm_node);
+        (try resolver.resolve(pm_node));
 // zbr:selfhost/main.zbr:110
         if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/main.zbr:111
@@ -3648,7 +3648,7 @@ pub const MultiCompiler = struct {
                         .use_ => |u_ptr| {
                             const u = u_ptr.*;
 // zbr:selfhost/main.zbr:121
-                            try self.compileDep_use(u, zbr_path);
+                            (try self.compileDep_use(u, zbr_path));
                         },
                         .class_ => |cls_ptr| {
                             const cls = cls_ptr.*;
@@ -3663,9 +3663,9 @@ pub const MultiCompiler = struct {
                     }
                 }
 // zbr:selfhost/main.zbr:129
-                const merged_pm = try self.mergePartials_pmodule(pm, zbr_path);
+                const merged_pm = (try self.mergePartials_pmodule(pm, zbr_path));
 // zbr:selfhost/main.zbr:132
-                const module = try ASTBuilder.build(merged_pm, zbr_path);
+                const module = (try ASTBuilder.build(merged_pm, zbr_path));
 // zbr:selfhost/main.zbr:135
                 const tc_mt: *ModuleTypes = buildModuleTypes(module);
 // zbr:selfhost/main.zbr:136
@@ -3716,7 +3716,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:162
                     if (self.node_addon) {
 // zbr:selfhost/main.zbr:166
-                        zig_src = try generateNodeAddon(module, zbr_path, self.preamble_path, "selfhost/napi_preamble.zig", self.strip_contracts);
+                        zig_src = (try generateNodeAddon(module, zbr_path, self.preamble_path, "selfhost/napi_preamble.zig", self.strip_contracts));
 // zbr:selfhost/main.zbr:167
                         var stem_na: []const u8 = zbr_path;
 // zbr:selfhost/main.zbr:168
@@ -3759,10 +3759,10 @@ pub const MultiCompiler = struct {
                         });
                     } else if (self.test_mode) {
 // zbr:selfhost/main.zbr:178
-                        zig_src = try generateFullWithDepsTest(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.tag_filter);
+                        zig_src = (try generateFullWithDepsTest(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.tag_filter));
                     } else {
 // zbr:selfhost/main.zbr:180
-                        zig_src = try generateFullWithDeps(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.library_mode);
+                        zig_src = (try generateFullWithDeps(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.library_mode));
                     }
 // zbr:selfhost/main.zbr:182
                     if ((std.mem.indexOf(u8, zig_src, "_sqlite_open") != null)) {
@@ -3771,7 +3771,7 @@ pub const MultiCompiler = struct {
                     }
                 } else {
 // zbr:selfhost/main.zbr:185
-                    zig_src = try generateDepWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, self.strip_contracts);
+                    zig_src = (try generateDepWith(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, self.strip_contracts));
                 }
 // zbr:selfhost/main.zbr:188
                 const zig_path: []const u8 = self.zbrToZig(zbr_path);
@@ -3814,7 +3814,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:209
         if ((blk: { std.Io.Dir.cwd().access(_io, dep_path, .{}) catch break :blk false; break :blk true; })) {
 // zbr:selfhost/main.zbr:210
-            try self.compileDep(dep_path, false);
+            (try self.compileDep(dep_path, false));
 // zbr:selfhost/main.zbr:211
             return;
         }
@@ -3825,7 +3825,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:220
             if ((blk: { std.Io.Dir.cwd().access(_io, mp_path, .{}) catch break :blk false; break :blk true; })) {
 // zbr:selfhost/main.zbr:221
-                try self.scanDepForTypes(mp_path);
+                (try self.scanDepForTypes(mp_path));
 // zbr:selfhost/main.zbr:222
                 return;
             }
@@ -3908,7 +3908,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:265
         const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_io, zbr_path, _allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:266
-        const pm_node = try Parser.Parser.parse(src, zbr_path);
+        const pm_node = (try Parser.Parser.parse(src, zbr_path));
 // zbr:selfhost/main.zbr:267
         switch (pm_node) {
             .module_ => |pm_ptr| {
@@ -3933,14 +3933,14 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:279
                             if ((blk: { std.Io.Dir.cwd().access(_io, sub_adj, .{}) catch break :blk false; break :blk true; })) {
 // zbr:selfhost/main.zbr:280
-                                try self.scanDepForTypes(sub_adj);
+                                (try self.scanDepForTypes(sub_adj));
                             } else if (!std.mem.eql(u8, self.module_path, "")) {
 // zbr:selfhost/main.zbr:282
                                 const sub_mp: []const u8 = _str_concat(_str_concat(_str_concat(self.module_path, "/", _allocator), sub_name, _allocator), ".zbr", _allocator);
 // zbr:selfhost/main.zbr:283
                                 if ((blk: { std.Io.Dir.cwd().access(_io, sub_mp, .{}) catch break :blk false; break :blk true; })) {
 // zbr:selfhost/main.zbr:284
-                                    try self.scanDepForTypes(sub_mp);
+                                    (try self.scanDepForTypes(sub_mp));
                                 }
                             }
                         },
@@ -3962,11 +3962,11 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:297
                 var resolver = Resolver.Resolver.init(zbr_path, "");
 // zbr:selfhost/main.zbr:298
-                try resolver.resolve(pm_node);
+                (try resolver.resolve(pm_node));
 // zbr:selfhost/main.zbr:299
-                const merged_pm = try self.mergePartials_pmodule(pm, zbr_path);
+                const merged_pm = (try self.mergePartials_pmodule(pm, zbr_path));
 // zbr:selfhost/main.zbr:300
-                const module = try ASTBuilder.build(merged_pm, zbr_path);
+                const module = (try ASTBuilder.build(merged_pm, zbr_path));
 // zbr:selfhost/main.zbr:301
                 populateModuleTypes(self.dep_types, module);
             },
@@ -4248,7 +4248,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:436
             const psrc: []const u8 = psrc_raw;
 // zbr:selfhost/main.zbr:437
-            const ppm_node = try Parser.Parser.parse(psrc, ppath);
+            const ppm_node = (try Parser.Parser.parse(psrc, ppath));
 // zbr:selfhost/main.zbr:438
             if (ppm_node == .module_) {
                 const ppm_ptr = ppm_node.module_;
@@ -4459,11 +4459,11 @@ pub fn tcCheckSide(src: []const u8, path: []const u8, diags: *std.ArrayList([]co
     var _try_err_2: ?anyerror = null;
     _try_blk_2: {
 // zbr:selfhost/main.zbr:541
-        const pm_node = Parser.Parser.parse(src, path) catch |_tc_3| { _try_err_2 = _tc_3; break :_try_blk_2; };
+        const pm_node = (Parser.Parser.parse(src, path) catch |_tc_3| { _try_err_2 = _tc_3; break :_try_blk_2; });
 // zbr:selfhost/main.zbr:542
         var resolver = Resolver.Resolver.init(path, src);
 // zbr:selfhost/main.zbr:543
-        resolver.resolve(pm_node) catch |_tc_4| { _try_err_2 = _tc_4; break :_try_blk_2; };
+        (resolver.resolve(pm_node) catch |_tc_4| { _try_err_2 = _tc_4; break :_try_blk_2; });
 // zbr:selfhost/main.zbr:544
         if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/main.zbr:545
@@ -4485,7 +4485,7 @@ pub fn tcCheckSide(src: []const u8, path: []const u8, diags: *std.ArrayList([]co
             const pm_ptr = pm_node.module_;
             const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:550
-            const module = ASTBuilder.build(pm, path) catch |_tc_5| { _try_err_2 = _tc_5; break :_try_blk_2; };
+            const module = (ASTBuilder.build(pm, path) catch |_tc_5| { _try_err_2 = _tc_5; break :_try_blk_2; });
 // zbr:selfhost/main.zbr:551
             const tc_mt: *ModuleTypes = buildModuleTypes(module);
 // zbr:selfhost/main.zbr:552
@@ -4630,11 +4630,11 @@ pub fn runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:631
     const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_io, path, _allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:632
-    const pm_node = try Parser.Parser.parse(src, path);
+    const pm_node = (try Parser.Parser.parse(src, path));
 // zbr:selfhost/main.zbr:633
     var resolver = Resolver.Resolver.init(path, src);
 // zbr:selfhost/main.zbr:634
-    try resolver.resolve(pm_node);
+    (try resolver.resolve(pm_node));
 // zbr:selfhost/main.zbr:635
     if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/main.zbr:636
@@ -4647,7 +4647,7 @@ pub fn runTypes(path: []const u8) anyerror!void {
         const pm_ptr = pm_node.module_;
         const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:639
-        const module = try ASTBuilder.build(pm, path);
+        const module = (try ASTBuilder.build(pm, path));
 // zbr:selfhost/main.zbr:640
         const mt: *ModuleTypes = buildModuleTypes(module);
 // zbr:selfhost/main.zbr:641
@@ -4820,7 +4820,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:724
                 if (args.positional(1)) |merge_file| {
 // zbr:selfhost/main.zbr:725
-                    runTypecheckMerge(merge_file) catch |_tc_7| { _try_err_6 = _tc_7; break :_try_blk_6; };
+                    (runTypecheckMerge(merge_file) catch |_tc_7| { _try_err_6 = _tc_7; break :_try_blk_6; });
 // zbr:selfhost/main.zbr:726
                     std.process.exit(@intCast(@as(i64, 0) & 0xFF));
                 } else {
@@ -4838,7 +4838,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:737
                 if (args.positional(1)) |types_file| {
 // zbr:selfhost/main.zbr:738
-                    runTypes(types_file) catch |_tc_8| { _try_err_6 = _tc_8; break :_try_blk_6; };
+                    (runTypes(types_file) catch |_tc_8| { _try_err_6 = _tc_8; break :_try_blk_6; });
 // zbr:selfhost/main.zbr:739
                     std.process.exit(@intCast(@as(i64, 0) & 0xFF));
                 } else {
@@ -4860,7 +4860,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:753
                 if (args.positional(1)) |fmt_file| {
 // zbr:selfhost/main.zbr:754
-                    runFmt(fmt_file, fmt_check, fmt_print) catch |_tc_9| { _try_err_6 = _tc_9; break :_try_blk_6; };
+                    (runFmt(fmt_file, fmt_check, fmt_print) catch |_tc_9| { _try_err_6 = _tc_9; break :_try_blk_6; });
 // zbr:selfhost/main.zbr:755
                     std.process.exit(@intCast(@as(i64, 0) & 0xFF));
                 } else {
@@ -4878,7 +4878,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:766
                 if (args.positional(1)) |chk_file| {
 // zbr:selfhost/main.zbr:767
-                    const had_issues: bool = runCheck(chk_file) catch |_tc_a| { _try_err_6 = _tc_a; break :_try_blk_6; };
+                    const had_issues: bool = (runCheck(chk_file) catch |_tc_a| { _try_err_6 = _tc_a; break :_try_blk_6; });
 // zbr:selfhost/main.zbr:768
                     if (had_issues) {
 // zbr:selfhost/main.zbr:769
@@ -5163,7 +5163,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:942
             mc.node_addon = mode_node;
 // zbr:selfhost/main.zbr:943
-            mc.compileDep(path, true) catch |_tc_b| { _try_err_6 = _tc_b; break :_try_blk_6; };
+            (mc.compileDep(path, true) catch |_tc_b| { _try_err_6 = _tc_b; break :_try_blk_6; });
 // zbr:selfhost/main.zbr:945
             if (mode_emit) {
 // zbr:selfhost/main.zbr:947

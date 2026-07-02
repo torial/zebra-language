@@ -3600,7 +3600,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:99
         lex.src = _intern(source);
 // zbr:selfhost/Lexer.zbr:100
-        try lex.run();
+        (try lex.run());
 // zbr:selfhost/Lexer.zbr:101
         return lex.out;
     }
@@ -3919,7 +3919,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:274
             if (((q == '\'') or (q == '"'))) {
 // zbr:selfhost/Lexer.zbr:275
-                try self.scanCharLiteral(q, start, ln, cl);
+                (try self.scanCharLiteral(q, start, ln, cl));
 // zbr:selfhost/Lexer.zbr:276
                 return;
             }
@@ -3938,7 +3938,7 @@ pub const Lexer = struct {
                     kind = TokenKind{ .string_raw_double = {} };
                 }
 // zbr:selfhost/Lexer.zbr:285
-                try self.scanSimpleString(q, start, kind, ln, cl);
+                (try self.scanSimpleString(q, start, kind, ln, cl));
 // zbr:selfhost/Lexer.zbr:286
                 return;
             }
@@ -3957,7 +3957,7 @@ pub const Lexer = struct {
                     kind = TokenKind{ .string_nosub_double = {} };
                 }
 // zbr:selfhost/Lexer.zbr:295
-                try self.scanSimpleString(q, start, kind, ln, cl);
+                (try self.scanSimpleString(q, start, kind, ln, cl));
 // zbr:selfhost/Lexer.zbr:296
                 return;
             }
@@ -3976,7 +3976,7 @@ pub const Lexer = struct {
                     kind = TokenKind{ .zig_double = {} };
                 }
 // zbr:selfhost/Lexer.zbr:305
-                try self.scanSimpleString(q, start, kind, ln, cl);
+                (try self.scanSimpleString(q, start, kind, ln, cl));
 // zbr:selfhost/Lexer.zbr:306
                 return;
             }
@@ -4139,7 +4139,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:395
         if ((((q == '"') and (self.peek1() == '"')) and (self.peekAt(2) == '"'))) {
 // zbr:selfhost/Lexer.zbr:396
-            try self.scanDocString(ln, cl);
+            (try self.scanDocString(ln, cl));
 // zbr:selfhost/Lexer.zbr:397
             return;
         }
@@ -4188,7 +4188,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:422
                 self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:423
-                try self.scanInterpExpr();
+                (try self.scanInterpExpr());
 // zbr:selfhost/Lexer.zbr:424
                 segStart = self.pos;
 // zbr:selfhost/Lexer.zbr:425
@@ -4324,7 +4324,7 @@ pub const Lexer = struct {
                 self.pos = specStart;
             }
 // zbr:selfhost/Lexer.zbr:491
-            try self.scanToken();
+            (try self.scanToken());
         }
     }
 
@@ -5008,35 +5008,35 @@ pub const Lexer = struct {
         switch (c) {
             '0'...'9' => {
 // zbr:selfhost/Lexer.zbr:821
-                try self.scanNumericLiteral(ln, cl);
+                (try self.scanNumericLiteral(ln, cl));
             },
             '@' => {
 // zbr:selfhost/Lexer.zbr:823
-                try self.scanAt(ln, cl);
+                (try self.scanAt(ln, cl));
             },
             'a'...'z' => {
 // zbr:selfhost/Lexer.zbr:825
-                try self.scanIdentOrKeyword(ln, cl);
+                (try self.scanIdentOrKeyword(ln, cl));
             },
             'A'...'Z' => {
 // zbr:selfhost/Lexer.zbr:827
-                try self.scanIdentOrKeyword(ln, cl);
+                (try self.scanIdentOrKeyword(ln, cl));
             },
             '_' => {
 // zbr:selfhost/Lexer.zbr:829
-                try self.scanIdentOrKeyword(ln, cl);
+                (try self.scanIdentOrKeyword(ln, cl));
             },
             '\'' => {
 // zbr:selfhost/Lexer.zbr:831
-                try self.scanString(c, ln, cl);
+                (try self.scanString(c, ln, cl));
             },
             '"' => {
 // zbr:selfhost/Lexer.zbr:833
-                try self.scanString(c, ln, cl);
+                (try self.scanString(c, ln, cl));
             },
             else => {
 // zbr:selfhost/Lexer.zbr:835
-                try self.scanOperator(ln, cl);
+                (try self.scanOperator(ln, cl));
             },
         }
     }
@@ -5114,7 +5114,7 @@ pub const Lexer = struct {
                             self.pos = (self.pos + 1);
                         }
 // zbr:selfhost/Lexer.zbr:877
-                        try self.scanBlockComment();
+                        (try self.scanBlockComment());
 // zbr:selfhost/Lexer.zbr:878
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
 // zbr:selfhost/Lexer.zbr:879
@@ -5133,7 +5133,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:885
                         if (((self.parenDepth == 0) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
 // zbr:selfhost/Lexer.zbr:886
-                            try self.processIndentation();
+                            (try self.processIndentation());
                         }
                     },
                 }
@@ -5182,11 +5182,11 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:911
             if (((c == '/') and (self.peek1() == '#'))) {
 // zbr:selfhost/Lexer.zbr:912
-                try self.scanBlockComment();
+                (try self.scanBlockComment());
                 continue;
             }
 // zbr:selfhost/Lexer.zbr:915
-            try self.scanToken();
+            (try self.scanToken());
         }
 // zbr:selfhost/Lexer.zbr:917
         if ((!atLineStart)) {

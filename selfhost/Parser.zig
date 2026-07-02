@@ -4882,7 +4882,7 @@ pub const Parser = struct {
         var _try_err_1: ?anyerror = null;
         _try_blk_1: {
 // zbr:selfhost/Parser.zbr:821
-            self.collected_decls.append(_allocator, self.parseTopDecl() catch |_tc_2| { _try_err_1 = _tc_2; break :_try_blk_1; }) catch unreachable;
+            self.collected_decls.append(_allocator, (self.parseTopDecl() catch |_tc_2| { _try_err_1 = _tc_2; break :_try_blk_1; })) catch unreachable;
             break :_try_blk_1;
         }
         if (_try_err_1 != null) {
@@ -9105,7 +9105,7 @@ pub const Parser = struct {
 
     pub fn parse(src: []const u8, file_name: []const u8) anyerror!PNode {
 // zbr:selfhost/Parser.zbr:3033
-        const toks = try Lexer.tokenize(src);
+        const toks = (try Lexer.tokenize(src));
 // zbr:selfhost/Parser.zbr:3034
         const p = Parser.init(toks, file_name, src);
 // zbr:selfhost/Parser.zbr:3035

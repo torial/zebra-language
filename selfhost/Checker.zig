@@ -5027,11 +5027,11 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 // zbr:selfhost/Checker.zbr:721
     const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_io, path, _allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/Checker.zbr:722
-    const pm_node = try Parser.Parser.parse(src, path);
+    const pm_node = (try Parser.Parser.parse(src, path));
 // zbr:selfhost/Checker.zbr:723
     var resolver = Resolver.Resolver.init(path, src);
 // zbr:selfhost/Checker.zbr:724
-    try resolver.resolve(pm_node);
+    (try resolver.resolve(pm_node));
 // zbr:selfhost/Checker.zbr:725
     if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/Checker.zbr:726
@@ -5064,14 +5064,14 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 // zbr:selfhost/Checker.zbr:738
                 if ((blk: { std.Io.Dir.cwd().access(_io, dep_path, .{}) catch break :blk false; break :blk true; })) {
 // zbr:selfhost/Checker.zbr:739
-                    try checkerLoadDeps(dep_path, visited, modules);
+                    (try checkerLoadDeps(dep_path, visited, modules));
                 }
             }
 // zbr:selfhost/Checker.zbr:740
             di = (di + 1);
         }
 // zbr:selfhost/Checker.zbr:741
-        const module: Module = try ASTBuilder.build(pm, path);
+        const module: Module = (try ASTBuilder.build(pm, path));
 // zbr:selfhost/Checker.zbr:742
         modules.append(_allocator, module) catch unreachable;
     }
@@ -5083,7 +5083,7 @@ pub fn runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:748
     var modules = std.ArrayList(Module).empty;
 // zbr:selfhost/Checker.zbr:749
-    try checkerLoadDeps(root_path, &visited, &modules);
+    (try checkerLoadDeps(root_path, &visited, &modules));
 // zbr:selfhost/Checker.zbr:750
     const n_deps: i64 = (@as(i64, @intCast(modules.items.len)) - 1);
 // zbr:selfhost/Checker.zbr:751
