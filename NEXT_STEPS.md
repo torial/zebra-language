@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-06-29 (Node.js addon target `--target node-addon` shipped on the bootstrap, verified end-to-end in Node; selfhost emit-mirror + allocator-lifetime + tests are follow-ups — see "Node.js addon target" below)
+**Last updated:** 2026-07-02 (differential fuzzer `fuzz/` built + grown through classes+methods; found & fixed BUG-159/160; deferred compiler-side F1/F2 recorded under Backlog → Compiler hardening. Prior: Node.js addon target `--target node-addon` shipped on the bootstrap, verified end-to-end in Node — see "Node.js addon target" below)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
@@ -40,6 +40,20 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
 - Audit/regenerate stale engine-style `.zig` with the converged bootstrap (pathfinding.zig
   was stale — others likely are); add a numeric-conversion compiler test; correct QUICKSTART §21.
 - Run full `compile_check.sh` corpus (JOBS-paced) + triage regressions.
+- **Differential fuzzer (`fuzz/`, see `fuzz/README.md` + `FINDINGS.md`)** — found +
+  fixed two real equivalence bugs (BUG-159 mutated-comptime-local annotation,
+  BUG-160 interp fmt-spec). Deferred compiler-side gaps it surfaced:
+  - **F1 (shared)**: user identifiers that shadow a Zig primitive type
+    (`i8`/`u32`/`f64`/`bool`/`void`/…) emit invalid Zig in *both* compilers. Fix:
+    escape such names to `@"name"` in the identifier-emit path (genIdent /
+    genLocalVar / genTopVar + params) in both emitters; regression fixture
+    `var i8 = …; var f32 = …`. (Masked in the generator so it stops burying
+    genuine divergences; the compiler gap is real for user code.)
+  - **F2 (shared)**: an unused local in some scopes emits `const` that Zig rejects
+    as an unused constant. Needs a shrunk minimal repro before a fix direction.
+  - Grow grammar surfaces further (generics, error/throws, branch/enum) to widen
+    coverage; run `fuzz/run.py --run` batches when free RAM allows (host caps
+    background runs ~4 min; zig ~1 min/build under memory pressure — small batches).
 
 **Dogfood programs (IO + networking + multithreading — surface stdlib/runtime gaps):**
 - ✅ **DONE 2026-06-30** — TCP key-value store + ThreadPool (`scratchpad/kv_dogfood.zbr`,
