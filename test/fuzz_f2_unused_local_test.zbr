@@ -1,0 +1,41 @@
+# Fuzzer finding F2 / BUG-161: an unused local must get the `_ = x;` auto-
+# discard in ALL of these shapes (previously each suppressed it, emitting a
+# `const x = …;` that Zig rejects as an unused local constant):
+#   1. annotated decl (`var zz: int = 5`) — the skip was for *constrained
+#      alias* types only (their contract check reads the local), but it
+#      covered every annotation
+#   2. later `.field` (implicit-self) statement — `this` wasn't modelled in
+#      mightUseNameInExpr, so any method/cue-init body with a `.field` use
+#      after the decl reported "might be used" for every name
+#   3. later string interpolation of a *different* var — same root, the
+#      string_interp arm wasn't modelled
+#   4. later `orelse` of a different var — same root
+# A constrained-alias local (shape 5) must still SKIP the discard: its
+# inline constraint check reads the local, and a second `_ = x;` read would
+# be a pointless discard.
+
+type Small = int where value >= 0 and value <= 99
+
+class Counter
+    var count: int
+    cue init(count: int)
+        var unused_in_init = 1
+        .count = count
+    def bump(): int
+        var unused_in_method: str = "dead"
+        .count = .count + 1
+        return .count
+
+def main()
+    var unused_annotated: int = 5
+    var unused_before_interp = 7
+    var o: int? = 3
+    var unused_before_orelse = 9
+    var w = (o orelse 0)
+    var c = Counter(10)
+    var small: Small = 42     # otherwise-unused: only the constraint check reads it
+    print("w=${w} bump=${c.bump()}")
+    if w == 3 and c.count == 11
+        print("fuzz_f2: OK")
+    else
+        print("fuzz_f2: FAIL w=${w} count=${c.count}")

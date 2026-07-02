@@ -49,8 +49,12 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
     genLocalVar / genTopVar + params) in both emitters; regression fixture
     `var i8 = …; var f32 = …`. (Masked in the generator so it stops burying
     genuine divergences; the compiler gap is real for user code.)
-  - **F2 (shared)**: an unused local in some scopes emits `const` that Zig rejects
-    as an unused constant. Needs a shrunk minimal repro before a fix direction.
+  - **F2 (shared)**: ✅ FIXED 2026-07-02 (BUG-161) — the unused-local auto-discard
+    was suppressed by (1) any type annotation (the skip was meant for
+    constrained-alias types only), (2) unmodelled `this` in `mightUseNameInExpr`
+    (any later `.field` stmt in a method body), (3) unmodelled
+    `string_interp`/`orelse`. Both compilers; regression
+    `test/fuzz_f2_unused_local_test.zbr`; smoke 192/192, round-trip clean.
   - Grow grammar surfaces further (generics, error/throws, branch/enum) to widen
     coverage; run `fuzz/run.py --run` batches when free RAM allows (host caps
     background runs ~4 min; zig ~1 min/build under memory pressure — small batches).

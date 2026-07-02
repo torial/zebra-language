@@ -4182,10 +4182,11 @@ struct Generator
         for s in stmts
             genStmt(s)
             if s is Stmt.var_ as n
-                # Skip explicitly-typed locals: a refinement type emits an inline
-                # contract check that uses the local (invisible to mightUseName).
+                # Skip locals whose declared type is a constrained alias: the
+                # inline contract check uses the local (invisible to
+                # mightUseName).  Plain annotations still need the discard.
                 if n.name != "_"
-                    if n.type_ == nil
+                    if not varDeclEmitsConstraintCheck(n.type_)
                         if not ms.contains_(n.name)
                             if not mightUseName(n.name, stmts)
                                 writeIndent()
@@ -4193,6 +4194,31 @@ struct Generator
                                 w.emit(n.name)
                                 w.emit(";\n")
         mut_set = saved_ms
+
+    # True when genLocalVar will emit an inline constraint-check block for a
+    # local declared with this type — a named / parametric alias with a `where`
+    # constraint, contracts not stripped.  The check reads the local invisibly
+    # to mightUseName, so the unused-local auto-discard must be suppressed
+    # exactly then.  Mirrors src/CodeGen.zig varDeclEmitsConstraintCheck.
+    def varDeclEmitsConstraintCheck(tr: TypeRef?): bool
+        if strip_contracts
+            return false
+        if tr == nil
+            return false
+        var alias_lookup_name: str = ""
+        branch tr!
+            on TypeRef.named as tn
+                alias_lookup_name = tn.name
+            on TypeRef.alias_applied as aa
+                alias_lookup_name = aa.name
+            else
+                pass
+        if alias_lookup_name == ""
+            return false
+        var alias_decl = findTypeAlias(alias_lookup_name)
+        if alias_decl == nil
+            return false
+        return alias_decl!.constraint != nil
 
     def genStmt(s: Stmt)
         if source_file != ""

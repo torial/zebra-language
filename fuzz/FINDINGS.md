@@ -105,11 +105,36 @@ the finding was pure generator over-generation.
 
 ---
 
-## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, investigating)
+## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, ✅ FIXED — BUG-161)
 
-A never-used generated `var` in some scopes emits `const x = <expr>;`, which Zig
-rejects (`error: unused local constant`). A trivial top-level `var unused = 5`
-does *not* reproduce it, so the trigger is scope-specific (likely a var declared
-inside an `if`/`while` block and unused there). Zig discards unused locals with
-`_ = x;`; Zebra may want the same for locals it can prove are unused. Needs a
-minimal repro (shrinker) before filing a direction.
+**Diagnosed 2026-07-02 by scope-shape probing** (12 hand-built shapes through the
+oracle, then 10 refinement shapes). The "scope-specific" hypothesis dissolved
+into one root cause with **three faces**, all in the unused-local auto-discard
+in `genStmts` (both compilers, shared):
+
+1. **Any annotated decl** (`var zz: int = 5`) — the discard skip for
+   explicitly-typed locals existed because a *constrained-alias* type
+   (`type Small = int where …`) emits an inline contract check that reads the
+   local invisibly to `mightUseName`. But the skip covered **every** annotation,
+   so any annotated unused local in any scope was left undischarged.
+2. **A later `.field` (implicit-self) statement** — `Expr.this` wasn't modelled
+   in `mightUseNameInExpr`, falling into the conservative `else => true`. Any
+   method/`cue init` body with a `.field` read or write after the decl reported
+   "might be used" for *every* name — no discard for any local in the body.
+   (This is why it looked like "method scope" in early probes.)
+3. **A later string interpolation or `orelse`** — same root: `string_interp`
+   and `orelse_` weren't modelled, so `print("a=${a}")` after `var zz = 5`
+   suppressed zz's discard.
+
+**Minimal repros:** `var zz: int = 5` + any later stmt (face 1);
+`var zz = 5` then `return .f0` in a method (face 2);
+`var zz = 5` then `print("a=${a}")` (face 3).
+
+**Fix (both compilers):** `genStmts` skip narrowed from "any annotated decl" to
+`varDeclEmitsConstraintCheck` (named/parametric alias with a `where` constraint,
+contracts not stripped — exactly when the hidden read exists);
+`mightUseNameInExpr` gained exact arms for `this` (never a user name),
+`string_interp` (recurse expr parts), and `orelse_` (recurse both sides).
+Regression: `test/fuzz_f2_unused_local_test.zbr` (all three faces + a
+constrained-alias local that must still *skip* the discard).
+Gates: smoke 192/192, round-trip byte-identical. Assigned **BUG-161**.

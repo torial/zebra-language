@@ -550,9 +550,9 @@ def nameUsedInStmts(name: str, stmts: List(Stmt)): bool
     return false
 
 # CONSERVATIVE expression-level companion: TRUE for any expr form it doesn't
-# model, so a use hidden inside one (type_check / orelse / if_expr / …) is never
-# missed.  Leaves (literals / nil) must return FALSE so a `var X = nil` stub
-# isn't seen as using X.  Mirrors src/CodeGen.zig mightUseNameInExpr.
+# model, so a use hidden inside one (type_check / if_expr / catch / …) is never
+# missed.  Leaves (literals / nil / this) must return FALSE so a `var X = nil`
+# stub isn't seen as using X.  Mirrors src/CodeGen.zig mightUseNameInExpr.
 def mightUseNameInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id
@@ -586,6 +586,16 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
                 if mightUseNameInExpr(name, op)
                     return true
             return false
+        on Expr.string_interp as si
+            for part in si.parts
+                if part is StringPart.expr_ as e
+                    if mightUseNameInExpr(name, e)
+                        return true
+            return false
+        on Expr.orelse_ as o
+            if mightUseNameInExpr(name, o.expr)
+                return true
+            return mightUseNameInExpr(name, o.fallback)
         on Expr.int_lit
             return false
         on Expr.float_lit
@@ -597,6 +607,8 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
         on Expr.string_lit
             return false
         on Expr.nil_
+            return false
+        on Expr.this_
             return false
         else
             return true

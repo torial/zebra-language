@@ -1,6 +1,40 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-160. Next new bug: BUG-161.**
+**Last bug number generated: BUG-161. Next new bug: BUG-162.**
+
+---
+
+## BUG-161: unused-local auto-discard missed by annotation / `this` / interp / orelse ✅ FIXED
+
+**Severity:** medium (shared robustness gap — programs both compilers accept
+emit Zig that `zig` rejects with `error: unused local constant`).
+**Found by the differential fuzzer** (`fuzz/` finding **F2**), diagnosed
+2026-07-02 by scope-shape probing after the trivial repro failed to reproduce.
+
+**Symptom:** an unused local sometimes emits `const x = <expr>;` with no
+`_ = x;` discard. One root cause, three faces, in `genStmts`' auto-discard
+(both compilers):
+1. the discard skip for explicitly-typed locals — needed only for
+   *constrained-alias* types, whose inline contract check reads the local —
+   covered **every** annotation (`var zz: int = 5` in any scope);
+2. `Expr.this` was unmodelled in `mightUseNameInExpr` (conservative
+   `else => true`), so any later `.field` statement in a method/`cue init`
+   body suppressed the discard for **every** local in that body;
+3. `string_interp` / `orelse_` were likewise unmodelled, so a later
+   `print("${other}")` or `(other orelse 0)` suppressed all discards.
+
+**FIXED (2026-07-02), both compilers** (`src/CodeGen.zig` +
+`selfhost/CodeGen.zbr`/`CgHelpers.zbr`):
+- `genStmts` skip narrowed to a new `varDeclEmitsConstraintCheck` predicate
+  (named/`alias_applied` type resolving to a `where`-constrained alias, and
+  contracts not stripped) — mirrors the constraint-check emission condition
+  exactly, so the discard now fires for plain annotations and, under
+  `--turbo`, for constrained-alias locals too (whose check isn't emitted).
+- `mightUseNameInExpr` gained exact arms: `this` → false (keyword, never a
+  user name), `string_interp` (recurse expr parts), `orelse_` (both sides).
+
+Regression: `test/fuzz_f2_unused_local_test.zbr`. Gates: smoke 192/192,
+round-trip byte-identical. See `fuzz/FINDINGS.md` F2.
 
 ---
 

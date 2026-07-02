@@ -1784,9 +1784,14 @@ fn mightUseNameInExpr(name: []const u8, expr: *const Ast.Expr) bool {
         },
         .tuple_lit => |e| blk: { for (e.elems) |el| if (mightUseNameInExpr(name, el)) break :blk true; break :blk false; },
         .chained_cmp => |cc| blk: { for (cc.operands) |op| if (mightUseNameInExpr(name, op)) break :blk true; break :blk false; },
-        .nil, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit => false,
-        // type_check / if_expr / orelse / catch_ / try_ / opt_chain / lambda /
-        // string_interp / … — not modelled; conservatively assume a use.
+        .string_interp => |e| blk: {
+            for (e.parts) |p| if (p == .expr and mightUseNameInExpr(name, p.expr)) break :blk true;
+            break :blk false;
+        },
+        .orelse_   => |e| mightUseNameInExpr(name, e.expr) or mightUseNameInExpr(name, e.fallback),
+        .nil, .this, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit => false,
+        // type_check / if_expr / catch_ / try_ / opt_chain / lambda / … —
+        // not modelled; conservatively assume a use.
         else       => true,
     };
 }
@@ -6092,6 +6097,23 @@ const Generator = struct {
 
     // ── Statements ────────────────────────────────────────────────────────────
 
+    /// True when genLocalVar will emit an inline constraint-check block for a
+    /// local declared with this type — i.e. the type is a named / parametric
+    /// alias with a `where` constraint and contracts aren't stripped.  The
+    /// check reads the local (`const value = X;`) invisibly to mightUseName,
+    /// so the unused-local auto-discard must be suppressed exactly then.
+    fn varDeclEmitsConstraintCheck(g: Generator, type_opt: ?Ast.TypeRef) bool {
+        if (g.strip_contracts) return false;
+        const tr = type_opt orelse return false;
+        const alias_name = switch (tr) {
+            .named         => |nt| nt.name,
+            .alias_applied => |aa| aa.name,
+            else           => return false,
+        };
+        const alias = g.type_alias_decls.get(alias_name) orelse return false;
+        return alias.constraint != null;
+    }
+
     fn genStmts(g: Generator, stmts: []const Ast.Stmt) anyerror!void {
         var block_mut = try scanMutations(stmts, g.alloc, g.tc);
         defer block_mut.deinit();
@@ -6108,12 +6130,13 @@ const Generator = struct {
             // would only be a harmless redundant read, never a miscompile.
             if (stmt == .var_) {
                 const name = stmt.var_.name;
-                // Skip explicitly-typed locals: a refinement type (`int where …`)
-                // emits an inline contract check that *uses* the local — invisible
-                // to mightUseName — so discarding it would be a pointless discard.
-                // The dominant dead-stub case (`var X = nil`) is untyped anyway.
+                // Skip locals whose declared type is a constrained alias (`int
+                // where …`): genLocalVar emits an inline contract check that
+                // *uses* the local — invisible to mightUseName — so discarding
+                // would be a pointless discard.  Plain annotations (`: int`)
+                // emit no such check and still need the discard.
                 if (!std.mem.eql(u8, name, "_") and
-                    stmt.var_.type_ == null and
+                    !varDeclEmitsConstraintCheck(g, stmt.var_.type_) and
                     !block_mut.contains(name) and
                     !mightUseName(name, stmts))
                 {
