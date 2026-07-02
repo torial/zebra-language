@@ -25,7 +25,9 @@ class Gen:
         self.caps = caps or DEFAULT_CAPS
         self.funcs = []       # [(name, [param_types], ret_type)] — callable helpers
         self.structs = {}     # name -> [(field, type)] — user struct types
+        self.classes = {}     # name -> {'fields': [(f,ty)], 'methods': [(m,[pt],ret)]}
         self._params = set()  # read-only names in scope (fn params — Zig consts)
+        self._self_fields = {}  # field -> type, when generating inside a class method body
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def fresh(self, prefix='v'):
@@ -54,6 +56,13 @@ class Gen:
     def vars_of(self, env, ty):
         return [k for k, v in env.items() if v == ty]
 
+    def _user_fields(self, tn):
+        if tn in self.structs:
+            return self.structs[tn]
+        if tn in self.classes:
+            return self.classes[tn]['fields']
+        return []
+
     def gen_expr(self, ty, env, depth):
         # optional target `T?`: an in-scope T? var, `nil`, or a bare T (coerces).
         if ty.endswith('?'):
@@ -80,12 +89,24 @@ class Gen:
             lists = [k for k, v in env.items() if v.startswith('List(')]
             if lists and self.maybe(0.2):
                 return f'{self.pick(lists)}.len'
-        # `structvar.field` → the field's type
-        fcands = [(k, fn) for k, v in env.items() if v in self.structs
-                  for fn, ft in self.structs[v] if ft == ty]
+        # `.field` — a same-typed field of the enclosing class (inside a method body)
+        if self._self_fields:
+            sf = [fn for fn, ft in self._self_fields.items() if ft == ty]
+            if sf and self.maybe(0.25):
+                return '.' + self.pick(sf)
+        # `structvar.field` / `classvar.field` → the field's type
+        fcands = [(k, fn) for k, v in env.items()
+                  for fn, ft in self._user_fields(v) if ft == ty]
         if fcands and self.maybe(0.25):
             sv, fn = self.pick(fcands)
             return f'{sv}.{fn}'
+        # `classvar.method(args)` returning `ty`
+        mcands = [(k, m, pts) for k, v in env.items() if v in self.classes
+                  for (m, pts, r) in self.classes[v]['methods'] if r == ty]
+        if mcands and self.maybe(0.2):
+            cv, m, pts = self.pick(mcands)
+            args = ', '.join(self.gen_expr(pt, env, depth - 1) for pt in pts)
+            return f'{cv}.{m}({args})'
         # call a helper function that returns `ty`
         callable_here = [f for f in self.funcs if f[2] == ty]
         if callable_here and self.maybe(0.3):
@@ -139,19 +160,25 @@ class Gen:
         choices = ['decl', 'print']
         # params are const in Zig; List vars are construct-once (never reassigned —
         # gen_expr produces no List values, and reassigning a list isn't interesting)
-        assignable = [k for k in env if k not in self._params
-                      and not env[k].startswith('List(') and env[k] not in self.structs]
+        assignable = [k for k in env if k not in self._params and not env[k].startswith('List(')
+                      and env[k] not in self.structs and env[k] not in self.classes]
         if assignable:
             choices += ['assign', 'assign']
         opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
         list_in_scope = [k for k, v in env.items() if v.startswith('List(')]
-        struct_in_scope = [k for k, v in env.items() if v in self.structs]
+        # struct + class instances share field-write; struct/class construction
+        # is offered whenever a type exists.
+        udt_in_scope = [k for k, v in env.items() if v in self.structs or v in self.classes]
         if self.caps.get('lists'):
             choices += ['listdecl']
         if self.structs:
             choices += ['structdecl']
-        if struct_in_scope:
+        if self.classes:
+            choices += ['classdecl']
+        if udt_in_scope:
             choices += ['fieldwrite']
+        if self._self_fields:
+            choices += ['selffieldwrite']   # `.field = expr` — mutating method
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -185,10 +212,19 @@ class Gen:
             name = self.fresh('s')
             env[name] = sname
             return [f'{ind}var {name} = {sname}({args})']
+        if k == 'classdecl':
+            cname = self.pick(list(self.classes.keys()))
+            args = ', '.join(self.gen_expr(ft, env, d) for _, ft in self.classes[cname]['fields'])
+            name = self.fresh('c')
+            env[name] = cname
+            return [f'{ind}var {name} = {cname}({args})']
         if k == 'fieldwrite':
-            sv = self.pick(struct_in_scope)
-            fn, ft = self.pick(self.structs[env[sv]])
+            sv = self.pick(udt_in_scope)
+            fn, ft = self.pick(self._user_fields(env[sv]))
             return [f'{ind}{sv}.{fn} = {self.gen_expr(ft, env, d)}']
+        if k == 'selffieldwrite':
+            fn, ft = self.pick(list(self._self_fields.items()))
+            return [f'{ind}.{fn} = {self.gen_expr(ft, env, d)}']
         if k == 'decl':
             ty = self.pick(PRIMS)
             name = self.fresh()
@@ -268,6 +304,44 @@ class Gen:
             lines.append(f'        .{fn} = {fn}')
         return lines
 
+    def gen_class(self):
+        """A top-level `class C` (reference type): typed prim fields + `cue init` +
+        1–2 methods.  Method bodies read `.field` and may write `.field` (exercising
+        both `*const self` and mutating `*self` codegen) and return a prim."""
+        name = self.fresh('C')
+        nf = self.rng.randint(1, 3)
+        fields = [(f'f{i}', self.pick(PRIMS)) for i in range(nf)]
+        lines = [f'class {name}']
+        for fn, ft in fields:
+            lines.append(f'    var {fn}: {ft}')
+        lines.append('    cue init(' + ', '.join(f'{fn}: {ft}' for fn, ft in fields) + ')')
+        for fn, _ in fields:
+            lines.append(f'        .{fn} = {fn}')
+        methods = []
+        for _ in range(self.rng.randint(1, 2)):
+            mname = self.fresh('m')
+            np = self.rng.randint(0, 2)
+            ptypes = [self.pick(PRIMS) for _ in range(np)]
+            pnames = [f'p{i}' for i in range(np)]
+            ret = self.pick(PRIMS)
+            env = dict(zip(pnames, ptypes))
+            saved_p, saved_sf = self._params, self._self_fields
+            self._params, self._self_fields = set(pnames), dict(fields)
+            mbody = self.gen_block(env, 2, [self.caps['stmts']])
+            mbody.append('        return ' + self.gen_expr(ret, env, self.caps['expr_depth']))
+            self._params, self._self_fields = saved_p, saved_sf
+            text = '\n'.join(mbody)
+            for pn in pnames:
+                if len(re.findall(r'\b' + pn + r'\b', text)) == 0:
+                    mbody.insert(0, '        var _ = ' + pn)
+            mbody = self._use_unused(mbody)
+            sig = ', '.join(f'{pn}: {pt}' for pn, pt in zip(pnames, ptypes))
+            lines.append(f'    def {mname}({sig}): {ret}')
+            lines += mbody
+            methods.append((mname, ptypes, ret))
+        self.classes[name] = {'fields': fields, 'methods': methods}
+        return lines
+
     def gen_function(self):
         """A top-level `def h(p0: T, …): R` with a body that returns an R.  Only
         callable helpers defined *earlier* are visible in its body (registered
@@ -300,6 +374,9 @@ class Gen:
         if self.caps.get('structs'):
             for _ in range(self.rng.randint(0, self.caps['structs'])):
                 decls += self.gen_struct() + ['']
+        if self.caps.get('classes'):
+            for _ in range(self.rng.randint(0, self.caps['classes'])):
+                decls += self.gen_class() + ['']
         if self.caps.get('funcs'):
             for _ in range(self.rng.randint(0, self.caps['funcs'])):
                 decls += self.gen_function() + ['']
@@ -319,6 +396,7 @@ DEFAULT_CAPS = {
     'optionals': True,   # generate T? optionals, nil, `if x as y`, orelse
     'lists': True,       # generate List(T) — construction, .add, .len, for-in
     'structs': 2,        # up to this many struct types (fields, construction, access)
+    'classes': 2,        # up to this many class types (fields, methods, dispatch)
 }
 
 
