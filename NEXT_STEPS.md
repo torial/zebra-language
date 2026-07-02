@@ -2,13 +2,13 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-07-02 (differential fuzzer `fuzz/` built + grown through classes+methods; found & fixed BUG-159/160; deferred compiler-side F1/F2 recorded under Backlog → Compiler hardening. Prior: Node.js addon target `--target node-addon` shipped on the bootstrap, verified end-to-end in Node — see "Node.js addon target" below)
+**Last updated:** 2026-07-02 (fuzz F1/F2 compiler gaps FIXED as BUG-162/161, both compilers, gated; new fuzz findings F6/F7 open; §28 pre-1.0 design-review recommendations added — grammar/stdlib items a–j from Fable's review. Prior: differential fuzzer built, BUG-159/160 found+fixed)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
 > - **Open Bugs** — known issues without an open milestone slot.
 > - **Medium Term** — §12, §19, §19.5, §21, §24, §25 — feature clusters with their own histories.
-> - **Longer Term (pre-1.0)** — §23 memory model, §15 1.0 stabilization.
+> - **Longer Term (pre-1.0)** — §28 design-review recommendations (NEW 2026-07-02), §23 memory model, §15 1.0 stabilization.
 > - **Post-1.0 deferred** — items explicitly punted; see grep for "post-1.0" / "deferred".
 
 > **Milestone cumulative semantics:** each milestone listed below is
@@ -631,6 +631,81 @@ dep-mode `_zbr_error_msg` limitation. 152/152 smoke, bootstrap 5/5.
 ---
 
 ## Longer Term (pre-1.0)
+
+### 28. Pre-1.0 design review recommendations (Fable, 2026-07-02) ★ NEW
+
+From a grammar/stdlib design review (complementary to Sonnet's and Opus's
+passes). Each item is here because 1.0's stability promise makes it cheap now
+and expensive later. Items marked **[decision]** need Sean's call before work
+starts; the rest are execution.
+
+**a. Inference-or-error rule at operator/dispatch sites.** Today an operator
+whose operand type the TC can't infer degrades to a *guessed emit* that Zig
+rejects (or worse, accepts wrongly) — e.g. string-concat `+` emitted as raw
+pointer `+` (fuzz F7; also hit in selfhost source during the BUG-162 fix,
+worked around with `var z: str = call(...)` hoists). Rule to adopt: **no
+typed dispatch site may guess — if inference comes up empty, emit a
+Zebra-level diagnostic ("cannot infer; annotate")**. Corollary: raise the
+priority of the single method-descriptor table (§24e, currently "defer
+post-1.0") — it converts four heuristic dispatch surfaces into one spec.
+
+**b. [decision] Unify error propagation on always-explicit `?`.** Same-file
+throws-to-throws auto-propagates; cross-module needs explicit `expr?` — an
+invisible rule keyed to file boundaries, so moving a function between files
+changes call-site semantics. Recommend always-explicit `?` (visible error
+flow at every call site) + a mechanical corpus sweep while the corpus is
+small.
+
+**c. Exhaustiveness default-on.** Flip `--warn-non-exhaustive` to warn **by
+default** for same-module unions pre-1.0 (flag to silence), documented path
+to error-by-default at 2.0. The 108 legacy `else` arms are a sweep, not a
+blocker.
+
+**d. [decision] Give copy-out its own token.** `<-` is channel send
+(`ch <- v`), channel receive (`var v <- ch`), AND allocate-block deep-copy
+(`x <- y`) — a reader can't parse `x <- y` without both types, and copy-out
+has radically different cost semantics (deep recursive copy). Recommend a
+distinct spelling for copy-out (e.g. `<<-` or a keyword form) before 1.0
+locks the token.
+
+**e. Spec `str` ownership per stdlib call.** `str` is sometimes a borrowed
+slice (`s[a..b]`), sometimes a fresh allocation (`concat`, `File.read`) —
+invisible under the program arena, load-bearing inside `allocate` scopes and
+threads. Pre-1.0 task is documentation, not a new type: a per-call
+borrows-vs-owns table in the spec/QUICKSTART, so the 1.5 `str_view` design
+(docs/http notes) has defined ground to stand on.
+
+**f. Stdlib: the functional trio + Set(T).** `List.map/filter/reduce/sort/
+sortBy`, `HashMap.keys()/values()/entries()`, generic `Set(T)` (StrSet is a
+compiler-needs fossil). Pre-1.0 because these names collide with user
+`extend` methods if added later.
+
+**g. Grammar cleanups while the door is open:** retire the `to!` alias
+(`x!` won); decide `yield`'s fate (in the AST — generator story or removal,
+not limbo); promote optional-FIELD `as`-unwrap (`if rec.field as x`, already
+in Backlog) to pre-1.0 — its workaround teaches users an idiom we'll want to
+unteach.
+
+**h. `ObjectPool(T)` stdlib type.** Explicit pooling in library-space:
+`var pool = ObjectPool(Bullet)(1024)`; `pool.take()` / `pool.give(b)`,
+contract-guarded against double-release. Motivated by the GameEngine entity-
+churn problem (allocator `Pool(T)` exists but has no release path in a
+language with no `free`), generally useful for any churn workload. See the
+GameEngine roadmap's memory section for the consumer side.
+
+**i. Memory diagnostics: `sys.memStats()` / arena high-water report.**
+Cheap; converts "I think it grows" into numbers. Wanted by the GameEngine
+bytes-per-frame measurement first step.
+
+**j. Verify `_allocator` semantics under `sys.go`/`ThreadPool`.** Arena
+allocators aren't thread-safe; if worker threads share the program arena,
+that's a latent race. Establish (and document) per-thread arenas or a
+ThreadSafe wrapper as the default before multithreaded programs are a
+headline use case (BUG-154 is adjacent).
+
+Explicitly NOT recommended for change: `var`-only mutability (BUG-161 was an
+implementation bug, not a design flaw), contracts as identity feature, no
+inheritance, `cue init` (document the Cobra etymology, keep it).
 
 ### 23. 0.14 — Memory model + concurrency primitives ★ Priority cluster
 
