@@ -60,11 +60,13 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
     `stmtMentionsThis` was blind to else/else-if branches, emitting a
     pointless `_ = self;` for methods whose only self-use was in an else.
     Post-fix batch: **seeds 0–59 all ok** — first fully-clean sweep.
-  - **F9 / BUG-165 (NEW 2026-07-02, OPEN)**: range for-in three-way
-    inconsistency — QUICKSTART §13's `for i in 0 to 10` rejected by BOTH
-    compilers (doc rot); bootstrap parses `0..3`; selfhost parser rejects
-    `..` in for-in entirely. Fix selfhost parser + QUICKSTART §13; decide
-    `to`/`step`. Fuzzer must not gen range loops until reconciled.
+  - **F9 / BUG-165**: ✅ FIXED 2026-07-02 — the colon for_num form
+    (`for i in a : b [: step]`) worked in both compilers all along; `..` is
+    now an alias of it in both (selfhost parses it; bootstrap dropped the
+    native-Zig usize lowering for the shared i64 one). Bootstrap genForNum
+    gained brace scoping (latent same-name collision). QUICKSTART §13
+    corrected (`to`/`step` doc rot removed). Regression
+    `test/fuzz_f9_range_test.zbr`.
   - **F7**: ✅ FIXED 2026-07-02 (BUG-163) — orelse/catch/if-expr/try emitted
     without self-parens; Zig re-associated them (`1 - v orelse 8` ≡
     `(1 - v) orelse 8`). All four arms now self-parenthesize in both

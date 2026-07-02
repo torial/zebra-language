@@ -845,10 +845,15 @@ for item in items
 for i, item in items
     print("${i}: ${item}")
 
-# for-in with numeric range
-for i in 0 to 10                     # 0..9
+# for-in with numeric range — three equivalent spellings, all i64 counters,
+# stop is EXCLUSIVE (0..10 iterates 0-9); negative bounds work
+for i in 0 : 10                      # canonical: for_num loop
     print(i)
-for i in 0 to 10 step 2
+for i in 0..10                       # `..` is an alias for `:` (no step form)
+    print(i)
+for i in 0 : 10 : 2                  # with step (colon form only)
+    print(i)
+for i in 0.to(10)                    # method form (composes with expressions)
     print(i)
 
 # for-in with inline guard (filter condition; skip non-matching elements)

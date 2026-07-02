@@ -159,19 +159,27 @@ the Gauge shape in `test/fuzz_f6_unused_capture_test.zbr` + seed 51.
 Also hardened en route: the BUG-164 discards now skip `as _` (explicit
 discard binding) — caught by crypto_test before commit (`_ = _;`).
 
-## F9 — range for-in: docs claim `to`, bootstrap has `..`, selfhost has neither  (divergence + doc rot, OPEN)
+## F9 — range for-in: docs claim `to`, bootstrap has `..`, selfhost has neither  (✅ FIXED — BUG-165)
 
-Found while probing F6. Three-way inconsistency around numeric range loops:
-- QUICKSTART §13 documents `for i in 0 to 10` (+ `step`) as the canonical
-  form — **both compilers reject it** (no `to` range operator exists).
-- The bootstrap parses `for i in 0..3` (genForInToRange) — QUICKSTART uses
-  this form in §33/§35 examples.
-- The **selfhost parser rejects `..` in for-in** ("expected indent, got
-  '..'") — its `..` handling is slice-context only.
-- `for i in 0.to(100)` (method form) exists in both (isToRangeIter).
-Reconcile: implement `..` range parsing in the selfhost parser (equivalence
-rule), fix QUICKSTART §13 to the real forms, decide whether `to`/`step`
-should exist at all. Until then the fuzzer must not generate range loops.
+Found while probing F6; resolved 2026-07-02. The full picture turned out to
+be FOUR-way once `for i in a : b [: step]` was probed — the colon for_num
+form worked in BOTH compilers all along and is the real canonical range:
+- QUICKSTART §13's `for i in 0 to 10` (+ `step`): pure doc rot — no compiler
+  ever accepted it. §13 now documents the real forms.
+- Bootstrap `for i in 0..3`: parsed, but lowered to Zig's NATIVE range for —
+  a **usize** counter (negative bounds = compile error; `i - 1` at zero =
+  underflow panic), silently different semantics from `:`/`.to()` (i64).
+- Selfhost: rejected `..` in for-in entirely.
+
+**Fix:** `..` is now an alias for the `:` for_num form in both compilers —
+selfhost parses `a..b` into the same for_num node (step disallowed after
+`..`, matching the bootstrap); bootstrap routes binary-dotdot iterables to
+the shared i64 counter lowering (`genForInRangeParts`) instead of native
+`for (a..b)`. En route: bootstrap `genForNum` gained the brace scoping the
+selfhost always had (two same-named `for i in a : b` loops in one scope
+previously collided — latent, corpus never did it). Regression:
+`test/fuzz_f9_range_test.zbr` (all three spellings + step + negative bounds
++ `i - 1` at zero + repeated same-named loops).
 
 ## F7 — low-precedence expressions re-emitted without parens  (shared, ✅ FIXED — BUG-163)
 

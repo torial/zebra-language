@@ -2074,12 +2074,16 @@ class Parser
             var_names.add(.eatId())
         .expectText("in")
         const start_expr = .parseExpr()
-        # Numeric range: for i in lo : hi [:step]
-        if .textIs(":")
+        # Numeric range: for i in lo : hi [:step].  `..` is an alias for `:`
+        # (BUG-165/F9): the bootstrap parses `for i in a..b`, so both spellings
+        # must lower to the same i64 for_num counter loop in both compilers.
+        if .textIs(":") or .textIs("..")
+            var range_is_dotdot = .textIs("..")
             .advance()
             const stop_expr = .parseExpr()
             var step_list = List(PNode)()
-            if .textIs(":")
+            # No step after `..` — the bootstrap rejects `a..b : step` too.
+            if .textIs(":") and not range_is_dotdot
                 .advance()
                 step_list.add(.parseExpr())
             .skipEol()

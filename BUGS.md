@@ -54,16 +54,27 @@ Regression: `test/fuzz_f6_unused_capture_test.zbr`. See FINDINGS.md F6.
 
 ---
 
-## BUG-165: range for-in — docs say `to`, bootstrap has `..`, selfhost has neither (= fuzz F9)
+## BUG-165: range for-in — docs said `to`, bootstrap had usize `..`, selfhost had neither ✅ FIXED (= fuzz F9)
 
-**Status:** OPEN, found 2026-07-02 while probing BUG-164.
+**Status:** FIXED 2026-07-02 (found the same day while probing BUG-164).
 Three-way inconsistency: QUICKSTART §13's documented `for i in 0 to 10` (+
 `step`) is rejected by BOTH compilers; the bootstrap parses `for i in 0..3`
 (and QUICKSTART §33/§35 use that form); the selfhost parser rejects `..` in
 for-in entirely ("expected indent, got '..'" — its `..` is slice-context
-only). `0.to(n)` method form works in both. Fix: selfhost `..` range
-parsing (equivalence rule) + QUICKSTART §13 correction + a decision on
-whether `to`/`step` should exist. See FINDINGS.md F9.
+only). `0.to(n)` method form works in both, and probing revealed the colon
+for_num form (`for i in a : b [: step]`) worked in BOTH compilers all along
+— the real canonical range.
+
+**FIXED:** `..` is now an alias of the `:` for_num form in both compilers:
+the selfhost parses `a..b` into the same for_num node (no step after `..`,
+matching the bootstrap); the bootstrap routes binary-dotdot iterables to
+the shared i64 counter lowering instead of Zig's native `for (a..b)` —
+whose usize counter rejected negative bounds and underflow-panicked on
+`i - 1` at zero (a silent semantic split from `:`/`.to()`). Also fixed en
+route: bootstrap `genForNum` now brace-scopes its counter like the selfhost
+(two same-named colon loops in one scope previously collided). QUICKSTART
+§13 corrected to the real forms. Regression: `test/fuzz_f9_range_test.zbr`.
+See FINDINGS.md F9.
 
 ---
 

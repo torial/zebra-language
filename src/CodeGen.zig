@@ -11054,6 +11054,7 @@ const Generator = struct {
 
         // for i in start.to(end) — numeric range loop (Zig: while (i < stop) : (i += 1))
         if (isToRangeCall(s.iter)) return g.genForInToRange(s);
+        if (s.iter.* == .binary and s.iter.binary.op == .dotdot) return g.genForInRangeBinary(s);
 
         // for x in str.split(delim) — emit while loop over splitSequence iterator
         if (g.isSplitCallOnString(s.iter)) return g.genForInSplit(s);
@@ -11201,15 +11202,27 @@ const Generator = struct {
         return std.mem.eql(u8, c.callee.member.member, "to");
     }
 
+    /// BUG-165 (fuzz F9): `for i in a..b` — lower to the same i64 counter
+    /// loop as `for i in a : b` / `a.to(b)`, NOT Zig's native `for (a..b)`
+    /// (whose usize counter rejects negative bounds at compile time and
+    /// underflow-panics on `i - 1` at zero).  The selfhost parses `..` as an
+    /// alias of the `:` for_num form, so this keeps the two compilers'
+    /// semantics identical.
+    fn genForInRangeBinary(g: Generator, s: *Ast.StmtForIn) anyerror!void {
+        try g.genForInRangeParts(s, s.iter.binary.left, s.iter.binary.right);
+    }
+
     /// `for i in start.to(end)` → numeric range loop. Lowered to:
     ///     { var i: i64 = <start>; const _stop_i: i64 = <end>;
     ///       while (i < _stop_i) : (i += 1) { body } }
     /// Mirrors the `for var in start:end` (StmtForNum) pattern but takes its
     /// arguments from a method-call expression rather than a numeric-range syntax.
     fn genForInToRange(g: Generator, s: *Ast.StmtForIn) anyerror!void {
-        const c     = s.iter.call;
-        const start = c.callee.member.object;
-        const stop  = c.args[0].value;
+        const c = s.iter.call;
+        try g.genForInRangeParts(s, c.callee.member.object, c.args[0].value);
+    }
+
+    fn genForInRangeParts(g: Generator, s: *Ast.StmtForIn, start: *const Ast.Expr, stop: *const Ast.Expr) anyerror!void {
         const vname = s.vars[0];
 
         try g.writeIndent();
@@ -11651,16 +11664,24 @@ const Generator = struct {
     }
 
     fn genForNum(g: Generator, s: *Ast.StmtForNum) anyerror!void {
+        // BUG-165 adjacent: brace-scope the counter so two same-named
+        // `for i in a : b` loops in one Zig scope don't redeclare `i`
+        // (the range/`..`/`.to()` lowerings already scope; the selfhost
+        // for_num does too — the bootstrap was the odd one out).
+        try g.writeIndent();
+        try g.w.writeAll("{\n");
+        const og = g.indented();
+
         // for-else: wrap while in a labeled block that evaluates to bool
         var fels_lbl: ?[]const u8 = null;
         if (s.else_ != null) {
             const uid = g.nextUid();
             fels_lbl = try std.fmt.allocPrint(g.alloc, "_fels_{x}", .{uid});
-            try g.writeIndent();
-            try g.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
+            try og.writeIndent();
+            try og.w.print("const {s} = {s}: {{\n", .{fels_lbl.?, fels_lbl.?});
         }
         defer { if (fels_lbl) |lbl| g.alloc.free(lbl); }
-        const wg = if (fels_lbl != null) g.indented() else g;
+        const wg = if (fels_lbl != null) og.indented() else og;
 
         // `for i in start : stop : step` → Zig while loop with explicit counter.
         try wg.writeIndent();
@@ -11682,14 +11703,16 @@ const Generator = struct {
         if (s.else_) |else_body| {
             try wg.writeIndent();
             try wg.w.print("break :{s} true;\n", .{fels_lbl.?});
-            try g.writeIndent();
-            try g.w.writeAll("};\n");
-            try g.writeIndent();
-            try g.w.print("if ({s}) {{\n", .{fels_lbl.?});
-            try g.indented().genStmts(else_body);
-            try g.writeIndent();
-            try g.w.writeAll("}\n");
+            try og.writeIndent();
+            try og.w.writeAll("};\n");
+            try og.writeIndent();
+            try og.w.print("if ({s}) {{\n", .{fels_lbl.?});
+            try og.indented().genStmts(else_body);
+            try og.writeIndent();
+            try og.w.writeAll("}\n");
         }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
     }
 
     // Classifies the payload of a union variant for binding purposes.

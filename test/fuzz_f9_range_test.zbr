@@ -1,0 +1,31 @@
+# Fuzzer finding F9 / BUG-165: numeric range for-in reconciliation.
+# QUICKSTART documented a `to` form neither compiler accepted; the bootstrap
+# parsed `a..b` but lowered it to Zig's NATIVE range for (usize counter —
+# negative bounds rejected at compile time, `i - 1` underflow-panics at 0);
+# the selfhost parser rejected `..` entirely.  Now: `..` is an alias for the
+# `:` for_num form in both compilers — same i64 counter loop, stop exclusive.
+
+def main()
+    var a = 0
+    for i in 0..4              # dotdot alias
+        a = a + i
+    var b = 0
+    for i in 0 : 4             # canonical colon form
+        b = b + i
+    var c = 0
+    for i in 0 : 10 : 3        # step (colon form only)
+        c = c + i
+    var d = 0
+    for i in -2..2             # negative start — must be i64, not usize
+        d = d + i
+    var e = 0
+    for i in 0..3              # i64 arithmetic: (0 - 1) must be -1, not underflow
+        e = e + (i - 1)
+    var f = 0
+    for i in 2.to(5)           # method form, same lowering
+        f = f + i
+    print("a=${a} b=${b} c=${c} d=${d} e=${e} f=${f}")
+    if a == 6 and b == 6 and c == 18 and d == -2 and e == 0 and f == 9
+        print("fuzz_f9: OK")
+    else
+        print("fuzz_f9: FAIL")
