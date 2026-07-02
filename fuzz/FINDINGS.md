@@ -132,15 +132,45 @@ CodeGen.zbr ~6331 family) misses this shape. Same family as F2 (unused-use
 analysis on binding forms); likely the nested-scope usage check. Repro:
 `fuzz/run.py --seed 3`. NOT yet diagnosed — next fuzz session.
 
-## F7 — generated program emits an invalid binary expression  (shared, OPEN)
+## F7 — low-precedence expressions re-emitted without parens  (shared, ✅ FIXED — BUG-163)
 
-**Seed 7** (`both-zig-fail`, `error: invalid operands to binary expression`
-at a `+`). Smells like the string-concat-of-call-result class (concat not
-rewritten to `_str_concat` when an operand's type isn't inferred — the same
-trap hit while writing the F1 fix, where a cross-module `zigSafeName(...)`
-call concat'd with a literal emitted raw Zig `+`). Repro: `fuzz/run.py
---seed 7`; shrunk (category-preserving only) copies in `fuzz/findings/`.
-NOT yet diagnosed — next fuzz session.
+**Seed 7**: `var c27 = C5((1 - (v26 orelse 8)))` — valid Zebra — emitted as
+`C5.init((1 - v26 orelse 8))`. Zig's `orelse` binds looser than arithmetic,
+so that re-parses as `(1 - v26) orelse 8` → `invalid operands to binary
+expression: 'comptime_int' and 'optional'`.
+
+**Root cause (both compilers):** the parser drops redundant source parens
+(no paren AST node), and the emitters printed `orelse` / `catch` /
+`if`-expression / `try` — ALL of which bind looser than every operator in
+Zig — without self-parenthesizing. Any nesting of one inside a binary or
+tighter context re-associated or failed to parse.
+
+**Initial hypothesis falsified:** this was NOT the concat-of-call-result
+inference class (that trap is real but separate — no fuzz seed currently
+hits it; the workaround pattern is recorded in BUG-162's entry).
+
+**Fix (both compilers):** the `orelse_`, `catch_` (both plain and
+try-block-label forms), `if_expr`, and `try_` emission arms now always wrap
+their output in parens. Redundant parens are harmless; missing ones are a
+miscompile. Regression: `test/fuzz_f7_precedence_test.zbr` (orelse in
+arithmetic — the seed-7 shape; two orelse operands in one binary; `?` in
+arithmetic). Assigned **BUG-163**.
+
+## F8 — the two parsers accept DIFFERENT ternary syntaxes  (divergence, OPEN)
+
+Found while writing the F7 fixture. The bootstrap parses the if-expression
+(ternary) as call-form `if(cond, then, else)` (AstBuilder 8-child CST arm);
+the selfhost parses colon-form `if cond: then else: else_val`
+(Parser.zbr `parseAtom` `textIs("if")` arm). Each rejects the other's form.
+**Zero corpus usage of either** — the feature is undocumented (no QUICKSTART
+section) and untested, so the divergence was invisible until now. Also
+latent: literal ternary arms in runtime arithmetic emit bare `comptime_int`
+arms that Zig rejects ("value with comptime-only type depends on runtime
+control flow") — arms need `@as(i64, …)` wrapping once the syntax is
+reconciled. Recommend: pick ONE form (the colon form matches the 0.15
+inline-if statement syntax), implement in both parsers, document in
+QUICKSTART §13, add typed-arm emission. Until then the fuzzer must not
+generate ternaries.
 
 ## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, ✅ FIXED — BUG-161)
 

@@ -1,0 +1,26 @@
+# Fuzzer finding F7 / BUG-163: orelse / catch / if-else / try bind looser
+# than any operator in Zig, and the parser drops redundant source parens —
+# so codegen must self-parenthesize them.  Before the fix,
+# `(1 - (v orelse 8))` re-emitted as `1 - v orelse 8`, which Zig parses as
+# `(1 - v) orelse 8` → "invalid operands to binary expression".
+
+def half(x: int): int throws
+    if x < 0
+        raise "negative"
+    return x / 2
+
+def main()
+    var v: int? = 4
+    var a = (1 - (v orelse 8))            # orelse nested in arithmetic (the seed-7 shape)
+    var n: int? = nil
+    var b = ((n orelse 3) * (v orelse 1)) # two orelse operands in one binary
+    var c = (10 + half(8)?)               # try nested in arithmetic
+    # NOTE: no if-expression (ternary) case here — the two parsers currently
+    # accept DIFFERENT ternary syntaxes (bootstrap `if(c,t,e)`, selfhost
+    # `if c: t else: e`) with zero corpus usage; filed as fuzz F8. The
+    # BUG-163 paren fix covers if_expr in both emitters once reconciled.
+    print("a=${a} b=${b} c=${c}")
+    if a == -3 and b == 12 and c == 14
+        print("fuzz_f7: OK")
+    else
+        print("fuzz_f7: FAIL a=${a} b=${b} c=${c}")

@@ -13298,12 +13298,19 @@ const Generator = struct {
                 try g.genExpr(e.expr);
                 try g.w.writeAll(" == null)");
             },
+            // BUG-163 (fuzz F7): orelse / catch / if-else / try bind LOOSER than
+            // any operator in Zig, and the parser drops redundant source parens —
+            // so these must self-parenthesize or `1 - (v26 orelse 8)` re-emits as
+            // `1 - v26 orelse 8` ≡ `(1 - v26) orelse 8` (invalid or wrong).
             .orelse_ => |e| {
+                try g.w.writeAll("(");
                 try g.genExpr(e.expr);
                 try g.w.writeAll(" orelse ");
                 try g.genExpr(e.fallback);
+                try g.w.writeAll(")");
             },
             .catch_ => |e| {
+                try g.w.writeAll("(");
                 try g.genExpr(e.expr);
                 if (e.err_var) |ev| {
                     try g.w.print(" catch |{s}| ", .{ev});
@@ -13311,14 +13318,16 @@ const Generator = struct {
                     try g.w.writeAll(" catch ");
                 }
                 try g.genExpr(e.fallback);
+                try g.w.writeAll(")");
             },
             .if_expr => |e| {
-                try g.w.writeAll("if (");
+                try g.w.writeAll("(if (");
                 try g.genExpr(e.cond);
                 try g.w.writeAll(") ");
                 try g.genExpr(e.then_expr);
                 try g.w.writeAll(" else ");
                 try g.genExpr(e.else_expr);
+                try g.w.writeAll(")");
             },
             .lambda   => |e| try g.genLambda(e),
             .list_lit => |e| {
@@ -13408,15 +13417,19 @@ const Generator = struct {
                     const ev  = g.try_err_var.?;
                     const tmp = try std.fmt.allocPrint(g.alloc, "_tc_{x}", .{g.nextUid()});
                     defer g.alloc.free(tmp);
+                    // BUG-163: self-parenthesize (catch binds looser than any operator).
+                    try g.w.writeAll("(");
                     try g.genExpr(e.expr);
-                    try g.w.print(" catch |{s}| {{ {s} = {s}; break :{s}; }}", .{ tmp, ev, tmp, lbl });
+                    try g.w.print(" catch |{s}| {{ {s} = {s}; break :{s}; }})", .{ tmp, ev, tmp, lbl });
                 } else {
-                    try g.w.writeAll("try ");
+                    // BUG-163: self-parenthesize (`1 + try f()` is invalid Zig).
+                    try g.w.writeAll("(try ");
                     // Suppress auto-try inside genCall — the `try` above already covers it.
                     // g is a value parameter, so shadow it with a mutable copy.
                     var g2 = g;
                     g2.suppress_auto_try = true;
                     try g2.genExpr(e.expr);
+                    try g.w.writeAll(")");
                 }
             },
             .tuple_lit => |e| {

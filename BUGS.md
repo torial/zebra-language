@@ -1,6 +1,39 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-162. Next new bug: BUG-163.**
+**Last bug number generated: BUG-163. Next new bug: BUG-164.**
+
+---
+
+## BUG-163: orelse/catch/if-expr/try re-emitted without parens → precedence miscompile ✅ FIXED
+
+**Severity:** high-medium (silent semantics class: valid Zebra can emit Zig
+that re-associates differently; the fuzz hit failed loudly, but shapes like
+`(a - b) orelse c` vs `a - (b orelse c)` could compile AND misbehave).
+**Found by the differential fuzzer** (`fuzz/` finding **F7**, seed 7,
+2026-07-02) — first finding from the post-BUG-162 unmasked batches.
+
+**Symptom:** `C5((1 - (v26 orelse 8)))` emitted `C5.init((1 - v26 orelse 8))`;
+Zig parses that as `(1 - v26) orelse 8` → invalid operands (or, worse,
+different runtime semantics where both parses type-check).
+
+**Root cause:** the Zebra parser drops redundant source parens (no paren AST
+node), so codegen must re-establish precedence — but the `orelse_`, `catch_`,
+`if_expr`, and `try_` emission arms printed bare. All four bind looser than
+every Zig operator, so ANY nesting inside a binary/call-arg/tighter context
+broke. (`1 + try f()` is also invalid Zig — the `try` arm had the same gap.)
+
+**FIXED (2026-07-02), both compilers** (`src/CodeGen.zig` genExpr +
+`selfhost/CodeGen.zbr` genExpr): those four arms now always self-parenthesize
+(`(x orelse y)`, `(x catch |e| f)`, `(if (c) a else b)`, `(try x)` — including
+the try-block-label catch form). Redundant parens are harmless.
+Regression: `test/fuzz_f7_precedence_test.zbr`. Smoke + round-trip green;
+seed 7 → `ok`.
+
+**Surfaced en route (filed as fuzz F8, OPEN):** the two parsers accept
+*different* ternary syntaxes — bootstrap `if(c, t, e)` call-form vs selfhost
+`if c: t else: e` colon-form — with zero corpus usage and no QUICKSTART
+documentation; plus literal ternary arms emit bare `comptime_int` in runtime
+contexts. Reconcile as its own task (see FINDINGS.md F8).
 
 ---
 

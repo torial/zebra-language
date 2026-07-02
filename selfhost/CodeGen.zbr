@@ -7770,11 +7770,18 @@ struct Generator
                 w.emit("(")
                 genExpr(isn.expr)
                 w.emit(" == null)")
+            # BUG-163 (fuzz F7): orelse / catch / if-else bind LOOSER than any
+            # operator in Zig, and the parser drops redundant source parens — so
+            # these must self-parenthesize or `1 - (v orelse 8)` re-emits as
+            # `1 - v orelse 8` ≡ `(1 - v) orelse 8` (invalid or wrong).
             on Expr.orelse_ as or_
+                w.emit("(")
                 genExpr(or_.expr)
                 w.emit(" orelse ")
                 genExpr(or_.fallback)
+                w.emit(")")
             on Expr.catch_ as ca2
+                w.emit("(")
                 genExpr(ca2.expr)
                 w.emit(" catch ")
                 if ca2.err_var != nil
@@ -7782,13 +7789,15 @@ struct Generator
                     w.emit(ca2.err_var!)
                     w.emit("| ")
                 genExpr(ca2.fallback)
+                w.emit(")")
             on Expr.if_expr as ie
-                w.emit("if (")
+                w.emit("(if (")
                 genExpr(ie.cond)
                 w.emit(") ")
                 genExpr(ie.then_expr)
                 w.emit(" else ")
                 genExpr(ie.else_expr)
+                w.emit(")")
             on Expr.lambda as lam
                 genLambda(lam)
             on Expr.list_lit as ll
@@ -7868,15 +7877,20 @@ struct Generator
             on Expr.try_ as tr
                 if try_block_label != nil
                     # Inside try block: use catch-break pattern instead of try keyword
+                    # BUG-163: self-parenthesize (catch binds looser than any operator).
+                    w.emit("(")
                     in_try_expr = true
                     genExpr(tr.expr)
                     in_try_expr = false
                     emitTryBlockCatch()
+                    w.emit(")")
                 else
-                    w.emit("try ")
+                    # BUG-163: self-parenthesize (`1 + try f()` is invalid Zig).
+                    w.emit("(try ")
                     in_try_expr = true
                     genExpr(tr.expr)
                     in_try_expr = false
+                    w.emit(")")
             on Expr.tuple_lit as tu
                 w.emit(".{")
                 var ti = 0

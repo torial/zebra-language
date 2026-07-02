@@ -52,10 +52,16 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
     round-trip clean.
   - **F6 (shared, NEW 2026-07-02)**: unused `if x as y` capture → Zig
     "unused capture" (seeds 3/27) — the `_ = b;` suppression misses a shape.
-  - **F7 (shared, NEW 2026-07-02)**: seed 7 emits an invalid binary `+` —
-    likely string-concat-of-call-result not rewritten to `_str_concat`
-    (same trap hit in selfhost sources during the F1 fix). Both open in
-    `fuzz/FINDINGS.md`; diagnose next fuzz session.
+    Open; diagnose next fuzz session.
+  - **F7**: ✅ FIXED 2026-07-02 (BUG-163) — orelse/catch/if-expr/try emitted
+    without self-parens; Zig re-associated them (`1 - v orelse 8` ≡
+    `(1 - v) orelse 8`). All four arms now self-parenthesize in both
+    compilers. Regression `test/fuzz_f7_precedence_test.zbr`.
+  - **F8 (divergence, NEW 2026-07-02)**: the two parsers accept DIFFERENT
+    ternary syntaxes (bootstrap `if(c,t,e)` vs selfhost `if c: t else: e`);
+    zero corpus usage, undocumented; literal arms also emit bare
+    comptime_int. Reconcile alongside the `: void` parse divergence above —
+    recommend the colon form (matches 0.15 inline-if statements). §28g adjacent.
   - **F2 (shared)**: ✅ FIXED 2026-07-02 (BUG-161) — the unused-local auto-discard
     was suppressed by (1) any type annotation (the skip was meant for
     constrained-alias types only), (2) unmodelled `this` in `mightUseNameInExpr`
