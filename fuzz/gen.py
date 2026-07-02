@@ -24,6 +24,7 @@ class Gen:
         self.n = 0            # unique-name counter
         self.caps = caps or DEFAULT_CAPS
         self.funcs = []       # [(name, [param_types], ret_type)] — callable helpers
+        self.structs = {}     # name -> [(field, type)] — user struct types
         self._params = set()  # read-only names in scope (fn params — Zig consts)
 
     # ── helpers ──────────────────────────────────────────────────────────────
@@ -79,6 +80,12 @@ class Gen:
             lists = [k for k, v in env.items() if v.startswith('List(')]
             if lists and self.maybe(0.2):
                 return f'{self.pick(lists)}.len'
+        # `structvar.field` → the field's type
+        fcands = [(k, fn) for k, v in env.items() if v in self.structs
+                  for fn, ft in self.structs[v] if ft == ty]
+        if fcands and self.maybe(0.25):
+            sv, fn = self.pick(fcands)
+            return f'{sv}.{fn}'
         # call a helper function that returns `ty`
         callable_here = [f for f in self.funcs if f[2] == ty]
         if callable_here and self.maybe(0.3):
@@ -132,13 +139,19 @@ class Gen:
         choices = ['decl', 'print']
         # params are const in Zig; List vars are construct-once (never reassigned —
         # gen_expr produces no List values, and reassigning a list isn't interesting)
-        assignable = [k for k in env if k not in self._params and not env[k].startswith('List(')]
+        assignable = [k for k in env if k not in self._params
+                      and not env[k].startswith('List(') and env[k] not in self.structs]
         if assignable:
             choices += ['assign', 'assign']
         opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
         list_in_scope = [k for k, v in env.items() if v.startswith('List(')]
+        struct_in_scope = [k for k, v in env.items() if v in self.structs]
         if self.caps.get('lists'):
             choices += ['listdecl']
+        if self.structs:
+            choices += ['structdecl']
+        if struct_in_scope:
+            choices += ['fieldwrite']
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -166,6 +179,16 @@ class Gen:
             if len(re.findall(r'\b' + e + r'\b', '\n'.join(body))) == 0:
                 body.insert(0, '    ' * (indent + 1) + f'var _ = {e}')  # capture must be used
             return [f'{ind}for {e} in {lv}'] + body
+        if k == 'structdecl':
+            sname = self.pick(list(self.structs.keys()))
+            args = ', '.join(self.gen_expr(ft, env, d) for _, ft in self.structs[sname])
+            name = self.fresh('s')
+            env[name] = sname
+            return [f'{ind}var {name} = {sname}({args})']
+        if k == 'fieldwrite':
+            sv = self.pick(struct_in_scope)
+            fn, ft = self.pick(self.structs[env[sv]])
+            return [f'{ind}{sv}.{fn} = {self.gen_expr(ft, env, d)}']
         if k == 'decl':
             ty = self.pick(PRIMS)
             name = self.fresh()
@@ -188,8 +211,8 @@ class Gen:
             env2 = dict(env); env2[bound] = env[ov][:-1]   # narrowed to base type
             return [f'{ind}if {ov} as {bound}'] + self.gen_block(env2, indent + 1, budget)
         if k == 'print':
-            # don't interpolate an optional directly (not printable); prefer a base-typed var
-            printable = [x for x, v in env.items() if not v.endswith('?')]
+            # only interpolate a plain prim var (optionals/lists/structs aren't printable)
+            printable = [x for x, v in env.items() if v in PRIMS]
             if printable and self.maybe(0.6):
                 name = self.pick(printable)
                 return [f'{ind}print("v=${{{name}}}")']
@@ -229,6 +252,22 @@ class Gen:
                     out.append(f'{m.group(1)}var _ = {name}')
         return out
 
+    def gen_struct(self):
+        """A top-level `struct S` with 1–3 typed prim fields + a `cue init` that sets
+        them.  Registered in self.structs so bodies can construct it and read/write
+        its fields."""
+        name = self.fresh('S')
+        nf = self.rng.randint(1, 3)
+        fields = [(f'f{i}', self.pick(PRIMS)) for i in range(nf)]
+        self.structs[name] = fields
+        lines = [f'struct {name}']
+        for fn, ft in fields:
+            lines.append(f'    var {fn}: {ft}')
+        lines.append('    cue init(' + ', '.join(f'{fn}: {ft}' for fn, ft in fields) + ')')
+        for fn, _ in fields:
+            lines.append(f'        .{fn} = {fn}')
+        return lines
+
     def gen_function(self):
         """A top-level `def h(p0: T, …): R` with a body that returns an R.  Only
         callable helpers defined *earlier* are visible in its body (registered
@@ -258,6 +297,9 @@ class Gen:
 
     def program(self):
         decls = []
+        if self.caps.get('structs'):
+            for _ in range(self.rng.randint(0, self.caps['structs'])):
+                decls += self.gen_struct() + ['']
         if self.caps.get('funcs'):
             for _ in range(self.rng.randint(0, self.caps['funcs'])):
                 decls += self.gen_function() + ['']
@@ -276,6 +318,7 @@ DEFAULT_CAPS = {
     'funcs': 3,          # up to this many top-level helper functions
     'optionals': True,   # generate T? optionals, nil, `if x as y`, orelse
     'lists': True,       # generate List(T) — construction, .add, .len, for-in
+    'structs': 2,        # up to this many struct types (fields, construction, access)
 }
 
 

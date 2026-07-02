@@ -8417,7 +8417,12 @@ struct Generator
                         else if .isStringBoth(e, "interp_fmt")
                             fmt_str = fmt_str + "{s}"
                         else
-                            fmt_str = fmt_str + "{}"
+                            # BUG-160 (fuzzer): use the type-appropriate spec (mirrors
+                            # the bootstrap's printFmt), NOT a hardcoded `{}`.  `{}`
+                            # diverges — `{d}` for float, and `{any}` for List/struct
+                            # (a `{}` on an ArrayList blows up zig's comptime formatting
+                            # → build timeout).  printFmtSpec falls back to `{any}`.
+                            fmt_str = fmt_str + printFmtSpec(e)
                         cast_types.add("")
                         needs_tostring.add(ts)
                 on StringPart.format as _

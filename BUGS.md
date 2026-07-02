@@ -1,6 +1,31 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-159. Next new bug: BUG-160.**
+**Last bug number generated: BUG-160. Next new bug: BUG-161.**
+
+---
+
+## BUG-160: selfhost string-interpolation used `{}` for non-strings ✅ FIXED
+
+**Severity:** medium (self-hosting equivalence + a real user-facing failure).
+**Found by the differential fuzzer** (`fuzz/`), 2026-07-01 — its second divergence
+(verdict `zig-diverge-B`, surfaced as a `zig` build timeout on the selfhost emit).
+
+**Symptom:** interpolating a non-string value with no explicit format spec
+(`print("${x}")`) diverged. The bootstrap emits the type-appropriate spec via
+`printFmt` (`{d}` for float, `{any}` for List/struct/unknown); the selfhost's
+`genStringInterp` hardcoded `{}` in the implicit case. Consequences:
+- **float** → `{}` vs `{d}`: Zig 0.16 rejects `{}` on a float, or formats it
+  differently → divergent output.
+- **List/struct** → `{}` vs `{any}`: a `{}` on a `std.ArrayList` sends Zig's
+  comptime default-struct formatter into a blow-up → **build timeout** (the
+  selfhost emit was uncompilable where the bootstrap's compiled in ~6s).
+
+**FIXED (2026-07-01):** the selfhost `genStringInterp` implicit case now routes
+through `printFmtSpec(e)` (the existing mirror of the bootstrap's `printFmt`,
+falling back to `{any}`) instead of a hardcoded `{}`. Selfhost-only (the bootstrap
+was already correct). Round-trip byte-identical; smoke 192/192. Regression:
+`test/fuzz_f4_interp_fmt_test.zbr` (float + List interpolation). See
+`fuzz/FINDINGS.md` F4.
 
 ---
 

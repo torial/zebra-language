@@ -1,0 +1,13 @@
+# Fuzzer finding F4 / BUG-160: string interpolation of a non-string value used a
+# hardcoded `{}` in the selfhost, diverging from the bootstrap's type-appropriate
+# spec.  For a float that's `{}` vs `{d}` (Zig 0.16 rejects `{}` on a float); for a
+# List/struct it's `{}` vs `{any}` (a `{}` on an ArrayList blows up Zig's comptime
+# formatting → build timeout).  If this compiles + runs, the specifiers are right.
+
+def main()
+    var f = 2.5
+    var xs: List(int) = List(int)()
+    xs.add(7)
+    print("f=${f}")        # float → {d} (a `{}` here fails to compile on Zig 0.16)
+    print("xs=${xs}")      # List → {any} (a `{}` here times out zig's formatter)
+    print("fuzz_f4: OK")

@@ -63,6 +63,19 @@ type (`lv_infer_t`) for a non-literal numeric init → emits `: i64`/`: f64`,
 matching the bootstrap. Regression: `test/fuzz_f3_comptime_local_test.zbr`.
 Assigned **BUG-159**.
 
+## F4 — selfhost interpolation used `{}` for non-strings  ★ EQUIVALENCE BUG (fixed, BUG-160)
+
+The fuzzer's **second** self-hosting divergence (verdict `zig-diverge-B`, seen as
+a `zig` build timeout on the selfhost emit). Interpolating a non-string with no
+explicit spec (`print("${x}")`): bootstrap emits the type-appropriate spec
+(`{d}` float, `{any}` List/struct), selfhost hardcoded `{}`. For a List that
+`{}` sends Zig's comptime formatter into a blow-up → build timeout; for a float
+it's `{}` vs `{d}` (divergent/invalid). Fixed by routing the selfhost's implicit
+case through `printFmtSpec` (mirror of the bootstrap's `printFmt`). Regression:
+`test/fuzz_f4_interp_fmt_test.zbr`. (Surfaced via the old generator's list
+interpolation, before print was restricted to prims — but the bug is real for any
+user program interpolating a non-primitive.)
+
 ## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, investigating)
 
 A never-used generated `var` in some scopes emits `const x = <expr>;`, which Zig

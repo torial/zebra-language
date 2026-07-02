@@ -726,6 +726,9 @@ smoke_run test/module_global_class_instance_test.zbr "module_global_class_instan
 # BUG-159 (fuzzer F3): mutated local with a comptime-numeric binary-op init needs
 # an explicit `: i64`/`: f64` annotation (was omitted by selfhost).
 smoke_run test/fuzz_f3_comptime_local_test.zbr "fuzz_f3: OK"
+# BUG-160 (fuzzer F4): interpolation of a non-string uses the type-appropriate spec
+# ({d} for float, {any} for List/struct) — a hardcoded `{}` diverged from bootstrap.
+smoke_run test/fuzz_f4_interp_fmt_test.zbr "fuzz_f4: OK"
 
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
