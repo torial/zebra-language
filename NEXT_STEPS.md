@@ -751,6 +751,14 @@ Explicitly NOT recommended for change: `var`-only mutability (BUG-161 was an
 implementation bug, not a design flaw), contracts as identity feature, no
 inheritance, `cue init` (document the Cobra etymology, keep it).
 
+**Synthesis of the 2026-07-02 campaign → `docs/walker_discipline.md`:** the
+ten fixed bugs cluster into four structural causes (two walker families
+with opposite safety rules; inference gaps degrading to guessed emit —
+§28a; emitters re-establishing what the parser normalized away; ungenerated
+syntax drifting silently). Standing rule adopted: **new syntax lands with a
+fuzz generator surface + smoke fixture in the same commit.** §28c's
+empirical justification lives there too.
+
 ### 23. 0.14 — Memory model + concurrency primitives ★ Priority cluster
 
 Foundational memory + concurrency primitives.  Cluster motivation: these items shape the
