@@ -1,0 +1,9 @@
+# Library half of bug168_crossmod_prim_return_test.
+def greet(name: str): str
+    return "hi " + name
+
+def answer(): int
+    return 40
+
+def ratio(): float
+    return 2.5

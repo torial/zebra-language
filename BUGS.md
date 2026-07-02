@@ -1,6 +1,39 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-167. Next new bug: BUG-168.**
+**Last bug number generated: BUG-168. Next new bug: BUG-169.**
+
+---
+
+## BUG-168: cross-module PRIMITIVE-returning free fns untyped at bootstrap call sites ✅ FIXED
+
+**Severity:** medium (bootstrap-lags-selfhost class; `greet(x) + "!"` on a
+cross-module `greet(): str` emitted raw Zig `+` on slices — 'pointer' and
+'pointer').  Hit twice from inside the compiler's own sources during the
+BUG-162 work (worked around with `var z: str = call(...)` hoists), tracked
+informally since, minimal repro + fix 2026-07-02.
+
+**Root cause (two layers, both bootstrap-only — the selfhost stores full
+`Type_` in dep_types and was always correct):**
+1. `extractFromDecls` recorded a free fn's return in `fn_return_types` only
+   via `namedTypeStr`, which deliberately skips builtins — so a `: str`
+   return was never recorded, and `inferCall` typed the call `.unknown`.
+2. `genBinary .add` consulted only the LEFT operand's type (the selfhost's
+   helper is literally named `isStringBoth`).
+
+**FIXED (2026-07-02):**
+- `primTypeName` records `str/int/float/bool/char` returns in
+  `fn_return_types`; the consultation site maps those names back to
+  primitive `Type`s instead of wrapping them `.cross_module`.
+- `genBinary .add` checks both operands (either side string ⇒ concat;
+  `str + non-str` is a TC error upstream, so the OR cannot misfire).
+- Validation bonus: regenerating the selfhost with the fixed TC changed
+  exactly ONE emitted line — `var lv_used = mightUseName(...)` gained its
+  `: bool` annotation, i.e. the compiler's own emission got more precise.
+
+Regression: `test/bug168_crossmod_prim_return_test.zbr` (+`_lib`; call+lit,
+lit+call, call+call, int/float arithmetic), registered in smoke.  The
+BUG-162 `zigSafeName` hoist workarounds in `selfhost/CodeGen.zbr` are now
+unnecessary but harmless — left in place (cosmetic revert, low value).
 
 ---
 

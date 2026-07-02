@@ -694,6 +694,16 @@ fn extractFromDecls(
                     errdefer alloc.free(key);
                     const val = try alloc.dupe(u8, ret_name);
                     try fn_return_types.put(key, val);
+                } else if (primTypeName(rt)) |prim_name| {
+                    // BUG-168: record PRIMITIVE returns too — a cross-module
+                    // `greet(): str` was otherwise untyped at call sites, so
+                    // `greet(x) + "!"` emitted raw Zig `+` on slices.  The
+                    // consultation site maps these names back to prim Types
+                    // (the selfhost stores full Type_ and never had the gap).
+                    const key = try alloc.dupe(u8, m.name);
+                    errdefer alloc.free(key);
+                    const val = try alloc.dupe(u8, prim_name);
+                    try fn_return_types.put(key, val);
                 }
             }
         },
@@ -847,6 +857,17 @@ fn extractFromMembers(
 /// or null for builtins, generics, and other compound types.
 /// Unwraps `^T` (ref_to) to get the inner named type.
 ///
+/// BUG-168: the bare primitive-type name of a TypeRef (`str`/`int`/`float`/
+/// `bool`/`char`), or null.  Used to record cross-module free-fn PRIMITIVE
+/// returns in fn_return_types (namedTypeStr deliberately skips builtins).
+fn primTypeName(tr: *const Ast.TypeRef) ?[]const u8 {
+    if (tr.* != .named) return null;
+    const n = tr.named.name;
+    const prims = [_][]const u8{ "str", "int", "float", "bool", "char" };
+    for (prims) |p| if (std.mem.eql(u8, n, p)) return p;
+    return null;
+}
+
 /// IMPORTANT: `tr` must be a pointer into the AST arena (not a stack copy).
 /// `resolve.types` is keyed by arena `*const Ast.NamedTypeRef` pointers; a
 /// by-value switch would produce stack pointers that never match.
@@ -2966,6 +2987,14 @@ const TypeChecker = struct {
                                     // Key is the function name only — stored in fn_return_types,
                                     // not instance_method_return_types, to avoid key collision.
                                     if (iface.fn_return_types.get(sym.name)) |ret_name| {
+                                        // BUG-168: primitive returns come back as their
+                                        // prim Type, not a cross_module wrapper — so
+                                        // `greet(x) + "!"` concat-dispatches correctly.
+                                        if (std.mem.eql(u8, ret_name, "str"))   return .string;
+                                        if (std.mem.eql(u8, ret_name, "int"))   return .int;
+                                        if (std.mem.eql(u8, ret_name, "float")) return .float;
+                                        if (std.mem.eql(u8, ret_name, "bool"))  return .bool;
+                                        if (std.mem.eql(u8, ret_name, "char"))  return .char;
                                         return Type{ .cross_module = .{
                                             .module    = mod_alias,
                                             .type_name = ret_name,

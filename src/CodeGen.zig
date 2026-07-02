@@ -15373,10 +15373,18 @@ const Generator = struct {
             },
             .add => {
                 // str + str → string concatenation via _str_concat; otherwise numeric add.
+                // BUG-168: check BOTH operands (the selfhost's isStringBoth does) —
+                // a left-side call the TC couldn't type (e.g. cross-module
+                // `greet(x) + "!"`) fell through to raw Zig `+` on slices.
+                // Either side string ⇒ concat: `str + non-str` is a TC error
+                // upstream, so the OR cannot misfire on valid programs.
                 const left_is_str = if (g.tc) |tc|
                     (tc.expr_types.get(e.left) orelse .unknown) == .string
                 else false;
-                if (left_is_str) {
+                const right_is_str = if (g.tc) |tc|
+                    (tc.expr_types.get(e.right) orelse .unknown) == .string
+                else false;
+                if (left_is_str or right_is_str) {
                     try g.w.writeAll("_str_concat(");
                     try g.genExpr(e.left);
                     try g.w.writeAll(", ");

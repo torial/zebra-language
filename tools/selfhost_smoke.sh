@@ -742,6 +742,9 @@ smoke_run test/fuzz_f7_precedence_test.zbr "fuzz_f7: OK"
 smoke_run test/fuzz_f8_ternary_test.zbr "fuzz_f8: OK"
 # BUG-165 (fuzzer F9): range for-in — `:`/`..`/`.to()` all lower to the i64 for_num.
 smoke_run test/fuzz_f9_range_test.zbr "fuzz_f9: OK"
+# BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
+# (concat/arith dispatch); genBinary .add checks both operands.
+smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"
 
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"

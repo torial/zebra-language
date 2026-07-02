@@ -1,0 +1,21 @@
+# BUG-168: a cross-module free function returning a PRIMITIVE (str/int/...)
+# was untyped at bootstrap call sites — namedTypeStr deliberately skips
+# builtins, so fn_return_types never recorded it, so `greet(x) + "!"`
+# emitted raw Zig `+` on slices ('pointer' and 'pointer').  The selfhost
+# stores full types and never had the gap.  Fix: primitives recorded in
+# fn_return_types + mapped back to prim Types at the consultation site;
+# genBinary .add also now checks BOTH operands (parity with the selfhost's
+# isStringBoth).
+use bug168_crossmod_prim_return_lib exposing greet, answer, ratio
+
+def main()
+    var a = greet("zebra") + "!"          # call + literal
+    var b = "pre-" + greet("x")           # literal + call
+    var c = greet("a") + greet("b")       # call + call (needs the TC fix)
+    var d = answer() + 2                  # int return in arithmetic
+    var e = ratio() * 2.0                 # float return in arithmetic
+    print("${a}|${b}|${c}|${d}|${e}")
+    if a == "hi zebra!" and b == "pre-hi x" and c == "hi ahi b" and d == 42 and e == 5.0
+        print("bug168: OK")
+    else
+        print("bug168: FAIL")

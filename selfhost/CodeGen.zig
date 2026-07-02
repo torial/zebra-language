@@ -15506,7 +15506,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:6042
             if (!std.mem.eql(u8, lv, "_")) {
 // zbr:selfhost/CodeGen.zbr:6043
-                var lv_used = mightUseName(lv, fi.stmts);
+                var lv_used: bool = mightUseName(lv, fi.stmts);
 // zbr:selfhost/CodeGen.zbr:6044
                 if (((!lv_used) and (fi.filter != null))) {
 // zbr:selfhost/CodeGen.zbr:6045
