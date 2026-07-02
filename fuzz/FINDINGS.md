@@ -8,7 +8,24 @@ equivalence bugs; genuine equivalence bugs show as `run-divergence` /
 
 ---
 
-## F1 — user identifiers that shadow a Zig primitive type emit invalid Zig  (shared, open)
+## F1 — user identifiers that shadow a Zig primitive type emit invalid Zig  (shared, ✅ FIXED — BUG-162)
+
+**FIXED 2026-07-02, both compilers.** Identifier-position emissions (local
+decls, params — including shim/vtable/thunk/lambda glue — expression
+references, unused-discards) now route through `emitName`/`zigSafeName`,
+which escapes a primitive-shadowing name to `@"name"`. Key property that
+made a partial-coverage fix safe: `@"name"` and `name` are the SAME Zig
+identifier (escaped spelling, not a rename), so escaping some occurrences
+of a legal name never breaks consistency; prefix-concatenated forms
+(`_p_*`, `_zbr_mv_*`, `_ttag_*`) keep the bare name — the prefix already
+avoids the collision. Known residual (out of scope, rare): `for`/`if-as`
+binding names, destructuring names, struct/class field names that shadow a
+primitive still emit bare. Regression: `test/fuzz_f1_primitive_names_test.zbr`;
+the generator now deliberately names ~10% of locals from a primitive pool
+(`PRIM_SHADOW`) to keep the escape differentially tested — 11/40 seeds
+carried shadow decls, all `ok`. Smoke 192/192; round-trip byte-identical.
+
+**Original finding:**
 
 **Minimal repro:**
 ```zebra
@@ -104,6 +121,26 @@ This confirms the *language* behavior is correct (immutable narrowing captures);
 the finding was pure generator over-generation.
 
 ---
+
+## F6 — unused `if x as y` capture emits `if (x) |y|` that Zig rejects  (shared, OPEN)
+
+Surfaced 2026-07-02 by the first post-F1-unmasking batch: **seeds 3 and 27**
+(`both-zig-fail`, `error: unused capture` on `if (v9) |ob10| {`). The
+generator guards for-in captures with `var _ = e` when unused, but not
+`if…as` bindings — and the compilers' unused-capture suppression (`_ = b;`,
+CodeGen.zbr ~6331 family) misses this shape. Same family as F2 (unused-use
+analysis on binding forms); likely the nested-scope usage check. Repro:
+`fuzz/run.py --seed 3`. NOT yet diagnosed — next fuzz session.
+
+## F7 — generated program emits an invalid binary expression  (shared, OPEN)
+
+**Seed 7** (`both-zig-fail`, `error: invalid operands to binary expression`
+at a `+`). Smells like the string-concat-of-call-result class (concat not
+rewritten to `_str_concat` when an operand's type isn't inferred — the same
+trap hit while writing the F1 fix, where a cross-module `zigSafeName(...)`
+call concat'd with a literal emitted raw Zig `+`). Repro: `fuzz/run.py
+--seed 7`; shrunk (category-preserving only) copies in `fuzz/findings/`.
+NOT yet diagnosed — next fuzz session.
 
 ## F2 — unused local emitted as `const` → Zig "unused local constant"  (shared, ✅ FIXED — BUG-161)
 

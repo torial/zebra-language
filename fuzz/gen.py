@@ -16,6 +16,13 @@ import re
 
 PRIMS = ('int', 'float', 'bool', 'str')
 
+# F1/BUG-162 regression surface: names that shadow a Zig primitive.  The
+# compilers escape these to @"name" since 2026-07-02; generating them
+# occasionally keeps the escaping differentially tested.  (Before the fix
+# these were masked out of generator prefixes to stop F1 noise burying
+# genuine divergences — see FINDINGS.md F1.)
+PRIM_SHADOW = ('i8', 'u32', 'f64', 'usize', 'c_int', 'i64', 'u8', 'f32')
+
 
 class Gen:
     def __init__(self, seed, caps=None):
@@ -28,6 +35,7 @@ class Gen:
         self.classes = {}     # name -> {'fields': [(f,ty)], 'methods': [(m,[pt],ret)]}
         self._params = set()  # read-only names in scope (fn params — Zig consts)
         self._self_fields = {}  # field -> type, when generating inside a class method body
+        self._shadow_used = set()  # primitive-shadowing names already declared (must stay unique)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def fresh(self, prefix='v'):
@@ -228,6 +236,14 @@ class Gen:
         if k == 'decl':
             ty = self.pick(PRIMS)
             name = self.fresh()
+            # Occasionally shadow a Zig primitive (exact name required — the
+            # whole point is the @"name" escape path).  Must be globally fresh:
+            # a repeat would be a Zebra redeclaration error.
+            if self.maybe(0.10):
+                cand = self.pick(PRIM_SHADOW)
+                if cand not in self._shadow_used:
+                    self._shadow_used.add(cand)
+                    name = cand
             if self.caps.get('optionals') and self.maybe(0.25):
                 e = self.gen_expr(ty + '?', env, d)   # init BEFORE binding — no self-reference
                 env[name] = ty + '?'

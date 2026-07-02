@@ -406,7 +406,9 @@ fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclIn
         const meth = switch (m) { .method => |x| x, else => continue };
         try g.w.print("fn _shim_{s}_{s}_{s}(ptr: *anyopaque", .{ class_name, iname, meth.name });
         for (meth.params) |p| {
-            try g.w.print(", {s}: ", .{p.name});
+            try g.w.writeAll(", ");
+            try g.emitName(p.name);
+            try g.w.writeAll(": ");
             if (p.type_) |pt| try g.genType(pt) else try g.w.writeAll("anytype");
         }
         try g.w.writeAll(") ");
@@ -416,7 +418,7 @@ fn genIfaceVtable(g: Generator, class_name: []const u8, iface: *const Ast.DeclIn
             if (meth.throws) "return try " else "return ",
             class_name, meth.name,
         });
-        for (meth.params) |p| try g.w.print(", {s}", .{p.name});
+        for (meth.params) |p| { try g.w.writeAll(", "); try g.emitName(p.name); }
         try g.w.writeAll("); }\n");
     }
     try g.w.print("const _vtable_{s}_{s} = {s}.VTable{{", .{ class_name, iname, iname });
@@ -446,7 +448,9 @@ fn genIfaceVtableInStruct(g: Generator, iface: *const Ast.DeclInterface) anyerro
         try g.writeIndent();
         try g.w.print("fn _shim_{s}_{s}(ptr: *anyopaque", .{ iname, meth.name });
         for (meth.params) |p| {
-            try g.w.print(", {s}: ", .{p.name});
+            try g.w.writeAll(", ");
+            try g.emitName(p.name);
+            try g.w.writeAll(": ");
             if (p.type_) |pt| try g.genType(pt) else try g.w.writeAll("anytype");
         }
         try g.w.writeAll(") ");
@@ -460,7 +464,7 @@ fn genIfaceVtableInStruct(g: Generator, iface: *const Ast.DeclInterface) anyerro
         for (meth.params) |p| {
             if (!first) try g.w.writeAll(", ");
             first = false;
-            try g.w.print("{s}", .{p.name});
+            try g.emitName(p.name);
         }
         try g.w.writeAll("); }\n");
     }
@@ -1794,6 +1798,33 @@ fn mightUseNameInExpr(name: []const u8, expr: *const Ast.Expr) bool {
         // not modelled; conservatively assume a use.
         else       => true,
     };
+}
+
+/// F1 / BUG-162: true when `name` emitted as a bare Zig identifier would
+/// collide with a Zig primitive type or primitive value — `iN`/`uN` int
+/// types (any digit run), the float types, `bool`/`void`/`type`/…, the
+/// `c_*` ABI types, and the primitive values `null`/`undefined`.  Zig
+/// rejects such declarations with "name shadows primitive".
+fn isZigPrimitiveName(name: []const u8) bool {
+    if (name.len >= 2 and (name[0] == 'i' or name[0] == 'u')) {
+        var all_digits = true;
+        for (name[1..]) |ch| {
+            if (ch < '0' or ch > '9') { all_digits = false; break; }
+        }
+        if (all_digits) return true;
+    }
+    const prims = std.StaticStringMap(void).initComptime(&.{
+        .{ "f16", {} },  .{ "f32", {} },  .{ "f64", {} },  .{ "f80", {} },
+        .{ "f128", {} }, .{ "bool", {} }, .{ "void", {} }, .{ "type", {} },
+        .{ "anyerror", {} }, .{ "anyopaque", {} }, .{ "anyframe", {} },
+        .{ "noreturn", {} }, .{ "comptime_int", {} }, .{ "comptime_float", {} },
+        .{ "isize", {} }, .{ "usize", {} },
+        .{ "c_char", {} }, .{ "c_short", {} }, .{ "c_ushort", {} },
+        .{ "c_int", {} }, .{ "c_uint", {} }, .{ "c_long", {} },
+        .{ "c_ulong", {} }, .{ "c_longlong", {} }, .{ "c_ulonglong", {} },
+        .{ "c_longdouble", {} }, .{ "null", {} }, .{ "undefined", {} },
+    });
+    return prims.get(name) != null;
 }
 
 fn mightUseName(name: []const u8, stmts: []const Ast.Stmt) bool {
@@ -4590,7 +4621,8 @@ const Generator = struct {
             try g.w.print("export fn {s}_{s}(", .{ owner_name, n.name });
             for (n.params, 0..) |p, i| {
                 if (i > 0) try g.w.writeAll(", ");
-                try g.w.print("{s}: ", .{p.name});
+                try g.emitName(p.name);
+                try g.w.writeAll(": ");
                 try g.genType(p.type_.?);
             }
             try g.w.writeAll(") ");
@@ -4602,7 +4634,7 @@ const Generator = struct {
             });
             for (n.params, 0..) |p, i| {
                 if (i > 0) try g.w.writeAll(", ");
-                try g.w.writeAll(p.name);
+                try g.emitName(p.name);
             }
             try g.w.writeAll("); }\n");
             if (g.has_exports_ptr) |p| p.* = true;
@@ -5219,7 +5251,8 @@ const Generator = struct {
             try vtig.w.print("{s}: *const fn (ptr: *anyopaque", .{meth.name});
             for (meth.params) |p| {
                 try vtig.w.writeAll(", ");
-                try vtig.w.print("{s}: ", .{p.name});
+                try vtig.emitName(p.name);
+                try vtig.w.writeAll(": ");
                 if (p.type_) |tr| try g.genType(tr) else try vtig.w.writeAll("anytype");
             }
             try vtig.w.writeAll(") ");
@@ -5245,7 +5278,9 @@ const Generator = struct {
             try ig.writeIndent();
             try ig.w.print("pub fn {s}(self: @This()", .{meth.name});
             for (meth.params) |p| {
-                try ig.w.print(", {s}: ", .{p.name});
+                try ig.w.writeAll(", ");
+                try ig.emitName(p.name);
+                try ig.w.writeAll(": ");
                 if (p.type_) |tr| try g.genType(tr) else try ig.w.writeAll("anytype");
             }
             try ig.w.writeAll(") ");
@@ -5256,7 +5291,7 @@ const Generator = struct {
             if (meth.throws) try mig.w.writeAll("return try self.vtable.")
             else             try mig.w.writeAll("return self.vtable.");
             try mig.w.print("{s}(self.ptr", .{meth.name});
-            for (meth.params) |p| try mig.w.print(", {s}", .{p.name});
+            for (meth.params) |p| { try mig.w.writeAll(", "); try mig.emitName(p.name); }
             try mig.w.writeAll(");\n");
             try ig.writeIndent();
             try ig.w.writeAll("}\n");
@@ -5279,7 +5314,9 @@ const Generator = struct {
                 try ig.writeIndent();
                 try ig.w.print("pub fn {s}(self: @This()", .{meth.name});
                 for (meth.params) |p| {
-                    try ig.w.print(", {s}: ", .{p.name});
+                    try ig.w.writeAll(", ");
+                    try ig.emitName(p.name);
+                    try ig.w.writeAll(": ");
                     if (p.type_) |tr| try g.genType(tr) else try ig.w.writeAll("anytype");
                 }
                 try ig.w.writeAll(") ");
@@ -5290,7 +5327,7 @@ const Generator = struct {
                 if (meth.throws) try mig.w.writeAll("return try self.vtable.__as_")
                 else             try mig.w.writeAll("return self.vtable.__as_");
                 try mig.w.print("{s}.{s}(self.ptr", .{ s.name, meth.name });
-                for (meth.params) |p| try mig.w.print(", {s}", .{p.name});
+                for (meth.params) |p| { try mig.w.writeAll(", "); try mig.emitName(p.name); }
                 try mig.w.writeAll(");\n");
                 try ig.writeIndent();
                 try ig.w.writeAll("}\n");
@@ -5583,7 +5620,7 @@ const Generator = struct {
         if (m.params.len > 0) try g.w.writeAll(", ");
         for (m.params, 0..) |p, i| {
             if (i > 0) try g.w.writeAll(", ");
-            try g.w.writeAll(p.name);
+            try g.emitName(p.name);
             try g.w.writeAll(": ");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
         }
@@ -5606,7 +5643,9 @@ const Generator = struct {
             for (m.params) |p| {
                 if (!refs.param_names.contains(p.name)) {
                     try bg.writeIndent();
-                    try bg.w.print("_ = {s};\n", .{p.name});
+                    try bg.w.writeAll("_ = ");
+                    try bg.emitName(p.name);
+                    try bg.w.writeAll(";\n");
                 }
             }
             try bg.genStmts(body);
@@ -5832,7 +5871,7 @@ const Generator = struct {
         // with mutable `var <name> = _p_<name>;` locals inside the while loop.
         for (n.params, 0..) |p, i| {
             if (i > 0) try g.w.writeAll(", ");
-            if (is_tco) try g.w.print("_p_{s}", .{p.name}) else try g.w.writeAll(p.name);
+            if (is_tco) try g.w.print("_p_{s}", .{p.name}) else try g.emitName(p.name);
             try g.w.writeAll(": ");
             // BUG-091: List(T)/HashMap(K,V) params that are mutated in the body
             // emit as `*std.ArrayList(T)` so `.append` (which takes *Self) works
@@ -5948,7 +5987,9 @@ const Generator = struct {
                 const ig = mg.indented();
                 for (n.params) |p| {
                     try ig.writeIndent();
-                    try ig.w.print("var {s} = _p_{s};\n", .{ p.name, p.name });
+                    try ig.w.writeAll("var ");
+                    try ig.emitName(p.name);
+                    try ig.w.print(" = _p_{s};\n", .{p.name});
                 }
                 try ig.writeIndent();
                 try ig.w.writeAll("while (true) {\n");
@@ -5988,7 +6029,9 @@ const Generator = struct {
                 for (n.params) |p| {
                     if (!refs.param_names.contains(p.name)) {
                         try bg.writeIndent();
-                        try bg.w.print("_ = {s};\n", .{p.name});
+                        try bg.w.writeAll("_ = ");
+                        try bg.emitName(p.name);
+                        try bg.w.writeAll(";\n");
                     }
                 }
                 try bg.genRequireChecks(n.require, n.name);
@@ -6029,7 +6072,7 @@ const Generator = struct {
         try g.w.writeAll("pub fn init(");
         for (n.params, 0..) |p, i| {
             if (i > 0) try g.w.writeAll(", ");
-            try g.w.writeAll(p.name);
+            try g.emitName(p.name);
             try g.w.writeAll(": ");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
         }
@@ -6073,7 +6116,9 @@ const Generator = struct {
         for (n.params) |p| {
             if (!refs.param_names.contains(p.name)) {
                 try bg.writeIndent();
-                try bg.w.print("_ = {s};\n", .{p.name});
+                try bg.w.writeAll("_ = ");
+                try bg.emitName(p.name);
+                try bg.w.writeAll(";\n");
             }
         }
         try bg.genRequireChecks(n.require, "init");
@@ -6096,6 +6141,21 @@ const Generator = struct {
     }
 
     // ── Statements ────────────────────────────────────────────────────────────
+
+    /// F1 / BUG-162: emit `name` as a bare Zig identifier, escaping to
+    /// `@"name"` when it would collide with a Zig primitive (`@"i8"` and
+    /// `i8` are the SAME identifier in Zig — different spellings — so a
+    /// declaration and its references stay consistent even when only some
+    /// occurrences are escaped).  NEVER use for prefix-concatenated names
+    /// (`_p_{s}`, `_zbr_mv_{s}`, `_ttag_{s}`, …): the prefix already makes
+    /// those collision-free, and `_p_@"i8"` would be invalid Zig.
+    fn emitName(g: Generator, name: []const u8) anyerror!void {
+        if (isZigPrimitiveName(name)) {
+            try g.w.print("@\"{s}\"", .{name});
+        } else {
+            try g.w.writeAll(name);
+        }
+    }
 
     /// True when genLocalVar will emit an inline constraint-check block for a
     /// local declared with this type — i.e. the type is a named / parametric
@@ -6141,7 +6201,9 @@ const Generator = struct {
                     !mightUseName(name, stmts))
                 {
                     try bg.writeIndent();
-                    try bg.w.print("_ = {s};\n", .{name});
+                    try bg.w.writeAll("_ = ");
+                    try bg.emitName(name);
+                    try bg.w.writeAll(";\n");
                 }
             }
         }
@@ -6400,7 +6462,9 @@ const Generator = struct {
                     if (n.type_) |tr| {
                         if (tr == .named and findInterfaceDecl(g.module, tr.named.name) != null) {
                             try g.writeIndent();
-                            try g.w.print("{s} {s}: {s} = .{{ .ptr = ", .{ kw, n.name, tr.named.name });
+                            try g.w.print("{s} ", .{kw});
+                            try g.emitName(n.name);
+                            try g.w.print(": {s} = .{{ .ptr = ", .{tr.named.name});
                             try g.genExpr(init_e);
                             // Reconstruct `Box(i64)` for the in-struct vtable reference.
                             try g.w.print(", .vtable = &{s}(", .{gclass});
@@ -6426,8 +6490,10 @@ const Generator = struct {
                     if (tr == .named) {
                         if (findInterfaceDecl(g.module, tr.named.name) != null) {
                             try g.writeIndent();
-                            try g.w.print("{s} {s}: {s} = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{
-                                kw, n.name, tr.named.name, class_name, class_name, tr.named.name,
+                            try g.w.print("{s} ", .{kw});
+                            try g.emitName(n.name);
+                            try g.w.print(": {s} = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{
+                                tr.named.name, class_name, class_name, tr.named.name,
                             });
                             return;
                         }
@@ -6442,7 +6508,9 @@ const Generator = struct {
                             try g.writeIndent();
                             try g.w.print("_iface_{x}.* = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ uid, class_name, class_name, iname });
                             try g.writeIndent();
-                            try g.w.print("{s} {s}: *{s} = _iface_{x};\n", .{ kw, n.name, iname, uid });
+                            try g.w.print("{s} ", .{kw});
+                            try g.emitName(n.name);
+                            try g.w.print(": *{s} = _iface_{x};\n", .{ iname, uid });
                             return;
                         }
                     }
@@ -6475,7 +6543,9 @@ const Generator = struct {
                                     try g.genExpr(init_e);
                                     try g.w.writeAll(";\n");
                                     try g.writeIndent();
-                                    try g.w.print("{s} {s}: {s} = .{{ .ptr = _ifsrc_{x}.ptr, .vtable = _ifsrc_{x}.vtable.__as_{s} }};\n", .{ kw, n.name, dst_name, uid, uid, dst_name });
+                                    try g.w.print("{s} ", .{kw});
+                                    try g.emitName(n.name);
+                                    try g.w.print(": {s} = .{{ .ptr = _ifsrc_{x}.ptr, .vtable = _ifsrc_{x}.vtable.__as_{s} }};\n", .{ dst_name, uid, uid, dst_name });
                                     return;
                                 }
                             }
@@ -6503,7 +6573,9 @@ const Generator = struct {
                             !std.mem.eql(u8, src_name, dst_name))
                         {
                             try g.writeIndent();
-                            try g.w.print("{s} {s}: {s} = .{{ .ptr = ", .{ kw, n.name, dst_name });
+                            try g.w.print("{s} ", .{kw});
+                            try g.emitName(n.name);
+                            try g.w.print(": {s} = .{{ .ptr = ", .{dst_name});
                             try g.genExpr(init_e);
                             try g.w.print(", .vtable = &_vtable_{s}_{s} }};\n", .{ src_name, dst_name });
                             return;
@@ -6535,9 +6607,13 @@ const Generator = struct {
                 is_sb_ctor; // infer StringBuilder type from the constructor call alone
             if (has_sb_type and is_sb_ctor) {
                 // Always var: ArrayList.appendSlice takes *Self.
-                try g.w.print("var {s} = std.ArrayList(u8).empty;\n", .{n.name});
+                try g.w.writeAll("var ");
+                try g.emitName(n.name);
+                try g.w.writeAll(" = std.ArrayList(u8).empty;\n");
                 try g.writeIndent();
-                try g.w.print("defer {s}.deinit(_allocator);\n", .{n.name});
+                try g.w.writeAll("defer ");
+                try g.emitName(n.name);
+                try g.w.writeAll(".deinit(_allocator);\n");
                 return;
             }
         }
@@ -6553,7 +6629,7 @@ const Generator = struct {
                     {
                         try g.w.writeAll(kw);
                         try g.w.writeAll(" ");
-                        try g.w.writeAll(n.name);
+                        try g.emitName(n.name);
                         try g.w.writeAll(" = ");
                         try g.genStdlibInit(gtr);
                         try g.w.writeAll(";\n");
@@ -6575,7 +6651,7 @@ const Generator = struct {
                 if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List") and e.* == .list_lit) {
                     try g.w.writeAll(kw);
                     try g.w.writeAll(" ");
-                    try g.w.writeAll(n.name);
+                    try g.emitName(n.name);
                     try g.w.writeAll(": ");
                     try g.genType(tr);
                     try g.w.writeAll(" = ");
@@ -6584,7 +6660,8 @@ const Generator = struct {
                     try g.w.writeAll(".empty;\n");
                     for (e.list_lit.elems) |el| {
                         try g.writeIndent();
-                        try g.w.print("{s}.append(_allocator, ", .{n.name});
+                        try g.emitName(n.name);
+                        try g.w.writeAll(".append(_allocator, ");
                         try g.genExpr(el);
                         try g.w.writeAll(") catch @panic(\"OOM\");\n");
                     }
@@ -6604,7 +6681,9 @@ const Generator = struct {
                     const meth = e.call.callee.member.member;
                     if (std.mem.eql(u8, meth, "split") or std.mem.eql(u8, meth, "lines")) {
                         const uid = g.nextUid();
-                        try g.w.print("var {s}: ", .{n.name});
+                        try g.w.writeAll("var ");
+                        try g.emitName(n.name);
+                        try g.w.writeAll(": ");
                         try g.genType(tr);
                         try g.w.writeAll(" = ");
                         try g.genStdlibInit(tr.generic);
@@ -6612,7 +6691,9 @@ const Generator = struct {
                         try g.writeIndent();
                         try g.w.print("{{ var _split_iter_{x} = ", .{uid});
                         try g.genExpr(e);
-                        try g.w.print("; while (_split_iter_{x}.next()) |_se_{x}| {{ {s}.append(_allocator, _se_{x}) catch @panic(\"OOM\"); }} }}\n", .{ uid, uid, n.name, uid });
+                        try g.w.print("; while (_split_iter_{x}.next()) |_se_{x}| {{ ", .{ uid, uid });
+                        try g.emitName(n.name);
+                        try g.w.print(".append(_allocator, _se_{x}) catch @panic(\"OOM\"); }} }}\n", .{uid});
                         return;
                     }
                 }
@@ -6629,7 +6710,7 @@ const Generator = struct {
                 // and _gui_run/_http_serve make a `var _mframe = frame` copy internally.
                 try g.w.writeAll(kw);
                 try g.w.writeAll(" ");
-                try g.w.writeAll(n.name);
+                try g.emitName(n.name);
                 try g.w.writeAll(" = ");
                 try g.genCaptureClosureStruct(e.lambda);
                 try g.w.writeAll(";\n");
@@ -6643,7 +6724,9 @@ const Generator = struct {
             if (n.init) |e| {
                 if (e.* == .ident) {
                     const fname = e.ident.name;
-                    try g.w.print("var {s}: @TypeOf(&{s}) = &{s};\n", .{ n.name, fname, fname });
+                    try g.w.writeAll("var ");
+                    try g.emitName(n.name);
+                    try g.w.print(": @TypeOf(&{s}) = &{s};\n", .{ fname, fname });
                     return;
                 }
             }
@@ -6651,7 +6734,7 @@ const Generator = struct {
 
         try g.w.writeAll(kw);
         try g.w.writeAll(" ");
-        try g.w.writeAll(n.name);
+        try g.emitName(n.name);
         if (n.type_) |tr| {
             try g.w.writeAll(": ");
             try g.genType(tr);
@@ -6738,7 +6821,9 @@ const Generator = struct {
                                 }
                             }
                             try ig.writeIndent();
-                            try ig.w.print("const value = {s};\n", .{n.name});
+                            try ig.w.writeAll("const value = ");
+                            try ig.emitName(n.name);
+                            try ig.w.writeAll(";\n");
                             try ig.writeIndent();
                             try ig.w.writeAll("if (!(");
                             try ig.genExpr(c);
@@ -10304,7 +10389,7 @@ const Generator = struct {
         }
         for (e.params) |p| {
             try fg.w.writeAll(", ");
-            try fg.w.writeAll(p.name);
+            try fg.emitName(p.name);
             try fg.w.writeAll(": ");
             if (p.type_) |tr| try fg.genType(tr) else try fg.w.writeAll("anytype");
         }
@@ -13731,11 +13816,12 @@ const Generator = struct {
         // Nil-narrowed local: name.?
         if (g.nil_narrowed) |nn| {
             if (nn.contains(e.name)) {
-                try g.w.print("{s}.?", .{e.name});
+                try g.emitName(e.name);
+                try g.w.writeAll(".?");
                 return;
             }
         }
-        try g.w.writeAll(e.name);
+        try g.emitName(e.name);
     }
 
     /// Return the `[]const Param` for a callee expression, or null if unavailable.
@@ -14037,7 +14123,7 @@ const Generator = struct {
             try g.w.print("var _zbr_dispatch_{d}: ?*const fn(*anyopaque", .{t.id});
             for (t.lambda.params) |p| {
                 try g.w.writeAll(", ");
-                try g.w.writeAll(p.name);
+                try g.emitName(p.name);
                 try g.w.writeAll(": ");
                 if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
             }
@@ -14055,7 +14141,7 @@ const Generator = struct {
                 try g.w.print("fn _zbr_thunk_{d}_{d}(", .{ t.id, slot });
                 for (t.lambda.params, 0..) |p, pi| {
                     if (pi > 0) try g.w.writeAll(", ");
-                    try g.w.writeAll(p.name);
+                    try g.emitName(p.name);
                     try g.w.writeAll(": ");
                     if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
                 }
@@ -14068,7 +14154,7 @@ const Generator = struct {
                 try g.w.print(" {{\n    if (_zbr_state_{d}[{d}]) |s| _zbr_dispatch_{d}.?(s", .{ t.id, slot, t.id });
                 for (t.lambda.params) |p| {
                     try g.w.writeAll(", ");
-                    try g.w.writeAll(p.name);
+                    try g.emitName(p.name);
                 }
                 try g.w.writeAll(");\n}\n");
             }
@@ -14194,7 +14280,7 @@ const Generator = struct {
             try dg.w.writeAll("fn dispatch(ctx: *anyopaque");
             for (lam.params) |p| {
                 try dg.w.writeAll(", ");
-                try dg.w.writeAll(p.name);
+                try dg.emitName(p.name);
                 try dg.w.writeAll(": ");
                 if (p.type_) |tr| try dg.genType(tr) else try dg.w.writeAll("anytype");
             }
@@ -14214,7 +14300,7 @@ const Generator = struct {
             try ig.w.writeAll("cc.call(");
             for (lam.params, 0..) |p, pi| {
                 if (pi > 0) try ig.w.writeAll(", ");
-                try ig.w.writeAll(p.name);
+                try ig.emitName(p.name);
             }
             try ig.w.writeAll(");\n");
             try dg.writeIndent();
@@ -15629,7 +15715,7 @@ const Generator = struct {
         for (e.params) |p| {
             if (!first) try g.w.writeAll(", ");
             first = false;
-            try g.w.writeAll(p.name);
+            try g.emitName(p.name);
             try g.w.writeAll(": ");
             if (p.type_) |tr| try g.genType(tr) else try g.w.writeAll("anytype");
         }

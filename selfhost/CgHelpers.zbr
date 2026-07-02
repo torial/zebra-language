@@ -613,6 +613,58 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
         else
             return true
 
+# F1 / BUG-162: true when `name` emitted as a bare Zig identifier would collide
+# with a Zig primitive type or primitive value — iN/uN int types (any digit
+# run), the float types, bool/void/type/…, the c_* ABI types, and the primitive
+# values null/undefined.  Zig rejects such declarations with "name shadows
+# primitive".  Mirrors src/CodeGen.zig isZigPrimitiveName.
+def isZigPrimitiveName(name: str): bool
+    if name.len >= 2
+        var c0 = name[0]
+        if c0 == c'i' or c0 == c'u'
+            var all_digits = true
+            var di = 1
+            while di < name.len
+                branch name[di]
+                    on c'0'..c'9'
+                        pass
+                    else
+                        all_digits = false
+                        break
+                di += 1
+            if all_digits
+                return true
+    if name == "f16" or name == "f32" or name == "f64" or name == "f80" or name == "f128"
+        return true
+    if name == "bool" or name == "void" or name == "type" or name == "anyerror"
+        return true
+    if name == "anyopaque" or name == "anyframe" or name == "noreturn"
+        return true
+    if name == "comptime_int" or name == "comptime_float"
+        return true
+    if name == "isize" or name == "usize"
+        return true
+    if name == "c_char" or name == "c_short" or name == "c_ushort" or name == "c_int"
+        return true
+    if name == "c_uint" or name == "c_long" or name == "c_ulong" or name == "c_longlong"
+        return true
+    if name == "c_ulonglong" or name == "c_longdouble"
+        return true
+    if name == "null" or name == "undefined"
+        return true
+    return false
+
+# F1 / BUG-162: return `name` unchanged, or the @"name" escaped spelling when
+# it would collide with a Zig primitive.  @"name" denotes the SAME identifier
+# in Zig (an escaped spelling, not a rename), so escaping only some occurrences
+# of a legal name stays consistent.  Never apply to prefix-concatenated names
+# (_p_*, _zbr_mv_*, _ttag_*, …) — the prefix already avoids the collision and
+# `_p_@"i8"` would be invalid Zig.
+def zigSafeName(name: str): str
+    if isZigPrimitiveName(name)
+        return "@\"" + name + "\""
+    return name
+
 # CONSERVATIVE "might `name` be read anywhere in `stmts`?" — returns true for any
 # statement form it can't fully analyse, so a caller may safely emit an unused
 # discard (`_ = X;`) only when this is false (never discarding a used name, which

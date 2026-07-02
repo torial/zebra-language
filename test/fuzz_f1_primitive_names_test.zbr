@@ -1,0 +1,25 @@
+# Fuzzer finding F1 / BUG-162: user identifiers that shadow a Zig primitive
+# type or value (i8/u32/f64/bool-family, c_int family, null, undefined, ...)
+# used to emit bare and collide — Zig rejects "name shadows primitive".
+# Both emitters now escape such names to @"name" (the SAME Zig identifier,
+# escaped spelling) at bare-identifier positions: local decls, params,
+# expression references, unused-discards.  Prefix-concatenated forms
+# (_p_*, _zbr_mv_*) stay bare — the prefix already avoids the collision.
+
+def mix(f64: float, u32: int): float
+    return f64 * u32.toFloat()
+
+def main()
+    var i8 = 5                 # local shadowing an int type
+    i8 = i8 + 2                # mutation + references
+    var f32: float = 1.5       # annotated local shadowing a float type
+    var u16: int? = 3          # optional local, orelse read
+    var usize = (u16 orelse 0) # shadows usize; init reads the optional
+    var c_int = "abc"          # shadows a C ABI type
+    var null_ish = mix(f32, i8)
+    var undefined = 9          # unused → needs the escaped discard
+    print("i8=${i8} f32=${f32} usize=${usize} c_int=${c_int} r=${null_ish}")
+    if i8 == 7 and usize == 3 and null_ish == 10.5
+        print("fuzz_f1: OK")
+    else
+        print("fuzz_f1: FAIL i8=${i8} usize=${usize} r=${null_ish}")

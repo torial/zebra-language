@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, isZigPrimitiveName, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -2841,7 +2841,8 @@ struct Generator
             if m is Decl.method as meth
                 w.emit("fn _shim_${class_name}_${iname}_${meth.name}(ptr: *anyopaque")
                 for p in meth.params
-                    w.emit(", " + p.name + ": ")
+                    var zp_shim: str = zigSafeName(p.name)
+                    w.emit(", " + zp_shim + ": ")
                     if p.type_ != nil
                         genType(p.type_!)
                     else
@@ -2905,7 +2906,8 @@ struct Generator
                 writeIndent()
                 w.emit("fn _shim_${iname}_${meth.name}(ptr: *anyopaque")
                 for p in meth.params
-                    w.emit(", " + p.name + ": ")
+                    var zp_shim2: str = zigSafeName(p.name)
+                    w.emit(", " + zp_shim2 + ": ")
                     if p.type_ != nil
                         genType(p.type_!)
                     else
@@ -2928,7 +2930,7 @@ struct Generator
                     if not first
                         w.emit(", ")
                     first = false
-                    w.emit(p.name)
+                    w.emit(zigSafeName(p.name))
                 w.emit("); }\n")
         writeIndent()
         w.emit("const _vtable_${iname} = ${iname}.VTable{")
@@ -3495,7 +3497,7 @@ struct Generator
                 if not nameUsedInStmts(p.name, mstmts)
                     bg.writeIndent()
                     bg.w.emit("_ = ")
-                    bg.w.emit(p.name)
+                    bg.w.emit(zigSafeName(p.name))
                     bg.w.emit(";\n")
             bg.genRequireChecks(m.require_, m.name)
             var ec = bg.genEnsureBlock(m.ensure_, m.name, m.return_type)
@@ -3728,7 +3730,7 @@ struct Generator
                 w.emit(": *const fn (ptr: *anyopaque")
                 for p in mth.params
                     w.emit(", ")
-                    w.emit(p.name)
+                    w.emit(zigSafeName(p.name))
                     w.emit(": ")
                     if p.type_ != nil
                         genType(p.type_!)
@@ -3790,7 +3792,7 @@ struct Generator
                 w.emit("(self: @This()")
                 for p in mth.params
                     w.emit(", ")
-                    w.emit(p.name)
+                    w.emit(zigSafeName(p.name))
                     w.emit(": ")
                     if p.type_ != nil
                         genType(p.type_!)
@@ -3813,7 +3815,7 @@ struct Generator
                 w.emit("(self.ptr")
                 for p in mth.params
                     w.emit(", ")
-                    w.emit(p.name)
+                    w.emit(zigSafeName(p.name))
                 w.emit(");\n")
                 ig.writeIndent()
                 w.emit("}\n")
@@ -3842,7 +3844,7 @@ struct Generator
                             w.emit("(self: @This()")
                             for p in smth.params
                                 w.emit(", ")
-                                w.emit(p.name)
+                                w.emit(zigSafeName(p.name))
                                 w.emit(": ")
                                 if p.type_ != nil
                                     genType(p.type_!)
@@ -3867,7 +3869,7 @@ struct Generator
                             w.emit("(self.ptr")
                             for p in smth.params
                                 w.emit(", ")
-                                w.emit(p.name)
+                                w.emit(zigSafeName(p.name))
                             w.emit(");\n")
                             ig.writeIndent()
                             w.emit("}\n")
@@ -3937,7 +3939,7 @@ struct Generator
             w.emit(tname)
         for p in mth.params
             w.emit(", ")
-            w.emit(p.name)
+            w.emit(zigSafeName(p.name))
             w.emit(": ")
             if p.type_ != nil
                 genType(p.type_!)
@@ -3967,7 +3969,7 @@ struct Generator
             if not first
                 w.emit(", ")
             first = false
-            w.emit(p.name)
+            w.emit(zigSafeName(p.name))
             w.emit(": ")
             # BUG-091: List(T)/HashMap(K,V) param mutated by body → emit *T
             # so .append/.put can take *Self and the caller sees changes.
@@ -4164,6 +4166,21 @@ struct Generator
 
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
+    # F1 / BUG-162: emit `name` as a bare Zig identifier, escaping to @"name"
+    # when it would collide with a Zig primitive (@"i8" and i8 are the SAME
+    # identifier in Zig — different spellings — so a declaration and its
+    # references stay consistent even when only some occurrences are escaped).
+    # NEVER use for prefix-concatenated names (_p_*, _zbr_mv_*, _ttag_*, …):
+    # the prefix already makes those collision-free, and `_p_@"i8"` would be
+    # invalid Zig.  Mirrors src/CodeGen.zig emitName.
+    def emitName(name: str)
+        if isZigPrimitiveName(name)
+            w.emit("@\"")
+            w.emit(name)
+            w.emit("\"")
+        else
+            w.emit(name)
+
     def genStmts(stmts: List(Stmt))
         # Per-block mutation scope: save caller's mut_set, install block-scoped one,
         # restore on exit. This prevents sibling branch arms from polluting each
@@ -4191,7 +4208,7 @@ struct Generator
                             if not mightUseName(n.name, stmts)
                                 writeIndent()
                                 w.emit("_ = ")
-                                w.emit(n.name)
+                                emitName(n.name)
                                 w.emit(";\n")
         mut_set = saved_ms
 
@@ -4420,7 +4437,8 @@ struct Generator
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name)
                     writeIndent()
-                    w.emit("var " + n.name + ": @TypeOf(&" + fid.name + ") = &" + fid.name + ";\n")
+                    var zn_fnref: str = zigSafeName(n.name)
+                    w.emit("var " + zn_fnref + ": @TypeOf(&" + fid.name + ") = &" + fid.name + ";\n")
                     return
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
@@ -4437,7 +4455,8 @@ struct Generator
                                 if is_mut
                                     ikw = "var"
                                 writeIndent()
-                                w.emit(ikw + " " + n.name + ": " + itn.name + " = .{ .ptr = " + iclass_name + ".init(), .vtable = &_vtable_" + iclass_name + "_" + itn.name + " };\n")
+                                var zn_ifc: str = zigSafeName(n.name)
+                                w.emit(ikw + " " + zn_ifc + ": " + itn.name + " = .{ .ptr = " + iclass_name + ".init(), .vtable = &_vtable_" + iclass_name + "_" + itn.name + " };\n")
                                 return
                         if itr is TypeRef.ref_to as irto
                             if irto is TypeRef.named as irtn
@@ -4452,7 +4471,8 @@ struct Generator
                                     writeIndent()
                                     w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = " + iclass_name + ".init(), .vtable = &_vtable_" + iclass_name + "_" + irtn.name + " };\n")
                                     writeIndent()
-                                    w.emit(ikw2 + " " + n.name + ": *" + irtn.name + " = _iface_" + iuid.toString() + ";\n")
+                                    var zn_ifc2: str = zigSafeName(n.name)
+                                    w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn.name + " = _iface_" + iuid.toString() + ";\n")
                                     return
                 # Generalized concrete→interface coercion for an ident or method-call
                 # RHS (the constructor RHS is handled above). e.g. `var b: IBase = d`
@@ -4475,7 +4495,8 @@ struct Generator
                                     if g_inner.callee is Expr.ident as g_id
                                         if g_id.name == cc!
                                             writeIndent()
-                                            w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
+                                            var zn_ifc3: str = zigSafeName(n.name)
+                                            w.emit(ikw3 + " " + zn_ifc3 + ": " + itn2.name + " = .{ .ptr = ")
                                             genExpr(iinit)
                                             w.emit(", .vtable = &" + (cc!) + "(")
                                             var g_first = true
@@ -4489,7 +4510,8 @@ struct Generator
                             if did_generic
                                 return
                             writeIndent()
-                            w.emit(ikw3 + " " + n.name + ": " + itn2.name + " = .{ .ptr = ")
+                            var zn_ifc4: str = zigSafeName(n.name)
+                            w.emit(ikw3 + " " + zn_ifc4 + ": " + itn2.name + " = .{ .ptr = ")
                             genExpr(iinit)
                             w.emit(", .vtable = &_vtable_" + cc! + "_" + itn2.name + " };\n")
                             return
@@ -4514,7 +4536,8 @@ struct Generator
                                             genExpr(iinit)
                                             w.emit(";\n")
                                             writeIndent()
-                                            w.emit(ikw4 + " " + n.name + ": " + itn2.name + " = .{ .ptr = _ifsrc_" + iiuid.toString() + ".ptr, .vtable = _ifsrc_" + iiuid.toString() + ".vtable.__as_" + itn2.name + " };\n")
+                                            var zn_ifc5: str = zigSafeName(n.name)
+                                            w.emit(ikw4 + " " + zn_ifc5 + ": " + itn2.name + " = .{ .ptr = _ifsrc_" + iiuid.toString() + ".ptr, .vtable = _ifsrc_" + iiuid.toString() + ".vtable.__as_" + itn2.name + " };\n")
                                             return
         writeIndent()
         # const vs var already computed above
@@ -4522,7 +4545,7 @@ struct Generator
             w.emit("var ")
         else
             w.emit("const ")
-        w.emit(n.name)
+        emitName(n.name)
         # Track local str/List-tuple/StrSet variables for type-aware codegen
         # Must happen BEFORE early-return paths (StringBuilder, generic stdlib ctor)
         if n.type_ != nil
@@ -4607,7 +4630,8 @@ struct Generator
                             var lli = 0
                             while lli < ll_init.elems.len
                                 writeIndent()
-                                w.emit(n.name + ".append(_allocator, ")
+                                var zn_ll: str = zigSafeName(n.name)
+                                w.emit(zn_ll + ".append(_allocator, ")
                                 genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\");\n")
                                 lli += 1
@@ -4784,7 +4808,8 @@ struct Generator
             w.emit(";\n")
             pi += 1
         ig.writeIndent()
-        w.emit("const value = " + var_name + ";\n")
+        var zvn: str = zigSafeName(var_name)
+        w.emit("const value = " + zvn + ";\n")
         ig.writeIndent()
         w.emit("if (!(")
         ig.genExpr(alias_decl.constraint!)
@@ -8023,7 +8048,7 @@ struct Generator
             w.emit("._zbr_mv_")
             w.emit(id.name)
             return
-        w.emit(id.name)
+        emitName(id.name)
 
     # True if `name` is a module-level var/const (registered under the ""
     # sentinel class by populateModuleTypes). Module vars emit as a prefixed
@@ -8598,7 +8623,7 @@ struct Generator
                 dg.w.emit("fn dispatch(ctx: *anyopaque")
                 for p in lam.params
                     dg.w.emit(", ")
-                    dg.w.emit(p.name)
+                    dg.w.emit(zigSafeName(p.name))
                     dg.w.emit(": ")
                     if p.type_ != nil
                         dg.genType(p.type_!)
@@ -8621,7 +8646,7 @@ struct Generator
                 for p2 in lam.params
                     if pi > 0
                         ig.w.emit(", ")
-                    ig.w.emit(p2.name)
+                    ig.w.emit(zigSafeName(p2.name))
                     pi = pi + 1
                 ig.w.emit(");\n")
                 dg.writeIndent()
@@ -8666,7 +8691,7 @@ struct Generator
             w.emit("var _zbr_dispatch_" + id_s + ": ?*const fn(*anyopaque")
             for p in t.lambda.params
                 w.emit(", ")
-                w.emit(p.name)
+                w.emit(zigSafeName(p.name))
                 w.emit(": ")
                 if p.type_ != nil
                     genType(p.type_!)
@@ -8691,7 +8716,7 @@ struct Generator
                     if pj > 0
                         w.emit(", ")
                     var pp = t.lambda.params.at(pj)
-                    w.emit(pp.name)
+                    w.emit(zigSafeName(pp.name))
                     w.emit(": ")
                     if pp.type_ != nil
                         genType(pp.type_!)
@@ -8708,7 +8733,7 @@ struct Generator
                 w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| _zbr_dispatch_" + id_s + ".?(s")
                 for p2 in t.lambda.params
                     w.emit(", ")
-                    w.emit(p2.name)
+                    w.emit(zigSafeName(p2.name))
                 w.emit(");")
                 w.emit("\n")
                 w.emit("}")
@@ -11839,7 +11864,7 @@ struct Generator
             if not first
                 w.emit(", ")
             first = false
-            w.emit(p.name)
+            w.emit(zigSafeName(p.name))
             w.emit(": ")
             if p.type_ != nil
                 genType(p.type_!)

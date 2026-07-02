@@ -1,6 +1,45 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-161. Next new bug: BUG-162.**
+**Last bug number generated: BUG-162. Next new bug: BUG-163.**
+
+---
+
+## BUG-162: identifiers shadowing Zig primitives emitted bare → invalid Zig ✅ FIXED
+
+**Severity:** medium (shared robustness gap; any user program naming a var or
+param `i8`/`u32`/`f64`/`usize`/`c_int`/… failed to compile in both compilers
+with Zig's "name shadows primitive").
+**Found by the differential fuzzer** (`fuzz/` finding **F1**, 2026-07-01);
+compiler-side fix landed 2026-07-02 (was deferred to a gated session).
+
+**FIXED (2026-07-02), both compilers:**
+- `isZigPrimitiveName` predicate (iN/uN digit-run int types, f16–f128,
+  bool/void/type/anyerror/anyopaque/anyframe/noreturn/comptime_*/isize/usize,
+  the `c_*` ABI types, and the primitive values `null`/`undefined`).
+- Bootstrap: `Generator.emitName` (writer-level, no allocation) applied at
+  identifier-position emissions — genIdent, genLocalVar (all decl paths),
+  genStmts unused-discard, genParamList-equivalents (method/init/ext/lambda
+  sigs), unused-param discards, TCO shadows (`var X = _p_X` — bare `_p_X`
+  side kept), interface shim/vtable/wrapper glue, closure-thunk glue,
+  `export fn` shims, constraint-check `const value = X`.
+- Selfhost: `zigSafeName` (returning form, for concat-style emission) +
+  `emitName` mirror at the same logical sites.
+- **Safety property:** `@"name"` is the SAME identifier as `name` in Zig
+  (escaped spelling), so partial coverage degrades gracefully — an escaped
+  reference to a bare-declared legal name stays consistent. Prefix-
+  concatenated names (`_p_`, `_zbr_mv_`, `_ttag_`) must stay bare and do.
+- **Residual (rare, deliberate scope bound):** for-in/`if-as` binding names,
+  destructuring names, and struct/class *field* names that shadow a
+  primitive still emit bare and still fail. Extend `emitName` coverage if a
+  real program hits one.
+- Selfhost-source trap discovered en route: `zigSafeName(x) + "lit"`
+  (cross-module call result in a string concat) emitted raw Zig `+`;
+  worked around by hoisting into annotated `var z: str = zigSafeName(x)`
+  locals. Same class now tracked as fuzz finding **F7** (open).
+
+Regression: `test/fuzz_f1_primitive_names_test.zbr`; generator now names
+~10% of locals from a primitive pool so the escape stays differentially
+tested. Smoke 192/192, round-trip byte-identical. See `fuzz/FINDINGS.md` F1.
 
 ---
 

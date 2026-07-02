@@ -43,12 +43,19 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
 - **Differential fuzzer (`fuzz/`, see `fuzz/README.md` + `FINDINGS.md`)** — found +
   fixed two real equivalence bugs (BUG-159 mutated-comptime-local annotation,
   BUG-160 interp fmt-spec). Deferred compiler-side gaps it surfaced:
-  - **F1 (shared)**: user identifiers that shadow a Zig primitive type
-    (`i8`/`u32`/`f64`/`bool`/`void`/…) emit invalid Zig in *both* compilers. Fix:
-    escape such names to `@"name"` in the identifier-emit path (genIdent /
-    genLocalVar / genTopVar + params) in both emitters; regression fixture
-    `var i8 = …; var f32 = …`. (Masked in the generator so it stops burying
-    genuine divergences; the compiler gap is real for user code.)
+  - **F1 (shared)**: ✅ FIXED 2026-07-02 (BUG-162) — primitive-shadowing
+    identifiers now escape to `@"name"` at identifier-position emissions in
+    both compilers (emitName/zigSafeName); generator deliberately produces
+    them (~10% of locals) as a standing differential test. Residual: binding
+    names (for/if-as), destructuring, field names still bare — extend if hit.
+    Regression `test/fuzz_f1_primitive_names_test.zbr`; smoke 192/192,
+    round-trip clean.
+  - **F6 (shared, NEW 2026-07-02)**: unused `if x as y` capture → Zig
+    "unused capture" (seeds 3/27) — the `_ = b;` suppression misses a shape.
+  - **F7 (shared, NEW 2026-07-02)**: seed 7 emits an invalid binary `+` —
+    likely string-concat-of-call-result not rewritten to `_str_concat`
+    (same trap hit in selfhost sources during the F1 fix). Both open in
+    `fuzz/FINDINGS.md`; diagnose next fuzz session.
   - **F2 (shared)**: ✅ FIXED 2026-07-02 (BUG-161) — the unused-local auto-discard
     was suppressed by (1) any type annotation (the skip was meant for
     constrained-alias types only), (2) unmodelled `this` in `mightUseNameInExpr`
