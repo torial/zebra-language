@@ -688,11 +688,18 @@ throws call in selfhost/ + test/ + examples/, likely hundreds of sites):**
    byte-identical; 60/60 fuzz seeds. QUICKSTART §12 now teaches explicit `?`
    and marks auto-try deprecated.
 4. ✅ DONE (Opus, 2026-07-02) — **trap removed at the gate level**, which is
-   the durable half of the migration. `tools/check_explicit_try.sh` runs
-   `--warn-implicit-try` over the whole corpus and FAILS on any implicit-try
-   site (currently 0). New code that omits `?` now breaks the gate instead of
-   silently compiling — the exact "silent-regression" hazard the half-done
-   state created. Zero compiler-behavior change; near-zero risk.
+   the durable half of the migration. `tools/check_explicit_try.sh` FAILS on
+   any implicit-try site (currently 0). New code that omits `?` breaks the
+   gate instead of silently compiling. Zero compiler-behavior change.
+   **INCREMENTAL** (2026-07-02): only re-checks `.zbr` files modified since
+   the last clean run (mtime vs `zig-out/.explicit_try_stamp`, gitignored);
+   full re-scan when the compiler binary is newer than the stamp (a rebuild
+   can flip a previously-clean file — the correctness safeguard) or on
+   `--full`. Measured: full = 387 files / 3m21s; no-change re-run = **0.4s**;
+   one changed file = **0.56s**. Both invalidation + regression-on-changed-
+   file verified. Accepted residual (Sean OK'd "not 100%"): a `.zbr` whose
+   content changes without its mtime advancing is skipped until the next
+   `--full`; normal edit/build/git workflows advance mtimes.
 5. **Language-level flip (implicit-try → compile error for EXTERNAL code too)
    — REDESIGNED, deferred to its own session; now SAFE to defer because step 4
    protects the repo.** Design note (Opus discovery): do NOT emit
@@ -712,10 +719,14 @@ throws call in selfhost/ + test/ + examples/, likely hundreds of sites):**
 6. QUICKSTART §12 rewrite (done, marks deprecated) + CHANGELOG entry at flip
    time (breaking change — biggest since the `arena` keyword removal).
 
-**Wiring TODO for whoever runs the gates:** `tools/check_explicit_try.sh` is
-not yet called from `zig build test`/CI — invoke it in the gate runner (it's
-standalone, needs only `zebra-bootstrap.exe`). Left uninvoked-by-default so
-this commit changes no existing gate behavior; wire it in deliberately.
+**Wiring recommendation (now cheap enough to run often):** the incremental
+gate is near-instant for source-only edits, so the best home is a **git
+pre-commit hook** or a standalone dev check — those don't rebuild, so they
+hit the fast incremental path. Do NOT bury it *inside* the post-`zig build`
+gate pipeline: a fresh build makes the binary newer than the stamp, forcing
+the full 3-min scan every time (correct, but wasteful there). CI that wants
+certainty should call it once with `--full`. Still not auto-invoked anywhere
+by default — wire it where it fits your loop.
 
 **c. Exhaustiveness default-on.** Flip `--warn-non-exhaustive` to warn **by
 default** for same-module unions pre-1.0 (flag to silence), documented path
