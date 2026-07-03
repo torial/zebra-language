@@ -43,9 +43,12 @@ first:
   (`T?`, nil, `if x as y`, `orelse`), lists (`List(T)`, `.add`, for-in), structs
   (fields + `cue init` + field read/write), classes (fields + methods, `*self`
   vs `*const self`, method dispatch), ternary `if(c,t,e)`, numeric ranges
-  (`a:b[:s]` / `a..b`), and **`throws`** — throws fns with a conditional
-  `raise`, explicit-`?` propagation (§28b), and method-level `catch` wrappers
-  that make throws chains reachable + runnable from `main`.
+  (`a:b[:s]` / `a..b`), **`throws`** (throws fns with a conditional `raise`,
+  explicit-`?` propagation (§28b), method-level `catch` wrappers that make
+  throws chains reachable + runnable from `main`), and **enums / unions /
+  `branch`** — bare enums (`E.variant`), tagged unions (payload-less +
+  prim-payload variants, `U.variant(x)` construction), and `branch` dispatch
+  with payload binding (`on U.v as p`), in both exhaustive and `else` forms.
 - `harness.py` — the oracle above. `check(zbr, tag, zig_check=True, run=False)`.
 - `shrink.py` — line-granularity delta debugging; minimizes a failing program
   while preserving its verdict signature.

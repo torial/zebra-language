@@ -33,6 +33,8 @@ class Gen:
         self.funcs = []       # [(name, [param_types], ret_type, throws_bool)] — callable helpers
         self.structs = {}     # name -> [(field, type)] — user struct types
         self.classes = {}     # name -> {'fields': [(f,ty)], 'methods': [(m,[pt],ret)]}
+        self.enums = {}       # name -> [variant_name, ...] — bare enums
+        self.unions = {}      # name -> [(variant, payload_type|None), ...] — tagged unions
         self._params = set()  # read-only names in scope (fn params — Zig consts)
         self._self_fields = {}  # field -> type, when generating inside a class method body
         self._shadow_used = set()  # primitive-shadowing names already declared (must stay unique)
@@ -179,7 +181,8 @@ class Gen:
         # params are const in Zig; List vars are construct-once (never reassigned —
         # gen_expr produces no List values, and reassigning a list isn't interesting)
         assignable = [k for k in env if k not in self._params and not env[k].startswith('List(')
-                      and env[k] not in self.structs and env[k] not in self.classes]
+                      and env[k] not in self.structs and env[k] not in self.classes
+                      and env[k] not in self.enums and env[k] not in self.unions]
         if assignable:
             choices += ['assign', 'assign']
         opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
@@ -193,6 +196,12 @@ class Gen:
             choices += ['structdecl']
         if self.classes:
             choices += ['classdecl']
+        if self.enums:
+            choices += ['enumdecl']
+        if self.unions:
+            choices += ['uniondecl']
+        # in-scope enum/union vars can be dispatched with `branch`
+        tagged_in_scope = [k for k, v in env.items() if v in self.enums or v in self.unions]
         if udt_in_scope:
             choices += ['fieldwrite']
         if self._self_fields:
@@ -205,6 +214,8 @@ class Gen:
                 choices += ['forin']   # `for e in list`
             if self.caps.get('ranges'):
                 choices += ['fornum']  # `for i in a : b [: s]` / `a..b` (BUG-165/F9)
+            if tagged_in_scope:
+                choices += ['branch']  # `branch v` over enum/union variants
         k = self.pick(choices)
         d = self.caps['expr_depth']
         if k == 'listdecl':
@@ -234,6 +245,45 @@ class Gen:
             body = self.gen_block(env2, indent + 1, budget)
             self._params.discard(v)
             return [head] + body
+        if k == 'enumdecl':
+            en = self.pick(list(self.enums.keys()))
+            v = self.pick(self.enums[en])
+            name = self.fresh('en')
+            env[name] = en
+            return [f'{ind}var {name} = {en}.{v}']
+        if k == 'uniondecl':
+            un = self.pick(list(self.unions.keys()))
+            (v, pt) = self.pick(self.unions[un])
+            name = self.fresh('un')
+            env[name] = un
+            if pt is not None:
+                return [f'{ind}var {name} = {un}.{v}({self.gen_expr(pt, env, d)})']
+            return [f'{ind}var {name} = {un}.{v}()']
+        if k == 'branch':
+            bv = self.pick(tagged_in_scope)
+            tname = env[bv]
+            if tname in self.enums:
+                variants = [(v, None) for v in self.enums[tname]]
+            else:
+                variants = self.unions[tname]
+            ind2 = '    ' * (indent + 1)
+            ind3 = '    ' * (indent + 2)
+            out = [f'{ind}branch {bv}']
+            # Full coverage exercises exhaustiveness codegen; else-form ~40%.
+            use_else = self.maybe(0.4)
+            covered = variants if not use_else else variants[:max(1, len(variants) - 1)]
+            for (v, pt) in covered:
+                if pt is not None:
+                    b = self.fresh('bp')      # payload binding — a prim value
+                    out.append(f'{ind2}on {tname}.{v} as {b}')
+                    out.append(f'{ind3}print("v=${{{b}}}")')   # use the binding
+                else:
+                    out.append(f'{ind2}on {tname}.{v}')
+                    out.append(f'{ind3}print("hit")')
+            if use_else:
+                out.append(f'{ind2}else')
+                out.append(f'{ind3}pass')
+            return out
         if k == 'forin':
             lv = self.pick(list_in_scope)
             et = env[lv][5:-1]            # List(T) → T
@@ -354,6 +404,35 @@ class Gen:
             lines.append(f'        .{fn} = {fn}')
         return lines
 
+    def gen_enum(self):
+        """A top-level `enum E` with 2–4 bare (payload-less) variants.  Registered
+        so bodies can build `E.variant` values and `branch` over them."""
+        name = self.fresh('E')
+        nv = self.rng.randint(2, 4)
+        variants = [f'ev{i}' for i in range(nv)]   # ev* — never shadows a Zig primitive
+        self.enums[name] = variants
+        return [f'enum {name}'] + [f'    {v}' for v in variants]
+
+    def gen_union(self):
+        """A top-level `union U` with 2–4 variants, each payload-less or a single
+        prim payload.  Registered with payload types so bodies can construct
+        `U.variant(x)` / `U.variant()` and `branch` with payload binding."""
+        name = self.fresh('U')
+        nv = self.rng.randint(2, 4)
+        variants = []
+        lines = [f'union {name}']
+        for i in range(nv):
+            v = f'wv{i}'                            # wv* — distinct, non-primitive
+            if self.maybe(0.6):
+                pt = self.pick(PRIMS)
+                lines.append(f'    {v}: {pt}')
+                variants.append((v, pt))
+            else:
+                lines.append(f'    {v}')            # payload-less
+                variants.append((v, None))
+        self.unions[name] = variants
+        return lines
+
     def gen_class(self):
         """A top-level `class C` (reference type): typed prim fields + `cue init` +
         1–2 methods.  Method bodies read `.field` and may write `.field` (exercising
@@ -463,6 +542,13 @@ class Gen:
 
     def program(self):
         decls = []
+        # enums/unions first — simplest, no deps; bodies branch over them.
+        if self.caps.get('enums'):
+            for _ in range(self.rng.randint(0, self.caps['enums'])):
+                decls += self.gen_enum() + ['']
+        if self.caps.get('unions'):
+            for _ in range(self.rng.randint(0, self.caps['unions'])):
+                decls += self.gen_union() + ['']
         if self.caps.get('structs'):
             for _ in range(self.rng.randint(0, self.caps['structs'])):
                 decls += self.gen_struct() + ['']
@@ -489,6 +575,8 @@ DEFAULT_CAPS = {
     'lists': True,       # generate List(T) — construction, .add, .len, for-in
     'structs': 2,        # up to this many struct types (fields, construction, access)
     'classes': 2,        # up to this many class types (fields, methods, dispatch)
+    'enums': 2,          # up to this many enum types (E.variant values, branch)
+    'unions': 2,         # up to this many union types (payload variants, branch binding)
     'ternary': True,     # if(cond, a, b) call-form ternary (BUG-167/F8)
     'ranges': True,      # for_num range loops: `a : b [: s]` and `a..b` (BUG-165/F9)
     'throws': True,      # `throws` fns + `?` propagation + method-level `catch` (§28b surface)
