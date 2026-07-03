@@ -170,6 +170,11 @@ pub fn main(init: std.process.Init) void {
             library_mode = true;
         } else if (std.mem.eql(u8, arg, "--warn-non-exhaustive")) {
             warn_non_exhaustive = true;
+        } else if (std.mem.eql(u8, arg, "--warn-implicit-try")) {
+            // §28b step 1 (explicit-`?` migration): print IMPLICIT_TRY lines
+            // for every auto-inserted `try`.  Global so dep compilation
+            // reports too; no behavior change.
+            CodeGen.warn_implicit_try = true;
         } else if (std.mem.startsWith(u8, arg, "--gui-backend=")) {
             const val = arg["--gui-backend=".len..];
             if (std.mem.eql(u8, val, "stub")) {

@@ -70,6 +70,15 @@ const Allocator = std.mem.Allocator;
 /// any user/preamble identifier occupies.  The Zebra source name is unchanged.
 const module_var_prefix = "_zbr_mv_";
 
+/// §28b step 1 (explicit-`?` migration): when set (--warn-implicit-try),
+/// every site where codegen auto-inserts `try` for a throws call the user
+/// did not mark with `?` prints a machine-parsable line to stderr:
+///   IMPLICIT_TRY: <file>:<line>:<col>:<end_line>:<end_col>
+/// The migration sweep consumes these to insert `?` at end positions.
+/// No behavior change when unset.  Removed when implicit try becomes an
+/// error (§28b step 5).
+pub var warn_implicit_try: bool = false;
+
 // ── Compile-time hash (FNV-1a 32-bit) ────────────────────────────────────────
 // Used internally by CodeGen to compute class-name hash components for
 // `_ttag_ClassName` constants.  The algorithm must stay bitwise-identical to
@@ -6149,6 +6158,13 @@ const Generator = struct {
     /// occurrences are escaped).  NEVER use for prefix-concatenated names
     /// (`_p_{s}`, `_zbr_mv_{s}`, `_ttag_{s}`, …): the prefix already makes
     /// those collision-free, and `_p_@"i8"` would be invalid Zig.
+    /// §28b step 1: report an implicit-try site (see warn_implicit_try).
+    fn noteImplicitTry(g: Generator, span: Ast.Span) void {
+        if (!warn_implicit_try) return;
+        std.debug.print("IMPLICIT_TRY: {s}:{d}:{d}:{d}:{d}\n",
+            .{ g.source_file, span.line, span.col, span.end_line, span.end_col });
+    }
+
     fn emitName(g: Generator, name: []const u8) anyerror!void {
         if (isZigPrimitiveName(name)) {
             try g.w.print("@\"{s}\"", .{name});
@@ -6331,6 +6347,7 @@ const Generator = struct {
                             try g.w.writeAll(";\n");
                             try g.writeIndent();
                             if (is_throws and g.current_method_throws and g.try_block_label == null and !g.suppress_auto_try) {
+                                g.noteImplicitTry(call.span);
                                 try g.w.writeAll("try ");
                             }
                             try g.w.print("_mc_{x}.{s}(", .{ uid, mem.member });
@@ -15253,6 +15270,7 @@ const Generator = struct {
                         else    => false,
                     };
                     if (callee_throws and g.current_method_throws and g.try_block_label == null and !g.suppress_auto_try) {
+                        g.noteImplicitTry(e.span);
                         try g.w.writeAll("try ");
                     }
                     if (is_top_level) {
@@ -15299,6 +15317,7 @@ const Generator = struct {
             if (g.imported_modules) |imp| {
                 if (imp.get(mod_name)) |iface| {
                     if (iface.throws_methods.contains(method_name)) {
+                        g.noteImplicitTry(e.span);
                         try g.w.writeAll("try ");
                     }
                 }
@@ -15322,7 +15341,10 @@ const Generator = struct {
                     }
                 }
             } else false;
-            if (callee_throws) try g.w.writeAll("try ");
+            if (callee_throws) {
+                g.noteImplicitTry(e.span);
+                try g.w.writeAll("try ");
+            }
         }
         // BUG-027: expression-position chain fix — `f().method(args)` must materialise
         // the temporary as a mutable `var` so the pointer-receiver method can take `*T`.
@@ -15332,6 +15354,7 @@ const Generator = struct {
             const uid = g.nextUid();
             const chain_throws = exprCallIsThrows(e, g.resolve, g.imported_modules, g.owner_members, g.tc);
             const need_try = chain_throws and g.current_method_throws and g.try_block_label == null and !g.suppress_auto_try;
+            if (need_try) g.noteImplicitTry(e.span);
             try g.w.print("(blk_{x}: {{ var _mc_{x} = ", .{ uid, uid });
             try g.genExpr(mem.object);
             if (need_try) {
