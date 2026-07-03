@@ -97,7 +97,7 @@ class Lexer
 
         var c = .peek()
         if .isDigit(c)
-            return .readNumber()
+            return .readNumber()?
 
         # Single-character tokens — bump past `c` and dispatch on it.
         # Ignoring a non-void return is rejected at the Zig layer, so

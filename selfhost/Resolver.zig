@@ -3604,9 +3604,9 @@ pub const Resolver = struct {
 
     pub fn resolve(self: *Resolver, root: PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:117
-        try self.bindPass1(root);
+        (try self.bindPass1(root));
 // zbr:selfhost/Resolver.zbr:118
-        try self.resolvePass2(root);
+        (try self.resolvePass2(root));
     }
 
     pub fn bindPass1(self: *Resolver, root: PNode) anyerror!void {
@@ -3617,7 +3617,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:124
             for (m.decls.items) |decl| {
 // zbr:selfhost/Resolver.zbr:125
-                try self.bindTopDecl(decl);
+                (try self.bindTopDecl(decl));
             }
         }
     }
@@ -3708,7 +3708,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:168
             for (m.decls.items) |decl| {
 // zbr:selfhost/Resolver.zbr:169
-                try self.resolveTopDecl(decl);
+                (try self.resolveTopDecl(decl));
             }
         }
     }
@@ -3719,17 +3719,17 @@ pub const Resolver = struct {
             .class_ => |c_ptr| {
                 const c = c_ptr.*;
 // zbr:selfhost/Resolver.zbr:173
-                try self.enterClass(c.name, c.members, c.type_params);
+                (try self.enterClass(c.name, c.members, c.type_params));
             },
             .struct_ => |s_ptr| {
                 const s = s_ptr.*;
 // zbr:selfhost/Resolver.zbr:175
-                try self.enterClass(s.name, s.members, s.type_params);
+                (try self.enterClass(s.name, s.members, s.type_params));
             },
             .method_ => |m_ptr| {
                 const m = m_ptr.*;
 // zbr:selfhost/Resolver.zbr:177
-                try self.enterMethod(m.params, m.stmts);
+                (try self.enterMethod(m.params, m.stmts));
             },
             .namespace_decl => |ns_ptr| {
                 const ns = ns_ptr.*;
@@ -3740,7 +3740,7 @@ pub const Resolver = struct {
                         .method_ => |nm_ptr| {
                             const nm = nm_ptr.*;
 // zbr:selfhost/Resolver.zbr:183
-                            try self.enterMethod(nm.params, nm.stmts);
+                            (try self.enterMethod(nm.params, nm.stmts));
                         },
                         .namespace_decl => |inner_ns_ptr| {
                             const inner_ns = inner_ns_ptr.*;
@@ -3751,7 +3751,7 @@ pub const Resolver = struct {
                                     const im_ptr = inner_d.method_;
                                     const im = im_ptr.*;
 // zbr:selfhost/Resolver.zbr:187
-                                    try self.enterMethod(im.params, im.stmts);
+                                    (try self.enterMethod(im.params, im.stmts));
                                 }
                             }
                         },
@@ -3781,12 +3781,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:203
         for (members.items) |member| {
 // zbr:selfhost/Resolver.zbr:204
-            try self.collectMember(member);
+            (try self.collectMember(member));
         }
 // zbr:selfhost/Resolver.zbr:206
         for (members.items) |member| {
 // zbr:selfhost/Resolver.zbr:207
-            try self.resolveMember(member);
+            (try self.resolveMember(member));
         }
     }
 
@@ -3819,12 +3819,12 @@ pub const Resolver = struct {
             .method_ => |m_ptr| {
                 const m = m_ptr.*;
 // zbr:selfhost/Resolver.zbr:223
-                try self.enterMethod(m.params, m.stmts);
+                (try self.enterMethod(m.params, m.stmts));
             },
             .init_ => |i_ptr| {
                 const i = i_ptr.*;
 // zbr:selfhost/Resolver.zbr:225
-                try self.enterMethod(i.params, i.stmts);
+                (try self.enterMethod(i.params, i.stmts));
             },
             else => {
                 // pass
@@ -3843,14 +3843,14 @@ pub const Resolver = struct {
             self.symbol_count = (self.symbol_count + 1);
         }
 // zbr:selfhost/Resolver.zbr:235
-        try self.resolveStmts(stmts);
+        (try self.resolveStmts(stmts));
     }
 
     pub fn resolveStmts(self: *Resolver, stmts: std.ArrayList(PNode)) anyerror!void {
 // zbr:selfhost/Resolver.zbr:240
         for (stmts.items) |stmt| {
 // zbr:selfhost/Resolver.zbr:241
-            try self.resolveStmt(stmt);
+            (try self.resolveStmt(stmt));
         }
     }
 
@@ -3862,7 +3862,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:247
                 for (v.init_expr.items) |expr| {
 // zbr:selfhost/Resolver.zbr:248
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:249
                 self.method_scope.put(_intern(v.name), 4) catch unreachable;
@@ -3874,7 +3874,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:252
                 for (d.init_expr.items) |expr| {
 // zbr:selfhost/Resolver.zbr:253
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:254
                 for (d.names.items) |nm| {
@@ -3889,7 +3889,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:258
                 for (r.value.items) |expr| {
 // zbr:selfhost/Resolver.zbr:259
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
             },
             .stmt_if => |i_ptr| {
@@ -3897,7 +3897,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:261
                 for (i.cond.items) |expr| {
 // zbr:selfhost/Resolver.zbr:262
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:263
                 if (i.is_capture) |ic| {
@@ -3907,26 +3907,26 @@ pub const Resolver = struct {
                     self.symbol_count = (self.symbol_count + 1);
                 }
 // zbr:selfhost/Resolver.zbr:266
-                try self.resolveStmts(i.then_stmts);
+                (try self.resolveStmts(i.then_stmts));
 // zbr:selfhost/Resolver.zbr:267
-                try self.resolveStmts(i.else_stmts);
+                (try self.resolveStmts(i.else_stmts));
             },
             .stmt_while => |w_ptr| {
                 const w = w_ptr.*;
 // zbr:selfhost/Resolver.zbr:269
                 for (w.cond.items) |expr| {
 // zbr:selfhost/Resolver.zbr:270
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:271
-                try self.resolveStmts(w.stmts);
+                (try self.resolveStmts(w.stmts));
             },
             .stmt_for_in => |f_ptr| {
                 const f = f_ptr.*;
 // zbr:selfhost/Resolver.zbr:273
                 for (f.iter.items) |expr| {
 // zbr:selfhost/Resolver.zbr:274
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:275
                 for (f.var_names.items) |var_name| {
@@ -3934,21 +3934,21 @@ pub const Resolver = struct {
                     self.method_scope.put(_intern(var_name), 4) catch unreachable;
                 }
 // zbr:selfhost/Resolver.zbr:277
-                try self.resolveStmts(f.stmts);
+                (try self.resolveStmts(f.stmts));
 // zbr:selfhost/Resolver.zbr:278
-                try self.resolveStmts(f.else_stmts);
+                (try self.resolveStmts(f.else_stmts));
             },
             .stmt_assign => |a_ptr| {
                 const a = a_ptr.*;
 // zbr:selfhost/Resolver.zbr:280
                 for (a.target.items) |expr| {
 // zbr:selfhost/Resolver.zbr:281
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:282
                 for (a.value.items) |expr| {
 // zbr:selfhost/Resolver.zbr:283
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
             },
             .stmt_assert => |a_ptr| {
@@ -3956,12 +3956,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:285
                 for (a.cond.items) |expr| {
 // zbr:selfhost/Resolver.zbr:286
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:287
                 for (a.message.items) |expr| {
 // zbr:selfhost/Resolver.zbr:288
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
             },
             .stmt_raise => |r_ptr| {
@@ -3969,27 +3969,27 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:290
                 for (r.message.items) |expr| {
 // zbr:selfhost/Resolver.zbr:291
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
             },
             .stmt_try_catch => |tc_ptr| {
                 const tc = tc_ptr.*;
 // zbr:selfhost/Resolver.zbr:293
-                try self.resolveStmts(tc.body_stmts);
+                (try self.resolveStmts(tc.body_stmts));
 // zbr:selfhost/Resolver.zbr:294
                 if (!std.mem.eql(u8, tc.catch_binding, "")) {
 // zbr:selfhost/Resolver.zbr:295
                     self.method_scope.put(_intern(tc.catch_binding), 4) catch unreachable;
                 }
 // zbr:selfhost/Resolver.zbr:296
-                try self.resolveStmts(tc.catch_stmts);
+                (try self.resolveStmts(tc.catch_stmts));
             },
             .stmt_branch => |br_ptr| {
                 const br = br_ptr.*;
 // zbr:selfhost/Resolver.zbr:298
                 for (br.subject.items) |expr| {
 // zbr:selfhost/Resolver.zbr:299
-                    try self.resolveExpr(expr);
+                    (try self.resolveExpr(expr));
                 }
 // zbr:selfhost/Resolver.zbr:300
                 for (br.arms.items) |arm| {
@@ -3999,15 +3999,15 @@ pub const Resolver = struct {
                         self.method_scope.put(_intern(arm.binding), 4) catch unreachable;
                     }
 // zbr:selfhost/Resolver.zbr:303
-                    try self.resolveStmts(arm.stmts);
+                    (try self.resolveStmts(arm.stmts));
                 }
 // zbr:selfhost/Resolver.zbr:304
-                try self.resolveStmts(br.else_stmts);
+                (try self.resolveStmts(br.else_stmts));
             },
             .stmt_expr => |inner_ptr| {
                 const inner = inner_ptr.*;
 // zbr:selfhost/Resolver.zbr:306
-                try self.resolveExpr(inner);
+                (try self.resolveExpr(inner));
             },
             .stmt_print => |arg_nodes| {
 // zbr:selfhost/Resolver.zbr:308
@@ -4015,7 +4015,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:309
                 for (arg_list.items) |an| {
 // zbr:selfhost/Resolver.zbr:310
-                    try self.resolveExpr(an);
+                    (try self.resolveExpr(an));
                 }
             },
             .stmt_pass => {
@@ -4049,12 +4049,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:328
                 for (b.left.items) |e| {
 // zbr:selfhost/Resolver.zbr:329
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:330
                 for (b.right.items) |e| {
 // zbr:selfhost/Resolver.zbr:331
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_unary => |u_ptr| {
@@ -4062,7 +4062,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:333
                 for (u.operand.items) |e| {
 // zbr:selfhost/Resolver.zbr:334
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_call => |c_ptr| {
@@ -4070,12 +4070,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:336
                 for (c.callee.items) |e| {
 // zbr:selfhost/Resolver.zbr:337
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:338
                 for (c.args.items) |e| {
 // zbr:selfhost/Resolver.zbr:339
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_index => |ix_ptr| {
@@ -4083,12 +4083,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:341
                 for (ix.object.items) |e| {
 // zbr:selfhost/Resolver.zbr:342
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:343
                 for (ix.index.items) |e| {
 // zbr:selfhost/Resolver.zbr:344
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_slice => |sl_ptr| {
@@ -4096,17 +4096,17 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:346
                 for (sl.object.items) |e| {
 // zbr:selfhost/Resolver.zbr:347
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:348
                 for (sl.start.items) |e| {
 // zbr:selfhost/Resolver.zbr:349
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:350
                 for (sl.stop_.items) |e| {
 // zbr:selfhost/Resolver.zbr:351
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_member => |m_ptr| {
@@ -4114,7 +4114,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:353
                 for (m.base.items) |e| {
 // zbr:selfhost/Resolver.zbr:354
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_try => {
@@ -4128,14 +4128,14 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:363
                 for (ex.base.items) |e| {
 // zbr:selfhost/Resolver.zbr:364
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:365
                 for (ex.fields.items) |f| {
 // zbr:selfhost/Resolver.zbr:366
                     for (f.value.items) |v| {
 // zbr:selfhost/Resolver.zbr:367
-                        try self.resolveExpr(v);
+                        (try self.resolveExpr(v));
                     }
                 }
             },
@@ -4144,7 +4144,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:369
                 for (si.parts.items) |part| {
 // zbr:selfhost/Resolver.zbr:370
-                    try self.resolveExpr(part);
+                    (try self.resolveExpr(part));
                 }
             },
             .expr_opt_chain => |poc_ptr| {
@@ -4152,12 +4152,12 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:372
                 for (poc.base.items) |e| {
 // zbr:selfhost/Resolver.zbr:373
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:374
                 for (poc.args.items) |e| {
 // zbr:selfhost/Resolver.zbr:375
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             .expr_if_expr => |pie_ptr| {
@@ -4165,17 +4165,17 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:377
                 for (pie.cond.items) |e| {
 // zbr:selfhost/Resolver.zbr:378
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:379
                 for (pie.then_expr.items) |e| {
 // zbr:selfhost/Resolver.zbr:380
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
 // zbr:selfhost/Resolver.zbr:381
                 for (pie.else_expr.items) |e| {
 // zbr:selfhost/Resolver.zbr:382
-                    try self.resolveExpr(e);
+                    (try self.resolveExpr(e));
                 }
             },
             else => {

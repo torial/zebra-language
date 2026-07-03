@@ -20,26 +20,26 @@ use AstBuilder exposing ASTBuilder
 
 class ASTBuilderTest
     def run() throws
-        .testEmptyClass()
-        .testClassWithField()
-        .testEnumDecl()
-        .testSimpleMethod()
-        .testMethodWithParams()
-        .testIfStmt()
-        .testWhileStmt()
-        .testForInStmt()
-        .testAssignStmt()
-        .testExprBinary()
-        .testExprUnary()
-        .testExprCall()
-        .testExprMember()
-        .testParseTypeRefSimple()
-        .testParseTypeRefNilable()
-        .testParseTypeRefGeneric()
-        .testReturnValue()
-        .testVarInit()
-        .testAssertMessage()
-        .testRaiseMessage()
+        .testEmptyClass()?
+        .testClassWithField()?
+        .testEnumDecl()?
+        .testSimpleMethod()?
+        .testMethodWithParams()?
+        .testIfStmt()?
+        .testWhileStmt()?
+        .testForInStmt()?
+        .testAssignStmt()?
+        .testExprBinary()?
+        .testExprUnary()?
+        .testExprCall()?
+        .testExprMember()?
+        .testParseTypeRefSimple()?
+        .testParseTypeRefNilable()?
+        .testParseTypeRefGeneric()?
+        .testReturnValue()?
+        .testVarInit()?
+        .testAssertMessage()?
+        .testRaiseMessage()?
         print("astbuilder_test: all assertions passed")
 
     # -- Helpers -------------------------------------------------------------------

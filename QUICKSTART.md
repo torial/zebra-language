@@ -740,7 +740,7 @@ def divide(a: int, b: int): int throws
     return a / b
 
 def caller(): int throws
-    var r = divide(10, 2)            # auto-propagates (same-file throws calls)
+    var r = divide(10, 2)?           # `?` propagates the error to the caller
     return r
 
 # Method-level catch (catch clauses after the method body):
@@ -762,8 +762,11 @@ var r = someObj.method()?            # propagates if method throws
 ```
 
 - `throws` on a `def` makes it return `anyerror!T`.
-- Inside a `throws` method, calls to other `throws` methods in the **same file**
-  auto-propagate (compiler emits `try`).  For cross-module `throws` calls or
+- **Write `?` on every call to a `throws` function** (§28b, 2026-07-02: the
+  corpus is fully explicit; the legacy auto-propagation for same-file
+  statement-position calls still compiles but is DEPRECATED and will become
+  a compile error — `--warn-implicit-try` lists any remaining sites).
+  For cross-module `throws` calls or
   calls on local variables, use explicit `?` suffix.
 - **Migration note**: The `try expr` prefix form was removed in 0.15.
   Replace every `try f()` with `f()?`; the semantics are identical.
@@ -1764,7 +1767,7 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Substring test       | `"needle" in str`              | preferred over `.contains`               |
 | Optional chain       | `obj?.field`                   | propagates nil                           |
 | Error propagation    | `expr?`                        | explicit in cross-module / local-var calls |
-| Auto-propagation     | `.method()`                    | same-file `throws` methods only          |
+| Error propagation    | `expr?`                        | explicit everywhere (auto-try deprecated) |
 | Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
 | Int-to-float         | `x.toFloat()`                  | explicit conversion                      |

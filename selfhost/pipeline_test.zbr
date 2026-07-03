@@ -30,17 +30,17 @@ def runPipelineFull(src: str, preamble_path: str): str throws
 
 class PipelineTest
     def run() throws
-        .testEmptyClass()
-        .testClassWithField()
-        .testMethodWithReturn()
-        .testVarWithInit()
-        .testEnumDecl()
-        .testEntryPointNonThrowing()
-        .testEntryPointThrowing()
-        .testEntryPointNoMain()
-        .testResolverClean()
-        .testResolverError()
-        .testFullRoundTrip()
+        .testEmptyClass()?
+        .testClassWithField()?
+        .testMethodWithReturn()?
+        .testVarWithInit()?
+        .testEnumDecl()?
+        .testEntryPointNonThrowing()?
+        .testEntryPointThrowing()?
+        .testEntryPointNoMain()?
+        .testResolverClean()?
+        .testResolverError()?
+        .testFullRoundTrip()?
         print("pipeline_test: all OK")
 
     # -- Phase 10: declarations-only tests -------------------------------------

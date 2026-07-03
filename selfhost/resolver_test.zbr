@@ -15,16 +15,16 @@ use Resolver
 
 class ResolverTest
     def run() throws
-        .testEmptyClass()
-        .testFieldInScope()
-        .testMethodInScope()
-        .testLocalDeclaredBeforeUse()
-        .testUndefinedName()
-        .testLocalNotVisibleBeforeDecl()
-        .testArithExpr()
-        .testIfCond()
-        .testWhileLoop()
-        .testTryCatch()
+        .testEmptyClass()?
+        .testFieldInScope()?
+        .testMethodInScope()?
+        .testLocalDeclaredBeforeUse()?
+        .testUndefinedName()?
+        .testLocalNotVisibleBeforeDecl()?
+        .testArithExpr()?
+        .testIfCond()?
+        .testWhileLoop()?
+        .testTryCatch()?
         print("resolver_test: all assertions passed")
 
     # ── Tests ─────────────────────────────────────────────────────────────────

@@ -670,19 +670,23 @@ Zebra-level diagnostic ("cannot infer; annotate")**. Corollary: raise the
 priority of the single method-descriptor table (§24e, currently "defer
 post-1.0") — it converts four heuristic dispatch surfaces into one spec.
 
-**b. [decision → APPROVED 2026-07-02] Unify error propagation on always-explicit `?`.** Same-file
+**b. [APPROVED; steps 1–3 ✅ DONE 2026-07-02] Unify error propagation on always-explicit `?`.** Same-file
 throws-to-throws auto-propagates; cross-module needs explicit `expr?` — an
 invisible rule keyed to file boundaries, so moving a function between files
 changes call-site semantics. Approved: always-explicit `?`.
 **Execution plan (own gated session — the sweep touches every same-file
 throws call in selfhost/ + test/ + examples/, likely hundreds of sites):**
-1. Add `--warn-implicit-try` to the BOOTSTRAP: at every site where codegen
-   auto-inserts `try` for a same-file throws call without `?`, emit
-   `file:line:col: implicit try (add '?')` to stderr. No behavior change.
-2. Run it over selfhost/*.zbr + test/ + examples/; a script consumes the
-   warning lines and inserts `?` at the exact positions (LF-safe writes!).
-3. Re-run until zero warnings; gates (smoke + round-trip — the round-trip
-   is the real test: the compiler compiles itself with the new rule).
+1. ✅ DONE (588f84d) — `--warn-implicit-try` prints machine-parsable
+   `IMPLICIT_TRY: file:line:col:end_line:end_col` at all 5 auto-try sites.
+   Empirical finding: the implicit surface was FAR narrower than documented
+   (only self-method statement calls, cross-module module-fn calls, chains
+   — var-inits/free-fn statements/nested positions already required `?`).
+2. ✅ DONE — `tools/sweep_implicit_try.py` inserted `?` at all 441 sites
+   (316 Parser.zbr, 57 Resolver.zbr, rest tests/examples); 0 skipped, every
+   insertion verified against its closing paren; LF-safe.
+3. ✅ DONE — inventory re-run: 0 remaining; smoke 199/199; round-trip
+   byte-identical; 60/60 fuzz seeds. QUICKSTART §12 now teaches explicit `?`
+   and marks auto-try deprecated.
 4. Mirror the warning in the selfhost, verify zero warnings there too.
 5. Flip: implicit try becomes a compile error in both (message: "call to
    throws function needs '?'"); keep the flag as `--allow-implicit-try`

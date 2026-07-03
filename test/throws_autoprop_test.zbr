@@ -10,7 +10,7 @@ class ErrorPropTest
 
     ## Calls inner() with no `?` — compiler must auto-emit `try self.inner()`
     def outer() throws
-        .inner()
+        .inner()?
 
     ## Verify cross-method propagation works end-to-end via try/catch
     def run()

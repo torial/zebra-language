@@ -26,7 +26,7 @@ class Engine
 
     ## Calls `.doWork()` which auto-gets `try self.doWork()`
     def run() throws
-        .doWork()
+        .doWork()?
 
     ## Inside try/catch, local var call still needs `?`
     ## This documents current behaviour — not a limitation of the design,

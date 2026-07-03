@@ -114,15 +114,15 @@ class Resolver
     # -- Public entry point ----------------------------------------------------
 
     def resolve(root: PNode) throws
-        .bindPass1(root)
-        .resolvePass2(root)
+        .bindPass1(root)?
+        .resolvePass2(root)?
 
     # -- Pass 1: Bind - hoist all top-level names ------------------------------
 
     def bindPass1(root: PNode) throws
         if root is PNode.module_ as m
             for decl in m.decls
-                .bindTopDecl(decl)
+                .bindTopDecl(decl)?
     def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
@@ -166,25 +166,25 @@ class Resolver
     def resolvePass2(root: PNode) throws
         if root is PNode.module_ as m
             for decl in m.decls
-                .resolveTopDecl(decl)
+                .resolveTopDecl(decl)?
     def resolveTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
-                .enterClass(c.name, c.members, c.type_params)
+                .enterClass(c.name, c.members, c.type_params)?
             on PNode.struct_ as s
-                .enterClass(s.name, s.members, s.type_params)
+                .enterClass(s.name, s.members, s.type_params)?
             on PNode.method_ as m
-                .enterMethod(m.params, m.stmts)
+                .enterMethod(m.params, m.stmts)?
             on PNode.namespace_decl as ns
                 # Resolve method bodies inside the namespace (all levels).
                 for ns_d in ns.decls
                     branch ns_d
                         on PNode.method_ as nm
-                            .enterMethod(nm.params, nm.stmts)
+                            .enterMethod(nm.params, nm.stmts)?
                         on PNode.namespace_decl as inner_ns
                             for inner_d in inner_ns.decls
                                 if inner_d is PNode.method_ as im
-                                    .enterMethod(im.params, im.stmts)
+                                    .enterMethod(im.params, im.stmts)?
                         else
                             pass
             else
@@ -201,10 +201,10 @@ class Resolver
             .symbol_count = .symbol_count + 1
         # Sub-pass: collect field and method names before resolving any body
         for member in members
-            .collectMember(member)
+            .collectMember(member)?
         # Resolve bodies
         for member in members
-            .resolveMember(member)
+            .resolveMember(member)?
 
     def collectMember(member: PNode) throws
         branch member
@@ -220,9 +220,9 @@ class Resolver
     def resolveMember(member: PNode) throws
         branch member
             on PNode.method_ as m
-                .enterMethod(m.params, m.stmts)
+                .enterMethod(m.params, m.stmts)?
             on PNode.init_ as i
-                .enterMethod(i.params, i.stmts)
+                .enterMethod(i.params, i.stmts)?
             else
                 pass
 
@@ -232,82 +232,82 @@ class Resolver
         for p in params
             .method_scope.put(p.name, 3)
             .symbol_count = .symbol_count + 1
-        .resolveStmts(stmts)
+        .resolveStmts(stmts)?
 
     # -- Statement walking -----------------------------------------------------
 
     def resolveStmts(stmts: List(PNode)) throws
         for stmt in stmts
-            .resolveStmt(stmt)
+            .resolveStmt(stmt)?
 
     def resolveStmt(stmt: PNode) throws
         branch stmt
             on PNode.stmt_var as v
                 # Resolve init before declaring - so `var x = x` errors
                 for expr in v.init_expr
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 .method_scope.put(v.name, 4)
                 .symbol_count = .symbol_count + 1
             on PNode.stmt_destruct as d
                 for expr in d.init_expr
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 for nm in d.names
                     .method_scope.put(nm, 4)
                     .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
             on PNode.stmt_if as i
                 for expr in i.cond
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 if i.is_capture as ic
                     .method_scope.put(ic, 4)
                     .symbol_count = .symbol_count + 1
-                .resolveStmts(i.then_stmts)
-                .resolveStmts(i.else_stmts)
+                .resolveStmts(i.then_stmts)?
+                .resolveStmts(i.else_stmts)?
             on PNode.stmt_while as w
                 for expr in w.cond
-                    .resolveExpr(expr)
-                .resolveStmts(w.stmts)
+                    .resolveExpr(expr)?
+                .resolveStmts(w.stmts)?
             on PNode.stmt_for_in as f
                 for expr in f.iter
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 for var_name in f.var_names
                     .method_scope.put(var_name, 4)
-                .resolveStmts(f.stmts)
-                .resolveStmts(f.else_stmts)
+                .resolveStmts(f.stmts)?
+                .resolveStmts(f.else_stmts)?
             on PNode.stmt_assign as a
                 for expr in a.target
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 for expr in a.value
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
             on PNode.stmt_assert as a
                 for expr in a.cond
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 for expr in a.message
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
             on PNode.stmt_raise as r
                 for expr in r.message
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
             on PNode.stmt_try_catch as tc
-                .resolveStmts(tc.body_stmts)
+                .resolveStmts(tc.body_stmts)?
                 if tc.catch_binding != ""
                     .method_scope.put(tc.catch_binding, 4)
-                .resolveStmts(tc.catch_stmts)
+                .resolveStmts(tc.catch_stmts)?
             on PNode.stmt_branch as br
                 for expr in br.subject
-                    .resolveExpr(expr)
+                    .resolveExpr(expr)?
                 for arm in br.arms
                     if arm.binding != ""
                         .method_scope.put(arm.binding, 4)
-                    .resolveStmts(arm.stmts)
-                .resolveStmts(br.else_stmts)
+                    .resolveStmts(arm.stmts)?
+                .resolveStmts(br.else_stmts)?
             on PNode.stmt_expr as inner
-                .resolveExpr(inner)
+                .resolveExpr(inner)?
             on PNode.stmt_print as arg_nodes
                 var arg_list: List(PNode) = arg_nodes
                 for an in arg_list
-                    .resolveExpr(an)
+                    .resolveExpr(an)?
             on PNode.stmt_pass
                 pass
             on PNode.stmt_break
@@ -326,32 +326,32 @@ class Resolver
                     .errors.add(ResolveError(.fmtErrAt(id.line, id.col, "undefined name: '" + id.name + "'")))
             on PNode.expr_binary as b
                 for e in b.left
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in b.right
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_unary as u
                 for e in u.operand
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_call as c
                 for e in c.callee
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in c.args
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_index as ix
                 for e in ix.object
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in ix.index
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_slice as sl
                 for e in sl.object
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in sl.start
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in sl.stop_
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_member as m
                 for e in m.base
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 # member name is accessed via dot notation - not a scope reference
             on PNode.expr_try
                 # ^PNode payload - skip deep resolution (same limitation: stmt_expr)
@@ -361,25 +361,25 @@ class Resolver
                 pass
             on PNode.expr_except as ex
                 for e in ex.base
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for f in ex.fields
                     for v in f.value
-                        .resolveExpr(v)
+                        .resolveExpr(v)?
             on PNode.expr_string_interp as si
                 for part in si.parts
-                    .resolveExpr(part)
+                    .resolveExpr(part)?
             on PNode.expr_opt_chain as poc
                 for e in poc.base
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in poc.args
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             on PNode.expr_if_expr as pie
                 for e in pie.cond
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in pie.then_expr
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
                 for e in pie.else_expr
-                    .resolveExpr(e)
+                    .resolveExpr(e)?
             else
                 # Literals (int, float, bool, str, nil, this) need no resolution
                 pass
