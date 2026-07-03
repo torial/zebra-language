@@ -8,6 +8,69 @@ equivalence bugs; genuine equivalence bugs show as `run-divergence` /
 
 ---
 
+## F11 — unused capture/local discard skipped when the body holds an unmodeled expr (shared, OPEN — BUG-169)
+
+**Found 2026-07-03** by the enum/union/branch batch (80 seeds → 2 `both-zig-fail`;
+seed 39 pinned, second in seeds 50–79 predicted same root). Note the *equivalence*
+was clean (30/30 zig-validity + 5/5 `--run`); these are shared robustness gaps.
+
+**Minimal shape** (from seed 39, `if x as y` with an unused binding + a ternary
+in the body):
+```zebra
+def main()
+    var o: int? = nil
+    if o as b            # b is never read in the body
+        var x = if(true, 1, 2)   # a ternary — the trigger
+        print("x=${x}")
+```
+Both compilers emit `if (o) |b| { … }` **without** the `_ = b;` discard, so Zig
+rejects it: `error: unused capture`. (Same class as an unused local → "unused
+local constant".)
+
+**Root cause (airtight, confirmed by reading the walker — no build needed):**
+the unused-binding discard fires only when `mightUseName(cap, body)` is FALSE.
+`mightUseNameInExpr` models ident/member/index/unary/binary/call/tuple_lit/
+chained_cmp/string_interp/orelse_/literals/this — but NOT `if_expr` (ternary),
+`try_`, `catch_`, `to_non_nil`, `is_nil`, `cast`, `type_check`, `opt_chain`,
+`slice`. Those hit the conservative `else => true`. So a ternary (or any of the
+unmodeled forms) *anywhere* in the body makes `mightUseName` claim "maybe uses
+`b`", the discard is skipped, and a genuinely-unused `b` errors. Surfaced now
+because ternaries only entered the generator yesterday (F8) and the enum/union
+work produced bigger bodies. **Same family as F2/BUG-161** — that fix added
+string_interp/orelse/this; this is the same walker, further expr forms.
+
+**The deeper defect (the real lesson):** `mightUseName` was designed
+*conservative* ("true when unsure") to avoid a *pointless discard* (`_ = x` when
+x IS used). But for the discard decision, BOTH error directions are Zig compile
+errors — over-approx → unused-capture/const; under-approx → pointless discard —
+so the walker must be **exact**, not conservative. The `else => true` is the
+root defect and will keep surfacing as the grammar grows (each unmodeled
+expr/stmt form in a capture body with an unused binding = a `both-zig-fail`).
+Note `mightUseNameStmt` has the SAME over-approx gap for unmodeled *statement*
+forms (branch/with/try_catch/…) — a nested `branch` in an unused-capture body
+would trigger it too.
+
+**Fix (specified; deferred to a RAM-plentiful session — the code edit is
+trivial but needs a compiler rebuild + regen + gates, and the host was at
+~3.4GB killing zig jobs when this was found):**
+- Immediate: add the missing identifier-containing arms to `mightUseNameInExpr`
+  in BOTH compilers (`src/CodeGen.zig` + `selfhost/CgHelpers.zbr`), mirroring the
+  already-complete `nameUsedInExpr`: `if_expr` (recurse cond/then/else), `try_`,
+  `catch_`, `to_non_nil`, `is_nil`, `cast`, `type_check`, `opt_chain`, `slice`.
+- Robust: also close `mightUseNameStmt`'s statement-form gaps, OR switch the
+  discard decision to an *exact* ident-set check (`collectAllIdents(body)` —
+  already in CgHelpers — `cap in idents`), which is immune to walker-completeness
+  drift. Recommend the exact-ident-set approach long-term; it retires the whole
+  bug class instead of playing whack-a-form.
+- Regression: `test/fuzz_f11_unused_capture_ternary_test.zbr` (the minimal shape
+  above + a for-in variant + an unused-local variant).
+- Cross-ref `docs/walker_discipline.md`: this is the "exact vs conservative
+  walker family" lesson biting exactly as that doc warned.
+
+Repro saved: `fuzz/findings/seed39_both-zig-fail_bug169.zbr`.
+
+---
+
 ## F1 — user identifiers that shadow a Zig primitive type emit invalid Zig  (shared, ✅ FIXED — BUG-162)
 
 **FIXED 2026-07-02, both compilers.** Identifier-position emissions (local

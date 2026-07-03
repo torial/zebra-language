@@ -1,6 +1,39 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-168. Next new bug: BUG-169.**
+**Last bug number generated: BUG-169. Next new bug: BUG-170.**
+
+---
+
+## BUG-169: unused capture/local discard skipped when body holds an unmodeled expr (ternary) — OPEN
+
+**Severity:** medium (shared robustness gap — both compilers emit the same
+invalid Zig; `error: unused capture` / `unused local constant`). Found
+2026-07-03 by the fuzzer's enum/union/branch batch = fuzz finding **F11**.
+
+**Symptom:** `if x as y` (or for-in / unused local) where the binding is never
+read AND the body contains a **ternary** (`if(c,t,e)`) — or any of `try_`,
+`catch_`, `to_non_nil`, `is_nil`, `cast`, `type_check`, `opt_chain`, `slice` —
+emits the capture without the `_ = y;` discard, which Zig rejects.
+
+**Root (confirmed by reading the walker, no build):** the discard fires only
+when `mightUseName(cap, body)` is FALSE; `mightUseNameInExpr` doesn't model
+those expr forms, so they hit `else => true`, the discard is skipped, and a
+genuinely-unused binding errors. Same family as BUG-161 (that fix added
+string_interp/orelse/this to the same walker). Deeper defect: `mightUseName`
+is *conservative* ("true when unsure"), but the discard decision needs an
+*exact* walker — both error directions are compile errors. `mightUseNameStmt`
+has the analogous gap for unmodeled statement forms.
+
+**Fix (specified; deferred — trivial edit but needs rebuild+regen+gates, host
+was RAM-starved at discovery):** add the missing arms to `mightUseNameInExpr`
+in both compilers (mirror the complete `nameUsedInExpr`: if_expr/try_/catch_/
+to_non_nil/is_nil/cast/type_check/opt_chain/slice); long-term, switch the
+discard decision to an exact `collectAllIdents(body)` membership check to
+retire the class. Regression:
+`test/fuzz_f11_unused_capture_ternary_test.zbr`. Full analysis + minimal
+repro in `fuzz/FINDINGS.md` F11; repro at
+`fuzz/findings/seed39_both-zig-fail_bug169.zbr`. Cross-ref
+`docs/walker_discipline.md` (exact-vs-conservative walker lesson).
 
 ---
 
