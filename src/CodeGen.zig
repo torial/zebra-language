@@ -1830,11 +1830,24 @@ fn mightUseNameInExpr(name: []const u8, expr: *const Ast.Expr) bool {
             for (e.entries) |en| if (mightUseNameInExpr(name, en.key) or mightUseNameInExpr(name, en.value)) break :blk true;
             break :blk false;
         },
-        .nil, .this, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit => false,
-        // lambda / list_lit / array_lit / zig_lit / old / result_ — not
-        // modelled; conservatively assume a use (safe direction: skips no
-        // pointless discard, only occasionally over-conservative).
-        else       => true,
+        .lambda    => |e| blk: {
+            // capture-init exprs always reference outer scope
+            for (e.capture) |cv| if (cv.init) |ie| if (mightUseNameInExpr(name, ie)) break :blk true;
+            // body — unless a lambda param or capture field shadows `name`
+            for (e.params) |p| if (std.mem.eql(u8, p.name, name)) break :blk false;
+            for (e.capture) |cv| if (std.mem.eql(u8, cv.name, name)) break :blk false;
+            break :blk switch (e.body) {
+                .expr  => |ex| mightUseNameInExpr(name, ex),
+                .stmts => |ss| mightUseName(name, ss),
+            };
+        },
+        .list_lit  => |e| blk: { for (e.elems) |el| if (mightUseNameInExpr(name, el)) break :blk true; break :blk false; },
+        .array_lit => |e| blk: { for (e.elems) |el| if (mightUseNameInExpr(name, el)) break :blk true; break :blk false; },
+        .old       => |e| mightUseNameInExpr(name, e.expr),
+        // BUG-169 retirement: exhaustive — no `else`.  Every Expr tag is now
+        // handled; adding one breaks the build until it's covered here.  These
+        // are the genuinely ident-free forms.
+        .nil, .this, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit, .result_, .zig_lit => false,
     };
 }
 
@@ -1920,12 +1933,32 @@ fn mightUseNameStmt(name: []const u8, stmt: Ast.Stmt) bool {
             break :blk false;
         },
         .defer_   => |s| mightUseNameStmt(name, s.body),
+        // BUG-169 retirement: model every remaining ident-bearing statement and
+        // REMOVE `else`, making this an exhaustive switch.  The Zig compiler now
+        // refuses to build if a future Stmt form is unhandled — which is what
+        // permanently retires the "walker drifted → skipped discard" class
+        // (F2/BUG-161, F6/BUG-166, F11/BUG-169 were all this class).
+        .assert_eq, .assert_ne => |s| mightUseNameInExpr(name, s.lhs) or mightUseNameInExpr(name, s.rhs),
+        .assert_true, .assert_false => |s| mightUseNameInExpr(name, s.expr),
+        .yield    => |s| mightUseNameInExpr(name, s.value),
+        .contract => |s| blk: { for (s.exprs) |e| if (mightUseNameInExpr(name, e)) break :blk true; break :blk false; },
+        .with     => |s| mightUseNameInExpr(name, s.target) or mightUseName(name, s.body),
+        .in_scope => |s| mightUseNameInExpr(name, s.expr) or mightUseName(name, s.body),
+        .arena_scope => |s| mightUseName(name, s.body),
+        .allocate_   => |s| mightUseNameInExpr(name, s.source) or mightUseName(name, s.body),
+        .copy_out    => |s| mightUseNameInExpr(name, s.target) or mightUseNameInExpr(name, s.value),
+        .var_except  => |s| blk: {
+            if (mightUseNameInExpr(name, s.base)) break :blk true;
+            for (s.fields) |f| if (mightUseNameInExpr(name, f.value)) break :blk true;
+            break :blk false;
+        },
+        .assign_except => |s| blk: {
+            if (mightUseNameInExpr(name, s.target)) break :blk true;
+            if (mightUseNameInExpr(name, s.base)) break :blk true;
+            for (s.fields) |f| if (mightUseNameInExpr(name, f.value)) break :blk true;
+            break :blk false;
+        },
         .break_, .continue_, .pass => false,
-        // with / yield / *_except / arena / allocate / copy_out / contract /
-        // assert_eq/ne/true/false / in_scope — not modelled; conservatively
-        // assume a use (safe direction: never a wrong discard).  Kept in
-        // behavioural parity with the selfhost mirror.
-        else => true,
     };
 }
 fn nameUsedInStmt(name: []const u8, stmt: Ast.Stmt) bool {

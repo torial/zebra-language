@@ -20,10 +20,15 @@ compilers, mirroring the complete `nameUsedInExpr`/`nameUsedInStmt` (conservativ
 discard). Seed 39 → `ok`; both `both-zig-fail` from the 80-seed batch closed;
 regression `test/fuzz_f11_unused_capture_ternary_test.zbr` (if-as+ternary,
 if-as+branch, for-in+ternary, unused-local+ternary). Smoke + round-trip green.
-Residual (documented, not fuzzer-reachable): an unused binding whose sole use
-sits inside one of the still-unmodeled forms would over-conservatively skip its
-discard → possible unused-capture; the robust retirement is the exact
-`collectAllIdents` approach noted below (deferred).
+**RETIRED 2026-07-03 (class killed structurally).** Rather than the deferred
+`collectAllIdents` route, the fix went further: `mightUseNameInExpr`/
+`mightUseNameStmt` in the **bootstrap** are now **exhaustive switches with no
+`else`** — the Zig compiler refuses to build if any future Expr/Stmt form is
+unhandled, so this class (F2/F6/F11 all shared it) can no longer silently
+recur. Selfhost mirrors it; round-trip enforces parity. No residual: every
+ident-bearing form is modelled; the only `else` left (selfhost
+mightUseNameInExpr) covers zig_lit/result_ which genuinely have no idents.
+See `docs/walker_discipline.md` §1 "RETIREMENT".
 
 **Original finding:**
 

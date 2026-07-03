@@ -666,8 +666,41 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
             return false
         on Expr.this_
             return false
+        # BUG-169 retirement: model every remaining ident-bearing expr, so the
+        # final `else` only catches genuinely ident-free forms (zig_lit/result_)
+        # → false.  Mirrors the bootstrap's exhaustive switch (round-trip enforces
+        # parity).  Retires the walker-drift class (F2/F6/F11).
+        on Expr.lambda as lam
+            for lcap in lam.captures
+                if lcap.init_expr != nil
+                    if mightUseNameInExpr(name, lcap.init_expr!)
+                        return true
+            for lp in lam.params
+                if lp.name == name
+                    return false
+            for lcap2 in lam.captures
+                if lcap2.name == name
+                    return false
+            branch lam.body_
+                on LambdaBody.expr_ as lex
+                    return mightUseNameInExpr(name, lex)
+                on LambdaBody.stmts as lss
+                    return mightUseName(name, lss)
+        on Expr.list_lit as ll
+            for lle in ll.elems
+                if mightUseNameInExpr(name, lle)
+                    return true
+            return false
+        on Expr.array_lit as al
+            for ale in al.elems
+                if mightUseNameInExpr(name, ale)
+                    return true
+            return false
+        on Expr.old_ as ol
+            return mightUseNameInExpr(name, ol.operand)
         else
-            return true
+            # zig_lit / result_ — no user idents.
+            return false
 
 # F1 / BUG-162: true when `name` emitted as a bare Zig identifier would collide
 # with a Zig primitive type or primitive value — iN/uN int types (any digit
@@ -826,14 +859,49 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             return false
         on Stmt.defer_ as d
             return mightUseNameStmt(name, d.stmt)
+        # BUG-169 retirement: model every remaining ident-bearing statement, so
+        # the final `else` is unreachable (all selfhost Stmt forms handled) →
+        # false.  Mirrors the bootstrap's exhaustive switch; round-trip enforces
+        # parity.  Retires the walker-drift class (F2/F6/F11).
+        on Stmt.assert_eq_ as aeq
+            if mightUseNameInExpr(name, aeq.lhs)
+                return true
+            return mightUseNameInExpr(name, aeq.rhs)
+        on Stmt.assert_ne_ as ane
+            if mightUseNameInExpr(name, ane.lhs)
+                return true
+            return mightUseNameInExpr(name, ane.rhs)
+        on Stmt.assert_true_ as atr
+            return mightUseNameInExpr(name, atr.expr)
+        on Stmt.assert_false_ as afa
+            return mightUseNameInExpr(name, afa.expr)
+        on Stmt.with_ as wth
+            if mightUseNameInExpr(name, wth.target)
+                return true
+            return mightUseName(name, wth.stmts)
+        on Stmt.in_scope as ins
+            if mightUseNameInExpr(name, ins.expr)
+                return true
+            return mightUseName(name, ins.stmts)
+        on Stmt.allocate_ as alc
+            if mightUseNameInExpr(name, alc.source)
+                return true
+            return mightUseName(name, alc.stmts)
+        on Stmt.copy_out as cpo
+            if mightUseNameInExpr(name, cpo.target)
+                return true
+            return mightUseNameInExpr(name, cpo.value)
+        on Stmt.contract as ctr
+            for ce in ctr.exprs
+                if mightUseNameInExpr(name, ce)
+                    return true
+            return false
         on Stmt.break_
             return false
         on Stmt.continue_
             return false
         on Stmt.pass_
             return false
-        else
-            return true
 
 def nameUsedInStmt(name: str, stmt: Stmt): bool
     branch stmt

@@ -37,6 +37,21 @@ were added to the generator).
 - Selfhost: the same protection is exactly what §28c (exhaustiveness
   default-on) buys — this campaign is its empirical justification.
 
+**RETIREMENT DONE 2026-07-03 (the discard-decision walker).** `mightUseName`/
+`mightUseNameInExpr`/`mightUseNameStmt` (the unused-capture/local discard
+decision — the walker behind F2/BUG-161, F6/BUG-166, F11/BUG-169) were the
+worst offenders: conservative `else => true`, so any unmodeled form skipped a
+needed discard. Fixed structurally, not by another arm: the **bootstrap** now
+uses **exhaustive switches with NO `else`** for both walkers — the Zig compiler
+refuses to build if a future Expr/Stmt tag is unhandled, so the class *cannot*
+silently return. The **selfhost** mirrors it (mightUseNameStmt is fully
+exhaustive → no `else`; mightUseNameInExpr keeps an `else` only for the two
+genuinely ident-free forms zig_lit/result_), and **round-trip** enforces
+behavioural parity with the bootstrap. This is the template for retiring any
+member of the exact family: make the bootstrap switch exhaustive; let the
+compiler be the completeness gate. (`stmtMentionsThis` is the next candidate;
+it still has an `else`.)
+
 ## 2. Inference gaps degrade to guessed emit, not errors (§28a)
 
 BUG-159 (untyped comptime local), BUG-168 (cross-module primitive returns
