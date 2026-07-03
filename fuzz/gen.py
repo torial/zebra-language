@@ -30,12 +30,14 @@ class Gen:
         self.seed = seed
         self.n = 0            # unique-name counter
         self.caps = caps or DEFAULT_CAPS
-        self.funcs = []       # [(name, [param_types], ret_type)] — callable helpers
+        self.funcs = []       # [(name, [param_types], ret_type, throws_bool)] — callable helpers
         self.structs = {}     # name -> [(field, type)] — user struct types
         self.classes = {}     # name -> {'fields': [(f,ty)], 'methods': [(m,[pt],ret)]}
         self._params = set()  # read-only names in scope (fn params — Zig consts)
         self._self_fields = {}  # field -> type, when generating inside a class method body
         self._shadow_used = set()  # primitive-shadowing names already declared (must stay unique)
+        self._throw_ok = False  # true in a `throws` fn body or a catch-wrapper body — where a
+                                # throws call `f()?` is legal (§28b: always explicit `?`)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def fresh(self, prefix='v'):
@@ -115,12 +117,16 @@ class Gen:
             cv, m, pts = self.pick(mcands)
             args = ', '.join(self.gen_expr(pt, env, depth - 1) for pt in pts)
             return f'{cv}.{m}({args})'
-        # call a helper function that returns `ty`
-        callable_here = [f for f in self.funcs if f[2] == ty]
+        # call a helper function that returns `ty`.  A `throws` helper is only
+        # callable where `?` is legal (self._throw_ok — a throws-fn body or a
+        # catch-wrapper body) and is emitted with the explicit `?` (§28b: the
+        # generator produces explicit-`?` to match the migration and to
+        # differential-test the `?`-propagation codegen).
+        callable_here = [f for f in self.funcs if f[2] == ty and (not f[3] or self._throw_ok)]
         if callable_here and self.maybe(0.3):
-            name, ptypes, _ = self.pick(callable_here)
+            name, ptypes, _ret, throws = self.pick(callable_here)
             args = ', '.join(self.gen_expr(pt, env, depth - 1) for pt in ptypes)
-            return f'{name}({args})'
+            return f'{name}({args})?' if throws else f'{name}({args})'
         # ternary if(cond, a, b) — any prim type (BUG-167/F8 surface)
         if self.caps.get('ternary') and self.maybe(0.12):
             c = self.gen_expr('bool', env, depth - 1)
@@ -389,7 +395,27 @@ class Gen:
     def gen_function(self):
         """A top-level `def h(p0: T, …): R` with a body that returns an R.  Only
         callable helpers defined *earlier* are visible in its body (registered
-        after emission), so no self-/mutual recursion — programs always terminate."""
+        after emission), so no self-/mutual recursion — programs always terminate.
+
+        Kinds (BUG-16x/§28b throws surface):
+          - 'normal'  : non-throws, cannot call throws helpers.
+          - 'throws'  : `def h(...): R throws` with a conditional `raise`; its
+                        body may call earlier throws helpers with `?`
+                        (throws→throws propagation).  Reachable only from other
+                        throws/catch contexts, so any raise is contained.
+          - 'catch'   : non-throws wrapper with a method-level `catch` clause;
+                        its body forces a throws call `f()?` (so the catch is
+                        meaningful) and the clause returns a default on error.
+                        Callable from main → makes throws reachable + runnable."""
+        # Does any earlier helper throw?  A catch-wrapper needs one to call.
+        have_throwers = any(f[3] for f in self.funcs)
+        kind = 'normal'
+        if self.caps.get('throws'):
+            r = self.rng.random()
+            if r < 0.30:
+                kind = 'throws'
+            elif r < 0.55 and have_throwers:
+                kind = 'catch'
         name = self.fresh('h')
         np = self.rng.randint(0, 3)
         ptypes = [self.pick(PRIMS) for _ in range(np)]
@@ -397,9 +423,24 @@ class Gen:
         ret = self.pick(PRIMS)
         env = dict(zip(pnames, ptypes))
         self._params = set(pnames)     # params are read-only (const in Zig)
+        self._throw_ok = kind in ('throws', 'catch')
         budget = [self.caps['stmts'] + 2]
         body = self.gen_block(env, 1, budget)
+        # A catch-wrapper must actually call something throwing, or the `catch`
+        # clause is on a non-throwing function.  Force one throws call.
+        if kind == 'catch':
+            throwers = [f for f in self.funcs if f[3]]
+            fn, fpt, _fret, _t = self.pick(throwers)
+            fargs = ', '.join(self.gen_expr(pt, env, self.caps['expr_depth']) for pt in fpt)
+            body.append(f'    var _cw = {fn}({fargs})?')
+            body.append('    var _ = _cw')
+        # A throws function needs a real raise so the `throws` is not vacuous.
+        if kind == 'throws':
+            cond = self.gen_expr('bool', env, self.caps['expr_depth'])
+            body.append(f'    if {cond}')
+            body.append(f'        raise "e{self.n}"')
         body.append('    return ' + self.gen_expr(ret, env, self.caps['expr_depth']))
+        self._throw_ok = False
         self._params = set()
         # discard any never-referenced param (Zig rejects unused params).  A param
         # name appears in the body text only when *used*, so count == 0 ⇒ unused
@@ -410,8 +451,15 @@ class Gen:
                 body.insert(0, f'    var _ = {pn}')
         body = self._use_unused(body)
         sig = ', '.join(f'{pn}: {pt}' for pn, pt in zip(pnames, ptypes))
-        self.funcs.append((name, ptypes, ret))
-        return [f'def {name}({sig}): {ret}'] + body
+        throws_kw = ' throws' if kind == 'throws' else ''
+        out = [f'def {name}({sig}): {ret}{throws_kw}'] + body
+        if kind == 'catch':
+            # Method-level catch clause (column-0 `catch`, indented body) —
+            # runs when a `?` inside the body propagates an error.
+            out.append('catch')
+            out.append('    return ' + self.lit(ret))
+        self.funcs.append((name, ptypes, ret, kind == 'throws'))
+        return out
 
     def program(self):
         decls = []
@@ -443,6 +491,7 @@ DEFAULT_CAPS = {
     'classes': 2,        # up to this many class types (fields, methods, dispatch)
     'ternary': True,     # if(cond, a, b) call-form ternary (BUG-167/F8)
     'ranges': True,      # for_num range loops: `a : b [: s]` and `a..b` (BUG-165/F9)
+    'throws': True,      # `throws` fns + `?` propagation + method-level `catch` (§28b surface)
 }
 
 
