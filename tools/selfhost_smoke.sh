@@ -742,6 +742,9 @@ smoke_run test/fuzz_f7_precedence_test.zbr "fuzz_f7: OK"
 smoke_run test/fuzz_f8_ternary_test.zbr "fuzz_f8: OK"
 # BUG-165 (fuzzer F9): range for-in — `:`/`..`/`.to()` all lower to the i64 for_num.
 smoke_run test/fuzz_f9_range_test.zbr "fuzz_f9: OK"
+# BUG-169 (fuzzer F11): unused if-as/for-in/local discard when body holds a
+# ternary or branch — mightUseName* now model those forms (both compilers).
+smoke_run test/fuzz_f11_unused_capture_ternary_test.zbr "fuzz_f11: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"

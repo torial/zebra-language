@@ -596,6 +596,62 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
             if mightUseNameInExpr(name, o.expr)
                 return true
             return mightUseNameInExpr(name, o.fallback)
+        # BUG-169: these expr forms were unmodelled (→ conservative `else => true`),
+        # which SKIPS a needed unused-capture/local discard when one appears in the
+        # body (fuzz F11: a ternary in an unused `if x as y` body).  Model them
+        # exactly (mirroring nameUsedInExpr) so the discard fires.  `lambda` is
+        # deliberately left to `else` (conservative — its shadowing logic is
+        # error-prone to mirror, and over-approx here is the safe direction).
+        on Expr.if_expr as ie
+            if mightUseNameInExpr(name, ie.cond)
+                return true
+            if mightUseNameInExpr(name, ie.then_expr)
+                return true
+            return mightUseNameInExpr(name, ie.else_expr)
+        on Expr.try_ as t
+            return mightUseNameInExpr(name, t.expr)
+        on Expr.catch_ as ca
+            if mightUseNameInExpr(name, ca.expr)
+                return true
+            return mightUseNameInExpr(name, ca.fallback)
+        on Expr.to_non_nil as tn
+            return mightUseNameInExpr(name, tn.expr)
+        on Expr.is_nil as isn
+            return mightUseNameInExpr(name, isn.expr)
+        on Expr.cast as cst
+            return mightUseNameInExpr(name, cst.expr)
+        on Expr.type_check as tc
+            return mightUseNameInExpr(name, tc.expr)
+        on Expr.slice as sl
+            if mightUseNameInExpr(name, sl.object)
+                return true
+            if sl.start != nil
+                if mightUseNameInExpr(name, sl.start!)
+                    return true
+            if sl.stop_ != nil
+                return mightUseNameInExpr(name, sl.stop_!)
+            return false
+        on Expr.opt_chain as oc
+            if mightUseNameInExpr(name, oc.base)
+                return true
+            for oca in oc.args
+                if mightUseNameInExpr(name, oca.value)
+                    return true
+            return false
+        on Expr.except_ as ex
+            if mightUseNameInExpr(name, ex.base)
+                return true
+            for exf in ex.fields
+                if mightUseNameInExpr(name, exf.value)
+                    return true
+            return false
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                if mightUseNameInExpr(name, de.key)
+                    return true
+                if mightUseNameInExpr(name, de.value)
+                    return true
+            return false
         on Expr.int_lit
             return false
         on Expr.float_lit
@@ -731,6 +787,45 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             if mightUseNameInExpr(name, g.cond)
                 return true
             return mightUseName(name, g.else_stmts)
+        # BUG-169: statement forms that were unmodelled (→ conservative
+        # `else => true`), which skips a needed unused-capture/local discard
+        # when one appears in the body.  `branch_` is the one the fuzzer's
+        # enum/union surface hits (a `branch` in an unused-capture body);
+        # model these exactly (mirroring nameUsedInStmt) so the discard fires.
+        on Stmt.branch_ as b
+            if mightUseNameInExpr(name, b.expr)
+                return true
+            for bc in b.cases
+                for bcv in bc.values
+                    if mightUseNameInExpr(name, bcv)
+                        return true
+                if mightUseName(name, bc.stmts)
+                    return true
+            if b.else_ as be
+                return mightUseName(name, be)
+            return false
+        on Stmt.try_catch as tcs
+            if mightUseName(name, tcs.stmts)
+                return true
+            for cl in tcs.clauses
+                if mightUseName(name, cl.stmts)
+                    return true
+            return false
+        on Stmt.raise_ as r
+            if r.message != nil
+                if mightUseNameInExpr(name, r.message!)
+                    return true
+            if r.details != nil
+                return mightUseNameInExpr(name, r.details!)
+            return false
+        on Stmt.assert_ as a
+            if mightUseNameInExpr(name, a.cond)
+                return true
+            if a.message != nil
+                return mightUseNameInExpr(name, a.message!)
+            return false
+        on Stmt.defer_ as d
+            return mightUseNameStmt(name, d.stmt)
         on Stmt.break_
             return false
         on Stmt.continue_

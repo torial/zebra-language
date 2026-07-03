@@ -8,7 +8,24 @@ equivalence bugs; genuine equivalence bugs show as `run-divergence` /
 
 ---
 
-## F11 — unused capture/local discard skipped when the body holds an unmodeled expr (shared, OPEN — BUG-169)
+## F11 — unused capture/local discard skipped when the body holds an unmodeled expr (shared, ✅ FIXED — BUG-169)
+
+**FIXED 2026-07-03:** added the missing arms to `mightUseNameInExpr`
+(`if_expr`, `try_`, `catch_`, `to_non_nil`, `is_nil`, `cast`, `type_check`,
+`slice`, `opt_chain`, `dict_lit`; `except_` on the selfhost) and
+`mightUseNameStmt` (`branch`, `try_catch`, `raise`, `assert`, `defer`) in BOTH
+compilers, mirroring the complete `nameUsedInExpr`/`nameUsedInStmt` (conservative
+`else => true` kept for the rare remainder — `lambda`/`with`/`allocate`/
+`copy_out`/`except`-stmt — where over-approx is the safe direction, no pointless
+discard). Seed 39 → `ok`; both `both-zig-fail` from the 80-seed batch closed;
+regression `test/fuzz_f11_unused_capture_ternary_test.zbr` (if-as+ternary,
+if-as+branch, for-in+ternary, unused-local+ternary). Smoke + round-trip green.
+Residual (documented, not fuzzer-reachable): an unused binding whose sole use
+sits inside one of the still-unmodeled forms would over-conservatively skip its
+discard → possible unused-capture; the robust retirement is the exact
+`collectAllIdents` approach noted below (deferred).
+
+**Original finding:**
 
 **Found 2026-07-03** by the enum/union/branch batch (80 seeds → 2 `both-zig-fail`;
 seed 39 pinned, second in seeds 50–79 predicted same root). Note the *equivalence*

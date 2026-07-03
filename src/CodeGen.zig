@@ -1802,9 +1802,38 @@ fn mightUseNameInExpr(name: []const u8, expr: *const Ast.Expr) bool {
             break :blk false;
         },
         .orelse_   => |e| mightUseNameInExpr(name, e.expr) or mightUseNameInExpr(name, e.fallback),
+        // BUG-169: these forms were unmodelled (→ conservative `else => true`),
+        // which SKIPS a needed unused-capture/local discard when one appears in
+        // the body (fuzz F11: a ternary in an unused `if x as y` body).  Model
+        // them exactly (mirroring nameUsedInExpr) so the discard fires.  `lambda`
+        // is deliberately left to `else` — over-approx there is the safe
+        // direction and its shadowing logic is error-prone to mirror.
+        .if_expr   => |e| mightUseNameInExpr(name, e.cond) or mightUseNameInExpr(name, e.then_expr) or mightUseNameInExpr(name, e.else_expr),
+        .try_      => |e| mightUseNameInExpr(name, e.expr),
+        .catch_    => |e| mightUseNameInExpr(name, e.expr) or mightUseNameInExpr(name, e.fallback),
+        .to_non_nil => |e| mightUseNameInExpr(name, e.expr),
+        .is_nil    => |e| mightUseNameInExpr(name, e.expr),
+        .cast      => |e| mightUseNameInExpr(name, e.expr),
+        .type_check => |e| mightUseNameInExpr(name, e.expr),
+        .slice     => |e| blk: {
+            if (mightUseNameInExpr(name, e.object)) break :blk true;
+            if (e.start) |s| if (mightUseNameInExpr(name, s)) break :blk true;
+            if (e.stop) |s| if (mightUseNameInExpr(name, s)) break :blk true;
+            break :blk false;
+        },
+        .opt_chain => |e| blk: {
+            if (mightUseNameInExpr(name, e.base)) break :blk true;
+            if (e.args) |args| for (args) |a| if (mightUseNameInExpr(name, a.value)) break :blk true;
+            break :blk false;
+        },
+        .dict_lit  => |e| blk: {
+            for (e.entries) |en| if (mightUseNameInExpr(name, en.key) or mightUseNameInExpr(name, en.value)) break :blk true;
+            break :blk false;
+        },
         .nil, .this, .int_lit, .float_lit, .string_lit, .bool_lit, .char_lit => false,
-        // type_check / if_expr / catch_ / try_ / opt_chain / lambda / … —
-        // not modelled; conservatively assume a use.
+        // lambda / list_lit / array_lit / zig_lit / old / result_ — not
+        // modelled; conservatively assume a use (safe direction: skips no
+        // pointless discard, only occasionally over-conservative).
         else       => true,
     };
 }
@@ -1862,11 +1891,40 @@ fn mightUseNameStmt(name: []const u8, stmt: Ast.Stmt) bool {
         .for_in   => |s| mightUseNameInExpr(name, s.iter) or mightUseName(name, s.body),
         .for_num  => |s| mightUseNameInExpr(name, s.start) or mightUseNameInExpr(name, s.stop) or mightUseName(name, s.body),
         .guard    => |s| mightUseNameInExpr(name, s.cond) or mightUseName(name, s.else_body),
+        // BUG-169: these were unmodelled (→ conservative `else => true`), which
+        // skips a needed unused-capture/local discard when one appears in the
+        // body.  `branch` is the one the fuzzer's enum/union surface hits (a
+        // `branch` in an unused-capture body).  Model them exactly.
+        .branch   => |s| blk: {
+            if (mightUseNameInExpr(name, s.expr)) break :blk true;
+            for (s.on) |bo| {
+                for (bo.values) |v| if (mightUseNameInExpr(name, v)) break :blk true;
+                if (mightUseName(name, bo.body)) break :blk true;
+            }
+            if (s.else_) |eb| if (mightUseName(name, eb)) break :blk true;
+            break :blk false;
+        },
+        .try_catch => |s| blk: {
+            if (mightUseName(name, s.body)) break :blk true;
+            for (s.clauses) |cl| if (mightUseName(name, cl.body)) break :blk true;
+            break :blk false;
+        },
+        .raise    => |s| blk: {
+            if (s.message) |m| if (mightUseNameInExpr(name, m)) break :blk true;
+            if (s.details) |d| if (mightUseNameInExpr(name, d)) break :blk true;
+            break :blk false;
+        },
+        .assert   => |s| blk: {
+            if (mightUseNameInExpr(name, s.cond)) break :blk true;
+            if (s.message) |m| if (mightUseNameInExpr(name, m)) break :blk true;
+            break :blk false;
+        },
+        .defer_   => |s| mightUseNameStmt(name, s.body),
         .break_, .continue_, .pass => false,
-        // branch / with / try_catch / raise / yield / defer / *_except / arena /
-        // allocate / copy_out / contract / assert* — not modelled here;
-        // conservatively assume a use (so we never wrongly discard).  Kept to the
-        // same core set as the selfhost mirror for bootstrap parity.
+        // with / yield / *_except / arena / allocate / copy_out / contract /
+        // assert_eq/ne/true/false / in_scope — not modelled; conservatively
+        // assume a use (safe direction: never a wrong discard).  Kept in
+        // behavioural parity with the selfhost mirror.
         else => true,
     };
 }

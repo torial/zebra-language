@@ -1,0 +1,43 @@
+# Fuzzer finding F11 / BUG-169: an unused binding (if-as capture, for-in
+# capture, or plain local) whose body contains an expr/stmt form that
+# `mightUseNameInExpr`/`mightUseNameStmt` didn't model — a ternary `if(c,t,e)`,
+# or a `branch` — skipped the `_ = binding;` discard, so Zig rejected it
+# ("unused capture" / "unused local constant").  Root: those walkers were
+# conservative (`else => true`) but the discard decision needs them EXACT
+# (both error directions are Zig compile errors).  Fix: model the missing
+# forms in both compilers (mirroring the complete nameUsedInExpr/nameUsedInStmt).
+
+union Tag
+    a: int
+    b
+
+def main()
+    # 1. if-as capture, UNUSED, with a ternary in the body (the seed-39 shape)
+    var o: int? = 3
+    if o as cap1
+        var x = if(true, 10, 20)
+        print("x=${x}")
+
+    # 2. if-as capture, UNUSED, with a branch in the body (the 2nd both-zig-fail)
+    var o2: int? = 5
+    var t = Tag.a(7)
+    if o2 as cap2
+        branch t
+            on Tag.a as n
+                print("a=${n}")
+            on Tag.b
+                print("b")
+
+    # 3. for-in capture, UNUSED, with a ternary in the body
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    xs.add(2)
+    for e in xs
+        var y = if(false, 1, 2)
+        print("y=${y}")
+
+    # 4. plain local, UNUSED, initialised past a ternary
+    var z = if(true, 100, 200)
+    var _ = z
+
+    print("fuzz_f11: OK")

@@ -4,7 +4,7 @@
 
 ---
 
-## BUG-169: unused capture/local discard skipped when body holds an unmodeled expr (ternary) — OPEN
+## BUG-169: unused capture/local discard skipped when body holds an unmodeled expr (ternary) ✅ FIXED
 
 **Severity:** medium (shared robustness gap — both compilers emit the same
 invalid Zig; `error: unused capture` / `unused local constant`). Found
@@ -24,16 +24,19 @@ is *conservative* ("true when unsure"), but the discard decision needs an
 *exact* walker — both error directions are compile errors. `mightUseNameStmt`
 has the analogous gap for unmodeled statement forms.
 
-**Fix (specified; deferred — trivial edit but needs rebuild+regen+gates, host
-was RAM-starved at discovery):** add the missing arms to `mightUseNameInExpr`
-in both compilers (mirror the complete `nameUsedInExpr`: if_expr/try_/catch_/
-to_non_nil/is_nil/cast/type_check/opt_chain/slice); long-term, switch the
-discard decision to an exact `collectAllIdents(body)` membership check to
-retire the class. Regression:
-`test/fuzz_f11_unused_capture_ternary_test.zbr`. Full analysis + minimal
-repro in `fuzz/FINDINGS.md` F11; repro at
-`fuzz/findings/seed39_both-zig-fail_bug169.zbr`. Cross-ref
-`docs/walker_discipline.md` (exact-vs-conservative walker lesson).
+**FIXED 2026-07-03:** added the missing arms to `mightUseNameInExpr`
+(if_expr/try_/catch_/to_non_nil/is_nil/cast/type_check/slice/opt_chain/dict_lit;
++except_ on the selfhost) and `mightUseNameStmt` (branch/try_catch/raise/
+assert/defer) in both compilers, mirroring the complete `nameUsedInExpr`/
+`nameUsedInStmt`; conservative `else => true` kept for the rare remainder
+(lambda/with/allocate/copy_out/except-stmt — over-approx there is the safe
+direction). Seed 39 → ok; both 80-seed `both-zig-fail` closed; smoke +
+round-trip green. Regression `test/fuzz_f11_unused_capture_ternary_test.zbr`
+(registered in smoke). **Residual (documented):** an unused binding whose sole
+use sits inside a still-unmodeled form would over-conservatively skip its
+discard; long-term robust retirement = switch the discard decision to an exact
+`collectAllIdents(body)` membership check. Full analysis in `fuzz/FINDINGS.md`
+F11; cross-ref `docs/walker_discipline.md` (exact-vs-conservative walker lesson).
 
 ---
 
