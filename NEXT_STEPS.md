@@ -660,15 +660,20 @@ passes). Each item is here because 1.0's stability promise makes it cheap now
 and expensive later. Items marked **[decision]** need Sean's call before work
 starts; the rest are execution.
 
-**a. Inference-or-error rule at operator/dispatch sites.** Today an operator
-whose operand type the TC can't infer degrades to a *guessed emit* that Zig
-rejects (or worse, accepts wrongly) — e.g. string-concat `+` emitted as raw
-pointer `+` (fuzz F7; also hit in selfhost source during the BUG-162 fix,
-worked around with `var z: str = call(...)` hoists). Rule to adopt: **no
-typed dispatch site may guess — if inference comes up empty, emit a
-Zebra-level diagnostic ("cannot infer; annotate")**. Corollary: raise the
-priority of the single method-descriptor table (§24e, currently "defer
-post-1.0") — it converts four heuristic dispatch surfaces into one spec.
+**a. [✅ ADOPTED — Sean 2026-07-03] Inference-or-error rule at operator/dispatch
+sites.** Today an operator whose operand type the TC can't infer degrades to a
+*guessed emit* that Zig rejects (or worse, accepts wrongly) — e.g. string-concat
+`+` emitted as raw pointer `+` (fuzz F7; also hit in selfhost source during the
+BUG-162 fix, worked around with `var z: str = call(...)` hoists). **Rule adopted:
+no typed dispatch site may guess — if inference comes up empty, emit a
+Zebra-level diagnostic ("cannot infer type of X; annotate")** instead of a
+guessed emit. Corollary: raise the priority of the single method-descriptor
+table (§24e, currently "defer post-1.0") — it converts four heuristic dispatch
+surfaces into one spec. Execution note: audit every fallback/`else` arm in the
+type-dispatched emitters (genBinary `.add`, genMemberCall Mode-2, the name-based
+container heuristics) and replace guess-on-unknown with a diagnostic; a few
+currently-lucky programs will need an annotation (acceptable — that's the
+point). This is the systemic fix for the F7/BUG-162/BUG-168 bug class.
 
 **b. [APPROVED; steps 1–3 ✅ DONE 2026-07-02] Unify error propagation on always-explicit `?`.** Same-file
 throws-to-throws auto-propagates; cross-module needs explicit `expr?` — an
@@ -728,10 +733,11 @@ the full 3-min scan every time (correct, but wasteful there). CI that wants
 certainty should call it once with `--full`. Still not auto-invoked anywhere
 by default — wire it where it fits your loop.
 
-**c. Exhaustiveness default-on.** Flip `--warn-non-exhaustive` to warn **by
-default** for same-module unions pre-1.0 (flag to silence), documented path
-to error-by-default at 2.0. The 108 legacy `else` arms are a sweep, not a
-blocker.
+**c. [✅ APPROVED — Sean 2026-07-03] Exhaustiveness default-on.** Flip
+`--warn-non-exhaustive` to warn **by default** for same-module unions pre-1.0
+(add a `--no-warn-non-exhaustive` / silence flag), documented path to
+error-by-default at 2.0. The 108 legacy `else` arms are a sweep, not a blocker
+— sweep them (or accept the warnings) as part of the flip. Both compilers.
 
 **d. ✅ DONE 2026-07-02 — copy-out is `<<-`; `<-` is channel-only.**
 Sean approved `<<-` or `<--`; `<<-` chosen — `<--` already lexes as `<-`
@@ -757,16 +763,32 @@ threads. Pre-1.0 task is documentation, not a new type: a per-call
 borrows-vs-owns table in the spec/QUICKSTART, so the 1.5 `str_view` design
 (docs/http notes) has defined ground to stand on.
 
-**f. Stdlib: the functional trio + Set(T).** `List.map/filter/reduce/sort/
-sortBy`, `HashMap.keys()/values()/entries()`, generic `Set(T)` (StrSet is a
-compiler-needs fossil). Pre-1.0 because these names collide with user
-`extend` methods if added later.
+**f. [✅ GREEN-LIT — Sean 2026-07-03] Stdlib: the functional trio + Set(T).**
+`List.map/filter/reduce/sort/sortBy`, `HashMap.keys()/values()/entries()`,
+generic `Set(T)`. Pre-1.0 because these names collide with user `extend`
+methods if added later. **Design calls (Sean):** `sort` takes an **optional
+comparator** (`sort()` natural order for comparable prims; `sort(def(a,b)=…)`
+custom); **`Set(T)` mirrors the existing `StrSet` API** (add/contains/remove/
+len/items) generalized to any hashable T (StrSet stays as the str-specialized
+fossil or becomes `Set(str)` — decide during impl). Both compilers +
+QUICKSTART.
 
-**g. Grammar cleanups while the door is open:** retire the `to!` alias
-(`x!` won); decide `yield`'s fate (in the AST — generator story or removal,
-not limbo); promote optional-FIELD `as`-unwrap (`if rec.field as x`, already
-in Backlog) to pre-1.0 — its workaround teaches users an idiom we'll want to
-unteach.
+**g. [✅ DECIDED — Sean 2026-07-03] Grammar cleanups while the door is open:**
+- **Retire the `to!` alias** — `x!` won as force-unwrap; `to!` is a redundant
+  second spelling. Remove `to!` from lexer/parser + sweep any corpus uses to
+  `x!`. Both compilers.
+- **Remove `yield` completely.** Decided after establishing there ARE good
+  alternatives: (1) iterator structs (`def next(): T?`) — the idiomatic Zig
+  way and the future path if lazy sequences are wanted (a `for x in it`
+  protocol, NOT a keyword); (2) `Chan(T)` + `sys.go` already ships for the
+  concurrent-generator case; (3) eager `List(T)` for the common case.
+  Decisive: Zig has NO coroutine primitive to lower `yield` to, so it would
+  require a bespoke state-machine transform — a poor fit for a dead AST node.
+  Rip `yield` out of the AST/parser/lexer (kw_yield) in both compilers; if
+  laziness is wanted post-1.0, add an iterator protocol instead.
+- **Promote optional-FIELD `as`-unwrap** (`if rec.field as x`) to pre-1.0 —
+  its `!= nil` + `to!` workaround teaches an idiom we'll want to unteach
+  (and `to!` is going away anyway).
 
 **h. `ObjectPool(T)` stdlib type.** Explicit pooling in library-space:
 `var pool = ObjectPool(Bullet)(1024)`; `pool.take()` / `pool.give(b)`,
@@ -779,11 +801,23 @@ GameEngine roadmap's memory section for the consumer side.
 Cheap; converts "I think it grows" into numbers. Wanted by the GameEngine
 bytes-per-frame measurement first step.
 
-**j. Verify `_allocator` semantics under `sys.go`/`ThreadPool`.** Arena
-allocators aren't thread-safe; if worker threads share the program arena,
-that's a latent race. Establish (and document) per-thread arenas or a
-ThreadSafe wrapper as the default before multithreaded programs are a
-headline use case (BUG-154 is adjacent).
+**j. [DIRECTION SET — Sean 2026-07-03; needs the measurement first] `_allocator`
+under threads → two-tier model.** Arena allocators aren't thread-safe; if worker
+threads share the program arena, that's a latent race. **The primitives already
+exist** — `Smp()` (Zig `smp_allocator`, sharded low-contention, the natural
+shared cross-thread pool), `ThreadSafe(inner)` (mutex-wraps any allocator, e.g.
+`ThreadSafe(Arena())`), `C()` (libc malloc). **Target design (Sean asked "can we
+share between threads": yes) = two-tier:** a shared thread-safe allocator
+(`Smp()`) for state that outlives/crosses threads (server HashMap, entity
+registry — the BUG-153/154 shared state), + fast per-thread arenas for each
+worker's temporaries (freed at task end, zero contention on the hot path).
+**Remaining work is WIRING, not a new allocator:** (a) MEASURE what `_allocator`
+resolves to inside a `sys.go`/ThreadPool worker today (suspect: the shared
+program arena → the race); (b) give a clean handle — a program-wide `shared`
+allocator for cross-thread data, workers defaulting to their own arena for the
+rest. This is the piece that unblocks correct shared-state servers (BUG-153/154).
+Do the measurement (§28i `sys.memStats` + a thread-alloc probe) before locking
+the default.
 
 Explicitly NOT recommended for change: `var`-only mutability (BUG-161 was an
 implementation bug, not a design flaw), contracts as identity feature, no
