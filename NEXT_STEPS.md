@@ -687,12 +687,35 @@ throws call in selfhost/ + test/ + examples/, likely hundreds of sites):**
 3. ✅ DONE — inventory re-run: 0 remaining; smoke 199/199; round-trip
    byte-identical; 60/60 fuzz seeds. QUICKSTART §12 now teaches explicit `?`
    and marks auto-try deprecated.
-4. Mirror the warning in the selfhost, verify zero warnings there too.
-5. Flip: implicit try becomes a compile error in both (message: "call to
-   throws function needs '?'"); keep the flag as `--allow-implicit-try`
-   escape hatch for one release, then delete.
-6. QUICKSTART §12 rewrite; CHANGELOG entry (this is a breaking change —
-   the biggest since the `arena` keyword removal).
+4. ✅ DONE (Opus, 2026-07-02) — **trap removed at the gate level**, which is
+   the durable half of the migration. `tools/check_explicit_try.sh` runs
+   `--warn-implicit-try` over the whole corpus and FAILS on any implicit-try
+   site (currently 0). New code that omits `?` now breaks the gate instead of
+   silently compiling — the exact "silent-regression" hazard the half-done
+   state created. Zero compiler-behavior change; near-zero risk.
+5. **Language-level flip (implicit-try → compile error for EXTERNAL code too)
+   — REDESIGNED, deferred to its own session; now SAFE to defer because step 4
+   protects the repo.** Design note (Opus discovery): do NOT emit
+   `@compileError` at the auto-try sites — 4 of the 5 are *expression-position*
+   (a `try ` prefix before a downstream call emission), so swapping in
+   `@compileError` malforms the surrounding expression, and you can't cleanly
+   "emit the error and skip the call" from the prefix site. Correct approach:
+   **driver-level diagnostic** — the 5 sites record their spans into a
+   generator-held list (mirror of `noteImplicitTry`); `main.zig`/`main.zbr`,
+   after emission, if the list is non-empty and not `--allow-implicit-try`,
+   prints `file:line:col: throws call needs '?'` for each and exits non-zero.
+   Emission proceeds normally (valid `try` still written), the compile is
+   REJECTED at the driver, and the message is source-located and clean.
+   Mirror the recording in the selfhost, gate, then flip default-on with
+   `--allow-implicit-try` as the one-release hatch (GameEngine's build can add
+   the flag as its bridge — it has 1 throws file; ported scripts likewise).
+6. QUICKSTART §12 rewrite (done, marks deprecated) + CHANGELOG entry at flip
+   time (breaking change — biggest since the `arena` keyword removal).
+
+**Wiring TODO for whoever runs the gates:** `tools/check_explicit_try.sh` is
+not yet called from `zig build test`/CI — invoke it in the gate runner (it's
+standalone, needs only `zebra-bootstrap.exe`). Left uninvoked-by-default so
+this commit changes no existing gate behavior; wire it in deliberately.
 
 **c. Exhaustiveness default-on.** Flip `--warn-non-exhaustive` to warn **by
 default** for same-module unions pre-1.0 (flag to silence), documented path
