@@ -747,6 +747,8 @@ smoke_run test/fuzz_f9_range_test.zbr "fuzz_f9: OK"
 smoke_run test/fuzz_f11_unused_capture_ternary_test.zbr "fuzz_f11: OK"
 # §28f functional trio: List.map/filter/reduce with element-typed lambda params.
 smoke_run test/list_functional_test.zbr "list_functional: OK"
+# §28f: HashMap.keys()/values() → List(K)/List(V), annotated + direct iteration.
+smoke_run test/hashmap_kv_test.zbr "hashmap_kv: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"

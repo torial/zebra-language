@@ -10083,6 +10083,19 @@ const Generator = struct {
             try g.w.writeAll(".count()))");
             return true;
         }
+        // §28f: keys()/values() → a new List(K)/List(V) snapshot of the map.
+        if (std.mem.eql(u8, method, "keys")) {
+            try g.w.writeAll("_zebra_map_keys(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "values")) {
+            try g.w.writeAll("_zebra_map_values(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
         return false;
     }
 
@@ -11242,6 +11255,17 @@ const Generator = struct {
         // so type-inference gaps don't fall through to the native Zig for-loop path.
         if (s.vars.len == 2) return g.genForInHashMap(s);
 
+        // §28f: for k in m.keys() / for v in m.values() — the result is a
+        // List; iterate its `.items` (genForInList captures the temporary first).
+        if (s.iter.* == .call and s.iter.call.callee.* == .member) {
+            const cm = s.iter.call.callee.member;
+            if (std.mem.eql(u8, cm.member, "keys") or std.mem.eql(u8, cm.member, "values")) {
+                if (g.getExprDeclaredType(cm.object)) |tr| {
+                    if (tr == .generic and std.mem.eql(u8, tr.generic.name, "HashMap"))
+                        return g.genForInList(s);
+                }
+            }
+        }
         // Detect stdlib container types for special iteration patterns.
         if (g.getExprDeclaredType(s.iter)) |tr| {
             if (tr == .generic) {

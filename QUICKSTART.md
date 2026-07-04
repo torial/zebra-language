@@ -663,6 +663,12 @@ m.set("a", 1)
 var v = m.get("a")                   # returns int? (optional)
 var has = m.contains("a")            # bool
 m.remove("a")
+var ks: List(str) = m.keys()         # snapshot of keys as a new List(K)
+var vs: List(int) = m.values()       # snapshot of values as a new List(V)
+for val in m.values()                # or iterate the snapshot directly
+    print(val)
+# As with map/filter, annotate the binding (`var ks: List(str) = …`) to call
+# List methods on the result; direct `for x in m.keys()` iteration is also fine.
 
 # StrSet (set of strings)
 var s = StrSet()

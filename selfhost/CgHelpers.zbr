@@ -1241,6 +1241,9 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "map" or name == "filter" or name == "reduce"
         return true
+    # HashMap.keys()/values() snapshot into a new List — receiver stays const.
+    if name == "keys" or name == "values"
+        return true
     if name == "lastIndexOf" or name == "indexOfFrom"
         return true
     if name == "encodeBase64" or name == "decodeBase64"

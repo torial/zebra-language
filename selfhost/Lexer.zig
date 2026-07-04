@@ -291,6 +291,21 @@ fn _zebra_list_reduce(comptime T: type, init: anytype, f: anytype, list: std.Arr
     for (list.items) |item| acc = f(acc, item);
     return acc;
 }
+// §28f: HashMap.keys()/values() — snapshot the map's keys/values into a new List.
+// Generic over StringHashMap(V)/AutoHashMap(K,V); the K/V types come from the
+// map's KV entry struct so no explicit type args are needed at the call site.
+fn _zebra_map_keys(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "key")) {
+    var out: std.ArrayList(@FieldType(@TypeOf(map).KV, "key")) = .empty;
+    var it = map.keyIterator();
+    while (it.next()) |k| out.append(_allocator, k.*) catch @panic("OOM");
+    return out;
+}
+fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "value")) {
+    var out: std.ArrayList(@FieldType(@TypeOf(map).KV, "value")) = .empty;
+    var it = map.valueIterator();
+    while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
+    return out;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     var child = std.process.spawn(_io, .{

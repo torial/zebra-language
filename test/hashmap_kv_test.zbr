@@ -1,0 +1,32 @@
+# §28f: HashMap.keys() / values() — snapshot the map into a new List(K)/List(V).
+# Prints "hashmap_kv: OK" iff every result is correct (checked by smoke_run).
+
+def main()
+    var m = HashMap(str, int)()
+    m.set("a", 10)
+    m.set("b", 20)
+    m.set("c", 30)
+
+    # annotated result bindings (the element type flows from the annotation).
+    var ks: List(str) = m.keys()
+    var vs: List(int) = m.values()
+    var kc = ks.count()              # 3
+
+    var vsum = 0
+    for v in vs
+        vsum = vsum + v              # 60
+
+    # direct iteration over values() (no intermediate binding).
+    var dvsum = 0
+    for v in m.values()
+        dvsum = dvsum + v            # 60
+
+    # keys() carries the str element type — count matches over the annotated List.
+    var kcount = 0
+    for k in ks
+        kcount = kcount + 1          # 3
+
+    if kc == 3 and vsum == 60 and dvsum == 60 and kcount == 3
+        print("hashmap_kv: OK")
+    else
+        print("hashmap_kv: FAIL kc=${kc} vsum=${vsum} dvsum=${dvsum} kcount=${kcount}")

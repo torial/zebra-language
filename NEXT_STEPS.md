@@ -843,8 +843,24 @@ QUICKSTART.
   (`CgHelpers.zbr`) gained map/filter/reduce so results emit `const` not `var`.
   Fixture `test/list_functional_test.zbr` (smoke_run). Gates: smoke 201/201,
   round-trip byte-identical, inference-guess 0/389.
-- ⏳ TODO — `HashMap.keys()/values()/entries()`; `sort` optional comparator
-  refinement; generic `Set(T)`. Fuzz surface for lambda-taking list methods
+- ✅ DONE (2026-07-04) — **`HashMap.keys()/values()`** → `List(K)`/`List(V)`
+  in both compilers. Preamble helpers `_zebra_map_keys/_zebra_map_values`
+  (generic over StringHashMap/AutoHashMap via `@FieldType(@TypeOf(map).KV, …)`;
+  the map's own K/V, no call-site type args). This REPLACED a pre-existing,
+  broken selfhost emit that called Zig's `.keys()`/`.values()` — those exist
+  only on ArrayHashMap, not the StringHashMap/AutoHashMap both compilers emit,
+  so it never compiled (no test exercised it). Usable annotated
+  (`var ks: List(str) = m.keys()`) or via direct `for k in m.keys()`
+  iteration (genForIn routes keys/values calls to the list path; the selfmap
+  for_in types the element from `hashmap_` key_t/val_t). **Selfhost bug fixed:**
+  `isStrListCallExpr` blanket-typed `.keys()/.values()/.items()` as str, so
+  `HashMap(str,int).values()` mis-typed as str → `_str_concat` on `sum + v`;
+  removed keys/values from that heuristic. Fixture `test/hashmap_kv_test.zbr`.
+  Gates: smoke 202/202, round-trip byte-identical, inference-guess 0/390.
+- ⏳ TODO — `HashMap.entries()` (needs `List((K,V))` tuples; the selfhost has
+  a pre-existing BROKEN entries arm that emits the map itself — unused, no
+  test — fix or remove when tuples are wired). `sort` optional comparator
+  refinement. Generic `Set(T)`. Fuzz surface for lambda-taking list methods
   (none are fuzzed today — any/all/find/sortBy/map/filter/reduce would come as
   one lambda-generation capability) is a broader follow-up.
 

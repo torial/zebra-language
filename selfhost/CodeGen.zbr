@@ -9658,18 +9658,16 @@ struct Generator
                         genExpr(m.object)
                         return
                     if mname == "keys"
-                        w.emit("(blk_hk: { var _hk = std.ArrayList(@TypeOf(")
+                        # §28f: use the preamble helper (StringHashMap/AutoHashMap
+                        # have no Zig .keys()/.values() — those are ArrayHashMap-only).
+                        w.emit("_zebra_map_keys(")
                         genExpr(m.object)
-                        w.emit(".keys()[0])){}; for (")
-                        genExpr(m.object)
-                        w.emit(".keys()) |_k| _hk.append(_allocator, _k) catch unreachable; break :blk_hk _hk; })")
+                        w.emit(")")
                         return
                     if mname == "values"
-                        w.emit("(blk_hv: { var _hv = std.ArrayList(@TypeOf(")
+                        w.emit("_zebra_map_values(")
                         genExpr(m.object)
-                        w.emit(".values()[0])){}; for (")
-                        genExpr(m.object)
-                        w.emit(".values()) |_v| _hv.append(_allocator, _v) catch unreachable; break :blk_hv _hv; })")
+                        w.emit(")")
                         return
                 on Type_.list_ as list_elem_t
                     var item_is_str = list_elem_t is Type_.string_
@@ -10682,20 +10680,15 @@ struct Generator
             genExpr(m.object)
             return
         if mname == "keys"
-            # HashMap.keys() → collect keys into ArrayList
-            w.emit("(blk_hk: { var _hk = std.ArrayList(@TypeOf(")
+            # §28f: preamble helper (StringHashMap/AutoHashMap have no Zig .keys()).
+            w.emit("_zebra_map_keys(")
             genExpr(m.object)
-            w.emit(".keys()[0])){}; for (")
-            genExpr(m.object)
-            w.emit(".keys()) |_k| _hk.append(_allocator, _k) catch unreachable; break :blk_hk _hk; })")
+            w.emit(")")
             return
         if mname == "values"
-            # HashMap.values() → collect values into ArrayList
-            w.emit("(blk_hv: { var _hv = std.ArrayList(@TypeOf(")
+            w.emit("_zebra_map_values(")
             genExpr(m.object)
-            w.emit(".values()[0])){}; for (")
-            genExpr(m.object)
-            w.emit(".values()) |_v| _hv.append(_allocator, _v) catch unreachable; break :blk_hv _hv; })")
+            w.emit(")")
             return
         # Result methods
         if mname == "isOk" or mname == "isErr" or mname == "unwrap" or mname == "unwrapOr" or mname == "okValue" or mname == "errValue" or mname == "map" or mname == "flatMap"

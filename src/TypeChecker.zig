@@ -2657,20 +2657,39 @@ const TypeChecker = struct {
     /// `TypeRef` directly because the TC has no HashMap `Type` variant
     /// (`typeFromRef` collapses generics to `.unknown`), so `m.get(k)`'s
     /// optional return was invisible and `if m.get(k) as v` left `v` untyped.
-    fn hashMapValueType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+    /// Type argument `idx` of a `HashMap(K, V)`-declared receiver (0 = key,
+    /// 1 = value), or null.  Reads the declared TypeRef — from an annotation
+    /// or a `HashMap(K,V)()` initializer — because the bootstrap TC has no
+    /// HashMap Type.  Used for `m.get(k) → V?`, `for k in m.keys()`, etc.
+    fn hashMapArgType(tc: TypeChecker, obj: *const Ast.Expr, idx: usize) ?Type {
         if (obj.* != .ident) return null;
         const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        // (a) explicit annotation.
         const dt: ?Ast.TypeRef = switch (sym.decl) {
             .var_  => |dv| dv.type_,
             .param => |p|  p.type_,
             else   => null,
         };
-        const t = dt orelse return null;
-        if (t != .generic or !std.mem.eql(u8, t.generic.name, "HashMap")) return null;
-        if (t.generic.args.len < 2) return null;
-        const vt = tc.typeFromRef(&t.generic.args[1]);
-        if (vt.isAbstract()) return null;
-        return vt;
+        if (dt) |t| {
+            if (t == .generic and std.mem.eql(u8, t.generic.name, "HashMap") and t.generic.args.len > idx) {
+                const at = tc.typeFromRef(&t.generic.args[idx]);
+                if (!at.isAbstract()) return at;
+            }
+        }
+        // (b) inferred from a `HashMap(K,V)()` initializer.
+        if (sym.decl == .var_) if (sym.decl.var_.init) |init| {
+            if (init.* == .call and init.call.type_args.len > idx and init.call.callee.* == .ident and
+                std.mem.eql(u8, init.call.callee.ident.name, "HashMap"))
+            {
+                const at = tc.typeFromRef(&init.call.type_args[idx]);
+                if (!at.isAbstract()) return at;
+            }
+        };
+        return null;
+    }
+
+    fn hashMapValueType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        return tc.hashMapArgType(obj, 1);
     }
 
     /// §28f: element type T of a `List(T)`-declared receiver, or null.  Reads the
@@ -2743,6 +2762,14 @@ const TypeChecker = struct {
         if (iter.* == .array_lit) {
             for (iter.array_lit.elems) |el|
                 if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+        }
+        // §28f: for k in m.keys() → K; for v in m.values() → V.
+        if (iter.* == .call and iter.call.callee.* == .member) {
+            const cm = iter.call.callee.member;
+            if (std.mem.eql(u8, cm.member, "keys"))
+                if (tc.hashMapArgType(cm.object, 0)) |kt| return kt;
+            if (std.mem.eql(u8, cm.member, "values"))
+                if (tc.hashMapArgType(cm.object, 1)) |vt| return vt;
         }
         // §28a: for-in over a call returning `List(T)` (optionally `?`-propagated,
         // `for a in makeNums()?`) — element type T.  `fn_return_types` collapses

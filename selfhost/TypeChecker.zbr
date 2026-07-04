@@ -1981,14 +1981,17 @@ def isRangeIterExpr(e: Expr): bool
     return false
 
 # Detects iterators whose elements are known to be strings:
-# .split()/.lines() return string slices; .keys()/.items()/.values() on str containers;
+# .split()/.lines() return string slices; .items() on str containers;
 # .groups()/.findAll() on Regex return string slices.
+# NOTE: .keys()/.values() are NOT here — their element type depends on the
+# HashMap's K/V (a HashMap(str,int).values() is int, not str), so the for_in
+# handler types them from the map's hashmap_ key_t/val_t (§28f).
 def isStrListCallExpr(e: Expr): bool
     if e is Expr.call as cal
         if cal.callee is Expr.member as mem
             if mem.member == "split" or mem.member == "lines"
                 return true
-            if mem.member == "keys" or mem.member == "items" or mem.member == "values"
+            if mem.member == "items"
                 return true
             if mem.member == "groups" or mem.member == "findAll"
                 return true
@@ -2097,10 +2100,21 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             else if fi.vars.len == 1 and isRangeIterExpr(fi.iter)
                 loop_var_t = Type_.int_
             else if fi.vars.len == 1
+                # §28f: for k in m.keys() / for v in m.values() — element type is
+                # the map's key_t / val_t (NOT blanket str; see isStrListCallExpr).
+                if fi.iter is Expr.call as kv_call
+                    if kv_call.callee is Expr.member as kv_mem
+                        if kv_mem.member == "keys" or kv_mem.member == "values"
+                            var recv_t: Type_ = inferExpr(kv_mem.object, ctx)
+                            if recv_t is Type_.hashmap_ as hm
+                                if kv_mem.member == "keys"
+                                    loop_var_t = hm.key_t
+                                else
+                                    loop_var_t = hm.val_t
                 # §28a: for-in over a list literal `[a, b, ...]` — element type
                 # is the annotation if present, else the first element's type.
                 # Mirrors inferForInElemType's list_lit arm in the bootstrap.
-                if fi.iter is Expr.list_lit as lit_iter
+                else if fi.iter is Expr.list_lit as lit_iter
                     if lit_iter.elem_type != nil
                         loop_var_t = typeFromRef(lit_iter.elem_type!)
                     else if lit_iter.elems.len > 0
