@@ -788,11 +788,17 @@ the full 3-min scan every time (correct, but wasteful there). CI that wants
 certainty should call it once with `--full`. Still not auto-invoked anywhere
 by default — wire it where it fits your loop.
 
-**c. [✅ APPROVED — Sean 2026-07-03] Exhaustiveness default-on.** Flip
-`--warn-non-exhaustive` to warn **by default** for same-module unions pre-1.0
-(add a `--no-warn-non-exhaustive` / silence flag), documented path to
-error-by-default at 2.0. The 108 legacy `else` arms are a sweep, not a blocker
-— sweep them (or accept the warnings) as part of the flip. Both compilers.
+**c. [✅ DONE — 2026-07-04] Exhaustiveness default-on.** Flipped
+`warn_non_exhaustive` to **on by default** in both compilers (a same-module
+union `branch` with an `else` that doesn't explicitly handle every variant now
+warns). Added `--no-warn-non-exhaustive` to opt out; the legacy
+`--warn-non-exhaustive` is kept as an accepted no-op. Warnings are stderr-only
+(appended to `diags`, not the emitted Zig), so round-trip byte-identity and
+all gates are unaffected. The feared "108 legacy `else` arms" were a non-issue:
+the selfhost's OWN sources produce **0** exhaustiveness warnings (its branches
+are exhaustive or on cross-module unions, which are exempt). Gates: smoke
+203/203, round-trip byte-identical, inference-guess 0/391. Documented path to
+error-by-default at 2.0 remains future work.
 
 **d. ✅ DONE 2026-07-02 — copy-out is `<<-`; `<-` is channel-only.**
 Sean approved `<<-` or `<--`; `<<-` chosen — `<--` already lexes as `<-`

@@ -912,7 +912,9 @@ def main()
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
     var lib_mode             = args.contains("--library-mode")
-    var warn_ne              = args.contains("--warn-non-exhaustive")
+    # §28c: exhaustiveness warnings are ON by default pre-1.0; opt out with
+    # --no-warn-non-exhaustive.  (--warn-non-exhaustive kept as an accepted no-op.)
+    var warn_ne              = not args.contains("--no-warn-non-exhaustive")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
     var has_gui              = gui_backend != ""
