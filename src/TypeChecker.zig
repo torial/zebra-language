@@ -1918,7 +1918,6 @@ const TypeChecker = struct {
             .assert_eq, .assert_ne => |s| { _ = try tc.inferExpr(s.lhs); _ = try tc.inferExpr(s.rhs); },
             .assert_true, .assert_false => |s| _ = try tc.inferExpr(s.expr),
             .print    => |s| { for (s.args) |a| _ = try tc.inferExpr(a); },
-            .yield    => |s| _ = try tc.inferExpr(s.value),
             .assign   => |s| try tc.checkAssign(s),
             .var_     => |n| try tc.checkVarDecl(n, true),
             .expr     => |e| _ = try tc.inferExpr(e),

@@ -225,7 +225,6 @@ Stmt                 → StmtReturn
                      |  StmtBreak
                      |  StmtContinue
                      |  StmtAssert
-                     |  StmtYield
                      |  StmtIf
                      |  StmtWhile
                      |  StmtPostWhile
@@ -254,8 +253,6 @@ StmtContinue         → kw_continue eol
 StmtAssert           → kw_assert Expr eol
                      |  kw_assert Expr comma Expr eol
 
-StmtYield            → kw_yield Expr eol
-
 StmtIf               → kw_if Expr eol Block IfTail
                      |  kw_if Expr kw_as id eol Block IfTail
                      |  kw_if Expr colon InlineThen InlineElse eol
@@ -276,7 +273,6 @@ InlineThen           → kw_return
                      |  kw_pass | kw_break | kw_continue
                      |  kw_assert Expr
                      |  kw_assert Expr comma Expr
-                     |  kw_yield Expr
                      |  kw_var id VarTypeOpt VarInitOpt
                      |  kw_const id VarTypeOpt assign Expr
                      |  Expr AssignOp Expr

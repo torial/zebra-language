@@ -1324,10 +1324,6 @@ const Builder = struct {
             .StmtPass     => .{ .pass      = s },
             .StmtBreak    => .{ .break_    = s },
             .StmtContinue => .{ .continue_ = s },
-            .StmtYield    => .{ .yield = try b.box(Ast.StmtYield, .{
-                .span  = s,
-                .value = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
-            }) },
             .StmtAssert => .{ .assert = try b.box(Ast.StmtAssert, .{
                 .span    = s,
                 .cond    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
@@ -1479,10 +1475,6 @@ const Builder = struct {
         if (isLeafKind(first, .kw_pass))     return .{ .pass      = s };
         if (isLeafKind(first, .kw_break))    return .{ .break_    = s };
         if (isLeafKind(first, .kw_continue)) return .{ .continue_ = s };
-        if (isLeafKind(first, .kw_yield)) return .{ .yield = try b.box(Ast.StmtYield, .{
-            .span  = s,
-            .value = try b.box(Ast.Expr, try b.buildExpr(kids[1])),
-        }) };
         if (isLeafKind(first, .kw_assert)) return .{ .assert = try b.box(Ast.StmtAssert, .{
             .span    = s,
             .cond    = try b.box(Ast.Expr, try b.buildExpr(kids[1])),

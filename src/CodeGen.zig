@@ -637,7 +637,6 @@ fn refsInStmt(stmt: Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerr
         .assert       => |s| { try refsInExpr(s.cond, r, o); if (s.message) |m| try refsInExpr(m, r, o); },
         .assert_eq, .assert_ne => |s| { try refsInExpr(s.lhs, r, o); try refsInExpr(s.rhs, r, o); },
         .assert_true, .assert_false => |s| try refsInExpr(s.expr, r, o),
-        .yield     => |s| try refsInExpr(s.value, r, o),
         .expr      => |e| try refsInExpr(e, r, o),
         .defer_    => |s| try refsInStmt(s.body, r, o),
         .contract  => |s| { for (s.exprs) |e| try refsInExpr(e, r, o); },
@@ -1950,7 +1949,6 @@ fn mightUseNameStmt(name: []const u8, stmt: Ast.Stmt) bool {
         // (F2/BUG-161, F6/BUG-166, F11/BUG-169 were all this class).
         .assert_eq, .assert_ne => |s| mightUseNameInExpr(name, s.lhs) or mightUseNameInExpr(name, s.rhs),
         .assert_true, .assert_false => |s| mightUseNameInExpr(name, s.expr),
-        .yield    => |s| mightUseNameInExpr(name, s.value),
         .contract => |s| blk: { for (s.exprs) |e| if (mightUseNameInExpr(name, e)) break :blk true; break :blk false; },
         .with     => |s| mightUseNameInExpr(name, s.target) or mightUseName(name, s.body),
         .in_scope => |s| mightUseNameInExpr(name, s.expr) or mightUseName(name, s.body),
@@ -6351,7 +6349,6 @@ const Generator = struct {
             .assert        => |s| s.span,
             .assert_eq, .assert_ne => |s| s.span,
             .assert_true, .assert_false => |s| s.span,
-            .yield         => |s| s.span,
             .expr          => |e| exprSpan(e),
             .defer_        => |s| s.span,
             .with          => |s| s.span,
@@ -6433,12 +6430,6 @@ const Generator = struct {
             .assert_ne    => |s| try g.genAssertCmp(s, false),
             .assert_true  => |s| try g.genAssertUnary(s, true),
             .assert_false => |s| try g.genAssertUnary(s, false),
-            .yield     => |s| {
-                try g.writeIndent();
-                try g.w.writeAll("// yield ");
-                try g.genExpr(s.value);
-                try g.w.writeAll(";\n");
-            },
             .expr      => |e| {
                 // GUI widget calls with allocating string args need block-scoped temps.
                 if (try g.genGuiWidgetStmt(e)) return;

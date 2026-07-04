@@ -260,7 +260,6 @@ pub const TokenKind = enum {
     kw_stop,
     kw_trace,
     kw_return,
-    kw_yield,
     kw_defer,     // defer stmt — run on scope exit
     kw_errdefer,  // errdefer stmt — run only on error exit
 
@@ -380,7 +379,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // Reserving it broke `.stop()` calls — tokenize it as a plain identifier.
     .{ "trace",       .kw_trace },
     .{ "return",      .kw_return },
-    .{ "yield",       .kw_yield },
     .{ "defer",       .kw_defer },
     .{ "errdefer",    .kw_errdefer },
     .{ "this",        .kw_this },

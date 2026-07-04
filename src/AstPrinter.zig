@@ -318,7 +318,6 @@ const Printer = struct {
             .assert_true  => |n| { try p.w("(assert-true ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .assert_false => |n| { try p.w("(assert-false ", .{}); try p.printExpr(n.expr.*); try p.w(")", .{}); },
             .print    => |n| try p.printPrint(n.*),
-            .yield    => |n| { try p.w("(yield ", .{}); try p.printExpr(n.value.*); try p.w(")", .{}); },
             .assign   => |n| try p.printAssign(n.*),
             .var_     => |n| try p.printVar(n.*),
             .expr     => |e| { try p.w("(expr ", .{}); try p.printExpr(e.*); try p.w(")", .{}); },

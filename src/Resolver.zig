@@ -469,7 +469,6 @@ const Resolver = struct {
             .assert_eq, .assert_ne => |s| { try r.walkExpr(s.lhs, scope); try r.walkExpr(s.rhs, scope); },
             .assert_true, .assert_false => |s| try r.walkExpr(s.expr, scope),
             .print    => |s| { for (s.args) |a|   try r.walkExpr(a, scope); },
-            .yield    => |s| try r.walkExpr(s.value, scope),
             .assign   => |s| {
                 try r.walkExpr(s.target, scope);
                 try r.walkExpr(s.value, scope);
@@ -1044,7 +1043,6 @@ const Resolver = struct {
             },
             .assert_eq, .assert_ne => |s| { try r.checkCaptureBoundary(s.lhs, lambda_local); try r.checkCaptureBoundary(s.rhs, lambda_local); },
             .assert_true, .assert_false => |s| try r.checkCaptureBoundary(s.expr, lambda_local),
-            .yield   => |s| try r.checkCaptureBoundary(s.value, lambda_local),
             .defer_  => |s| try r.checkCaptureBoundaryStmt(s.body, lambda_local),
             .with    => |s| {
                 try r.checkCaptureBoundary(s.target, lambda_local);

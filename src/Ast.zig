@@ -379,7 +379,6 @@ pub const Stmt = union(enum) {
     pass: Span,
     break_: Span,
     continue_: Span,
-    yield: *StmtYield,
     assign: *StmtAssign,
     var_: *DeclVar,     // local variable declaration
     expr: *Expr,        // expression statement
@@ -512,11 +511,6 @@ pub const StmtAssertUnary = struct {
 pub const StmtPrint = struct {
     span: Span,
     args: []const *Expr,
-};
-
-pub const StmtYield = struct {
-    span: Span,
-    value: *Expr,
 };
 
 pub const StmtDefer = struct {

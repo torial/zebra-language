@@ -832,15 +832,20 @@ QUICKSTART.
 - **Retire the `to!` alias** — `x!` won as force-unwrap; `to!` is a redundant
   second spelling. Remove `to!` from lexer/parser + sweep any corpus uses to
   `x!`. Both compilers.
-- **Remove `yield` completely.** Decided after establishing there ARE good
-  alternatives: (1) iterator structs (`def next(): T?`) — the idiomatic Zig
-  way and the future path if lazy sequences are wanted (a `for x in it`
-  protocol, NOT a keyword); (2) `Chan(T)` + `sys.go` already ships for the
-  concurrent-generator case; (3) eager `List(T)` for the common case.
-  Decisive: Zig has NO coroutine primitive to lower `yield` to, so it would
-  require a bespoke state-machine transform — a poor fit for a dead AST node.
-  Rip `yield` out of the AST/parser/lexer (kw_yield) in both compilers; if
-  laziness is wanted post-1.0, add an iterator protocol instead.
+- **Remove `yield` completely.** ✅ DONE (2026-07-03). Decided after
+  establishing there ARE good alternatives: (1) iterator structs
+  (`def next(): T?`) — the idiomatic Zig way and the future path if lazy
+  sequences are wanted (a `for x in it` protocol, NOT a keyword);
+  (2) `Chan(T)` + `sys.go` already ships for the concurrent-generator case;
+  (3) eager `List(T)` for the common case. Decisive: Zig has NO coroutine
+  primitive to lower `yield` to. The old codegen only emitted a `// yield`
+  COMMENT — never a real transform — so removal was a clean deletion with zero
+  corpus migration (all corpus "yield" hits were prose). Ripped out of both
+  compilers: `kw_yield` token + keyword map, `StmtYield` grammar nonterminal /
+  productions (block + `InlineThen` inline form), the `Ast.StmtYield` union
+  member + struct, AstBuilder/AstPrinter/Resolver/TypeChecker/CodeGen arms, and
+  grammar.txt; selfhost `Token.zbr`. `yield` is now a free identifier. Gates:
+  smoke 200/200, round-trip byte-identical, fuzz 40/40 ok.
 - **Promote optional-FIELD `as`-unwrap** (`if rec.field as x`) to pre-1.0 —
   its `!= nil` + `to!` workaround teaches an idiom we'll want to unteach
   (and `to!` is going away anyway).

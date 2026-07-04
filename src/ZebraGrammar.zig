@@ -134,7 +134,6 @@ pub const NT = enum {
     StmtAssertNe,
     StmtAssertTrue,
     StmtAssertFalse,
-    StmtYield,
 
     StmtIf,
     IfTail,              // zero or more else-if clauses, optional else
@@ -812,7 +811,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAssertNe) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAssertTrue) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAssertFalse) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtYield) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtIf) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWhile) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtForIn) } },
@@ -851,7 +849,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtAssertNe,    .rhs = &.{ t(.kw_assert_ne),    n(.Expr), t(.comma), n(.Expr), t(.eol) } },
     .{ .lhs = .StmtAssertTrue,  .rhs = &.{ t(.kw_assert_true),  n(.Expr), t(.eol) } },
     .{ .lhs = .StmtAssertFalse, .rhs = &.{ t(.kw_assert_false), n(.Expr), t(.eol) } },
-    .{ .lhs = .StmtYield,       .rhs = &.{ t(.kw_yield), n(.Expr), t(.eol) } },
 
     // if / else if / else (block form)
     .{ .lhs = .StmtIf, .rhs = &.{ t(.kw_if), n(.Expr), t(.eol), n(.Block), n(.IfTail) } },
@@ -880,7 +877,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_continue) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_assert), n(.Expr) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_assert), n(.Expr), t(.comma), n(.Expr) } },
-    .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_yield), n(.Expr) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_var), t(.id), n(.VarTypeOpt), n(.VarInitOpt) } },
     .{ .lhs = .InlineThen, .rhs = &.{ t(.kw_const), t(.id), n(.VarTypeOpt), t(.assign), n(.Expr) } },
     .{ .lhs = .InlineThen, .rhs = &.{ n(.Expr), n(.AssignOp), n(.Expr) } },

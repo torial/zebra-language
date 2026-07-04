@@ -158,7 +158,6 @@ union TokenKind
     kw_stop
     kw_trace
     kw_return
-    kw_yield
     kw_defer
     kw_errdefer
     kw_this
@@ -327,8 +326,6 @@ class Keywords
             return TokenKind.kw_trace()
         if word == "return"
             return TokenKind.kw_return()
-        if word == "yield"
-            return TokenKind.kw_yield()
         if word == "defer"
             return TokenKind.kw_defer()
         if word == "errdefer"
