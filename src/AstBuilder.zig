@@ -2511,7 +2511,8 @@ const Builder = struct {
             }) };
         }
 
-        // `expr!` postfix: 2 children, second is .bang — force-unwrap, alias for `expr to!`
+        // `expr!` postfix: 2 children, second is .bang — force-unwrap / non-nil assert.
+        // (The old `expr to!` spelling was retired in #218; `expr!` is the only form.)
         if (kids.len == 2 and isLeafKind(kids[1], .bang)) {
             return .{ .to_non_nil = try b.box(Ast.ExprToNonNil, .{
                 .span = s,

@@ -849,9 +849,13 @@ QUICKSTART.
   one lambda-generation capability) is a broader follow-up.
 
 **g. [✅ DECIDED — Sean 2026-07-03] Grammar cleanups while the door is open:**
-- **Retire the `to!` alias** — `x!` won as force-unwrap; `to!` is a redundant
-  second spelling. Remove `to!` from lexer/parser + sweep any corpus uses to
-  `x!`. Both compilers.
+- **Retire the `to!` alias** — ✅ ALREADY DONE (#218, predates this §28
+  review). `x!` won as force-unwrap; the `expr to!` spelling was removed from
+  both parsers. `test/to_bang_removed_test.zbr` is a must-fail fixture proving
+  `x to!` no longer parses (registered via `smoke_tc_fail`). The grammar has
+  only `expr!` (force-unwrap) and `expr to T` (cast). 2026-07-04: tidied the
+  last stale `to!` mentions (AstPrinter now prints `(force-unwrap …)`, not
+  `(to! …)`; AstBuilder comment corrected).
 - **Remove `yield` completely.** ✅ DONE (2026-07-03). Decided after
   establishing there ARE good alternatives: (1) iterator structs
   (`def next(): T?`) — the idiomatic Zig way and the future path if lazy
