@@ -864,7 +864,19 @@ QUICKSTART.
   Fixture `test/list_sort_comparator_test.zbr`.
 - ⏳ TODO — `HashMap.entries()` (needs `List((K,V))` tuples; the selfhost has
   a pre-existing BROKEN entries arm that emits the map itself — unused, no
-  test — fix or remove when tuples are wired). Generic `Set(T)`.
+  test — fix or remove when tuples are wired).
+  **Generic `Set(T)` — FROM SCRATCH (design input wanted).** The §28f premise
+  "mirror the existing StrSet API" is INVALID: `StrSet` is a selfhost-internal
+  Zig type, NOT a user-facing Zebra type (`var s = StrSet()` → "'StrSet' is not
+  defined"; QUICKSTART's StrSet example was stale and is now corrected). So
+  `Set(T)` is a HashMap-sized new builtin: `zigGenericName` already stubs
+  `Set → std.AutoHashMap`, but `Set` isn't in `Builtins.NAMES`/
+  `MUTABLE_COLLECTIONS`, and the type emission must special-case the void value
+  (`Set(T)` → `AutoHashMap(T, void)` / `StringHashMap(void)` for str), plus
+  set-flavored methods (add→put(x,{}), contains, remove, count, items→List),
+  for-in iteration, TC, and both compilers. Decisions to confirm: str-key
+  specialization (StringHashMap(void)); does `items()` return `List(T)`; expose
+  a `Set(str)` alias or leave StrSet retired. Best done as its own gated pass.
   Fuzz surface for lambda-taking list methods
   (none are fuzzed today — any/all/find/sortBy/map/filter/reduce would come as
   one lambda-generation capability) is a broader follow-up.

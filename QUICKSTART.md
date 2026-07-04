@@ -674,10 +674,9 @@ for val in m.values()                # or iterate the snapshot directly
 # As with map/filter, annotate the binding (`var ks: List(str) = …`) to call
 # List methods on the result; direct `for x in m.keys()` iteration is also fine.
 
-# StrSet (set of strings)
-var s = StrSet()
-s.add("hello")
-var present = s.contains("hello")
+# Set(T) — a hashable-element set (add/contains/remove/count) is PLANNED
+# (NEXT_STEPS §28f); not yet implemented. For now, model a set with
+# HashMap(T, bool) or check membership with `x in list`.
 
 # Iteration
 for item in items
