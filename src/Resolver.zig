@@ -492,9 +492,16 @@ const Resolver = struct {
                 const dv = try r.table.arena.create(Ast.DeclVar);
                 dv.* = .{ .span = s.span, .mods = .{}, .name = s.name,
                            .type_ = s.type_ref, .init = null, .is_const = true };
+                // §28a: `resolve.types` is keyed by NamedTypeRef node ADDRESS, but
+                // `dv.type_` is a by-value COPY of `s.type_ref` at a different
+                // address — so without resolving the copy, `typeFromRef(&dv.type_)`
+                // misses and the except-bound local (`var tmp: Box = base except`)
+                // types as unknown, guessing on `tmp.field` arithmetic downstream.
+                if (dv.type_) |*tr| try r.resolveTypeRef(tr, scope);
                 const sym = try r.table.newSymbol(s.name, .local, .{ .var_ = dv });
                 _ = try scope.define(s.name, sym);
             },
+
             .assign_except => |s| {
                 try r.walkExpr(s.target, scope);
                 try r.walkExpr(s.base, scope);

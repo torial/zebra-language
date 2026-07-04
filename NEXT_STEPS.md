@@ -692,22 +692,38 @@ point). This is the systemic fix for the F7/BUG-162/BUG-168 bug class.
    **Consequence: §28a is chiefly "close inference gaps so dispatch is *proven*";
    the hard error is a rare backstop for future un-inferable code, not a common
    path. Flipping guesses to errors today would reject 10 correct programs.**
-2. ⏳ IN PROGRESS — close the inference gaps so the guess sites become proven.
-   Each closure verified emit byte-identical (typing a loop var changes no
-   output) + full gate (smoke/round-trip) + re-sweep.
-   ✅ range-for element typing (dotdot `a..b` + method `n.to(m)` → int) via
-   `inferForInElemType` / selfhost `isRangeIterExpr` — cleared 5 (10→5).
-   ✅ list/array-literal element typing (`for x in [a,b,…]`) via the `list_lit`/
-   `array_lit` arms in `inferForInElemType` + the selfhost for_in handler —
-   cleared 1 (5→4).
-   Remaining 4 guesses / 3 gap classes, each central-inference (not a cheap
-   for-in-iter arm) and fixing one emit-correct site:
-     • fn-return element — `for a in makeNums()?` (parse `fn_return_types`
-       "List(int)" string + unwrap `?`).
-     • `this except` field-ref — `v = v + 0` in an except block (bind bare
-       field names to their field types, like a `with` scope).
-     • module-global var + `if..as` binding — `total = total + 7` and
-       `sum = sum + a` where `a` is `if counts.get("a") as a`.
+2. ✅ DONE (2026-07-03) — closed every inference gap; corpus now 0 guesses.
+   Each closure verified emit byte-identical (typing an operand changes no
+   output) + full gate (smoke 200/200 / round-trip byte-identical) + re-sweep.
+   All were bootstrap-side gaps (the bootstrap TC collapses generics to
+   `.unknown`; the selfhost TC models them via `hashmap_`/`list_`, so it was
+   already ahead on several):
+     • range-for element (dotdot `a..b` + method `n.to(m)` → int) —
+       `inferForInElemType` / selfhost `isRangeIterExpr`. Cleared 5.
+     • list/array-literal element (`for x in [a,b,…]`) — `list_lit`/`array_lit`
+       arms in `inferForInElemType` + the selfhost for_in handler. Cleared 1.
+     • HashMap.get → `V?` — `hashMapValueType` reads the receiver's declared
+       `HashMap(K,V)` TypeRef (the bootstrap has no HashMap Type), so
+       `if m.get(k) as v` narrows `v`. Selfhost already had it. Cleared 2.
+     • fn-return List element (`for a in makeNums()?`) — `inferForInElemType`
+       reads the callee's declared `List(T)` return TypeRef (`fn_return_types`
+       drops generics). Cleared 1.
+     • except-bound-local declared type (`var tmp: Box = base except`, then
+       `tmp.field` arithmetic) — a genuine latent bug: the resolver copied
+       `s.type_ref` by value into the synthesised DeclVar, but `resolve.types`
+       is keyed by node ADDRESS, so `typeFromRef` missed and `tmp` typed
+       `.unknown`. Fixed by resolving the COPY's node. Cleared 1.
+3. ✅ DONE (2026-07-03) — `tools/check_inference_guess.sh` (mirrors
+   `check_explicit_try.sh`): incremental, stamp in `zig-out/`, forces a full
+   rescan when the compiler binary is newer than the stamp. FAILS on any
+   `INFER_GUESS` site — new code that dispatches on an un-inferred type breaks
+   the gate instead of silently guessing. Corpus is at 0, so it passes today.
+4. ⏳ PENDING (needs its own gated session — semantic/irreversible) — the
+   language-level flip: a residual guess becomes a Zebra-level "cannot infer
+   type of X; annotate" compile error in BOTH compilers (selfhost must make the
+   same in/error decision or round-trip diverges). The gate (step 3) is the
+   durable protection until then; on current evidence the error path would be a
+   rare backstop, not a common diagnostic.
 3. ⏳ PENDING (needs Sean's steer — semantic/irreversible) — add the Phase-B
    backstop: once corpus guesses are 0, convert the residual guess arms to a
    Zebra-level "cannot infer type of X; annotate" diagnostic in BOTH compilers

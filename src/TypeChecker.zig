@@ -2653,6 +2653,27 @@ const TypeChecker = struct {
         return std.mem.eql(u8, callee.member.member, "walk");
     }
 
+    /// §28a: value type `V` of a `HashMap(K, V)`-declared receiver, or null if
+    /// the receiver isn't a HashMap-typed variable/param.  Reads the declared
+    /// `TypeRef` directly because the TC has no HashMap `Type` variant
+    /// (`typeFromRef` collapses generics to `.unknown`), so `m.get(k)`'s
+    /// optional return was invisible and `if m.get(k) as v` left `v` untyped.
+    fn hashMapValueType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        if (obj.* != .ident) return null;
+        const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        const dt: ?Ast.TypeRef = switch (sym.decl) {
+            .var_  => |dv| dv.type_,
+            .param => |p|  p.type_,
+            else   => null,
+        };
+        const t = dt orelse return null;
+        if (t != .generic or !std.mem.eql(u8, t.generic.name, "HashMap")) return null;
+        if (t.generic.args.len < 2) return null;
+        const vt = tc.typeFromRef(&t.generic.args[1]);
+        if (vt.isAbstract()) return null;
+        return vt;
+    }
+
     fn inferForInElemType(tc: TypeChecker, iter: *const Ast.Expr) Type {
         // §28a: numeric range iterators yield int elements, matching for_num
         // (whose loop var is always int).  The colon forms `a : b [: step]`
@@ -2682,6 +2703,29 @@ const TypeChecker = struct {
         if (iter.* == .array_lit) {
             for (iter.array_lit.elems) |el|
                 if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+        }
+        // §28a: for-in over a call returning `List(T)` (optionally `?`-propagated,
+        // `for a in makeNums()?`) — element type T.  `fn_return_types` collapses
+        // generic returns to nothing (namedTypeStr → null for `.generic`), so read
+        // the callee's declared return TypeRef directly.
+        {
+            const call_expr: ?*const Ast.Expr = switch (iter.*) {
+                .call => iter,
+                .try_ => iter.try_.expr,
+                else  => null,
+            };
+            if (call_expr) |ce| if (ce.* == .call and ce.call.callee.* == .ident) {
+                if (tc.resolve.exprs.get(&ce.call.callee.ident)) |sym| {
+                    if (sym.kind == .method) if (sym.decl.method.return_type) |*rt| {
+                        if (rt.* == .generic and std.mem.eql(u8, rt.generic.name, "List") and
+                            rt.generic.args.len > 0)
+                        {
+                            const et = tc.typeFromRef(&rt.generic.args[0]);
+                            if (!et.isAbstract()) return et;
+                        }
+                    };
+                }
+            };
         }
         // for tag in v.getList("key")  — []JsonValue call → json_value elements
         if (iter.* == .call) {
@@ -3052,6 +3096,18 @@ const TypeChecker = struct {
                 }
             },
             .member => |mem| {
+                // §28a: HashMap(K,V).get(key) → V?  Models the optional return
+                // so `if m.get(k) as v` narrows v to V (the TC has no HashMap
+                // Type otherwise, so this dispatch was guessing).
+                if (std.mem.eql(u8, mem.member, "get")) {
+                    if (tc.hashMapValueType(mem.object)) |vt| {
+                        _ = try tc.inferExpr(mem.object);
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        const boxed = tc.map_alloc.create(Type) catch return .unknown;
+                        boxed.* = vt;
+                        return Type{ .optional = boxed };
+                    }
+                }
                 // File.* static methods: special-case the File builtin.
                 if (mem.object.* == .ident and std.mem.eql(u8, mem.object.ident.name, "File")) {
                     _ = try tc.inferExpr(mem.object);
