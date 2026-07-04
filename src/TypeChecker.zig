@@ -2666,6 +2666,23 @@ const TypeChecker = struct {
             const rm = iter.call.callee.member.member;
             if (std.mem.eql(u8, rm, "to")) return .int;
         }
+        // §28a: for-in over a list/array literal — the element type is the
+        // literal's annotation, else the first element whose inference
+        // succeeded (the for_in pre-pass already inferred every element, so
+        // their types are memoized in expr_types).  Same §28a inference gap
+        // as the range arm: without it the loop var reads .unknown.
+        if (iter.* == .list_lit) {
+            if (iter.list_lit.elem_type) |*et| {
+                const t = tc.typeFromRef(et);
+                if (!t.isAbstract()) return t;
+            }
+            for (iter.list_lit.elems) |el|
+                if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+        }
+        if (iter.* == .array_lit) {
+            for (iter.array_lit.elems) |el|
+                if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+        }
         // for tag in v.getList("key")  — []JsonValue call → json_value elements
         if (iter.* == .call) {
             if (iter.call.callee.* == .member) {

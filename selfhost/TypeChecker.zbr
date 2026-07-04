@@ -2097,8 +2097,16 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             else if fi.vars.len == 1 and isRangeIterExpr(fi.iter)
                 loop_var_t = Type_.int_
             else if fi.vars.len == 1
+                # §28a: for-in over a list literal `[a, b, ...]` — element type
+                # is the annotation if present, else the first element's type.
+                # Mirrors inferForInElemType's list_lit arm in the bootstrap.
+                if fi.iter is Expr.list_lit as lit_iter
+                    if lit_iter.elem_type != nil
+                        loop_var_t = typeFromRef(lit_iter.elem_type!)
+                    else if lit_iter.elems.len > 0
+                        loop_var_t = inferExpr(lit_iter.elems.at(0), ctx)
                 # `for x in obj.field` where field: List(str) on a same-file/dep struct.
-                if fi.iter is Expr.member as iter_mem
+                else if fi.iter is Expr.member as iter_mem
                     if iter_mem.object is Expr.ident as iter_obj
                         if ctx.hasLocal(iter_obj.name)
                             var obj_t: Type_ = ctx.localType(iter_obj.name)

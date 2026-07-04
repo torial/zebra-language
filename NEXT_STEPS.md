@@ -693,11 +693,21 @@ point). This is the systemic fix for the F7/BUG-162/BUG-168 bug class.
    the hard error is a rare backstop for future un-inferable code, not a common
    path. Flipping guesses to errors today would reject 10 correct programs.**
 2. ⏳ IN PROGRESS — close the inference gaps so the guess sites become proven.
-   ✅ range-for element typing (dotdot `a..b` + method `n.to(m)` → int) in
-   `inferForInElemType` (bootstrap) + `isRangeIterExpr` arm (selfhost) — clears
-   5 of 10; emit byte-identical (typing the loop var doesn't change output).
-   Remaining gap classes (list-literal element, fn-return element, except-field,
-   module-global, as-binding) to close next; re-run the probe after each.
+   Each closure verified emit byte-identical (typing a loop var changes no
+   output) + full gate (smoke/round-trip) + re-sweep.
+   ✅ range-for element typing (dotdot `a..b` + method `n.to(m)` → int) via
+   `inferForInElemType` / selfhost `isRangeIterExpr` — cleared 5 (10→5).
+   ✅ list/array-literal element typing (`for x in [a,b,…]`) via the `list_lit`/
+   `array_lit` arms in `inferForInElemType` + the selfhost for_in handler —
+   cleared 1 (5→4).
+   Remaining 4 guesses / 3 gap classes, each central-inference (not a cheap
+   for-in-iter arm) and fixing one emit-correct site:
+     • fn-return element — `for a in makeNums()?` (parse `fn_return_types`
+       "List(int)" string + unwrap `?`).
+     • `this except` field-ref — `v = v + 0` in an except block (bind bare
+       field names to their field types, like a `with` scope).
+     • module-global var + `if..as` binding — `total = total + 7` and
+       `sum = sum + a` where `a` is `if counts.get("a") as a`.
 3. ⏳ PENDING (needs Sean's steer — semantic/irreversible) — add the Phase-B
    backstop: once corpus guesses are 0, convert the residual guess arms to a
    Zebra-level "cannot infer type of X; annotate" diagnostic in BOTH compilers
