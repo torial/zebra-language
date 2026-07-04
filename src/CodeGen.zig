@@ -9917,7 +9917,19 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "sort")) {
-            // list.sort() — natural ascending sort (numeric: a < b, strings: lexicographic)
+            // §28f: sort takes an OPTIONAL comparator. sort(def(a,b)=…) sorts by
+            // the custom predicate (same as sortBy); sort() with no arg is the
+            // natural ascending sort (numeric a < b, strings lexicographic).
+            if (args.len > 0) {
+                try g.w.writeAll("_zebra_sort_by(@TypeOf(");
+                try g.genExpr(obj);
+                try g.w.writeAll(".items[0]), ");
+                try g.genExpr(args[0].value);
+                try g.w.writeAll(", ");
+                try g.genExpr(obj);
+                try g.w.writeAll(".items)");
+                return true;
+            }
             try g.w.writeAll("_zebra_sort_natural(@TypeOf(");
             try g.genExpr(obj);
             try g.w.writeAll(".items[0]), ");

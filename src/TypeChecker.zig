@@ -3037,10 +3037,11 @@ const TypeChecker = struct {
                 const m = hm.member;
                 const one_param = std.mem.eql(u8, m, "map") or std.mem.eql(u8, m, "filter") or
                     std.mem.eql(u8, m, "any") or std.mem.eql(u8, m, "all") or std.mem.eql(u8, m, "find");
-                if ((one_param or std.mem.eql(u8, m, "sortBy")) and
+                if ((one_param or std.mem.eql(u8, m, "sortBy") or std.mem.eql(u8, m, "sort")) and
                     e.args.len >= 1 and e.args[0].value.* == .lambda)
                 {
-                    // map/filter/any/all/find: 1 param = elem.  sortBy: 2 params = elem, elem.
+                    // map/filter/any/all/find: 1 param = elem.  sortBy / sort(cmp):
+                    // 2 params (a, b), both elem.  (Bare sort() has no lambda arg.)
                     for (e.args[0].value.lambda.params) |*p|
                         try tc.seedLambdaParam(p.name, elem_t, &seeded);
                 } else if (std.mem.eql(u8, m, "reduce") and

@@ -657,6 +657,10 @@ var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; resu
 # methods on it, annotate the binding (`var doubled: List(int) = …`) — the
 # element type of a map/filter result isn't inferred through the binding yet.
 
+# Sorting — in place. sort() takes an OPTIONAL comparator:
+items.sort()                         # natural ascending (numeric / lexicographic)
+items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
+
 # HashMap
 var m = HashMap(str, int)()
 m.set("a", 1)

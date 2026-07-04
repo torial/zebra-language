@@ -857,10 +857,15 @@ QUICKSTART.
   `HashMap(str,int).values()` mis-typed as str → `_str_concat` on `sum + v`;
   removed keys/values from that heuristic. Fixture `test/hashmap_kv_test.zbr`.
   Gates: smoke 202/202, round-trip byte-identical, inference-guess 0/390.
+- ✅ DONE (2026-07-04) — **`sort` optional comparator**. `sort(def(a,b)=…)`
+  now routes to `_zebra_sort_by` (custom comparator, same as `sortBy`); bare
+  `sort()` stays the natural ascending sort. Both compilers; the comparator
+  lambda's `a`/`b` params are seeded with the element type (like sortBy).
+  Fixture `test/list_sort_comparator_test.zbr`.
 - ⏳ TODO — `HashMap.entries()` (needs `List((K,V))` tuples; the selfhost has
   a pre-existing BROKEN entries arm that emits the map itself — unused, no
-  test — fix or remove when tuples are wired). `sort` optional comparator
-  refinement. Generic `Set(T)`. Fuzz surface for lambda-taking list methods
+  test — fix or remove when tuples are wired). Generic `Set(T)`.
+  Fuzz surface for lambda-taking list methods
   (none are fuzzed today — any/all/find/sortBy/map/filter/reduce would come as
   one lambda-generation capability) is a broader follow-up.
 

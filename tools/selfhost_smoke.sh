@@ -749,6 +749,8 @@ smoke_run test/fuzz_f11_unused_capture_ternary_test.zbr "fuzz_f11: OK"
 smoke_run test/list_functional_test.zbr "list_functional: OK"
 # §28f: HashMap.keys()/values() → List(K)/List(V), annotated + direct iteration.
 smoke_run test/hashmap_kv_test.zbr "hashmap_kv: OK"
+# §28f: List.sort with an optional comparator — sort() natural, sort(cmp) custom.
+smoke_run test/list_sort_comparator_test.zbr "list_sort: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"

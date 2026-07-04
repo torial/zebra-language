@@ -9724,11 +9724,22 @@ struct Generator
                         w.emit(".clearRetainingCapacity()")
                         return
                     if mname == "sort"
-                        w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
-                        genExpr(m.object)
-                        w.emit(".items)), ")
-                        genExpr(m.object)
-                        w.emit(".items)")
+                        # §28f: sort(def(a,b)=…) uses a custom comparator (like
+                        # sortBy); bare sort() is the natural ascending sort.
+                        if args.len > 0
+                            w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(".items)")
+                        else
+                            w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(m.object)
+                            w.emit(".items)")
                         return
                     if mname == "sortBy"
                         if args.len > 0
@@ -10458,11 +10469,21 @@ struct Generator
                 w.emit(".clearRetainingCapacity()")
                 return
         if mname == "sort"
-            w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
-            genExpr(m.object)
-            w.emit(".items)), ")
-            genExpr(m.object)
-            w.emit(".items)")
+            # §28f: sort(def(a,b)=…) → custom comparator; bare sort() → natural.
+            if args.len > 0
+                w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(".items)")
+            else
+                w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(m.object)
+                w.emit(".items)")
             return
         if mname == "sortBy"
             if args.len > 0
