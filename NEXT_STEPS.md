@@ -910,8 +910,11 @@ QUICKSTART.
   grammar.txt; selfhost `Token.zbr`. `yield` is now a free identifier. Gates:
   smoke 200/200, round-trip byte-identical, fuzz 40/40 ok.
 - **Promote optional-FIELD `as`-unwrap** (`if rec.field as x`) to pre-1.0 —
-  its `!= nil` + `to!` workaround teaches an idiom we'll want to unteach
-  (and `to!` is going away anyway).
+  ✅ ALREADY WORKS in both compilers (verified 2026-07-04): `if r.n as x`
+  narrows `x` to the field's inner type (typed for arithmetic, 0 inference
+  guesses), the `else` handles nil, and str/int fields both work. Exercised by
+  `test/ctor_arg_ref_test.zbr` and `test/crossmod_hatopt_test.zbr` in smoke.
+  The `!= nil` + `to!` workaround is no longer necessary (and `to!` is gone).
 
 **h. `ObjectPool(T)` stdlib type.** Explicit pooling in library-space:
 `var pool = ObjectPool(Bullet)(1024)`; `pool.take()` / `pool.give(b)`,
