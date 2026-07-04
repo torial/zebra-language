@@ -275,6 +275,24 @@ fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T 
     for (list.items) |item| { if (pred(item)) return item; }
     return null;
 }
+fn _zebra_list_map(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(@TypeOf(pred(@as(T, undefined)))) {
+    var out: std.ArrayList(@TypeOf(pred(@as(T, undefined)))) = .empty;
+    for (list.items) |item| out.append(_allocator, pred(item)) catch @panic("OOM");
+    return out;
+}
+fn _zebra_list_filter(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(T) {
+    var out: std.ArrayList(T) = .empty;
+    for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
+    return out;
+}
+fn _zebra_list_reduce(comptime T: type, init: anytype, f: anytype, list: std.ArrayList(T)) @TypeOf(f(init, @as(T, undefined))) {
+    // Accumulator type = the fold function's result type (concrete, since it
+    // combines with the runtime element T), so a `comptime_int` init like `0`
+    // coerces to it instead of leaving the return type comptime-only.
+    var acc: @TypeOf(f(init, @as(T, undefined))) = init;
+    for (list.items) |item| acc = f(acc, item);
+    return acc;
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     var child = std.process.spawn(_io, .{

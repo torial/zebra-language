@@ -828,6 +828,26 @@ len/items) generalized to any hashable T (StrSet stays as the str-specialized
 fossil or becomes `Set(str)` — decide during impl). Both compilers +
 QUICKSTART.
 
+**Progress:**
+- ✅ DONE (2026-07-03) — **`List.map/filter/reduce`** in both compilers.
+  Preamble helpers `_zebra_list_map/filter/reduce` (map/filter allocate a new
+  list via `_allocator`; reduce's accumulator type is the fold fn's result type
+  so a `comptime_int` init like `0` coerces cleanly). Codegen in both
+  `genListMethod`s; TC types `reduce` as the init's type (map/filter stay
+  `.unknown` — the bootstrap TC can't parameterize a List result, so annotate
+  the binding to use it typed). **Bonus fix:** higher-order lambda params are
+  now typed from the receiver's element type (`listElemTypeOfReceiver` +
+  `seedLambdaParam` via `narrowed_types`), so arithmetic bodies (`x * 2`)
+  type-check without `def(x: int)` — this fixes any/all/find/sortBy too, which
+  previously only worked with comparison bodies. Selfhost mutation allow-list
+  (`CgHelpers.zbr`) gained map/filter/reduce so results emit `const` not `var`.
+  Fixture `test/list_functional_test.zbr` (smoke_run). Gates: smoke 201/201,
+  round-trip byte-identical, inference-guess 0/389.
+- ⏳ TODO — `HashMap.keys()/values()/entries()`; `sort` optional comparator
+  refinement; generic `Set(T)`. Fuzz surface for lambda-taking list methods
+  (none are fuzzed today — any/all/find/sortBy/map/filter/reduce would come as
+  one lambda-generation capability) is a broader follow-up.
+
 **g. [✅ DECIDED — Sean 2026-07-03] Grammar cleanups while the door is open:**
 - **Retire the `to!` alias** — `x!` won as force-unwrap; `to!` is a redundant
   second spelling. Remove `to!` from lexer/parser + sweep any corpus uses to

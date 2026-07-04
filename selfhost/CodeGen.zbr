@@ -9772,6 +9772,38 @@ struct Generator
                             genExpr(m.object)
                             w.emit(")")
                         return
+                    if mname == "map"
+                        if args.len > 0
+                            w.emit("_zebra_list_map(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
+                    if mname == "filter"
+                        if args.len > 0
+                            w.emit("_zebra_list_filter(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
+                    if mname == "reduce"
+                        if args.len > 1
+                            w.emit("_zebra_list_reduce(std.meta.Child(@TypeOf(")
+                            genExpr(m.object)
+                            w.emit(".items)), ")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genExpr(args.at(1).value)
+                            w.emit(", ")
+                            genExpr(m.object)
+                            w.emit(")")
+                        return
                     if mname == "join"
                         w.emit("(std.mem.join(_allocator, ")
                         if args.len > 0
@@ -10470,6 +10502,38 @@ struct Generator
                 genExpr(m.object)
                 w.emit(".items)), ")
                 genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
+        if mname == "map"
+            if args.len > 0
+                w.emit("_zebra_list_map(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
+        if mname == "filter"
+            if args.len > 0
+                w.emit("_zebra_list_filter(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(m.object)
+                w.emit(")")
+            return
+        if mname == "reduce"
+            if args.len > 1
+                w.emit("_zebra_list_reduce(std.meta.Child(@TypeOf(")
+                genExpr(m.object)
+                w.emit(".items)), ")
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(args.at(1).value)
                 w.emit(", ")
                 genExpr(m.object)
                 w.emit(")")

@@ -2673,6 +2673,47 @@ const TypeChecker = struct {
         return vt;
     }
 
+    /// §28f: element type T of a `List(T)`-declared receiver, or null.  Reads the
+    /// declared TypeRef directly (the bootstrap TC has no List Type).  Used to
+    /// seed higher-order lambda params (map/filter/reduce/any/all/find/sortBy)
+    /// so the lambda body checks against T instead of an untyped `void` param.
+    fn listElemTypeOfReceiver(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        if (obj.* != .ident) return null;
+        const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        // (a) explicit annotation: `var xs: List(T)` / a `List(T)` param.
+        const dt: ?Ast.TypeRef = switch (sym.decl) {
+            .var_  => |dv| dv.type_,
+            .param => |p|  p.type_,
+            else   => null,
+        };
+        if (dt) |t| {
+            if (t == .generic and std.mem.eql(u8, t.generic.name, "List") and t.generic.args.len >= 1) {
+                const et = tc.typeFromRef(&t.generic.args[0]);
+                if (!et.isAbstract()) return et;
+            }
+        }
+        // (b) inferred from the initializer: `var xs = List(T)()` — the generic
+        // construction call carries the type arg even with no annotation.
+        if (sym.decl == .var_) if (sym.decl.var_.init) |init| {
+            if (init.* == .call and init.call.type_args.len >= 1 and init.call.callee.* == .ident and
+                std.mem.eql(u8, init.call.callee.ident.name, "List"))
+            {
+                const et = tc.typeFromRef(&init.call.type_args[0]);
+                if (!et.isAbstract()) return et;
+            }
+        };
+        return null;
+    }
+
+    /// §28f: bind a higher-order lambda param name to `t` in narrowed_types for
+    /// the duration of arg inference, recording it for later removal.  Skips a
+    /// name that is already narrowed so a real narrowing is never clobbered.
+    fn seedLambdaParam(tc: TypeChecker, name: []const u8, t: Type, seeded: *std.ArrayList([]const u8)) !void {
+        if (tc.narrowed_types.contains(name)) return;
+        try tc.narrowed_types.put(name, t);
+        try seeded.append(tc.map_alloc, name);
+    }
+
     fn inferForInElemType(tc: TypeChecker, iter: *const Ast.Expr) Type {
         // §28a: numeric range iterators yield int elements, matching for_num
         // (whose loop var is always int).  The colon forms `a : b [: step]`
@@ -2953,6 +2994,41 @@ const TypeChecker = struct {
             if (obj_t != .sqlite_db) break :blk null;
             break :blk 1;
         };
+        // §28f: seed higher-order lambda param types from the receiver's List
+        // element type BEFORE inferring the args, so the lambda body checks
+        // against the element type (an untyped param defaults to `void`, which
+        // breaks arithmetic bodies like map's `x * 2`).  Bindings via
+        // narrowed_types (which inferIdent consults first) are removed after.
+        var seeded: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (seeded.items) |nm| _ = tc.narrowed_types.remove(nm);
+            seeded.deinit(tc.map_alloc);
+        }
+        if (e.callee.* == .member) {
+            const hm = e.callee.member;
+            if (tc.listElemTypeOfReceiver(hm.object)) |elem_t| {
+                const m = hm.member;
+                const one_param = std.mem.eql(u8, m, "map") or std.mem.eql(u8, m, "filter") or
+                    std.mem.eql(u8, m, "any") or std.mem.eql(u8, m, "all") or std.mem.eql(u8, m, "find");
+                if ((one_param or std.mem.eql(u8, m, "sortBy")) and
+                    e.args.len >= 1 and e.args[0].value.* == .lambda)
+                {
+                    // map/filter/any/all/find: 1 param = elem.  sortBy: 2 params = elem, elem.
+                    for (e.args[0].value.lambda.params) |*p|
+                        try tc.seedLambdaParam(p.name, elem_t, &seeded);
+                } else if (std.mem.eql(u8, m, "reduce") and
+                    e.args.len >= 2 and e.args[1].value.* == .lambda)
+                {
+                    // reduce(init, def(acc, x)): acc = init's type, x = elem.
+                    const params = e.args[1].value.lambda.params;
+                    if (params.len >= 1) {
+                        const init_t = try tc.inferExpr(e.args[0].value);
+                        if (!init_t.isAbstract()) try tc.seedLambdaParam(params[0].name, init_t, &seeded);
+                    }
+                    if (params.len >= 2) try tc.seedLambdaParam(params[1].name, elem_t, &seeded);
+                }
+            }
+        }
         for (e.args, 0..) |arg, i| {
             if (sqlite_params_idx) |pi| {
                 if (i == pi and arg.value.* == .list_lit) {
@@ -3716,6 +3792,11 @@ const TypeChecker = struct {
                         return tc.typeFromRef(&dtr.generic.args[1]);
                     }
                 }
+                // §28f: List.reduce(init, fn) → type of `init` (map/filter return
+                // a new List, which the bootstrap TC can't parameterize — those
+                // stay .unknown; annotate the binding to use the result typed).
+                if (std.mem.eql(u8, mem.member, "reduce") and e.args.len >= 1)
+                    return try tc.inferExpr(e.args[0].value);
                 return tc.inferStdlibMethodType(obj_type, mem.member);
             },
             else => {},

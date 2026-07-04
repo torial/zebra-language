@@ -648,6 +648,15 @@ var has = items.any(def(x) = x > 2)  # true if any element matches predicate
 var ok  = items.all(def(x) = x > 0)  # true if every element matches predicate
 var f   = items.find(def(x) = x > 2) # first match or nil (returns T?)
 
+# Functional trio — the lambda param is typed as the element type, so
+# arithmetic bodies (x * 2) type-check without an explicit `def(x: int)`.
+var doubled: List(int) = items.map(def(x) = x * 2)      # new List, each element transformed
+var evens: List(int)   = items.filter(def(x) = x % 2 == 0)  # new List, matching elements only
+var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; result type = init's type
+# Note: map/filter return a NEW List. When you bind the result and then call
+# methods on it, annotate the binding (`var doubled: List(int) = …`) — the
+# element type of a map/filter result isn't inferred through the binding yet.
+
 # HashMap
 var m = HashMap(str, int)()
 m.set("a", 1)

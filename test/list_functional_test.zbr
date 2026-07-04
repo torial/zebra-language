@@ -1,0 +1,33 @@
+# §28f functional trio: List.map / filter / reduce.
+# Verifies element values, not just that it compiles. Prints
+# "list_functional: OK" iff every result is correct (checked by smoke_run).
+
+def main()
+    var nums: List(int) = List()
+    nums.add(1)
+    nums.add(2)
+    nums.add(3)
+    nums.add(4)
+
+    # reduce: fold to a scalar (result type = init's type).
+    var sum = nums.reduce(0, def(acc, x) = acc + x)          # 10
+
+    # map: new List(int) with each element doubled.
+    var doubled: List(int) = nums.map(def(x) = x * 2)         # [2,4,6,8]
+    var dsum = doubled.reduce(0, def(acc, x) = acc + x)       # 20
+
+    # filter: new List(int) keeping even elements.
+    var evens: List(int) = nums.filter(def(x) = (x % 2) == 0) # [2,4]
+    var esum = evens.reduce(0, def(acc, x) = acc + x)         # 6
+    var ecount = evens.count()                                # 2
+
+    # chained: map then filter then reduce.
+    var chained = nums.map(def(x) = x + 10)                   # [11,12,13,14]
+    var chained_list: List(int) = chained
+    var big: List(int) = chained_list.filter(def(x) = x > 12) # [13,14]
+    var bigsum = big.reduce(0, def(acc, x) = acc + x)         # 27
+
+    if sum == 10 and dsum == 20 and esum == 6 and ecount == 2 and bigsum == 27
+        print("list_functional: OK")
+    else
+        print("list_functional: FAIL sum=${sum} dsum=${dsum} esum=${esum} ecount=${ecount} bigsum=${bigsum}")

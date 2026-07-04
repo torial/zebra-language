@@ -9982,6 +9982,44 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        // §28f functional trio. map/filter return a NEW List (allocated via the
+        // preamble helper's `_allocator`); reduce folds to a scalar.
+        if (std.mem.eql(u8, method, "map")) {
+            if (args.len == 0) return false;
+            try g.w.writeAll("_zebra_list_map(std.meta.Child(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items)), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "filter")) {
+            if (args.len == 0) return false;
+            try g.w.writeAll("_zebra_list_filter(std.meta.Child(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items)), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "reduce")) {
+            // list.reduce(init, def(acc, x) = …) → fold; result type is init's type.
+            if (args.len < 2) return false;
+            try g.w.writeAll("_zebra_list_reduce(std.meta.Child(@TypeOf(");
+            try g.genExpr(obj);
+            try g.w.writeAll(".items)), ");
+            try g.genExpr(args[0].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(args[1].value);
+            try g.w.writeAll(", ");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
         return false;
     }
 

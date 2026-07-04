@@ -1235,8 +1235,11 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "format"
         return true
-    # List predicates + extra string queries / codecs (read-only; receiver stays const)
+    # List predicates + functional trio (§28f) + extra string queries / codecs
+    # (read-only; the receiver stays const — map/filter build a NEW list, reduce folds).
     if name == "any" or name == "all"
+        return true
+    if name == "map" or name == "filter" or name == "reduce"
         return true
     if name == "lastIndexOf" or name == "indexOfFrom"
         return true
