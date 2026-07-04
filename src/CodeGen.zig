@@ -79,6 +79,16 @@ const module_var_prefix = "_zbr_mv_";
 /// error (§28b step 5).
 pub var warn_implicit_try: bool = false;
 
+/// §28a step 1 (inference-or-error migration): when set (--warn-inference-guess),
+/// every type-dispatched emitter that falls through to a GUESS because the
+/// TypeChecker could not supply the operand/receiver type prints a
+/// machine-parsable line to stderr:
+///   INFER_GUESS: <site>: <file>:<line>:<col>:<end_line>:<end_col>
+/// `<site>` names the emitter (`add`, ...) so the measure phase can bucket by
+/// guess kind. No behavior change when unset — this is the measurement pass
+/// before the guesses become Zebra-level "cannot infer; annotate" diagnostics.
+pub var warn_inference_guess: bool = false;
+
 // ── Compile-time hash (FNV-1a 32-bit) ────────────────────────────────────────
 // Used internally by CodeGen to compute class-name hash components for
 // `_ttag_ClassName` constants.  The algorithm must stay bitwise-identical to
@@ -6256,6 +6266,15 @@ const Generator = struct {
             .{ g.source_file, span.line, span.col, span.end_line, span.end_col });
     }
 
+    /// §28a step 1: report a type-dispatch site that is guessing because the
+    /// TypeChecker did not supply the operand/receiver type (see
+    /// warn_inference_guess).  `site` names the emitter for bucketing.
+    fn noteInferenceGuess(g: Generator, site: []const u8, span: Ast.Span) void {
+        if (!warn_inference_guess) return;
+        std.debug.print("INFER_GUESS: {s}: {s}:{d}:{d}:{d}:{d}\n",
+            .{ site, g.source_file, span.line, span.col, span.end_line, span.end_col });
+    }
+
     fn emitName(g: Generator, name: []const u8) anyerror!void {
         if (isZigPrimitiveName(name)) {
             try g.w.print("@\"{s}\"", .{name});
@@ -7175,6 +7194,10 @@ const Generator = struct {
                     .{ "join", {} },
                 });
                 if (list_methods.get(method) != null) {
+                    // §28a: routing to List codegen purely because the method NAME
+                    // is List-shaped, with no receiver type — the Mode-2 guess.
+                    if (warn_inference_guess)
+                        if (exprSpan(object)) |sp| g.noteInferenceGuess("list_dispatch", sp);
                     return g.genListMethod(object, false, null, method, args);
                 }
             },
@@ -7233,6 +7256,11 @@ const Generator = struct {
             else => {
                 // Unknown type — treat len/count as ArrayList .items.len fallback.
                 if (std.mem.eql(u8, prop, "len") or std.mem.eql(u8, prop, "count")) {
+                    // §28a: `.items.len` is only correct for a List/ArrayList; on
+                    // a slice or string the right form is `.len`.  With no receiver
+                    // type this is a guess — note it for the measure phase.
+                    if (warn_inference_guess)
+                        if (exprSpan(object)) |sp| g.noteInferenceGuess("len_count", sp);
                     try g.genExpr(object);
                     try g.w.writeAll(".items.len");
                     return true;
@@ -15505,6 +15533,16 @@ const Generator = struct {
                     try g.genExpr(e.right);
                     try g.w.writeAll(", _allocator)");
                 } else {
+                    // §28a: numeric `+` is only PROVEN correct when both operands
+                    // are known-numeric.  Otherwise we are guessing numeric over
+                    // string-concat — the exact defect behind BUG-168/F7.  Note
+                    // it for the measure phase (no behavior change yet).
+                    if (warn_inference_guess) {
+                        const lt = if (g.tc) |tc| tc.expr_types.get(e.left) orelse .unknown else .unknown;
+                        const rt = if (g.tc) |tc| tc.expr_types.get(e.right) orelse .unknown else .unknown;
+                        if (!(lt.isNumeric() and rt.isNumeric()))
+                            g.noteInferenceGuess("add", e.span);
+                    }
                     try g.w.writeAll("(");
                     try g.genExpr(e.left);
                     try g.w.writeAll(" + ");

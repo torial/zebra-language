@@ -675,6 +675,35 @@ container heuristics) and replace guess-on-unknown with a diagnostic; a few
 currently-lucky programs will need an annotation (acceptable — that's the
 point). This is the systemic fix for the F7/BUG-162/BUG-168 bug class.
 
+**Execution plan (measure-first, mirroring §28b):**
+1. ✅ DONE (2026-07-03) — `--warn-inference-guess` prints machine-parsable
+   `INFER_GUESS: <site>: file:line:col:end_line:end_col` at the three guess
+   sites: `add` (numeric-`+` emitted without proving both operands numeric),
+   `len_count` (unknown receiver → `.items.len` ArrayList fallback),
+   `list_dispatch` (unknown receiver + List-shaped method name → assume List).
+   No behavior change when unset. **Empirical finding (388-file sweep):** only
+   **10** guesses, **all `add`**, **zero** `len_count`/`list_dispatch`. Every
+   one is TC *under-inference*, not genuine ambiguity — the emitted `+` is
+   already correct; inference just didn't reach the operand. **Zero genuinely-
+   ambiguous sites in the whole corpus.** The 10 span 6 small gap classes:
+   dotdot/`.to()` range-for element (5), list-literal `[1,2,3]` element (1),
+   function-return List element (`for a in makeNums()?`, 1), `this except`
+   field-ref operand (1), module-global var (1), `if..as` narrowing binding (1).
+   **Consequence: §28a is chiefly "close inference gaps so dispatch is *proven*";
+   the hard error is a rare backstop for future un-inferable code, not a common
+   path. Flipping guesses to errors today would reject 10 correct programs.**
+2. ⏳ IN PROGRESS — close the inference gaps so the guess sites become proven.
+   ✅ range-for element typing (dotdot `a..b` + method `n.to(m)` → int) in
+   `inferForInElemType` (bootstrap) + `isRangeIterExpr` arm (selfhost) — clears
+   5 of 10; emit byte-identical (typing the loop var doesn't change output).
+   Remaining gap classes (list-literal element, fn-return element, except-field,
+   module-global, as-binding) to close next; re-run the probe after each.
+3. ⏳ PENDING (needs Sean's steer — semantic/irreversible) — add the Phase-B
+   backstop: once corpus guesses are 0, convert the residual guess arms to a
+   Zebra-level "cannot infer type of X; annotate" diagnostic in BOTH compilers
+   (selfhost must make the same in/error decision or round-trip diverges), and
+   add a gate (like `check_explicit_try.sh`) that fails on any new guess site.
+
 **b. [APPROVED; steps 1–3 ✅ DONE 2026-07-02] Unify error propagation on always-explicit `?`.** Same-file
 throws-to-throws auto-propagates; cross-module needs explicit `expr?` — an
 invisible rule keyed to file boundaries, so moving a function between files

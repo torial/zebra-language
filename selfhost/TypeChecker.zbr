@@ -1965,6 +1965,21 @@ def isCharsCallExpr(e: Expr): bool
                 return true
     return false
 
+# §28a: numeric range iterators (`a..b` dotdot form, `n.to(m)` method form)
+# yield int elements, matching for_num whose loop var is always int. Without
+# this the loop var reads as unknown_ and body arithmetic falls through to the
+# guessed-numeric `+` emit — an inference gap, not a genuine ambiguity. Mirrors
+# inferForInElemType's range arm in the bootstrap TypeChecker.
+def isRangeIterExpr(e: Expr): bool
+    if e is Expr.binary as b
+        if b.op == BinaryOp.dotdot
+            return true
+    if e is Expr.call as cal
+        if cal.callee is Expr.member as mem
+            if mem.member == "to"
+                return true
+    return false
+
 # Detects iterators whose elements are known to be strings:
 # .split()/.lines() return string slices; .keys()/.items()/.values() on str containers;
 # .groups()/.findAll() on Regex return string slices.
@@ -2079,6 +2094,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 loop_var_t = Type_.string_
             else if fi.vars.len == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
                 loop_var_t = Type_.sqlite_row
+            else if fi.vars.len == 1 and isRangeIterExpr(fi.iter)
+                loop_var_t = Type_.int_
             else if fi.vars.len == 1
                 # `for x in obj.field` where field: List(str) on a same-file/dep struct.
                 if fi.iter is Expr.member as iter_mem

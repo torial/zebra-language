@@ -2654,6 +2654,18 @@ const TypeChecker = struct {
     }
 
     fn inferForInElemType(tc: TypeChecker, iter: *const Ast.Expr) Type {
+        // §28a: numeric range iterators yield int elements, matching for_num
+        // (whose loop var is always int).  The colon forms `a : b [: step]`
+        // lower to for_num and are typed there; the dotdot form `a..b` and the
+        // method form `n.to(m)` stay for_in with a range iter, so type them
+        // here.  Without this the loop var reads as .unknown and downstream
+        // arithmetic falls through to the guessed-numeric `+` emit (a §28a
+        // inference gap, not a genuine ambiguity — the emit is already correct).
+        if (iter.* == .binary and iter.binary.op == .dotdot) return .int;
+        if (iter.* == .call and iter.call.callee.* == .member) {
+            const rm = iter.call.callee.member.member;
+            if (std.mem.eql(u8, rm, "to")) return .int;
+        }
         // for tag in v.getList("key")  — []JsonValue call → json_value elements
         if (iter.* == .call) {
             if (iter.call.callee.* == .member) {

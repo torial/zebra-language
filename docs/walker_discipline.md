@@ -62,6 +62,17 @@ dispatch site may guess; unresolvable inference is a Zebra-level
 diagnostic) remains the deep fix; until it lands, treat any `else`/fallback
 arm in a type-dispatched emitter as a bug report waiting to happen.
 
+**MEASURED 2026-07-03 (`--warn-inference-guess`).** Instrumenting the three
+guess sites (`add`, `len_count`, `list_dispatch`) and sweeping all 388 corpus
+files found only **10** guesses, **all `add`**, and — crucially — **every one
+is TC under-inference, not genuine type ambiguity** (the emitted `+` is already
+correct; inference just didn't reach the operand). So §28a in practice is
+"close the inference gaps until dispatch is *proven*," with the hard error as a
+backstop for future un-inferable code rather than a common path. First gap
+closed: range-for element typing (`a..b` / `n.to(m)` → int), which the colon
+range form already got via `for_num`. See NEXT_STEPS §28a for the execution
+plan and the remaining gap classes.
+
 BUG-168's validation is the model: after fixing the TC, regenerating the
 selfhost changed exactly one emitted line — an annotation became *more*
 precise. Inference fixes should make emission strictly better, never
