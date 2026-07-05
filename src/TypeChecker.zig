@@ -2728,6 +2728,22 @@ const TypeChecker = struct {
                 const et = tc.typeFromRef(&init.call.type_args[0]);
                 if (!et.isAbstract()) return et;
             }
+            // (c) inferred from a list-literal initializer: `var xs = [1,2,3]`.
+            // The elements were inferred when the var decl was checked, so read
+            // the first typed element (or the literal's annotation).  Fixes the
+            // §10 example `[1,2,3].map(def(x)=x*2)` — audit B2, 2026-07-05.
+            if (init.* == .list_lit) {
+                if (init.list_lit.elem_type) |*et| {
+                    const t = tc.typeFromRef(et);
+                    if (!t.isAbstract()) return t;
+                }
+                for (init.list_lit.elems) |el|
+                    if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+            }
+            if (init.* == .array_lit) {
+                for (init.array_lit.elems) |el|
+                    if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
+            }
         };
         return null;
     }

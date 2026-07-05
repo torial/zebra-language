@@ -1,0 +1,16 @@
+# Audit B2 (2026-07-05): map/filter/reduce on a list-LITERAL-initialized var.
+# `var xs = [1,2,3]` — the element type now flows into the lambda param, so an
+# untyped `def(x) = x*2` body type-checks (previously failed only on the
+# bootstrap TC). Prints "list_literal_map: OK" iff results are correct.
+
+def main()
+    var xs = [1, 2, 3, 4]
+    var doubled: List(int) = xs.map(def(x) = x * 2)          # [2,4,6,8]
+    var dsum = doubled.reduce(0, def(acc, x) = acc + x)      # 20
+    var evens: List(int) = xs.filter(def(x) = x % 2 == 0)    # [2,4]
+    var ecount = evens.count()                                # 2
+
+    if dsum == 20 and ecount == 2
+        print("list_literal_map: OK")
+    else
+        print("list_literal_map: FAIL dsum=${dsum} ecount=${ecount}")

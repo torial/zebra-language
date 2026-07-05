@@ -1312,8 +1312,8 @@ class Wallet
 ## 19. Lambda / closures
 
 ```zebra
-# Expression lambda:
-var double = (x: int) -> x * 2
+# Expression lambda (`def(params) = expr` — there is no `->` arrow form):
+var double = def(x: int) = x * 2
 
 # Statement-body lambda:
 var consume = def(x: int)
@@ -2482,7 +2482,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `File.rename(src, dst)`       | void          | Rename/move file                               |
 | `File.copy(src, dst)`         | void          | Copy file                                      |
 | `File.listDir(path)`          | `List(str)`   | List entry names in directory                  |
-| `File.modtime(path)`          | `int`         | Modification time (ms since epoch); -1 missing |
+| `File.modtime(path)`          | `int?`        | Modification time (ms since epoch); nil if missing — unwrap with `if File.modtime(p) as t` |
 
 ### `Dir` — directory operations (static)
 
@@ -2516,6 +2516,7 @@ var present  = args.contains("--dry-run")    # bool
 | `Math.pow(x, y)`                | float    |
 | `Math.abs(x)`                   | numeric  |
 | `Math.min(a, b)` / `Math.max(a, b)` | numeric |
+| `Math.gcd(a, b)` / `Math.lcm(a, b)` | int |
 | `Math.PI`, `Math.E`, `Math.TAU` | float constants |
 
 ### `Json` — JSON values

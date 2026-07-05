@@ -747,6 +747,8 @@ smoke_run test/fuzz_f9_range_test.zbr "fuzz_f9: OK"
 smoke_run test/fuzz_f11_unused_capture_ternary_test.zbr "fuzz_f11: OK"
 # §28f functional trio: List.map/filter/reduce with element-typed lambda params.
 smoke_run test/list_functional_test.zbr "list_functional: OK"
+# Audit B2: map/filter on a list-literal-initialized var (element type inferred).
+smoke_run test/list_literal_map_test.zbr "list_literal_map: OK"
 # §28f: HashMap.keys()/values() → List(K)/List(V), annotated + direct iteration.
 smoke_run test/hashmap_kv_test.zbr "hashmap_kv: OK"
 # §28f: List.sort with an optional comparator — sort() natural, sort(cmp) custom.
