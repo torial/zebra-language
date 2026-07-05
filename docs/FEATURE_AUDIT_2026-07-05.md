@@ -115,3 +115,70 @@ users will reach for. And the C-class Zig-0.16 drift (a compile-check-the-emitte
 
 **Cross-compiler:** D1/D2 are places `src/` regressed behind the selfhost —
 worth reconciling before 1.0 since `src/` is nominally the trusted reference.
+
+---
+
+## Resolution — applied 2026-07-05
+
+### Fixed (mechanical: doc / bad-practice / toolchain-drift)
+
+**Doc corrections** (each re-verified to compile):
+- A1 `has` → renamed the example variables (`found`/`present`); noted `has` is a keyword.
+- A2 expression-`if` → §13 rewritten to use the ternary `if(cond, a, b)`; the
+  colon-form is marked statement-only.
+- A4 arrow-lambda → `def(x: int) = expr`.
+- A6 union `^T` → single-payload unary `neg: ^Expr` example (multi-field payload
+  never parsed; unions are single-payload).
+- A7 Reflect Tier-1 → the example now references the instance (was an unused local).
+- A8 `re.test` → removed (unimplemented AND `test` is a keyword); doc points to
+  `re.find(s) != ""` for match-anywhere.
+- §31: `File.modtime` corrected to `int?`; `Math.gcd`/`lcm` and `sys.cwd` added
+  (worked but were undocumented).
+
+**Toolchain-drift compiler fixes (Zig 0.16, emitted runtime):**
+- C1 `sys.args()` → `_args.toSlice(_allocator)` (argsAlloc removed). Both compilers.
+- C2 `File.append` → new `_file_append` preamble helper (read+concat+write, since
+  `File.seekFromEnd` is gone). Both compilers. Also fixed a *pre-existing* selfhost
+  dispatch bug: the StringBuilder `.append` handler had no receiver guard and was
+  intercepting `File.append` → emitting `File.appendSlice`; guarded it.
+- C3 `File.rename` → Zig 0.16 sig `rename(old, cwd(), new, io)` (bootstrap; the
+  selfhost has no `File.rename` handler at all — see below).
+
+**Code fix:** B2 — `map`/`filter`/`reduce` on a list-literal-initialized var.
+
+### Left for tactical resolution (real feature / design / codegen work)
+
+**Codegen / parser gaps:**
+- A3 exhaustive union `branch` + `else` → Zig "unreachable else prong" (codegen:
+  suppress the emitted `else` when all variants are covered).
+- A5 struct-`^T` field mutation emits broken deref-assign (codegen). Note:
+  recursive *classes* work with a plain `Node?` field (no `^`), so this is about
+  value-type recursion specifically — decide fix vs. steer-to-class.
+- B1 indexed `for i, v in items` → emits `.iterator()` on an ArrayList.
+- B3 `zig"…"` referencing params → param-discards emitted before the inline Zig.
+- B4 mutating `capture` closure → closure self emitted `const`.
+- B5 interface `is Iface` runtime check → undeclared `_ttag_Iface`.
+- B6 `@once` on a class with instance fields; B7 `static var` before an instance
+  field → hidden/static decl emitted between struct fields (Zig container error).
+- B8 cross-module non-mutating struct method on a `const` binding → `self: *T`.
+- B9 `is Union.Variant as n` on an OPTIONAL union.
+- B10 backed enum `enum Status(int)` (parser — not implemented).
+- B11 `while` bind-and-guard `while x = f() != nil` (parser — not implemented).
+- B12 inline / comma `except` (only the block form parses; prose implies comma).
+- The `^ClassName is a compile error` claim (§22) is factually wrong — it compiles
+  (redundant). Decide: reject `^Class`, or document it as allowed-but-pointless.
+
+**Bootstrap-vs-selfhost divergences (D-class — `src/` is nominally authority):**
+- D1 mixin `adds` — works on `zebra.exe`, fails on bootstrap.
+- D2 generic functions `def f(T)(x:T):T` — works on `zebra.exe`, fails on bootstrap.
+- **File.read + print** — bootstrap prints the string (`abc`), selfhost prints the
+  byte array (`{ 97, 98, 99 }`). A *silent output divergence* — the selfhost types
+  `File.read`'s result differently. Pre-existing; surfaced when the File.append fix
+  let such programs compile. Worth prioritizing (silent, not a crash).
+- `File.rename` — bootstrap only; the selfhost has no handler.
+
+**Design / other:**
+- `allocate Debug()` reports every heap allocation as leaked (the arena never frees
+  individual values) — the documented leak-detection use case is unusable as-is.
+- No `String.*` static namespace exists — decide before the API freeze.
+- `${n:08x}` on a `comptime_int` literal fails (`@bitCast from comptime_int`).

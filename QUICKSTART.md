@@ -644,7 +644,7 @@ var x = items.at(0)                  # index (bounds-checked) — preferred
 var y = items[0]                     # also works (postfix index); .at() is idiomatic
 items.set(1, 42)                     # in-place element update (the inverse of .at)
 items.remove(0)                      # remove by index
-var has = items.any(def(x) = x > 2)  # true if any element matches predicate
+var found = items.any(def(x) = x > 2)  # true if any element matches predicate (NB: `has` is a keyword)
 var ok  = items.all(def(x) = x > 0)  # true if every element matches predicate
 var f   = items.find(def(x) = x > 2) # first match or nil (returns T?)
 
@@ -665,7 +665,7 @@ items.sort(def(a, b) = a > b)        # custom comparator (descending here); same
 var m = HashMap(str, int)()
 m.set("a", 1)
 var v = m.get("a")                   # returns int? (optional)
-var has = m.contains("a")            # bool
+var present = m.contains("a")        # bool
 m.remove("a")
 var ks: List(str) = m.keys()         # snapshot of keys as a new List(K)
 var vs: List(int) = m.values()       # snapshot of values as a new List(V)
@@ -830,21 +830,20 @@ def sign(n: int): String
 #   - No capture binding (`as`) in inline form — use block form for that
 #   - Control structures (while, for, branch) still require block form
 
-# Inline if as an expression — use in var init, function args, or any expression position:
-var label = if score >= 60: "pass" else: "fail"
-print(if ready: "yes" else: "no")
-var abs_n: int = if n >= 0: n else: -n
-# Only simple if/else — chained else-if is NOT supported in expression position.
-# For grades/ranges, use the statement form instead:
-#   if score >= 90: letter = "A" else if score >= 80: letter = "B" else: letter = "C"
+# `if cond: a else: b` is a STATEMENT form (assign inside each branch, above).
+# For an if that produces a VALUE in expression position (var init, call args),
+# use the ternary call-form `if(cond, then_value, else_value)`:
+var label = if(score >= 60, "pass", "fail")
+print(if(ready, "yes", "no"))
+var abs_n: int = if(n >= 0, n, 0 - n)
+# The ternary takes exactly three args; for grades/ranges, use the statement
+# form and assign into each branch (or nest `if(...)` calls).
 ```
 
-- **Expression if** requires an `else:` branch (both branches must be present for the
-  compiler to infer a type).  The two branch values must be the same type.
-- The `else:` must appear on the same line as `if`.  Block-body branches are not
-  supported in expression position — use a block-form `if` and a temporary variable.
-- `if cond: stmt` (no `else`) is a **statement** form only; when used as an expression
-  the `else:` is mandatory.
+- **Expression position uses the ternary `if(cond, a, b)`** — three arguments, both
+  value branches the same type.  (The colon-form `if c: a else: b` is a *statement*
+  only; it does not currently parse in expression position — use the ternary there.)
+- The statement colon-form supports `else if` chains; the ternary does not (nest it).
 
 ```zebra
 
@@ -1592,18 +1591,23 @@ if root.left as n
 
 ### Union with `^T` payload
 
+Union variants carry a **single** payload (`variant: T`), so recursion uses a
+single `^Union` payload — a binary node needs a struct/class payload holding
+both children rather than two variant fields.
+
 ```zebra
 union Expr
-    num(value: int)
-    add(left: ^Expr, right: ^Expr)
+    num: int
+    neg: ^Expr                     # recursive: a single ^Expr child
 
-var e = Expr.add(left: Expr.num(1), right: Expr.num(2))
-branch e
-    on Expr.add as a
-        # a.left: Expr (transparent — ^Expr auto-deref'd)
-        print(a.left)
-    on Expr.num as n
-        print(n.value)
+def eval(e: Expr): int
+    branch e
+        on Expr.num as n
+            return n
+        on Expr.neg as inner       # inner: Expr (transparent — ^Expr auto-deref'd)
+            return 0 - eval(inner)
+
+var e = Expr.neg(Expr.num(5))      # eval(e) == -5
 ```
 
 ### Iterating `List(^T)`
@@ -1719,9 +1723,11 @@ class Main
     static
         def main
             var u = User()
-            print(Reflect.className(u))        # "User"
-            for name in Reflect.fieldNames(u)
-                print(name)                    # "name", "age"
+            u.name = "Ada"                     # NB: reference the instance — the
+            print(u.name)                      # Reflect calls resolve from its
+            print(Reflect.className(u))        # TYPE at comptime, so a value used
+            for name in Reflect.fieldNames(u)  # ONLY in Reflect.* reads as an
+                print(name)                    # unused local otherwise. "User"; "name","age"
 ```
 
 ### Tier 3 — `@reflectable` + `Json.parseStrict(T, src): ?T`
@@ -2464,6 +2470,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `sys.err(msg)`      | void              | Write to stderr (no newline)                 |
 | `sys.errln(msg)`    | void              | Write to stderr + newline                    |
 | `sys.getenv(name)`  | `str?`            | Environment variable or nil                  |
+| `sys.cwd()`         | `str`             | Current working directory (absolute path)    |
 | `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
@@ -2574,8 +2581,7 @@ var roll = rng.nextInt(1, 6)        # same seed → same sequence, every run
 | Call                              | Returns        | Notes                              |
 |-----------------------------------|----------------|-------------------------------------|
 | `Regex.compile(pattern)`          | `Regex`        | Compile a pattern (Thompson NFA)    |
-| `re.test(s)`                      | bool           | Match anywhere in `s`               |
-| `re.match(s)`                     | bool           | Match from start of `s`             |
+| `re.match(s)`                     | bool           | Match from start of `s` (for "match anywhere", use `re.find(s) != ""`) |
 | `re.find(s)`                      | str            | First matching substring            |
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |

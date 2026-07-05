@@ -7337,30 +7337,13 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "append")) {
-            // File.append(path, content) → append content; creates file if absent.
-            // openFile with read_write; fall back to createFile if not found.
-            try g.w.writeAll("(blk: {\n");
-            const bg = g.indented();
-            try bg.writeIndent();
-            try bg.w.writeAll("const _fa_path = ");
-            if (args.len >= 1) try bg.genExpr(args[0].value) else try bg.w.writeAll("\"\"");
-            try bg.w.writeAll(";\n");
-            try bg.writeIndent();
-            try bg.w.writeAll("const _fa_file = std.Io.Dir.cwd().openFile(_io, _zbr_norm_path(_fa_path), .{ .mode = .read_write })\n");
-            try bg.indented().writeIndent();
-            try bg.indented().w.writeAll("catch std.Io.Dir.cwd().createFile(_io, _zbr_norm_path(_fa_path), .{}) catch @panic(\"File.append error\");\n");
-            try bg.writeIndent();
-            try bg.w.writeAll("defer _fa_file.close(_io);\n");
-            try bg.writeIndent();
-            try bg.w.writeAll("_ = _fa_file.seekFromEnd(_io, 0) catch @panic(\"File.append seek error\");\n");
-            try bg.writeIndent();
-            try bg.w.writeAll("_fa_file.writeStreamingAll(_io, ");
-            if (args.len >= 2) try bg.genExpr(args[1].value) else try bg.w.writeAll("\"\"");
-            try bg.w.writeAll(") catch @panic(\"File.append write error\");\n");
-            try bg.writeIndent();
-            try bg.w.writeAll("break :blk {};\n");
-            try g.writeIndent();
-            try g.w.writeAll("})");
+            // File.append(path, content) → _file_append (read+concat+write).
+            // Zig 0.16 removed File.seekFromEnd, so seek-to-end append is gone.
+            try g.w.writeAll("_file_append(");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(", ");
+            if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "delete")) {
@@ -7371,12 +7354,13 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "rename")) {
-            // File.rename(oldPath, newPath) → rename/move within cwd.
-            try g.w.writeAll("(std.Io.Dir.cwd().rename(_io, ");
+            // File.rename(oldPath, newPath) → rename/move within cwd.  Zig 0.16
+            // sig: rename(old_dir, old_sub_path, new_dir, new_sub_path, io).
+            try g.w.writeAll("(std.Io.Dir.cwd().rename(");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(", ");
+            try g.w.writeAll(", std.Io.Dir.cwd(), ");
             if (args.len >= 2) try g.genExpr(args[1].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(") catch @panic(\"File.rename error\"))");
+            try g.w.writeAll(", _io) catch @panic(\"File.rename error\"))");
             return true;
         }
         if (std.mem.eql(u8, method, "copy")) {
@@ -7910,11 +7894,13 @@ const Generator = struct {
     ///   sys.getenv(name)    → ?[]const u8 via std.posix.getenv
     fn genSysCall(g: Generator, method: []const u8, args: []const Ast.Arg) anyerror!bool {
         if (std.mem.eql(u8, method, "args")) {
-            // sys.args() → build an ArrayList from argsAlloc result
+            // sys.args() → build an ArrayList from the process args.  Zig 0.16
+            // removed std.process.argsAlloc; use the program's `_args`
+            // (std.process.Args, set in main) via `.toSlice`.
             try g.w.writeAll("(blk: {\n");
             const bg = g.indented();
             try bg.writeIndent();
-            try bg.w.writeAll("const _sa_raw = std.process.argsAlloc(_allocator) catch @panic(\"sys.args OOM\");\n");
+            try bg.w.writeAll("const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n");
             try bg.writeIndent();
             try bg.w.writeAll("var _sa_list = std.ArrayList([]const u8).empty;\n");
             try bg.writeIndent();

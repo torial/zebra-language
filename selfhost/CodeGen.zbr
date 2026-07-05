@@ -10274,12 +10274,19 @@ struct Generator
                     return
         # StringBuilder
         if mname == "append"
-            genExpr(m.object)
-            w.emit(".appendSlice(_allocator, ")
-            if args.len > 0
-                genExpr(args.at(0).value)
-            w.emit(") catch @panic(\"OOM\")")
-            return
+            # Guard: File.append is a static file op handled later — don't let the
+            # StringBuilder append intercept it (it would emit File.appendSlice).
+            var _ap_is_file = false
+            if m.object is Expr.ident as _ap_id
+                if _ap_id.name == "File"
+                    _ap_is_file = true
+            if not _ap_is_file
+                genExpr(m.object)
+                w.emit(".appendSlice(_allocator, ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                w.emit(") catch @panic(\"OOM\")")
+                return
         if mname == "len"
             # sb.len() → @as(i64, @intCast(sb.items.len))
             w.emit("@as(i64, @intCast(")
@@ -12182,32 +12189,18 @@ struct Generator
             w.emit("})")
             return
         if mname == "append"
-            w.emit("(blk_fa: {\n")
-            writeIndent()
-            w.emit("    const _fa_path = ")
+            # Zig 0.16 removed File.seekFromEnd; append = _file_append (read+concat+write).
+            w.emit("_file_append(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(";\n")
-            writeIndent()
-            w.emit("    const _fa_file = std.Io.Dir.cwd().openFile(_io, _zbr_norm_path(_fa_path), .{ .mode = .read_write })")
-            w.emit(" catch std.Io.Dir.cwd().createFile(_io, _zbr_norm_path(_fa_path), .{}) catch @panic(\"File.append error\");\n")
-            writeIndent()
-            w.emit("    defer _fa_file.close(_io);\n")
-            writeIndent()
-            w.emit("    _ = _fa_file.seekFromEnd(_io, 0) catch @panic(\"File.append seek error\");\n")
-            writeIndent()
-            w.emit("    _fa_file.writeStreamingAll(_io, ")
+            w.emit(", ")
             if args.len >= 2
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
-            w.emit(") catch @panic(\"File.append write error\");\n")
-            writeIndent()
-            w.emit("    break :blk_fa {};\n")
-            writeIndent()
-            w.emit("})")
+            w.emit(")")
             return
         if mname == "delete"
             w.emit("(std.Io.Dir.cwd().deleteFile(_io, ")
@@ -12332,7 +12325,8 @@ struct Generator
         if mname == "args"
             w.emit("(blk_sa: {\n")
             writeIndent()
-            w.emit("    const _sa_raw = std.process.argsAlloc(_allocator) catch @panic(\"sys.args OOM\");\n")
+            # Zig 0.16 removed std.process.argsAlloc; use _args.toSlice.
+            w.emit("    const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n")
             writeIndent()
             w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()

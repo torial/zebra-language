@@ -543,6 +543,16 @@ fn _objpool_create(comptime T: type, cap: i64) *_ObjectPool(T) {
     p.* = _ObjectPool(T).init(@intCast(@max(cap, 0)));
     return p;
 }
+// File.append(path, content): Zig 0.16 removed File.seekFromEnd, so append is
+// read-existing + concat + rewrite (creates the file if absent).
+fn _file_append(path: []const u8, content: []const u8) void {
+    const p = _zbr_norm_path(path);
+    const existing: []const u8 = std.Io.Dir.cwd().readFileAlloc(_io, p, _allocator, .unlimited) catch "";
+    const combined = _str_concat(existing, content, _allocator);
+    const wf = std.Io.Dir.cwd().createFile(_io, p, .{}) catch @panic("File.append error");
+    defer wf.close(_io);
+    wf.writeStreamingAll(_io, combined) catch @panic("File.append write error");
+}
 // ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
 fn _Atomic(comptime T: type) type {
     return struct {
