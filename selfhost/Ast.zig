@@ -304,6 +304,14 @@ fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "va
     while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
     return out;
 }
+// §28i: sys.memStats() → current program-arena footprint (bytes the arena
+// holds from the OS).  Because the arena bump-allocates and only grows until an
+// arena_scope reset, this is the high-water mark for the main allocator.  A
+// struct (not a bare int) so fields can be added later without breaking callers.
+const MemStats = struct { arenaBytes: i64 };
+fn _mem_stats() MemStats {
+    return .{ .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())) };
+}
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     var child = std.process.spawn(_io, .{

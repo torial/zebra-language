@@ -751,6 +751,8 @@ smoke_run test/list_functional_test.zbr "list_functional: OK"
 smoke_run test/hashmap_kv_test.zbr "hashmap_kv: OK"
 # §28f: List.sort with an optional comparator — sort() natural, sort(cmp) custom.
 smoke_run test/list_sort_comparator_test.zbr "list_sort: OK"
+# §28i: sys.memStats() → MemStats{ arenaBytes } — arena footprint grows on alloc.
+smoke_run test/mem_stats_test.zbr "mem_stats: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"

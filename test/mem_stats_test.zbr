@@ -1,0 +1,20 @@
+# §28i: sys.memStats() → MemStats{ arenaBytes } — the program arena's footprint.
+# Prints "mem_stats: OK" iff the arena grows after a batch of allocations
+# (checked by smoke_run).
+
+def main()
+    var before = sys.memStats()
+
+    var junk: List(int) = List()
+    var i = 0
+    while i < 50000
+        junk.add(i)
+        i = i + 1
+
+    var after = sys.memStats()
+    var grew = after.arenaBytes - before.arenaBytes
+
+    if before.arenaBytes >= 0 and after.arenaBytes > before.arenaBytes and grew > 0
+        print("mem_stats: OK")
+    else
+        print("mem_stats: FAIL before=${before.arenaBytes} after=${after.arenaBytes}")

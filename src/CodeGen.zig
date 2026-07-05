@@ -7920,6 +7920,11 @@ const Generator = struct {
             try g.w.writeAll("})");
             return true;
         }
+        if (std.mem.eql(u8, method, "memStats")) {
+            // §28i: sys.memStats() → MemStats{ .arenaBytes = arena footprint }.
+            try g.w.writeAll("_mem_stats()");
+            return true;
+        }
         if (std.mem.eql(u8, method, "exit")) {
             try g.w.writeAll("std.process.exit(@intCast(@as(i64, ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("0");
@@ -16612,6 +16617,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .file,
         .str_slice,
         .sys_run_result,
+        .mem_stats,
         .sys_process,
         .json_value,
         .json_array,

@@ -923,9 +923,15 @@ churn problem (allocator `Pool(T)` exists but has no release path in a
 language with no `free`), generally useful for any churn workload. See the
 GameEngine roadmap's memory section for the consumer side.
 
-**i. Memory diagnostics: `sys.memStats()` / arena high-water report.**
-Cheap; converts "I think it grows" into numbers. Wanted by the GameEngine
-bytes-per-frame measurement first step.
+**i. [✅ DONE — 2026-07-04] Memory diagnostics: `sys.memStats()`.** Returns a
+`MemStats` struct with an `arenaBytes: int` field = the program arena's current
+footprint (`_arena.queryCapacity()`). Because the arena bump-allocates and only
+grows until an `arena_scope` reset, this is the high-water mark for the main
+allocator; the bytes-per-frame delta is `after.arenaBytes - before.arenaBytes`.
+Chose the struct shape (option B, Sean) over a bare int so fields (alloc count,
+per-scope) can be added later without breaking callers — mirrors `SysRunResult`
+(new `mem_stats` Type + `MemStats`/`_mem_stats()` preamble helper, both
+compilers). Fixture `test/mem_stats_test.zbr`. Gates green.
 
 **j. [DIRECTION SET — Sean 2026-07-03; needs the measurement first] `_allocator`
 under threads → two-tier model.** Arena allocators aren't thread-safe; if worker

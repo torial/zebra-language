@@ -12293,6 +12293,10 @@ struct Generator
                 w.emit("0")
             w.emit("))")
             return
+        if mname == "memStats"
+            # §28i: sys.memStats() → MemStats{ .arenaBytes = arena footprint }.
+            w.emit("_mem_stats()")
+            return
         if mname == "run"
             w.emit("_sys_run(")
             if args.len > 0

@@ -96,6 +96,8 @@ pub const Type = union(enum) {
     str_slice,
     /// `SysRunResult` — result of `sys.run(argv)` with exit_code/stdout/stderr fields.
     sys_run_result,
+    /// `MemStats` — result of `sys.memStats()` with an `arenaBytes` field (§28i).
+    mem_stats,
     /// `SysProcess` — live subprocess handle returned by `sys.spawn()`.
     sys_process,
     /// `JsonValue` — a parsed JSON value (wraps `std.json.Value`).
@@ -272,6 +274,7 @@ pub const Type = union(enum) {
             .file           => b == .file,
             .str_slice      => b == .str_slice,
             .sys_run_result => b == .sys_run_result,
+            .mem_stats      => b == .mem_stats,
             .sys_process    => b == .sys_process,
             .json_value     => b == .json_value,
             .date_time      => b == .date_time,
@@ -360,6 +363,7 @@ pub const Type = union(enum) {
             .file           => "File",
             .str_slice      => "[]str",
             .sys_run_result => "SysRunResult",
+            .mem_stats      => "MemStats",
             .sys_process    => "SysProcess",
             .json_value     => "JsonValue",
             .json_array     => "[]JsonValue",
@@ -2520,6 +2524,10 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, e.member, "stdout"))    return .string;
             if (std.mem.eql(u8, e.member, "stderr"))    return .string;
         }
+        // MemStats field access (§28i).
+        if (obj_type == .mem_stats) {
+            if (std.mem.eql(u8, e.member, "arenaBytes")) return .int;
+        }
         // SysProcess field/method access.
         if (obj_type == .sys_process) {
             if (std.mem.eql(u8, e.member, "pid"))        return .int;
@@ -3399,6 +3407,7 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "readLine")) return .unknown; // ?str
                     if (std.mem.eql(u8, mem.member, "args"))     return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "run"))          return .sys_run_result;
+                    if (std.mem.eql(u8, mem.member, "memStats"))     return .mem_stats;
                     if (std.mem.eql(u8, mem.member, "exec_inherit")) return .int;
                     if (std.mem.eql(u8, mem.member, "spawn"))        return .sys_process;
                     if (std.mem.eql(u8, mem.member, "cwd"))          return .string;
@@ -4508,6 +4517,7 @@ fn builtinType(n: []const u8) Type {
     if (std.mem.eql(u8, n, "Shell"))         return .shell;
     if (std.mem.eql(u8, n, "File"))          return .file;
     if (std.mem.eql(u8, n, "SysRunResult")) return .sys_run_result;
+    if (std.mem.eql(u8, n, "MemStats")) return .mem_stats;
     if (std.mem.eql(u8, n, "SysProcess"))   return .sys_process;
     if (std.mem.eql(u8, n, "JsonValue"))   return .json_value;
     if (std.mem.eql(u8, n, "DateTime"))    return .date_time;

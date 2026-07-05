@@ -2442,6 +2442,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
+| `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |
 
 ### `File` — file I/O (static)
 
