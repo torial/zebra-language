@@ -959,6 +959,43 @@ rest. This is the piece that unblocks correct shared-state servers (BUG-153/154)
 Do the measurement (§28i `sys.memStats` + a thread-alloc probe) before locking
 the default.
 
+**MEASUREMENT DONE — 2026-07-04 (step a).**
+- **Code-level: race CONFIRMED.** `_allocator` is a single global
+  (`selfhost/stdlib_preamble.zig:18`) backed by one non-thread-safe
+  `std.heap.ArenaAllocator`. The ThreadPool `worker()` runs `task.invoke(...)`
+  (the user's lambda) WITHOUT swapping `_allocator`, so every worker allocates
+  (`list.add`, string ops, `create`) from the same arena. Concurrent
+  `_allocator.alloc` is a data race (UB) on the arena's `end_index` / buffer
+  list. `sys.go` is the same. So the suspicion is correct: workers share the
+  program arena.
+- **Runtime: did NOT manifest.** Two probes — up to 200 tasks × 4000 allocs on
+  16 threads, one with per-list content-sum verification — ran ~15 times with
+  **zero** crashes and **zero** corrupted lists. The race window (a plain
+  read-modify-write of `end_index` between the bump-path fast case) is narrow
+  enough that visible corruption is rare on this platform; the page_allocator
+  refill path is thread-safe (Windows VirtualAlloc). It remains UB and a latent
+  hazard — timing/optimizer/platform changes could surface it — but it is not
+  a frequently-firing bug today.
+- **Conclusion:** the race is real (code) but latent (runtime), matching the
+  "latent race" framing. Because the FIX (step b) is a central, subtle change
+  to the allocator model with concurrency-lifetime failure modes the gates
+  can't reliably catch, it is NOT suitable for unsupervised work — see below.
+
+**WIRING (step b) — DEFERRED to a supervised session (design + risk).** The
+two-tier fix is genuinely tricky, not mechanical:
+- Making `_allocator` `threadlocal` (each worker its own arena) fixes the
+  temporary-allocation race, BUT then any data a worker allocates and a *later*
+  thread reads (a shared HashMap, a result pushed to the main thread) lives in
+  an arena that dies with the worker → **use-after-free**. That failure mode is
+  invisible to smoke/round-trip/fuzz (they're single-threaded emit/compile
+  checks), so a wrong wiring would pass every gate and corrupt in production.
+- The correct model needs BOTH tiers wired together AND a clean Zebra-level
+  handle for "allocate this in the shared pool" (`Smp()`), which is an API
+  design decision (keyword? `shared` alloc block? a `sys.sharedAlloc()`?).
+- Recommendation: do this as its own gated, supervised session — decide the
+  shared-handle API first, then wire per-thread arenas + shared allocator, and
+  add a threaded lifetime test (not just the alloc-race probe) to the gate set.
+
 Explicitly NOT recommended for change: `var`-only mutability (BUG-161 was an
 implementation bug, not a design flaw), contracts as identity feature, no
 inheritance, `cue init` (document the Cobra etymology, keep it).
