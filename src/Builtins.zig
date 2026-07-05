@@ -55,6 +55,7 @@ pub const NAMES = std.StaticStringMap(void).initComptime(&.{
     .{ "Chan",          {} },
     .{ "Atomic",        {} },
     .{ "ThreadPool",    {} },
+    .{ "ObjectPool",    {} },
     // Stdlib string builder
     .{ "StringBuilder", {} },
     // Stdlib file I/O and path utilities

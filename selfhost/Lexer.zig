@@ -484,6 +484,60 @@ fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// ── ObjectPool(T) — fixed-capacity recycling pool (§28h) ──────────────────────
+// For a class Bullet, T is the instance type `*Bullet` (Zebra classes are
+// pointer-typed).  init() pre-allocates `cap` objects; take() hands out a free
+// one (null when exhausted); give(obj) returns it.  Objects are RECYCLED — a
+// taken object keeps its previous field values, so callers re-initialize on
+// take.  Contract-guarded: give() panics on a double-release or an object not
+// owned by this pool.  Pooling only makes sense for heap objects (classes);
+// `ObjectPool(int)` fails to compile (@typeInfo(T).pointer), which is intended.
+fn _ObjectPool(comptime T: type) type {
+    return struct {
+        slots:  []T,
+        in_use: []bool,
+        const Self = @This();
+        const _alloc = std.heap.page_allocator;
+
+        pub fn init(cap: usize) Self {
+            const slots  = _alloc.alloc(T, cap) catch @panic("OOM");
+            const in_use = _alloc.alloc(bool, cap) catch @panic("OOM");
+            for (slots) |*s| s.* = _alloc.create(@typeInfo(T).pointer.child) catch @panic("OOM");
+            @memset(in_use, false);
+            return .{ .slots = slots, .in_use = in_use };
+        }
+
+        pub fn take(self: *Self) ?T {
+            for (self.in_use, 0..) |used, i| {
+                if (!used) { self.in_use[i] = true; return self.slots[i]; }
+            }
+            return null; // pool exhausted — every object is checked out
+        }
+
+        pub fn give(self: *Self, obj: T) void {
+            for (self.slots, 0..) |s, i| {
+                if (s == obj) {
+                    if (!self.in_use[i])
+                        @panic("ObjectPool.give: double release (object was not taken)");
+                    self.in_use[i] = false;
+                    return;
+                }
+            }
+            @panic("ObjectPool.give: object not owned by this pool");
+        }
+
+        pub fn inUse(self: *Self) i64 { // number currently checked out
+            var n: i64 = 0;
+            for (self.in_use) |used| { if (used) n += 1; }
+            return n;
+        }
+    };
+}
+fn _objpool_create(comptime T: type, cap: i64) *_ObjectPool(T) {
+    const p = std.heap.page_allocator.create(_ObjectPool(T)) catch @panic("OOM");
+    p.* = _ObjectPool(T).init(@intCast(@max(cap, 0)));
+    return p;
+}
 // ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
 fn _Atomic(comptime T: type) type {
     return struct {

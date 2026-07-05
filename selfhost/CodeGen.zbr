@@ -2213,6 +2213,14 @@ struct Generator
                 w.emit("anytype")
             w.emit(")")
             return
+        if gtr.name == "ObjectPool"
+            w.emit("*_ObjectPool(")
+            if gtr.args.len >= 1
+                genType(gtr.args.at(0))
+            else
+                w.emit("anytype")
+            w.emit(")")
+            return
         if gtr.name == "Atomic"
             w.emit("*_Atomic(")
             if gtr.args.len >= 1
@@ -9026,7 +9034,7 @@ struct Generator
         # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
             if inner.callee is Expr.ident as id
-                if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool"
+                if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool" or id.name == "ObjectPool"
                     genGenericCtorCall(id.name, inner.args, c.args)
                     return
                 if class_names.contains_(id.name)
@@ -13739,6 +13747,19 @@ struct Generator
     def genGenericCtorCall(name: str, type_args: List(Arg), val_args: List(Arg))
         if name == "Chan"
             w.emit("_chan_create(")
+            if type_args.len > 0
+                genTypeFromExpr(type_args.at(0).value)
+            else
+                w.emit("anytype")
+            w.emit(", ")
+            if val_args.len > 0
+                genExpr(val_args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")")
+            return
+        if name == "ObjectPool"
+            w.emit("_objpool_create(")
             if type_args.len > 0
                 genTypeFromExpr(type_args.at(0).value)
             else

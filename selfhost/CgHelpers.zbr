@@ -1244,6 +1244,10 @@ def isReadOnlyMethod(name: str): bool
     # HashMap.keys()/values() snapshot into a new List — receiver stays const.
     if name == "keys" or name == "values"
         return true
+    # ObjectPool(T) methods — the pool handle is a const pointer; take/give/inUse
+    # mutate the pooled objects' in-use state via the pointer, not the handle.
+    if name == "take" or name == "give" or name == "inUse"
+        return true
     if name == "lastIndexOf" or name == "indexOfFrom"
         return true
     if name == "encodeBase64" or name == "decodeBase64"

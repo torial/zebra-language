@@ -916,12 +916,20 @@ QUICKSTART.
   `test/ctor_arg_ref_test.zbr` and `test/crossmod_hatopt_test.zbr` in smoke.
   The `!= nil` + `to!` workaround is no longer necessary (and `to!` is gone).
 
-**h. `ObjectPool(T)` stdlib type.** Explicit pooling in library-space:
-`var pool = ObjectPool(Bullet)(1024)`; `pool.take()` / `pool.give(b)`,
-contract-guarded against double-release. Motivated by the GameEngine entity-
-churn problem (allocator `Pool(T)` exists but has no release path in a
-language with no `free`), generally useful for any churn workload. See the
-GameEngine roadmap's memory section for the consumer side.
+**h. [✅ DONE — 2026-07-04] `ObjectPool(T)` stdlib type.** Explicit pooling in
+library-space: `var pool = ObjectPool(Bullet)(1024)`; `pool.take()` → `^T?`
+(nil on exhaustion), `pool.give(b)` (contract-guarded: panics on double-release
+or a foreign object), `pool.inUse()` → int. A new builtin generic modelled on
+`Chan(T)`: `_ObjectPool(T)` preamble struct (pre-allocates cap objects, hands
+out free ones, recycles — taken objects keep prior field values), `genType` →
+`*_ObjectPool(T)`, init → `_objpool_create(T, cap)`, methods pass through to the
+matching Zig struct methods. TC types `take() → T?` (via `objectPoolElemType`,
+mirroring HashMap.get→V?) so `if pool.take() as b` narrows b. Key wrinkle solved:
+Zebra classes are pointer-typed, so the pool stores `[]T` (T = `*Bullet`) of
+pre-allocated objects and `take()` returns `?T`, not `?*T`. `count` was renamed
+`inUse` to dodge the generic List/HashMap count→`.items.len` interception. Both
+compilers. Fixture `test/object_pool_test.zbr`. `ObjectPool(int)` intentionally
+fails to compile (pooling primitives is pointless). Gates green.
 
 **i. [✅ DONE — 2026-07-04] Memory diagnostics: `sys.memStats()`.** Returns a
 `MemStats` struct with an `arenaBytes: int` field = the program arena's current

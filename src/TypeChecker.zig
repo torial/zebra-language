@@ -2732,6 +2732,34 @@ const TypeChecker = struct {
         return null;
     }
 
+    /// §28h: element type T of an `ObjectPool(T)`-declared receiver (annotation
+    /// or `ObjectPool(T)(cap)` initializer), or null.  Used to type
+    /// `pool.take() → T?` so `if pool.take() as b` narrows b to T.
+    fn objectPoolElemType(tc: TypeChecker, obj: *const Ast.Expr) ?Type {
+        if (obj.* != .ident) return null;
+        const sym = tc.resolve.exprs.get(&obj.ident) orelse return null;
+        const dt: ?Ast.TypeRef = switch (sym.decl) {
+            .var_  => |dv| dv.type_,
+            .param => |p|  p.type_,
+            else   => null,
+        };
+        if (dt) |t| {
+            if (t == .generic and std.mem.eql(u8, t.generic.name, "ObjectPool") and t.generic.args.len >= 1) {
+                const et = tc.typeFromRef(&t.generic.args[0]);
+                if (!et.isAbstract()) return et;
+            }
+        }
+        if (sym.decl == .var_) if (sym.decl.var_.init) |init| {
+            if (init.* == .call and init.call.type_args.len >= 1 and init.call.callee.* == .ident and
+                std.mem.eql(u8, init.call.callee.ident.name, "ObjectPool"))
+            {
+                const et = tc.typeFromRef(&init.call.type_args[0]);
+                if (!et.isAbstract()) return et;
+            }
+        };
+        return null;
+    }
+
     /// §28f: bind a higher-order lambda param name to `t` in narrowed_types for
     /// the duration of arg inference, recording it for later removal.  Skips a
     /// name that is already narrowed so a real narrowing is never clobbered.
@@ -3207,6 +3235,22 @@ const TypeChecker = struct {
                 }
             },
             .member => |mem| {
+                // §28h: ObjectPool(T).take() → T?  (nil when exhausted) so
+                // `if pool.take() as b` narrows b to T; give → void; count → int.
+                if (tc.objectPoolElemType(mem.object)) |elem_t| {
+                    if (std.mem.eql(u8, mem.member, "take")) {
+                        _ = try tc.inferExpr(mem.object);
+                        const inner = tc.map_alloc.create(Type) catch return .unknown;
+                        inner.* = elem_t;
+                        return Type{ .optional = inner };
+                    }
+                    if (std.mem.eql(u8, mem.member, "give")) {
+                        _ = try tc.inferExpr(mem.object);
+                        for (e.args) |a| _ = try tc.inferExpr(a.value);
+                        return .void_;
+                    }
+                    if (std.mem.eql(u8, mem.member, "inUse")) return .int;
+                }
                 // §28a: HashMap(K,V).get(key) → V?  Models the optional return
                 // so `if m.get(k) as v` narrows v to V (the TC has no HashMap
                 // Type otherwise, so this dispatch was guessing).

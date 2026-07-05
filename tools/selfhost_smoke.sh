@@ -753,6 +753,8 @@ smoke_run test/hashmap_kv_test.zbr "hashmap_kv: OK"
 smoke_run test/list_sort_comparator_test.zbr "list_sort: OK"
 # §28i: sys.memStats() → MemStats{ arenaBytes } — arena footprint grows on alloc.
 smoke_run test/mem_stats_test.zbr "mem_stats: OK"
+# §28h: ObjectPool(T) — take()/give()/inUse(), exhaustion nil, double-give guard.
+smoke_run test/object_pool_test.zbr "object_pool: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"

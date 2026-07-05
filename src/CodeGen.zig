@@ -7121,6 +7121,11 @@ const Generator = struct {
                 if (std.mem.eql(u8, gtr.name, "Chan")) {
                     return g.genChanMethod(object, method, args);
                 }
+                // ObjectPool(T) instance methods (take/give/inUse) pass through
+                // to the _ObjectPool struct's matching Zig methods directly.
+                if (std.mem.eql(u8, gtr.name, "ObjectPool")) {
+                    return false;
+                }
                 // Atomic(T) and ThreadPool: instance methods pass through to
                 // the Zig-generated _Atomic(T)/_ThreadPool struct methods directly.
                 if (std.mem.eql(u8, gtr.name, "Atomic") or
@@ -14679,6 +14684,15 @@ const Generator = struct {
                 try g.w.writeAll(")");
                 return;
             }
+            // ObjectPool(T)(cap) → _objpool_create(T, cap)  (§28h)
+            if (std.mem.eql(u8, class_name, "ObjectPool") and e.type_args.len == 1) {
+                try g.w.writeAll("_objpool_create(");
+                try g.genType(e.type_args[0]);
+                try g.w.writeAll(", ");
+                if (e.args.len > 0) try g.genExpr(e.args[0].value) else try g.w.writeAll("0");
+                try g.w.writeAll(")");
+                return;
+            }
             // Atomic(T)(v) → _atomic_create(T, v)
             if (std.mem.eql(u8, class_name, "Atomic") and e.type_args.len == 1) {
                 try g.w.writeAll("_atomic_create(");
@@ -16317,6 +16331,13 @@ const Generator = struct {
                 // Chan(T) — heap-allocated *_Chan(T) pointer.
                 if (std.mem.eql(u8, gtr.name, "Chan")) {
                     try g.w.writeAll("*_Chan(");
+                    if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("anytype");
+                    try g.w.writeAll(")");
+                    return;
+                }
+                // ObjectPool(T) — heap-allocated *_ObjectPool(T) pointer (§28h).
+                if (std.mem.eql(u8, gtr.name, "ObjectPool")) {
+                    try g.w.writeAll("*_ObjectPool(");
                     if (gtr.args.len >= 1) try g.genType(gtr.args[0]) else try g.w.writeAll("anytype");
                     try g.w.writeAll(")");
                     return;

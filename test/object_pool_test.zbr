@@ -1,0 +1,42 @@
+# §28h: ObjectPool(T) — fixed-capacity recycling pool.
+#   pool.take()  → ^T?   (nil when exhausted)
+#   pool.give(x) → void  (contract-guarded against double-release)
+#   pool.inUse() → int   (objects currently checked out)
+# Prints "object_pool: OK" iff every result is correct (checked by smoke_run).
+
+class Bullet
+    var x: int
+    var y: int
+    cue init()
+        this.x = 0
+        this.y = 0
+
+def main()
+    var pool = ObjectPool(Bullet)(2)
+
+    # take → mutate → give back
+    var sum = 0
+    if pool.take() as b
+        b.x = 10
+        b.y = 20
+        sum = sum + b.x + b.y            # 30
+        pool.give(b)
+    var live1 = pool.inUse()             # 0 — returned
+
+    # exhaustion: pool of 2, take both, third take is nil
+    var took = 0
+    if pool.take() as a
+        took = took + 1
+        if pool.take() as c
+            took = took + 1
+            var third_nil = true
+            if pool.take() as d
+                third_nil = false
+            if third_nil
+                took = took + 100        # → 102
+    var live2 = pool.inUse()             # 2 — a and c still out
+
+    if sum == 30 and live1 == 0 and took == 102 and live2 == 2
+        print("object_pool: OK")
+    else
+        print("object_pool: FAIL sum=${sum} live1=${live1} took=${took} live2=${live2}")

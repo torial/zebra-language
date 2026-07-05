@@ -1909,6 +1909,31 @@ lists, class instances) live until program exit.  You never free individual
 values; the arena cleans up everything at once.  This makes memory management
 invisible for typical programs.
 
+`sys.memStats()` reports the arena's current footprint (`.arenaBytes`, the
+high-water mark for the main allocator) — handy for a bytes-per-frame delta:
+`var a = sys.memStats().arenaBytes; …; print(sys.memStats().arenaBytes - a)`.
+
+### Recycling churny objects: `ObjectPool(T)`
+
+For a high-churn workload (bullets, particles) where the arena would otherwise
+grow without bound, `ObjectPool(T)` recycles a fixed set of objects instead of
+allocating fresh ones:
+
+```zebra
+var pool = ObjectPool(Bullet)(1024)   # pre-allocates 1024 Bullets
+if pool.take() as b                    # ^Bullet?, nil when the pool is exhausted
+    b.x = spawn_x                       # objects are RECYCLED — reset fields on take
+    b.y = spawn_y
+    # ... use b for a while ...
+    pool.give(b)                        # return it; the slot is free again
+var live = pool.inUse()                 # how many are currently checked out
+```
+
+`take()` returns nil when all objects are checked out (bounded — never grows).
+`give(x)` is contract-guarded: giving an object twice, or one not owned by the
+pool, panics. Taken objects keep their previous field values, so re-initialize
+on `take`. Pooling only makes sense for class objects.
+
 ### When you need bounded-scope memory: `allocate`
 
 The `allocate <expr>` block redirects `_allocator` to any `AllocatorSource`-
