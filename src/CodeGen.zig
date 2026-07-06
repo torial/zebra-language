@@ -2215,6 +2215,10 @@ const Generator = struct {
     /// expression, so that genCall does not also emit a `try` prefix.  Prevents
     /// `try try self.foo()` when the Zebra source has `foo()?`.
     suppress_auto_try: bool = false,
+    // When set, genMethod skips emitting an @once method's cache FIELD (it is
+    // emitted separately in genClass's fields pass so all struct fields stay
+    // contiguous — Zig rejects a declaration between fields).
+    suppress_once_field: bool = false,
     /// Member declarations of the current class or struct.  Used in genCall to
     /// look up whether a self-method called via `.method()` syntax is `throws`.
     /// Empty slice at module scope or when owner is a namespace.
@@ -5059,19 +5063,35 @@ const Generator = struct {
         try ig.writeIndent();
         try ig.w.print("_type_tag: u64 = _ttag_{s},\n", .{n.name});
 
-        // ② Inline mixin members before class members (fields first in Zig
-        //    struct layout).
+        // ② Two passes so every struct FIELD is contiguous — Zig rejects a
+        //    declaration (method / static var / const) between fields.  Pass 1:
+        //    instance fields + @once cache fields, from mixins then the class.
+        //    Pass 2: all declarations.  (Fixes @once-with-fields, static-var-
+        //    before-field, and mixin-adds; matches the selfhost's genClass.)
+        for (n.adds) |tr| {
+            const mname = typeRefSimpleName(tr) orelse continue;
+            if (g.mixins.get(mname)) |mx| for (mx.members) |decl|
+                if (contributesField(decl)) try ig.genFieldPart(decl);
+        }
+        for (n.members) |decl| if (contributesField(decl)) try ig.genFieldPart(decl);
+
+        // Pass 2 — declarations (methods incl. @once, static vars, inits) — i.e.
+        // everything except an instance field.  @once cache fields were emitted
+        // above, so suppress them in genMethod here.
+        const ig_decls = blk: {
+            var d = ig;
+            d.suppress_once_field = true;
+            break :blk d;
+        };
         for (n.adds) |tr| {
             const mname = typeRefSimpleName(tr) orelse continue;
             if (g.mixins.get(mname)) |mx| {
-                try ig.writeIndent();
-                try ig.w.print("// mixin: {s}\n", .{mname});
-                for (mx.members) |decl| try ig.genMember(decl);
+                try ig_decls.writeIndent();
+                try ig_decls.w.print("// mixin: {s}\n", .{mname});
+                for (mx.members) |decl| if (!isInstanceField(decl)) try ig_decls.genMember(decl);
             }
         }
-
-        // ② Regular class members.
-        for (n.members) |decl| try ig.genMember(decl);
+        for (n.members) |decl| if (!isInstanceField(decl)) try ig_decls.genMember(decl);
 
         // ③ Synthetic default init — emitted when no explicit `cue init` is present.
         //    Without this, a class constructed via `ClassName{}` relies on the field
@@ -5232,6 +5252,40 @@ const Generator = struct {
             .method   => |n| try g.genMethod(n),
             .init     => |n| try g.genInit(n),
             else      => {},
+        }
+    }
+
+    /// True if this member CONTRIBUTES a contiguous struct FIELD: an instance
+    /// `var` (not `static`), or an `@once` method (its synthetic cache field).
+    /// Note an @once method contributes a field AND is a declaration — it is
+    /// emitted in BOTH passes.
+    fn contributesField(decl: Ast.Decl) bool {
+        return switch (decl) {
+            .var_   => |v| !v.mods.static_,
+            .method => |m| m.mods.once,
+            else    => false,
+        };
+    }
+
+    /// True for an instance field only (emitted solely in the fields pass).
+    /// Everything else — methods (incl. @once), `static var`, `init` — is a
+    /// declaration emitted in pass 2.
+    fn isInstanceField(decl: Ast.Decl) bool {
+        return decl == .var_ and !decl.var_.mods.static_;
+    }
+
+    /// Emit only the FIELD contribution of a member (instance field, or an
+    /// @once method's cache field), for genClass/genStruct's fields pass.
+    fn genFieldPart(g: Generator, decl: Ast.Decl) anyerror!void {
+        switch (decl) {
+            .var_ => |v| if (!v.mods.static_) try g.genFieldDecl(v),
+            .method => |m| if (m.mods.once and m.return_type != null) {
+                try g.writeIndent();
+                try g.w.print("_once_{s}_val: ?", .{m.name});
+                try g.genType(m.return_type.?);
+                try g.w.writeAll(" = null,\n");
+            },
+            else => {},
         }
     }
 
@@ -5917,10 +5971,13 @@ const Generator = struct {
                 std.debug.panic("@once requires a no-param instance method with a non-void return type", .{});
             const impl_name = std.fmt.bufPrint(&once_name_buf, "_zbr_once_{s}_impl", .{n.name}) catch n.name;
             // ── Cache field ──────────────────────────────────────────────────
-            try g.writeIndent();
-            try g.w.print("_once_{s}_val: ?", .{n.name});
-            try g.genType(n.return_type.?);
-            try g.w.writeAll(" = null,\n");
+            // Skipped here when genClass already emitted it in the fields pass.
+            if (!g.suppress_once_field) {
+                try g.writeIndent();
+                try g.w.print("_once_{s}_val: ?", .{n.name});
+                try g.genType(n.return_type.?);
+                try g.w.writeAll(" = null,\n");
+            }
             // ── Public wrapper ───────────────────────────────────────────────
             try g.writeIndent();
             const self_type = if (g.is_generic) "@This()" else g.owner;

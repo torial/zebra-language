@@ -1603,10 +1603,15 @@ def tryChain(e: Expr): CallChain?
 class Writer
     var _buf: StringBuilder
     var _uid: int
+    # When true, genMethod skips an @once method's cache FIELD (genClass emits it
+    # in the fields pass so all struct fields stay contiguous). On the Writer
+    # (shared, mutable) so `except`-derived Generators all see it.
+    var suppress_once_field: bool
 
     cue init()
         _buf = StringBuilder()
         _uid = 0
+        suppress_once_field = false
 
     def emit(s: str)
         _buf.append(s)
@@ -3007,12 +3012,27 @@ struct Generator
         var ig2 = ig1.withOwnerMembers(n.members)
         var ig  = ig2.withOwnerInvariants(n.invariants)
         ig.line("_type_tag: u64 = _ttag_${n.name},")
+        # Pass 1 — all struct FIELDS first (Zig rejects a declaration between
+        # fields): instance fields (skip static) + @once cache fields.
         for decl in n.members
             if decl is Decl.var_ as fld
-                ig.genFieldDecl(fld)
+                if not fld.mods.is_static
+                    ig.genFieldDecl(fld)
+            else if decl is Decl.method as ofm
+                if ofm.mods.is_once and ofm.return_type != nil
+                    ig.writeIndent()
+                    ig.w.emit("_once_${ofm.name}_val: ?")
+                    ig.genType(ofm.return_type!)
+                    ig.w.emit(" = null,\n")
+        # Pass 2 — declarations: static vars, methods (incl. @once, whose cache
+        # field was emitted above → suppress it), inits.
+        w.suppress_once_field = true
         var has_init = false
         for decl in n.members
             branch decl
+                on Decl.var_ as sv
+                    if sv.mods.is_static
+                        ig.genFieldDecl(sv)
                 on Decl.method as m
                     ig.genMethod(m)
                 on Decl.init as ini
@@ -3029,6 +3049,7 @@ struct Generator
                             for mmem in mx.members
                                 if mmem is Decl.method as mm
                                     ig.genMethod(mm)
+        w.suppress_once_field = false
         # Synthetic default init for classes without explicit cue init
         if not has_init
             ig.writeIndent()
@@ -3301,14 +3322,15 @@ struct Generator
         # @once: emit cache field + public wrapper, then emit private impl function.
         var fn_name: str = m.name
         if m.mods.is_once
-            # Cache field
-            writeIndent()
-            w.emit("_once_")
-            w.emit(m.name)
-            w.emit("_val: ?")
-            if m.return_type != nil
-                genType(m.return_type!)
-            w.emit(" = null,\n")
+            # Cache field (skipped when genClass already emitted it in the fields pass).
+            if not w.suppress_once_field
+                writeIndent()
+                w.emit("_once_")
+                w.emit(m.name)
+                w.emit("_val: ?")
+                if m.return_type != nil
+                    genType(m.return_type!)
+                w.emit(" = null,\n")
             # Public wrapper
             writeIndent()
             w.emit("pub fn ")

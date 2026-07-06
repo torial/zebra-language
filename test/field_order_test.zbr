@@ -1,0 +1,23 @@
+# Audit B6/B7 (2026-07-05): struct fields must stay contiguous in the emitted
+# Zig — a `static var`, an `@once` method's cache field, or a mixin method must
+# not land between instance fields. genClass now emits all fields first (pass 1),
+# then all declarations (pass 2). Prints "field_order: OK" iff correct.
+
+class Widget
+    static var instances: int = 0    # static var declared before an instance field
+    var id: int = 0
+    cue init(id: int)
+        this.id = id
+
+    @once
+    def expensive(): int             # @once contributes a hidden cache field
+        return this.id * 100
+
+def main()
+    var w = Widget(3)
+    var a = w.expensive()            # 300 (computed)
+    var b = w.expensive()            # 300 (cached)
+    if a == 300 and b == 300 and w.id == 3
+        print("field_order: OK")
+    else
+        print("field_order: FAIL a=${a} b=${b} id=${w.id}")

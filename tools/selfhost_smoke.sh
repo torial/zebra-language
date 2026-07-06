@@ -757,6 +757,9 @@ smoke_run test/list_sort_comparator_test.zbr "list_sort: OK"
 smoke_run test/mem_stats_test.zbr "mem_stats: OK"
 # §28h: ObjectPool(T) — take()/give()/inUse(), exhaustion nil, double-give guard.
 smoke_run test/object_pool_test.zbr "object_pool: OK"
+# Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
+# method must not split instance fields) — genClass emits fields-first.
+smoke_run test/field_order_test.zbr "field_order: OK"
 # BUG-168: cross-module free fns returning PRIMITIVES typed at call sites
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"
