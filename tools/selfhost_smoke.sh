@@ -764,6 +764,10 @@ smoke_run test/object_pool_test.zbr "object_pool: OK"
 smoke_run test/file_rename_test.zbr "file_rename OK"
 # §28b: HashMap.entries() → List((K,V)) — sortable map snapshot (sort by value).
 smoke_run test/hashmap_entries_test.zbr "hashmap_entries: OK"
+# Audit A3: exhaustive union branch + else must compile (else prong omitted).
+smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
+# Audit B1: indexed for-in `for i, v in list` (i = index, v = element).
+smoke_run test/for_indexed_test.zbr "for_indexed: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

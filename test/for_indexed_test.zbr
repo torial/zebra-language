@@ -1,0 +1,29 @@
+# B1: indexed for-in `for i, v in list` — i = index (int), v = element.
+# A 2-var for-in over a List is indexed iteration (not HashMap dispatch).
+
+def main()
+    var words: List(str) = List()
+    words.add("zero")
+    words.add("one")
+    words.add("two")
+
+    # Index is an int; element keeps its type (str here).
+    var idx_sum = 0
+    var joined = ""
+    for i, w in words
+        idx_sum = idx_sum + i
+        joined = joined + "${i}:${w} "
+    assert idx_sum == 3, "0+1+2"
+    assert joined == "0:zero 1:one 2:two ", "indexed interp"
+
+    # Works over an int list too; where-clause filters on the index.
+    var nums: List(int) = List()
+    nums.add(10)
+    nums.add(20)
+    nums.add(30)
+    var even_idx_total = 0
+    for i, n in nums if i % 2 == 0
+        even_idx_total = even_idx_total + n
+    assert even_idx_total == 40, "idx 0 and 2 -> 10+30"
+
+    print("for_indexed: OK")

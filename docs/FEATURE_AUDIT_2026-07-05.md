@@ -149,12 +149,15 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
 ### Left for tactical resolution (real feature / design / codegen work)
 
 **Codegen / parser gaps:**
-- A3 exhaustive union `branch` + `else` → Zig "unreachable else prong" (codegen:
-  suppress the emitted `else` when all variants are covered).
-- A5 struct-`^T` field mutation emits broken deref-assign (codegen). Note:
-  recursive *classes* work with a plain `Node?` field (no `^`), so this is about
-  value-type recursion specifically — decide fix vs. steer-to-class.
-- B1 indexed `for i, v in items` → emits `.iterator()` on an ArrayList.
+- A3 ✅ FIXED (2026-07-06) — exhaustive union `branch` + `else`: both compilers
+  now omit the emitted `else` prong when all variants are covered
+  (`branchCoversAllVariants` via the union variant registry).
+  Fixture `test/branch_exhaustive_else_test.zbr`.
+- A5 struct-`^T` field mutation emits broken deref-assign — now tracked as
+  **BUG-170** (selfhost-only; bootstrap boxes correctly).
+- B1 ✅ FIXED (2026-07-06) — indexed `for i, v in list` now emits indexed
+  iteration (`for (list.items, 0..) |v, _zbr_i|`; i = index int, v = element) on
+  both compilers.  Fixture `test/for_indexed_test.zbr`.
 - B3 `zig"…"` referencing params → param-discards emitted before the inline Zig.
 - B4 mutating `capture` closure → closure self emitted `const`.
 - B5 interface `is Iface` runtime check → undeclared `_ttag_Iface`.
@@ -165,12 +168,16 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
 - B10 backed enum `enum Status(int)` (parser — not implemented).
 - B11 `while` bind-and-guard `while x = f() != nil` (parser — not implemented).
 - B12 inline / comma `except` (only the block form parses; prose implies comma).
-- The `^ClassName is a compile error` claim (§22) is factually wrong — it compiles
-  (redundant). Decide: reject `^Class`, or document it as allowed-but-pointless.
+- ✅ RESOLVED (2026-07-05) — `^ClassName` is now a real compile error in both
+  compilers ("a class is already a reference; drop the '^'"), making the §22 doc
+  claim true.  See BUG-078.
 
 **Bootstrap-vs-selfhost divergences (D-class — `src/` is nominally authority):**
-- D1 mixin `adds` — works on `zebra.exe`, fails on bootstrap.
-- D2 generic functions `def f(T)(x:T):T` — works on `zebra.exe`, fails on bootstrap.
+- D1 ✅ FIXED (2026-07-05) — mixin `adds` method-return typing on the call path
+  (bootstrap now matches `zebra.exe`).
+- D2 generic functions `def f(T)(x:T):T` — works on `zebra.exe`, fails on
+  bootstrap.  **Deferred** (large feature port to the phasing-out compiler); see
+  NEXT_STEPS "Bootstrap lacks generic *functions*".
 - **File.read + print** — bootstrap prints the string (`abc`), selfhost prints the
   byte array (`{ 97, 98, 99 }`). A *silent output divergence* — the selfhost types
   `File.read`'s result differently. Pre-existing; surfaced when the File.append fix

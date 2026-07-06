@@ -1666,6 +1666,11 @@ const TypeChecker = struct {
                             for (s.vars, 0..) |vname, i| {
                                 if (i < elem.tuple.len) try tc.loop_var_types.put(vname, elem.tuple[i]);
                             }
+                        } else if (s.vars.len == 2) {
+                            // B1: indexed List iteration `for i, v in list` — the
+                            // first var is the index (int), the second the element.
+                            try tc.loop_var_types.put(s.vars[0], .int);
+                            try tc.loop_var_types.put(s.vars[1], elem);
                         } else {
                             for (s.vars) |vname| try tc.loop_var_types.put(vname, elem);
                         }

@@ -1,0 +1,36 @@
+# A3: a union `branch` that names every variant AND has an `else` must compile.
+# The emitted Zig switch is exhaustive, so codegen omits the redundant else
+# prong (Zig rejects an else on a fully-covered switch as "unreachable").
+
+union Shape
+    circle: int
+    square: int
+
+def area(s: Shape): int
+    branch s
+        on Shape.circle as r
+            return r * r
+        on Shape.square as w
+            return w * w
+        else
+            return 0        # unreachable — all variants covered; must not error
+
+# A non-exhaustive branch keeps its else (the else genuinely handles the rest).
+union Color
+    red: int
+    green: int
+    blue: int
+
+def brightness(c: Color): int
+    branch c
+        on Color.red as v
+            return v
+        else
+            return 0
+
+def main()
+    assert area(Shape.circle(3)) == 9, "circle"
+    assert area(Shape.square(4)) == 16, "square"
+    assert brightness(Color.green(7)) == 0, "non-exhaustive else"
+    assert brightness(Color.red(5)) == 5, "covered arm"
+    print("branch_exhaustive_else: OK")

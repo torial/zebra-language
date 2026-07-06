@@ -692,6 +692,10 @@ for k, v in m.entries()              # direct iteration also works
 for item in items
     print(item)
 
+# Indexed iteration over a List — first var is the index (int), second the element.
+for i, item in items
+    print("${i}: ${item}")
+
 for k, v in m
     print("${k} = ${v}")
 

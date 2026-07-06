@@ -5687,6 +5687,15 @@ struct Generator
             if is_tuple_list
                 genForInTupleList(fi)
                 return
+        # B1: for i, v in list — indexed iteration (i = index, v = element).
+        if fi.vars.len == 2
+            var is_indexed = false
+            if fi.iter is Expr.ident as il_id
+                if localIsList(il_id.name)
+                    is_indexed = true
+            if is_indexed
+                genForInIndexedList(fi)
+                return
         if fi.vars.len == 2
             # HashMap two-var iterator: `for k, v in map`
             var kname = fi.vars.at(0)
@@ -6044,6 +6053,35 @@ struct Generator
             if i == 1 and direct_val_str
                 ig.str_params.add(vname)
             i = i + 1
+        ig.emitForGuard(fi)
+        ig.genStmts(fi.stmts)
+        if fi.else_ != nil
+            writeIndent()
+            w.emit("} else {\n")
+            ig.genStmts(fi.else_!)
+        writeIndent()
+        w.emit("}\n")
+
+    # B1: `for i, v in list` — indexed iteration.  i = index (i64), v = element.
+    # Emits `for (list.items, 0..) |v, _zbr_i| { const i = @intCast(_zbr_i); ... }`.
+    def genForInIndexedList(fi: StmtForIn)
+        var ig = indented()
+        ig.for_else_label = nil
+        var iname = fi.vars.at(0)
+        var vname = fi.vars.at(1)
+        writeIndent()
+        w.emit("for (")
+        genExpr(fi.iter)
+        w.emit(".items, 0..) |" + vname + ", _zbr_i| {\n")
+        ig.writeIndent()
+        ig.w.emit("const " + iname + " = @as(i64, @intCast(_zbr_i));\n")
+        # Discard i / v if neither the body nor the where-clause reads them
+        # (Zig rejects an unused capture / local constant).
+        ig.discardUnusedLoopVars(fi)
+        # Mark the element var as str when iterating a List(str).
+        if fi.iter is Expr.ident as lv_id
+            if localIsListStr(lv_id.name)
+                ig.str_params.add(vname)
         ig.emitForGuard(fi)
         ig.genStmts(fi.stmts)
         if fi.else_ != nil
@@ -6593,6 +6631,38 @@ struct Generator
                 writeIndent()
                 w.emit("unreachable;\n")
 
+    # A3: true when a union branch names every variant in its on-arms, making
+    # the emitted Zig switch exhaustive — an else prong would then be
+    # "unreachable" and Zig rejects it.  Returns false for enums (variant list
+    # empty) and cross-module unions not in the type tables, keeping the else.
+    def branchCoversAllVariants(b: StmtBranch): bool
+        var union_name: str = ""
+        for cas in b.cases
+            if union_name != ""
+                break
+            for cv in cas.values
+                var vk = getVariantKey(cv)
+                if vk != nil
+                    # Key is "Union.variant"; take the part before the first dot.
+                    for kp in vk!.split(".")
+                        union_name = kp
+                        break
+                    break
+        if union_name == ""
+            return false
+        var total = .module_types.variantNamesForUnion(union_name).len
+        if total == 0
+            total = .dep_types.variantNamesForUnion(union_name).len
+        if total == 0
+            return false
+        var covered: StrSet = StrSet()
+        for cas2 in b.cases
+            for cv2 in cas2.values
+                var vk2 = getVariantKey(cv2)
+                if vk2 != nil
+                    covered.add(extractAfterDot(vk2!))
+        return covered.items().len >= total
+
     def genBranchTagged(b: StmtBranch)
         # Determine if any case has a binding (union dispatch vs enum dispatch)
         var has_binding = false
@@ -6699,7 +6769,8 @@ struct Generator
                 iig.opt_ptr_field_bindings.removeStartingWith(bkey)
             ig.writeIndent()
             ig.w.emit("},\n")
-        if b.else_ != nil
+        # A3: omit the else prong when the union switch is exhaustive.
+        if b.else_ != nil and not branchCoversAllVariants(b)
             ig.writeIndent()
             ig.w.emit("else => ")
             # Zig 0.16: |_| capture discard not allowed; omit entirely

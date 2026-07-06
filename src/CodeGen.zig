@@ -11326,6 +11326,16 @@ const Generator = struct {
             }
         }
 
+        // B1: for i, v in list — indexed iteration (i = index, v = element).
+        // A List with 2 vars is NOT a HashMap; the List((tuple)) destructuring
+        // case is already handled above, so a plain List(T) here is indexed.
+        if (s.vars.len == 2) {
+            if (g.getExprDeclaredType(s.iter)) |tr| {
+                if (tr == .generic and std.mem.eql(u8, tr.generic.name, "List"))
+                    return g.genForInIndexedList(s);
+            }
+        }
+
         // for k, v in map — 2-var form is HashMap-only in Zebra; dispatch early
         // so type-inference gaps don't fall through to the native Zig for-loop path.
         if (s.vars.len == 2) return g.genForInHashMap(s);
@@ -11611,6 +11621,37 @@ const Generator = struct {
         try g.w.writeAll("| {\n");
         var bg = g.indented();
         bg.for_else_label = null;  // don't inherit outer for-else label
+        try discardUnusedLoopVars(bg, s);
+        if (s.where) |w| {
+            try bg.writeIndent();
+            try bg.w.writeAll("if (!(");
+            try bg.genExpr(w);
+            try bg.w.writeAll(")) continue;\n");
+        }
+        try bg.genStmts(s.body);
+        if (s.else_) |else_body| {
+            try g.writeIndent();
+            try g.w.writeAll("} else {\n");
+            try g.indented().genStmts(else_body);
+        }
+        try g.writeIndent();
+        try g.w.writeAll("}\n");
+    }
+
+    /// B1: `for i, v in list` — indexed iteration.  i = index (i64), v = element.
+    /// Emits `for (list.items, 0..) |v, _zbr_i| { const i = @intCast(_zbr_i); ... }`.
+    fn genForInIndexedList(g: Generator, s: *Ast.StmtForIn) anyerror!void {
+        try g.writeIndent();
+        try g.w.writeAll("for (");
+        const iter_needs_paren = s.iter.* == .try_;
+        if (iter_needs_paren) try g.w.writeAll("(");
+        try g.genExpr(s.iter);
+        if (iter_needs_paren) try g.w.writeAll(")");
+        try g.w.print(".items, 0..) |{s}, _zbr_i| {{\n", .{s.vars[1]});
+        var bg = g.indented();
+        bg.for_else_label = null;
+        try bg.writeIndent();
+        try bg.w.print("const {s} = @as(i64, @intCast(_zbr_i));\n", .{s.vars[0]});
         try discardUnusedLoopVars(bg, s);
         if (s.where) |w| {
             try bg.writeIndent();
@@ -12001,6 +12042,34 @@ const Generator = struct {
     //   .list_payload → `List(T)`: inject list_loop_vars so nested for-in uses .items.
     //   .other        → plain value; no special treatment.
     const PayloadKind = enum { ref_payload, list_payload, other };
+
+    /// A3: true when a same-module union `branch` names every variant in its
+    /// `on` arms.  Such a Zig switch is exhaustive, so an `else` prong would be
+    /// "unreachable" and Zig rejects it — genBranch omits the else in that case.
+    /// Conservative: returns false for cross-module/exposed unions (variant list
+    /// not available here), leaving the else in place.
+    fn branchCoversAllVariants(g: Generator, s: *const Ast.StmtBranch) bool {
+        var union_name: []const u8 = "";
+        outer: for (s.on) |on| {
+            for (on.values) |v| {
+                const obj: ?*const Ast.Expr = if (v.* == .member) v.member.object
+                    else if (v.* == .call and v.call.callee.* == .member) v.call.callee.member.object
+                    else null;
+                if (obj) |o| if (o.* == .ident) { union_name = o.ident.name; break :outer; };
+            }
+        }
+        if (union_name.len == 0) return false;
+        const du = g.union_decls.get(union_name) orelse return false;
+        var covered = std.StringHashMap(void).init(g.alloc);
+        defer covered.deinit();
+        for (s.on) |on| for (on.values) |v| {
+            const vn: []const u8 = if (v.* == .member) v.member.member
+                else if (v.* == .call and v.call.callee.* == .member) v.call.callee.member.member
+                else "";
+            if (vn.len > 0) covered.put(vn, {}) catch return false;
+        };
+        return covered.count() >= du.variants.len;
+    }
 
     fn unionPayloadKind(g: Generator, union_name: []const u8, variant_name: []const u8) PayloadKind {
         if (g.union_decls.get(union_name)) |du| {
@@ -12401,12 +12470,16 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.writeAll("},\n");
         }
+        // A3: an else on an exhaustive union switch is unreachable — omit it.
+        const skip_else = is_union and g.branchCoversAllVariants(s);
         if (s.else_) |eb| {
-            try bg.writeIndent();
-            try bg.w.writeAll("else => {\n");
-            try bg.indented().genStmts(eb);
-            try bg.writeIndent();
-            try bg.w.writeAll("},\n");
+            if (!skip_else) {
+                try bg.writeIndent();
+                try bg.w.writeAll("else => {\n");
+                try bg.indented().genStmts(eb);
+                try bg.writeIndent();
+                try bg.w.writeAll("},\n");
+            }
         }
         try g.writeIndent();
         try g.w.writeAll("}\n");
