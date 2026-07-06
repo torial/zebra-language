@@ -15,4 +15,6 @@ def main()
     var f = Foo()
     assert f.hi() == "hi", "mixin str method"
     assert f.count() == 42, "mixin int method"
+    # Call-return path: print() must see hi() as str, not a byte array.
+    print(f.hi())
     print("ok")
