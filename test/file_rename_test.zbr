@@ -1,0 +1,16 @@
+def main()
+    var a = "test_rename_a.txt"
+    var b = "test_rename_b.txt"
+
+    File.write(a, "payload")
+    File.rename(a, b)
+
+    # Old path gone, new path present with the original contents.
+    assert not File.exists(a), "source removed after rename"
+    assert File.exists(b), "target present after rename"
+    assert File.read(b) == "payload", "contents preserved"
+
+    File.delete(b)
+    assert not File.exists(b)
+
+    print("file_rename OK")

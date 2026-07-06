@@ -229,27 +229,9 @@ const Resolver = struct {
         // Resolve each variant's payload TypeRef so TypeChecker can infer branch binding types.
         for (n.variants) |*v| {
             if (v.payload) |*payload| {
+                // resolveTypeRef centrally rejects `^ClassName` (BUG-078: a class
+                // is already a reference; the `^` double-boxes to `**T`).
                 try r.resolveTypeRef(payload, scope);
-                // BUG-078: ^ClassName double-boxes — class types are already reference
-                // types (*T on the heap); adding ^T produces **T at runtime.
-                switch (payload.*) {
-                    .ref_to => |inner| switch (inner.*) {
-                        .named => |*ntr| {
-                            if (r.types.get(ntr)) |resolved| {
-                                if (resolved == .symbol and resolved.symbol.kind == .class) {
-                                    const msg = try std.fmt.allocPrint(
-                                        r.diag_alloc,
-                                        "'^{s}' double-boxes — '{s}' is already a reference type; use '{s}: {s}' directly",
-                                        .{ resolved.symbol.name, resolved.symbol.name, v.name, resolved.symbol.name },
-                                    );
-                                    try r.diags.append(r.diag_alloc, .{ .span = v.span, .kind = .err, .message = msg });
-                                }
-                            }
-                        },
-                        else => {},
-                    },
-                    else => {},
-                }
             }
         }
     }
@@ -1096,7 +1078,32 @@ const Resolver = struct {
             .nilable     => |inner| try r.resolveTypeRef(inner, scope),
             .stream      => |inner| try r.resolveTypeRef(inner, scope),
             .error_union => |inner| try r.resolveTypeRef(inner, scope),
-            .ref_to      => |inner| try r.resolveTypeRef(inner, scope),
+            .ref_to      => |inner| {
+                try r.resolveTypeRef(inner, scope);
+                // A class is already a reference (`*T`); `^ClassName` adds a
+                // redundant indirection that emits the identical `*T`.  Reject
+                // it everywhere with a fix-it so the spelling stays honest.
+                // (Structs/unions still need `^` for by-value heap indirection.)
+                // `^Class?` parses as ref_to(nilable(named)), so peer through an
+                // optional layer to reach the named type.
+                const named_inner: ?*const Ast.NamedTypeRef = switch (inner.*) {
+                    .named => &inner.named,
+                    .nilable => |opt_inner| if (opt_inner.* == .named) &opt_inner.named else null,
+                    else => null,
+                };
+                if (named_inner) |ntr| {
+                    if (r.types.get(ntr)) |resolved| {
+                        if (resolved == .symbol and resolved.symbol.kind == .class) {
+                            const msg = try std.fmt.allocPrint(
+                                r.diag_alloc,
+                                "'^{s}' is invalid — a class is already a reference; drop the '^' and use '{s}' directly",
+                                .{ resolved.symbol.name, resolved.symbol.name },
+                            );
+                            try r.diags.append(r.diag_alloc, .{ .span = ntr.span, .kind = .err, .message = msg });
+                        }
+                    }
+                }
+            },
             .generic     => |*g| {
                 if (scope.lookup(g.name) == null and BUILTINS.get(g.name) == null)
                     try r.emitUnresolved(g.span, g.name);

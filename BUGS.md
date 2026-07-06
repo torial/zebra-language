@@ -1,8 +1,45 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-169. Next new bug: BUG-170.**
+**Last bug number generated: BUG-170. Next new bug: BUG-171.**
 
 ---
+
+## BUG-170: selfhost does not box a value struct assigned to a `^T` field ⚠️ OPEN (pre-existing, selfhost-only)
+
+**Severity:** medium (bootstrap/selfhost parity gap; selfhost emits invalid Zig
+for a narrow struct pattern). Surfaced 2026-07-05 while making `^ClassName` a
+hard error — `test/ref_struct_test.zbr` (a struct `^Point` field test, never
+registered in the smoke suite) fails on the selfhost compiler while bootstrap
+passes.
+
+**Symptom:** `holder.p = pt` where `p: ^Point` (a `^`-indirected **struct**
+field) and `pt` is a value `Point`. Selfhost emits `self.p = pt;` — assigning a
+`Point` value to a `*Point` field — which Zig rejects with
+`error: expected type '*Point', found 'Point'`.
+
+**Expected (bootstrap emits):**
+`{ const _rp = _allocator.create(Point) catch @panic("OOM"); _rp.* = pt; self.p = _rp; }`
+— heap-box the value and assign the pointer.
+
+**Root:** `selfhost/CodeGen.zbr` `genAssign` has no boxing path for `^T` fields.
+It knows which fields are `^T`/`^T?` (`ref_fields`/`opt_ref_fields` StrSets +
+`getAssignFieldType`), but never emits the create-and-copy box when the RHS is a
+value. The hard part (why it isn't a trivial fix) is deciding *when* to box:
+only when the field is `^T` **and** the RHS is a value (not already a pointer,
+e.g. another `^T` field read or a class instance). Making that call precisely
+needs `inferExpr` on the RHS from within codegen — the same "least confident"
+struct-field-boxing area flagged in `test/recursive_type_test.zbr`.
+
+**Scope note:** This is NOT about classes — after BUG-078's `^ClassName`
+rejection, `^` only ever wraps structs/unions, and only structs are value types
+needing the box. The only in-repo trigger is `ref_struct_test.zbr`, which is why
+it went unnoticed (not in the smoke suite). `test/val_lib.zbr` (union `^Val?`)
+is a *field type* only, not an assignment, so it doesn't hit the gap.
+
+**Status:** documented, deferred — not introduced by the `^ClassName` work (the
+class boxing it replaced was identity/no-op). Fix = add a `^T`-field boxing arm
+to selfhost `genAssign` gated on an `inferExpr`-based value-vs-pointer check,
+then register `ref_struct_test` in the smoke suite.
 
 ## BUG-169: unused capture/local discard skipped when body holds an unmodeled expr (ternary) ✅ FIXED
 

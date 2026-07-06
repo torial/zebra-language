@@ -1,8 +1,13 @@
 # `^Struct` must emit `*Struct` (not `**Struct`) — struct discriminator for
-# BUG-041. Companion to `recursive_type_test.zbr` which covers `^Class`.
-# Rule: concept_zebra-class-auto-box-rule — the class short-circuit in
+# BUG-041. Rule: concept_zebra-class-auto-box-rule — the class short-circuit in
 # genType's .ref_to arm MUST NOT fire for struct payloads; structs are
 # value types and need the extra pointer.
+#
+# NOTE: passes on the bootstrap compiler; FAILS on the selfhost compiler due to
+# BUG-170 (selfhost genAssign doesn't box a value struct into a `^T` field).
+# Not registered in the smoke suite until BUG-170 is fixed. Companion coverage
+# for `^Class` recursion now lives in `recursive_type_test.zbr` (plain `Class?`,
+# since `^Class` is rejected as of BUG-078).
 struct Point
     var x: int
     var y: int

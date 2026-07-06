@@ -479,6 +479,13 @@ pub const ModuleInterface = struct {
     /// Key: "TypeName.fieldName" — present iff the field is `^T?`.
     /// Used by CodeGen to emit `field.?.*` in `expr to!` unwrap operations.
     optional_ref_fields: std.StringHashMap(void),
+    /// Set of fields declared as a plain `T?` (nilable) of a user-defined type
+    /// `T` (e.g. `next: Node?`).  Key: "TypeName.fieldName".  Unlike
+    /// `optional_ref_fields` this does NOT imply a `.?.*` double-deref — it only
+    /// tells `inferMember` to wrap the cross-module field type in `.optional`
+    /// so `if inst.field as n` sees an optional.  Without it a plain optional
+    /// class/struct field read cross-module loses its optionality.
+    optional_fields: std.StringHashMap(void),
     /// Set of methods whose declared return type is `T?` (nilable) for a
     /// user-defined `T`.  Key: "TypeName.methodName".  `simpleTypeFromRef`
     /// collapses such returns to `.unknown` and `instance_method_return_types`
@@ -549,6 +556,9 @@ pub const ModuleInterface = struct {
         var orfk = self.optional_ref_fields.keyIterator();
         while (orfk.next()) |k| alloc.free(k.*);
         self.optional_ref_fields.deinit();
+        var ofk = self.optional_fields.keyIterator();
+        while (ofk.next()) |k| alloc.free(k.*);
+        self.optional_fields.deinit();
         var omrk = self.optional_method_returns.keyIterator();
         while (omrk.next()) |k| alloc.free(k.*);
         self.optional_method_returns.deinit();
@@ -600,6 +610,8 @@ pub fn extractModuleInterface(
     errdefer ref_fields.deinit();
     var optional_ref_fields = std.StringHashMap(void).init(alloc);
     errdefer optional_ref_fields.deinit();
+    var optional_fields = std.StringHashMap(void).init(alloc);
+    errdefer optional_fields.deinit();
     var optional_method_returns = std.StringHashMap(void).init(alloc);
     errdefer optional_method_returns.deinit();
     var struct_init_ref_params = std.StringHashMap([]bool).init(alloc);
@@ -615,8 +627,8 @@ pub fn extractModuleInterface(
         if (decl == .var_) try module_vars.put(try alloc.dupe(u8, decl.var_.name), {});
     }
 
-    try extractFromDecls(module.decls, resolve, alloc, &methods, &fields, &types, &throws_methods, &boxed_variants, &variant_payload_types, &instance_field_types, &instance_method_return_types, &fn_return_types, &ref_fields, &optional_ref_fields, &optional_method_returns, &struct_init_ref_params, &list_field_elem_types);
-    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types, .module_vars = module_vars };
+    try extractFromDecls(module.decls, resolve, alloc, &methods, &fields, &types, &throws_methods, &boxed_variants, &variant_payload_types, &instance_field_types, &instance_method_return_types, &fn_return_types, &ref_fields, &optional_ref_fields, &optional_fields, &optional_method_returns, &struct_init_ref_params, &list_field_elem_types);
+    return .{ .methods = methods, .fields = fields, .types = types, .throws_methods = throws_methods, .boxed_variants = boxed_variants, .variant_payload_types = variant_payload_types, .instance_field_types = instance_field_types, .instance_method_return_types = instance_method_return_types, .fn_return_types = fn_return_types, .ref_fields = ref_fields, .optional_ref_fields = optional_ref_fields, .optional_fields = optional_fields, .optional_method_returns = optional_method_returns, .struct_init_ref_params = struct_init_ref_params, .list_field_elem_types = list_field_elem_types, .module_vars = module_vars };
 }
 
 fn extractFromDecls(
@@ -634,6 +646,7 @@ fn extractFromDecls(
     fn_return_types:              *std.StringHashMap([]const u8),
     ref_fields:                   *std.StringHashMap(void),
     optional_ref_fields:          *std.StringHashMap(void),
+    optional_fields:              *std.StringHashMap(void),
     optional_method_returns:      *std.StringHashMap(void),
     struct_init_ref_params:       *std.StringHashMap([]bool),
     list_field_elem_types:        *std.StringHashMap([]const u8),
@@ -642,12 +655,12 @@ fn extractFromDecls(
         .class  => |c| {
             const key = try alloc.dupe(u8, c.name);
             try types.put(key, .class);
-            try extractFromMembers(c.name, c.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(c.name, c.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .struct_ => |s| {
             const key = try alloc.dupe(u8, s.name);
             try types.put(key, .struct_);
-            try extractFromMembers(s.name, s.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(s.name, s.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .enum_ => |e| {
             const key = try alloc.dupe(u8, e.name);
@@ -687,7 +700,7 @@ fn extractFromDecls(
                 }
             }
         },
-        .namespace => |ns| try extractFromDecls(ns.decls, resolve, alloc, methods, fields, types, throws_methods, boxed_variants, variant_payload_types, instance_field_types, instance_method_return_types, fn_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types),
+        .namespace => |ns| try extractFromDecls(ns.decls, resolve, alloc, methods, fields, types, throws_methods, boxed_variants, variant_payload_types, instance_field_types, instance_method_return_types, fn_return_types, ref_fields, optional_ref_fields, optional_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types),
         // Top-level functions: record return type name in fn_return_types when it is a
         // user-defined type.  Key = function name only (no class prefix) so there is no
         // ambiguity with the "ClassName.methodName" keys in instance_method_return_types.
@@ -715,7 +728,7 @@ fn extractFromDecls(
         .interface => |i| {
             const key = try alloc.dupe(u8, i.name);
             try types.put(key, .class);
-            try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
+            try extractFromMembers(i.name, i.members, resolve, alloc, methods, fields, throws_methods, instance_field_types, instance_method_return_types, ref_fields, optional_ref_fields, optional_fields, optional_method_returns, struct_init_ref_params, list_field_elem_types);
         },
         .mixin      => {},  // mixin members not extracted today
         .extend     => {},  // extension methods collected by collectExtMethodsInDecls
@@ -738,6 +751,7 @@ fn extractFromMembers(
     instance_method_return_types: *std.StringHashMap([]const u8),
     ref_fields:                   *std.StringHashMap(void),
     optional_ref_fields:          *std.StringHashMap(void),
+    optional_fields:              *std.StringHashMap(void),
     optional_method_returns:      *std.StringHashMap(void),
     struct_init_ref_params:       *std.StringHashMap([]bool),
     list_field_elem_types:        *std.StringHashMap([]const u8),
@@ -815,6 +829,12 @@ fn extractFromMembers(
                     } else {
                         try ref_fields.put(rf_key, {});
                     }
+                }
+                // Plain `T?` (nilable, no ref_to) of a user-defined type: record
+                // so cross-module `inst.field` reads stay optional.  Unlike
+                // optional_ref_fields this does NOT trigger a `.?.*` deref.
+                if (tr.* == .nilable and namedTypeStr(tr, resolve) != null and t.isAbstract()) {
+                    try optional_fields.put(try alloc.dupe(u8, key), {});
                 }
             }
         },
@@ -2604,10 +2624,11 @@ const TypeChecker = struct {
                     if (iface.methods.get(key)) |t| if (!t.isAbstract()) return t;
                     // For user-defined field types: return a typed cross_module value
                     // so chained access (inst.field.method()) stays typed.
-                    // For ^T? (optional_ref_fields) wrap in optional so `if x as n` works.
+                    // Wrap in optional so `if x as n` works: `^T?` fields live in
+                    // optional_ref_fields, plain `T?` fields in optional_fields.
                     if (iface.instance_field_types.get(key)) |tname| {
                         const base = Type{ .cross_module = .{ .module = cm.module, .type_name = tname } };
-                        if (iface.optional_ref_fields.contains(key)) {
+                        if (iface.optional_ref_fields.contains(key) or iface.optional_fields.contains(key)) {
                             const boxed = tc.map_alloc.create(Type) catch return base;
                             boxed.* = base;
                             return Type{ .optional = boxed };

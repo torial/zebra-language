@@ -1,8 +1,8 @@
 class Node
     var name: str
-    var next: ^Node?
+    var next: Node?
 
-    cue init(name: str, next: ^Node?)
+    cue init(name: str, next: Node?)
         .name = name
         .next = next
 
@@ -39,8 +39,8 @@ class Main
             ok = false
             print("Test 2 FAIL: values")
 
-        # Test 3: class instance with recursive ^T? field (3-node linked list)
-        var head: ^Node? = nil
+        # Test 3: class instance with recursive optional self-link (3-node list)
+        var head: Node? = nil
         allocate Arena()
             var n3 = Node("c", nil)
             var n2 = Node("b", n3)

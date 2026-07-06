@@ -391,6 +391,9 @@ smoke tools/branch_to_if_is.zbr
 # SIMD vector types: f32x8, i32x4, etc.
 smoke test/simd_test.zbr
 
+# Design c: `^ClassName` is rejected — a class is already a reference.
+smoke_tc_fail test/bug078_double_box_test.zbr "a class is already a reference"
+
 # Phase 2 TC diagnostics: bidirectional inference error fixtures.
 # These must FAIL compilation with a "type mismatch" substring in stderr.
 smoke_tc_fail test/tc_mismatch_var_test.zbr "type mismatch"
@@ -757,6 +760,8 @@ smoke_run test/list_sort_comparator_test.zbr "list_sort: OK"
 smoke_run test/mem_stats_test.zbr "mem_stats: OK"
 # §28h: ObjectPool(T) — take()/give()/inUse(), exhaustion nil, double-give guard.
 smoke_run test/object_pool_test.zbr "object_pool: OK"
+# File.rename parity: Zig-0.16 rename(old_dir, sub, new_dir, sub, io) on both compilers.
+smoke_run test/file_rename_test.zbr "file_rename OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

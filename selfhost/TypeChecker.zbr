@@ -175,9 +175,13 @@ class ClassTypes
     # Full Param list (incl. default exprs) per method/ctor ("init" for the
     # constructor), so cross-module callers can fill defaulted args (§27b).
     var fn_param_lists: HashMap(str, List(Param))
+    # True iff this entry is a `class` (not a struct/union/interface/mixin).
+    # Used to reject `^ClassName` — a class is already a reference (`*T`).
+    var is_class: bool
 
     cue init(name: str)
         .name = internString(name)
+        is_class = false
         field_types = HashMap()
         method_returns = HashMap()
         method_params = HashMap()
@@ -733,6 +737,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
         branch decl
             on Decl.class_ as c
                 var ct = ClassTypes(c.name)
+                ct.is_class = true
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
                 if c.ifaces.len > 0
@@ -2742,8 +2747,73 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
         else
             pass
 
+# ── `^ClassName` rejection ────────────────────────────────────────────────
+# A class is already a reference (`*T`); `^ClassName` adds a redundant
+# indirection that would double-box.  Reject it everywhere with a fix-it,
+# mirroring src/Resolver.zig.  Structs/unions still need `^` for by-value
+# heap indirection, so only names bound to an actual `class` are rejected.
+
+def isHatClassName(nm: str, mt: ModuleTypes, dt: ModuleTypes): bool
+    if mt.classOf(nm) as ct
+        return ct.is_class
+    if dt.classOf(nm) as ct2
+        return ct2.is_class
+    return false
+
+# Returns the class name if `tr` is `^Class` or `^Class?` (ref_to, possibly
+# wrapping an optional), else nil.
+def hatClassName(tr: TypeRef, mt: ModuleTypes, dt: ModuleTypes): str?
+    if tr is TypeRef.ref_to as inner
+        var nm: str = ""
+        if inner is TypeRef.named as nr
+            nm = nr.name
+        else if inner is TypeRef.nilable as nopt
+            if nopt is TypeRef.named as nr2
+                nm = nr2.name
+        if nm != ""
+            if isHatClassName(nm, mt, dt)
+                return nm
+    return nil
+
+def reportHatClass(tr: TypeRef, line: int, col: int, file: str, ctx: InferCtx)
+    if hatClassName(tr, ctx.module_types, ctx.dep_types) as cn
+        ctx.addErr(file, line, col, "'^" + cn + "' is invalid — a class is already a reference; drop the '^' and use '" + cn + "' directly")
+
+def checkHatClassDecl(decl: Decl, file: str, ctx: InferCtx)
+    branch decl
+        on Decl.class_ as c
+            for cmem in c.members
+                checkHatClassDecl(cmem, file, ctx)
+        on Decl.struct_ as s
+            for smem in s.members
+                checkHatClassDecl(smem, file, ctx)
+        on Decl.namespace_ as ns
+            for nd in ns.decls
+                checkHatClassDecl(nd, file, ctx)
+        on Decl.var_ as v
+            if v.type_ != nil
+                reportHatClass(v.type_!, v.span.line, v.span.col, file, ctx)
+        on Decl.method as dm
+            for mp in dm.params
+                if mp.type_ != nil
+                    reportHatClass(mp.type_!, mp.span.line, mp.span.col, file, ctx)
+            if dm.return_type != nil
+                reportHatClass(dm.return_type!, dm.span.line, dm.span.col, file, ctx)
+        on Decl.init as ini
+            for ip in ini.params
+                if ip.type_ != nil
+                    reportHatClass(ip.type_!, ip.span.line, ip.span.col, file, ctx)
+        on Decl.union_ as u
+            for uv in u.variants
+                if uv.payload != nil
+                    reportHatClass(uv.payload!, uv.span.line, uv.span.col, file, ctx)
+        else
+            pass
+
 def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
     ctx.withFile(file)
+    for hdecl in m.decls
+        checkHatClassDecl(hdecl, file, ctx)
     var tc_result: TcResult = TcResult()
     for decl in m.decls
         checkDecl(decl, file, ctx, tc_result)

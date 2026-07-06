@@ -1,17 +1,18 @@
-# Test ^T heap-indirection type for recursive/self-referential structures.
+# Test recursive/self-referential class structures.  A class is already a
+# reference (`*T`), so an optional self-link is just `Node?` — no `^` needed
+# (the `^` heap-indirection form is for structs/unions; see ref_struct_test).
 # A singly-linked list node where `next` points to another Node.
 
 class Node
     var value: int
-    var next : ^Node?
+    var next : Node?
 
     cue init(v: int)
         value = v
         next = nil
 
-# Pair uses non-optional ^T to test cross-class field boxing
-# (the least-confident scenario: `obj.field = x` where field: ^T
-# and obj is a different class than the one being generated).
+# PairHolder holds a non-optional reference to a Pair declared in a different
+# class — tests cross-class field assignment (`obj.field = x`).
 class Pair
     var a: int
     var b: int
@@ -20,14 +21,14 @@ class Pair
         b = pb
 
 class PairHolder
-    var p: ^Pair
+    var p: Pair
     cue init(pair: Pair)
         p = pair
 
 class Tree
     var value: int
-    var left : ^Tree?
-    var right: ^Tree?
+    var left : Tree?
+    var right: Tree?
 
     cue init(v: int)
         value = v
@@ -35,16 +36,14 @@ class Tree
         right = nil
 
 def main()
-    # Build from deepest first so each boxing captures the correct state.
-    # ^T boxing copies by value at assignment time — deeper links must be
-    # set before the node is boxed into its parent.
+    # Classes are reference types, so a.next = b links to the shared b.
     var c = Node(3)     # leaf
 
     var b = Node(2)
-    b.next = c          # link b → c *before* boxing b
+    b.next = c          # link b → c
 
     var a = Node(1)
-    a.next = b          # link a → b (boxes current b, which has next → c)
+    a.next = b          # link a → b
 
     assert a.value == 1
 
@@ -57,8 +56,7 @@ def main()
     assert n2 != nil
     assert n2?.value == 3
 
-    # Nested ^T? assignment: set children on an object that's already
-    # reached via a member access (tests nested boxing path).
+    # Nested optional assignment: set children on a tree node.
     var leaf_l = Tree(10)
     var leaf_r = Tree(20)
     var root   = Tree(5)
@@ -73,9 +71,8 @@ def main()
     assert rr != nil
     assert rr?.value == 20
 
-    # Non-optional ^T field: `holder.p = pair` where p: ^Pair is
-    # declared in PairHolder, not in Main.  Tests the cross-class
-    # TC-based boxing path (the "least confident" scenario).
+    # Cross-class field: `holder.p = pair` where p: Pair is declared in
+    # PairHolder, not in Main.  Tests cross-class field assignment.
     var pair  = Pair(7, 13)
     var holder = PairHolder(pair)
     assert holder.p.a == 7

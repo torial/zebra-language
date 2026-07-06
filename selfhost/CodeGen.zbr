@@ -12283,6 +12283,20 @@ struct Generator
             writeIndent()
             w.emit("})")
             return
+        if mname == "rename"
+            # Zig 0.16 sig: rename(old_dir, old_sub_path, new_dir, new_sub_path, io).
+            w.emit("(std.Io.Dir.cwd().rename(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", std.Io.Dir.cwd(), ")
+            if args.len >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(", _io) catch @panic(\"File.rename error\"))")
+            return
         # Fallback: unknown File method
         w.emit("@compileError(\"selfhost: unknown File.")
         w.emit(mname)
