@@ -4645,6 +4645,18 @@ struct Generator
         if n.init_expr != nil
             if isStrSetCtor(n.init_expr!)
                 strset_locals.add(n.name)
+        # §28b: inferred `var e = map.entries()` → List((K, V)) tuple-list local,
+        # so `for k, v in e` destructures and str elements print as strings.
+        if n.init_expr != nil
+            if n.init_expr! is Expr.call as ent_c
+                if ent_c.callee is Expr.member as ent_m
+                    if ent_m.member == "entries"
+                        if ent_m.object is Expr.ident as ent_map_id
+                            list_tuple_locals.add(n.name)
+                            if localIsHashMapStrKey(ent_map_id.name)
+                                list_tuple_str_pos.add("${n.name}:0")
+                            if localIsHashMapStrVal(ent_map_id.name)
+                                list_tuple_str_pos.add("${n.name}:1")
         # Detect string vars from init expression (var x = "" or var x = "literal")
         if n.init_expr != nil
             if .isStringBoth(n.init_expr!, "var_decl")
@@ -5667,6 +5679,11 @@ struct Generator
             if fi.iter is Expr.ident as iter_id
                 if list_tuple_locals.contains_(iter_id.name)
                     is_tuple_list = true
+            # §28b: direct `for k, v in map.entries()` — the call yields List((K,V)).
+            if fi.iter is Expr.call as iter_call
+                if iter_call.callee is Expr.member as iter_cm
+                    if iter_cm.member == "entries"
+                        is_tuple_list = true
             if is_tuple_list
                 genForInTupleList(fi)
                 return
@@ -5998,6 +6015,16 @@ struct Generator
         var iter_name: str = ""
         if fi.iter is Expr.ident as iter_id
             iter_name = iter_id.name
+        # §28b: direct `for k, v in map.entries()` has no iter var name — derive
+        # the str positions straight from the map's key/value types.
+        var direct_key_str = false
+        var direct_val_str = false
+        if fi.iter is Expr.call as ent_call
+            if ent_call.callee is Expr.member as ent_cm
+                if ent_cm.member == "entries"
+                    if ent_cm.object is Expr.ident as ent_map
+                        direct_key_str = localIsHashMapStrKey(ent_map.name)
+                        direct_val_str = localIsHashMapStrVal(ent_map.name)
         writeIndent()
         w.emit("for (")
         genExpr(fi.iter)
@@ -6011,6 +6038,10 @@ struct Generator
                 ig.w.emit("_ = " + vname + ";\n")
             # Mark string loop vars so print/interp uses {s} format specifier.
             if iter_name != "" and list_tuple_str_pos.contains_(iter_name + ":" + i.toString())
+                ig.str_params.add(vname)
+            if i == 0 and direct_key_str
+                ig.str_params.add(vname)
+            if i == 1 and direct_val_str
                 ig.str_params.add(vname)
             i = i + 1
         ig.emitForGuard(fi)
@@ -9685,7 +9716,10 @@ struct Generator
                         w.emit(".count()))")
                         return
                     if mname == "entries"
+                        # §28b: entries() → List((K, V)) sortable snapshot.
+                        w.emit("_zebra_map_entries(")
                         genExpr(m.object)
+                        w.emit(")")
                         return
                     if mname == "keys"
                         # §28f: use the preamble helper (StringHashMap/AutoHashMap

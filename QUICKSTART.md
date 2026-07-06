@@ -674,6 +674,16 @@ for val in m.values()                # or iterate the snapshot directly
 # As with map/filter, annotate the binding (`var ks: List(str) = …`) to call
 # List methods on the result; direct `for x in m.keys()` iteration is also fine.
 
+# entries() → List((K, V)): a materialized, SORTABLE snapshot of the pairs.
+# Unlike `for k, v in m` (unordered), an entries() list can be sorted — e.g.
+# rank a word-count map by frequency.  Use it via inference (no annotation):
+var e = m.entries()                  # List((str, int))
+e.sort(def(a: (str, int), b: (str, int)) = a.1 > b.1)   # by value, descending
+for k, v in e                        # k: str, v: int
+    print("${k}: ${v}")
+for k, v in m.entries()              # direct iteration also works
+    print("${k}=${v}")
+
 # Set(T) — a hashable-element set (add/contains/remove/count) is PLANNED
 # (NEXT_STEPS §28f); not yet implemented. For now, model a set with
 # HashMap(T, bool) or check membership with `x in list`.

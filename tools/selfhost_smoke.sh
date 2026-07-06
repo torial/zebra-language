@@ -762,6 +762,8 @@ smoke_run test/mem_stats_test.zbr "mem_stats: OK"
 smoke_run test/object_pool_test.zbr "object_pool: OK"
 # File.rename parity: Zig-0.16 rename(old_dir, sub, new_dir, sub, io) on both compilers.
 smoke_run test/file_rename_test.zbr "file_rename OK"
+# §28b: HashMap.entries() → List((K,V)) — sortable map snapshot (sort by value).
+smoke_run test/hashmap_entries_test.zbr "hashmap_entries: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

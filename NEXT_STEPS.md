@@ -330,6 +330,21 @@ Everything here must ship before 1.0 stability locks in.
 
 ## Open Bugs
 
+**Bootstrap lacks generic *functions* (`def f(T)(...)`)** — parity gap where the
+selfhost is *ahead* of the bootstrap. `def identity(T)(x: T): T` and
+`test/generic_fn_test.zbr` compile and run on `zebra.exe` (selfhost) but the
+bootstrap parser rejects them (`syntax error near '('`). Bootstrap already has
+generic *class* machinery (`class Pair(A, B)` → `generic_named`), so the missing
+piece is function-level type-param parsing + comptime-`T` binding + call-site
+monomorphization (`identity(int)(42)`). **Deferred (2026-07-05):** this is a
+multi-component feature port (Parser + Ast + TypeChecker + CodeGen), not a
+reconcile-level fix, and the bootstrap is the phasing-out escape-hatch/regen
+authority. The self-hosting equivalence rule's core concern (selfhost never
+*lagging* bootstrap) is satisfied — bootstrap-lags-selfhost is the acceptable
+direction for the endgame. Revisit if a user hits it via `--zig-backend`, or as
+part of a deliberate "retire the bootstrap parser gaps" pass.
+See [[project_bootstrap_lags_selfhost]].
+
 **Selfhost `_initIo` propagation gap** —
 Selfhost-emitted dep modules get a simple `_initIo` from the preamble (sets local `_io` only);
 bootstrap-emitted dep modules get a propagating version that chains to their own transitive deps.
@@ -868,9 +883,19 @@ QUICKSTART.
   `sort()` stays the natural ascending sort. Both compilers; the comparator
   lambda's `a`/`b` params are seeded with the element type (like sortBy).
   Fixture `test/list_sort_comparator_test.zbr`.
-- ⏳ TODO — `HashMap.entries()` (needs `List((K,V))` tuples; the selfhost has
-  a pre-existing BROKEN entries arm that emits the map itself — unused, no
-  test — fix or remove when tuples are wired).
+- ✅ DONE (2026-07-06) — **`HashMap.entries()` → `List((K, V))`**. A
+  materialized, sortable snapshot of the map's pairs (`for k, v in m` can't be
+  sorted). Preamble helper `_zebra_map_entries` (shared); `map.entries()` emits
+  it in both compilers; TC types it as `List((K,V))` so `for k, v in e`
+  destructures (str keys print as strings) and a `.sort` comparator's params are
+  seeded to `(K,V)`. Works both via an inferred local (`var e = m.entries();
+  e.sort(...)`) and directly (`for k, v in m.entries()`). Fixed the selfhost's
+  pre-existing broken entries arm (emitted the map itself). Side fix: removed
+  `sort`/`sortBy` from the bootstrap's `mutating_methods` allow-list so a
+  sort-only list is emitted `const` (matches the selfhost, which already treated
+  them as read-only) — Zig rejects a `var` that is never reassigned.
+  Fixture `test/hashmap_entries_test.zbr`. Use via inference, not an explicit
+  `List((K,V))` annotation (each Zig `struct { K, V }` is a distinct type).
   **Generic `Set(T)` — FROM SCRATCH (design input wanted).** The §28f premise
   "mirror the existing StrSet API" is INVALID: `StrSet` is a selfhost-internal
   Zig type, NOT a user-facing Zebra type (`var s = StrSet()` → "'StrSet' is not

@@ -1732,6 +1732,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(hmt.key_t)
                             if hmname == "values"
                                 return Type_.list_(hmt.val_t)
+                            if hmname == "entries"
+                                # §28b: entries() → List((K, V)) sortable snapshot.
+                                var ent_elems = List(Type_)()
+                                ent_elems.add(hmt.key_t)
+                                ent_elems.add(hmt.val_t)
+                                return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
                         else
                             pass
                     # Cross-module constructor: ModuleName.ClassName(args).

@@ -311,6 +311,17 @@ fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "va
     while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
     return out;
 }
+// map.entries() → List((K, V)): a materialized, sortable snapshot of the map's
+// pairs (unlike `for k, v in map`, which can't be sorted).  Element type is the
+// same anonymous 2-tuple Zebra emits for `(K, V)`.  Because each `struct { K, V }`
+// is a distinct Zig type, the result is meant to be used via inference
+// (`var e = map.entries()`), not an explicit `List((K,V))` annotation.
+fn _zebra_map_entries(map: anytype) std.ArrayList(struct { @FieldType(@TypeOf(map).KV, "key"), @FieldType(@TypeOf(map).KV, "value") }) {
+    var out: std.ArrayList(struct { @FieldType(@TypeOf(map).KV, "key"), @FieldType(@TypeOf(map).KV, "value") }) = .empty;
+    var it = map.iterator();
+    while (it.next()) |e| out.append(_allocator, .{ e.key_ptr.*, e.value_ptr.* }) catch @panic("OOM");
+    return out;
+}
 // §28i: sys.memStats() → current program-arena footprint (bytes the arena
 // holds from the OS).  Because the arena bump-allocates and only grows until an
 // arena_scope reset, this is the high-water mark for the main allocator.  A

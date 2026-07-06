@@ -1,0 +1,38 @@
+# §28b: HashMap.entries() → List((K, V)) — a materialized, sortable snapshot
+# of the map's pairs.  Unlike `for k, v in map`, an entries() list can be
+# sorted (e.g. rank a word-count map by frequency).
+
+def main()
+    var scores: HashMap(str, int) = HashMap(str, int)()
+    scores.put("charlie", 30)
+    scores.put("alice", 10)
+    scores.put("bob", 20)
+
+    # Sort a map by value (ascending), then by value descending.
+    var e = scores.entries()
+    e.sort(def(a: (str, int), b: (str, int)) = a.1 < b.1)
+    var first_asc = e.at(0).0          # "alice" (lowest value)
+    assert first_asc == "alice", "asc first"
+
+    e.sort(def(a: (str, int), b: (str, int)) = a.1 > b.1)
+    var first_desc = e.at(0).0         # "charlie" (highest value)
+    assert first_desc == "charlie", "desc first"
+
+    # entries() count matches the map size.
+    assert e.len == 3, "entries len"
+
+    # Direct iteration over entries() (no intermediate var) sums the values.
+    var total = 0
+    for k, v in scores.entries()
+        total = total + v
+    assert total == 60, "sum via direct entries"
+
+    # Sum values of keys longer than 3 chars: charlie(30) + alice(10) = 40
+    # ("bob" is exactly 3, excluded) — tuple element access on str keys.
+    var long_total = 0
+    for k, v in scores.entries()
+        if k.len > 3
+            long_total = long_total + v
+    assert long_total == 40, "long-key value sum"
+
+    print("hashmap_entries: OK")

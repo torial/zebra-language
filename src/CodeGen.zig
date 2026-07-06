@@ -1442,10 +1442,13 @@ fn scanMutationsInExpr(
                 // Methods that modify the receiver's internal state in-place.
                 // Everything else defaults to non-mutating.
                 const mutating_methods = std.StaticStringMap(void).initComptime(&.{
-                    // List — in-place mutations
+                    // List — in-place mutations.  sort/sortBy are NOT here: they
+                    // emit `_zebra_sort_by(T, cmp, xs.items)`, which reorders the
+                    // backing buffer through a slice and does not require the
+                    // receiver binding to be `var` — so a sort-only list must stay
+                    // `const` (else Zig rejects it as "never mutated").
                     .{ "add",            {} }, .{ "remove",        {} },
-                    .{ "clear",          {} }, .{ "sort",          {} },
-                    .{ "sortBy",         {} }, .{ "reverse",       {} },
+                    .{ "clear",          {} }, .{ "reverse",       {} },
                     // HashMap — in-place mutations
                     .{ "set",            {} },
                     // StringBuilder — all write methods
@@ -10161,6 +10164,13 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        // §28b: entries() → List((K, V)) sortable snapshot of the map.
+        if (std.mem.eql(u8, method, "entries")) {
+            try g.w.writeAll("_zebra_map_entries(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
         return false;
     }
 
@@ -11525,6 +11535,23 @@ const Generator = struct {
             try bg.writeIndent();
             try bg.w.print("_ = {s};\n", .{v});
         }
+    }
+
+    /// Build the `List((K, V))` TypeRef for `<map_obj>.entries()` from the map's
+    /// declared `HashMap(K, V)` type, or null if `map_obj` isn't a known HashMap.
+    /// Lets `getExprDeclaredType` treat an entries() result as a tuple-list so the
+    /// existing tuple-list machinery (destructuring for-in, str element typing)
+    /// applies unchanged.
+    fn entriesListTypeRef(g: Generator, map_obj: *const Ast.Expr) ?Ast.TypeRef {
+        const mtr = g.getExprDeclaredType(map_obj) orelse return null;
+        if (mtr != .generic or !std.mem.eql(u8, mtr.generic.name, "HashMap") or mtr.generic.args.len < 2)
+            return null;
+        const tup_elems = g.alloc.alloc(Ast.TypeRef, 2) catch return null;
+        tup_elems[0] = mtr.generic.args[0];
+        tup_elems[1] = mtr.generic.args[1];
+        const list_args = g.alloc.alloc(Ast.TypeRef, 1) catch return null;
+        list_args[0] = .{ .tuple = .{ .span = mtr.generic.span, .elems = tup_elems } };
+        return .{ .generic = .{ .span = mtr.generic.span, .name = "List", .args = list_args } };
     }
 
     /// `for a, b in list_of_pairs` — destructure each tuple element into named variables.
@@ -13914,6 +13941,11 @@ const Generator = struct {
                     if (sym.decl == .method) return sym.decl.method.return_type;
                 }
             }
+            // §28b: `map.entries()` → List((K, V)) so `for k, v in map.entries()`
+            // destructures the tuple (and str keys print as strings).
+            if (callee.* == .member and std.mem.eql(u8, callee.member.member, "entries")) {
+                if (g.entriesListTypeRef(callee.member.object)) |lt| return lt;
+            }
         }
         if (expr.* == .ident) {
             const sym = g.resolve.exprs.get(&expr.ident) orelse return null;
@@ -13930,6 +13962,13 @@ const Generator = struct {
                             if (std.mem.eql(u8, ini.call.callee.ident.name, "HashMap")) {
                                 return .{ .generic = .{ .span = ini.call.span, .name = "HashMap", .args = ini.call.type_args } };
                             }
+                        }
+                        // §28b: inferred `var e = m.entries()` → List((K, V)) so
+                        // 2-var for-in destructures with correct element types.
+                        if (ini.* == .call and ini.call.callee.* == .member and
+                            std.mem.eql(u8, ini.call.callee.member.member, "entries"))
+                        {
+                            if (g.entriesListTypeRef(ini.call.callee.member.object)) |lt| return lt;
                         }
                         // Inferred `var files = Dir.walk(path)` → List(str), so
                         // `files.count()` / `files.items` route through the List

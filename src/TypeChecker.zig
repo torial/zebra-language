@@ -2765,6 +2765,20 @@ const TypeChecker = struct {
                 for (init.array_lit.elems) |el|
                     if (tc.expr_types.get(el)) |t| if (!t.isAbstract()) return t;
             }
+            // (d) inferred from a `map.entries()` initializer → List((K, V)).
+            // The element is the 2-tuple `(K, V)`, so `for k, v in e` destructures
+            // and a `.sort` comparator's params are seeded to `(K, V)`.
+            if (init.* == .call and init.call.callee.* == .member and
+                std.mem.eql(u8, init.call.callee.member.member, "entries"))
+            {
+                const obj_ = init.call.callee.member.object;
+                if (tc.hashMapArgType(obj_, 0)) |kt| if (tc.hashMapArgType(obj_, 1)) |vt| {
+                    const elems = tc.map_alloc.alloc(Type, 2) catch return null;
+                    elems[0] = kt;
+                    elems[1] = vt;
+                    return Type{ .tuple = elems };
+                };
+            }
         };
         return null;
     }
@@ -2843,6 +2857,14 @@ const TypeChecker = struct {
                 if (tc.hashMapArgType(cm.object, 0)) |kt| return kt;
             if (std.mem.eql(u8, cm.member, "values"))
                 if (tc.hashMapArgType(cm.object, 1)) |vt| return vt;
+            // §28b: for k, v in m.entries() → the tuple element (K, V).
+            if (std.mem.eql(u8, cm.member, "entries"))
+                if (tc.hashMapArgType(cm.object, 0)) |kt| if (tc.hashMapArgType(cm.object, 1)) |vt| {
+                    const elems = tc.map_alloc.alloc(Type, 2) catch return .unknown;
+                    elems[0] = kt;
+                    elems[1] = vt;
+                    return Type{ .tuple = elems };
+                };
         }
         // §28a: for-in over a call returning `List(T)` (optionally `?`-propagated,
         // `for a in makeNums()?`) — element type T.  `fn_return_types` collapses
@@ -2937,6 +2959,9 @@ const TypeChecker = struct {
                     }
                 }
             }
+            // Inferred list/tuple-list local (no annotation) — read the
+            // initializer.  Covers `var e = map.entries()` → element `(K, V)`.
+            if (tc.listElemTypeOfReceiver(iter)) |et| if (!et.isAbstract()) return et;
         }
         // Bare identifier initialized from db.query(sql) — no explicit type annotation,
         // but the variable's init expression is a sqlite query call → elements are sqlite_row.
