@@ -1540,6 +1540,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "isAbsolute"
                                 return Type_.bool_
                             return Type_.string_  # join/basename/dirname/ext/extension/stem/absolute
+                        if bname == "File"
+                            # Match the bootstrap's File return types so File.read
+                            # prints as a string ({s}), not a byte array ({any}).
+                            if mem.member == "read"
+                                return Type_.string_
+                            if mem.member == "exists" or mem.member == "isFile" or mem.member == "isDir"
+                                return Type_.bool_
+                            if mem.member == "size"
+                                return Type_.int_
+                            if mem.member == "modtime"
+                                return Type_.optional(Type_.int_)
+                            if mem.member == "readLines"
+                                return Type_.list_(Type_.string_)
+                            return Type_.void_  # write/append/delete/copy/rename
                         if bname == "Crypto"
                             if mem.member == "encrypt"
                                 return Type_.string_
