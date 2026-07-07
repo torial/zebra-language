@@ -768,6 +768,8 @@ smoke_run test/hashmap_entries_test.zbr "hashmap_entries: OK"
 smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
 # Audit B1: indexed for-in `for i, v in list` (i = index, v = element).
 smoke_run test/for_indexed_test.zbr "for_indexed: OK"
+# Audit B9: `is Union.Variant as n` on an OPTIONAL union (unwrap then tag-check).
+smoke_run test/optional_union_is_test.zbr "optional_union_is: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

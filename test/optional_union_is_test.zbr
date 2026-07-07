@@ -1,0 +1,30 @@
+# B9: `if x is Union.Variant as n` on an OPTIONAL union (`?Union`).
+# The check must unwrap the optional first (`x != null and x.? == .v`) and read
+# the payload through `.?` — Zig rejects comparing `?Union` to a tag directly.
+
+union Animal
+    dog: int
+    cat: str
+
+def describe(a: Animal?): str
+    if a is Animal.dog as age
+        return "dog aged ${age}"
+    else if a is Animal.cat as name
+        return "cat named ${name}"
+    return "none"
+
+def main()
+    var d: Animal? = Animal.dog(3)
+    var c: Animal? = Animal.cat("Felix")
+    var n: Animal? = nil
+
+    assert describe(d) == "dog aged 3", "optional dog"
+    assert describe(c) == "cat named Felix", "optional cat (str payload)"
+    assert describe(n) == "none", "nil optional"
+
+    # Non-optional union check still works (regression guard).
+    var plain: Animal = Animal.dog(9)
+    if plain is Animal.dog as age
+        assert age == 9, "non-optional dog"
+
+    print("optional_union_is: OK")

@@ -164,7 +164,10 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
 - B8 cross-module non-mutating struct method on a `const` binding → `self: *T`.
-- B9 `is Union.Variant as n` on an OPTIONAL union.
+- B9 ✅ FIXED (2026-07-06) — `is Union.Variant as n` on an OPTIONAL union now
+  unwraps first (`x != null and x.? == .v`, payload via `.?`) and the TC narrows
+  the binding through the optional (str payloads print correctly).  Both
+  compilers.  Fixture `test/optional_union_is_test.zbr`.
 - B10 backed enum `enum Status(int)` (parser — not implemented).
 - B11 `while` bind-and-guard `while x = f() != nil` (parser — not implemented).
 - B12 inline / comma `except` (only the block form parses; prose implies comma).

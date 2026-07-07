@@ -2135,7 +2135,10 @@ const TypeChecker = struct {
         }
         const tc_node = cond.type_check;
         const variant = tc_node.variant_name orelse return null;
-        const subj_type = try tc.inferExpr(tc_node.expr);
+        const subj_type_raw = try tc.inferExpr(tc_node.expr);
+        // B9: `if maybe is Union.variant as n` on an OPTIONAL union (`?Union`)
+        // narrows the payload through the optional — unwrap before the lookups.
+        const subj_type = if (subj_type_raw == .optional) subj_type_raw.optional.* else subj_type_raw;
         // ① Same-module union: look up the variant symbol in this file's scope.
         if (subj_type == .named) {
             const union_sym = subj_type.named;

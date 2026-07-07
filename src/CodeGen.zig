@@ -11044,9 +11044,20 @@ const Generator = struct {
                 const tc_node = cond.type_check;
                 const variant = tc_node.variant_name orelse tc_node.type_name;
                 const union_nm = tc_node.type_name;
+                // B9: `if maybe is Union.variant as n` on an OPTIONAL union
+                // (`?Union`) must unwrap first — `maybe != null and maybe.? == .v`
+                // — and read the payload through `.?`.  Zig rejects `?U == .v`.
+                const is_opt = if (g.tc) |tc|
+                    (tc.expr_types.get(tc_node.expr) orelse .unknown) == .optional
+                else false;
+                const deref: []const u8 = if (is_opt) ".?" else "";
                 try g.w.writeAll(lead);
+                if (is_opt) {
+                    try g.genExpr(tc_node.expr);
+                    try g.w.writeAll(" != null and ");
+                }
                 try g.genExpr(tc_node.expr);
-                try g.w.print(" == .{s}) {{\n", .{variant});
+                try g.w.print("{s} == .{s}) {{\n", .{ deref, variant });
                 const pk = if (union_nm.len > 0)
                     g.unionPayloadKind(union_nm, variant)
                 else
@@ -11056,13 +11067,13 @@ const Generator = struct {
                 if (pk == .ref_payload) {
                     try bg.w.print("const {s}_ptr = ", .{cap});
                     try bg.genExpr(tc_node.expr);
-                    try bg.w.print(".{s};\n", .{variant});
+                    try bg.w.print("{s}.{s};\n", .{ deref, variant });
                     try bg.writeIndent();
                     try bg.w.print("const {s} = {s}_ptr.*;\n", .{ cap, cap });
                 } else {
                     try bg.w.print("const {s} = ", .{cap});
                     try bg.genExpr(tc_node.expr);
-                    try bg.w.print(".{s};\n", .{variant});
+                    try bg.w.print("{s}.{s};\n", .{ deref, variant });
                 }
                 // BUG-164 (fuzz F6): a binding the body never reads is an
                 // unused local constant to Zig — discard it.  mightUseName is

@@ -5530,8 +5530,23 @@ struct Generator
                     # Union-variant check: `if x is Union.Variant as cap`
                     var variant = tc.variant_name!
                     var union_nm = tc.type_name
+                    # B9: on an OPTIONAL union (`?Union`) unwrap first —
+                    # `x != null and x.? == .v` — and read the payload via `.?`.
+                    # Zig rejects `?U == .v`.
+                    var is_opt = false
+                    if .infer_ctx != nil
+                        var et_b9: Type_ = inferExpr(tc.expr, .infer_ctx!)
+                        if et_b9 is Type_.optional as b9opt
+                            is_opt = true
+                    var deref: str = ""
+                    if is_opt
+                        deref = ".?"
                     w.emit("if (")
+                    if is_opt
+                        genExpr(tc.expr)
+                        w.emit(" != null and ")
                     genExpr(tc.expr)
+                    w.emit(deref)
                     w.emit(" == .")
                     w.emit(variant)
                     w.emit(") {\n")
@@ -5541,13 +5556,13 @@ struct Generator
                     if boxed_variants.contains_(variant_key)
                         ig.w.emit("const " + cap + "_ptr = ")
                         ig.genExpr(tc.expr)
-                        ig.w.emit("." + variant + ";\n")
+                        ig.w.emit(deref + "." + variant + ";\n")
                         ig.writeIndent()
                         ig.w.emit("const " + cap + " = " + cap + "_ptr.*;\n")
                     else
                         ig.w.emit("const " + cap + " = ")
                         ig.genExpr(tc.expr)
-                        ig.w.emit("." + variant + ";\n")
+                        ig.w.emit(deref + "." + variant + ";\n")
                     # Track ^T fields for this binding to enable auto-deref (mirrors genBranch)
                     if union_nm.len > 0 and variant.len > 0
                         var vp_ = .module_types.variantPayload(union_nm, variant)
