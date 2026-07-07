@@ -2,7 +2,7 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
-**Last updated:** 2026-07-02 (fuzz F1/F2 compiler gaps FIXED as BUG-162/161, both compilers, gated; new fuzz findings F6/F7 open; §28 pre-1.0 design-review recommendations added — grammar/stdlib items a–j from Fable's review. Prior: differential fuzzer built, BUG-159/160 found+fixed)
+**Last updated:** 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
