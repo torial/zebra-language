@@ -163,7 +163,16 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
 - B5 interface `is Iface` runtime check → undeclared `_ttag_Iface`.
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
-- B8 cross-module non-mutating struct method on a `const` binding → `self: *T`.
+- B8 ✅ NOT REPRODUCIBLE (2026-07-06) — cross-module non-mutating struct methods
+  now emit correctly (separate-file emit gives `self: *const T`); a clean var /
+  param / struct-field / list-iteration test works on both compilers, so the
+  original "cast discards const qualifier" appears to have been resolved by the
+  intervening mutation-analysis work.  **Found & fixed a real adjacent bug while
+  investigating:** a user struct/class method named like a SIMD reduction
+  (`sum`/`dot`/`max_element`/`min_element`) was mis-dispatched to `@reduce` on
+  the selfhost ("expected vector, found …") — the selfhost now only takes the
+  SIMD path when the receiver is a proven SIMD (`f32x8`/…) type.  Fixture
+  `test/struct_simd_name_method_test.zbr`.
 - B9 ✅ FIXED (2026-07-06) — `is Union.Variant as n` on an OPTIONAL union now
   unwraps first (`x != null and x.? == .v`, payload via `.?`) and the TC narrows
   the binding through the optional (str payloads print correctly).  Both

@@ -11144,14 +11144,22 @@ struct Generator
             if id.name == "Build"
                 genBuildStaticCall(mname, args)
                 return
-        # SIMD instance methods: sum/dot/max_element/min_element
-        # Safe dispatch by name — none of these clash with string/list/stdlib methods.
-        if mname == "sum" or mname == "max_element" or mname == "min_element"
-            genSimdInstanceCall(m.object, mname, args)
-            return
-        if mname == "dot" and args.len > 0
-            genSimdInstanceCall(m.object, mname, args)
-            return
+        # SIMD instance methods: sum/dot/max_element/min_element.  These names are
+        # also legal user-defined struct/class methods (e.g. `Vec2.sum()`), so
+        # dispatch to the SIMD reduction ONLY when the receiver is provably a SIMD
+        # vector (a named `f32x8`/`i32x4`/… type); otherwise fall through to normal
+        # method dispatch.  (Bootstrap gets this right; the selfhost previously
+        # assumed the names never clashed and mis-emitted `@reduce` on user types.)
+        if mname == "sum" or mname == "max_element" or mname == "min_element" or (mname == "dot" and args.len > 0)
+            var recv_is_simd = false
+            if .infer_ctx != nil
+                var simd_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
+                if simd_recv_t is Type_.named as simd_rn
+                    if isSimdTypeName(simd_rn)
+                        recv_is_simd = true
+            if recv_is_simd
+                genSimdInstanceCall(m.object, mname, args)
+                return
         # BUG-116: char methods — dispatch to std.ascii predicates when receiver is char_
         if mname == "isAlpha" or mname == "isDigit" or mname == "isWhitespace" or mname == "isUpper" or mname == "isLower" or mname == "toUpper" or mname == "toLower"
             var is_char116 = false

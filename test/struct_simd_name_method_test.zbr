@@ -1,0 +1,37 @@
+# A user struct/class method whose name collides with a SIMD reduction
+# (sum / dot / max_element / min_element) must dispatch to the user method, not
+# to `@reduce`.  The selfhost previously assumed these names never clashed and
+# emitted `@reduce` on the struct value ("expected vector, found …").
+
+struct Vec2
+    var x: int
+    var y: int
+
+    def sum(): int
+        return x + y
+
+    def dot(o: Vec2): int
+        return x * o.x + y * o.y
+
+    def max_element(): int
+        if x > y
+            return x
+        return y
+
+def main()
+    var a = Vec2(x: 2, y: 3)
+    assert a.sum() == 5, "user sum method"
+    assert a.dot(a) == 13, "user dot method"
+    assert a.max_element() == 3, "user max_element method"
+
+    # Same names reached through a List loop variable (element type not always
+    # inferred) must still dispatch to the user method.
+    var vs: List(Vec2) = List()
+    vs.add(Vec2(x: 1, y: 1))
+    vs.add(Vec2(x: 4, y: 5))
+    var total = 0
+    for item in vs
+        total = total + item.sum()
+    assert total == 11, "sum over a list of structs"
+
+    print("struct_simd_name_method: OK")
