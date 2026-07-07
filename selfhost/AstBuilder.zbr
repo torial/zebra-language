@@ -347,9 +347,21 @@ class ASTBuilder
 
     def buildEnum(e: PEnum): Decl throws
         var members: List(EnumMember) = List(EnumMember)()
-        for v in e.variants
-            members.add(EnumMember(zspan(), v, nil))
-        return Decl.enum_(DeclEnum(zspan(), zmods(), e.name, nil, members))
+        # B10: thread per-variant explicit values (parallel `values` list) and
+        # the optional backing type.
+        var vi = 0
+        while vi < e.variants.len
+            var vname: str = e.variants.at(vi)
+            if vi < e.values.len and e.values.at(vi).len > 0
+                const vval = .buildExpr(e.values.at(vi).at(0))?
+                members.add(EnumMember(zspan(), vname, vval))
+            else
+                members.add(EnumMember(zspan(), vname, nil))
+            vi = vi + 1
+        var base: TypeRef? = nil
+        if e.base != ""
+            base = .parseTypeRef(e.base)
+        return Decl.enum_(DeclEnum(zspan(), zmods(), e.name, base, members))
 
     # ── Method ────────────────────────────────────────────────────────────────
 

@@ -611,13 +611,20 @@ const Builder = struct {
 
     fn buildEnumDecl(b: Builder, node: TN) anyerror!Ast.DeclEnum {
         const kids = ch(node);
+        // Plain form: [ModList kw_enum id eol indent EnumMemberList dedent].
+        // B10 backed form: [ModList kw_enum open_call TypeRef rparen eol indent
+        // EnumMemberList dedent] — kids[2] is the open_call `Status(`, kids[3]
+        // the backing TypeRef.  open_call leaf text is the bare identifier.
+        const is_backed = isLeafKind(kids[2], .open_call);
+        const members_idx: usize = if (is_backed) 7 else 5;
         var members = std.ArrayList(Ast.EnumMember).empty;
-        try b.collectEnumMembers(kids[5], &members);
+        try b.collectEnumMembers(kids[members_idx], &members);
+        const base: ?Ast.TypeRef = if (is_backed) try b.buildTypeRef(kids[3]) else null;
         return .{
             .span    = spanOf(node, b.tokens),
             .mods    = b.buildModList(kids[0]),
             .name    = leafText(kids[2], b.tokens),
-            .base    = null,
+            .base    = base,
             .members = try members.toOwnedSlice(b.arena),
         };
     }

@@ -168,7 +168,12 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   unwraps first (`x != null and x.? == .v`, payload via `.?`) and the TC narrows
   the binding through the optional (str payloads print correctly).  Both
   compilers.  Fixture `test/optional_union_is_test.zbr`.
-- B10 backed enum `enum Status(int)` (parser — not implemented).
+- B10 ✅ FIXED (2026-07-06) — backed enum `enum Status(int)` with explicit
+  member values (`active = 1`).  Bootstrap: grammar rule + AstBuilder (codegen
+  `genEnum` already emitted `enum(T) { name = value }`).  Selfhost: taught the
+  enum parser the `(Type)` backing and `= Expr` per-variant values (PEnum +
+  parseEnumDecl + buildEnum + genEnum value emission — the DeclEnum AST already
+  modeled `base` and `EnumMember.value`).  Fixture `test/backed_enum_test.zbr`.
 - B11 ✅ NOT A GAP (2026-07-06) — bind-and-guard is implemented as
   `while var x = EXPR, GUARD` (comma required); the audit's `while x = f() != nil`
   example was malformed syntax copied from an incorrect QUICKSTART line (now

@@ -282,9 +282,15 @@ struct PExtend
 struct PEnum
     var name: str
     var variants: List(str)
-    cue init(name: str, variants: List(str))
+    # B10: backing type name ("" = plain enum) and per-variant explicit values
+    # (parallel to variants; each inner list is 0 or 1 value expr, like PField).
+    var base: str
+    var values: List(List(PNode))
+    cue init(name: str, variants: List(str), base: str, values: List(List(PNode)))
         .name = name
         .variants = variants
+        .base = base
+        .values = values
 
 struct PField
     var name: str
@@ -1419,9 +1425,22 @@ class Parser
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")?
-        const name = .eatId()?
+        # B10: backed enum `enum Status(int)` — the tokenizer merges `Status(`
+        # into an open_call token (like a generic class name), so the backing
+        # type sits inside the parens.  Plain `enum Color` is a bare id.
+        var name: str = ""
+        var base: str = ""
+        if .isOpenCall()
+            name = .peek().text
+            .advance()
+            base = .peek().text
+            .advance()
+            .expectText(")")?
+        else
+            name = .eatId()?
         .skipEol()
         var variants = List(str)()
+        var values = List(List(PNode))()
         if .isIndent()
             .advance()
             while not .isDedent() and not .isEof()
@@ -1429,10 +1448,16 @@ class Parser
                 if .isDedent()
                     break
                 variants.add(.eatId()?)
+                # B10: optional `= Expr` explicit value for this variant.
+                var vlist = List(PNode)()
+                if .textIs("=")
+                    .advance()
+                    vlist.add(.parseExpr()?)
+                values.add(vlist)
                 .skipEol()
             if .isDedent()
                 .advance()
-        return PNode.enum_(PEnum(name, variants))
+        return PNode.enum_(PEnum(name, variants, base, values))
 
     def parseStructDecl(is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false): PNode throws
         .expectText("struct")?

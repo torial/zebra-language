@@ -507,6 +507,12 @@ const enum_rules: []const Rule = &.{
         n(.ModList), t(.kw_enum), t(.id), t(.eol),
         t(.indent), n(.EnumMemberList), t(.dedent),
     } },
+    // B10: backed enum — `enum Status(int)`.  The tokenizer emits open_call for
+    // `Status(`; the backing TypeRef sets the Zig `enum(T)` representation.
+    .{ .lhs = .EnumDecl, .rhs = &.{
+        n(.ModList), t(.kw_enum), t(.open_call), n(.TypeRef), t(.rparen), t(.eol),
+        t(.indent), n(.EnumMemberList), t(.dedent),
+    } },
     .{ .lhs = .EnumMemberList, .rhs = &.{ n(.EnumMember) } },
     .{ .lhs = .EnumMemberList, .rhs = &.{ n(.EnumMemberList), n(.EnumMember) } },
     .{ .lhs = .EnumMemberList, .rhs = &.{ n(.EnumMemberList), t(.eol) } }, // blank lines

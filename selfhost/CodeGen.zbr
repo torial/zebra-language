@@ -2444,6 +2444,10 @@ struct Generator
         for m in n.members
             ig.writeIndent()
             ig.w.emit(m.name)
+            # B10: explicit backing value — `active = 1`.
+            if m.value != nil
+                ig.w.emit(" = ")
+                ig.genExpr(m.value!)
             ig.w.emit(",\n")
         writeIndent()
         w.emit("};\n\n")

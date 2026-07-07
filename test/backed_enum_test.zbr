@@ -1,0 +1,36 @@
+# B10: backed enum `enum Name(int)` with explicit member values — emits a Zig
+# `enum(i64) { … = N }`.  Plain enums (no backing, no values) still work.
+
+enum Status(int)
+    active = 1
+    inactive = 2
+    pending = 5
+
+enum Plain
+    red
+    green
+
+def classify(s: Status): str
+    branch s
+        on Status.active
+            return "active"
+        on Status.inactive
+            return "inactive"
+        on Status.pending
+            return "pending"
+
+def main()
+    assert classify(Status.active) == "active", "active"
+    assert classify(Status.pending) == "pending", "pending (value 5)"
+
+    # Plain enum still dispatches.
+    var c = Plain.green
+    var label = "?"
+    branch c
+        on Plain.red
+            label = "red"
+        on Plain.green
+            label = "green"
+    assert label == "green", "plain enum"
+
+    print("backed_enum: OK")
