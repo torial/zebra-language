@@ -169,7 +169,11 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   the binding through the optional (str payloads print correctly).  Both
   compilers.  Fixture `test/optional_union_is_test.zbr`.
 - B10 backed enum `enum Status(int)` (parser — not implemented).
-- B11 `while` bind-and-guard `while x = f() != nil` (parser — not implemented).
+- B11 ✅ NOT A GAP (2026-07-06) — bind-and-guard is implemented as
+  `while var x = EXPR, GUARD` (comma required); the audit's `while x = f() != nil`
+  example was malformed syntax copied from an incorrect QUICKSTART line (now
+  fixed).  Works on both compilers; `test/while_var_test.zbr` now registered in
+  the smoke suite.
 - B12 ✅ FIXED (2026-07-06) — inline / comma `except`
   (`base except a = 5, b = 6`) now parses on both compilers, in addition to the
   block form.  Also fixed a pre-existing bug: `target = base except …`

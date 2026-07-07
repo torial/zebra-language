@@ -876,8 +876,10 @@ while i < 10
     print(i)
     i += 1
 
-# while with bind-and-guard:
-while line = reader.readLine() != nil
+# while with bind-and-guard — `while var NAME = EXPR, GUARD`.  The comma is
+# required: it separates the per-iteration binding from the loop condition.
+# (`while var x = f() != nil` — no comma — does NOT parse.)
+while var line = reader.readLine(), line != nil
     process(line!)
 
 # for-in (list)

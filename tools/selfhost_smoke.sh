@@ -772,6 +772,8 @@ smoke_run test/for_indexed_test.zbr "for_indexed: OK"
 smoke_run test/optional_union_is_test.zbr "optional_union_is: OK"
 # Audit B12: inline / comma `except` — `base except a = 5, b = 6` (+ assign-except).
 smoke_run test/except_inline_test.zbr "except_inline: OK"
+# Audit B11: `while var x = EXPR, GUARD` bind-and-guard loop (already implemented).
+smoke_run test/while_var_test.zbr "while_var_test: all OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"
