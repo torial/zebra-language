@@ -197,6 +197,8 @@ pub const NT = enum {
     // ── except struct-update expression ───────────────────────────────────
     ExceptFieldList,  // one or more field assignments
     ExceptField,      // id = Expr eol
+    ExceptFieldInline,  // B12: inline comma form — id = Expr, id = Expr, …
+    ExceptFieldItem,    // id = Expr (no eol)
 
     // ── Expressions ────────────────────────────────────────────────────────
     // Each level handles one precedence band; lower number = lower precedence.
@@ -1399,6 +1401,22 @@ const except_rules: []const Rule = &.{
     .{ .lhs = .ExceptFieldList, .rhs = &.{ n(.ExceptFieldList), n(.ExceptField) } },
     // id = Expr eol
     .{ .lhs = .ExceptField, .rhs = &.{ t(.id), t(.assign), n(.Expr), t(.eol) } },
+
+    // B12: inline comma form — `... except id = Expr, id = Expr` (no indent block).
+    // After kw_except the parser sees `id` (inline) vs `eol` (block) — no ambiguity.
+    // var id [as T] = Expr except ExceptFieldInline eol
+    .{ .lhs = .StmtLocalVar, .rhs = &.{
+        t(.kw_var), t(.id), n(.VarTypeOpt), t(.assign), n(.Expr),
+        t(.kw_except), n(.ExceptFieldInline), t(.eol),
+    } },
+    // target op Expr except ExceptFieldInline eol
+    .{ .lhs = .StmtAssign, .rhs = &.{
+        n(.Expr), n(.AssignOp), n(.Expr),
+        t(.kw_except), n(.ExceptFieldInline), t(.eol),
+    } },
+    .{ .lhs = .ExceptFieldInline, .rhs = &.{ n(.ExceptFieldItem) } },
+    .{ .lhs = .ExceptFieldInline, .rhs = &.{ n(.ExceptFieldInline), t(.comma), n(.ExceptFieldItem) } },
+    .{ .lhs = .ExceptFieldItem, .rhs = &.{ t(.id), t(.assign), n(.Expr) } },
 };
 
 // ── Combined rule table ───────────────────────────────────────────────────────

@@ -170,7 +170,12 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   compilers.  Fixture `test/optional_union_is_test.zbr`.
 - B10 backed enum `enum Status(int)` (parser — not implemented).
 - B11 `while` bind-and-guard `while x = f() != nil` (parser — not implemented).
-- B12 inline / comma `except` (only the block form parses; prose implies comma).
+- B12 ✅ FIXED (2026-07-06) — inline / comma `except`
+  (`base except a = 5, b = 6`) now parses on both compilers, in addition to the
+  block form.  Also fixed a pre-existing bug: `target = base except …`
+  (assign-except, block OR inline) did not mark the target mutable, so it
+  emitted `const` and Zig rejected the reassignment.  Fixture
+  `test/except_inline_test.zbr`.
 - ✅ RESOLVED (2026-07-05) — `^ClassName` is now a real compile error in both
   compilers ("a class is already a reference; drop the '^'"), making the §22 doc
   claim true.  See BUG-078.

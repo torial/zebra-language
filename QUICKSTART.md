@@ -525,6 +525,15 @@ struct Config
 `this except` produces a new value with the listed fields overridden; all other
 fields are copied.
 
+Two forms — the indented block above, or an inline comma list on one line:
+
+```zebra
+var c = this except indent = indent + 1, verbose = true
+```
+
+Works as a var-init (`var c = base except …`) or a reassignment
+(`c = base except …`).
+
 ---
 
 ## 8. Enums

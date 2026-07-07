@@ -1,0 +1,31 @@
+# B12: inline / comma `except` — `base except a = 5, b = 6` on one line, in
+# addition to the indented block form.  Both var-init and reassignment targets.
+
+struct Point
+    var x: int
+    var y: int
+    var z: int
+
+def main()
+    var p = Point(x: 1, y: 2, z: 3)
+
+    # Inline var form: unchanged fields carry over from the base.
+    var q = p except x = 10, y = 20
+    assert q.x == 10 and q.y == 20 and q.z == 3, "inline var"
+
+    # Inline reassignment form (assign-except must mark the target mutable).
+    var r = Point(x: 0, y: 0, z: 0)
+    r = p except z = 99
+    assert r.x == 1 and r.y == 2 and r.z == 99, "inline assign"
+
+    # Single-field inline.
+    var s = p except y = 7
+    assert s.x == 1 and s.y == 7 and s.z == 3, "inline single"
+
+    # Block form still parses and produces the same result.
+    var t = p except
+        x = 100
+        z = 300
+    assert t.x == 100 and t.y == 2 and t.z == 300, "block form"
+
+    print("except_inline: OK")

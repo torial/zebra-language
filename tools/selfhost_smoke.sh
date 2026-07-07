@@ -770,6 +770,8 @@ smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
 smoke_run test/for_indexed_test.zbr "for_indexed: OK"
 # Audit B9: `is Union.Variant as n` on an OPTIONAL union (unwrap then tag-check).
 smoke_run test/optional_union_is_test.zbr "optional_union_is: OK"
+# Audit B12: inline / comma `except` — `base except a = 5, b = 6` (+ assign-except).
+smoke_run test/except_inline_test.zbr "except_inline: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

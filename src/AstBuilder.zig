@@ -2289,8 +2289,12 @@ const Builder = struct {
                 const name     = leafText(kids[1], b.tokens);
                 const type_ref = try b.buildReturnAnnotOpt(kids[2]);
                 const base     = try b.box(Ast.Expr, try b.buildExpr(kids[i - 1]));
-                // kids after: eol, indent, ExceptFieldList, dedent
-                const fields   = try b.buildExceptFieldList(kids[i + 3]);
+                // Block form: [eol, indent, ExceptFieldList, dedent] → fields at i+3.
+                // B12 inline form: [ExceptFieldInline, eol] → fields at i+1.
+                const fields   = if (isLeafKind(kids[i + 1], .eol))
+                    try b.buildExceptFieldList(kids[i + 3])
+                else
+                    try b.buildExceptFieldList(kids[i + 1]);
                 return .{ .var_except = try b.box(Ast.StmtVarExcept, .{
                     .span     = s,
                     .name     = name,
@@ -2352,7 +2356,11 @@ const Builder = struct {
                 const target = try b.box(Ast.Expr, try b.buildExpr(kids[0]));
                 const op     = buildAssignOp(kids[1]);
                 const base   = try b.box(Ast.Expr, try b.buildExpr(kids[2]));
-                const fields = try b.buildExceptFieldList(kids[i + 3]);
+                // Block form → fields at i+3; B12 inline form → fields at i+1.
+                const fields = if (isLeafKind(kids[i + 1], .eol))
+                    try b.buildExceptFieldList(kids[i + 3])
+                else
+                    try b.buildExceptFieldList(kids[i + 1]);
                 return .{ .assign_except = try b.box(Ast.StmtAssignExcept, .{
                     .span   = s,
                     .target = target,
@@ -2385,6 +2393,16 @@ const Builder = struct {
                         // ExceptFieldList ExceptField
                         try b.collectExceptFields(kids[0], out);
                         try out.append(b.arena, try b.buildExceptField(kids[1]));
+                    }
+                } else if (ntOf(node) == .ExceptFieldInline) {
+                    // B12: ExceptFieldItem | ExceptFieldInline comma ExceptFieldItem.
+                    // buildExceptField reads kids[0]=id / kids[2]=Expr — the same
+                    // layout as ExceptFieldItem (id assign Expr), so it is reused.
+                    if (kids.len == 1) {
+                        try out.append(b.arena, try b.buildExceptField(kids[0]));
+                    } else {
+                        try b.collectExceptFields(kids[0], out);
+                        try out.append(b.arena, try b.buildExceptField(kids[2]));
                     }
                 }
             },

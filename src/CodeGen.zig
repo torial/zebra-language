@@ -1369,6 +1369,17 @@ fn scanMutationsInto(
                 .member => |m| if (m.object.* == .ident) try set.put(m.object.ident.name, {}),
                 else   => {},
             },
+            // `target = base except …` reassigns target (block or inline form);
+            // without this the target is emitted `const` and Zig rejects it.
+            .assign_except => |s| {
+                switch (s.target.*) {
+                    .ident  => |e| try set.put(e.name, {}),
+                    .member => |m| if (m.object.* == .ident) try set.put(m.object.ident.name, {}),
+                    else    => {},
+                }
+                try scanMutationsInExpr(s.base, set, tc_opt);
+                for (s.fields) |f| try scanMutationsInExpr(f.value, set, tc_opt);
+            },
             .if_     => |s| {
                 try scanMutationsInto(s.then_body, set, tc_opt);
                 for (s.else_ifs) |ei| try scanMutationsInto(ei.body, set, tc_opt);

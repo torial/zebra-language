@@ -2681,25 +2681,43 @@ class Parser
                 .advance()
                 expr = PNode.expr_to_bang(expr)
             else if .textIs("except")
-                # struct update: expr except \n field = value \n ...
+                # struct update, two forms:
+                #   block:  expr except \n field = value \n ...
+                #   inline: expr except field = value, field = value   (B12)
                 .advance()
-                .skipEol()
                 var fields = List(PExceptField)()
-                if .isIndent()
-                    .advance()
-                    while not .isDedent() and not .isEof()
-                        .skipEol()
-                        if .isDedent()
-                            break
-                        const fname = .eatId()?
-                        .expectText("=")?
-                        const fval = .parseExpr()?
-                        .skipEol()
-                        var vlist = List(PNode)()
-                        vlist.add(fval)
-                        fields.add(PExceptField(fname, vlist))
-                    if .isDedent()
+                if .isEol() or .isIndent()
+                    # Block form: an eol then an indented field list.
+                    .skipEol()
+                    if .isIndent()
                         .advance()
+                        while not .isDedent() and not .isEof()
+                            .skipEol()
+                            if .isDedent()
+                                break
+                            const fname = .eatId()?
+                            .expectText("=")?
+                            const fval = .parseExpr()?
+                            .skipEol()
+                            var vlist = List(PNode)()
+                            vlist.add(fval)
+                            fields.add(PExceptField(fname, vlist))
+                        if .isDedent()
+                            .advance()
+                else
+                    # B12 inline form: comma-separated `field = value` on one line.
+                    var more = true
+                    while more
+                        const fname2 = .eatId()?
+                        .expectText("=")?
+                        const fval2 = .parseExpr()?
+                        var vlist2 = List(PNode)()
+                        vlist2.add(fval2)
+                        fields.add(PExceptField(fname2, vlist2))
+                        if .textIs(",")
+                            .advance()
+                        else
+                            more = false
                 var base_list = List(PNode)()
                 base_list.add(expr)
                 expr = PNode.expr_except(PExcept(base_list, fields))
