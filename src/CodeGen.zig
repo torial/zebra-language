@@ -6638,7 +6638,12 @@ const Generator = struct {
         // marks any receiver of a method call as mutated when TC type is .cross_module).
         // timer_handle is opaque with always-mutable state — force var unconditionally.
         const needs_var_for_methods = (tc_init_type == .timer_handle);
-        const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods)) "const" else "var";
+        // B4: a mutating capture-closure's `call` takes `*@This()`, so the binding
+        // must be `var` even though it is never reassigned.
+        const needs_var_for_closure = if (n.init) |init|
+            (init.* == .lambda and g.lambdaHasMutatingCapture(init.lambda))
+        else false;
+        const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods and !needs_var_for_closure)) "const" else "var";
 
         // Interface coercion for a generic-class ctor: `var b: I = Box(int)(args)`.
         // The concrete type is a generic instantiation, so the vtable lives inside the
@@ -10602,6 +10607,23 @@ const Generator = struct {
     }
 
     /// Emit a struct-instance literal for a lambda that has a `capture` block.
+    /// B4: true when `e` is a capture-closure whose `call` will take `*@This()`
+    /// because it mutates a capture field.  A local var holding such a closure
+    /// must be emitted `var` (else `counter.call()` casts `*const` → `*`, which
+    /// Zig rejects).  Mirrors the `any_capture_mutated` check in
+    /// genCaptureClosureStruct.
+    fn lambdaHasMutatingCapture(g: Generator, e: *const Ast.ExprLambda) bool {
+        if (e.capture.len == 0) return false;
+        const body_stmts: []const Ast.Stmt = switch (e.body) {
+            .stmts => |ss| ss,
+            .expr  => return false,
+        };
+        var body_mutations = scanMutations(body_stmts, g.alloc, g.tc) catch return false;
+        defer body_mutations.deinit();
+        for (e.capture) |cv| if (body_mutations.contains(cv.name)) return true;
+        return false;
+    }
+
     /// The result is a value of an anonymous struct type; call sites use `.call()`.
     fn genCaptureClosureStruct(g: Generator, e: *Ast.ExprLambda) anyerror!void {
         // Collect capture field names so body idents use `self.name`

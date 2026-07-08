@@ -159,7 +159,16 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   iteration (`for (list.items, 0..) |v, _zbr_i|`; i = index int, v = element) on
   both compilers.  Fixture `test/for_indexed_test.zbr`.
 - B3 `zig"…"` referencing params → param-discards emitted before the inline Zig.
-- B4 mutating `capture` closure → closure self emitted `const`.
+- B4 ✅ FIXED (2026-07-06) — a mutating `capture` closure (`count += 1`) now
+  works on both compilers.  Bootstrap: the binding holding the closure is forced
+  `var` when the closure's `call` takes `*@This()` (mutating captures).
+  Selfhost: also emit `self: *@This()` (it always emitted by-value `@This()`,
+  so `self.count += 1` failed) AND force the binding `var`.  Read-only captures
+  unchanged.  Fixture `test/mutating_capture_test.zbr`.  Note: the *factory*
+  form (`def(): def(): int` returning a closure) is a separate, still-open gap —
+  a function-type return annotation (`def(): T` as a type) does not parse on
+  either compiler ("expected type name, got 'def'").  Not in the original audit;
+  filed here as a follow-up.
 - B5 interface `is Iface` runtime check → undeclared `_ttag_Iface`.
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).

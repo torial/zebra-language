@@ -1367,21 +1367,25 @@ It can reference module-level variables, but has no private persistent state of 
 lambda allocates a fresh instance of that struct with its own independent fields.
 
 ```zebra
-# Factory that returns a fresh counter each time:
-var make_counter = def(): def(): int
-    return def(): int
-        capture
-            var count: int = 0
-        count += 1
-        return count
+# A closure with its own persistent, mutable state:
+var counter = def(): int
+    capture
+        var count: int = 0
+    count += 1
+    return count
 
-var c1 = make_counter()
-var c2 = make_counter()
-print(c1())   # → 1
-print(c1())   # → 2
-print(c2())   # → 1  (independent from c1)
-print(c1())   # → 3
+print(counter())   # → 1
+print(counter())   # → 2  (state persists across calls)
+print(counter())   # → 3
 ```
+
+The binding must be `var` (the compiler emits it as such automatically): calling
+a mutating closure mutates its captured state.  Each separately-created closure
+has independent capture fields.
+
+> Note: a *factory* that returns a fresh closure — `def(): def(): int` — does
+> not parse yet: a function-type return annotation (`def(): T` used as a type)
+> is unsupported.  Create the closure directly, as above.
 
 **How it works:** The `capture` block's variables become fields of an anonymous Zig
 struct.  Each call to the factory allocates a fresh instance.  The struct's `call` method

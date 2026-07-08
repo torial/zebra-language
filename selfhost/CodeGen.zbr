@@ -190,6 +190,45 @@ def getVariantKey(e: Expr): str?
             return makeDottedKey(obj_n, m.member)
     return nil
 
+# B4: collect names that are the target of a DIRECT assignment (`x = …`,
+# `x += …`, `x.f = …`, `x[i] = …`) — used to decide when a capture-closure's
+# `call` needs `*@This()`.  Unlike scanMutations this does NOT mark method-call
+# receivers: a class/pointer capture (`ch.send()`) mutates through the pointer
+# and keeps by-value `@This()` (matches the bootstrap's allow-list behavior).
+def collectAssignedIdents(stmts: List(Stmt), out: StrSet)
+    for s in stmts
+        branch s
+            on Stmt.assign as a
+                if a.target is Expr.ident as aid
+                    out.add(aid.name)
+                else if a.target is Expr.member as amem
+                    if amem.object is Expr.ident as amid
+                        out.add(amid.name)
+                else if a.target is Expr.index as aix
+                    if aix.object is Expr.ident as axid
+                        out.add(axid.name)
+            on Stmt.if_ as si
+                collectAssignedIdents(si.then_stmts, out)
+                for ei in si.else_ifs
+                    collectAssignedIdents(ei.stmts, out)
+                if si.else_stmts as se
+                    collectAssignedIdents(se, out)
+            on Stmt.while_ as w
+                collectAssignedIdents(w.stmts, out)
+            on Stmt.for_in as f
+                collectAssignedIdents(f.stmts, out)
+                if f.else_ as fe
+                    collectAssignedIdents(fe, out)
+            on Stmt.for_num as fnum
+                collectAssignedIdents(fnum.stmts, out)
+            on Stmt.branch_ as b
+                for c in b.cases
+                    collectAssignedIdents(c.stmts, out)
+                if b.else_ as be
+                    collectAssignedIdents(be, out)
+            else
+                pass
+
 def isKnownListField(name: str): bool
     # Known List-typed fields on Parser structs and AST types
     if name == "value" or name == "else_stmts" or name == "init_expr"
@@ -4490,6 +4529,20 @@ struct Generator
             is_mut = mut_set!.contains_(n.name)
         if n.is_const
             is_mut = false
+        # B4: a mutating capture-closure's `call` takes `*@This()`, so the binding
+        # must be `var` even though it is never reassigned.
+        if not n.is_const and n.init_expr != nil
+            if n.init_expr! is Expr.lambda as blam
+                if blam.captures.len > 0
+                    branch blam.body_
+                        on LambdaBody.stmts as blam_ss
+                            var blam_muts: StrSet = StrSet()
+                            collectAssignedIdents(blam_ss, blam_muts)
+                            for bcv in blam.captures
+                                if blam_muts.contains_(bcv.name)
+                                    is_mut = true
+                        else
+                            pass
         if is_mut and n.init_expr != nil and not n.is_const
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name)
@@ -12208,11 +12261,27 @@ struct Generator
                     fg.w.emit("anytype")
                 fg.w.emit(",\n")
             writeIndent()
+        # B4: `call` takes `*@This()` (mutable self) when a capture field is
+        # assigned in the body, so the mutation is visible across calls.
+        var any_cap_mutated = false
+        if has_capture
+            branch lam.body_
+                on LambdaBody.stmts as body_ss_m
+                    var body_muts: StrSet = StrSet()
+                    collectAssignedIdents(body_ss_m, body_muts)
+                    for cv_m in lam.captures
+                        if body_muts.contains_(cv_m.name)
+                            any_cap_mutated = true
+                else
+                    pass
         # call method
         w.emit(" fn call(")
         var first = true
         if has_capture
-            w.emit("self: @This()")
+            if any_cap_mutated
+                w.emit("self: *@This()")
+            else
+                w.emit("self: @This()")
             first = false
         for p in lam.params
             if not first

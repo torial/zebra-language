@@ -1,0 +1,35 @@
+# B4: a capture-closure that MUTATES a capture field (`count += 1`) — the
+# headline use case.  Its `call` takes `*@This()`, and the binding holding it
+# must be `var` (calling it mutates it).  Read-only captures still work.
+
+def main()
+    # Mutating capture: persistent per-closure counter.
+    var counter = def(): int
+        capture
+            var count: int = 0
+        count += 1
+        return count
+
+    assert counter() == 1, "first call"
+    assert counter() == 2, "second call — state persists"
+    assert counter() == 3, "third call"
+
+    # An accumulator that grows a captured total.
+    var acc = def(n: int): int
+        capture
+            var total: int = 0
+        total += n
+        return total
+    assert acc(10) == 10, "acc 10"
+    assert acc(5) == 15, "acc 15"
+
+    # Read-only capture (regression): value copied in, never mutated.
+    var base: int = 100
+    var addBase = def(x: int): int
+        capture
+            var b: int = base
+        return x + b
+    assert addBase(1) == 101, "read-only capture"
+    assert addBase(2) == 102, "read-only capture again"
+
+    print("mutating_capture: OK")
