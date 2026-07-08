@@ -171,10 +171,15 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   Selfhost: also emit `self: *@This()` (it always emitted by-value `@This()`,
   so `self.count += 1` failed) AND force the binding `var`.  Read-only captures
   unchanged.  Fixture `test/mutating_capture_test.zbr`.  Note: the *factory*
-  form (`def(): def(): int` returning a closure) is a separate, still-open gap —
-  a function-type return annotation (`def(): T` as a type) does not parse on
-  either compiler ("expected type name, got 'def'").  Not in the original audit;
-  filed here as a follow-up.
+  form (`def(): def(): int` returning a closure) — flagged here as a follow-up —
+  is now ✅ FIXED (2026-07-08) on both compilers.  A returned capture closure is
+  hoisted to a module-level named type `_ZbrClosure_<fn>` (an anonymous struct
+  cannot be named as a `sig`/fn-pointer); the factory returns that, the caller
+  infers it and dispatches `c()` → `c.call()`.  The inline function-type
+  annotation `def(P): R` now parses as a real type (new `TypeRef.fn_type`), so a
+  factory can write `def(): int` directly instead of a named `sig`.  Fixtures
+  `test/return_lambda_test.zbr`, `test/closure_factory_test.zbr`,
+  `test/fn_type_annotation_test.zbr`.  Commits d4c092d, 8a27403, c5f3334.
 - B5 ⚠️ DEFERRED (2026-07-06, needs a design call) — `if obj is Iface`.
   Bootstrap: the codegen's `type_check` arm unconditionally emits
   `obj._type_tag == _ttag_Iface`, but interfaces have no `_ttag_` constant and an
