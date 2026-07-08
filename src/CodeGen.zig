@@ -590,8 +590,19 @@ const Refs = struct {
     uses_self:    bool,
     /// Names of parameters that are actually referenced in the body.
     param_names: std.StringHashMap(void),
+    /// B3: identifier words appearing inside any `zig"…"` literal in the body.
+    /// A param whose name appears here is "used" (the inline Zig references it),
+    /// so we must NOT emit `_ = param;` (Zig rejects that as a pointless discard).
+    zig_lit_words: std.StringHashMap(void),
+    /// Owns the words copied out of zig-lit text so the keys outlive the AST node.
+    zig_word_alloc: Allocator,
 
-    fn deinit(r: *Refs) void { r.param_names.deinit(); }
+    fn deinit(r: *Refs) void {
+        r.param_names.deinit();
+        var it = r.zig_lit_words.keyIterator();
+        while (it.next()) |k| r.zig_word_alloc.free(k.*);
+        r.zig_lit_words.deinit();
+    }
 };
 
 fn collectRefs(
@@ -599,10 +610,36 @@ fn collectRefs(
     resolve: *const Resolver.ResolveResult,
     alloc:   Allocator,
 ) !Refs {
-    var out = Refs{ .uses_self = false, .param_names = std.StringHashMap(void).init(alloc) };
+    var out = Refs{
+        .uses_self = false,
+        .param_names = std.StringHashMap(void).init(alloc),
+        .zig_lit_words = std.StringHashMap(void).init(alloc),
+        .zig_word_alloc = alloc,
+    };
     errdefer out.param_names.deinit();
+    errdefer out.zig_lit_words.deinit();
     try refsInStmts(stmts, resolve, &out);
     return out;
+}
+
+/// Add each identifier-like word (`[A-Za-z_][A-Za-z0-9_]*`) in `code` to `o`'s
+/// zig_lit_words set.  Used to detect params referenced from inline Zig (B3).
+fn collectZigLitWords(o: *Refs, code: []const u8) !void {
+    var i: usize = 0;
+    while (i < code.len) {
+        const c = code[i];
+        if (std.ascii.isAlphabetic(c) or c == '_') {
+            const start = i;
+            while (i < code.len and (std.ascii.isAlphanumeric(code[i]) or code[i] == '_')) : (i += 1) {}
+            const word = code[start..i];
+            if (!o.zig_lit_words.contains(word)) {
+                const owned = try o.zig_word_alloc.dupe(u8, word);
+                try o.zig_lit_words.put(owned, {});
+            }
+        } else {
+            i += 1;
+        }
+    }
 }
 
 fn refsInStmts(stmts: []const Ast.Stmt, r: *const Resolver.ResolveResult, o: *Refs) anyerror!void {
@@ -1097,8 +1134,9 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .type_check  => |e| try refsInExpr(e.expr, r, o),
         .this        => o.uses_self = true,  // extension methods: `this` means self is used
         .opt_chain => |e| { try refsInExpr(e.base, r, o); if (e.args) |args| for (args) |a| try refsInExpr(a.value, r, o); },
+        .zig_lit => |e| try collectZigLitWords(o, e.text),
         .int_lit, .float_lit, .bool_lit, .char_lit,
-        .string_lit, .nil, .zig_lit => {},
+        .string_lit, .nil => {},
     }
 }
 
@@ -5815,9 +5853,9 @@ const Generator = struct {
             defer cv_map.deinit();
             const bg = eg.indented().withClosureVars(&cv_map).withReturnedNames(&ret_set);
             try g.w.writeAll(" {\n");
-            if (!refs.uses_self) try bg.line("_ = self;");
+            if ((!refs.uses_self and !refs.zig_lit_words.contains("self"))) try bg.line("_ = self;");
             for (m.params) |p| {
-                if (!refs.param_names.contains(p.name)) {
+                if (!refs.param_names.contains(p.name) and !refs.zig_lit_words.contains(p.name)) {
                     try bg.writeIndent();
                     try bg.w.writeAll("_ = ");
                     try bg.emitName(p.name);
@@ -6184,7 +6222,7 @@ const Generator = struct {
                     .withMethodRetType(n.return_type);
                 // No param suppression needed — all params are used via `var p = _p_p;`.
                 // Skip `_ = self` when invariant defer already references self.
-                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
+                if (has_self and (!refs.uses_self and !refs.zig_lit_words.contains("self")) and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
                 try bg.genRequireChecks(n.require, n.name);
                 const ec_tco = try bg.genEnsureBlock(n.ensure, n.name, n.return_type);
                 try bg.withEnsureCtx(ec_tco.armed, ec_tco.uses_result).genStmts(body);
@@ -6204,9 +6242,9 @@ const Generator = struct {
                     .withMethodRetType(n.return_type);
                 // Emit `_ = x;` only for params that are NOT referenced in the body.
                 // Skip when invariant defer already references self (avoids "pointless discard" in Zig 0.15).
-                if (has_self and !refs.uses_self and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
+                if (has_self and (!refs.uses_self and !refs.zig_lit_words.contains("self")) and (n.mods.private or g.owner_invariants.len == 0 or g.strip_contracts)) try bg.line("_ = self;");
                 for (n.params) |p| {
-                    if (!refs.param_names.contains(p.name)) {
+                    if (!refs.param_names.contains(p.name) and !refs.zig_lit_words.contains(p.name)) {
                         try bg.writeIndent();
                         try bg.w.writeAll("_ = ");
                         try bg.emitName(p.name);
@@ -6293,7 +6331,7 @@ const Generator = struct {
             }
         }
         for (n.params) |p| {
-            if (!refs.param_names.contains(p.name)) {
+            if (!refs.param_names.contains(p.name) and !refs.zig_lit_words.contains(p.name)) {
                 try bg.writeIndent();
                 try bg.w.writeAll("_ = ");
                 try bg.emitName(p.name);

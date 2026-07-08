@@ -781,6 +781,8 @@ smoke_run test/backed_enum_test.zbr "backed_enum: OK"
 smoke_run test/struct_simd_name_method_test.zbr "struct_simd_name_method: OK"
 # Audit B4: a mutating `capture` closure (`count += 1`) — *@This() self + var binding.
 smoke_run test/mutating_capture_test.zbr "mutating_capture: OK"
+# Audit B3: params referenced inside a zig"…" literal are used (no `_ = p;` discard).
+smoke_run test/ziglit_param_test.zbr "ziglit_param: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

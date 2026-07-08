@@ -415,10 +415,49 @@ def nilNarrowVar(cond: Expr, for_then: bool): str?
 # Returns true if `name` appears: an ExprIdent anywhere in `expr`.
 # List(^Expr) nodes (list_lit, array_lit, tuple_lit) are skipped conservatively.
 
+# B3: true if `c` is a Zig identifier char [A-Za-z0-9_].
+def isZigIdentChar(c: char): bool
+    if c >= c'a' and c <= c'z'
+        return true
+    if c >= c'A' and c <= c'Z'
+        return true
+    if c >= c'0' and c <= c'9'
+        return true
+    return c == c'_'
+
+# B3: true if `name` appears as a WHOLE identifier word in inline-Zig `code`.
+# A param referenced from a `zig"…"` literal is used, so it must not be discarded.
+def zigLitMentionsWord(code: str, name: str): bool
+    var m: int = name.len
+    if m == 0
+        return false
+    var n: int = code.len
+    var i: int = 0
+    while i < n
+        if isZigIdentChar(code[i])
+            var start: int = i
+            while i < n and isZigIdentChar(code[i])
+                i = i + 1
+            if (i - start) == m
+                var matched = true
+                var k: int = 0
+                while k < m
+                    if code[start + k] != name[k]
+                        matched = false
+                        break
+                    k = k + 1
+                if matched
+                    return true
+        else
+            i = i + 1
+    return false
+
 def nameUsedInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id
             return id.name == name
+        on Expr.zig_lit as zl
+            return zigLitMentionsWord(zl.text, name)
         on Expr.binary as b
             if nameUsedInExpr(name, b.left)
                 return true

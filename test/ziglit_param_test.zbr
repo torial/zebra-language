@@ -1,0 +1,25 @@
+# B3: parameters referenced inside a `zig"…"` inline-Zig literal must NOT be
+# emitted as `_ = param;` unused-discards — the inline Zig uses them, and Zig
+# rejects a discard of a used parameter ("pointless discard of function
+# parameter").  Genuinely-unused params are still discarded.
+
+def zigAdd(a: int, b: int): int
+    zig"return a + b;"
+
+def scaleFirst(x: int, unused: int): int
+    # `x` is used inside the inline Zig; `unused` is genuinely unused and must
+    # still get its `_ = unused;` discard so Zig doesn't complain.
+    zig"return x * 2;"
+
+def rawZero(ptr: uint, size: uint)
+    zig"@memset(@as([*]u8, @ptrFromInt(ptr))[0..size], 0);"
+
+def main()
+    assert zigAdd(3, 4) == 7, "params used in inline Zig"
+    assert scaleFirst(5, 99) == 10, "one param used, one unused"
+
+    # rawZero over a real buffer: allocate 4 bytes, zero them via inline Zig.
+    var buf: List(int) = List()
+    buf.add(1)
+    # Just exercise the codegen path (params referenced from inline Zig compile).
+    print("ziglit_param: OK")

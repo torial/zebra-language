@@ -158,7 +158,13 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
 - B1 ✅ FIXED (2026-07-06) — indexed `for i, v in list` now emits indexed
   iteration (`for (list.items, 0..) |v, _zbr_i|`; i = index int, v = element) on
   both compilers.  Fixture `test/for_indexed_test.zbr`.
-- B3 `zig"…"` referencing params → param-discards emitted before the inline Zig.
+- B3 ✅ FIXED (2026-07-06) — parameters referenced inside a `zig"…"` literal are
+  now recognized as used, so the codegen no longer emits `_ = param;` before the
+  inline Zig (Zig rejected that as "pointless discard of function parameter").
+  Bootstrap: `collectRefs` extracts identifier words from every zig-lit into
+  `zig_lit_words`; the param/self discard sites consult it.  Selfhost:
+  `nameUsedInExpr` gained a `zig_lit` arm (word-boundary match).  Genuinely
+  unused params are still discarded.  Fixture `test/ziglit_param_test.zbr`.
 - B4 ✅ FIXED (2026-07-06) — a mutating `capture` closure (`count += 1`) now
   works on both compilers.  Bootstrap: the binding holding the closure is forced
   `var` when the closure's `call` takes `*@This()` (mutating captures).
