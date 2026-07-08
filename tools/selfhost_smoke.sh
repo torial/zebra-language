@@ -787,6 +787,8 @@ smoke_run test/ziglit_param_test.zbr "ziglit_param: OK"
 smoke_run test/allocate_debug_stats_test.zbr "allocate_debug_stats: OK"
 # Audit B5 (option a): `obj is IFace` — compile-time interface conformance.
 smoke_run test/interface_is_test.zbr "interface_is: OK"
+# Statement-body lambda in `return` position (bootstrap grammar gap; selfhost ok).
+smoke_run test/return_lambda_test.zbr "return_lambda: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

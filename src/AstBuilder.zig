@@ -1361,6 +1361,7 @@ const Builder = struct {
             .StmtBranch   => .{ .branch  = try b.box(Ast.StmtBranch, try b.buildStmtBranch(inner)) },
             .StmtLocalVar       => try b.buildStmtLocalVarDispatch(inner),
             .StmtLocalVarLambda => try b.buildStmtLocalVarLambda(inner),
+            .StmtReturnLambda   => try b.buildStmtReturnLambda(inner),
             .StmtDestruct       => blk: {
                 // kw_var lparen IdListNE rparen assign Expr eol
                 var names = std.ArrayList([]const u8).empty;
@@ -2348,6 +2349,34 @@ const Builder = struct {
             .type_    = type_ref,
             .init     = try b.box(Ast.Expr, .{ .lambda = lambda }),
             .is_const = is_const,
+        }) };
+    }
+
+    /// NT: StmtReturnLambda
+    ///   kw_return  kw_def  lparen  ParamList  rparen  ReturnAnnotOpt
+    ///   eol  indent  CaptureOpt  StmtList  dedent
+    /// A statement-body lambda returned directly (closure factories).
+    fn buildStmtReturnLambda(b: Builder, node: TN) anyerror!Ast.Stmt {
+        const kids = ch(node);
+        const s    = spanOf(node, b.tokens);
+        // kids[0] = kw_return, kids[1] = kw_def, kids[2] = lparen
+        const params   = try b.buildParamList(kids[3]);
+        // kids[4] = rparen
+        const ret_type = try b.buildReturnAnnotOpt(kids[5]);
+        // kids[6] = eol, kids[7] = indent
+        const capture  = try b.buildCaptureOpt(kids[8]);
+        const stmts    = try b.buildStmtList(kids[9]);
+        // kids[10] = dedent
+        const lambda   = try b.box(Ast.ExprLambda, .{
+            .span        = s,
+            .params      = params,
+            .return_type = ret_type,
+            .body        = .{ .stmts = stmts },
+            .capture     = capture,
+        });
+        return .{ .return_ = try b.box(Ast.StmtReturn, .{
+            .span  = s,
+            .value = try b.box(Ast.Expr, .{ .lambda = lambda }),
         }) };
     }
 

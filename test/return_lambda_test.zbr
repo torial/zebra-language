@@ -1,0 +1,30 @@
+# Statement-body lambda in `return` position (`return def(): T` + indented body).
+# Previously a syntax error; now parses.  A non-capturing returned lambda is a
+# plain function pointer, typeable via a `sig`.  (Stateful/capture closures
+# returned from a factory need closure-type hoisting — a separate, larger item.)
+
+sig IntFn(): int
+sig BinOp(a: int, b: int): int
+
+def constant(): IntFn
+    return def(): int
+        var v = 40
+        return v + 2
+
+def picker(useAdd: bool): BinOp
+    if useAdd
+        return def(a: int, b: int): int
+            return a + b
+    return def(a: int, b: int): int
+        return a * b
+
+def main()
+    var k = constant()
+    assert k() == 42, "no-capture return-lambda"
+
+    var add = picker(true)
+    var mul = picker(false)
+    assert add(3, 4) == 7, "returned adder"
+    assert mul(3, 4) == 12, "returned multiplier"
+
+    print("return_lambda: OK")

@@ -159,6 +159,7 @@ pub const NT = enum {
 
     StmtLocalVar,        // var/const inside a method body
     StmtLocalVarLambda,  // var/const = def(...) eol Block  (statement-body lambda)
+    StmtReturnLambda,    // return def(...) eol Block  (statement-body lambda in return position)
     StmtDestruct,        // var ( IdListNE ) = Expr eol  — tuple destructuring
     StmtDestructStruct,  // var { IdListNE } = Expr eol  — struct field destructuring
     IdListNE,            // non-empty comma-separated id list (for destructuring)
@@ -826,6 +827,7 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtBranch) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtLocalVar) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtLocalVarLambda) } },
+    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtReturnLambda) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDestruct) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDestructStruct) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAssign) } },
@@ -1321,6 +1323,12 @@ const lambda_stmt_rules: []const Rule = &.{
     .{ .lhs = .StmtLocalVarLambda, .rhs = &.{
         t(.kw_const), t(.id), n(.VarTypeOpt),
         t(.assign), t(.kw_def), t(.lparen), n(.ParamList), t(.rparen), n(.ReturnAnnotOpt),
+        t(.eol), t(.indent), n(.CaptureOpt), n(.StmtList), t(.dedent),
+    } },
+    // `return def(...) [ReturnAnnot] eol indent CaptureOpt StmtList dedent`
+    // — a statement-body lambda returned directly (closure factories).
+    .{ .lhs = .StmtReturnLambda, .rhs = &.{
+        t(.kw_return), t(.kw_def), t(.lparen), n(.ParamList), t(.rparen), n(.ReturnAnnotOpt),
         t(.eol), t(.indent), n(.CaptureOpt), n(.StmtList), t(.dedent),
     } },
 };
