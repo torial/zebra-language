@@ -140,6 +140,11 @@ class Resolver
             on PNode.sig_ as sg
                 .module_scope.put(sg.name, 0)
                 .symbol_count = .symbol_count + 1
+            on PNode.interface_ as i
+                # B5(a): register interface names so `obj is IFace` resolves the
+                # interface name (previously "undefined name: 'IFace'").
+                .module_scope.put(i.name, 0)
+                .symbol_count = .symbol_count + 1
             on PNode.method_ as m
                 .module_scope.put(m.name, 1)
                 .symbol_count = .symbol_count + 1

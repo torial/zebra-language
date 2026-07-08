@@ -785,6 +785,8 @@ smoke_run test/mutating_capture_test.zbr "mutating_capture: OK"
 smoke_run test/ziglit_param_test.zbr "ziglit_param: OK"
 # Design-a: `allocate Debug()` = scoped arena + allocation-stats reporter at block exit.
 smoke_run test/allocate_debug_stats_test.zbr "allocate_debug_stats: OK"
+# Audit B5 (option a): `obj is IFace` — compile-time interface conformance.
+smoke_run test/interface_is_test.zbr "interface_is: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

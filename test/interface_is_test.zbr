@@ -1,0 +1,53 @@
+# B5(a): `obj is IFace` interface conformance check.  Interfaces have no runtime
+# `_type_tag`, so it resolves at compile time (interfaces are structurally
+# verified at `implements`): a statically interface-typed value is `true`; a
+# concrete class is its (already-verified) `implements` relation.
+
+interface Printable
+    def show(): str
+
+interface Drawable
+    def draw(): int
+
+# Dog implements Printable (only); default ctor so it coerces to the interface.
+class Dog implements Printable
+    def show(): str
+        return "Dog"
+
+class Rock
+    var w: int
+    cue init(w: int)
+        .w = w
+
+# `obj` is already interface-typed — the audit repro shape.
+def describe(obj: Printable): str
+    if obj is Printable
+        return obj.show()
+    return "no"
+
+def main()
+    # Interface-typed value (via the working var-init coercion) → is Printable is true.
+    var p: Printable = Dog()
+    assert describe(p) == "Dog", "interface-typed obj is its own interface"
+
+    # Concrete class that implements Printable → compile-time true.
+    var d = Dog()
+    var got_printable = false
+    if d is Printable
+        got_printable = true
+    assert got_printable, "Dog implements Printable"
+
+    # Concrete class that does NOT implement Printable → compile-time false.
+    var r = Rock(5)
+    var got_rock = false
+    if r is Printable
+        got_rock = true
+    assert not got_rock, "Rock does not implement Printable"
+
+    # A class checked against an interface it doesn't implement → false.
+    var got_drawable = false
+    if d is Drawable
+        got_drawable = true
+    assert not got_drawable, "Dog does not implement Drawable"
+
+    print("interface_is: OK")

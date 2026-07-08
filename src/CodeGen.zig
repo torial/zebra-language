@@ -380,6 +380,33 @@ fn findGenericClassDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclCl
     return null;
 }
 
+/// Returns the class declaration for `name` (any arity), or null.
+fn findClassDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclClass {
+    for (module.decls) |*decl| {
+        if (decl.* == .class and std.mem.eql(u8, decl.class.name, name)) return decl.class;
+    }
+    return null;
+}
+
+/// B5(a): true if `class` conforms to interface `iface_name` — it (or one of the
+/// interfaces it implements, transitively) names `iface_name`.  Interfaces are
+/// structurally verified at `implements`, so this compile-time answer is exact
+/// for typed exprs.
+fn classImplements(module: Ast.Module, class: *const Ast.DeclClass, iface_name: []const u8) bool {
+    for (class.implements) |tr| {
+        const iname = typeRefSimpleName(tr) orelse continue;
+        if (std.mem.eql(u8, iname, iface_name)) return true;
+        // Transitive: the implemented interface may extend `iface_name`.
+        if (findInterfaceDecl(module, iname)) |ifc| {
+            var buf: [32]*const Ast.DeclInterface = undefined;
+            for (collectSuperIfaces(module, ifc, &buf)) |super| {
+                if (std.mem.eql(u8, super.name, iface_name)) return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// Collect the transitive super-interfaces of `iface` (the `implements` closure),
 /// into the caller-provided fixed `buf` (avoids allocation; interface hierarchies
 /// are shallow — depth past `buf.len` is silently dropped). De-duplicated. Returns
@@ -10662,6 +10689,22 @@ const Generator = struct {
         return false;
     }
 
+    /// B5(a): compile-time result of `expr is Iface` where `Iface` is an
+    /// interface.  A statically interface-typed expr is trivially `true`; a
+    /// concrete class is its (already-verified) `implements` relation.  When the
+    /// expr type isn't statically resolvable here (cross-module / heterogeneous
+    /// / unknown) we conservatively return `true` — option (a)'s documented
+    /// limitation; a real runtime test would need interface RTTI (option b).
+    fn exprConformsToInterface(g: Generator, expr: *const Ast.Expr, iface_name: []const u8) bool {
+        const t = if (g.tc) |tc| tc.expr_types.get(expr) orelse .unknown else .unknown;
+        if (t == .named) {
+            if (std.mem.eql(u8, t.named.name, iface_name)) return true;
+            if (findClassDecl(g.module, t.named.name)) |cd|
+                return classImplements(g.module, cd, iface_name);
+        }
+        return true;
+    }
+
     /// The result is a value of an anonymous struct type; call sites use `.call()`.
     fn genCaptureClosureStruct(g: Generator, e: *Ast.ExprLambda) anyerror!void {
         // Collect capture field names so body idents use `self.name`
@@ -13990,12 +14033,29 @@ const Generator = struct {
             // `expr is Union.variant`  — union variant tag check.
             // Parenthesised so unary `not` and other operators bind correctly.
             .type_check => |e| {
-                try g.w.writeAll("(");
-                try g.genExpr(e.expr);
-                if (e.variant_name) |vname| {
-                    try g.w.print(" == .{s})", .{vname});
+                // B5(a): `expr is Iface` — interfaces have no `_type_tag`, so
+                // resolve conformance at compile time (interfaces are structurally
+                // verified at `implements`).
+                if (e.variant_name == null and findInterfaceDecl(g.module, e.type_name) != null) {
+                    // Evaluate the operand (for side effects / so it isn't an
+                    // "unused local"), discard it, and yield the compile-time
+                    // conformance result.
+                    // Read the operand into a local and discard the LOCAL (not the
+                    // operand): this marks a check-only operand as used without
+                    // producing a "pointless discard of function parameter" when
+                    // the operand is also used elsewhere.
+                    const uid = g.nextUid();
+                    try g.w.print("(_zbr_isblk_{d}: {{ const _isv_{d} = ", .{ uid, uid });
+                    try g.genExpr(e.expr);
+                    try g.w.print("; _ = _isv_{d}; break :_zbr_isblk_{d} {s}; }})", .{ uid, uid, if (g.exprConformsToInterface(e.expr, e.type_name)) "true" else "false" });
                 } else {
-                    try g.w.print("._type_tag == _ttag_{s})", .{e.type_name});
+                    try g.w.writeAll("(");
+                    try g.genExpr(e.expr);
+                    if (e.variant_name) |vname| {
+                        try g.w.print(" == .{s})", .{vname});
+                    } else {
+                        try g.w.print("._type_tag == _ttag_{s})", .{e.type_name});
+                    }
                 }
             },
 

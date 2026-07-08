@@ -195,6 +195,18 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   Recommend (a) for the common typed case now (unblocks the repro without
   emitting undeclared symbols), with (b) tracked separately if a real
   heterogeneous use case appears.  Left for Sean's call.
+  ✅ IMPLEMENTED option (a) (2026-07-08, Sean chose a; b = 1.1 RTTI) — both
+  compilers.  Bootstrap: the `type_check` arm detects an interface `type_name`
+  (`findInterfaceDecl`) and emits a compile-time `true`/`false` from the operand's
+  static type (interface-typed → true; class → transitive `implements`), reading
+  the operand into a discarded local so a check-only operand isn't flagged unused.
+  Selfhost: registered interface names in the resolver (they were "undefined
+  name" in `is` position), added an `is_interface` flag + `isInterface()` to
+  ModuleTypes, and emit the same compile-time result via the existing
+  `classConformsTo`.  Unknown/heterogeneous operands conservatively yield `true`
+  (option-a limitation).  Fixture `test/interface_is_test.zbr`.  (Separately
+  noted while testing: class→interface coercion at a call site / for a class with
+  a non-default ctor is still shaky — a distinct gap, not B5.)
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
 - B8 ✅ NOT REPRODUCIBLE (2026-07-06) — cross-module non-mutating struct methods

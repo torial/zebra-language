@@ -178,10 +178,14 @@ class ClassTypes
     # True iff this entry is a `class` (not a struct/union/interface/mixin).
     # Used to reject `^ClassName` — a class is already a reference (`*T`).
     var is_class: bool
+    # B5(a): true iff this entry is an `interface`.  `obj is IFace` resolves at
+    # compile time (interfaces have no `_type_tag`); a class is a tag check.
+    var is_interface: bool
 
     cue init(name: str)
         .name = internString(name)
         is_class = false
+        is_interface = false
         field_types = HashMap()
         method_returns = HashMap()
         method_params = HashMap()
@@ -395,6 +399,12 @@ class ModuleTypes
 
     def addClassInterfaces(class_name: str, ifaces_pipe: str)
         .class_interfaces.put(internString(class_name), internString(ifaces_pipe))
+
+    # B5(a): true iff `name` is a declared interface.
+    def isInterface(name: str): bool
+        if .classOf(name) as ct
+            return ct.is_interface
+        return false
 
     def classConformsTo(class_name: str, iface_name: str): bool
         return .classConformsToDepth(class_name, iface_name, 16)
@@ -785,6 +795,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register interface method signatures so methodReturnAny resolves
                 # calls through interface-typed variables (fixes print format inference).
                 var ict = ClassTypes(iface.name)
+                ict.is_interface = true
                 addClassMembers(mt, ict, iface.members)
                 mt.addClass(ict)
             on Decl.mixin_ as mx

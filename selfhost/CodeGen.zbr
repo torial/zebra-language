@@ -8211,6 +8211,25 @@ struct Generator
                     w.emit(" == .")
                     w.emit(tc2.variant_name!)
                     w.emit(")")
+                else if .module_types.isInterface(tc2.type_name) or .dep_types.isInterface(tc2.type_name)
+                    # B5(a): `expr is IFace` — interfaces have no `_type_tag`, so
+                    # resolve conformance at compile time (structurally verified at
+                    # `implements`).  Evaluate the operand into a discarded local so
+                    # a check-only operand isn't flagged unused.
+                    var conforms = true
+                    if .infer_ctx != nil
+                        var recv_t: Type_ = inferExpr(tc2.expr, .infer_ctx!)
+                        if recv_t is Type_.named as recv_nm
+                            conforms = .module_types.classConformsTo(recv_nm, tc2.type_name) or .dep_types.classConformsTo(recv_nm, tc2.type_name)
+                    var isuid = w.nextUid().toString()
+                    w.emit("(_zbr_isblk_${isuid}: { const _isv_${isuid} = ")
+                    genExpr(tc2.expr)
+                    w.emit("; _ = _isv_${isuid}; break :_zbr_isblk_${isuid} ")
+                    if conforms
+                        w.emit("true")
+                    else
+                        w.emit("false")
+                    w.emit("; })")
                 else
                     # Class type-tag check: expr._type_tag == _ttag_TypeName
                     w.emit("(")

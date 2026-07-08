@@ -1254,7 +1254,11 @@ if obj is Printable
 - `implements` declares interface conformance — the compiler verifies all
   required methods exist via `comptime { Iface.check(@This()); }`.
 - `adds Mixin` includes methods from a mixin declaration.
-- `is Iface` performs the conformance check at runtime.
+- `is Iface` checks interface conformance.  For a statically-typed value this is
+  resolved at compile time (interfaces are structurally verified at `implements`):
+  an interface-typed value satisfies its own interface, and a concrete class
+  satisfies exactly the interfaces it implements.  (A true runtime test over a
+  heterogeneous value is a planned extension.)
 
 ---
 
