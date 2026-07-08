@@ -175,7 +175,26 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   a function-type return annotation (`def(): T` as a type) does not parse on
   either compiler ("expected type name, got 'def'").  Not in the original audit;
   filed here as a follow-up.
-- B5 interface `is Iface` runtime check → undeclared `_ttag_Iface`.
+- B5 ⚠️ DEFERRED (2026-07-06, needs a design call) — `if obj is Iface`.
+  Bootstrap: the codegen's `type_check` arm unconditionally emits
+  `obj._type_tag == _ttag_Iface`, but interfaces have no `_ttag_` constant and an
+  interface-typed `obj` (a fat pointer) has no `_type_tag` field → "use of
+  undeclared identifier '_ttag_Iface'".  Selfhost fails EARLIER — the
+  resolver/TC rejects the interface name in `is` position ("undefined name:
+  'Iface'"), a different layer.
+  Design question — what should `obj is Iface` mean?
+    (a) Compile-time: a statically interface-typed `obj` is trivially `true`; a
+        concrete class is the already-verified `implements` relation → a
+        `true`/`false` constant.  Small; resolvable in codegen for typed exprs;
+        no honest compile-time answer for the heterogeneous/unknown case.
+    (b) Runtime: a real conformance test over a heterogeneous value (a union of
+        classes, a generic `T`) needs interface RTTI — a per-concrete-type table
+        of satisfied interfaces checked against `obj`'s runtime tag.  A sizable
+        feature in both compilers (the class↔interface relation is many-to-many,
+        unlike the 1:1 class `_type_tag`).
+  Recommend (a) for the common typed case now (unblocks the repro without
+  emitting undeclared symbols), with (b) tracked separately if a real
+  heterogeneous use case appears.  Left for Sean's call.
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
 - B8 ✅ NOT REPRODUCIBLE (2026-07-06) — cross-module non-mutating struct methods
