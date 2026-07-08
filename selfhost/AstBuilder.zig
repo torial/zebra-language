@@ -327,6 +327,73 @@ const MemStats = struct { arenaBytes: i64 };
 fn _mem_stats() MemStats {
     return .{ .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())) };
 }
+
+// `allocate Debug()` allocation-stats reporter.  Wraps a real allocator and
+// records, for the lexical block, how many allocations occurred, the cumulative
+// bytes requested, and the peak simultaneously-live bytes.  At block exit
+// `report()` prints those to stderr.  (Under the arena model, per-allocation
+// leak detection — Debug()'s old role — is not meaningful; this profiling view
+// is.)  Every op delegates to `parent`, so allocation behavior is unchanged.
+const _AllocStats = struct {
+    parent: std.mem.Allocator,
+    count: usize = 0, // number of successful allocations
+    bytes: usize = 0, // cumulative bytes requested (allocs + grow-resizes)
+    live: usize = 0,  // currently-live bytes
+    peak: usize = 0,  // high-water mark of `live`
+
+    fn allocator(self: *_AllocStats) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &_alloc_stats_vtable };
+    }
+    fn grow(self: *_AllocStats, delta: usize) void {
+        self.bytes += delta;
+        self.live += delta;
+        if (self.live > self.peak) self.peak = self.live;
+    }
+    fn report(self: *_AllocStats) void {
+        std.debug.print(
+            "[allocate Debug] {d} allocations, {d} bytes requested, {d} bytes peak live\n",
+            .{ self.count, self.bytes, self.peak },
+        );
+    }
+};
+fn _alloc_stats_alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const p = self.parent.vtable.alloc(self.parent.ptr, len, alignment, ret_addr);
+    if (p != null) {
+        self.count += 1;
+        self.grow(len);
+    }
+    return p;
+}
+fn _alloc_stats_resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const ok = self.parent.vtable.resize(self.parent.ptr, memory, alignment, new_len, ret_addr);
+    if (ok) {
+        if (new_len > memory.len) self.grow(new_len - memory.len)
+        else self.live -= (memory.len - new_len);
+    }
+    return ok;
+}
+fn _alloc_stats_remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const p = self.parent.vtable.remap(self.parent.ptr, memory, alignment, new_len, ret_addr);
+    if (p != null) {
+        if (new_len > memory.len) self.grow(new_len - memory.len)
+        else self.live -= (memory.len - new_len);
+    }
+    return p;
+}
+fn _alloc_stats_free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    self.parent.vtable.free(self.parent.ptr, memory, alignment, ret_addr);
+    self.live -= memory.len;
+}
+const _alloc_stats_vtable = std.mem.Allocator.VTable{
+    .alloc = _alloc_stats_alloc,
+    .resize = _alloc_stats_resize,
+    .remap = _alloc_stats_remap,
+    .free = _alloc_stats_free,
+};
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     var child = std.process.spawn(_io, .{

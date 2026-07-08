@@ -7627,6 +7627,12 @@ struct Generator
                     ig.w.emit("4096")
                 ig.w.emit("]u8 = undefined;\n")
                 ig.line("var ".concat(src_name).concat(" = std.heap.FixedBufferAllocator.init(&").concat(backing_name).concat(");"))
+            else if kind == "debug"
+                # §Design-a: Debug() = a scoped arena (frees on exit) WRAPPED by a
+                # stats observer that reports alloc count/bytes/peak at block exit.
+                var dbg_arena = "_dbg_arena_".concat(depth_str)
+                ig.line("var ".concat(dbg_arena).concat(" = std.heap.ArenaAllocator.init(_allocator);"))
+                ig.line("var ".concat(src_name).concat(" = _AllocStats{ .parent = ").concat(dbg_arena).concat(".allocator() };"))
             else
                 ig.writeIndent()
                 ig.w.emit("var ")
@@ -7642,7 +7648,7 @@ struct Generator
             if kind == "fixed_buffer" or kind == "stack_fallback"
                 ig.line("defer _allocator = ".concat(saved_name).concat(";"))
             else if kind == "debug"
-                ig.line("defer { _allocator = ".concat(saved_name).concat("; std.debug.assert(").concat(src_name).concat(".deinit() == .ok); }"))
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".report(); _dbg_arena_").concat(depth_str).concat(".deinit(); }"))
             else
                 ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
         else

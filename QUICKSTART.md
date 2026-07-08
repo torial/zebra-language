@@ -1988,7 +1988,7 @@ allocate Arena()
 | Name | Zig backing | Scoped? | Notes |
 |------|-------------|---------|-------|
 | `Arena()` | `std.heap.ArenaAllocator` | ✓ | general sub-arena; most common choice |
-| `Debug()` | `std.heap.DebugAllocator` | ✓ | leak detection; `GeneralPurposeAllocator` alias |
+| `Debug()` | scoped arena + stats observer | ✓ | frees on exit like `Arena()`; **prints allocation count / bytes / peak-live at block exit** |
 | `Page()` | `std.heap.page_allocator` | ✗ | singleton; no cleanup needed |
 | `Smp()` | `std.heap.smp_allocator` | ✗ | thread-safe singleton; no cleanup |
 | `C()` | `std.heap.c_allocator` | ✗ | libc malloc/free; no cleanup |
@@ -2002,8 +2002,11 @@ You can also pass any class that implements `AllocatorSource` (`def allocator():
 Typical uses:
 - **Large file processing in a loop** — `allocate Arena()` each iteration to discard
   temporaries before reading the next file.
-- **Leak detection during development** — swap in `allocate Debug()` to catch
-  unmatched allocations.
+- **Allocation profiling during development** — swap in `allocate Debug()` to
+  print how many allocations a block made, the cumulative bytes requested, and
+  the peak simultaneously-live bytes (to stderr, at block exit).  It behaves
+  like `Arena()` otherwise (scoped; frees on exit).  Example line:
+  `[allocate Debug] 5 allocations, 1929 bytes requested, 1776 bytes peak live`.
 - **Stack-local scratch** — `allocate StackFallback(4096)()` avoids heap for small work.
 - **Any batch operation** where you want to bound peak memory usage.
 

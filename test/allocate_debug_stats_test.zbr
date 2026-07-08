@@ -1,0 +1,30 @@
+# Design-a: `allocate Debug()` is now a scoped arena (frees on exit, like
+# Arena()) wrapped by a stats observer that prints allocation count / bytes /
+# peak-live to stderr at block exit.  This test exercises the wrapper's vtable
+# with real heap allocations and confirms the block still functions: values are
+# correct inside, and `<<-` copy-out survives the block.
+
+def main()
+    var out: str = ""
+
+    allocate Debug()
+        # Real heap traffic: a growing List and string concatenation route
+        # through the _AllocStats wrapper (its alloc/resize/remap/free vtable).
+        var xs: List(int) = List()
+        var i = 0
+        var total = 0
+        while i < 50
+            xs.add(i * 2)
+            total = total + xs.at(i)
+            i = i + 1
+        assert xs.len == 50, "list built inside Debug block"
+        assert total == 2450, "sum of 0,2,4,…,98"
+
+        var msg = "peak " + "live " + "bytes"
+        assert msg == "peak live bytes", "string concat inside Debug block"
+
+        # Copy-out must dupe into the parent allocator so it survives block exit.
+        out <<- msg
+
+    assert out == "peak live bytes", "copy-out survives the Debug block"
+    print("allocate_debug_stats: OK")

@@ -13042,6 +13042,12 @@ const Generator = struct {
                 if (fb_args.len > 0) try ig.genExpr(fb_args[0].value) else try ig.w.writeAll("4096");
                 try ig.w.writeAll("]u8 = undefined;\n");
                 try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = std.heap.FixedBufferAllocator.init(&_fba_backing_{d});\n", .{ depth, depth });
+            } else if (kind == .debug) {
+                // §Design-a: `Debug()` is a scoped arena (frees on exit, like Arena())
+                // WRAPPED by a stats observer that reports alloc count/bytes/peak at
+                // block exit.  (Its old leak-detection role is moot under the arena model.)
+                try ig.writeIndent(); try ig.w.print("var _dbg_arena_{d} = std.heap.ArenaAllocator.init(_allocator);\n", .{depth});
+                try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = _AllocStats{{ .parent = _dbg_arena_{d}.allocator() }};\n", .{ depth, depth });
             } else {
                 try ig.writeIndent(); try ig.w.print("var _alloc_src_{d} = ", .{depth});
                 try ig.genAllocatorSourceInit(s.source);
@@ -13056,8 +13062,8 @@ const Generator = struct {
                     try ig.writeIndent(); try ig.w.print("defer _allocator = _parent_alloc_{d};\n", .{depth});
                 },
                 .debug => {
-                    // deinit() returns Check; assert .ok so leaks are caught in debug builds.
-                    try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; std.debug.assert(_alloc_src_{d}.deinit() == .ok); }}\n", .{ depth, depth });
+                    // Restore the allocator, print the stats, then free the wrapped arena.
+                    try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; _alloc_src_{d}.report(); _dbg_arena_{d}.deinit(); }}\n", .{ depth, depth, depth });
                 },
                 .arena, .user => {
                     try ig.writeIndent(); try ig.w.print("defer {{ _allocator = _parent_alloc_{d}; _alloc_src_{d}.deinit(); }}\n", .{ depth, depth });
