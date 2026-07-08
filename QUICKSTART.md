@@ -1387,13 +1387,41 @@ The binding must be `var` (the compiler emits it as such automatically): calling
 a mutating closure mutates its captured state.  Each separately-created closure
 has independent capture fields.
 
-> Note: a *factory* that returns a fresh closure — `def(): def(): int` — does
-> not parse yet: a function-type return annotation (`def(): T` used as a type)
-> is unsupported.  Create the closure directly, as above.
+### §19.2 Closure factories — returning a stateful closure
+
+A function may `return` a capture closure — a **closure factory**.  Because a
+capture closure is an anonymous struct (not a plain function pointer), the factory
+declares its return type with a `sig` naming the closure's call signature; the
+compiler hoists the concrete closure struct to a module-level named type and
+returns that.
+
+```zebra
+sig IntFn(): int
+
+def makeCounter(start: int): IntFn
+    return def(): int
+        capture
+            var count: int = start   # capture needs an explicit type
+        count += 1
+        return count
+
+var c = makeCounter(10)
+var d = makeCounter(100)
+print(c())   # → 11
+print(c())   # → 12
+print(d())   # → 101   (independent state)
+print(c())   # → 13
+```
+
+The caller writes `var c = makeCounter(...)` and calls `c()`; the binding is made
+`var` automatically when the closure mutates.  **Captures in a returned closure
+need explicit types** — the hoisted struct lives at module scope, so a bare
+`@TypeOf(init)` referencing an enclosing-scope name would not resolve.
 
 **How it works:** The `capture` block's variables become fields of an anonymous Zig
 struct.  Each call to the factory allocates a fresh instance.  The struct's `call` method
-is invoked on each call to the closure.
+is invoked on each call to the closure.  For a factory, that struct is lifted to a named
+`_ZbrClosure_<fn>` type so the function signature can name it.
 
 **Mutation detection:** The compiler inspects the lambda body and emits
 `self: *@This()` (mutable self) when any capture field is directly assigned or passed to a

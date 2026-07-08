@@ -202,6 +202,12 @@ pub fn generate(
     defer type_alias_decls.deinit();
     var pending_thunks = std.ArrayList(ClosureThunk).empty;
     defer pending_thunks.deinit(alloc);
+    // Closure-factory pre-pass: top-level functions that `return` a capture
+    // closure.  Their anonymous closure struct is hoisted to a module-level
+    // named type so the function can name it as its return type (see
+    // `genCaptureClosureStruct` / `genTopDecl` / `genReturn`).
+    var closure_ret_fns = try collectClosureRetFns(module, alloc);
+    defer closure_ret_fns.deinit();
     const g = Generator{
         .resolve     = resolve,
         .tc          = tc,
@@ -240,9 +246,72 @@ pub fn generate(
         .dynlib_vars         = &dynlib_vars,
         .type_alias_decls    = &type_alias_decls,
         .pending_thunks      = &pending_thunks,
+        .closure_ret_fns     = &closure_ret_fns,
     };
     try g.genModule(module);
     return GenerateResult{ .uses_gui = uses_gui, .has_exports = has_exports, .uses_sqlite = uses_sqlite };
+}
+
+// ── Closure-factory pre-pass ────────────────────────────────────────────────
+//
+// A function that `return`s a capture closure (a stateful lambda) is a closure
+// factory.  A capture closure is an anonymous Zig struct with a `call` method,
+// which no `sig` (fn pointer) can name.  To let the factory declare a concrete
+// return type, its closure struct is hoisted to a module-level named type
+// `_ZbrClosure_<fn>`; the factory returns that named type and the caller's
+// `var c = factory()` infers it (and dispatches `c()` → `c.call()`).
+
+const ClosureRetInfo = struct {
+    lambda:  *Ast.ExprLambda,
+    mutates: bool,
+};
+
+/// The first `return <capture lambda>` reachable in a statement list (recursing
+/// into control-flow bodies), or null.  A returned lambda WITHOUT a capture is a
+/// plain function pointer — not a factory — so it is ignored here.
+fn returnedCaptureLambda(stmts: []const Ast.Stmt) ?*Ast.ExprLambda {
+    for (stmts) |st| {
+        switch (st) {
+            .return_ => |s| {
+                if (s.value) |v| if (v.* == .lambda and v.lambda.capture.len > 0)
+                    return v.lambda;
+            },
+            .if_ => |s| {
+                if (returnedCaptureLambda(s.then_body)) |l| return l;
+                for (s.else_ifs) |ei| if (returnedCaptureLambda(ei.body)) |l| return l;
+                if (s.else_body) |eb| if (returnedCaptureLambda(eb)) |l| return l;
+            },
+            .branch => |s| {
+                for (s.on) |arm| if (returnedCaptureLambda(arm.body)) |l| return l;
+                if (s.else_) |eb| if (returnedCaptureLambda(eb)) |l| return l;
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Collect top-level functions that return a capture closure AND declare a
+/// return type (the annotation that signals "this returns a callable").  Keyed
+/// by function name; value carries the returned lambda + whether its captures
+/// are mutated (which forces the caller binding to be `var`).
+fn collectClosureRetFns(module: Ast.Module, alloc: Allocator) !std.StringHashMap(ClosureRetInfo) {
+    var map = std.StringHashMap(ClosureRetInfo).init(alloc);
+    errdefer map.deinit();
+    for (module.decls) |decl| {
+        const m = switch (decl) { .method => |x| x, else => continue };
+        if (m.return_type == null) continue;
+        const body = m.body orelse continue;
+        if (returnedCaptureLambda(body)) |lam| {
+            var muts = try scanMutations(
+                if (lam.body == .stmts) lam.body.stmts else &.{}, alloc, null);
+            defer muts.deinit();
+            var mutates = false;
+            for (lam.capture) |cv| if (muts.contains(cv.name)) { mutates = true; break; };
+            try map.put(m.name, .{ .lambda = lam, .mutates = mutates });
+        }
+    }
+    return map;
 }
 
 // ── Mixin pre-pass ────────────────────────────────────────────────────────────
@@ -1152,9 +1221,15 @@ fn refsInExpr(expr: *const Ast.Expr, r: *const Resolver.ResolveResult, o: *Refs)
         .array_lit   => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
         .dict_lit    => |e| { for (e.entries) |en| { try refsInExpr(en.key, r, o); try refsInExpr(en.value, r, o); } },
         .string_interp => |e| { for (e.parts) |p| switch (p) { .expr => |ex| try refsInExpr(ex, r, o), else => {} }; },
-        .lambda      => |e| switch (e.body) {
-            .expr  => |ex| try refsInExpr(ex, r, o),
-            .stmts => |ss| try refsInStmts(ss, r, o),
+        .lambda      => |e| {
+            // Capture inits reference the ENCLOSING scope (e.g. a param), so they
+            // count as uses of those names — otherwise an outer param used only in
+            // `capture var x = param` is wrongly flagged unused (`_ = param;`).
+            for (e.capture) |cv| if (cv.init) |ie| try refsInExpr(ie, r, o);
+            switch (e.body) {
+                .expr  => |ex| try refsInExpr(ex, r, o),
+                .stmts => |ss| try refsInStmts(ss, r, o),
+            }
         },
         .try_        => |e| try refsInExpr(e.expr, r, o),
         .tuple_lit   => |e| { for (e.elems) |el| try refsInExpr(el, r, o); },
@@ -2373,6 +2448,14 @@ const Generator = struct {
     /// closure can satisfy the fn-pointer-typed sig.  Entries are added at
     /// call-site emit and flushed at module-end.  See ClosureThunk.
     pending_thunks: *std.ArrayList(ClosureThunk),
+    /// Closure factories: top-level fns that `return` a capture closure.  Keyed
+    /// by fn name; drives (1) hoisting the closure struct to `_ZbrClosure_<fn>`
+    /// before the fn, (2) emitting that as the fn's return type, (3) constructing
+    /// it at the `return`, and (4) the caller's `var c = factory()` dispatch.
+    closure_ret_fns: *const std.StringHashMap(ClosureRetInfo),
+    /// Set to `_ZbrClosure_<fn>` while emitting a closure-factory body, so its
+    /// `return <capture lambda>` constructs the hoisted named type (init-only).
+    current_closure_ret: ?[]const u8 = null,
 
     // ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -4612,6 +4695,15 @@ const Generator = struct {
                 // In test mode, skip top-level `def main()` — the test runner
                 // provides its own `pub fn main()`.
                 if (g.test_mode and !n.mods.static_ and std.mem.eql(u8, n.name, "main")) return;
+                // Closure factory: hoist its returned closure struct to a
+                // module-level named type `_ZbrClosure_<fn>` so the fn can name
+                // it as its return type (see collectClosureRetFns).
+                if (g.closure_ret_fns.get(n.name)) |info| {
+                    try g.writeIndent();
+                    try g.w.print("const _ZbrClosure_{s} = ", .{n.name});
+                    try g.genCaptureClosureStructMode(info.lambda, .type_only, null);
+                    try g.w.writeAll(";\n");
+                }
                 try g.genMethod(n);
             },
             .var_      => |n| try g.genTopVar(n),
@@ -6138,7 +6230,14 @@ const Generator = struct {
             (n.body != null and bodyHasRaise(n.body.?, g.tc));
         mg.current_method_throws = needs_error;
         if (needs_error) try g.w.writeAll("anyerror!");
-        if (n.return_type) |rt| try g.genType(rt) else try g.w.writeAll("void");
+        // Closure factory: return the hoisted `_ZbrClosure_<fn>` named type
+        // (the declared `sig`/fn-type return is just the "returns a callable"
+        // signal; the concrete type is the returned closure's struct).
+        const is_closure_factory = g.owner.len == 0 and g.closure_ret_fns.contains(n.name);
+        if (is_closure_factory) {
+            try g.w.print("_ZbrClosure_{s}", .{n.name});
+            mg.current_closure_ret = try std.fmt.allocPrint(g.alloc, "_ZbrClosure_{s}", .{n.name});
+        } else if (n.return_type) |rt| try g.genType(rt) else try g.w.writeAll("void");
 
         if (n.body) |body| {
             // Pre-scan 1: which params / self are actually referenced?
@@ -6708,7 +6807,20 @@ const Generator = struct {
         const needs_var_for_closure = if (n.init) |init|
             (init.* == .lambda and g.lambdaHasMutatingCapture(init.lambda))
         else false;
-        const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods and !needs_var_for_closure)) "const" else "var";
+        // Caller of a closure factory: `var c = factory()`.  `c` is a value of
+        // the hoisted `_ZbrClosure_<fn>` type; register it so `c()` dispatches to
+        // `c.call()`, and force `var` when the closure MUTATES (its `call` takes
+        // `*@This()`, which Zig cannot invoke on a `const`).
+        const factory_info: ?ClosureRetInfo = if (n.init) |init| blk: {
+            if (init.* == .call and init.call.callee.* == .ident)
+                break :blk g.closure_ret_fns.get(init.call.callee.ident.name);
+            break :blk null;
+        } else null;
+        if (factory_info != null) {
+            if (g.closure_vars) |cv| try cv.put(n.name, {});
+        }
+        const needs_var_for_factory = if (factory_info) |fi| fi.mutates else false;
+        const kw: []const u8 = if (n.is_const or (!is_mutated and !needs_var_for_methods and !needs_var_for_closure and !needs_var_for_factory)) "const" else "var";
 
         // Interface coercion for a generic-class ctor: `var b: I = Box(int)(args)`.
         // The concrete type is a generic instantiation, so the vtable lives inside the
@@ -10706,105 +10818,134 @@ const Generator = struct {
     }
 
     /// The result is a value of an anonymous struct type; call sites use `.call()`.
+    /// How a capture closure is emitted.  `inline_all` (default) emits the full
+    /// `struct {…}{ inits }` in place.  For closure factories the struct TYPE is
+    /// hoisted to a module-level named type, so it is split: `type_only` emits
+    /// the `struct {…}` definition (at module scope) and `init_only` emits the
+    /// `<name>{ inits }` construction (at the `return` site).
+    const ClosureEmitMode = enum { inline_all, type_only, init_only };
+
     fn genCaptureClosureStruct(g: Generator, e: *Ast.ExprLambda) anyerror!void {
+        return g.genCaptureClosureStructMode(e, .inline_all, null);
+    }
+
+    fn genCaptureClosureStructMode(
+        g: Generator,
+        e: *Ast.ExprLambda,
+        mode: ClosureEmitMode,
+        hoisted_name: ?[]const u8,
+    ) anyerror!void {
         // Collect capture field names so body idents use `self.name`
         var field_names = std.ArrayList([]const u8).empty;
         defer field_names.deinit(g.alloc);
         for (e.capture) |cv| try field_names.append(g.alloc, cv.name);
 
-        // Determine if any capture field is mutated in the body.
-        // If so, `call` must take `self: *@This()` so assignments are visible to the caller.
-        const body_stmts: []const Ast.Stmt = switch (e.body) {
-            .stmts => |ss| ss,
-            .expr  => &.{},
-        };
-        var body_mutations = try scanMutations(body_stmts, g.alloc, g.tc);
-        defer body_mutations.deinit();
-        var any_capture_mutated = false;
-        for (e.capture) |cv| {
-            if (body_mutations.contains(cv.name)) { any_capture_mutated = true; break; }
-        }
-
-        try g.w.writeAll("struct {\n");
-        const fg = g.indented();
-
-        // Emit capture fields
-        for (e.capture) |cv| {
-            try fg.writeIndent();
-            try fg.w.writeAll(cv.name);
-            try fg.w.writeAll(": ");
-            if (cv.type_) |tr| {
-                try fg.genType(tr);
-            } else if (cv.init) |init| {
-                // No explicit type — use @TypeOf(init_expr) so Zig can infer
-                // the field type from the initialiser at the struct definition site.
-                try fg.w.writeAll("@TypeOf(");
-                try fg.genExpr(init);
-                try fg.w.writeAll(")");
-            } else {
-                try fg.w.writeAll("anytype");
+        // ── TYPE portion: `struct { <fields>; fn call(...) {...} }` ──
+        // Emitted in place (inline_all) or as the hoisted module-level def
+        // (type_only); skipped when only constructing the value (init_only).
+        if (mode != .init_only) {
+            // Determine if any capture field is mutated in the body.  If so, `call`
+            // takes `self: *@This()` so assignments are visible to the caller.
+            const body_stmts: []const Ast.Stmt = switch (e.body) {
+                .stmts => |ss| ss,
+                .expr  => &.{},
+            };
+            var body_mutations = try scanMutations(body_stmts, g.alloc, g.tc);
+            defer body_mutations.deinit();
+            var any_capture_mutated = false;
+            for (e.capture) |cv| {
+                if (body_mutations.contains(cv.name)) { any_capture_mutated = true; break; }
             }
-            try fg.w.writeAll(",\n");
-        }
 
-        // Emit call method — mutable self if any capture field is assigned.
-        try fg.writeIndent();
-        if (any_capture_mutated) {
-            try fg.w.writeAll("fn call(self: *@This()");
-        } else {
-            try fg.w.writeAll("fn call(self: @This()");
-        }
-        for (e.params) |p| {
-            try fg.w.writeAll(", ");
-            try fg.emitName(p.name);
-            try fg.w.writeAll(": ");
-            if (p.type_) |tr| try fg.genType(tr) else try fg.w.writeAll("anytype");
-        }
-        try fg.w.writeAll(") ");
-        if (e.return_type) |rt| {
-            try fg.genType(rt);
-        } else {
+            try g.w.writeAll("struct {\n");
+            const fg = g.indented();
+
+            // Emit capture fields
+            for (e.capture) |cv| {
+                try fg.writeIndent();
+                try fg.w.writeAll(cv.name);
+                try fg.w.writeAll(": ");
+                if (cv.type_) |tr| {
+                    try fg.genType(tr);
+                } else if (cv.init) |init| {
+                    // No explicit type — use @TypeOf(init_expr) so Zig can infer
+                    // the field type from the initialiser at the struct definition site.
+                    // (In `type_only` the struct is at module scope, so the init must
+                    // be resolvable there — an explicit capture type avoids this.)
+                    try fg.w.writeAll("@TypeOf(");
+                    try fg.genExpr(init);
+                    try fg.w.writeAll(")");
+                } else {
+                    try fg.w.writeAll("anytype");
+                }
+                try fg.w.writeAll(",\n");
+            }
+
+            // Emit call method — mutable self if any capture field is assigned.
+            try fg.writeIndent();
+            if (any_capture_mutated) {
+                try fg.w.writeAll("fn call(self: *@This()");
+            } else {
+                try fg.w.writeAll("fn call(self: @This()");
+            }
+            for (e.params) |p| {
+                try fg.w.writeAll(", ");
+                try fg.emitName(p.name);
+                try fg.w.writeAll(": ");
+                if (p.type_) |tr| try fg.genType(tr) else try fg.w.writeAll("anytype");
+            }
+            try fg.w.writeAll(") ");
+            if (e.return_type) |rt| {
+                try fg.genType(rt);
+            } else {
+                switch (e.body) {
+                    .expr => |ex| {
+                        try fg.w.writeAll("@TypeOf(");
+                        try fg.genExpr(ex);
+                        try fg.w.writeAll(")");
+                    },
+                    .stmts => try fg.w.writeAll("void"),
+                }
+            }
+            try fg.w.writeAll(" {\n");
+
+            // Body: idents matching capture names resolve to self.name
+            // Escape analysis so deferred frees are skipped for vars whose ownership transfers out.
+            var ret_set_capture = try analyzeEscapes(
+                if (e.body == .stmts) e.body.stmts else &.{}, g.alloc);
+            defer ret_set_capture.deinit();
+            const base_bg = fg.indented().withCaptureFields(field_names.items);
+            const bg = if (e.body == .stmts) base_bg.withReturnedNames(&ret_set_capture) else base_bg;
             switch (e.body) {
                 .expr => |ex| {
-                    try fg.w.writeAll("@TypeOf(");
-                    try fg.genExpr(ex);
-                    try fg.w.writeAll(")");
+                    try bg.writeIndent();
+                    try bg.w.writeAll("return ");
+                    try bg.genExpr(ex);
+                    try bg.w.writeAll(";\n");
                 },
-                .stmts => try fg.w.writeAll("void"),
+                .stmts => |ss| {
+                    try bg.genStmts(ss);
+                },
             }
+            try fg.writeIndent();
+            try fg.w.writeAll("}\n");
+            try g.writeIndent();
+            try g.w.writeAll("}");
         }
-        try fg.w.writeAll(" {\n");
 
-        // Body: idents matching capture names resolve to self.name
-        // Escape analysis so deferred frees are skipped for vars whose ownership transfers out.
-        var ret_set_capture = try analyzeEscapes(
-            if (e.body == .stmts) e.body.stmts else &.{}, g.alloc);
-        defer ret_set_capture.deinit();
-        const base_bg = fg.indented().withCaptureFields(field_names.items);
-        const bg = if (e.body == .stmts) base_bg.withReturnedNames(&ret_set_capture) else base_bg;
-        switch (e.body) {
-            .expr => |ex| {
-                try bg.writeIndent();
-                try bg.w.writeAll("return ");
-                try bg.genExpr(ex);
-                try bg.w.writeAll(";\n");
-            },
-            .stmts => |ss| {
-                try bg.genStmts(ss);
-            },
+        // ── INIT portion: `[name]{ .field = init, ... }` ──
+        if (mode != .type_only) {
+            if (mode == .init_only) if (hoisted_name) |hn| try g.w.writeAll(hn);
+            try g.w.writeAll("{ ");
+            for (e.capture) |cv| {
+                try g.w.writeAll(".");
+                try g.w.writeAll(cv.name);
+                try g.w.writeAll(" = ");
+                if (cv.init) |init| try g.genExpr(init) else try g.w.writeAll("undefined");
+                try g.w.writeAll(", ");
+            }
+            try g.w.writeAll("}");
         }
-        try fg.writeIndent();
-        try fg.w.writeAll("}\n");
-        try g.writeIndent();
-        try g.w.writeAll("}{ ");
-        for (e.capture) |cv| {
-            try g.w.writeAll(".");
-            try g.w.writeAll(cv.name);
-            try g.w.writeAll(" = ");
-            if (cv.init) |init| try g.genExpr(init) else try g.w.writeAll("undefined");
-            try g.w.writeAll(", ");
-        }
-        try g.w.writeAll("}");
     }
 
     fn genAssign(g: Generator, s: *Ast.StmtAssign) anyerror!void {
@@ -11128,6 +11269,17 @@ const Generator = struct {
                             return;
                         }
                     }
+                }
+            }
+            // Closure factory: `return <capture lambda>` constructs the hoisted
+            // named type `_ZbrClosure_<fn>` (its struct def was emitted at module
+            // scope; here we emit only `_ZbrClosure_<fn>{ .field = init, ... }`).
+            if (g.current_closure_ret) |cname| {
+                if (v.* == .lambda and v.lambda.capture.len > 0) {
+                    try g.w.writeAll("return ");
+                    try g.genCaptureClosureStructMode(v.lambda, .init_only, cname);
+                    try g.w.writeAll(";\n");
+                    return;
                 }
             }
             try g.w.writeAll("return ");

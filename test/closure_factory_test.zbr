@@ -1,0 +1,44 @@
+# Closure factories: a function that `return`s a stateful (capture) closure.
+#
+# A capture closure is an anonymous struct with a `call` method, which no `sig`
+# (fn pointer) can name.  The compiler hoists the closure struct to a module-level
+# named type `_ZbrClosure_<fn>`, emits that as the factory's return type, and the
+# caller's `var c = factory()` infers it (dispatching `c()` → `c.call()`).
+#
+# Captures in a returned closure need EXPLICIT types (the hoisted struct lives at
+# module scope, so `@TypeOf(init)` on an enclosing-scope name would not resolve).
+
+sig IntFn(): int
+sig StepFn(by: int): int
+
+# Stateful counter — each call returns the next value.
+def makeCounter(start: int): IntFn
+    return def(): int
+        capture
+            var count: int = start
+        count += 1
+        return count
+
+# Accumulator whose step size is fixed at construction; the call arg adds on top.
+def makeAccum(base: int): StepFn
+    return def(by: int): int
+        capture
+            var total: int = base
+        total += by
+        return total
+
+def main()
+    # Independent state: two counters do not share `count`.
+    var c = makeCounter(10)
+    var d = makeCounter(100)
+    assert c() == 11, "c first"
+    assert c() == 12, "c second"
+    assert d() == 101, "d independent of c"
+    assert c() == 13, "c resumes its own state"
+
+    # Factory with a call-time argument plus captured state.
+    var acc = makeAccum(1000)
+    assert acc(5) == 1005, "accum first"
+    assert acc(20) == 1025, "accum accumulates"
+
+    print("closure_factory: OK")

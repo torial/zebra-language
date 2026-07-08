@@ -727,6 +727,45 @@ def isDeferredModuleVar(mv: DeclVar): bool
         return mv.init_expr! is Expr.call
     return false
 
+# The first `return <capture lambda>` reachable in a statement list (recursing
+# into if/branch bodies), or nil.  A returned lambda WITHOUT a capture is a plain
+# function pointer — not a factory — so it is ignored.
+def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
+    for st in stmts
+        branch st
+            on Stmt.return_ as r
+                if r.value != nil
+                    branch r.value!
+                        on Expr.lambda as lam
+                            if lam.captures.len > 0
+                                return lam
+                        else
+                            pass
+            on Stmt.if_ as f
+                var l1 = returnedCaptureLambda(f.then_stmts)
+                if l1 != nil
+                    return l1
+                for ei in f.else_ifs
+                    var l2 = returnedCaptureLambda(ei.stmts)
+                    if l2 != nil
+                        return l2
+                if f.else_stmts != nil
+                    var l3 = returnedCaptureLambda(f.else_stmts!)
+                    if l3 != nil
+                        return l3
+            on Stmt.branch_ as b
+                for c in b.cases
+                    var l4 = returnedCaptureLambda(c.stmts)
+                    if l4 != nil
+                        return l4
+                if b.else_ != nil
+                    var l5 = returnedCaptureLambda(b.else_!)
+                    if l5 != nil
+                        return l5
+            else
+                pass
+    return nil
+
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
@@ -818,6 +857,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             g.toString_types.add(s.name)
             else
                 pass
+    # Closure-factory pre-pass: top-level fns that `return` a capture closure AND
+    # declare a return type (the "returns a callable" signal).  Runs as a method
+    # so the HashMap/StrSet field writes use bare self-field access (the `g.field`
+    # local-var form mis-resolves HashMap.set to List semantics in the bootstrap).
+    g.collectClosureFactories()
     for decl in m.decls
         branch decl
             on Decl.use_ as u
@@ -831,6 +875,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             on Decl.class_ as c
                 g.genClass(c)
             on Decl.method as mth
+                # Closure factory: hoist its returned closure struct to a
+                # module-level `_ZbrClosure_<fn>` type so the fn can name it.
+                g.emitHoistedFactoryType(mth.name)
                 g.genMethod(mth)
             on Decl.var_ as v
                 g.genFieldDecl(v)
@@ -1749,6 +1796,16 @@ struct Generator
     # closure_vars).  Populated when `var x = def(...) capture {...} ...` is
     # emitted; queried by emitCallWithClosureThunks for ident-case detection.
     var closure_lambdas      : HashMap(str, ExprLambda)
+    # Closure factories: top-level fns that `return` a capture closure.  Their
+    # anonymous closure struct is hoisted to a module-level named type
+    # `_ZbrClosure_<fn>` so the fn can name it as its return type.  Keyed by fn
+    # name → the returned lambda; a parallel StrSet marks factories whose closure
+    # MUTATES (forces the caller binding to be `var`).  See genLambda/genReturn.
+    var closure_ret_fns      : HashMap(str, ExprLambda)
+    var closure_ret_mutates  : StrSet
+    # Set to `_ZbrClosure_<fn>` while emitting a factory body, so its
+    # `return <capture lambda>` constructs the hoisted named type (init-only).
+    var current_closure_ret  : str?
 
     invariant
         indent >= 0
@@ -1823,6 +1880,9 @@ struct Generator
         .datetime_vars         = StrSet()
         .pending_thunks        = ThunkList()
         .closure_lambdas       = HashMap(str, ExprLambda)()
+        .closure_ret_fns       = HashMap(str, ExprLambda)()
+        .closure_ret_mutates   = StrSet()
+        .current_closure_ret   = nil
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
 
@@ -1844,6 +1904,11 @@ struct Generator
     def withMethodReturnType(tr: TypeRef): Generator
         var g = this except
             method_return_type = tr
+        return g
+
+    def withCurrentClosureRet(name: str): Generator
+        var g = this except
+            current_closure_ret = name
         return g
 
     def asMethod(): Generator
@@ -3463,7 +3528,13 @@ struct Generator
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre!))
         if auto_throws
             w.emit("anyerror!")
-        if m.return_type != nil
+        # Closure factory: return the hoisted `_ZbrClosure_<fn>` named type (the
+        # declared `sig`/fn-type return is just the "returns a callable" signal).
+        var is_factory = owner == "" and closure_ret_fns.get(m.name) != nil
+        if is_factory
+            w.emit("_ZbrClosure_")
+            w.emit(m.name)
+        else if m.return_type != nil
             genType(m.return_type!)
         else
             w.emit("void")
@@ -3542,6 +3613,8 @@ struct Generator
             bg = bg.withInferCtx(ctx17c)
             if m.return_type != nil
                 bg = bg.withMethodReturnType(m.return_type!)
+            if is_factory
+                bg = bg.withCurrentClosureRet("_ZbrClosure_${m.name}")
             # BUG-097: record which params are emitted as *ArrayList so arg-emit
             # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
             for pptr in m.params
@@ -4543,6 +4616,16 @@ struct Generator
                                     is_mut = true
                         else
                             pass
+        # Caller of a closure factory: `var c = factory()`.  Register `c` so `c()`
+        # dispatches to `c.call()`, and force `var` when the closure MUTATES (its
+        # `call` takes `*@This()`, which Zig cannot invoke on a `const`).
+        if n.init_expr != nil
+            if n.init_expr! is Expr.call as fccall
+                if fccall.callee is Expr.ident as fcid
+                    if closure_ret_fns.get(fcid.name) != nil
+                        closure_vars.add(n.name)
+                        if not n.is_const and closure_ret_mutates.contains_(fcid.name)
+                            is_mut = true
         if is_mut and n.init_expr != nil and not n.is_const
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name)
@@ -5456,6 +5539,36 @@ struct Generator
 
     # ── genReturn ─────────────────────────────────────────────────────────────
 
+    # If `name` is a closure factory, emit its hoisted struct definition
+    # `const _ZbrClosure_<name> = struct {…};` at module scope.
+    def emitHoistedFactoryType(name: str)
+        if closure_ret_fns.get(name) as hlam
+            writeIndent()
+            w.emit("const _ZbrClosure_")
+            w.emit(name)
+            w.emit(" = ")
+            genLambdaEx(hlam, true, false, nil)
+            w.emit(";\n")
+
+    # Populate closure_ret_fns / closure_ret_mutates from module_decls.  A method
+    # (not a free loop) so the field writes are bare self-field access.
+    def collectClosureFactories()
+        for decl in module_decls
+            if decl is Decl.method as fmth
+                if fmth.return_type != nil and fmth.stmts != nil
+                    var flam = returnedCaptureLambda(fmth.stmts!)
+                    if flam != nil
+                        closure_ret_fns.set(fmth.name, flam!)
+                        branch flam!.body_
+                            on LambdaBody.stmts as fbody
+                                var fmuts = StrSet()
+                                collectAssignedIdents(fbody, fmuts)
+                                for fcv in flam!.captures
+                                    if fmuts.contains_(fcv.name)
+                                        closure_ret_mutates.add(fmth.name)
+                            else
+                                pass
+
     def genReturn(r: StmtReturn)
         # Contract `result` capture: when the current function has an ensure
         # referencing `result`, capture the value and arm the flag before returning.
@@ -5510,6 +5623,20 @@ struct Generator
                                     writeIndent()
                                     w.emit("return _iface_" + ruid.toString() + ";\n")
                                     return
+        # Closure factory: `return <capture lambda>` constructs the hoisted named
+        # type `_ZbrClosure_<fn>{ .field = init, ... }` (its struct def was emitted
+        # at module scope).
+        if current_closure_ret != nil and r.value != nil
+            branch r.value!
+                on Expr.lambda as retlam
+                    if retlam.captures.len > 0
+                        writeIndent()
+                        w.emit("return ")
+                        genLambdaEx(retlam, false, true, current_closure_ret)
+                        w.emit(";\n")
+                        return
+                else
+                    pass
         writeIndent()
         if r.value != nil
             w.emit("return ")
@@ -12261,115 +12388,127 @@ struct Generator
     # Emit anonymous struct with a call method.
     # Without capture:   struct { fn call(params) RetT { body } }.call
     def genLambda(lam: ExprLambda)
+        # Default: emit the full `(struct {…}{ inits })` / `struct {…}.call` in place.
+        genLambdaEx(lam, true, true, nil)
+
+    # Emit a lambda.  For closure factories the struct TYPE is hoisted to a
+    # module-level named type, so emission is split:
+    #   emit_type=true , emit_init=true  → inline `(struct {…}{ inits })`
+    #   emit_type=true , emit_init=false → the hoisted `struct {…}` definition
+    #   emit_type=false, emit_init=true  → the `<name>{ inits }` construction
+    def genLambdaEx(lam: ExprLambda, emit_type: bool, emit_init: bool, hoisted_name: str?)
         var has_capture = lam.captures.len > 0
-        if has_capture
+        var wrap_paren = has_capture and emit_type and emit_init
+        if wrap_paren
             w.emit("(")
-        w.emit("struct {")
-        # Emit capture fields
-        if has_capture
-            w.emit("\n")
-            var fg = indented()
+        if emit_type
+            w.emit("struct {")
+            # Emit capture fields
+            if has_capture
+                w.emit("\n")
+                var fg = indented()
+                for cv in lam.captures
+                    fg.writeIndent()
+                    fg.w.emit(cv.name)
+                    fg.w.emit(": ")
+                    if cv.type_ != nil
+                        fg.genType(cv.type_!)
+                    else if cv.init_expr != nil
+                        # No explicit type — @TypeOf(<init>).  For a HOISTED (module-
+                        # scope) struct the init must be resolvable there; an explicit
+                        # capture type avoids referencing enclosing-scope names.
+                        fg.w.emit("@TypeOf(")
+                        fg.genExpr(cv.init_expr!)
+                        fg.w.emit(")")
+                    else
+                        fg.w.emit("anytype")
+                    fg.w.emit(",\n")
+                writeIndent()
+            # B4: `call` takes `*@This()` (mutable self) when a capture field is
+            # assigned in the body, so the mutation is visible across calls.
+            var any_cap_mutated = false
+            if has_capture
+                branch lam.body_
+                    on LambdaBody.stmts as body_ss_m
+                        var body_muts: StrSet = StrSet()
+                        collectAssignedIdents(body_ss_m, body_muts)
+                        for cv_m in lam.captures
+                            if body_muts.contains_(cv_m.name)
+                                any_cap_mutated = true
+                    else
+                        pass
+            # call method
+            w.emit(" fn call(")
+            var first = true
+            if has_capture
+                if any_cap_mutated
+                    w.emit("self: *@This()")
+                else
+                    w.emit("self: @This()")
+                first = false
+            for p in lam.params
+                if not first
+                    w.emit(", ")
+                first = false
+                w.emit(zigSafeName(p.name))
+                w.emit(": ")
+                if p.type_ != nil
+                    genType(p.type_!)
+                else
+                    w.emit("anytype")
+            w.emit(") ")
+            # Return type
+            if lam.return_type != nil
+                genType(lam.return_type!)
+            else
+                branch lam.body_
+                    on LambdaBody.expr_ as ex
+                        w.emit("@TypeOf(")
+                        genExpr(ex)
+                        w.emit(")")
+                    on LambdaBody.stmts as ss
+                        if not emitLambdaStmtsRetType(ss)
+                            w.emit("void")
+            w.emit(" {")
+            # Build capture context for body
+            var cf = StrSet()
             for cv in lam.captures
-                fg.writeIndent()
-                fg.w.emit(cv.name)
-                fg.w.emit(": ")
-                if cv.type_ != nil
-                    fg.genType(cv.type_!)
-                else if cv.init_expr != nil
-                    # BUG-FIX: previously emitted @TypeOf(cv.name) here, but cv.name
-                    # is the field name — not in scope at struct definition time.
-                    # Use @TypeOf(<init expression>) instead so Zig can infer.
-                    fg.w.emit("@TypeOf(")
-                    fg.genExpr(cv.init_expr!)
-                    fg.w.emit(")")
-                else
-                    fg.w.emit("anytype")
-                fg.w.emit(",\n")
-            writeIndent()
-        # B4: `call` takes `*@This()` (mutable self) when a capture field is
-        # assigned in the body, so the mutation is visible across calls.
-        var any_cap_mutated = false
-        if has_capture
-            branch lam.body_
-                on LambdaBody.stmts as body_ss_m
-                    var body_muts: StrSet = StrSet()
-                    collectAssignedIdents(body_ss_m, body_muts)
-                    for cv_m in lam.captures
-                        if body_muts.contains_(cv_m.name)
-                            any_cap_mutated = true
-                else
-                    pass
-        # call method
-        w.emit(" fn call(")
-        var first = true
-        if has_capture
-            if any_cap_mutated
-                w.emit("self: *@This()")
-            else
-                w.emit("self: @This()")
-            first = false
-        for p in lam.params
-            if not first
-                w.emit(", ")
-            first = false
-            w.emit(zigSafeName(p.name))
-            w.emit(": ")
-            if p.type_ != nil
-                genType(p.type_!)
-            else
-                w.emit("anytype")
-        w.emit(") ")
-        # Return type
-        if lam.return_type != nil
-            genType(lam.return_type!)
-        else
+                cf.add(cv.name)
+            var mg = asMethod()
+            var lg = mg.withCaptureFields(cf)
             branch lam.body_
                 on LambdaBody.expr_ as ex
-                    w.emit("@TypeOf(")
-                    genExpr(ex)
-                    w.emit(")")
+                    w.emit(" return ")
+                    lg.genExpr(ex)
+                    w.emit(";")
                 on LambdaBody.stmts as ss
-                    if not emitLambdaStmtsRetType(ss)
-                        w.emit("void")
-        w.emit(" {")
-        # Build capture context for body
-        var cf = StrSet()
-        for cv in lam.captures
-            cf.add(cv.name)
-        var mg = asMethod()
-        var lg = mg.withCaptureFields(cf)
-        branch lam.body_
-            on LambdaBody.expr_ as ex
-                w.emit(" return ")
-                lg.genExpr(ex)
-                w.emit(";")
-            on LambdaBody.stmts as ss
-                w.emit("\n")
-                # Clear the outer-fn ensure context so `return` inside the lambda
-                # body is NOT rewritten to outer-fn `_result` capture.
-                var ig = lg.withInLambda().indented()
-                ig.genStmts(ss)
-                lg.writeIndent()
-        w.emit(" } }")
+                    w.emit("\n")
+                    # Clear the outer-fn ensure context so `return` inside the lambda
+                    # body is NOT rewritten to outer-fn `_result` capture.
+                    var ig = lg.withInLambda().indented()
+                    ig.genStmts(ss)
+                    lg.writeIndent()
+            w.emit(" } }")
         # Capture initializer or .call suffix
-        if has_capture
-            w.emit("{ ")
-            for cv in lam.captures
-                w.emit(".")
-                w.emit(cv.name)
-                w.emit(" = ")
-                if cv.init_expr != nil
-                    # BUG-FIX: previously emitted cv.name here, which only worked
-                    # when the capture decl's name happened to match an outer-scope
-                    # var of the same name.  Emit the actual init expression instead
-                    # (matches the bootstrap codegen at src/CodeGen.zig:9205).
-                    genExpr(cv.init_expr!)
-                else
-                    w.emit("undefined")
-                w.emit(", ")
-            w.emit("})")
-        else
-            w.emit(".call")
+        if emit_init
+            if has_capture
+                if hoisted_name != nil
+                    w.emit(hoisted_name!)
+                w.emit("{ ")
+                for cv in lam.captures
+                    w.emit(".")
+                    w.emit(cv.name)
+                    w.emit(" = ")
+                    if cv.init_expr != nil
+                        genExpr(cv.init_expr!)
+                    else
+                        w.emit("undefined")
+                    w.emit(", ")
+                w.emit("}")
+                if wrap_paren
+                    w.emit(")")
+            else
+                w.emit(".call")
 
     # ── genFileCall ───────────────────────────────────────────────────────────
     # Emit File.* static calls: inline Zig expressions (no allocation needed).
