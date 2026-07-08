@@ -947,6 +947,8 @@ fn simpleTypeFromRef(
         .stream, .error_union, .generic, .same => .unknown,
         // Parametric alias applied — treat as same as the named alias at TC time.
         .alias_applied => .unknown,
+        // Function-pointer type — opaque at TC time (callable dispatch is by codegen).
+        .fn_type => .unknown,
     };
 }
 
@@ -4467,6 +4469,8 @@ const TypeChecker = struct {
             },
             // Parametric alias applied — same resolution path as the base alias name.
             .alias_applied => .unknown,
+            // Function-pointer type — opaque at TC time (callable dispatch is by codegen).
+            .fn_type => .unknown,
         };
     }
 

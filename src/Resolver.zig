@@ -1116,6 +1116,10 @@ const Resolver = struct {
                 if (scope.lookup(aa.name) == null)
                     try r.emitUnresolved(aa.span, aa.name);
             },
+            .fn_type => |*ft| {
+                for (ft.params) |*p| try r.resolveTypeRef(p, scope);
+                if (ft.ret) |rt| try r.resolveTypeRef(rt, scope);
+            },
         }
     }
 

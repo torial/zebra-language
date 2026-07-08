@@ -422,6 +422,7 @@ fn typeRefStr(tr: Ast.TypeRef, alloc: Allocator) ![]const u8 {
         .same          => try alloc.dupe(u8, "same"),
         .tuple         => try alloc.dupe(u8, "tuple"),
         .alias_applied => |aa| try alloc.dupe(u8, aa.name),
+        .fn_type       => try alloc.dupe(u8, "fn"),
     };
 }
 
@@ -16846,6 +16847,16 @@ const Generator = struct {
                     try g.genType(el);
                 }
                 try g.w.writeAll(" }");
+            },
+            .fn_type     => |ft| {
+                // `def(P1, P2): R` → `*const fn(P1, P2) R`  (same as a named `sig`).
+                try g.w.writeAll("*const fn(");
+                for (ft.params, 0..) |p, i| {
+                    if (i > 0) try g.w.writeAll(", ");
+                    try g.genType(p);
+                }
+                try g.w.writeAll(") ");
+                if (ft.ret) |rt| try g.genType(rt.*) else try g.w.writeAll("void");
             },
         }
     }

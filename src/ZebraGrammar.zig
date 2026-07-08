@@ -428,6 +428,11 @@ const type_rules: []const Rule = &.{
     // lparen TypeRef comma TypeRefListNE rparen
     .{ .lhs = .TypeRef, .rhs = &.{ t(.lparen), n(.TypeRef), t(.comma), n(.TypeRefListNE), t(.rparen) } },
 
+    // Function-pointer type (a `sig` written inline): `def(): R`, `def(T1, T2): R`.
+    // Anonymous `def(` tokenizes as `kw_def lparen` (no name → no open_call).
+    .{ .lhs = .TypeRef, .rhs = &.{ t(.kw_def), t(.lparen), t(.rparen), t(.colon), n(.TypeRef) } },
+    .{ .lhs = .TypeRef, .rhs = &.{ t(.kw_def), t(.lparen), n(.TypeRefListNE), t(.rparen), t(.colon), n(.TypeRef) } },
+
     // Comma-separated list of type references (for implements/adds)
     .{ .lhs = .TypeRefListNE, .rhs = &.{ n(.TypeRef) } },
     .{ .lhs = .TypeRefListNE, .rhs = &.{ n(.TypeRefListNE), t(.comma), n(.TypeRef) } },

@@ -699,6 +699,8 @@ def typeRefStr(tr: TypeRef): str
             return "tuple"
         on TypeRef.alias_applied as aa
             return aa.name + "(...)"
+        on TypeRef.fn_type
+            return "fn"
     return "unknown"
 
 # BUG-153: stdlib container types whose ctor is not comptime-known (HashMap/Set
@@ -2273,6 +2275,18 @@ struct Generator
                         genType(maybe_alias!.base)
                     else
                         w.emit("i64")
+
+            on TypeRef.fn_type as ft
+                # `def(P1, P2): R` → `*const fn(P1, P2) R` (same as a named `sig`).
+                w.emit("*const fn(")
+                var fk = 0
+                while fk < ft.params.len
+                    if fk > 0
+                        w.emit(", ")
+                    genType(ft.params.at(fk))
+                    fk += 1
+                w.emit(") ")
+                genType(ft.ret)
 
     def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN

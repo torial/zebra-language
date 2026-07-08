@@ -1045,6 +1045,31 @@ class Parser
             sb.append("^")
             sb.append(inner)
             return sb.build()
+        # Function-pointer type (inline `sig`): `def(T1, T2): R` — encode as
+        # "__fn__T1,T2__ret__R" for the AstBuilder to decode into TypeRef.fn_type.
+        if .textIs("def")
+            .advance()
+            .expectText("(")?
+            var fn_params: List(str) = List(str)()
+            while not .textIs(")")
+                if .textIs(",")
+                    .advance()
+                else
+                    fn_params.add(.eatTypeName()?)
+            .expectText(")")?
+            .expectText(":")?
+            var fn_ret: str = .eatTypeName()?
+            var sbf: StringBuilder = StringBuilder()
+            sbf.append("__fn__")
+            var firstp = true
+            for fp in fn_params
+                if not firstp
+                    sbf.append(",")
+                sbf.append(fp)
+                firstp = false
+            sbf.append("__ret__")
+            sbf.append(fn_ret)
+            return sbf.build()
         const text = .peek().text
         if .isOpenCall()
             .advance()  # consume "Name("

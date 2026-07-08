@@ -336,6 +336,17 @@ pub const TypeRef = union(enum) {
     /// `Bounded(0, 100)` — value-parameterized alias applied with literal args.
     /// Only literal args are supported in v1 (integer, float, string, negated number).
     alias_applied: AliasAppliedTypeRef,
+    /// `def(P1, P2): R` — an anonymous function-pointer type (a `sig` written
+    /// inline).  Emits `*const fn(P1, P2) R` in Zig.  As a closure factory's
+    /// return type it is just the "returns a callable" signal — the concrete
+    /// type is the hoisted `_ZbrClosure_<fn>` struct (see CodeGen).
+    fn_type: FnTypeRef,
+};
+
+pub const FnTypeRef = struct {
+    span:   Span,
+    params: []const TypeRef,
+    ret:    ?*TypeRef,   // null → void
 };
 
 pub const AliasAppliedTypeRef = struct {

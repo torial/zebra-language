@@ -1196,6 +1196,15 @@ const Builder = struct {
                 break :blk .{ .named = .{ .span = spanOf(node, b.tokens), .name = full_name } };
             },
             5 => blk: {
+                // def ( ) : R  — function-pointer type with no params
+                if (isLeafKind(kids[0], .kw_def)) {
+                    const ret = try b.box(Ast.TypeRef, try b.buildTypeRef(kids[4]));
+                    break :blk .{ .fn_type = .{
+                        .span   = spanOf(node, b.tokens),
+                        .params = &.{},
+                        .ret    = ret,
+                    }};
+                }
                 // ( TypeRef , TypeRefListNE )  — tuple type
                 // lparen TypeRef comma TypeRefListNE rparen
                 var elems = std.ArrayList(Ast.TypeRef).empty;
@@ -1205,6 +1214,16 @@ const Builder = struct {
                 break :blk .{ .tuple = .{
                     .span  = spanOf(node, b.tokens),
                     .elems = try elems.toOwnedSlice(b.arena),
+                }};
+            },
+            6 => blk: {
+                // def ( TypeRefListNE ) : R  — function-pointer type with params
+                const params = try b.buildTypeRefListNE(kids[2]);
+                const ret    = try b.box(Ast.TypeRef, try b.buildTypeRef(kids[5]));
+                break :blk .{ .fn_type = .{
+                    .span   = spanOf(node, b.tokens),
+                    .params = params,
+                    .ret    = ret,
                 }};
             },
             else => std.debug.panic("buildTypeRef: child count {}", .{kids.len}),

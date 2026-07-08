@@ -792,6 +792,8 @@ smoke_run test/return_lambda_test.zbr "return_lambda: OK"
 # Closure factories: `return <capture closure>` with the struct hoisted to a
 # module-level named type so the fn can name it as its return type.
 smoke_run test/closure_factory_test.zbr "closure_factory: OK"
+# Inline function-pointer type annotation `def(P): R` (an anonymous `sig`).
+smoke_run test/fn_type_annotation_test.zbr "fn_type_annotation: OK"
 # Audit B6/B7: struct fields stay contiguous (static var / @once field / mixin
 # method must not split instance fields) — genClass emits fields-first.
 smoke_run test/field_order_test.zbr "field_order: OK"

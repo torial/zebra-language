@@ -205,6 +205,10 @@ def typeRefStr(tr: TypeRef): str
                 j = j + 1
             b2.append(")")
             return b2.build()
+        on TypeRef.alias_applied as aa3
+            return aa3.name
+        on TypeRef.fn_type
+            return "fn"
 
 # ── exprHasTry ────────────────────────────────────────────────────────────────
 # Returns true if `expr` contains a bare try_ node (error propagation).

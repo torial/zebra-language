@@ -393,6 +393,17 @@ union TypeRef
     same_
     tuple: TupleTypeRef
     alias_applied: AliasAppliedTypeRef
+    fn_type: FnTypeRef
+
+struct FnTypeRef
+    var span: Span
+    var params: List(TypeRef)
+    var ret: ^TypeRef
+
+    cue init(span: Span, params: List(TypeRef), ret: ^TypeRef)
+        .span = span
+        .params = params
+        .ret = ret
 
 struct NamedTypeRef
     var span: Span

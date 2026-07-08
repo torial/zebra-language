@@ -1,0 +1,40 @@
+# Inline function-pointer type annotation: `def(P): R` written directly as a type
+# (an anonymous `sig`).  Emits `*const fn(P) R` in Zig.
+#
+# Two uses:
+#   1. As a closure factory's return type — the struct is hoisted (stateful).
+#   2. As a plain fn-pointer type — for returning/holding a named function.
+
+# 1. Closure factory whose return type is written inline as `def(): int`.
+def makeCounter(start: int): def(): int
+    return def(): int
+        capture
+            var count: int = start
+        count += 1
+        return count
+
+# 2. Plain fn-pointer type (no capture) — return a named top-level function.
+def add(a: int, b: int): int
+    return a + b
+
+def mul(a: int, b: int): int
+    return a * b
+
+def pickOp(useAdd: bool): def(int, int): int
+    if useAdd
+        return add
+    return mul
+
+# 3. Inline fn-type as a local variable annotation.
+def main()
+    var c = makeCounter(10)
+    assert c() == 11, "inline-type factory first"
+    assert c() == 12, "inline-type factory second"
+
+    var op: def(int, int): int = add
+    assert op(3, 4) == 7, "fn-type var holds add"
+
+    var chosen = pickOp(false)
+    assert chosen(3, 4) == 12, "pickOp returns mul"
+
+    print("fn_type_annotation: OK")

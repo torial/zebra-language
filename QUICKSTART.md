@@ -1391,14 +1391,12 @@ has independent capture fields.
 
 A function may `return` a capture closure — a **closure factory**.  Because a
 capture closure is an anonymous struct (not a plain function pointer), the factory
-declares its return type with a `sig` naming the closure's call signature; the
-compiler hoists the concrete closure struct to a module-level named type and
-returns that.
+declares its return type as a **function type** — either a named `sig` or the
+inline form `def(P): R` (see §19.3).  The compiler hoists the concrete closure
+struct to a module-level named type and returns that.
 
 ```zebra
-sig IntFn(): int
-
-def makeCounter(start: int): IntFn
+def makeCounter(start: int): def(): int   # inline function-type return
     return def(): int
         capture
             var count: int = start   # capture needs an explicit type
@@ -1451,7 +1449,31 @@ def view(g: Gui, model: Model)
         click_count()
 ```
 
-### §19.2 Lambda as a call argument
+### §19.3 Function-pointer types — `def(P): R`
+
+A function type may be written inline as `def(ParamTypes): ReturnType`, the
+anonymous equivalent of a named `sig`.  It emits `*const fn(P) R` in Zig and can
+appear anywhere a type is expected — a return annotation, a parameter type, or a
+variable type:
+
+```zebra
+def add(a: int, b: int): int
+    return a + b
+
+def pickOp(useAdd: bool): def(int, int): int   # inline fn-type return
+    if useAdd
+        return add
+    return mul
+
+var op: def(int, int): int = add               # inline fn-type variable
+print(op(3, 4))                                 # → 7
+```
+
+As a **closure factory's** return type (§19.2), `def(): R` also accepts a returned
+capture closure — the compiler hoists the closure struct and returns it.  A named
+`sig` and the inline `def(): R` form are interchangeable in that position.
+
+### §19.4 Lambda as a call argument
 
 A statement-body lambda can be passed **directly as a call argument** without first
 assigning it to a variable.  The indentation of the lambda body is relative to the
