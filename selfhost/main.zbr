@@ -643,31 +643,39 @@ def parseDiagLine(s: str): LspDiag?
         line = last.toInt()
     return LspDiag(line, col, sev, message)
 
-def buildDiagnosticsJson(path: str): str throws
-    if not File.exists(path)
-        return "[]"
-    var src: str = File.read(path)
+# Run the front-end on a source buffer and return structured diagnostics.
+def collectLspDiags(src: str, path: str): List(LspDiag)
     var raw: List(str) = List(str)()
     tcCheckSide(src, path, raw)
-    var out: StringBuilder = StringBuilder()
-    out.append("[")
-    var first: bool = true
+    var diags: List(LspDiag) = List(LspDiag)()
     for entry in raw
         for ln in entry.split("\n")
             var d = parseDiagLine(ln)
             if d as dd
-                if not first
-                    out.append(",")
-                first = false
-                out.append("{\"line\":")
-                out.append(dd.line.toString())
-                out.append(",\"col\":")
-                out.append(dd.col.toString())
-                out.append(",\"severity\":\"")
-                out.append(dd.severity)
-                out.append("\",\"message\":\"")
-                out.append(diagJsonEscape(dd.message))
-                out.append("\"}")
+                diags.add(dd)
+    return diags
+
+def buildDiagnosticsJson(path: str): str throws
+    if not File.exists(path)
+        return "[]"
+    var src: str = File.read(path)
+    var diags: List(LspDiag) = collectLspDiags(src, path)
+    var out: StringBuilder = StringBuilder()
+    out.append("[")
+    var first: bool = true
+    for dd in diags
+        if not first
+            out.append(",")
+        first = false
+        out.append("{\"line\":")
+        out.append(dd.line.toString())
+        out.append(",\"col\":")
+        out.append(dd.col.toString())
+        out.append(",\"severity\":\"")
+        out.append(dd.severity)
+        out.append("\",\"message\":\"")
+        out.append(diagJsonEscape(dd.message))
+        out.append("\"}")
     out.append("]")
     return out.build()
 
@@ -680,6 +688,114 @@ def runDiagnostics(path: str, out_path: str) throws
         File.write(out_path, json)
     else
         print(json)
+
+# ── LSP server (`zebra lsp`) ──────────────────────────────────────────────────
+# A minimal Language Server over stdio (JSON-RPC, Content-Length framed).  Reuses
+# the front-end in-process for live diagnostics.  Requests are read from stdin
+# (sys.readLine for headers, sys.readBytes for the exact body); responses go to
+# stdout via Terminal.write (real stdout — pipe-capable, unlike `print`).
+
+# Read one framed message body from stdin, or nil at EOF.
+def lspReadMessage(): str?
+    var content_len: int = 0
+    while true
+        var hdr = sys.readLine()
+        if hdr == nil
+            return nil
+        var h: str = hdr!
+        if h == ""
+            break
+        if h.startsWith("Content-Length:")
+            var hp: List(str) = List(str)()
+            for p in h.split(":")
+                hp.add(p)
+            if hp.len >= 2
+                content_len = hp.at(1).trim().toInt()
+    if content_len <= 0
+        return ""
+    var body = sys.readBytes(content_len)
+    if body == nil
+        return nil
+    return body!
+
+def lspWriteMessage(body: str)
+    Terminal.write("Content-Length: " + body.len.toString() + "\r\n\r\n")
+    Terminal.write(body)
+
+def lspRespond(id: int, result_json: str)
+    lspWriteMessage("{\"jsonrpc\":\"2.0\",\"id\":" + id.toString() + ",\"result\":" + result_json + "}")
+
+def lspClearDiagnostics(uri: str)
+    lspWriteMessage("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + diagJsonEscape(uri) + "\",\"diagnostics\":[]}}")
+
+# Run the front-end on `src` and push a publishDiagnostics notification for `uri`.
+# Compiler positions are 1-based line / 0-based col; LSP wants 0-based both.
+def lspPublishDiagnostics(uri: str, src: str)
+    var diags: List(LspDiag) = collectLspDiags(src, uri)
+    var sb: StringBuilder = StringBuilder()
+    sb.append("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"")
+    sb.append(diagJsonEscape(uri))
+    sb.append("\",\"diagnostics\":[")
+    var first: bool = true
+    for d in diags
+        if not first
+            sb.append(",")
+        first = false
+        var lsp_line: int = d.line - 1
+        if lsp_line < 0
+            lsp_line = 0
+        var sev_num: int = 1
+        if d.severity == "warning"
+            sev_num = 2
+        else if d.severity == "note"
+            sev_num = 3
+        sb.append("{\"range\":{\"start\":{\"line\":")
+        sb.append(lsp_line.toString())
+        sb.append(",\"character\":")
+        sb.append(d.col.toString())
+        sb.append("},\"end\":{\"line\":")
+        sb.append(lsp_line.toString())
+        sb.append(",\"character\":")
+        sb.append((d.col + 1).toString())
+        sb.append("}},\"severity\":")
+        sb.append(sev_num.toString())
+        sb.append(",\"message\":\"")
+        sb.append(diagJsonEscape(d.message))
+        sb.append("\"}")
+    sb.append("]}}")
+    lspWriteMessage(sb.build())
+
+def runLsp()
+    while true
+        var msg = lspReadMessage()
+        if msg == nil
+            break
+        var body: str = msg!
+        if body == ""
+            continue
+        var jv = Json.parse(body)
+        if jv == nil
+            continue
+        var j = jv!
+        var method: str = j.getStr("method")
+        if method == "initialize"
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1}}")
+        else if method == "shutdown"
+            lspRespond(j.getInt("id"), "null")
+        else if method == "exit"
+            break
+        else if method == "textDocument/didOpen"
+            var td = j.getObj("params").getObj("textDocument")
+            lspPublishDiagnostics(td.getStr("uri"), td.getStr("text"))
+        else if method == "textDocument/didChange"
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var new_text: str = ""
+            for ch in params.getList("contentChanges")
+                new_text = ch.getStr("text")
+            lspPublishDiagnostics(uri, new_text)
+        else if method == "textDocument/didClose"
+            lspClearDiagnostics(j.getObj("params").getObj("textDocument").getStr("uri"))
 
 # Type-check both sides of a conflict-marked .zbr file and report results.
 # Exit code is always 0 (informational); wrap in a stricter hook if you want
@@ -874,6 +990,14 @@ def main()
             else
                 sys.errln("usage: zebra diagnostics <file.zbr> [--out <file.json>]")
                 sys.exit(1)
+
+    # -- lsp subcommand ----------------------------------------------------
+    # `zebra lsp` — run the Language Server over stdio (JSON-RPC).
+
+    if args.positional(0) as lsp_pos
+        if lsp_pos == "lsp"
+            runLsp()
+            sys.exit(0)
 
     # -- fmt subcommand ----------------------------------------------------
     # `zebra fmt <file.zbr>` — normalize source formatting in-place.

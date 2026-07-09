@@ -487,6 +487,24 @@ fn _sys_readline() ?[]const u8 {
     }
     return line.items;
 }
+// Read EXACTLY `count` bytes from stdin (byte-at-a-time, no read-ahead so
+// consecutive reads stay aligned — used for LSP Content-Length framing).
+// Returns null at clean EOF; a short read at EOF returns what was read.
+fn _sys_read_bytes(count: i64) ?[]const u8 {
+    if (count <= 0) return "";
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var out: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    var i: i64 = 0;
+    while (i < count) : (i += 1) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (out.items.len > 0) out.items else null;
+        if (n == 0) return if (out.items.len > 0) out.items else null;
+        out.append(_allocator, byte_buf[0]) catch return null;
+    }
+    return out.items;
+}
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
 const _DynLib = struct {
     lib: std.DynLib,

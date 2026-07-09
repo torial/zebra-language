@@ -12879,6 +12879,14 @@ struct Generator
         if mname == "readLine"
             w.emit("_sys_readline()")
             return
+        if mname == "readBytes"
+            w.emit("_sys_read_bytes(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit(")")
+            return
         if mname == "go"
             w.emit("_sys_go(")
             if args.len > 0

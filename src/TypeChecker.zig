@@ -3537,7 +3537,11 @@ const TypeChecker = struct {
                     _ = try tc.inferExpr(mem.object);
                     for (e.args) |a| _ = try tc.inferExpr(a.value);
                     if (std.mem.eql(u8, mem.member, "getenv"))   return .unknown; // ?str
-                    if (std.mem.eql(u8, mem.member, "readLine")) return .unknown; // ?str
+                    if (std.mem.eql(u8, mem.member, "readLine") or std.mem.eql(u8, mem.member, "readBytes")) {
+                        const inner = tc.map_alloc.create(Type) catch return .unknown;
+                        inner.* = .string;
+                        return Type{ .optional = inner };
+                    }
                     if (std.mem.eql(u8, mem.member, "args"))     return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "run"))          return .sys_run_result;
                     if (std.mem.eql(u8, mem.member, "memStats"))     return .mem_stats;

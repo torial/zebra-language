@@ -18,10 +18,19 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   fast-backend build (so does `--emit-zig`), hence `--out <file>` is the clean
   consumer interface.  A real underlying bug to fix eventually: fast-backend
   stdout is not capturable on Windows (memory: stdout-to-pipe writes nothing).
-- **Phase 2** — LSP server (Zebra, JSON-RPC over stdio): `initialize`,
-  `didOpen`/`didChange`, `publishDiagnostics`.  Prefer **in-process** (call the
-  diagnostics fn directly, no subprocess) to sidestep the stdout issue entirely.
-- **Phase 3** — thin VS Code extension that launches the server → live squiggles.
+- **Phase 2 ✅ DONE (2026-07-09)** — `zebra lsp`: a stdio Language Server
+  (JSON-RPC, Content-Length framed) IN main.zbr, reusing the front-end in-process.
+  Handles `initialize` (advertises `textDocumentSync:1` = full sync), `shutdown`,
+  `exit`, `didOpen`/`didChange`/`didClose` → `publishDiagnostics` (LSP 0-based
+  ranges; compiler is 1-based line/0-based col).  Transport: `Terminal.write` for
+  stdout (real stdout, pipe-capable — NOT `print`/stderr); stdin via `sys.readLine`
+  (headers) + new **`sys.readBytes(n)`** primitive (exact body).  Dynamic JSON via
+  `Json.parse`/`.getStr`/`.getInt`/`.getObj`/`.getList`.  Test
+  `tools/lsp_server_smoke.py` (5/5).  Limitations/follow-ups: numeric request ids
+  only (getInt); no hover/completion yet; Content-Length assumes byte==str.len
+  (fine for ASCII/JSON).
+- **Phase 3 (next)** — thin VS Code extension that launches `zebra lsp` → live
+  squiggles as you type.  Then optionally publish it.
 - **Phase 4+** — hover (types), go-to-definition, completion (reuse Resolver/TC).
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface

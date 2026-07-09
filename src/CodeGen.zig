@@ -8231,6 +8231,13 @@ const Generator = struct {
             try g.w.writeAll("_sys_readline()");
             return true;
         }
+        if (std.mem.eql(u8, method, "readBytes")) {
+            // sys.readBytes(n) → ?[]const u8 — exactly n bytes (LSP framing).
+            try g.w.writeAll("_sys_read_bytes(");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "run")) {
             // sys.run(argv as List(str)) → _SysRunResult
             try g.w.writeAll("_sys_run(");

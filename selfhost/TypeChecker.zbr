@@ -1548,6 +1548,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.regex
                         if bname == "sys" and mem.member == "spawn"
                             return Type_.sys_process
+                        if bname == "sys" and (mem.member == "readLine" or mem.member == "readBytes")
+                            return Type_.optional(Type_.string_)
                         if bname == "Build" and mem.member == "new"
                             return Type_.build_ctx
                         if bname == "Ws"
