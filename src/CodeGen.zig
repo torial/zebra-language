@@ -14678,6 +14678,25 @@ const Generator = struct {
     /// + concept_zebra-class-auto-box-rule). Boxing the arg into `_allocator.create(...)`
     /// would stack one pointer too many (BUG-045). Detect the class case and fall
     /// through to plain `genArgExpr`.
+    /// If `param_type` is an interface and `arg` is a constructor call for a
+    /// class implementing it, emit the interface fat-pointer at the call-argument
+    /// position (`.{ .ptr = <arg>, .vtable = &_vtable_<Class>_<Iface> }`) and
+    /// return true.  Mirrors the var/return coercion; the TC already accepts
+    /// class→interface, so this closes the codegen half of that gap.
+    fn genInterfaceArgCoercion(g: Generator, arg: *const Ast.Expr, param_type: Ast.TypeRef) anyerror!bool {
+        if (param_type != .named) return false;
+        const iface_name = param_type.named.name;
+        if (findInterfaceDecl(g.module, iface_name) == null) return false;
+        if (arg.* != .call or arg.call.callee.* != .ident or arg.call.type_args.len != 0) return false;
+        const cn = arg.call.callee.ident.name;
+        const cd = findClassDecl(g.module, cn) orelse return false;
+        if (!classImplements(g.module, cd, iface_name)) return false;
+        try g.w.writeAll(".{ .ptr = ");
+        try g.genExpr(arg);
+        try g.w.print(", .vtable = &_vtable_{s}_{s} }}", .{ cn, iface_name });
+        return true;
+    }
+
     fn genBoxedArgExpr(g: Generator, expr: *const Ast.Expr, inner: Ast.TypeRef) anyerror!void {
         const payload: Ast.TypeRef = if (inner == .nilable) inner.nilable.* else inner;
         if (payload == .named) {
@@ -14740,6 +14759,10 @@ const Generator = struct {
                 // Box the arg if the corresponding param is ^T.
                 if (params) |ps| {
                     if (i < ps.len) {
+                        // Interface param + class-ctor arg → fat-pointer coercion.
+                        if (ps[i].type_) |pt| {
+                            if (try g.genInterfaceArgCoercion(a.value, pt)) continue;
+                        }
                         if (ps[i].type_) |pt| if (pt == .ref_to) {
                             try g.genBoxedArgExpr(a.value, pt.ref_to.*);
                             continue;
@@ -14795,7 +14818,9 @@ const Generator = struct {
                 const param_needs_addr = if (i < ps.len) paramNeedsAddrOf(ps[i], body, g.alloc, g.tc, g.resolve) else false;
                 const param_is_container = if (i < ps.len) if (ps[i].type_) |pt| isContainerType(pt) else false else false;
                 if (maybe_expr) |expr| {
-                    if (param_is_ref) {
+                    if (i < ps.len and ps[i].type_ != null and try g.genInterfaceArgCoercion(expr, ps[i].type_.?)) {
+                        // interface param + class-ctor arg → fat-pointer coercion
+                    } else if (param_is_ref) {
                         try g.genBoxedArgExpr(expr, ps[i].type_.?.ref_to.*);
                     } else if (param_needs_addr) {
                         if (argIdentInCpp(expr, g.caller_ptr_params)) {

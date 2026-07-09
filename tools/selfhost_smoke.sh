@@ -789,6 +789,8 @@ smoke_run test/allocate_debug_stats_test.zbr "allocate_debug_stats: OK"
 smoke_run test/interface_is_test.zbr "interface_is: OK"
 # Class→interface coercion passes ctor args (non-default constructor).
 smoke_run test/interface_coerce_ctor_test.zbr "interface_coerce_ctor: OK"
+# Class→interface coercion at a call-argument position (positional + named).
+smoke_run test/interface_coerce_arg_test.zbr "interface_coerce_arg: OK"
 # BUG-171: bare `'Z'` char literals (selfhost lexer treated them as strings).
 smoke_run test/char_literal_test.zbr "char_literal: OK"
 # BUG-170: value struct assigned into a `^T` field is heap-boxed (selfhost genAssign).

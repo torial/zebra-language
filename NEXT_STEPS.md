@@ -33,7 +33,11 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
 **Compiler hardening (gated):**
 - Converge capture-binding `for x in <as-bound List>` → `.items` in the bootstrap
   (see "Bootstrap lags selfhost" below). Repro: `scratchpad/forin_capture.zbr`.
-- Optional-FIELD `as`-unwrap in the selfhost TC (`if rec.field as x`).
+  NOTE (2026-07-09): low value now — bootstrap is phasing out and the selfhost
+  (primary compiler) already handles it; converge only if the bootstrap needs it
+  as regen authority.
+- ~~Optional-FIELD `as`-unwrap in the selfhost TC (`if rec.field as x`).~~ DONE —
+  verified working on both compilers (struct + class optional fields), 2026-07-09.
 - `zig"…"` ref-analysis: count idents used inside zig-literals (no spurious `_ = v;`).
 - Reconcile explicit `: void` parse divergence (bootstrap `.named "void"` vs selfhost `.void_`).
 - BUG-147 (3 bootstrap lisp emit divergences); BUG-149 (`.len` on a local-map `fetch`).

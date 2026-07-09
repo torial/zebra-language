@@ -1,0 +1,37 @@
+# Class → interface coercion at a CALL-ARGUMENT position.
+#
+# `greet(Dog("Rex"))` where `greet` takes a `Named` param: the concrete class
+# constructor must be wrapped in the interface fat pointer at the call site
+# (`.{ .ptr = Dog.init("Rex"), .vtable = &_vtable_Dog_Named }`).  Previously the
+# arg emitted as a bare `*Dog` → Zig "expected Named, found *Dog".  The TC already
+# accepted class→interface, so this was purely a codegen gap; fixed in both the
+# positional and named-argument paths, on both compilers.
+
+interface Named
+    def name(): str
+
+class Dog implements Named
+    var n: str
+    cue init(n: str)
+        .n = n
+    def name(): str
+        return .n
+
+class Cat implements Named
+    def name(): str
+        return "cat"
+
+def greet(prefix: str, who: Named): str
+    return prefix + who.name()
+
+def main()
+    # positional class-ctor arg (non-default ctor)
+    assert greet("hi ", Dog("Rex")) == "hi Rex", "positional ctor arg coercion"
+
+    # named class-ctor args (out of order)
+    assert greet(who: Dog("Fido"), prefix: "yo ") == "yo Fido", "named ctor arg coercion"
+
+    # default-ctor class as an interface arg
+    assert greet("a ", Cat()) == "a cat", "default-ctor arg coercion"
+
+    print("interface_coerce_arg: OK")

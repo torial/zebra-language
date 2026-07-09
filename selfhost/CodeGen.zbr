@@ -2952,6 +2952,36 @@ struct Generator
     # (constructor, ident, or method-call RHS), or nil if the expr is not a
     # concrete-class value (e.g. it is itself an interface — an i2i upcast, which
     # this fat-pointer representation can't synthesize without the concrete type).
+    # If `param_type` is an interface and `arg` is a constructor call for a known
+    # class, emit the interface fat-pointer at the call-arg position
+    # (`.{ .ptr = <arg>, .vtable = &_vtable_<Class>_<Iface> }`) and return true.
+    # The TC already accepts class→interface, so the class implements the iface
+    # (its vtable exists).  Mirrors src/CodeGen.zig genInterfaceArgCoercion.
+    def genInterfaceArgCoercion(arg: Expr, param_type: TypeRef): bool
+        var iface_name: str = ""
+        branch param_type
+            on TypeRef.named as itn
+                iface_name = itn.name
+            else
+                return false
+        if findInterfaceDecl(iface_name) == nil
+            return false
+        var cn: str = ""
+        branch arg
+            on Expr.call as ac
+                if ac.callee is Expr.ident as aid
+                    cn = aid.name
+                else
+                    return false
+            else
+                return false
+        if not class_names.contains_(cn)
+            return false
+        w.emit(".{ .ptr = ")
+        genExpr(arg)
+        w.emit(", .vtable = &_vtable_" + cn + "_" + iface_name + " }")
+        return true
+
     def concreteClassOf(e: Expr): str?
         if .infer_ctx == nil
             return nil
@@ -12362,7 +12392,12 @@ struct Generator
                 var a = args.at(ai)
                 if a.name != nil
                     if (a.name!) == p_name_str
-                        if needs_addr
+                        var coerced_n = false
+                        if p.type_ != nil
+                            coerced_n = genInterfaceArgCoercion(a.value, p.type_!)
+                        if coerced_n
+                            pass
+                        else if needs_addr
                             if argIdentInCpp(a.value)
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
                             else
@@ -12385,7 +12420,12 @@ struct Generator
                     var pa = args.at(pos_idx)
                     pos_idx += 1
                     if pa.name == nil
-                        if needs_addr
+                        var coerced_p = false
+                        if p.type_ != nil
+                            coerced_p = genInterfaceArgCoercion(pa.value, p.type_!)
+                        if coerced_p
+                            pass
+                        else if needs_addr
                             if argIdentInCpp(pa.value)
                                 genExpr(pa.value)       # Case 1: ptr→ptr, no &
                             else

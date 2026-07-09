@@ -215,9 +215,13 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   hardcoded `Class.init()` (no args); it now emits the full ctor call
   `Class.init(args)` via `genExpr` for the `.ptr` field, in all three positions
   (`IFace` var, `^IFace` var, `^IFace` return), both compilers.  Fixture
-  `test/interface_coerce_ctor_test.zbr`.  Still open: coercion at an arbitrary
-  call-site argument position, and the module-level `@export` interface thunk,
-  which remain default-ctor-only.)
+  `test/interface_coerce_ctor_test.zbr`.  Coercion at a **call-argument** position
+  (`greet(Dog("x"))`) is also now ✅ FIXED (2026-07-09) — a codegen-only gap (the
+  TC already accepted class→interface); `genInterfaceArgCoercion` wraps a
+  class-ctor arg in the fat pointer in both the positional and named-arg paths, on
+  both compilers.  Fixture `test/interface_coerce_arg_test.zbr`.  Still open only:
+  the module-level `@export` interface thunk (default-ctor-only; the ctor args are
+  not in scope at that lazy-init site).)
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
 - B8 ✅ NOT REPRODUCIBLE (2026-07-06) — cross-module non-mutating struct methods
