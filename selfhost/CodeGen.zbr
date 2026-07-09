@@ -896,6 +896,8 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     # ── Gap 1: emit module-level closure-thunk infrastructure for every
     # call site that passed a capture-block lambda to a sig-typed param.
     g.flushPendingThunks()
+    # Interface RTTI: `_zbr_implements_<Iface>` membership fns (runtime `is`).
+    g.emitInterfaceMembershipFns(m)
     # Emit Reflect runtime lookup functions
     var reflect_classes = List(str)()
     for decl in m.decls
@@ -2947,6 +2949,25 @@ struct Generator
                 if ifc.name == name
                     return ifc
         return nil
+
+    # Interface RTTI: emit `fn _zbr_implements_<Iface>(_tag: u64) bool` per
+    # interface — true iff the concrete class identified by `_tag`'s low 32 bits
+    # implements it (transitively).  Drives runtime `is` on interface-typed
+    # values.  Dead-stripped by Zig if unused.  Mirrors src/CodeGen.zig.
+    def emitInterfaceMembershipFns(m: Module)
+        for decl in m.decls
+            if decl is Decl.interface_ as ifc
+                w.emit("fn _zbr_implements_" + ifc.name + "(_tag: u64) bool {\n")
+                var any = false
+                for cdecl in m.decls
+                    if cdecl is Decl.class_ as cls
+                        if cls.type_params.len == 0
+                            if module_types.classConformsTo(cls.name, ifc.name)
+                                w.emit("    if ((_tag & 0xFFFFFFFF) == _ttag_" + cls.name + ") return true;\n")
+                                any = true
+                if not any
+                    w.emit("    _ = _tag;\n")
+                w.emit("    return false;\n}\n")
 
     # Concrete class name of an expr being assigned to an interface-typed var
     # (constructor, ident, or method-call RHS), or nil if the expr is not a
@@ -8419,32 +8440,51 @@ struct Generator
                     w.emit(" == .")
                     w.emit(tc2.variant_name!)
                     w.emit(")")
-                else if .module_types.isInterface(tc2.type_name) or .dep_types.isInterface(tc2.type_name)
-                    # B5(a): `expr is IFace` — interfaces have no `_type_tag`, so
-                    # resolve conformance at compile time (structurally verified at
-                    # `implements`).  Evaluate the operand into a discarded local so
-                    # a check-only operand isn't flagged unused.
-                    var conforms = true
-                    if .infer_ctx != nil
-                        var recv_t: Type_ = inferExpr(tc2.expr, .infer_ctx!)
-                        if recv_t is Type_.named as recv_nm
-                            conforms = .module_types.classConformsTo(recv_nm, tc2.type_name) or .dep_types.classConformsTo(recv_nm, tc2.type_name)
-                    var isuid = w.nextUid().toString()
-                    w.emit("(_zbr_isblk_${isuid}: { const _isv_${isuid} = ")
-                    genExpr(tc2.expr)
-                    w.emit("; _ = _isv_${isuid}; break :_zbr_isblk_${isuid} ")
-                    if conforms
-                        w.emit("true")
-                    else
-                        w.emit("false")
-                    w.emit("; })")
                 else
-                    # Class type-tag check: expr._type_tag == _ttag_TypeName
-                    w.emit("(")
-                    genExpr(tc2.expr)
-                    w.emit("._type_tag == _ttag_")
-                    w.emit(tc2.type_name)
-                    w.emit(")")
+                    # Is the OPERAND interface-typed (a fat pointer)?  If so a
+                    # compile-time answer is impossible — read the concrete
+                    # `_type_tag` through `.ptr` and resolve at runtime.
+                    var op_iface = false
+                    if .infer_ctx != nil
+                        var op_t: Type_ = inferExpr(tc2.expr, .infer_ctx!)
+                        if op_t is Type_.named as op_nm
+                            if .module_types.isInterface(op_nm) or .dep_types.isInterface(op_nm)
+                                op_iface = true
+                    var target_iface = .module_types.isInterface(tc2.type_name) or .dep_types.isInterface(tc2.type_name)
+                    if op_iface
+                        var isuid = w.nextUid().toString()
+                        w.emit("(_zbr_isblk_${isuid}: { const _isv_${isuid} = ")
+                        genExpr(tc2.expr)
+                        w.emit("; const _tag_${isuid} = @as(*const u64, @ptrCast(@alignCast(_isv_${isuid}.ptr))).*; break :_zbr_isblk_${isuid} ")
+                        if target_iface
+                            w.emit("_zbr_implements_" + tc2.type_name + "(_tag_${isuid})")
+                        else
+                            w.emit("((_tag_${isuid} & 0xFFFFFFFF) == _ttag_" + tc2.type_name + ")")
+                        w.emit("; })")
+                    else if target_iface
+                        # Concrete-class operand testing `is <Interface>` — the
+                        # nominal `implements` relation IS knowable at compile time.
+                        var conforms = true
+                        if .infer_ctx != nil
+                            var recv_t: Type_ = inferExpr(tc2.expr, .infer_ctx!)
+                            if recv_t is Type_.named as recv_nm
+                                conforms = .module_types.classConformsTo(recv_nm, tc2.type_name) or .dep_types.classConformsTo(recv_nm, tc2.type_name)
+                        var isuid2 = w.nextUid().toString()
+                        w.emit("(_zbr_isblk_${isuid2}: { const _isv_${isuid2} = ")
+                        genExpr(tc2.expr)
+                        w.emit("; _ = _isv_${isuid2}; break :_zbr_isblk_${isuid2} ")
+                        if conforms
+                            w.emit("true")
+                        else
+                            w.emit("false")
+                        w.emit("; })")
+                    else
+                        # Class type-tag check: expr._type_tag == _ttag_TypeName
+                        w.emit("(")
+                        genExpr(tc2.expr)
+                        w.emit("._type_tag == _ttag_")
+                        w.emit(tc2.type_name)
+                        w.emit(")")
             on Expr.old_ as o
                 # ensure contract: emit _old_N reference (uid set at AST build time)
                 if in_ensure_emit

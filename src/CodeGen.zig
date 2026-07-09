@@ -462,6 +462,29 @@ fn findClassDecl(module: Ast.Module, name: []const u8) ?*const Ast.DeclClass {
 /// interfaces it implements, transitively) names `iface_name`.  Interfaces are
 /// structurally verified at `implements`, so this compile-time answer is exact
 /// for typed exprs.
+/// Emit `fn _zbr_implements_<Iface>(_tag: u64) bool` for each interface: returns
+/// true iff the concrete class identified by `_tag` (the low 32 bits of a
+/// `_type_tag`) implements the interface (transitively).  Drives runtime `is`
+/// on interface-typed values.  Lower-32-bit mask so generic instances (whose
+/// upper bits carry type args) still match their base class tag.
+fn emitInterfaceMembershipFns(g: Generator, module: Ast.Module) anyerror!void {
+    for (module.decls) |decl| {
+        const iface = switch (decl) { .interface => |i| i, else => continue };
+        try g.w.print("fn _zbr_implements_{s}(_tag: u64) bool {{\n", .{iface.name});
+        var any = false;
+        for (module.decls) |cdecl| {
+            const class = switch (cdecl) { .class => |c| c, else => continue };
+            if (class.type_params.len != 0) continue; // generics: base-tag follow-up
+            if (classImplements(module, class, iface.name)) {
+                try g.w.print("    if ((_tag & 0xFFFFFFFF) == _ttag_{s}) return true;\n", .{class.name});
+                any = true;
+            }
+        }
+        if (!any) try g.w.writeAll("    _ = _tag;\n");
+        try g.w.writeAll("    return false;\n}\n");
+    }
+}
+
 fn classImplements(module: Ast.Module, class: *const Ast.DeclClass, iface_name: []const u8) bool {
     for (class.implements) |tr| {
         const iname = typeRefSimpleName(tr) orelse continue;
@@ -4587,6 +4610,11 @@ const Generator = struct {
             try g.w.writeAll("\n");
         }
         for (module.decls) |decl| try g.genTopDecl(decl);
+
+        // Interface RTTI: one `_zbr_implements_<Iface>(tag)` membership fn per
+        // interface, so a runtime `is` on an interface-typed value can resolve the
+        // concrete type behind the fat pointer.  Dead-stripped by Zig if unused.
+        try emitInterfaceMembershipFns(g, module);
 
         // ── Gap 1: emit module-level thunk infrastructure for any closure
         // arguments collected during genCall (see emitCallWithClosureThunks).
@@ -14192,17 +14220,31 @@ const Generator = struct {
             // `expr is Union.variant`  — union variant tag check.
             // Parenthesised so unary `not` and other operators bind correctly.
             .type_check => |e| {
-                // B5(a): `expr is Iface` — interfaces have no `_type_tag`, so
-                // resolve conformance at compile time (interfaces are structurally
-                // verified at `implements`).
-                if (e.variant_name == null and findInterfaceDecl(g.module, e.type_name) != null) {
-                    // Evaluate the operand (for side effects / so it isn't an
-                    // "unused local"), discard it, and yield the compile-time
-                    // conformance result.
-                    // Read the operand into a local and discard the LOCAL (not the
-                    // operand): this marks a check-only operand as used without
-                    // producing a "pointless discard of function parameter" when
-                    // the operand is also used elsewhere.
+                // Runtime interface `is`: when the OPERAND is interface-typed (a fat
+                // pointer), a compile-time answer is impossible — it can hold any
+                // implementer.  Read the concrete `_type_tag` through `.ptr` and
+                // resolve at runtime (downcast → tag compare; other interface →
+                // `_zbr_implements_<Iface>` membership fn).
+                const operand_iface = e.variant_name == null and blk: {
+                    const t = if (g.tc) |tc| tc.expr_types.get(e.expr) orelse break :blk false else break :blk false;
+                    break :blk t == .named and findInterfaceDecl(g.module, t.named.name) != null;
+                };
+                if (operand_iface) {
+                    const uid = g.nextUid();
+                    try g.w.print("(_zbr_isblk_{d}: {{ const _isv_{d} = ", .{ uid, uid });
+                    try g.genExpr(e.expr);
+                    try g.w.print("; const _tag_{d} = @as(*const u64, @ptrCast(@alignCast(_isv_{d}.ptr))).*; break :_zbr_isblk_{d} ", .{ uid, uid, uid });
+                    if (findInterfaceDecl(g.module, e.type_name) != null) {
+                        try g.w.print("_zbr_implements_{s}(_tag_{d})", .{ e.type_name, uid });
+                    } else {
+                        try g.w.print("((_tag_{d} & 0xFFFFFFFF) == _ttag_{s})", .{ uid, e.type_name });
+                    }
+                    try g.w.writeAll("; })");
+                } else if (e.variant_name == null and findInterfaceDecl(g.module, e.type_name) != null) {
+                    // Concrete-class operand testing `is <Interface>` — the nominal
+                    // `implements` relation IS knowable at compile time.  Read the
+                    // operand into a local and discard the LOCAL so a check-only
+                    // operand isn't flagged unused.
                     const uid = g.nextUid();
                     try g.w.print("(_zbr_isblk_{d}: {{ const _isv_{d} = ", .{ uid, uid });
                     try g.genExpr(e.expr);

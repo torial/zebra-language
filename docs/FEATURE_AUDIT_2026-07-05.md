@@ -200,16 +200,26 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   Recommend (a) for the common typed case now (unblocks the repro without
   emitting undeclared symbols), with (b) tracked separately if a real
   heterogeneous use case appears.  Left for Sean's call.
-  ✅ IMPLEMENTED option (a) (2026-07-08, Sean chose a; b = 1.1 RTTI) — both
-  compilers.  Bootstrap: the `type_check` arm detects an interface `type_name`
-  (`findInterfaceDecl`) and emits a compile-time `true`/`false` from the operand's
-  static type (interface-typed → true; class → transitive `implements`), reading
-  the operand into a discarded local so a check-only operand isn't flagged unused.
-  Selfhost: registered interface names in the resolver (they were "undefined
-  name" in `is` position), added an `is_interface` flag + `isInterface()` to
-  ModuleTypes, and emit the same compile-time result via the existing
-  `classConformsTo`.  Unknown/heterogeneous operands conservatively yield `true`
-  (option-a limitation).  Fixture `test/interface_is_test.zbr`.  (Separately
+  ✅ IMPLEMENTED option (a) (2026-07-08) then option (b) (2026-07-09) — both
+  compilers.  Option (a): the `type_check` arm emits a compile-time `true`/`false`
+  for a **concrete-class** operand (class → transitive `implements`).  This is
+  correct and unchanged.
+  ✅ Option (b) RTTI (2026-07-09, Sean chose b) — for an **interface-typed**
+  operand (a fat pointer), a compile-time answer is impossible (it can hold any
+  implementer), and the old option-(a) fallback returned a per-compiler CONSTANT
+  that was wrong ~half the time and DIVERGED (bootstrap always `true`, selfhost
+  always `false`).  Now the concrete `_type_tag` is read through the fat pointer's
+  `.ptr` (`@as(*const u64, @ptrCast(@alignCast(v.ptr))).*` — the tag is the first
+  field of every class instance) and resolved at runtime: downcast (`p is Dog`) →
+  `(tag & 0xFFFFFFFF) == _ttag_Dog`; cross-interface (`p is Drawable`) →
+  `_zbr_implements_Drawable(tag)`, a per-interface membership fn emitted at module
+  scope listing the transitive implementers.  No ABI change (additive; fat pointer
+  stays 2 words).  Fixture `test/interface_rtti_test.zbr`.  Risk scan before the
+  change: the only `is <Interface>` usages in-repo were in `interface_is_test.zbr`,
+  all either concrete-class operands or same-interface — none hit the divergent
+  case, so no existing behavior changed.  Follow-up: generic classes as `is`
+  targets (currently skipped in the membership fns) + cross-module interfaces.
+  Fixture `test/interface_is_test.zbr`.  (Separately
   noted while testing: class→interface coercion for a class with a non-default
   ctor — a distinct gap, not B5 — is now ✅ FIXED (2026-07-08): the coercion
   hardcoded `Class.init()` (no args); it now emits the full ctor call

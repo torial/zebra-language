@@ -787,6 +787,8 @@ smoke_run test/ziglit_param_test.zbr "ziglit_param: OK"
 smoke_run test/allocate_debug_stats_test.zbr "allocate_debug_stats: OK"
 # Audit B5 (option a): `obj is IFace` — compile-time interface conformance.
 smoke_run test/interface_is_test.zbr "interface_is: OK"
+# B5 (option b): runtime `is` on an interface-typed value (RTTI via _type_tag).
+smoke_run test/interface_rtti_test.zbr "interface_rtti: OK"
 # Class→interface coercion passes ctor args (non-default constructor).
 smoke_run test/interface_coerce_ctor_test.zbr "interface_coerce_ctor: OK"
 # Class→interface coercion at a call-argument position (positional + named).

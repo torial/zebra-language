@@ -1,0 +1,52 @@
+# Runtime `is` on an interface-typed value (B5 option-b RTTI).
+#
+# When the operand is statically an interface (a fat pointer), the concrete type
+# behind it is only known at runtime, so the answer can't be a compile-time
+# constant.  The compiler reads the concrete `_type_tag` through the fat pointer's
+# `.ptr` and resolves:
+#   - downcast (`p is Dog`)        → tag == _ttag_Dog
+#   - cross-interface (`p is Drawable`) → `_zbr_implements_Drawable(tag)`
+# Before this, the two compilers returned OPPOSITE constants (bootstrap always
+# true, selfhost always false) and were wrong ~half the time.
+
+interface Printable
+    def show(): str
+
+interface Drawable
+    def draw(): int
+
+class Dog implements Printable
+    def show(): str
+        return "dog"
+
+class Sprite implements Printable, Drawable
+    def show(): str
+        return "sprite"
+    def draw(): int
+        return 7
+
+def describe(p: Printable): str
+    # p is interface-typed — every check below is resolved at runtime.
+    if p is Drawable
+        return "drawable"
+    return "plain"
+
+def main()
+    var p: Printable = Dog()
+    var q: Printable = Sprite()
+
+    # downcast: interface value → concrete class
+    assert p is Dog, "downcast: p is Dog"
+    assert not (p is Sprite), "downcast: p is not Sprite"
+    assert q is Sprite, "downcast: q is Sprite"
+
+    # cross-interface: does the concrete type implement another interface?
+    assert not (p is Drawable), "cross: Dog behind p is not Drawable"
+    assert q is Drawable, "cross: Sprite behind q is Drawable"
+    assert describe(p) == "plain", "describe Dog"
+    assert describe(q) == "drawable", "describe Sprite"
+
+    # same interface — always true
+    assert p is Printable, "same: p is Printable"
+
+    print("interface_rtti: OK")
