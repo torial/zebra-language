@@ -210,8 +210,14 @@ worth reconciling before 1.0 since `src/` is nominally the trusted reference.
   ModuleTypes, and emit the same compile-time result via the existing
   `classConformsTo`.  Unknown/heterogeneous operands conservatively yield `true`
   (option-a limitation).  Fixture `test/interface_is_test.zbr`.  (Separately
-  noted while testing: class→interface coercion at a call site / for a class with
-  a non-default ctor is still shaky — a distinct gap, not B5.)
+  noted while testing: class→interface coercion for a class with a non-default
+  ctor — a distinct gap, not B5 — is now ✅ FIXED (2026-07-08): the coercion
+  hardcoded `Class.init()` (no args); it now emits the full ctor call
+  `Class.init(args)` via `genExpr` for the `.ptr` field, in all three positions
+  (`IFace` var, `^IFace` var, `^IFace` return), both compilers.  Fixture
+  `test/interface_coerce_ctor_test.zbr`.  Still open: coercion at an arbitrary
+  call-site argument position, and the module-level `@export` interface thunk,
+  which remain default-ctor-only.)
 - B6 `@once` on a class with instance fields; B7 `static var` before an instance
   field → hidden/static decl emitted between struct fields (Zig container error).
 - B8 ✅ NOT REPRODUCIBLE (2026-07-06) — cross-module non-mutating struct methods

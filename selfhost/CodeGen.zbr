@@ -4663,7 +4663,11 @@ struct Generator
                                     ikw = "var"
                                 writeIndent()
                                 var zn_ifc: str = zigSafeName(n.name)
-                                w.emit(ikw + " " + zn_ifc + ": " + itn.name + " = .{ .ptr = " + iclass_name + ".init(), .vtable = &_vtable_" + iclass_name + "_" + itn.name + " };\n")
+                                # `.ptr` = the ctor call WITH its args (genExpr emits
+                                # `Class.init(args)`); a non-default ctor needs the args.
+                                w.emit(ikw + " " + zn_ifc + ": " + itn.name + " = .{ .ptr = ")
+                                genExpr(iinit)
+                                w.emit(", .vtable = &_vtable_" + iclass_name + "_" + itn.name + " };\n")
                                 return
                         if itr is TypeRef.ref_to as irto
                             if irto is TypeRef.named as irtn
@@ -4676,7 +4680,9 @@ struct Generator
                                     writeIndent()
                                     w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn.name + ") catch @panic(\"OOM\");\n")
                                     writeIndent()
-                                    w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = " + iclass_name + ".init(), .vtable = &_vtable_" + iclass_name + "_" + irtn.name + " };\n")
+                                    w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = ")
+                                    genExpr(iinit)
+                                    w.emit(", .vtable = &_vtable_" + iclass_name + "_" + irtn.name + " };\n")
                                     writeIndent()
                                     var zn_ifc2: str = zigSafeName(n.name)
                                     w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn.name + " = _iface_" + iuid.toString() + ";\n")
@@ -5633,7 +5639,9 @@ struct Generator
                                     writeIndent()
                                     w.emit("const _iface_" + ruid.toString() + " = _allocator.create(" + rtn.name + ") catch @panic(\"OOM\");\n")
                                     writeIndent()
-                                    w.emit("_iface_" + ruid.toString() + ".* = .{ .ptr = " + rvid.name + ".init(), .vtable = &_vtable_" + rvid.name + "_" + rtn.name + " };\n")
+                                    w.emit("_iface_" + ruid.toString() + ".* = .{ .ptr = ")
+                                    genExpr(rv)
+                                    w.emit(", .vtable = &_vtable_" + rvid.name + "_" + rtn.name + " };\n")
                                     writeIndent()
                                     w.emit("return _iface_" + ruid.toString() + ";\n")
                                     return

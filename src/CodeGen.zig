@@ -6864,9 +6864,11 @@ const Generator = struct {
                             try g.writeIndent();
                             try g.w.print("{s} ", .{kw});
                             try g.emitName(n.name);
-                            try g.w.print(": {s} = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{
-                                tr.named.name, class_name, class_name, tr.named.name,
-                            });
+                            // `.ptr` = the ctor call WITH its args (genExpr emits
+                            // `Class.init(args)`); a non-default ctor needs the args.
+                            try g.w.print(": {s} = .{{ .ptr = ", .{tr.named.name});
+                            try g.genExpr(init_e);
+                            try g.w.print(", .vtable = &_vtable_{s}_{s} }};\n", .{ class_name, tr.named.name });
                             return;
                         }
                     }
@@ -6878,7 +6880,9 @@ const Generator = struct {
                             try g.writeIndent();
                             try g.w.print("const _iface_{x} = _allocator.create({s}) catch @panic(\"OOM\");\n", .{ uid, iname });
                             try g.writeIndent();
-                            try g.w.print("_iface_{x}.* = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ uid, class_name, class_name, iname });
+                            try g.w.print("_iface_{x}.* = .{{ .ptr = ", .{uid});
+                            try g.genExpr(init_e);
+                            try g.w.print(", .vtable = &_vtable_{s}_{s} }};\n", .{ class_name, iname });
                             try g.writeIndent();
                             try g.w.print("{s} ", .{kw});
                             try g.emitName(n.name);
@@ -11264,7 +11268,9 @@ const Generator = struct {
                             const uid = g.nextUid();
                             try g.w.print("const _iface_{x} = _allocator.create({s}) catch @panic(\"OOM\");\n", .{ uid, iname });
                             try g.writeIndent();
-                            try g.w.print("_iface_{x}.* = .{{ .ptr = {s}.init(), .vtable = &_vtable_{s}_{s} }};\n", .{ uid, class_name, class_name, iname });
+                            try g.w.print("_iface_{x}.* = .{{ .ptr = ", .{uid});
+                            try g.genExpr(v);
+                            try g.w.print(", .vtable = &_vtable_{s}_{s} }};\n", .{ class_name, iname });
                             try g.writeIndent();
                             try g.w.print("return _iface_{x};\n", .{uid});
                             return;

@@ -1,0 +1,43 @@
+# Class → interface coercion when the class has a NON-default constructor.
+#
+# `var p: Printable = Dog("Rex")` must pass the ctor args through — previously the
+# coercion hardcoded `Dog.init()` (no args) → Zig "expected 1 argument(s), found 0".
+# The fix emits the full ctor call (`Dog.init("Rex")`) for the `.ptr` field, in
+# all three coercion positions: `IFace` var, `^IFace` var, and `^IFace` return.
+
+interface Named
+    def name(): str
+
+class Dog implements Named
+    var n: str
+    cue init(n: str)
+        .n = n
+    def name(): str
+        return .n
+
+# Default-ctor class — the coercion must still work with no args (regression).
+class Anon implements Named
+    def name(): str
+        return "anon"
+
+def adopt(n: str): ^Named
+    return Dog(n)
+
+def main()
+    # (1) value-interface var, non-default ctor
+    var p: Named = Dog("Rex")
+    assert p.name() == "Rex", "IFace var coercion passes ctor args"
+
+    # (2) ^interface var, non-default ctor
+    var q: ^Named = Dog("Fido")
+    assert q.name() == "Fido", "^IFace var coercion passes ctor args"
+
+    # (3) ^interface return, non-default ctor
+    var r = adopt("Spot")
+    assert r.name() == "Spot", "^IFace return coercion passes ctor args"
+
+    # (4) default ctor still coerces (no args)
+    var a: Named = Anon()
+    assert a.name() == "anon", "default-ctor coercion regression"
+
+    print("interface_coerce_ctor: OK")
