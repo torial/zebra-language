@@ -4,28 +4,32 @@
 
 ---
 
-## BUG-171: selfhost mis-types a `char`-literal return as `str` ⚠️ OPEN (pre-existing, selfhost-only)
+## BUG-171: selfhost lexed a bare `'Z'` char literal as a string ✅ FIXED (2026-07-09)
 
-**Severity:** medium (bootstrap/selfhost parity gap; selfhost rejects valid code).
+**Severity:** medium (bootstrap/selfhost parity gap; selfhost rejected valid code).
 Surfaced 2026-07-08 while building a char-based discriminator for fn-type
 inference — unrelated to fn-types.
 
-**Symptom:** a function declared to return `char` whose body returns a char
-literal fails TC on the selfhost:
+**Symptom:** a bare single-quoted char literal (`'Z'`, no `c'` prefix) in a
+`char`-typed context failed on the selfhost:
 ```
 def getCh(): char
     return 'Z'
 ```
-→ `error: type mismatch: expected char, got str` (reported at the `return`).
-The bootstrap accepts it and runs (`getCh()` → `Z`).
+→ `error: type mismatch: expected char, got str`. The bootstrap accepts it.
 
-**Root (suspected):** the selfhost TC infers a `'x'` char literal as `str_`
-(or the return-type check compares `char` against a str-typed literal). The
-bootstrap types char literals as `char`. Needs the selfhost `inferExpr`
-char-literal arm (and/or the return-type check) to yield `char`.
+**Root:** the selfhost lexer dispatched a bare `'` straight to `scanString`
+(always emitting a string token) — it had no char-vs-string disambiguation. The
+selfhost's OWN sources only use the `c'…'` prefix form, so this path never bit
+self-compilation. The bootstrap's `scanSingleQuote` emits a char literal for
+single-char / single-escape content.
 
-**Workaround:** none needed in practice yet — char-returning functions are rare;
-char *values* in other positions work. No fixture depends on it.
+**Fix (2026-07-09):** added `scanSingleQuote` to `selfhost/Lexer.zbr` (mirrors
+the bootstrap: `'X'` / `'\X'` → char literal, else string) + a codegen arm in
+`selfhost/CodeGen.zbr` to emit an already-quoted bare char token as-is (the
+`c'…'` path strips the `c`; the bare path was double-wrapping → `''Z''`). Fixture
+`test/char_literal_test.zbr`. Gates green (smoke 228, round-trip byte-identical,
+inference 0/414, fuzz 25).
 
 ---
 

@@ -372,6 +372,23 @@ class Lexer
             kind = TokenKind.char_lit_double()
         emit(kind, src[start..pos], ln, cl)
 
+    # Bare `'…'`: a single plain char (`'X'`) or single escape (`'\X'`) is a CHAR
+    # literal; multi-char / empty / interpolated content is a string.  Mirrors
+    # src/Tokenizer.zig scanSingleQuote — without this, bare `'Z'` was lexed as a
+    # 1-char string and a `char`-typed context rejected it (BUG-171).  (The
+    # selfhost's own sources use the `c'…'` prefix, so this path never bit them.)
+    def scanSingleQuote(ln: int, cl: int) throws
+        var p1 = peekAt(1)
+        if p1 == c'\\'
+            if peekAt(3) == c'\''
+                scanCharLiteral(c'\'', pos, ln, cl)?
+                return
+        else if p1 != c'\'' and p1 != c'\x00' and p1 != c'\n'
+            if peekAt(2) == c'\''
+                scanCharLiteral(c'\'', pos, ln, cl)?
+                return
+        scanString(c'\'', ln, cl)?
+
     # -- Simple strings (raw, nosub, zig) ------------------------------------
 
     def scanSimpleString(q: char, start: int, kind: TokenKind, ln: int, cl: int) throws
@@ -834,7 +851,7 @@ class Lexer
             on c'_'
                 scanIdentOrKeyword(ln, cl)?
             on c'\''
-                scanString(c, ln, cl)?
+                scanSingleQuote(ln, cl)?
             on c'"'
                 scanString(c, ln, cl)?
             else

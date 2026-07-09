@@ -7988,6 +7988,10 @@ struct Generator
                         rest = rest + parts.at(pi)
                         pi = pi + 1
                     w.emit(rest)
+                else if cl.text.startsWith("'")
+                    # Bare `'X'` char literal (BUG-171): text already includes the
+                    # quotes and is a valid Zig char literal — emit as-is.
+                    w.emit(cl.text)
                 else
                     w.emit("'")
                     w.emit(cl.text)

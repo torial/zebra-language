@@ -1,0 +1,33 @@
+# Bare single-quoted char literals: `'Z'` (no `c'` prefix).  Regression guard for
+# BUG-171 — the selfhost lexer treated a bare `'Z'` as a 1-char STRING (its own
+# sources only use the `c'…'` prefix, so it never bit), while the bootstrap lexes
+# it as a char.  A `char`-typed context therefore rejected it ("expected char,
+# got str").  The selfhost now disambiguates: a single plain char / single escape
+# in `'…'` is a char literal.
+
+def firstInitial(): char
+    return 'Z'
+
+def isVowel(c: char): bool
+    return c == 'a' or c == 'e' or c == 'i' or c == 'o' or c == 'u'
+
+def main()
+    # bare char literal in a var
+    var a: char = 'A'
+    assert a == 'A', "bare char literal"
+
+    # char-typed return of a bare char literal
+    assert firstInitial() == 'Z', "char return"
+
+    # escape char literal
+    var nl: char = '\n'
+    assert nl == '\n', "escape char literal"
+
+    # char as a param + comparison
+    assert isVowel('e'), "char param vowel"
+    assert not isVowel('x'), "char param consonant"
+
+    # char in string interpolation → prints the character (format {u}), not the codepoint
+    assert "[${a}]" == "[A]", "char interpolation prints the character"
+
+    print("char_literal: OK")
