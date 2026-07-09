@@ -33,6 +33,8 @@ def main()
 
     var op: def(int, int): int = add
     assert op(3, 4) == 7, "fn-type var holds add"
+    # Arithmetic directly on a fn-type call result — infers int, no guess.
+    assert op(3, 4) + 1 == 8, "arithmetic on fn-type call result"
 
     var chosen = pickOp(false)
     assert chosen(3, 4) == 12, "pickOp returns mul"

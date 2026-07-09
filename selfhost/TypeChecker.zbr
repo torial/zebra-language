@@ -144,6 +144,10 @@ union Type_
     # Tuple type — ordered sequence of heterogeneous element types.
     tuple_: TupleType_
 
+    # Inline function-pointer type `def(P): R` — carries the RETURN type ref so a
+    # call on a value of this type infers R (matches src/TypeChecker.zig fn_type).
+    fn_type_: ^TypeRef
+
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
     unknown_
@@ -612,6 +616,10 @@ def typeFromRef(tr: TypeRef): Type_
         on TypeRef.alias_applied
             # value-parameterized alias — codegen resolves to base type; TC treats as unknown
             return Type_.unknown_
+        on TypeRef.fn_type as ftr
+            # Inline function-pointer type `def(P): R` — carry R so a call on a
+            # value of this type infers R (see inferExpr Expr.call).
+            return Type_.fn_type_(ftr.ret)
         else
             # error_union, stream, same_ — handled as unknown.
             return Type_.unknown_
@@ -1509,6 +1517,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             pass
                         else
                             return as_name
+                    # A local/capture of inline function type `def(P): R` — calling
+                    # it yields R (mirrors src/TypeChecker.zig inferCall fn_type).
+                    if ctx.hasLocal(cname)
+                        var lt: Type_ = ctx.localType(cname)
+                        if lt is Type_.fn_type_ as fret
+                            return typeFromRef(fret)
                     # Bare call: check current class first, then module-level
                     # functions registered under the "" sentinel in ModuleTypes.
                     if ctx.current_class != ""

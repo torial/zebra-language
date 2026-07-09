@@ -170,6 +170,12 @@ pub const Type = union(enum) {
     /// Stores the DeclSig so `inferCall` can recover the return type.
     fn_sig: *const Ast.DeclSig,
 
+    // ── Inline function-pointer type (`def(P): R`) ────────────────────────────
+    /// A value typed with an inline function type `def(P): R` (TypeRef.fn_type).
+    /// Like `fn_sig` but anonymous — stores the FnTypeRef so `inferCall` can
+    /// recover the return type (so `f()` infers `R`, not `unknown`).
+    fn_type: *const Ast.FnTypeRef,
+
     // ── Special ───────────────────────────────────────────────────────────────
     //
     // Three-way split of the former overloaded `.unknown` (BUG-099, 2026-05-04):
@@ -310,6 +316,7 @@ pub const Type = union(enum) {
             },
             .fn_ref         => |sa| switch (b) { .fn_ref => |sb| sa == sb, else => false },
             .fn_sig         => |da| switch (b) { .fn_sig => |db| da == db, else => false },
+            .fn_type        => |fa| switch (b) { .fn_type => |fb| fa == fb, else => false },
             // BUG-099: three-way split of the former `.unknown`. Equality
             // ignores the carried span on `.unresolved` — two unresolved
             // types from different sites are still both "TC gave up."
@@ -388,6 +395,7 @@ pub const Type = union(enum) {
             .cross_module   => |cm| cm.type_name,
             .fn_ref         => |s| s.name,
             .fn_sig         => |d| d.name,
+            .fn_type        => "fn",
             // BUG-099 three-way split.
             .context_dependent => "<context-dependent>",
             .unknown           => "<unknown>",
@@ -947,8 +955,8 @@ fn simpleTypeFromRef(
         .stream, .error_union, .generic, .same => .unknown,
         // Parametric alias applied — treat as same as the named alias at TC time.
         .alias_applied => .unknown,
-        // Function-pointer type — opaque at TC time (callable dispatch is by codegen).
-        .fn_type => .unknown,
+        // Inline function-pointer type `def(P): R` — model for call-return inference.
+        .fn_type => |*ft| Type{ .fn_type = ft },
     };
 }
 
@@ -1335,6 +1343,10 @@ const TypeChecker = struct {
         if (from == .fn_ref and to == .fn_sig) return true;
         // fn_sig is assignable to fn_sig (e.g. passing a sig-typed local to a sig-typed param)
         if (from == .fn_sig and to == .fn_sig) return true;
+        // Inline function-pointer type `def(P): R` accepts a named fn, a `sig`, or
+        // another inline fn-type (arity/type compat deferred to Zig, as for sigs).
+        if (to == .fn_type and (from == .fn_ref or from == .fn_sig or from == .fn_type)) return true;
+        if (from == .fn_type and (to == .fn_sig or to == .fn_ref)) return true;
         // Interface conformance: class/struct/interface → interface (direct, i→i, transitive).
         if (from == .named and to == .named and to.named.kind == .interface) {
             if (from.named == to.named) return true; // identity: same Symbol pointer
@@ -3303,6 +3315,11 @@ const TypeChecker = struct {
                         const sig_decl = sym_type.fn_sig;
                         return tc.typeFromOptRef(if (sig_decl.return_type) |*rt| rt else null);
                     }
+                    // If the callee has an inline function type `def(P): R`, return R.
+                    if (sym_type == .fn_type) {
+                        const ftr = sym_type.fn_type;
+                        return tc.typeFromOptRef(ftr.ret);
+                    }
                     return sym_type;
                 }
             },
@@ -4469,8 +4486,9 @@ const TypeChecker = struct {
             },
             // Parametric alias applied — same resolution path as the base alias name.
             .alias_applied => .unknown,
-            // Function-pointer type — opaque at TC time (callable dispatch is by codegen).
-            .fn_type => .unknown,
+            // Inline function-pointer type `def(P): R` — model it so a call on a
+            // value of this type infers `R` (see inferCall).
+            .fn_type => |*ft| Type{ .fn_type = ft },
         };
     }
 

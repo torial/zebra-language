@@ -12,15 +12,14 @@ def base(): int
     return 41
 
 # 1. A fn-type used as a `capture` field type (closure holding a callback).
-#    (Bind the call result to a typed local before arithmetic: a fn-type value's
-#    call-result type is not yet modelled, so `f() + 1` directly would emit an
-#    inference guess — see NEXT_STEPS "fn-type call-result inference".)
+#    Arithmetic directly on the call result (`f() + 1`) works because a fn-type
+#    value's call-result type is modelled (Type.fn_type carries the return type),
+#    so `f()` infers `int` — no inference guess.
 def makeWrap(): def(): int
     return def(): int
         capture
             var f: def(): int = base
-        var r: int = f()
-        return r + 1
+        return f() + 1
 
 # 2. A fn-type as a parameter type (higher-order function).
 def applyTo3(f: def(int): int): int

@@ -17130,7 +17130,7 @@ fn printFmt(tc: ?*const TypeChecker.TypeCheckResult, catch_var: []const u8, expr
         .tuple,
         .generic_named,
         .cross_module,
-        .fn_ref, .fn_sig               => "{any}",
+        .fn_ref, .fn_sig, .fn_type     => "{any}",
     };
 }
 

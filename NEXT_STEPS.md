@@ -34,12 +34,6 @@ polish lives in `C:\Projects\GameEngine\docs\ENGINE_ROADMAP.md` (local-only).
 - Converge capture-binding `for x in <as-bound List>` → `.items` in the bootstrap
   (see "Bootstrap lags selfhost" below). Repro: `scratchpad/forin_capture.zbr`.
 - Optional-FIELD `as`-unwrap in the selfhost TC (`if rec.field as x`).
-- **fn-type call-result inference** — a value of an inline function type (`def(P): R`,
-  `TypeRef.fn_type`) infers as `unknown`, so calling it (`f()`) yields `unknown` and
-  arithmetic on the result (`f() + 1`) emits an inference guess. Model a semantic
-  `Type.fn_` (carrying the return type) in both TCs so a call on a fn-typed value
-  infers `R`. Workaround today: bind to a typed local (`var r: int = f()`). Surfaced
-  by `test/fn_type_nested_test.zbr`.
 - `zig"…"` ref-analysis: count idents used inside zig-literals (no spurious `_ = v;`).
 - Reconcile explicit `: void` parse divergence (bootstrap `.named "void"` vs selfhost `.void_`).
 - BUG-147 (3 bootstrap lisp emit divergences); BUG-149 (`.len` on a local-map `fetch`).
