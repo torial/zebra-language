@@ -2,6 +2,35 @@
 
 Authoritative priority queue for the project. Update this file rather than regenerating the list from scratch each session.
 
+## EPIC: Language Server (LSP) — the highest-leverage adoption bet (started 2026-07-09)
+
+Rationale: an LSP (live errors/hover/completion in-editor) is the biggest daily-
+ergonomics lever for *any* language and rides on the compiler we already have.
+Written **in Zebra** (flagship dogfood + reuses the front-end directly).
+
+- **Phase 1 ✅ DONE (2026-07-09)** — the diagnostics *seam*: `zebra diagnostics
+  <file> [--out <json>]` runs parse→resolve→typecheck and emits a JSON array of
+  `{line, col, severity, message}`.  Reuses `tcCheckSide`; all error sources share
+  the `path:line:col: severity: msg` format so a uniform parse works (line/col are
+  the *trailing* numeric fields → robust to the Windows drive-colon).  Positions
+  are compiler-native (1-based line, 0-based col).  Test `tools/lsp_diagnostics_smoke.sh`
+  + `test/lsp/*.zbr`.  **NOTE:** `print` lands on **stderr** on the Windows
+  fast-backend build (so does `--emit-zig`), hence `--out <file>` is the clean
+  consumer interface.  A real underlying bug to fix eventually: fast-backend
+  stdout is not capturable on Windows (memory: stdout-to-pipe writes nothing).
+- **Phase 2** — LSP server (Zebra, JSON-RPC over stdio): `initialize`,
+  `didOpen`/`didChange`, `publishDiagnostics`.  Prefer **in-process** (call the
+  diagnostics fn directly, no subprocess) to sidestep the stdout issue entirely.
+- **Phase 3** — thin VS Code extension that launches the server → live squiggles.
+- **Phase 4+** — hover (types), go-to-definition, completion (reuse Resolver/TC).
+
+Companion (do soon): a **feature-usage map** — enumerate the language surface
+(grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the
+"not used by the compiler" column is the under-tested canary list (char literals,
+interface-value `is`, `^T` boxing all lived there). Aims the conformance-corpus work.
+
+---
+
 **Last updated:** 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
 
 > **Sections:**

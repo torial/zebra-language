@@ -560,6 +560,127 @@ def tcCheckSide(src: str, path: str, diags: List(str))
 catch |e|
     diags.add("error: " + e.message)
 
+# ── LSP diagnostics (JSON seam) ───────────────────────────────────────────────
+# `zebra diagnostics <file>` runs the front-end (parse → resolve → typecheck) and
+# emits a JSON array of {line, col, severity, message} to stdout.  This is the
+# structured seam an editor / LSP server consumes for live squiggles.  Positions
+# are compiler-native (1-based line, 0-based col); the LSP layer converts to the
+# 0-based LSP coordinate space.
+
+struct LspDiag
+    var line: int
+    var col: int
+    var severity: str
+    var message: str
+
+    cue init(line: int, col: int, severity: str, message: str)
+        .line = line
+        .col = col
+        .severity = severity
+        .message = message
+
+def diagAllDigits(s: str): bool
+    if s.len == 0
+        return false
+    for c in s.chars()
+        if c < '0' or c > '9'
+            return false
+    return true
+
+# JSON-escape a string for a "..." literal (backslash first so we don't
+# double-escape the escapes we add).
+def diagJsonEscape(s: str): str
+    var r = s.replace("\\", "\\\\")
+    r = r.replace("\"", "\\\"")
+    r = r.replace("\n", "\\n")
+    r = r.replace("\t", "\\t")
+    r = r.replace("\r", "")
+    return r
+
+# Parse one compiler diagnostic line "path:line:col: severity: message" into a
+# structured record, or nil for non-header lines (source/caret decoration).  The
+# path may contain ':' (Windows drive letter), so line/col are the LAST two
+# ':'-separated numeric fields of the prefix — never the drive or path segments.
+def parseDiagLine(s: str): LspDiag?
+    var sev: str = "error"
+    var sep: str = ": error: "
+    if not s.contains(sep)
+        sev = "warning"
+        sep = ": warning: "
+        if not s.contains(sep)
+            sev = "note"
+            sep = ": note: "
+            if not s.contains(sep)
+                return nil
+    var parts: List(str) = List(str)()
+    for p in s.split(sep)
+        parts.add(p)
+    if parts.len < 2
+        return nil
+    var prefix: str = parts.at(0)
+    var message: str = ""
+    var mi: int = 1
+    while mi < parts.len
+        if mi > 1
+            message = message + sep
+        message = message + parts.at(mi)
+        mi = mi + 1
+    var pparts: List(str) = List(str)()
+    for pp in prefix.split(":")
+        pparts.add(pp)
+    if pparts.len < 2
+        return nil
+    var last: str = pparts.at(pparts.len - 1)
+    var second: str = pparts.at(pparts.len - 2)
+    if not diagAllDigits(last)
+        return nil
+    var line: int = 0
+    var col: int = 0
+    if diagAllDigits(second)
+        line = second.toInt()
+        col = last.toInt()
+    else
+        line = last.toInt()
+    return LspDiag(line, col, sev, message)
+
+def buildDiagnosticsJson(path: str): str throws
+    if not File.exists(path)
+        return "[]"
+    var src: str = File.read(path)
+    var raw: List(str) = List(str)()
+    tcCheckSide(src, path, raw)
+    var out: StringBuilder = StringBuilder()
+    out.append("[")
+    var first: bool = true
+    for entry in raw
+        for ln in entry.split("\n")
+            var d = parseDiagLine(ln)
+            if d as dd
+                if not first
+                    out.append(",")
+                first = false
+                out.append("{\"line\":")
+                out.append(dd.line.toString())
+                out.append(",\"col\":")
+                out.append(dd.col.toString())
+                out.append(",\"severity\":\"")
+                out.append(dd.severity)
+                out.append("\",\"message\":\"")
+                out.append(diagJsonEscape(dd.message))
+                out.append("\"}")
+    out.append("]")
+    return out.build()
+
+# `--out <file>` writes the JSON to a file (the unambiguous interface for an LSP
+# server / CI, since `print` lands on stderr on the Windows fast-backend build).
+# Without `--out` the JSON goes to `print` (stderr) for manual viewing.
+def runDiagnostics(path: str, out_path: str) throws
+    var json: str = buildDiagnosticsJson(path)?
+    if out_path != ""
+        File.write(out_path, json)
+    else
+        print(json)
+
 # Type-check both sides of a conflict-marked .zbr file and report results.
 # Exit code is always 0 (informational); wrap in a stricter hook if you want
 # blocking behaviour. Integrates as a git pre-merge-commit hook via
@@ -739,6 +860,19 @@ def main()
                 sys.exit(0)
             else
                 sys.errln("usage: zebra types <file.zbr>")
+                sys.exit(1)
+
+    # -- diagnostics subcommand (LSP seam) ---------------------------------
+    # `zebra diagnostics <file.zbr>` — emit front-end diagnostics as JSON.
+
+    if args.positional(0) as diag_pos
+        if diag_pos == "diagnostics"
+            if args.positional(1) as diag_file
+                var diag_out: str = args.option("--out", "")
+                runDiagnostics(diag_file, diag_out)?
+                sys.exit(0)
+            else
+                sys.errln("usage: zebra diagnostics <file.zbr> [--out <file.json>]")
                 sys.exit(1)
 
     # -- fmt subcommand ----------------------------------------------------
