@@ -1,0 +1,126 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zebra",
+  "scopeName": "source.zebra",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#types" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.zebra",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.zebra",
+          "begin": "(?:c|r|ns|zig)?\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.zebra", "match": "\\\\." },
+            {
+              "name": "meta.interpolation.zebra",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "patterns": [{ "include": "$self" }]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.zebra",
+          "begin": "(?:c|r|ns|zig)?'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.zebra", "match": "\\\\." },
+            {
+              "name": "meta.interpolation.zebra",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "patterns": [{ "include": "$self" }]
+            }
+          ]
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.zebra" },
+            "2": { "name": "entity.name.function.zebra" }
+          }
+        },
+        {
+          "match": "\\b(class|struct|union|interface|enum|mixin|namespace|extend|aspect|sig|type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.zebra" },
+            "2": { "name": "entity.name.type.zebra" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.zebra",
+          "match": "\\b(if|else|elif|while|for|in|branch|on|return|break|continue|pass|guard|try|catch|raise|throws|defer|errdefer|with|using|lock|stop|from)\\b"
+        },
+        {
+          "name": "keyword.other.zebra",
+          "match": "\\b(def|var|const|class|struct|union|interface|enum|mixin|namespace|sig|type|cue|extend|aspect|use|exposing|import|capture|adds|implements|weaves|has|where)\\b"
+        },
+        {
+          "name": "storage.modifier.zebra",
+          "match": "\\b(abstract|static|private|protected|public|internal|readonly|export|extern|vari|shared)\\b"
+        },
+        {
+          "name": "keyword.control.contract.zebra",
+          "match": "\\b(require|ensure|invariant|assert|assert_eq|assert_ne|assert_true|assert_false|expect|implies|old|trace|test|print)\\b"
+        },
+        {
+          "name": "keyword.operator.word.zebra",
+          "match": "\\b(and|or|not|is|as|orelse|to|except|allocate|arena)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.zebra",
+          "match": "\\b(true|false|nil|this|same|result|error)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.zebra",
+          "match": "\\b(int|uint|float|bool|char|str|String|byte|any|void)\\b"
+        },
+        {
+          "name": "storage.type.sized.zebra",
+          "match": "\\b(u?int(8|16|32|64)|float(16|32|64))\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.zebra",
+          "match": "\\b(0x[0-9A-Fa-f_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*(\\.[0-9_]+)?([eE][-+]?[0-9]+)?)\\b"
+        }
+      ]
+    }
+  }
+}

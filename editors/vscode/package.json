@@ -1,0 +1,52 @@
+{
+  "name": "zebra-language",
+  "displayName": "Zebra Language",
+  "description": "Language support for Zebra (.zbr): live diagnostics via the built-in `zebra lsp` language server, plus syntax highlighting.",
+  "version": "0.1.0",
+  "publisher": "zebra",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "repository": { "type": "git", "url": "https://github.com/torial/zebra-language" },
+  "engines": { "vscode": "^1.82.0" },
+  "categories": ["Programming Languages", "Linters"],
+  "activationEvents": ["onLanguage:zebra"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "zebra",
+        "aliases": ["Zebra", "zebra"],
+        "extensions": [".zbr"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zebra",
+        "scopeName": "source.zebra",
+        "path": "./syntaxes/zebra.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Zebra",
+      "properties": {
+        "zebra.serverPath": {
+          "type": "string",
+          "default": "zebra",
+          "description": "Path to the zebra executable (which provides the `zebra lsp` server). Use an absolute path to a local build, e.g. C:/Projects/zebra-language/zig-out/bin/zebra.exe, or put zig-out/bin on your PATH."
+        },
+        "zebra.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace the JSON-RPC traffic between VS Code and the Zebra language server (Output panel → 'Zebra Language Server')."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.82.0"
+  }
+}

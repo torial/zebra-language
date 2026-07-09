@@ -29,8 +29,15 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   `tools/lsp_server_smoke.py` (5/5).  Limitations/follow-ups: numeric request ids
   only (getInt); no hover/completion yet; Content-Length assumes byte==str.len
   (fine for ASCII/JSON).
-- **Phase 3 (next)** — thin VS Code extension that launches `zebra lsp` → live
-  squiggles as you type.  Then optionally publish it.
+- **Phase 3 ✅ DONE (2026-07-09)** — VS Code extension at `editors/vscode/`: a thin
+  `vscode-languageclient` (9.0.1) client that launches `zebra lsp` over stdio +
+  a TextMate grammar + language config (`#` comments, brackets, indent).  `npm
+  install` there, set `zebra.serverPath` to the built exe (or PATH), F5 to run
+  (`.vscode/launch.json` provided) → live squiggles.  Verified as far as possible
+  headless: JSON valid, `extension.js` parses, deps resolve, server proven 5/5.
+  NOT yet click-tested inside VS Code (needs a human at the editor).  Follow-ups:
+  answer unknown REQUESTS with MethodNotFound (currently ignored — fine for a
+  diagnostics-only server); package as `.vsix` / publish.
 - **Phase 4+** — hover (types), go-to-definition, completion (reuse Resolver/TC).
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
