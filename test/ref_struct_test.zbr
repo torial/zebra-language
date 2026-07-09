@@ -3,11 +3,11 @@
 # genType's .ref_to arm MUST NOT fire for struct payloads; structs are
 # value types and need the extra pointer.
 #
-# NOTE: passes on the bootstrap compiler; FAILS on the selfhost compiler due to
-# BUG-170 (selfhost genAssign doesn't box a value struct into a `^T` field).
-# Not registered in the smoke suite until BUG-170 is fixed. Companion coverage
-# for `^Class` recursion now lives in `recursive_type_test.zbr` (plain `Class?`,
-# since `^Class` is rejected as of BUG-078).
+# Passes on BOTH compilers as of BUG-170 fix (2026-07-09): the selfhost `genAssign`
+# now heap-boxes a value struct assigned into a `^T` field (`{ const _rp =
+# _allocator.create(Point) …; _rp.* = pt; self.p = _rp; }`), matching the bootstrap.
+# Companion coverage for `^Class` recursion lives in `recursive_type_test.zbr`
+# (plain `Class?`, since `^Class` is rejected as of BUG-078).
 struct Point
     var x: int
     var y: int

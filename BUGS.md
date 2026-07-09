@@ -33,7 +33,22 @@ inference 0/414, fuzz 25).
 
 ---
 
-## BUG-170: selfhost does not box a value struct assigned to a `^T` field ⚠️ OPEN (pre-existing, selfhost-only)
+## BUG-170: selfhost does not box a value struct assigned to a `^T` field ✅ FIXED (2026-07-09)
+
+**Fix (2026-07-09):** `selfhost/CodeGen.zbr` `genAssign` now heap-boxes a value
+struct assigned into a `^T`/`^T?` field. It resolves the target field's TypeRef
+(`getAssignFieldType`, which handles both `field = x` and `self.field = x`); if it
+is `ref_to` with an inner type in `struct_names`, it emits
+`{ const _rp = _allocator.create(T) catch @panic("OOM"); _rp.* = value; target = _rp; }`
+— identical to the bootstrap. Keying on `struct_names` (not "RHS is a value")
+sidesteps the inferExpr-from-codegen problem: since `^Class` is rejected (BUG-078),
+`^T` fields are struct or union, and only structs (value types) need the box; union
+payloads are already pointers. `test/ref_struct_test.zbr` now registered in smoke
+(passes both compilers, round-trip byte-identical, inference 0/414, fuzz 25).
+
+---
+
+### Original report (pre-existing, selfhost-only)
 
 **Severity:** medium (bootstrap/selfhost parity gap; selfhost emits invalid Zig
 for a narrow struct pattern). Surfaced 2026-07-05 while making `^ClassName` a

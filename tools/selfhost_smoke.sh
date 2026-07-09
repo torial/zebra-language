@@ -791,6 +791,8 @@ smoke_run test/interface_is_test.zbr "interface_is: OK"
 smoke_run test/interface_coerce_ctor_test.zbr "interface_coerce_ctor: OK"
 # BUG-171: bare `'Z'` char literals (selfhost lexer treated them as strings).
 smoke_run test/char_literal_test.zbr "char_literal: OK"
+# BUG-170: value struct assigned into a `^T` field is heap-boxed (selfhost genAssign).
+smoke_run test/ref_struct_test.zbr "ref_struct_test OK"
 # Statement-body lambda in `return` position (bootstrap grammar gap; selfhost ok).
 smoke_run test/return_lambda_test.zbr "return_lambda: OK"
 # Closure factories: `return <capture closure>` with the struct hoisted to a

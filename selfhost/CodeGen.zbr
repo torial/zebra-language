@@ -5310,6 +5310,31 @@ struct Generator
                                 genCallWithTypeHint(a.value, field_type!)
                                 w.emit(";\n")
                                 return
+        # BUG-170: assigning a value struct into a `^T`/`^T?` field — heap-box it so
+        # Zig gets a `*T`.  Only structs (value types) need this; class/union
+        # payloads are already pointers (`^Class` is a hard error, so `^T` fields
+        # are struct or union).  Mirrors src/CodeGen.zig genAssign ref_box path.
+        if a.op == AssignOp.assign and not (a.value is Expr.nil_)
+            var bft = getAssignFieldType(a)
+            if bft as bftr
+                if bftr is TypeRef.ref_to as binner
+                    var box_tn: str? = nil
+                    branch binner
+                        on TypeRef.named as bn
+                            box_tn = bn.name
+                        on TypeRef.nilable as bni
+                            if bni is TypeRef.named as bn2
+                                box_tn = bn2.name
+                        else
+                            pass
+                    if box_tn as tn
+                        if struct_names.contains_(tn)
+                            w.emit("{ const _rp = _allocator.create(" + tn + ") catch @panic(\"OOM\"); _rp.* = ")
+                            genExpr(a.value)
+                            w.emit("; ")
+                            genExpr(a.target)
+                            w.emit(" = _rp; }\n")
+                            return
         genExpr(a.target)
         w.emit(" ")
         w.emit(assignOpStr(a.op))
