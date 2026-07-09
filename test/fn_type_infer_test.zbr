@@ -1,0 +1,40 @@
+# Safety net for fn-type call-result inference across every binding scope.
+#
+# A value of an inline function type `def(): R`, when called, must infer its
+# result as `R`.  This is observable through string interpolation: the format
+# spec is chosen from the inferred type — `{d}` for float vs the fallback `{any}`
+# (which prints an f64 as "1.5e0").  So `"${f()}"` yielding "1.5" (not "1.5e0")
+# proves f() inferred `float`.  A regression to `unknown` makes an assert below
+# fail at runtime — on BOTH compilers (the selfhost binds fn-typed plain locals,
+# factory results, AND capture fields; this guards all three).
+
+def half(): float
+    return 1.5
+
+# (1) plain-local fn-type
+def viaLocal(): str
+    var f: def(): float = half
+    return "L=${f()}"
+
+# (2) factory-result fn-type: the returned closure is itself called
+def makeGetter(): def(): float
+    return def(): float
+        capture
+            var base: float = 1.5
+        return base
+
+# (3) capture-field fn-type: a fn-typed value stored in a `capture` block,
+#     called inside the closure body
+def viaCapture(): str
+    var g = def(): str
+        capture
+            var f: def(): float = half
+        return "C=${f()}"
+    return g()
+
+def main()
+    assert viaLocal() == "L=1.5", "plain-local fn-type call inferred float"
+    var getter = makeGetter()
+    assert getter() == 1.5, "factory-result closure call"
+    assert viaCapture() == "C=1.5", "capture-field fn-type call inferred float"
+    print("fn_type_infer: OK")

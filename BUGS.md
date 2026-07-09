@@ -1,6 +1,31 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-170. Next new bug: BUG-171.**
+**Last bug number generated: BUG-171. Next new bug: BUG-172.**
+
+---
+
+## BUG-171: selfhost mis-types a `char`-literal return as `str` ⚠️ OPEN (pre-existing, selfhost-only)
+
+**Severity:** medium (bootstrap/selfhost parity gap; selfhost rejects valid code).
+Surfaced 2026-07-08 while building a char-based discriminator for fn-type
+inference — unrelated to fn-types.
+
+**Symptom:** a function declared to return `char` whose body returns a char
+literal fails TC on the selfhost:
+```
+def getCh(): char
+    return 'Z'
+```
+→ `error: type mismatch: expected char, got str` (reported at the `return`).
+The bootstrap accepts it and runs (`getCh()` → `Z`).
+
+**Root (suspected):** the selfhost TC infers a `'x'` char literal as `str_`
+(or the return-type check compares `char` against a str-typed literal). The
+bootstrap types char literals as `char`. Needs the selfhost `inferExpr`
+char-literal arm (and/or the return-type check) to yield `char`.
+
+**Workaround:** none needed in practice yet — char-returning functions are rare;
+char *values* in other positions work. No fixture depends on it.
 
 ---
 
