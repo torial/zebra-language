@@ -1045,8 +1045,10 @@ class Parser
             sb.append("^")
             sb.append(inner)
             return sb.build()
-        # Function-pointer type (inline `sig`): `def(T1, T2): R` — encode as
-        # "__fn__T1,T2__ret__R" for the AstBuilder to decode into TypeRef.fn_type.
+        # Function-pointer type (inline `sig`): `def(T1, T2): R` — encode using the
+        # generic-type string form `__fnptr(T1,T2,R)` (return type LAST).  This reuses
+        # the AstBuilder's bracket-aware generic decoder, so nested fn-types
+        # (`def(def(int): int): int`) round-trip via balanced parens.
         if .textIs("def")
             .advance()
             .expectText("(")?
@@ -1060,15 +1062,12 @@ class Parser
             .expectText(":")?
             var fn_ret: str = .eatTypeName()?
             var sbf: StringBuilder = StringBuilder()
-            sbf.append("__fn__")
-            var firstp = true
+            sbf.append("__fnptr(")
             for fp in fn_params
-                if not firstp
-                    sbf.append(",")
                 sbf.append(fp)
-                firstp = false
-            sbf.append("__ret__")
+                sbf.append(",")
             sbf.append(fn_ret)
+            sbf.append(")")
             return sbf.build()
         const text = .peek().text
         if .isOpenCall()

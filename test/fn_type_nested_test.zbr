@@ -1,0 +1,44 @@
+# Nested / higher-order uses of the inline function-pointer type `def(P): R`.
+#
+# Regression guard for the selfhost's string encoding of fn-types: a fn-type
+# nested inside another fn-type (`def(def(int): int): int`) previously panicked
+# ("index out of bounds") because the flat `__fn__…__ret__…` encoding was not
+# nesting-aware.  It now encodes as the bracket-balanced `__fnptr(P…,RET)` form,
+# decoded by the same top-level-arg splitter used for generics.
+
+sig IntFn(): int
+
+def base(): int
+    return 41
+
+# 1. A fn-type used as a `capture` field type (closure holding a callback).
+#    (Bind the call result to a typed local before arithmetic: a fn-type value's
+#    call-result type is not yet modelled, so `f() + 1` directly would emit an
+#    inference guess — see NEXT_STEPS "fn-type call-result inference".)
+def makeWrap(): def(): int
+    return def(): int
+        capture
+            var f: def(): int = base
+        var r: int = f()
+        return r + 1
+
+# 2. A fn-type as a parameter type (higher-order function).
+def applyTo3(f: def(int): int): int
+    return f(3)
+
+def dbl(x: int): int
+    return x * 2
+
+# 3. A fn-type NESTED inside a fn-type parameter — compile-only (the encoding
+#    stress case).  `run` is never called; it only has to type-check + emit.
+def run(f: def(def(int): int): int): int
+    return 0
+
+def main()
+    var w = makeWrap()
+    assert w() == 42, "fn-type capture field"
+
+    assert applyTo3(dbl) == 6, "fn-type param (higher-order)"
+
+    # `run` exists and the nested fn-type compiled if we got here.
+    print("fn_type_nested: OK")

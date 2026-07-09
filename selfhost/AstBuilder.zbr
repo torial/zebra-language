@@ -1150,26 +1150,6 @@ class ASTBuilder
                             alias_args.add(Expr.int_lit(ExprIntLit(zspan(), arg_text, IntBase.decimal)))
             return TypeRef.alias_applied(AliasAppliedTypeRef(zspan(), alias_name, alias_args))
 
-        # Function-pointer type: encoded as "__fn__<params>__ret__<ret>".
-        if s.startsWith("__fn__")
-            var fn_after: List(str) = List(str)()
-            for p in s.split("__fn__")
-                fn_after.add(p)
-            var fn_body = fn_after.at(1)   # "<params>__ret__<ret>"
-            var fn_pr: List(str) = List(str)()
-            for p in fn_body.split("__ret__")
-                fn_pr.add(p)
-            var fn_params_str = fn_pr.at(0)
-            var fn_ret_str = fn_pr.at(1)
-            var fn_params: List(TypeRef) = List(TypeRef)()
-            if fn_params_str != ""
-                var fn_tl: List(str) = .splitTopLevelArgs(fn_params_str)
-                for a in fn_tl
-                    if a != ""
-                        fn_params.add(.parseTypeRefRequired(a))
-            var fn_ret = .parseTypeRefRequired(fn_ret_str)
-            return TypeRef.fn_type(FnTypeRef(zspan(), fn_params, fn_ret))
-
         # `same` — constrained type placeholder
         if s == "same"
             return TypeRef.same_()
@@ -1256,6 +1236,16 @@ class ASTBuilder
             for a in tl_args
                 if a != ""
                     args.add(.parseTypeRefRequired(a))
+            # Function-pointer type encoded as "__fnptr(P1,...,RET)" (RET last).
+            # Reusing the generic decoder makes nested fn-types nesting-safe.
+            if gen_name == "__fnptr"
+                var fn_ret2: TypeRef = args.at(args.len - 1)
+                var fn_params2: List(TypeRef) = List(TypeRef)()
+                var fpi = 0
+                while fpi < args.len - 1
+                    fn_params2.add(args.at(fpi))
+                    fpi = fpi + 1
+                return TypeRef.fn_type(FnTypeRef(zspan(), fn_params2, fn_ret2))
             return TypeRef.generic(GenericTypeRef(zspan(), gen_name, args))
 
         # Simple named type
