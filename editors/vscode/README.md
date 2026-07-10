@@ -4,6 +4,13 @@ Language support for [Zebra](../../README.md) (`.zbr`) files:
 
 - **Live diagnostics** — errors and warnings as you type, from the compiler's
   own front-end (parse → resolve → typecheck), served by `zebra lsp`.
+- **Hover** — the signature of the symbol under the cursor (`def foo(a: int): str`,
+  `class Point`, `var x: int`).
+- **Go-to-definition** (F12) — jump to a symbol's declaration.
+- **Completion** — language keywords + the program's declared symbols
+  (functions, types, methods, fields), with kinds and signatures.
+- **Outline / breadcrumbs** — document symbols for classes, functions, fields, etc.
+- **Formatting** — via `zebra fmt` (enable `editor.formatOnSave` for format-on-save).
 - **Syntax highlighting** — comments, strings, keywords, types, numbers.
 - Comment toggling, bracket matching, indentation.
 
@@ -66,7 +73,12 @@ Then **Extensions → … → Install from VSIX** in VS Code.
 
 ## Current scope & limitations
 
-- Diagnostics only (no hover / go-to-definition / completion yet — planned).
-- Numeric JSON-RPC request ids.
-- Full-document sync (the whole buffer is re-checked on each change; fine for the
-  file sizes involved).
+- Hover / definition / completion are **name-based** (top-level decls + class
+  members), not yet scope-aware (locals/shadowing) or cross-file. Completion isn't
+  context-aware yet (no member completion after `.`).
+- Go-to-definition and hover locate declarations by text search — the selfhost AST
+  doesn't yet carry real source spans, so positions are line/name-precise rather
+  than exact for every case.
+- The formatter (`zebra fmt`) is minimal: tabs→spaces, trailing-whitespace trim,
+  blank-line trim. It does not re-indent or collapse inter-token spacing yet.
+- Numeric JSON-RPC request ids; full-document sync.

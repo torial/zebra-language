@@ -1015,7 +1015,9 @@ def lspDeclPosition(text: str, detail: str, name: str): Span
         var t: str = l.trimLeft()
         if t.startsWith(needle)
             if not lspIsIdentChar(lspCharAt(t, needle.len))
-                return Span(lineno + 1, 0, lineno + 1, 0)
+                # Point at the NAME (indent + keyword + one space), highlight it.
+                var col: int = (l.len - t.len) + kw.len + 1
+                return Span(lineno + 1, col, lineno + 1, col + name.len)
         lineno = lineno + 1
     return Span(0, 0, 0, 0)
 
@@ -1042,20 +1044,25 @@ def lspCompletionKind(detail: str): int
 # these are REAL program symbols (with kinds + signatures), which VS Code filters
 # by the typed prefix — a strict improvement over its word-based fallback.
 def lspCompletionItems(text: str, path: str): str
+    var seen: HashMap(str, bool) = HashMap(str, bool)()
     var sb: StringBuilder = StringBuilder()
     sb.append("[")
     var first: bool = true
     var kws: str = "def var const class struct union interface enum mixin namespace sig type if else while for in return branch on break continue pass and or not is as true false nil this print use exposing require ensure invariant throws raise try catch cue static private public where capture with"
     for kw in kws.split(" ")
-        if not first
-            sb.append(",")
-        first = false
-        sb.append("{\"label\":\"" + kw + "\",\"kind\":14}")
+        if seen.get(kw) == nil
+            seen.set(kw, true)
+            if not first
+                sb.append(",")
+            first = false
+            sb.append("{\"label\":\"" + kw + "\",\"kind\":14}")
     for d in lspBuildDeclIndex(text, path)
-        if not first
-            sb.append(",")
-        first = false
-        sb.append("{\"label\":\"" + diagJsonEscape(d.name) + "\",\"kind\":" + lspCompletionKind(d.detail).toString() + ",\"detail\":\"" + diagJsonEscape(d.detail) + "\"}")
+        if seen.get(d.name) == nil
+            seen.set(d.name, true)
+            if not first
+                sb.append(",")
+            first = false
+            sb.append("{\"label\":\"" + diagJsonEscape(d.name) + "\",\"kind\":" + lspCompletionKind(d.detail).toString() + ",\"detail\":\"" + diagJsonEscape(d.detail) + "\"}")
     sb.append("]")
     return sb.build()
 
