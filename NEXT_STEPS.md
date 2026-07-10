@@ -90,18 +90,22 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   type resolution is text-based (no full inference); unresolved receiver → empty
   list, not noisy globals.  Commit 78ada96.  Harness 12/12.
 
-- **Phase 4f — formatter v2 (DEFERRED, needs supervision).**  Wanted: re-indent to
-  4-space nesting + inter-token space normalization (e.g. collapse `low  = 0` →
-  `low = 0`, the case that motivated this).  **Blocker for a *safe* implementation:**
-  Zebra has triple-quoted multi-line strings (`"""…"""`, content spanning lines —
-  QUICKSTART §"Triple-quoted strings") plus raw/no-sub strings and `#` comments.  A
-  per-line collapse or re-indent would silently corrupt the interior of a `"""`
-  block (embedded SQL/docs).  Doing it safely means a **lexer-aware pass** (tokenize
-  → know which byte ranges are string/comment vs code → collapse/reindent only code
-  ranges; reindent from INDENT/DEDENT tokens).  That is a real sub-project with
-  corpus-gated risk — deliberately left for a supervised session.  Gate design when
-  taken up: `format(selfhost)==selfhost` (idempotence on clean input) + emit-
-  equivalence on the corpus + a messy-indent → format → emit-equivalence oracle.
+- **Phase 4f ✅ DONE (2026-07-10) — formatter v2: inter-token space collapse with
+  string preservation.**  `fmtNormalize` now collapses runs of interior spaces
+  between tokens to one (e.g. `low  = 0` → `low = 0`, the case that motivated this)
+  and normalizes tabs, **while preserving byte-for-byte** the content of every
+  string form (regular w/ `\` escapes, raw `r"…"`/`r'…'`, no-sub, triple-quoted
+  multi-line `"""…"""`) and `#` comments.  Leading indentation is preserved as
+  written.  Mechanism: a string/comment-aware line scanner (`fmtLine` + `FmtLine`)
+  that carries the only cross-line state — an open `"""` block — to the next line;
+  every mis-read errs toward staying *inside* a string (under-collapse, benign),
+  never exiting early (the only path that could touch string content).  **Gated by
+  `tools/fmt_safety.py`:** 11 string-preservation fixtures + idempotence on all 413
+  corpus files + emit-equivalence (formatting changed 123 files; all emit byte-
+  identical Zig → semantics preserved).  Still open — **re-indent** to a canonical
+  4-space nesting (leading indentation is left as-is): needs INDENT/DEDENT structure
+  and continuation/multi-line handling; a natural follow-on now that the string-safe
+  scanner exists.
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the
@@ -110,7 +114,7 @@ interface-value `is`, `^T` boxing all lived there). Aims the conformance-corpus 
 
 ---
 
-**Last updated:** 2026-07-10 (LSP round 2: Phase 4d real spans on decls [f0d9111] + 4e member completion after `.` [78ada96], both round-trip byte-identical; 4f formatter v2 DEFERRED — needs a lexer-aware pass to avoid corrupting `"""` multi-line strings). Prior 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
+**Last updated:** 2026-07-10 (LSP round 2: Phase 4d real spans on decls [f0d9111] + 4e member completion after `.` [78ada96] + 4f formatter v2 string-safe space-collapse [gated by tools/fmt_safety.py 13/13], all round-trip byte-identical; re-indent still open). Prior 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.

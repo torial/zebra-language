@@ -84,6 +84,9 @@ Then **Extensions → … → Install from VSIX** in VS Code.
 - Go-to-definition and documentSymbol positions come from **real source spans**
   the parser now records on each declaration (name-precise). Text search remains a
   fallback only for the rare case where a position wasn't captured (e.g. mid-edit).
-- The formatter (`zebra fmt`) is minimal: tabs→spaces, trailing-whitespace trim,
-  blank-line trim. It does not re-indent or collapse inter-token spacing yet.
+- The formatter (`zebra fmt`) normalizes whitespace: tabs→spaces, trailing-
+  whitespace trim, blank-line trim, and collapses runs of interior spaces between
+  tokens to one — while preserving the content of strings (regular, raw, no-sub,
+  triple-quoted multi-line) and `#` comments byte-for-byte. It does not re-indent
+  to a canonical nesting depth yet (leading indentation is left as written).
 - Numeric JSON-RPC request ids; full-document sync.
