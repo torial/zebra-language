@@ -483,7 +483,7 @@ class MultiCompiler
                         while mi < extra_members.len
                             new_members.add(extra_members.at(mi))
                             mi = mi + 1
-                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable, false, false, false, nil)))
+                        merged_decls.add(PNode.class_(PClass(rcls_name, rcls.type_params, rcls.ifaces, rcls.mixins, new_members, List(PNode)(), rcls.is_reflectable, false, false, false, nil, rcls.line, rcls.col)))
                 else
                     merged_decls.add(rdecl)
             ri = ri + 1
@@ -1132,7 +1132,11 @@ def runLsp()
             if docs.get(uri) as dt
                 var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
                 if lspFindDecl(dt, uri, word) as di
-                    var dsp: Span = lspDeclPosition(dt, di.detail, di.name)
+                    # Prefer the real AST span; fall back to text search only when
+                    # the parser didn't capture a position (e.g. mid-edit).
+                    var dsp: Span = di.span
+                    if dsp.line <= 0
+                        dsp = lspDeclPosition(dt, di.detail, di.name)
                     if dsp.end_line > 0 or dsp.line > 0
                         result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
             lspRespond(j.getInt("id"), result)

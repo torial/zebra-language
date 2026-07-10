@@ -111,9 +111,13 @@ union PNode
 struct PUnionDecl
     var name: str
     var variants: List(PUnionVariant)
-    cue init(name: str, variants: List(PUnionVariant))
+    var line: int
+    var col: int
+    cue init(name: str, variants: List(PUnionVariant), line: int = 0, col: int = 0)
         .name = name
         .variants = variants
+        .line = line
+        .col = col
 
 struct PUnionVariant
     var name: str
@@ -137,10 +141,14 @@ struct PSig
     var name: str
     var params: List(PParam)
     var return_type: str
-    cue init(name: str, params: List(PParam), return_type: str)
+    var line: int
+    var col: int
+    cue init(name: str, params: List(PParam), return_type: str, line: int = 0, col: int = 0)
         .name = name
         .params = params
         .return_type = return_type
+        .line = line
+        .col = col
 
 struct PBranch
     var subject: List(PNode)
@@ -234,9 +242,13 @@ struct PModule
 struct PNamespace
     var name: str
     var decls: List(PNode)
-    cue init(name: str, decls: List(PNode))
+    var line: int
+    var col: int
+    cue init(name: str, decls: List(PNode), line: int = 0, col: int = 0)
         .name = name
         .decls = decls
+        .line = line
+        .col = col
 
 struct PParam
     var name: str
@@ -259,7 +271,9 @@ struct PClass
     var is_derive_eq: bool
     var is_derive_hash: bool
     var export_sym: str?
-    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, export_sym: str? = nil)
+    var line: int
+    var col: int
+    cue init(name: str, type_params: List(str), ifaces: List(str), mixins: List(str), members: List(PNode), invs: List(PNode), is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, export_sym: str? = nil, line: int = 0, col: int = 0)
         .name = name
         .type_params = type_params
         .ifaces = ifaces
@@ -271,6 +285,8 @@ struct PClass
         .is_derive_eq = is_derive_eq
         .is_derive_hash = is_derive_hash
         .export_sym = export_sym
+        .line = line
+        .col = col
 
 struct PExtend
     var target_name: str
@@ -286,11 +302,15 @@ struct PEnum
     # (parallel to variants; each inner list is 0 or 1 value expr, like PField).
     var base: str
     var values: List(List(PNode))
-    cue init(name: str, variants: List(str), base: str, values: List(List(PNode)))
+    var line: int
+    var col: int
+    cue init(name: str, variants: List(str), base: str, values: List(List(PNode)), line: int = 0, col: int = 0)
         .name = name
         .variants = variants
         .base = base
         .values = values
+        .line = line
+        .col = col
 
 struct PField
     var name: str
@@ -300,7 +320,9 @@ struct PField
     var is_private: bool
     var is_public: bool
     var init_expr: List(PNode)
-    cue init(name: str, type_name: str, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: List(PNode))
+    var line: int
+    var col: int
+    cue init(name: str, type_name: str, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: List(PNode), line: int = 0, col: int = 0)
         .name = name
         .type_name = type_name
         .is_const = is_const
@@ -308,6 +330,8 @@ struct PField
         .is_private = is_private
         .is_public = is_public
         .init_expr = init_expr
+        .line = line
+        .col = col
 
 struct PMethod
     var name: str
@@ -325,7 +349,9 @@ struct PMethod
     var type_params: List(str)
     var is_pure: bool
     var is_node_export: bool
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false)
+    var line: int
+    var col: int
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0)
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -341,6 +367,8 @@ struct PMethod
         .type_params = type_params
         .is_pure = is_pure
         .is_node_export = is_node_export
+        .line = line
+        .col = col
 
 struct PInit
     var params: List(PParam)
@@ -1337,6 +1365,8 @@ class Parser
 
     def parseNamespaceDecl(): PNode throws
         .expectText("namespace")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         var name: str = .eatId()?
         while .textIs(".")
             .advance()
@@ -1354,7 +1384,7 @@ class Parser
                 .skipEol()
             if .isDedent()
                 .advance()
-        return PNode.namespace_decl(PNamespace(name, decls))
+        return PNode.namespace_decl(PNamespace(name, decls, _dl, _dc))
 
     def parseUseDecl(): PNode throws
         .expectText("use")?
@@ -1375,6 +1405,8 @@ class Parser
 
     def parseClassDecl(is_reflectable: bool, export_sym: str? = nil): PNode throws
         .expectText("class")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         var name: str = ""
         var type_params = List(str)()
         # Generic class: name is tokenized: open_call because `(` follows immediately.
@@ -1445,10 +1477,12 @@ class Parser
                         members.add(pd)
             if .isDedent()
                 .advance()
-        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym))
+        return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym, _dl, _dc))
 
     def parseEnumDecl(): PNode throws
         .expectText("enum")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         # B10: backed enum `enum Status(int)` — the tokenizer merges `Status(`
         # into an open_call token (like a generic class name), so the backing
         # type sits inside the parens.  Plain `enum Color` is a bare id.
@@ -1481,10 +1515,12 @@ class Parser
                 .skipEol()
             if .isDedent()
                 .advance()
-        return PNode.enum_(PEnum(name, variants, base, values))
+        return PNode.enum_(PEnum(name, variants, base, values, _dl, _dc))
 
     def parseStructDecl(is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false): PNode throws
         .expectText("struct")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         const name = .eatId()?
         .skipEol()
         var members = List(PNode)()
@@ -1506,10 +1542,12 @@ class Parser
                 .advance()
         var ifaces = List(str)()
         var type_params = List(str)()
-        return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash))
+        return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, nil, _dl, _dc))
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         const name = .eatId()?
         var ifaces = List(str)()
         if .textIs("implements")
@@ -1530,10 +1568,12 @@ class Parser
             if .isDedent()
                 .advance()
         var type_params = List(str)()
-        return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false, false, false, false))
+        return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false, false, false, false, nil, _dl, _dc))
 
     def parseMixinDecl(): PNode throws
         .expectText("mixin")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         const name = .eatId()?
         .skipEol()
         var members = List(PNode)()
@@ -1547,7 +1587,7 @@ class Parser
             if .isDedent()
                 .advance()
         var empty_str_list = List(str)()
-        return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false, false, false, false))
+        return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false, false, false, false, nil, _dl, _dc))
 
     def parseExtendDecl(): PNode throws
         .expectText("extend")?
@@ -1567,6 +1607,8 @@ class Parser
 
     def parseUnionDecl(): PNode throws
         .expectText("union")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         const name = .eatId()?
         .skipEol()
         var variants = List(PUnionVariant)()
@@ -1593,10 +1635,12 @@ class Parser
                 variants.add(PUnionVariant(vname, vtype))
             if .isDedent()
                 .advance()
-        return PNode.union_decl(PUnionDecl(name, variants))
+        return PNode.union_decl(PUnionDecl(name, variants, _dl, _dc))
 
     def parseSigDecl(): PNode throws
         .expectText("sig")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         var name = ""
         var has_params = false
         if .isOpenCall()
@@ -1627,7 +1671,7 @@ class Parser
             .advance()
             return_type = .eatTypeName()?
         .skipEol()
-        return PNode.sig_(PSig(name, params, return_type))
+        return PNode.sig_(PSig(name, params, return_type, _dl, _dc))
 
     def parseTypeAliasDecl(): PNode throws
         .expectText("type")?
@@ -1740,6 +1784,8 @@ class Parser
             .expectText("const")?
         else
             .expectText("var")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         const name = .eatId()?
         var type_name: str = ""
         if .textIs(":")
@@ -1753,7 +1799,7 @@ class Parser
             .advance()
             init_expr.add(.parseExpr()?)
         .skipEol()
-        return PNode.field_(PField(name, type_name, is_const, is_static, is_private, is_public, init_expr))
+        return PNode.field_(PField(name, type_name, is_const, is_static, is_private, is_public, init_expr, _dl, _dc))
 
     def parseDeclInit(): PNode throws
         .expectText("cue")?
@@ -1791,6 +1837,8 @@ class Parser
     def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false): PNode throws
         const line = .peek().line
         .expectText("def")?
+        const _dl = .peek().line
+        const _dc = .peek().col - 1
         var name = ""
         var has_params = false
         var params = List(PParam)()
@@ -1874,7 +1922,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc))
 
     # -- Block and statements --------------------------------------------------
 

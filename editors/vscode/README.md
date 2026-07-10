@@ -76,9 +76,9 @@ Then **Extensions → … → Install from VSIX** in VS Code.
 - Hover / definition / completion are **name-based** (top-level decls + class
   members), not yet scope-aware (locals/shadowing) or cross-file. Completion isn't
   context-aware yet (no member completion after `.`).
-- Go-to-definition and hover locate declarations by text search — the selfhost AST
-  doesn't yet carry real source spans, so positions are line/name-precise rather
-  than exact for every case.
+- Go-to-definition and documentSymbol positions come from **real source spans**
+  the parser now records on each declaration (name-precise). Text search remains a
+  fallback only for the rare case where a position wasn't captured (e.g. mid-edit).
 - The formatter (`zebra fmt`) is minimal: tabs→spaces, trailing-whitespace trim,
   blank-line trim. It does not re-indent or collapse inter-token spacing yet.
 - Numeric JSON-RPC request ids; full-document sync.

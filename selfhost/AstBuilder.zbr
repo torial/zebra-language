@@ -22,6 +22,15 @@ use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PIn
 def zspan(): Span
     return Span(0, 0, 0, 0)
 
+# A one-line span covering a declaration's NAME, from the name-token position the
+# parser captured (line 1-based, col 0-based).  Used by the LSP for precise
+# go-to-definition and documentSymbol ranges.  A zero line means "not captured"
+# (falls back to zspan()/text-search downstream).
+def nameSpan(line: int, col: int, name: str): Span
+    if line <= 0
+        return zspan()
+    return Span(line, col, line, col + name.len)
+
 def zmods(): Modifiers
     return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false)
 
@@ -187,7 +196,7 @@ class ASTBuilder
                 return Decl.use_(DeclUse(zspan(), u.path, u.exposed))
             on PNode.namespace_decl as ns
                 var nested: List(Decl) = .buildTopDecls(ns.decls)?
-                return Decl.namespace_(DeclNamespace(zspan(), ns.name, nested))
+                return Decl.namespace_(DeclNamespace(nameSpan(ns.line, ns.col, ns.name), ns.name, nested))
             on PNode.class_ as c
                 return .buildClass(c)?
             on PNode.struct_ as s
@@ -239,7 +248,7 @@ class ASTBuilder
             inv_exprs.add(.buildExpr(inv_pn)?)
         var mods = zmods()
         mods.is_reflectable = c.is_reflectable
-        return Decl.class_(DeclClass(zspan(), mods, c.name, tparams, ifaces, mixins, members, inv_exprs, c.export_sym))
+        return Decl.class_(DeclClass(nameSpan(c.line, c.col, c.name), mods, c.name, tparams, ifaces, mixins, members, inv_exprs, c.export_sym))
 
     # ── Interface ─────────────────────────────────────────────────────────────
 
@@ -250,7 +259,7 @@ class ASTBuilder
         var ifaces: List(TypeRef) = List(TypeRef)()
         for iface in c.ifaces
             ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
-        return Decl.interface_(DeclInterface(zspan(), zmods(), c.name, ifaces, members))
+        return Decl.interface_(DeclInterface(nameSpan(c.line, c.col, c.name), zmods(), c.name, ifaces, members))
 
     # ── Mixin ─────────────────────────────────────────────────────────────────
 
@@ -286,7 +295,7 @@ class ASTBuilder
         mods.is_derive_debug = s.is_derive_debug
         mods.is_derive_eq = s.is_derive_eq
         mods.is_derive_hash = s.is_derive_hash
-        return Decl.struct_(DeclStruct(zspan(), mods, s.name, ifaces, members, inv_exprs))
+        return Decl.struct_(DeclStruct(nameSpan(s.line, s.col, s.name), mods, s.name, ifaces, members, inv_exprs))
 
     # ── Union ─────────────────────────────────────────────────────────────────
 
@@ -297,7 +306,7 @@ class ASTBuilder
             if pv.type_name != ""
                 payload = .parseTypeRef(pv.type_name)
             variants.add(UnionVariant(zspan(), pv.name, payload))
-        return Decl.union_(DeclUnion(zspan(), zmods(), u.name, variants))
+        return Decl.union_(DeclUnion(nameSpan(u.line, u.col, u.name), zmods(), u.name, variants))
 
     # ── Sig ───────────────────────────────────────────────────────────────────
 
@@ -307,7 +316,7 @@ class ASTBuilder
             const ptype = .parseTypeRef(p.type_name)
             params.add(Param(zspan(), ParamMode.normal, p.name, ptype, nil))
         var ret_type = .parseTypeRef(sg.return_type)
-        return Decl.sig_(DeclSig(zspan(), sg.name, params, ret_type))
+        return Decl.sig_(DeclSig(nameSpan(sg.line, sg.col, sg.name), sg.name, params, ret_type))
 
     def buildTypeAlias(ta: PTypeAlias): Decl throws
         var alias_params: List(Param) = List(Param)()
@@ -334,8 +343,8 @@ class ASTBuilder
                 fmods.is_static = f.is_static
                 if f.init_expr.len > 0
                     const initval = .buildExpr(f.init_expr.at(0))?
-                    return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, initval, f.is_const))
-                return Decl.var_(DeclVar(zspan(), fmods, f.name, type_ref, nil, f.is_const))
+                    return Decl.var_(DeclVar(nameSpan(f.line, f.col, f.name), fmods, f.name, type_ref, initval, f.is_const))
+                return Decl.var_(DeclVar(nameSpan(f.line, f.col, f.name), fmods, f.name, type_ref, nil, f.is_const))
             on PNode.method_ as m
                 return .buildMethod(m, true)?
             on PNode.init_ as pinit
@@ -361,7 +370,7 @@ class ASTBuilder
         var base: TypeRef? = nil
         if e.base != ""
             base = .parseTypeRef(e.base)
-        return Decl.enum_(DeclEnum(zspan(), zmods(), e.name, base, members))
+        return Decl.enum_(DeclEnum(nameSpan(e.line, e.col, e.name), zmods(), e.name, base, members))
 
     # ── Method ────────────────────────────────────────────────────────────────
 
@@ -404,7 +413,7 @@ class ASTBuilder
         mods.is_export = m.is_export
         mods.is_pure = m.is_pure
         mods.is_node_export = m.is_node_export
-        return Decl.method(DeclMethod(zspan(), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
+        return Decl.method(DeclMethod(nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
 
