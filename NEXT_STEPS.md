@@ -70,6 +70,39 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   resolver); scope-aware locals; dedup.  These all want the version cache (NOT LRU)
   + real spans (see 4b follow-ups) once the front-end analysis is memoized per doc.
 
+- **Phase 4d ✅ DONE (2026-07-10) — real source spans on declarations.** The
+  selfhost parser now records the name-token position (1-based line, 0-based col)
+  on every decl PNode (class/struct/interface/mixin/enum/union/sig/namespace/
+  method/field); AstBuilder threads it into each Decl's `Span` via `nameSpan()`
+  (was `zspan()` = all-zero).  documentSymbol ranges are now real + name-precise
+  (were zero); go-to-definition uses the AST span directly (text search only a
+  mid-edit fallback).  Purely internal — spans were unused by codegen, so emitted
+  Zig is unchanged (round-trip byte-identical).  Commit f0d9111.  Harness 11/11.
+  Retires the 4b `zspan()` limitation.  Still open: spans on expressions/statements
+  (for a cursor→node resolver) and scope-aware locals.
+
+- **Phase 4e ✅ DONE (2026-07-10) — member completion after `.`.**
+  `textDocument/completion` narrows after `.` to the receiver's members:
+  `self.`/`this.`/leading-dot → the enclosing type (found by indentation);
+  a type name → its methods/fields or enum variants; an annotated/constructed
+  local (`var p: Point` / `var p = Point()`) → its type's members (declared type
+  by nearest-above text search).  `.` advertised as a trigger character.  Receiver-
+  type resolution is text-based (no full inference); unresolved receiver → empty
+  list, not noisy globals.  Commit 78ada96.  Harness 12/12.
+
+- **Phase 4f — formatter v2 (DEFERRED, needs supervision).**  Wanted: re-indent to
+  4-space nesting + inter-token space normalization (e.g. collapse `low  = 0` →
+  `low = 0`, the case that motivated this).  **Blocker for a *safe* implementation:**
+  Zebra has triple-quoted multi-line strings (`"""…"""`, content spanning lines —
+  QUICKSTART §"Triple-quoted strings") plus raw/no-sub strings and `#` comments.  A
+  per-line collapse or re-indent would silently corrupt the interior of a `"""`
+  block (embedded SQL/docs).  Doing it safely means a **lexer-aware pass** (tokenize
+  → know which byte ranges are string/comment vs code → collapse/reindent only code
+  ranges; reindent from INDENT/DEDENT tokens).  That is a real sub-project with
+  corpus-gated risk — deliberately left for a supervised session.  Gate design when
+  taken up: `format(selfhost)==selfhost` (idempotence on clean input) + emit-
+  equivalence on the corpus + a messy-indent → format → emit-equivalence oracle.
+
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the
 "not used by the compiler" column is the under-tested canary list (char literals,
@@ -77,7 +110,7 @@ interface-value `is`, `^T` boxing all lived there). Aims the conformance-corpus 
 
 ---
 
-**Last updated:** 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
+**Last updated:** 2026-07-10 (LSP round 2: Phase 4d real spans on decls [f0d9111] + 4e member completion after `.` [78ada96], both round-trip byte-identical; 4f formatter v2 DEFERRED — needs a lexer-aware pass to avoid corrupting `"""` multi-line strings). Prior 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.
