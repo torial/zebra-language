@@ -1,6 +1,33 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-171. Next new bug: BUG-172.**
+**Last bug number generated: BUG-172. Next new bug: BUG-173.**
+
+---
+
+## BUG-172: `List(char)` as a constructor argument — round-trip divergence ⚠️ OPEN
+
+**Severity:** low-medium (bootstrap/selfhost divergence; narrow trigger).
+Surfaced 2026-07-10 building the LSP hover/definition (`var chars: List(char) =
+List(char)()` in main.zbr).
+
+**Symptom:** `List(char)()` (constructing a `List` of `char`) fails the level-2
+selfhost (`selfhost-A`, built from the running compiler's own emit) with
+`error: undefined name: 'char'` at the constructor's type argument — while the
+running `zebra.exe` compiles and runs the same code fine. So it breaks the
+round-trip (selfhost-A can't re-emit a source that uses it), even though the
+feature works at runtime. `char` as a param/return type (`def peek(): char`) and
+in comparisons works everywhere; only `char` as a **generic type argument in a
+constructor** trips it.
+
+**Root (suspected):** the selfhost resolver/codegen doesn't register `char`
+(kw_char) as a resolvable type name in the generic-constructor argument position,
+so a compiler built from the selfhost's own emit rejects it. Likely a missing
+builtin-type case in the generic-arg resolution path (parallels how `int`/`str`
+are handled). Needs a minimal repro + a resolver/codegen arm for `char` (and
+probably `bool`/`float`) as generic args.
+
+**Workaround:** avoid `List(char)`; use string slicing (`s[a..b]`) + a char-at
+helper, as the Lexer does. `main.zbr` `lspWordAt` uses this.
 
 ---
 

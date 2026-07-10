@@ -59,10 +59,16 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   ("undefined name: 'char'"); reimplemented `lspWordAt` with string slicing.
   Harness 10/10.  Follow-ups: (1) thread real spans through the parser/AstBuilder
   → precise definition + documentSymbol ranges (currently line-precise / zero);
-  (2) scope-aware resolution (locals, shadowing, cross-file); (3) file BUG for
-  `List(char)`-constructor round-trip divergence.  Then completion (the flagship)
-  reuses the position index + scope + tolerant parsing.  Cache the analysis per
-  document *version* (NOT LRU).
+  (2) scope-aware resolution (locals, shadowing, cross-file); (3) BUG-172 filed
+  (`List(char)`-constructor round-trip divergence).
+- **Phase 4c ✅ DONE (2026-07-10) — completion (basic).** `textDocument/completion`
+  offers language keywords + every declared symbol in the buffer (functions/types/
+  methods/fields, with CompletionItemKind + signature detail), from the decl index.
+  Not scope- or context-aware yet, but these are REAL symbols (VS Code filters by
+  prefix) — a strict improvement over the word-based fallback.  Harness 11/11.
+  Follow-ups: member completion after `.` (needs the receiver's type + a position
+  resolver); scope-aware locals; dedup.  These all want the version cache (NOT LRU)
+  + real spans (see 4b follow-ups) once the front-end analysis is memoized per doc.
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the

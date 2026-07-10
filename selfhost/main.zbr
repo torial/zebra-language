@@ -1019,6 +1019,46 @@ def lspDeclPosition(text: str, detail: str, name: str): Span
         lineno = lineno + 1
     return Span(0, 0, 0, 0)
 
+# LSP CompletionItemKind from a decl detail's leading keyword.
+def lspCompletionKind(detail: str): int
+    var kw: str = "def"
+    for w in detail.split(" ")
+        kw = w
+        break
+    if kw == "class"
+        return 7
+    if kw == "struct"
+        return 22
+    if kw == "interface"
+        return 8
+    if kw == "enum" or kw == "union"
+        return 13
+    if kw == "var"
+        return 5
+    return 3
+
+# Completion items: language keywords + every declared symbol in the buffer
+# (functions, types, methods, fields).  Not scope- or context-aware yet, but
+# these are REAL program symbols (with kinds + signatures), which VS Code filters
+# by the typed prefix — a strict improvement over its word-based fallback.
+def lspCompletionItems(text: str, path: str): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("[")
+    var first: bool = true
+    var kws: str = "def var const class struct union interface enum mixin namespace sig type if else while for in return branch on break continue pass and or not is as true false nil this print use exposing require ensure invariant throws raise try catch cue static private public where capture with"
+    for kw in kws.split(" ")
+        if not first
+            sb.append(",")
+        first = false
+        sb.append("{\"label\":\"" + kw + "\",\"kind\":14}")
+    for d in lspBuildDeclIndex(text, path)
+        if not first
+            sb.append(",")
+        first = false
+        sb.append("{\"label\":\"" + diagJsonEscape(d.name) + "\",\"kind\":" + lspCompletionKind(d.detail).toString() + ",\"detail\":\"" + diagJsonEscape(d.detail) + "\"}")
+    sb.append("]")
+    return sb.build()
+
 def runLsp()
     var docs: HashMap(str, str) = HashMap(str, str)()
     while true
@@ -1034,7 +1074,7 @@ def runLsp()
         var j = jv!
         var method: str = j.getStr("method")
         if method == "initialize"
-            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true}}")
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{}}}")
         else if method == "shutdown"
             lspRespond(j.getInt("id"), "null")
         else if method == "exit"
@@ -1089,6 +1129,12 @@ def runLsp()
                     if dsp.end_line > 0 or dsp.line > 0
                         result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
             lspRespond(j.getInt("id"), result)
+        else if method == "textDocument/completion"
+            var uri: str = j.getObj("params").getObj("textDocument").getStr("uri")
+            var items: str = "[]"
+            if docs.get(uri) as dt
+                items = lspCompletionItems(dt, uri)
+            lspRespond(j.getInt("id"), items)
 
 # Type-check both sides of a conflict-marked .zbr file and report results.
 # Exit code is always 0 (informational); wrap in a stricter hook if you want

@@ -78,6 +78,8 @@ def main():
          "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
         {"jsonrpc": "2.0", "id": 6, "method": "textDocument/definition",
          "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
+        {"jsonrpc": "2.0", "id": 7, "method": "textDocument/completion",
+         "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -145,6 +147,14 @@ def main():
     check(defn and defn.get("id") == 6 and isinstance(dloc, dict)
           and dloc.get("uri") == uri and dloc["range"]["start"]["line"] == 5,
           "go-to-definition of helper() jumps to its declaration (line 5)")
+
+    comp = read_message(proc.stdout)
+    items = comp.get("result", []) if comp else []
+    labels = {it["label"] for it in items} if isinstance(items, list) else set()
+    check(comp and comp.get("id") == 7
+          and {"helper", "Point", "getX"}.issubset(labels)   # declared symbols
+          and "class" in labels,                              # a keyword
+          "completion offers declared symbols + keywords")
 
     shut = read_message(proc.stdout)
     check(shut and shut.get("id") == 2, "shutdown response")
