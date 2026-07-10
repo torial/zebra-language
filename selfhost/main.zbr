@@ -1039,11 +1039,208 @@ def lspCompletionKind(detail: str): int
         return 5
     return 3
 
+# The source line at 0-based `line` (empty if out of range).
+def lspLineAt(text: str, line: int): str
+    var idx: int = 0
+    for l in text.split("\n")
+        if idx == line
+            return l
+        idx = idx + 1
+    return ""
+
+# Read an identifier token starting at `start` (stops at the first non-ident char).
+def lspReadTypeTokenAt(s: str, start: int): str
+    var e: int = start
+    var n: int = s.len
+    while e < n and lspIsIdentChar(lspCharAt(s, e))
+        e = e + 1
+    if e == start
+        return ""
+    return s[start..e]
+
+# If the cursor at `col` on line text `s` is completing a member access
+# (`receiver.<partial>` or a leading-dot `.<partial>`), return the receiver:
+# an identifier, or "." for a leading-dot self access.  "" = not a member context.
+def lspMemberReceiver(s: str, col: int): str
+    var i: int = col - 1
+    # Skip the partial member identifier already typed before the cursor.
+    while i >= 0 and lspIsIdentChar(lspCharAt(s, i))
+        i = i - 1
+    if i < 0 or lspCharAt(s, i) != '.'
+        return ""
+    # A `..` (range/slice) is not a member access.
+    if i > 0 and lspCharAt(s, i - 1) == '.'
+        return ""
+    var j: int = i - 1
+    if j >= 0 and lspIsIdentChar(lspCharAt(s, j))
+        var rs: int = j
+        while rs > 0 and lspIsIdentChar(lspCharAt(s, rs - 1))
+            rs = rs - 1
+        var recv: str = s[rs..j + 1]
+        # A digit-led receiver is a float literal (`1.5`), not a member access.
+        var c0: char = lspCharAt(recv, 0)
+        if c0 >= '0' and c0 <= '9'
+            return ""
+        return recv
+    # Leading-dot self access: `.field`.
+    return "."
+
+# The nearest class/struct/interface/mixin whose body encloses `line`, by
+# indentation (walks outward past intervening defs).  "" if not inside a type.
+def lspEnclosingType(text: str, line: int): str
+    var lines: List(str) = List(str)()
+    for l in text.split("\n")
+        lines.add(l)
+    var ln: int = line
+    if ln >= lines.len
+        ln = lines.len - 1
+    if ln < 0
+        return ""
+    var target: int = lines.at(ln).len - lines.at(ln).trimLeft().len
+    var i: int = ln - 1
+    while i >= 0
+        var raw: str = lines.at(i)
+        var t: str = raw.trimLeft()
+        if t.len == 0 or t.startsWith("#")
+            i = i - 1
+            continue
+        var ind: int = raw.len - t.len
+        if ind < target
+            if t.startsWith("class ") or t.startsWith("struct ") or t.startsWith("interface ") or t.startsWith("mixin ")
+                var sp: str = t.substring(t.indexOf(" ") + 1, t.len)
+                return lspReadTypeTokenAt(sp.trimLeft(), 0)
+            target = ind
+        i = i - 1
+    return ""
+
+# An explicit type annotation for `name` on line `l` (`name: Type`, with a name
+# boundary), e.g. `var name: Type`, a param `(name: Type)`.  "" if none.
+def lspAnnotatedTypeInLine(l: str, name: str): str
+    var s: str = l
+    var n: int = s.len
+    var nl: int = name.len
+    var i: int = 0
+    while i + nl <= n
+        if s[i..i + nl] == name
+            var before_ok: bool = i == 0 or not lspIsIdentChar(lspCharAt(s, i - 1))
+            var k: int = i + nl
+            while k < n and lspCharAt(s, k) == ' '
+                k = k + 1
+            if before_ok and k < n and lspCharAt(s, k) == ':'
+                k = k + 1
+                while k < n and lspCharAt(s, k) == ' '
+                    k = k + 1
+                return lspReadTypeTokenAt(s, k)
+        i = i + 1
+    return ""
+
+# A constructor-init type for `name` on line `l` (`[var|const ]name = Type(`). "".
+def lspCtorTypeInLine(l: str, name: str): str
+    var t: str = l.trimLeft()
+    var nd: str = ""
+    if t.startsWith("var " + name + " = ")
+        nd = "var " + name + " = "
+    else if t.startsWith("const " + name + " = ")
+        nd = "const " + name + " = "
+    else if t.startsWith(name + " = ")
+        nd = name + " = "
+    else
+        return ""
+    var rest: str = t.substring(nd.len, t.len)
+    var tok: str = lspReadTypeTokenAt(rest, 0)
+    if tok != "" and rest.len > tok.len and lspCharAt(rest, tok.len) == '('
+        return tok
+    return ""
+
+# The declared type of local/param/field `name`, searching upward from `from_line`
+# so the nearest declaration above the cursor wins.  "" if not found.
+def lspTypeOfName(text: str, name: str, from_line: int): str
+    var lines: List(str) = List(str)()
+    for l in text.split("\n")
+        lines.add(l)
+    var i: int = from_line
+    if i >= lines.len
+        i = lines.len - 1
+    while i >= 0
+        var a: str = lspAnnotatedTypeInLine(lines.at(i), name)
+        if a != ""
+            return a
+        var c: str = lspCtorTypeInLine(lines.at(i), name)
+        if c != ""
+            return c
+        i = i - 1
+    return ""
+
+# Resolve a member-access receiver to a type name.
+def lspResolveReceiverType(text: str, path: str, recv: str, line: int): str
+    if recv == "." or recv == "self" or recv == "this"
+        return lspEnclosingType(text, line)
+    # The receiver may itself be a type (enum/static access: `Color.`, `Type.`).
+    if lspFindDecl(text, path, recv) as di
+        if di.detail.startsWith("class ") or di.detail.startsWith("struct ") or di.detail.startsWith("interface ") or di.detail.startsWith("enum ") or di.detail.startsWith("union ")
+            return recv
+    return lspTypeOfName(text, recv, line)
+
+# The members of the named type (methods + fields, or enum variants).
+def lspTypeMembers(text: str, path: str, typename: str): List(LspDeclInfo)
+    var out: List(LspDeclInfo) = List(LspDeclInfo)()
+    var pm_node = Parser.Parser.parse(text, path)?
+    if pm_node is PNode.module_ as pm
+        var module = ASTBuilder.build(pm, path)?
+        for decl in module.decls
+            branch decl
+                on Decl.class_ as c
+                    if c.name == typename
+                        for mi in lspMemberInfos(c.members)
+                            out.add(mi)
+                on Decl.struct_ as s
+                    if s.name == typename
+                        for mi in lspMemberInfos(s.members)
+                            out.add(mi)
+                on Decl.interface_ as ifc
+                    if ifc.name == typename
+                        for mi in lspMemberInfos(ifc.members)
+                            out.add(mi)
+                on Decl.enum_ as e
+                    if e.name == typename
+                        for em in e.members
+                            out.add(LspDeclInfo(em.name, "variant of " + typename, em.span))
+                else
+                    pass
+    return out
+catch |e|
+    return List(LspDeclInfo)()
+
+# Member-completion items for `receiver.` — the receiver's members only.  "[]" if
+# the receiver's type or its members can't be resolved.
+def lspMemberCompletionItems(text: str, path: str, recv: str, line: int): str
+    var tname: str = lspResolveReceiverType(text, path, recv, line)
+    if tname == ""
+        return "[]"
+    var mems: List(LspDeclInfo) = lspTypeMembers(text, path, tname)
+    var sb: StringBuilder = StringBuilder()
+    sb.append("[")
+    var first: bool = true
+    var seen: HashMap(str, bool) = HashMap(str, bool)()
+    for m in mems
+        if seen.get(m.name) == nil
+            seen.set(m.name, true)
+            if not first
+                sb.append(",")
+            first = false
+            sb.append("{\"label\":\"" + diagJsonEscape(m.name) + "\",\"kind\":" + lspCompletionKind(m.detail).toString() + ",\"detail\":\"" + diagJsonEscape(m.detail) + "\"}")
+    sb.append("]")
+    return sb.build()
+
 # Completion items: language keywords + every declared symbol in the buffer
-# (functions, types, methods, fields).  Not scope- or context-aware yet, but
-# these are REAL program symbols (with kinds + signatures), which VS Code filters
-# by the typed prefix — a strict improvement over its word-based fallback.
-def lspCompletionItems(text: str, path: str): str
+# (functions, types, methods, fields).  After `receiver.` it narrows to the
+# receiver's members (self/this/leading-dot → enclosing type; a type name →
+# its members; an annotated/constructed local → its type's members).  Symbols
+# are REAL, with kinds + signatures, which VS Code filters by the typed prefix.
+def lspCompletionItems(text: str, path: str, line: int, col: int): str
+    var recv: str = lspMemberReceiver(lspLineAt(text, line), col)
+    if recv != ""
+        return lspMemberCompletionItems(text, path, recv, line)
     var seen: HashMap(str, bool) = HashMap(str, bool)()
     var sb: StringBuilder = StringBuilder()
     sb.append("[")
@@ -1081,7 +1278,7 @@ def runLsp()
         var j = jv!
         var method: str = j.getStr("method")
         if method == "initialize"
-            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{}}}")
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}")
         else if method == "shutdown"
             lspRespond(j.getInt("id"), "null")
         else if method == "exit"
@@ -1141,10 +1338,12 @@ def runLsp()
                         result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
             lspRespond(j.getInt("id"), result)
         else if method == "textDocument/completion"
-            var uri: str = j.getObj("params").getObj("textDocument").getStr("uri")
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var pos = params.getObj("position")
             var items: str = "[]"
             if docs.get(uri) as dt
-                items = lspCompletionItems(dt, uri)
+                items = lspCompletionItems(dt, uri, pos.getInt("line"), pos.getInt("character"))
             lspRespond(j.getInt("id"), items)
 
 # Type-check both sides of a conflict-marked .zbr file and report results.

@@ -80,6 +80,10 @@ def main():
          "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
         {"jsonrpc": "2.0", "id": 7, "method": "textDocument/completion",
          "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
+        # Member completion: the leading-dot `.x` inside getX (line 3) completes to
+        # the enclosing class Point's members (x, getX), NOT global keywords.
+        {"jsonrpc": "2.0", "id": 8, "method": "textDocument/completion",
+         "params": {"textDocument": {"uri": uri}, "position": {"line": 3, "character": 16}}},
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -155,6 +159,14 @@ def main():
           and {"helper", "Point", "getX"}.issubset(labels)   # declared symbols
           and "class" in labels,                              # a keyword
           "completion offers declared symbols + keywords")
+
+    mcomp = read_message(proc.stdout)
+    mitems = mcomp.get("result", []) if mcomp else []
+    mlabels = {it["label"] for it in mitems} if isinstance(mitems, list) else set()
+    check(mcomp and mcomp.get("id") == 8
+          and {"x", "getX"}.issubset(mlabels)   # enclosing class members
+          and "class" not in mlabels,           # narrowed — no global keywords
+          "member completion after `.` narrows to the enclosing type's members")
 
     shut = read_message(proc.stdout)
     check(shut and shut.get("id") == 2, "shutdown response")

@@ -8,7 +8,10 @@ Language support for [Zebra](../../README.md) (`.zbr`) files:
   `class Point`, `var x: int`).
 - **Go-to-definition** (F12) — jump to a symbol's declaration.
 - **Completion** — language keywords + the program's declared symbols
-  (functions, types, methods, fields), with kinds and signatures.
+  (functions, types, methods, fields), with kinds and signatures. After `.` it
+  narrows to the receiver's members (`self.`/`this.`/`.` → the enclosing type;
+  a type name → its members/variants; an annotated or constructed local → its
+  type's members).
 - **Outline / breadcrumbs** — document symbols for classes, functions, fields, etc.
 - **Formatting** — via `zebra fmt` (enable `editor.formatOnSave` for format-on-save).
 - **Syntax highlighting** — comments, strings, keywords, types, numbers.
@@ -74,8 +77,10 @@ Then **Extensions → … → Install from VSIX** in VS Code.
 ## Current scope & limitations
 
 - Hover / definition / completion are **name-based** (top-level decls + class
-  members), not yet scope-aware (locals/shadowing) or cross-file. Completion isn't
-  context-aware yet (no member completion after `.`).
+  members), not yet scope-aware (locals/shadowing) or cross-file. Member
+  completion after `.` resolves the receiver's type by a lightweight text search
+  (explicit annotation / constructor init / enclosing type), not full inference —
+  so a receiver whose type is only inferred from an expression won't resolve yet.
 - Go-to-definition and documentSymbol positions come from **real source spans**
   the parser now records on each declaration (name-precise). Text search remains a
   fallback only for the rare case where a position wasn't captured (e.g. mid-edit).
