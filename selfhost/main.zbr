@@ -41,6 +41,7 @@ use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
 use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts
+use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
 
@@ -852,6 +853,172 @@ def lspFormatEdits(text: str): str
             nlines = nlines + 1
     return "[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":" + nlines.toString() + ",\"character\":0}},\"newText\":\"" + diagJsonEscape(formatted) + "\"}]"
 
+# ── Position → symbol (hover / go-to-definition) ──────────────────────────────
+# Name-based: extract the identifier under the cursor, look it up in a per-buffer
+# declaration index.  Not scope-aware (top-level + members), but covers the common
+# "jump to this function/type/method" case.
+
+def lspIsIdentChar(c: char): bool
+    if c >= 'a' and c <= 'z'
+        return true
+    if c >= 'A' and c <= 'Z'
+        return true
+    if c >= '0' and c <= '9'
+        return true
+    if c == '_'
+        return true
+    return false
+
+# The identifier under LSP position (line, col) — both 0-based; col is a UTF-16
+# offset, treated as a char/byte index (valid for ASCII identifiers).
+def lspWordAt(text: str, line: int, col: int): str
+    var lines: List(str) = List(str)()
+    for l in text.split("\n")
+        lines.add(l)
+    if line < 0 or line >= lines.len
+        return ""
+    var s: str = lines.at(line)
+    var n: int = s.len
+    if n == 0
+        return ""
+    var pos: int = col
+    if pos >= n
+        pos = n - 1
+    if pos < 0
+        return ""
+    if not lspIsIdentChar(lspCharAt(s, pos))
+        if pos > 0 and lspIsIdentChar(lspCharAt(s, pos - 1))
+            pos = pos - 1
+        else
+            return ""
+    var start: int = pos
+    while start > 0 and lspIsIdentChar(lspCharAt(s, start - 1))
+        start = start - 1
+    var wend: int = pos
+    while wend < n - 1 and lspIsIdentChar(lspCharAt(s, wend + 1))
+        wend = wend + 1
+    return s[start..wend + 1]
+
+struct LspDeclInfo
+    var name: str
+    var detail: str   # a one-line signature/kind for hover
+    var span: Span
+
+    cue init(name: str, detail: str, span: Span)
+        .name = name
+        .detail = detail
+        .span = span
+
+def lspMethodSig(m: DeclMethod): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("def ")
+    sb.append(m.name)
+    sb.append("(")
+    var first: bool = true
+    for p in m.params
+        if not first
+            sb.append(", ")
+        first = false
+        sb.append(p.name)
+        if p.type_ != nil
+            sb.append(": ")
+            sb.append(typeRefStr(p.type_!))
+    sb.append(")")
+    if m.return_type != nil
+        sb.append(": ")
+        sb.append(typeRefStr(m.return_type!))
+    return sb.build()
+
+def lspVarSig(v: DeclVar): str
+    if v.type_ != nil
+        return "var " + v.name + ": " + typeRefStr(v.type_!)
+    return "var " + v.name
+
+def lspMemberInfos(members: List(Decl)): List(LspDeclInfo)
+    var out: List(LspDeclInfo) = List(LspDeclInfo)()
+    for m in members
+        branch m
+            on Decl.method as dm
+                out.add(LspDeclInfo(dm.name, lspMethodSig(dm), dm.span))
+            on Decl.var_ as dv
+                out.add(LspDeclInfo(dv.name, lspVarSig(dv), dv.span))
+            else
+                pass
+    return out
+
+# Parse the buffer and index every named declaration (top-level + class/struct/
+# interface members) by name → (detail, span).  Empty on a mid-edit parse failure.
+def lspBuildDeclIndex(text: str, path: str): List(LspDeclInfo)
+    var out: List(LspDeclInfo) = List(LspDeclInfo)()
+    var pm_node = Parser.Parser.parse(text, path)?
+    if pm_node is PNode.module_ as pm
+        var module = ASTBuilder.build(pm, path)?
+        for decl in module.decls
+            branch decl
+                on Decl.class_ as c
+                    out.add(LspDeclInfo(c.name, "class " + c.name, c.span))
+                    for mi in lspMemberInfos(c.members)
+                        out.add(mi)
+                on Decl.struct_ as s
+                    out.add(LspDeclInfo(s.name, "struct " + s.name, s.span))
+                    for mi in lspMemberInfos(s.members)
+                        out.add(mi)
+                on Decl.interface_ as ifc
+                    out.add(LspDeclInfo(ifc.name, "interface " + ifc.name, ifc.span))
+                    for mi in lspMemberInfos(ifc.members)
+                        out.add(mi)
+                on Decl.enum_ as e
+                    out.add(LspDeclInfo(e.name, "enum " + e.name, e.span))
+                on Decl.union_ as u
+                    out.add(LspDeclInfo(u.name, "union " + u.name, u.span))
+                on Decl.method as dm
+                    out.add(LspDeclInfo(dm.name, lspMethodSig(dm), dm.span))
+                on Decl.sig_ as sg
+                    out.add(LspDeclInfo(sg.name, "sig " + sg.name, sg.span))
+                on Decl.var_ as dv
+                    out.add(LspDeclInfo(dv.name, lspVarSig(dv), dv.span))
+                else
+                    pass
+    return out
+catch |e|
+    return List(LspDeclInfo)()
+
+# Look up the declaration for `name` (first match).
+def lspFindDecl(text: str, path: str, name: str): LspDeclInfo?
+    if name == ""
+        return nil
+    for d in lspBuildDeclIndex(text, path)
+        if d.name == name
+            return d
+    return nil
+
+def lspCharAt(s: str, i: int): char
+    var idx: int = 0
+    for c in s.chars()
+        if idx == i
+            return c
+        idx = idx + 1
+    return ' '
+
+# Locate a declaration's source line by text search (the selfhost AST carries no
+# real spans — zspan()).  Matches the TRIMMED line starting with "<keyword> <name>"
+# + a name boundary, so uses (`print(helper())`) and comments (`# def helper`) are
+# not matched.  Returns a compiler-native Span (1-based line) or (0,0,0,0).
+def lspDeclPosition(text: str, detail: str, name: str): Span
+    var kw: str = "def"
+    for w in detail.split(" ")
+        kw = w
+        break
+    var needle: str = kw + " " + name
+    var lineno: int = 0
+    for l in text.split("\n")
+        var t: str = l.trimLeft()
+        if t.startsWith(needle)
+            if not lspIsIdentChar(lspCharAt(t, needle.len))
+                return Span(lineno + 1, 0, lineno + 1, 0)
+        lineno = lineno + 1
+    return Span(0, 0, 0, 0)
+
 def runLsp()
     var docs: HashMap(str, str) = HashMap(str, str)()
     while true
@@ -867,7 +1034,7 @@ def runLsp()
         var j = jv!
         var method: str = j.getStr("method")
         if method == "initialize"
-            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true}}")
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true}}")
         else if method == "shutdown"
             lspRespond(j.getInt("id"), "null")
         else if method == "exit"
@@ -900,6 +1067,28 @@ def runLsp()
             if docs.get(uri) as dt
                 syms = lspCollectDocSymbols(dt, uri)
             lspRespond(j.getInt("id"), syms)
+        else if method == "textDocument/hover"
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var pos = params.getObj("position")
+            var result: str = "null"
+            if docs.get(uri) as dt
+                var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
+                if lspFindDecl(dt, uri, word) as di
+                    result = "{\"contents\":{\"kind\":\"markdown\",\"value\":\"```zebra\\n" + diagJsonEscape(di.detail) + "\\n```\"}}"
+            lspRespond(j.getInt("id"), result)
+        else if method == "textDocument/definition"
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var pos = params.getObj("position")
+            var result: str = "null"
+            if docs.get(uri) as dt
+                var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
+                if lspFindDecl(dt, uri, word) as di
+                    var dsp: Span = lspDeclPosition(dt, di.detail, di.name)
+                    if dsp.end_line > 0 or dsp.line > 0
+                        result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
+            lspRespond(j.getInt("id"), result)
 
 # Type-check both sides of a conflict-marked .zbr file and report results.
 # Exit code is always 0 (informational); wrap in a stricter hook if you want

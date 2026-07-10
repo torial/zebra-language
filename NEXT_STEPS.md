@@ -45,12 +45,24 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   nested; SymbolKinds: class 5, struct 23, interface 11, enum 10, method 6, field
   8, function 12, init 9).  Server now stores open buffers (`docs` map) for these
   requests.  `tools/lsp_server_smoke.py` extended (8/8).
-- **Phase 4b (next) — the position-resolver → hover + go-to-definition.** Build
-  the shared primitive "given `line:col`, find the AST node / symbol / type"
-  (over a parsed+resolved+typechecked buffer), then layer hover (TC expr→type map)
-  and definition (Resolver use→decl-symbol span) on it.  Cache the analysis per
-  document *version* (NOT LRU) so queries stay snappy.  Then completion (the
-  flagship) reuses the same position-resolver + scope + tolerant parsing.
+- **Phase 4b ✅ DONE (2026-07-10) — hover + go-to-definition.** `zebra lsp`
+  advertises + serves `textDocument/hover` (markdown code-fence with the decl's
+  signature — `def helper(): int`, `class Point`, `var x: int`, built via
+  `typeRefStr`) and `textDocument/definition` (jumps to the declaration).
+  Name-based via a per-buffer declaration index (top-level + class/struct/interface
+  members).  `lspWordAt` extracts the identifier under the cursor.  **Constraint
+  discovered:** the selfhost AstBuilder uses `zspan()` = `Span(0,0,0,0)` — the AST
+  carries NO real positions (they live at the token level).  So definition finds
+  the target line by a TEXT SEARCH (`lspDeclPosition`: trimmed line startsWith
+  `<kw> <name>` + boundary — excludes comments/uses).  Also hit + worked around a
+  round-trip divergence: `List(char)` as a constructor arg fails selfhost-A
+  ("undefined name: 'char'"); reimplemented `lspWordAt` with string slicing.
+  Harness 10/10.  Follow-ups: (1) thread real spans through the parser/AstBuilder
+  → precise definition + documentSymbol ranges (currently line-precise / zero);
+  (2) scope-aware resolution (locals, shadowing, cross-file); (3) file BUG for
+  `List(char)`-constructor round-trip divergence.  Then completion (the flagship)
+  reuses the position index + scope + tolerant parsing.  Cache the analysis per
+  document *version* (NOT LRU).
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the

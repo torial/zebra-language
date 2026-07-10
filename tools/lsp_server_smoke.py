@@ -48,9 +48,19 @@ def main():
     )
 
     bad_src = "def main()\n    var x: int = \"oops\"\n"
-    good_src = ("class Point\n    var x: int\n    def getX(): int\n        return .x\n"
-                "def main()\n    print(42)\n")
+    # class Point{ x, getX }; helper(); main() calls helper() — a real reference
+    # for go-to-definition. Line indices (0-based):
+    #  0 class Point         5 def helper(): int
+    #  1     var x: int      6     return 1
+    #  2     def getX(): int 7 def main()
+    #  3         return .x   8     print(helper())
+    #  4 (blank)
+    good_src = ("class Point\n    var x: int\n    def getX(): int\n        return .x\n\n"
+                "def helper(): int\n    return 1\n"
+                "def main()\n    print(helper())\n")
     uri = "file:///tmp/lsp_test.zbr"
+    # `helper` in the call on line 8 spans cols 10..15 → point at char 12.
+    HELPER_USE = {"line": 8, "character": 12}
 
     convo = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
@@ -64,6 +74,10 @@ def main():
          "params": {"textDocument": {"uri": uri}}},
         {"jsonrpc": "2.0", "id": 4, "method": "textDocument/formatting",
          "params": {"textDocument": {"uri": uri}, "options": {"tabSize": 4, "insertSpaces": True}}},
+        {"jsonrpc": "2.0", "id": 5, "method": "textDocument/hover",
+         "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
+        {"jsonrpc": "2.0", "id": 6, "method": "textDocument/definition",
+         "params": {"textDocument": {"uri": uri}, "position": HELPER_USE}},
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -118,6 +132,19 @@ def main():
     check(fmt and fmt.get("id") == 4 and len(fmt_edits) == 1
           and "newText" in fmt_edits[0] and "class Point" in fmt_edits[0]["newText"],
           "formatting returns a full-document TextEdit")
+
+    hov = read_message(proc.stdout)
+    hov_val = ""
+    if hov and isinstance(hov.get("result"), dict):
+        hov_val = hov["result"].get("contents", {}).get("value", "")
+    check(hov and hov.get("id") == 5 and "def helper(): int" in hov_val,
+          "hover on a call shows the function signature")
+
+    defn = read_message(proc.stdout)
+    dloc = defn.get("result") if defn else None
+    check(defn and defn.get("id") == 6 and isinstance(dloc, dict)
+          and dloc.get("uri") == uri and dloc["range"]["start"]["line"] == 5,
+          "go-to-definition of helper() jumps to its declaration (line 5)")
 
     shut = read_message(proc.stdout)
     check(shut and shut.get("id") == 2, "shutdown response")
