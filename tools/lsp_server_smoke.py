@@ -48,7 +48,8 @@ def main():
     )
 
     bad_src = "def main()\n    var x: int = \"oops\"\n"
-    good_src = "def main()\n    print(42)\n"
+    good_src = ("class Point\n    var x: int\n    def getX(): int\n        return .x\n"
+                "def main()\n    print(42)\n")
     uri = "file:///tmp/lsp_test.zbr"
 
     convo = [
@@ -59,6 +60,10 @@ def main():
         {"jsonrpc": "2.0", "method": "textDocument/didChange",
          "params": {"textDocument": {"uri": uri},
                     "contentChanges": [{"text": good_src}]}},
+        {"jsonrpc": "2.0", "id": 3, "method": "textDocument/documentSymbol",
+         "params": {"textDocument": {"uri": uri}}},
+        {"jsonrpc": "2.0", "id": 4, "method": "textDocument/formatting",
+         "params": {"textDocument": {"uri": uri}, "options": {"tabSize": 4, "insertSpaces": True}}},
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -97,6 +102,22 @@ def main():
     check(diag_change and diag_change.get("method") == "textDocument/publishDiagnostics"
           and len(diag_change["params"]["diagnostics"]) == 0,
           "didChange to valid source clears diagnostics")
+
+    docsym = read_message(proc.stdout)
+    syms = docsym.get("result", []) if docsym else []
+    names = {s["name"] for s in syms}
+    check(docsym and docsym.get("id") == 3 and "Point" in names and "main" in names,
+          "documentSymbol returns top-level Point + main")
+    point = next((s for s in syms if s["name"] == "Point"), None)
+    child_names = {c["name"] for c in point["children"]} if point else set()
+    check(point and point["kind"] == 5 and "x" in child_names and "getX" in child_names,
+          "class Point (kind 5) has field x + method getX as children")
+
+    fmt = read_message(proc.stdout)
+    fmt_edits = fmt.get("result", []) if fmt else []
+    check(fmt and fmt.get("id") == 4 and len(fmt_edits) == 1
+          and "newText" in fmt_edits[0] and "class Point" in fmt_edits[0]["newText"],
+          "formatting returns a full-document TextEdit")
 
     shut = read_message(proc.stdout)
     check(shut and shut.get("id") == 2, "shutdown response")

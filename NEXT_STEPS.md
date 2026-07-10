@@ -38,7 +38,19 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   NOT yet click-tested inside VS Code (needs a human at the editor).  Follow-ups:
   answer unknown REQUESTS with MethodNotFound (currently ignored — fine for a
   diagnostics-only server); package as `.vsix` / publish.
-- **Phase 4+** — hover (types), go-to-definition, completion (reuse Resolver/TC).
+- **Phase 4a ✅ DONE (2026-07-09)** — formatting + document symbols. `zebra lsp`
+  now advertises + serves `textDocument/formatting` (reuses `fmtNormalize`, returns
+  a full-document TextEdit) and `textDocument/documentSymbol` (parses the buffer,
+  walks module decls → LSP DocumentSymbol[] with class/struct/interface members
+  nested; SymbolKinds: class 5, struct 23, interface 11, enum 10, method 6, field
+  8, function 12, init 9).  Server now stores open buffers (`docs` map) for these
+  requests.  `tools/lsp_server_smoke.py` extended (8/8).
+- **Phase 4b (next) — the position-resolver → hover + go-to-definition.** Build
+  the shared primitive "given `line:col`, find the AST node / symbol / type"
+  (over a parsed+resolved+typechecked buffer), then layer hover (TC expr→type map)
+  and definition (Resolver use→decl-symbol span) on it.  Cache the analysis per
+  document *version* (NOT LRU) so queries stay snappy.  Then completion (the
+  flagship) reuses the same position-resolver + scope + tolerant parsing.
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the

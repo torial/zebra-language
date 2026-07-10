@@ -39,7 +39,7 @@
 use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
-use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef
+use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
 use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -765,7 +765,95 @@ def lspPublishDiagnostics(uri: str, src: str)
     sb.append("]}}")
     lspWriteMessage(sb.build())
 
+# LSP range JSON from a compiler Span (compiler is 1-based line / 0-based col;
+# LSP wants 0-based both).
+def lspSpanRange(sp: Span): str
+    var sl: int = sp.line - 1
+    if sl < 0
+        sl = 0
+    var el: int = sp.end_line - 1
+    if el < sl
+        el = sl
+    return "{\"start\":{\"line\":" + sl.toString() + ",\"character\":" + sp.col.toString() + "},\"end\":{\"line\":" + el.toString() + ",\"character\":" + sp.end_col.toString() + "}}"
+
+# One LSP DocumentSymbol object.  `kind` is an LSP SymbolKind number.
+def lspDocSymbol(name: str, kind: int, sp: Span, children: str): str
+    var r: str = lspSpanRange(sp)
+    return "{\"name\":\"" + diagJsonEscape(name) + "\",\"kind\":" + kind.toString() + ",\"range\":" + r + ",\"selectionRange\":" + r + ",\"children\":[" + children + "]}"
+
+# Child symbols for a class/struct/interface: methods (6), fields (8), init (9).
+def lspMemberSymbols(members: List(Decl)): str
+    var sb: StringBuilder = StringBuilder()
+    var first: bool = true
+    for m in members
+        var msym: str = ""
+        branch m
+            on Decl.method as dm
+                msym = lspDocSymbol(dm.name, 6, dm.span, "")
+            on Decl.var_ as dv
+                msym = lspDocSymbol(dv.name, 8, dv.span, "")
+            on Decl.init as di
+                msym = lspDocSymbol("init", 9, di.span, "")
+            else
+                pass
+        if msym != ""
+            if not first
+                sb.append(",")
+            first = false
+            sb.append(msym)
+    return sb.build()
+
+# Parse `text` and return an LSP DocumentSymbol[] JSON array (top-level decls,
+# with class/struct/interface members nested).  Returns [] if the buffer doesn't
+# parse (mid-edit).
+def lspCollectDocSymbols(text: str, path: str): str
+    var pm_node = Parser.Parser.parse(text, path)?
+    if pm_node is PNode.module_ as pm
+        var module = ASTBuilder.build(pm, path)?
+        var sb: StringBuilder = StringBuilder()
+        var first: bool = true
+        for decl in module.decls
+            var sym: str = ""
+            branch decl
+                on Decl.class_ as c
+                    sym = lspDocSymbol(c.name, 5, c.span, lspMemberSymbols(c.members))
+                on Decl.struct_ as s
+                    sym = lspDocSymbol(s.name, 23, s.span, lspMemberSymbols(s.members))
+                on Decl.interface_ as ifc
+                    sym = lspDocSymbol(ifc.name, 11, ifc.span, lspMemberSymbols(ifc.members))
+                on Decl.enum_ as e
+                    sym = lspDocSymbol(e.name, 10, e.span, "")
+                on Decl.union_ as u
+                    sym = lspDocSymbol(u.name, 10, u.span, "")
+                on Decl.method as dm
+                    sym = lspDocSymbol(dm.name, 12, dm.span, "")
+                on Decl.sig_ as sg
+                    sym = lspDocSymbol(sg.name, 12, sg.span, "")
+                on Decl.namespace_ as ns
+                    sym = lspDocSymbol(ns.name, 3, ns.span, "")
+                else
+                    pass
+            if sym != ""
+                if not first
+                    sb.append(",")
+                first = false
+                sb.append(sym)
+        return "[" + sb.build() + "]"
+    return "[]"
+catch |e|
+    return "[]"
+
+# A TextEdit[] that replaces the whole document with its formatted form.
+def lspFormatEdits(text: str): str
+    var formatted: str = fmtNormalize(text)
+    var nlines: int = 1
+    for c in text.chars()
+        if c == '\n'
+            nlines = nlines + 1
+    return "[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":" + nlines.toString() + ",\"character\":0}},\"newText\":\"" + diagJsonEscape(formatted) + "\"}]"
+
 def runLsp()
+    var docs: HashMap(str, str) = HashMap(str, str)()
     while true
         var msg = lspReadMessage()
         if msg == nil
@@ -779,23 +867,39 @@ def runLsp()
         var j = jv!
         var method: str = j.getStr("method")
         if method == "initialize"
-            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1}}")
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true}}")
         else if method == "shutdown"
             lspRespond(j.getInt("id"), "null")
         else if method == "exit"
             break
         else if method == "textDocument/didOpen"
             var td = j.getObj("params").getObj("textDocument")
-            lspPublishDiagnostics(td.getStr("uri"), td.getStr("text"))
+            var uri: str = td.getStr("uri")
+            var text: str = td.getStr("text")
+            docs.set(uri, text)
+            lspPublishDiagnostics(uri, text)
         else if method == "textDocument/didChange"
             var params = j.getObj("params")
             var uri: str = params.getObj("textDocument").getStr("uri")
             var new_text: str = ""
             for ch in params.getList("contentChanges")
                 new_text = ch.getStr("text")
+            docs.set(uri, new_text)
             lspPublishDiagnostics(uri, new_text)
         else if method == "textDocument/didClose"
             lspClearDiagnostics(j.getObj("params").getObj("textDocument").getStr("uri"))
+        else if method == "textDocument/formatting"
+            var uri: str = j.getObj("params").getObj("textDocument").getStr("uri")
+            var edits: str = "[]"
+            if docs.get(uri) as dt
+                edits = lspFormatEdits(dt)
+            lspRespond(j.getInt("id"), edits)
+        else if method == "textDocument/documentSymbol"
+            var uri: str = j.getObj("params").getObj("textDocument").getStr("uri")
+            var syms: str = "[]"
+            if docs.get(uri) as dt
+                syms = lspCollectDocSymbols(dt, uri)
+            lspRespond(j.getInt("id"), syms)
 
 # Type-check both sides of a conflict-marked .zbr file and report results.
 # Exit code is always 0 (informational); wrap in a stricter hook if you want
