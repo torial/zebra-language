@@ -107,6 +107,19 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   and continuation/multi-line handling; a natural follow-on now that the string-safe
   scanner exists.
 
+- **Phase 4g ✅ DONE (2026-07-10) — signature help + protocol robustness.**
+  `textDocument/signatureHelp` (triggers `(` and `,`): finds the innermost enclosing
+  call on the current line (string/char/comment-aware paren-depth scan), looks up the
+  callee in the decl index, and returns the signature label + per-parameter labels
+  (depth-aware comma split, so `HashMap(str, int)` stays one param) with the cursor's
+  argument index as `activeParameter`.  Functions/methods only (not constructors);
+  single-line calls only.  Robustness: unknown **requests** now return `MethodNotFound`
+  (-32601) instead of silence (id != 0 distinguishes request from notification — safe
+  because `initialize` is always the first request).  Harness 14/14.  Deferred (need
+  async/lifetime work, not the sync stdio loop): diagnostics debounce on rapid edits;
+  a per-document-VERSION parse cache so hover/definition/completion/signatureHelp
+  reuse one parse instead of re-parsing per query.
+
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the
 "not used by the compiler" column is the under-tested canary list (char literals,
@@ -114,7 +127,7 @@ interface-value `is`, `^T` boxing all lived there). Aims the conformance-corpus 
 
 ---
 
-**Last updated:** 2026-07-10 (LSP round 2: Phase 4d real spans on decls [f0d9111] + 4e member completion after `.` [78ada96] + 4f formatter v2 string-safe space-collapse [gated by tools/fmt_safety.py 13/13], all round-trip byte-identical; re-indent still open). Prior 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
+**Last updated:** 2026-07-10 (LSP round 2: Phase 4d real spans [f0d9111] + 4e member completion [78ada96] + 4f formatter string-safe space-collapse [fmt_safety 13/13] + 4g signature help & MethodNotFound [lsp-server 14/14], all round-trip byte-identical; formatter re-indent + scope-aware locals still open). Prior 2026-07-06 (polish session: §28b `HashMap.entries()` shipped; `^ClassName` now a hard error [design-c, BUG-078]; File.rename/mixin-return/cross-module-optional parity; audit gaps A3 [exhaustive branch+else], B1 [indexed for-in], B9 [`is` on optional union] FIXED both compilers; BUG-170 [selfhost struct `^T` field boxing] filed; bootstrap generic-functions gap deferred [see Open Bugs]. Remaining audit gaps: B3/B4/B5/B8/B10/B11/B12 in docs/FEATURE_AUDIT_2026-07-05.md. Prior 2026-07-02: fuzz F1/F2 → BUG-162/161)
 
 > **Sections:**
 > - **§1.0 Gap Checklist** — original per-milestone tracker; `[x]` = shipped, `[ ]` = still open.

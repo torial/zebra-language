@@ -7,6 +7,8 @@ Language support for [Zebra](../../README.md) (`.zbr`) files:
 - **Hover** — the signature of the symbol under the cursor (`def foo(a: int): str`,
   `class Point`, `var x: int`).
 - **Go-to-definition** (F12) — jump to a symbol's declaration.
+- **Signature help** — while typing a call, shows the function/method's parameter
+  list with the current argument highlighted (triggers on `(` and `,`).
 - **Completion** — language keywords + the program's declared symbols
   (functions, types, methods, fields), with kinds and signatures. After `.` it
   narrows to the receiver's members (`self.`/`this.`/`.` → the enclosing type;

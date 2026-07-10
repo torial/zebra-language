@@ -55,9 +55,15 @@ def main():
     #  2     def getX(): int 7 def main()
     #  3         return .x   8     print(helper())
     #  4 (blank)
+    #  9 def add(a: int, b: int): int
+    # 10     return a + b
+    # 11 def caller()
+    # 12     print(add(1, 2))   ← signatureHelp fired inside this call
     good_src = ("class Point\n    var x: int\n    def getX(): int\n        return .x\n\n"
                 "def helper(): int\n    return 1\n"
-                "def main()\n    print(helper())\n")
+                "def main()\n    print(helper())\n"
+                "def add(a: int, b: int): int\n    return a + b\n"
+                "def caller()\n    print(add(1, 2))\n")
     uri = "file:///tmp/lsp_test.zbr"
     # `helper` in the call on line 8 spans cols 10..15 → point at char 12.
     HELPER_USE = {"line": 8, "character": 12}
@@ -84,6 +90,12 @@ def main():
         # the enclosing class Point's members (x, getX), NOT global keywords.
         {"jsonrpc": "2.0", "id": 8, "method": "textDocument/completion",
          "params": {"textDocument": {"uri": uri}, "position": {"line": 3, "character": 16}}},
+        # Signature help inside `add(1, |2)` — cursor on the 2nd arg (char 17).
+        {"jsonrpc": "2.0", "id": 9, "method": "textDocument/signatureHelp",
+         "params": {"textDocument": {"uri": uri}, "position": {"line": 12, "character": 17}}},
+        # Unknown request must get a MethodNotFound error, not silence.
+        {"jsonrpc": "2.0", "id": 10, "method": "textDocument/foldingRange",
+         "params": {"textDocument": {"uri": uri}}},
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
@@ -167,6 +179,23 @@ def main():
           and {"x", "getX"}.issubset(mlabels)   # enclosing class members
           and "class" not in mlabels,           # narrowed — no global keywords
           "member completion after `.` narrows to the enclosing type's members")
+
+    sig = read_message(proc.stdout)
+    sresult = sig.get("result") if sig else None
+    sig_ok = False
+    if isinstance(sresult, dict) and sresult.get("signatures"):
+        s0 = sresult["signatures"][0]
+        sig_ok = (s0.get("label") == "def add(a: int, b: int): int"
+                  and len(s0.get("parameters", [])) == 2
+                  and sresult.get("activeParameter") == 1)
+    check(sig and sig.get("id") == 9 and sig_ok,
+          "signature help shows `add` params with the 2nd arg active")
+
+    unknown = read_message(proc.stdout)
+    check(unknown and unknown.get("id") == 10
+          and isinstance(unknown.get("error"), dict)
+          and unknown["error"].get("code") == -32601,
+          "unknown request returns MethodNotFound (-32601), not silence")
 
     shut = read_message(proc.stdout)
     check(shut and shut.get("id") == 2, "shutdown response")
