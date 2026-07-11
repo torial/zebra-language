@@ -10664,6 +10664,19 @@ struct Generator
                     genExpr(m.object)
                     w.emit(".recv()")
                     return
+                if mname == "tryRecv"
+                    genExpr(m.object)
+                    w.emit(".tryRecv()")
+                    return
+                if mname == "recvTimeout"
+                    genExpr(m.object)
+                    w.emit(".recvTimeout(")
+                    if args.len > 0
+                        genExpr(args.at(0).value)
+                    else
+                        w.emit("0")
+                    w.emit(")")
+                    return
                 if mname == "close"
                     genExpr(m.object)
                     w.emit(".close()")

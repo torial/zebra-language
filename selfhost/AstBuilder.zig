@@ -568,6 +568,42 @@ fn _Chan(comptime T: type) type {
             return val;
         }
 
+        // Non-blocking receive: a value if one is ready right now, else null.
+        pub fn tryRecv(self: *Self) ?T {
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
+            if (self.buf.items.len == 0) return null;
+            const val = self.buf.orderedRemove(0);
+            self.not_full.signal(_dio);
+            return val;
+        }
+
+        // Timed receive: a value if one arrives within `seconds`, else null (also
+        // null if the channel is closed and drained).  Poll-based so it is
+        // correct-by-construction — no lock-ordering or lost-wakeup subtlety —
+        // at ~2ms granularity, which is fine for timeouts/debounce.  A future
+        // upgrade could use a futex timed-wait (std.Io futexWaitTimeout) to remove
+        // the polling entirely; the observable semantics would be unchanged.
+        pub fn recvTimeout(self: *Self, seconds: f64) ?T {
+            const start: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+            const budget: i128 = @intFromFloat(@max(seconds, 0.0) * @as(f64, @floatFromInt(std.time.ns_per_s)));
+            while (true) {
+                self.mutex.lockUncancelable(_dio);
+                if (self.buf.items.len > 0) {
+                    const val = self.buf.orderedRemove(0);
+                    self.not_full.signal(_dio);
+                    self.mutex.unlock(_dio);
+                    return val;
+                }
+                const is_closed = self.closed;
+                self.mutex.unlock(_dio);
+                if (is_closed) return null;
+                const now: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+                if (now - start >= budget) return null;
+                _sysSleep(2);
+            }
+        }
+
         pub fn close(self: *Self) void {
             self.mutex.lockUncancelable(_dio);
             defer self.mutex.unlock(_dio);

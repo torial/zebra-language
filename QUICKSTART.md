@@ -3239,7 +3239,26 @@ var ch: Chan(int) = Chan(int)(4)   # capacity 4
 |--------|---------|-------------|
 | `ch.send(val)` | `void` | Send a value; blocks when full |
 | `ch.recv()` | `int?` | Receive a value; blocks when empty; `nil` when closed + empty |
+| `ch.tryRecv()` | `int?` | Non-blocking receive: a value if one is ready now, else `nil` |
+| `ch.recvTimeout(secs)` | `int?` | Receive within `secs` (a float); `nil` on timeout (or closed + empty) |
 | `ch.close()` | `void` | Signal no more values; recv drains remaining then returns nil |
+
+`tryRecv` and `recvTimeout` let a receiver stay responsive instead of blocking
+forever. A common pattern — merge a work channel with a timer tick so a loop
+wakes on *either* a message or a deadline (e.g. debounced processing):
+
+```zebra
+var ch: Chan(int) = Chan(int)(8)
+while true
+    var msg: int? = ch.recvTimeout(0.2)   # wake on a message OR after 200ms
+    if msg as m
+        handle(m)
+    else
+        onIdleTick()                       # timed out — no message this window
+```
+
+`recvTimeout` is poll-based (~2ms granularity), which is ideal for timeouts and
+debouncing; it is not meant for sub-millisecond latency.
 
 For channels, the `<-` operator is syntactic sugar (`<-` is channel
 send/receive ONLY since 2026-07-02; arena copy-out uses `<<-`):

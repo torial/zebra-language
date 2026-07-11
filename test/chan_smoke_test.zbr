@@ -48,4 +48,22 @@ def main()
     assert x == 42
     assert y == 99
 
+    # ── tryRecv: non-blocking receive ─────────────────────────────────────────
+    var ch4: Chan(int) = Chan(int)(2)
+    var e1: int? = ch4.tryRecv()      # empty → nil
+    assert e1 == nil
+    ch4.send(7)
+    var e2: int? = ch4.tryRecv()      # one buffered → 7
+    assert e2 == 7
+    var e3: int? = ch4.tryRecv()      # drained → nil
+    assert e3 == nil
+
+    # ── recvTimeout: value-ready vs timeout ───────────────────────────────────
+    var ch5: Chan(int) = Chan(int)(2)
+    ch5.send(55)
+    var t1: int? = ch5.recvTimeout(1.0)    # already buffered → 55 (returns fast)
+    assert t1 == 55
+    var t2: int? = ch5.recvTimeout(0.05)   # empty → nil after ~50ms
+    assert t2 == nil
+
     print("chan: OK")

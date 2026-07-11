@@ -1721,7 +1721,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                         on Type_.chan_ as chan_elem
                             var cmname: str = mem.member
-                            if cmname == "recv"
+                            if cmname == "recv" or cmname == "tryRecv" or cmname == "recvTimeout"
                                 return Type_.optional(chan_elem)
                             if cmname == "send" or cmname == "close"
                                 return Type_.void_

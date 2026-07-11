@@ -115,10 +115,27 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   argument index as `activeParameter`.  Functions/methods only (not constructors);
   single-line calls only.  Robustness: unknown **requests** now return `MethodNotFound`
   (-32601) instead of silence (id != 0 distinguishes request from notification — safe
-  because `initialize` is always the first request).  Harness 14/14.  Deferred (need
-  async/lifetime work, not the sync stdio loop): diagnostics debounce on rapid edits;
-  a per-document-VERSION parse cache so hover/definition/completion/signatureHelp
-  reuse one parse instead of re-parsing per query.
+  because `initialize` is always the first request).  Harness 14/14.  Follow-ups:
+  diagnostics debounce on rapid edits — **now unblocked** by `Chan.recvTimeout` (see
+  below): move stdin reads into a `sys.go` task feeding a `Chan(Event)`, add a timer
+  task posting ticks, and the main loop `recvTimeout`s the merged channel (wake on a
+  message *or* a deadline).  Still open: a per-document-VERSION parse cache so
+  hover/definition/completion/signatureHelp reuse one parse (synchronous; blocked only
+  by AST/arena lifetime, not concurrency).
+
+- **Channel timed/non-blocking receive ✅ DONE (2026-07-10) — `Chan.recvTimeout` +
+  `Chan.tryRecv`.**  `ch.tryRecv(): T?` (a value if ready now, else nil) and
+  `ch.recvTimeout(secs): T?` (a value within `secs`, else nil).  Fills the gap that
+  made "wait on a message OR a timer" impossible with the old block-forever `recv`.
+  Runtime is poll-based (~2ms granularity via monotonic `std.Io.Timestamp` + `_sysSleep`)
+  — correct-by-construction, no lock-ordering/lost-wakeup subtlety; upgradeable to a
+  futex timed-wait later.  Shared preamble (`_Chan`) + both codegens + selfhost TC
+  (`chan_` recv/tryRecv/recvTimeout → optional); bootstrap types via annotation.
+  Verified under BOTH compilers (`chan_smoke_test` runs `chan: OK` emitted by each),
+  round-trip byte-identical, full suite green.  **Not done — a true multi-channel
+  `select`** block (Go-style, exactly-one-fires): a real project (new grammar + a
+  waiter-registration/one-fires protocol; Zig gives nothing to borrow — no channels
+  of its own).  The single-channel-merge + `recvTimeout` idiom covers most needs.
 
 Companion (do soon): a **feature-usage map** — enumerate the language surface
 (grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the

@@ -10108,6 +10108,18 @@ const Generator = struct {
             try g.w.writeAll(".recv()");
             return true;
         }
+        if (std.mem.eql(u8, method, "tryRecv")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".tryRecv()");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "recvTimeout")) {
+            try g.genExpr(obj);
+            try g.w.writeAll(".recvTimeout(");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "close")) {
             try g.genExpr(obj);
             try g.w.writeAll(".close()");
