@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZEBRA = os.path.join(ROOT, "zig-out", "bin", "zebra.exe")
@@ -99,7 +100,18 @@ def main():
         {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
         {"jsonrpc": "2.0", "method": "exit"},
     ]
-    for m in convo:
+    # Diagnostics are debounced: didChange no longer publishes immediately — a
+    # ~200ms lull flushes the coalesced result.  Send through didChange, then
+    # pause past the debounce window so the clean diagnostics are published before
+    # the follow-up requests.  This keeps the reply order stable AND proves the
+    # flush is timer-driven (didOpen still publishes immediately; didChange waits).
+    stage1 = convo[:4]    # initialize, initialized, didOpen, didChange
+    stage2 = convo[4:]    # documentSymbol ... shutdown, exit
+    for m in stage1:
+        proc.stdin.write(frame(m))
+    proc.stdin.flush()
+    time.sleep(0.6)       # > the server's ~200ms debounce window
+    for m in stage2:
         proc.stdin.write(frame(m))
     proc.stdin.flush()
     proc.stdin.close()
@@ -133,7 +145,7 @@ def main():
     diag_change = read_message(proc.stdout)
     check(diag_change and diag_change.get("method") == "textDocument/publishDiagnostics"
           and len(diag_change["params"]["diagnostics"]) == 0,
-          "didChange to valid source clears diagnostics")
+          "debounced didChange flushes clean diagnostics after the lull")
 
     docsym = read_message(proc.stdout)
     syms = docsym.get("result", []) if docsym else []

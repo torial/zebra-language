@@ -1423,11 +1423,39 @@ def lspSignatureHelp(text: str, path: str, line: int, col: int): str
 
 def runLsp()
     var docs: HashMap(str, str) = HashMap(str, str)()
+    # Diagnostics are debounced.  A background reader forwards each stdin message
+    # to a channel; the main loop recvTimeout()s it, so a ~200ms lull (or EOF)
+    # flushes pending analysis.  didChange only marks a doc dirty — the flush
+    # then runs ONE parse+typecheck per lull, not one per keystroke.  didOpen
+    # still publishes immediately (opening a file should show its state now).
+    # Requests are always answered promptly on the current buffer text.
+    var evCh: Chan(str) = Chan(str)(256)
+    var eof: Atomic(bool) = Atomic(bool)(false)
+    var dirty: HashMap(str, bool) = HashMap(str, bool)()
+    sys.go(def()
+        capture
+            var evCh: Chan(str) = evCh
+            var eof: Atomic(bool) = eof
+        while true
+            var rm = lspReadMessage()
+            if rm == nil
+                eof.store(true)
+                evCh.close()
+                break
+            evCh.send(rm!)
+    )
     while true
-        var msg = lspReadMessage()
-        if msg == nil
-            break
-        var body: str = msg!
+        var evo = evCh.recvTimeout(0.2)
+        if evo == nil
+            # A ~200ms lull (or EOF): publish coalesced diagnostics for changed docs.
+            for du in dirty.keys()
+                if docs.get(du) as dtext
+                    lspPublishDiagnostics(du, dtext)
+            dirty = HashMap(str, bool)()
+            if eof.load()
+                break
+            continue
+        var body: str = evo!
         if body == ""
             continue
         var jv = Json.parse(body)
@@ -1454,7 +1482,7 @@ def runLsp()
             for ch in params.getList("contentChanges")
                 new_text = ch.getStr("text")
             docs.set(uri, new_text)
-            lspPublishDiagnostics(uri, new_text)
+            dirty.set(uri, true)   # debounced — flushed on the next lull
         else if method == "textDocument/didClose"
             lspClearDiagnostics(j.getObj("params").getObj("textDocument").getStr("uri"))
         else if method == "textDocument/formatting"

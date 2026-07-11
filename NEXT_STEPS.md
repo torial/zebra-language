@@ -115,13 +115,22 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   argument index as `activeParameter`.  Functions/methods only (not constructors);
   single-line calls only.  Robustness: unknown **requests** now return `MethodNotFound`
   (-32601) instead of silence (id != 0 distinguishes request from notification — safe
-  because `initialize` is always the first request).  Harness 14/14.  Follow-ups:
-  diagnostics debounce on rapid edits — **now unblocked** by `Chan.recvTimeout` (see
-  below): move stdin reads into a `sys.go` task feeding a `Chan(Event)`, add a timer
-  task posting ticks, and the main loop `recvTimeout`s the merged channel (wake on a
-  message *or* a deadline).  Still open: a per-document-VERSION parse cache so
-  hover/definition/completion/signatureHelp reuse one parse (synchronous; blocked only
-  by AST/arena lifetime, not concurrency).
+  because `initialize` is always the first request).  Harness 14/14.  Still open: a
+  per-document-VERSION parse cache so hover/definition/completion/signatureHelp reuse
+  one parse (synchronous; blocked only by AST/arena lifetime, not concurrency).
+
+- **Phase 4h ✅ DONE (2026-07-10) — diagnostics debounce.**  `runLsp` now spawns a
+  `sys.go` reader that forwards each stdin message to a `Chan(str)`; the main loop
+  `recvTimeout(0.2)`s it, so a ~200ms lull (or EOF) flushes pending analysis.
+  `didChange` only marks the doc dirty (`dirty: HashMap(str,bool)`) — the flush runs
+  ONE parse+typecheck per lull, so a burst of keystrokes is a single analysis, not one
+  per stroke.  `didOpen` still publishes immediately; requests are always answered on
+  the current buffer.  Reader thread is detached (`_sys_go` calls `.detach()`), so
+  `exit` doesn't hang on the stdin-blocked reader; EOF is signalled via an
+  `Atomic(bool)` + `Chan.close()`.  Built directly on `Chan.recvTimeout`.  Verified:
+  a 3-didChange burst coalesces to 1 diagnostics flush; harness 14/14 (added a lull +
+  the "debounced didChange flushes clean diagnostics after the lull" assertion);
+  round-trip byte-identical, full suite green.
 
 - **Channel timed/non-blocking receive ✅ DONE (2026-07-10) — `Chan.recvTimeout` +
   `Chan.tryRecv`.**  `ch.tryRecv(): T?` (a value if ready now, else nil) and
