@@ -4,7 +4,7 @@
   "description": "Language support for Zebra (.zbr): live diagnostics via the built-in `zebra lsp` language server, plus syntax highlighting.",
   "version": "0.1.0",
   "publisher": "zebra",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "UNLICENSED",
   "repository": { "type": "git", "url": "https://github.com/torial/zebra-language" },
   "engines": { "vscode": "^1.82.0" },
   "categories": ["Programming Languages", "Linters"],
