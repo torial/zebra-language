@@ -160,16 +160,24 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
 - **Progress 2026-07-12 (overnight):**
   - ✅ **BUG-172 fixed** (96c804e) — `char`/`uint` as a generic arg (selfhost
     `Resolver.isBuiltin` gap). Regression test `test/bug172_list_char_test.zbr`.
-  - ✅ **Fuzzer cap (1) `char` added** (f2290ae) — `char` as a `List(char)` element,
-    leaf-only. Commit-gate 25/25 ok. It immediately EXPOSED a pre-existing bug:
+  - ✅ **Three fuzzer caps added**: (1) `char` as `List(char)` element (f2290ae),
+    (2) `HashMap(K,V)` construct/set/get/len/entries (be5a77b), (3) `strmethods`
+    clean subset (d2b4847). Each commit-gate 25/25 ok; batches mostly `ok` (the
+    few non-ok are `both-zig-fail` shared robustness gaps, not divergences).
   - ⚠️ **BUG-173 / fuzz F12 OPEN** — selfhost string-literal-vs-slice coercion
-    divergence (`*const [N:0]u8` vs `[]const u8`), seeds 80/83. NOT char-related
-    (shrink removed char); not yet minimally reduced (two hypotheses ruled out —
-    see F12). **Needs supervised bisection + a codegen fix — the top follow-up.**
-  - Remaining caps to add (each will likely surface more latent bugs — triage as
-    you go): (2) string methods, (3) HashMap, (4) `^T` boxing, (5) interfaces+`is`,
-    (6) generics/backed-enums/chained-cmp. Also: sized numerics (`List(int32)`)
-    fail at the *parser* (BUGS.md, BUG-172 follow-on).
+    divergence (`*const [N:0]u8` vs `[]const u8`), exposed by the char cap's RNG
+    shift. NOT char-related (shrink removed char); not minimally reduced (two
+    hypotheses ruled out). **Needs supervised bisection + codegen fix.**
+  - ⚠️ **BUG-174 OPEN (design call)** — `str.indexOf` signature: QUICKSTART +
+    selfhost say `int?`, bootstrap says `int/-1`, and the selfhost's `int?` codegen
+    is broken (invalid `?i64`). Found by hand-testing the string surface. Filed
+    with a recommendation (commit to `int?` per docs). `indexOf` family excluded
+    from the strmethods cap until resolved.
+  - **Remaining caps** (higher complexity — need class-relationship generation):
+    (4) `^T` boxing, (5) interfaces+`is`, (6) generics/backed-enums/chained-cmp.
+    Note: generic *functions* are intentionally selfhost-only (audit D2, bootstrap
+    phasing out) — don't fuzz them as an equivalence surface. Sized numerics
+    (`List(int32)`) fail at the *parser* (BUG-172 follow-on).
   - StrSet reclassified: compiler-internal, not user-facing — no test needed.
 
 ---
