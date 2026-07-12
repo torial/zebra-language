@@ -146,10 +146,19 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   waiter-registration/one-fires protocol; Zig gives nothing to borrow — no channels
   of its own).  The single-channel-merge + `recvTimeout` idiom covers most needs.
 
-Companion (do soon): a **feature-usage map** — enumerate the language surface
-(grammar.txt + QUICKSTART) and grep the selfhost sources for each construct; the
-"not used by the compiler" column is the under-tested canary list (char literals,
-interface-value `is`, `^T` boxing all lived there). Aims the conformance-corpus work.
+- **QA docs + coverage map ✅ DONE (2026-07-12).** The feature-usage/coverage-map
+  companion shipped as two docs: [`docs/QA_TOOLS.md`](docs/QA_TOOLS.md) (field guide
+  to every verification tool — the gate sequence, what each layer proves + its blind
+  spot, diagnostic tells) and [`docs/COVERAGE_MAP.md`](docs/COVERAGE_MAP.md) (the
+  construct × verification-layer matrix + risk surface). Also fixed the stale
+  lowercase file-map in `COMPILER_WORKFLOW.md`. **The actionable takeaway → next
+  correctness work:** the risk surface is *combinatorial* (BUG-172 = char × generic-
+  ctor-arg, a combo nothing randomly tests), so the highest-leverage move is
+  **growing the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) to pull high-bug-history
+  constructs into random combination — priority order: (1) `char` as a container/
+  generic element [closes BUG-172 class], (2) string methods, (3) HashMap, (4) `^T`
+  boxing, (5) interfaces+`is`, (6) generics/backed-enums/chained-cmp. Plus: write
+  `test/strset_test.zbr` (the only cluster with ZERO dedicated test) and fix BUG-172.
 
 ---
 

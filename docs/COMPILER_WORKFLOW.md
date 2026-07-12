@@ -4,6 +4,11 @@ A reference for doing compiler fixes and feature additions in the Zebra
 codebase.  Written for someone who knows the language but hasn't touched
 the compiler source before.
 
+**See also:** [`QA_TOOLS.md`](QA_TOOLS.md) — which verification tool proves what and
+how to read a failure (the gate sequence, diagnostic tells).
+[`COVERAGE_MAP.md`](COVERAGE_MAP.md) — what those tools do *not* cover (the risk
+surface). [`../tools/PROBES.md`](../tools/PROBES.md), [`../fuzz/README.md`](../fuzz/README.md).
+
 ---
 
 ## Architecture overview
@@ -59,7 +64,7 @@ bash tools/bootstrap_check.sh   # 5-step round-trip identity check
 ### Both compilers (the common case)
 
 Do both sequences above.  If you change `src/Parser.zig`, mirror it in
-`selfhost/parser.zbr`; run `update-selfhost` after each `.zbr` change.
+`selfhost/Parser.zbr`; run `update-selfhost` after each `.zbr` change.
 
 ---
 
@@ -112,7 +117,7 @@ When the selfhost compiler emits `typechecker.zig` as a **dependency** of
 
 ### AstBuilder dotted-type restriction in `is` expressions
 
-`selfhost/astbuilder.zbr` rejects `x is Some.Type.Variant` (dotted type path
+`selfhost/AstBuilder.zbr` rejects `x is Some.Type.Variant` (dotted type path
 in an `is` expression).  Use `branch kind on TokenKind.X` (19 arms) instead of
 chained `if kind is Token.TokenKind.X` when dispatching on token kinds.
 
@@ -257,15 +262,15 @@ Each `selfhost/*.zbr` file corresponds to one compiler phase:
 | File | Phase | What it does |
 |------|-------|--------------|
 | `Lexer.zbr` | 1 | Tokenizes source text into `Token` stream |
-| `ast.zbr` | 2 | AST type definitions (`Expr`, `Stmt`, `Decl`, etc.) |
-| `parser.zbr` | 3 | Builds `PNode` parse tree from token stream |
-| `resolver.zbr` | 4 | Scope analysis, symbol binding |
-| `astbuilder.zbr` | 9 | Transforms `PNode` tree → typed AST (`Module`) |
-| `typechecker.zbr` | 5 | Type inference (`inferExpr`), conformance checks |
-| `cg_helpers.zbr` | 6 | Escape, mutation, and name-use analysis used by codegen |
-| `codegen.zbr` | 7 | Zig emission from typed AST |
+| `Ast.zbr` | 2 | AST type definitions (`Expr`, `Stmt`, `Decl`, etc.) |
+| `Parser.zbr` | 3 | Builds `PNode` parse tree from token stream |
+| `Resolver.zbr` | 4 | Scope analysis, symbol binding |
+| `AstBuilder.zbr` | 9 | Transforms `PNode` tree → typed AST (`Module`) |
+| `TypeChecker.zbr` | 5 | Type inference (`inferExpr`), conformance checks |
+| `CgHelpers.zbr` | 6 | Escape, mutation, and name-use analysis used by codegen |
+| `CodeGen.zbr` | 7 | Zig emission from typed AST |
 | `main.zbr` | 8 | CLI entry point, pipeline orchestration |
-| `checker.zbr` | — | `zebra check` dead-code detector (optional tool) |
+| `Checker.zbr` | — | `zebra check` dead-code detector (optional tool) |
 | `stdlib_preamble.zig` | — | Hand-written Zig runtime included in every compiled output |
 
 The bootstrap (`src/`) counterparts follow the same pipeline:
@@ -276,15 +281,15 @@ The bootstrap (`src/`) counterparts follow the same pipeline:
 
 | Symptom | Start here |
 |---------|------------|
-| Parse error or wrong AST | `src/Parser.zig` (bootstrap), `selfhost/parser.zbr` |
-| Resolver error / binding gap | `src/Resolver.zig`, `selfhost/resolver.zbr` |
-| Type mismatch / inference gap | `src/TypeChecker.zig`, `selfhost/typechecker.zbr` |
-| Wrong Zig output / codegen bug | `src/CodeGen.zig`, `selfhost/codegen.zbr` |
-| Wrong helper emit | `selfhost/cg_helpers.zbr`, `src/CodeGen.zig` |
-| New AST node type | `src/ast.zig`, `selfhost/ast.zbr`, then all phases |
+| Parse error or wrong AST | `src/Parser.zig` (bootstrap), `selfhost/Parser.zbr` |
+| Resolver error / binding gap | `src/Resolver.zig`, `selfhost/Resolver.zbr` |
+| Type mismatch / inference gap | `src/TypeChecker.zig`, `selfhost/TypeChecker.zbr` |
+| Wrong Zig output / codegen bug | `src/CodeGen.zig`, `selfhost/CodeGen.zbr` |
+| Wrong helper emit | `selfhost/CgHelpers.zbr`, `src/CodeGen.zig` |
+| New AST node type | `src/Ast.zig`, `selfhost/Ast.zbr`, then all phases |
 | New token / keyword | `src/Tokenizer.zig`, `selfhost/Lexer.zbr`, then Parser |
 | New stdlib function | `selfhost/stdlib_preamble.zig` + codegen dispatch |
-| Dead-code checker gap | `selfhost/checker.zbr` |
+| Dead-code checker gap | `selfhost/Checker.zbr` |
 
 ---
 
