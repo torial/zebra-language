@@ -8,6 +8,40 @@ equivalence bugs; genuine equivalence bugs show as `run-divergence` /
 
 ---
 
+## F12 — selfhost string-literal-vs-slice coercion divergence  ⚠️ EQUIVALENCE BUG (open — see BUG-173)
+
+**Surfaced 2026-07-12** by growing the generator: added a `chars` cap so `char`
+appears as a `List(char)` element (the BUG-172 shape; leaf-only, not in `PRIMS`).
+The cap itself is clean — 98/100 seeds `ok`, valid char programs, no `both-reject`
+noise. But its RNG shift moved **seeds 80 and 83** onto a program shape the fuzzer
+had never generated, both verdict `zig-diverge-B`:
+
+```
+selfhost emit rejected by zig: expected type '*const [5:0]u8', found '[]const u8'
+```
+
+i.e. the **selfhost** emits Zig where a fixed-size string-literal type
+(`*const [N:0]u8`) is expected but a string slice (`[]const u8`) is supplied,
+while the **bootstrap** emits code `zig` accepts. `run.py` saved reproducers to
+`fuzz/findings/seed80,83_zig-diverge-B.zbr`.
+
+**Not char-related** — `shrink.py` reduced seed 80 to a program with **no** `char`
+/ `List(char)` at all (it kept `List(bool)`, string concat, a ternary, a union
+with a string-ish payload). So this is a **pre-existing** selfhost string-coercion
+bug that the char cap merely *exposed* via RNG variation — exactly the coverage-
+map thesis (more random combination → latent bugs surface).
+
+**Not yet minimally reduced.** Two obvious hypotheses were ruled out (both compile
+identically on BOTH compilers, so neither is the trigger):
+- string literal `==` a ternary-of-strings (`"x" == if(c, "y", f())`) — fine.
+- string var from a literal then reassigned to a concat/slice (`var v = "x"; v = a + b`) — fine (both emit `var v: []const u8`).
+
+So the trigger is a more specific combination in seed 80/83 (likely a string
+payload flowing through a union variant / struct field / method return where the
+selfhost fixes the type to the initializer's literal array shape instead of the
+general `[]const u8`). Needs careful bisection — deferred to a supervised session;
+filed as BUG-173.
+
 ## F11 — unused capture/local discard skipped when the body holds an unmodeled expr (shared, ✅ FIXED — BUG-169)
 
 **FIXED 2026-07-03:** added the missing arms to `mightUseNameInExpr`

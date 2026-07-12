@@ -1,6 +1,29 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-172. Next new bug: BUG-173.**
+**Last bug number generated: BUG-173. Next new bug: BUG-174.**
+
+---
+
+## BUG-173: selfhost string-literal-vs-slice coercion — emit divergence ⚠️ OPEN
+
+**Severity:** medium (selfhost emits invalid Zig where bootstrap is correct — a
+real equivalence bug). Surfaced 2026-07-12 by the fuzzer (fuzz finding **F12**).
+
+**Symptom:** on some programs, the **selfhost** emits Zig that `zig` rejects with
+`expected type '*const [N:0]u8', found '[]const u8'` — a fixed-size string-literal
+type is expected but a string slice is supplied. The **bootstrap** emits code
+`zig` accepts. Verdict `zig-diverge-B` (selfhost side). Reproducers:
+`fuzz/findings/seed80,83_zig-diverge-B.zbr`.
+
+**Root (suspected):** the selfhost fixes some string value's Zig type to the
+initializer literal's array shape (`*const [N:0]u8`) instead of the general
+`[]const u8` slice, so a later use that provides a slice (a concat result / fn
+return / union payload) mismatches. Bootstrap uses `[]const u8` throughout.
+
+**Not char-related** (shrink removed all char). **Not minimally reduced** — two
+simple hypotheses ruled out (see F12 in `fuzz/FINDINGS.md`); the trigger is a more
+specific combination (likely a string flowing through a union variant / struct
+field / method return). Needs careful bisection; deferred to a supervised session.
 
 ---
 

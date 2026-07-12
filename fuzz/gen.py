@@ -63,6 +63,8 @@ class Gen:
         if ty == 'str':
             n = self.rng.randint(0, 6)
             return '"' + ''.join(self.pick('abcdefg ') for _ in range(n)) + '"'
+        if ty == 'char':
+            return "'" + self.pick('abcdefg') + "'"
         raise ValueError(ty)
 
     def vars_of(self, env, ty):
@@ -76,6 +78,17 @@ class Gen:
         return []
 
     def gen_expr(self, ty, env, depth):
+        # char is a LEAF-ONLY type: a char literal or an in-scope char var.
+        # No arithmetic/concat is valid on char, so never build a compound char
+        # expr — that would generate invalid Zebra (both-reject noise), not a
+        # divergence.  char reaches here only as a List(char) element / .add arg
+        # / loop capture (see the `chars` cap in listdecl); it is deliberately
+        # NOT in PRIMS, so it never leaks into arithmetic / print / struct fields.
+        if ty == 'char':
+            vs = self.vars_of(env, 'char')
+            if vs and self.maybe(0.5):
+                return self.pick(vs)
+            return self.lit('char')
         # optional target `T?`: an in-scope T? var, `nil`, or a bare T (coerces).
         if ty.endswith('?'):
             base = ty[:-1]
@@ -220,6 +233,10 @@ class Gen:
         d = self.caps['expr_depth']
         if k == 'listdecl':
             et = self.pick(PRIMS)
+            # char as a List element — the BUG-172 shape (a keyword primitive as
+            # a generic arg). Only offered here (leaf type; see gen_expr).
+            if self.caps.get('chars') and self.maybe(0.25):
+                et = 'char'
             name = self.fresh('xs')
             lines = [f'{ind}var {name}: List({et}) = List({et})()']
             for _ in range(self.rng.randint(0, 3)):
@@ -580,6 +597,7 @@ DEFAULT_CAPS = {
     'ternary': True,     # if(cond, a, b) call-form ternary (BUG-167/F8)
     'ranges': True,      # for_num range loops: `a : b [: s]` and `a..b` (BUG-165/F9)
     'throws': True,      # `throws` fns + `?` propagation + method-level `catch` (§28b surface)
+    'chars': True,       # `char` as a List(char) element (BUG-172 shape; leaf-only)
 }
 
 
