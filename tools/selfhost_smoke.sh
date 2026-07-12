@@ -816,6 +816,10 @@ smoke_run test/field_order_test.zbr "field_order: OK"
 # (concat/arith dispatch); genBinary .add checks both operands.
 smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"
 
+# BUG-172: char/uint (keyword primitives) as a generic type arg (`List(char)`) —
+# was rejected as "undefined name" by the selfhost resolver (isBuiltin gap).
+smoke_run test/bug172_list_char_test.zbr "bug172: OK"
+
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
 

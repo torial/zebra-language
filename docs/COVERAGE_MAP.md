@@ -88,8 +88,8 @@ randomly combining them with each other or with the fuzzed set. Interaction bugs
 
 | Cluster | Tests | Self-use | Why it's exposed |
 |---|---|---|---|
-| **`StrSet` / `Set`** | **0** | 5 | **No standalone test at all.** Only exercised via the shapes the compiler uses it in — a change to Set codegen could break user shapes silently |
-| **`char` in generic position** | (char: yes; `List(char)` ctor-arg: **no**) | 0 | **BUG-172 lives here.** char tested alone, never as a generic arg / in a container |
+| ~~**`char` in generic position**~~ | ✅ FIXED | — | **BUG-172 — now fixed (2026-07-12).** char/uint as a generic arg (`List(char)`) was rejected by the selfhost resolver (`isBuiltin` gap); added them. Regression test `test/bug172_list_char_test.zbr`. Was the exemplar of this whole doc — investigating the 🔴 cell produced a real fix. |
+| sized numerics as a generic arg (`List(int32)`) | 0 | 0 | discovered fixing BUG-172: non-keyword primitives fail at the **parser** in type-arg position. Low priority; noted in BUGS.md |
 | chained comparisons `a < b < c` | 1 | 4 | one fixture; a real precedence-sensitive feature (fuzz F7 was precedence) |
 | refinement types `type B(lo,hi)=int where` | 1 | 1 | thin; parametric-alias codegen is intricate |
 | tuples / destructuring | 1 | 0 | thin; not used by the compiler |
@@ -101,6 +101,13 @@ randomly combining them with each other or with the fuzzed set. Interaction bugs
 > cluster with "1 test" may still be well-covered inside that fixture, and a
 > `selfhost` count of 0 doesn't mean unused by *user* corpus. Treat 🔴 as "look here
 > first," not "definitely broken." Refine as constructs get pulled into the fuzzer.
+>
+> Reclassified 2026-07-12: **`StrSet`** was flagged 🔴 ("zero tests") but turned out
+> to be **compiler-internal** — it's not in QUICKSTART, and `StrSet()` construction
+> is rejected by **both** compilers' resolvers (a deliberate-looking gate, not a
+> divergence). So its lack of a user-facing test is expected; dropped from the risk
+> surface. Investigating it still paid off — it confirmed the same `isBuiltin` root
+> cause as BUG-172.
 
 ---
 
@@ -124,12 +131,10 @@ Each addition follows the fuzzer's existing pattern (a `DEFAULT_CAPS` flag + a
 type-aware generator branch that only emits well-typed uses) — see how `structs`/
 `unions`/`throws` were added. Add one, run `--n 200 --run`, triage new buckets.
 
-**2. Fill the no-test cells.** Write a `test/strset_test.zbr` (construct, add,
-contains, iterate) — it's the only 🔴 cluster with *zero* dedicated coverage.
-
-**3. Fix `BUG-172` itself** — `List(char)` (and likely other primitives) as a
-constructor generic-arg diverges bootstrap↔selfhost. Concrete, filed, and the
-exemplar for the whole thesis.
+**2. ✅ `BUG-172` fixed (2026-07-12)** — `char`/`uint` as a generic arg were
+rejected by the selfhost resolver (`isBuiltin` gap). This was the exemplar for the
+whole thesis: the 🔴 cell held a real, fixable bug. Follow-on gap noted: sized
+numerics (`int32`, …) as a generic arg fail at the parser (BUGS.md).
 
 **4. Keep this map + the audit as living docs.** When a construct enters the
 fuzzer, move it to 🟢 here. When a 🔴 gets a real test, update the count. Pair with

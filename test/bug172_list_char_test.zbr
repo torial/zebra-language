@@ -1,0 +1,27 @@
+# BUG-172 regression: keyword primitive type names as a generic type argument.
+#
+# The selfhost resolver's isBuiltin() whitelisted only int/str/bool/float, so
+# `char` (and `uint`) in type position — e.g. the generic arg of `List(char)` —
+# was rejected as "undefined name: 'char'", even though typeFromName + codegen
+# already handled it (char -> u21). The bootstrap accepted it, so this broke the
+# round-trip whenever a compiler source used it. Fixed by adding char/uint to
+# Resolver.isBuiltin.
+#
+# (Sized numerics like int32 as a generic arg fail earlier, at the parser — a
+# separate, lower-priority gap; not covered here.)
+
+def main()
+    # char as a container element (the original trigger)
+    var cs: List(char) = List(char)()
+    cs.add('a')
+    cs.add('b')
+    cs.add('c')
+    assert cs.len == 3
+
+    # uint — the same keyword-primitive gap
+    var us: List(uint) = List(uint)()
+    us.add(1)
+    us.add(2)
+    assert us.len == 2
+
+    print("bug172: OK")

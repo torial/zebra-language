@@ -406,6 +406,14 @@ class Resolver
         # Language primitives and special names
         if name == "int" or name == "str" or name == "bool" or name == "float"
             return true
+        # char / uint are keyword primitives too, but were missing here — so in
+        # type position (e.g. the generic arg `List(char)`) they were rejected as
+        # "undefined name" even though typeFromName + codegen handle them
+        # (char -> u21). This was BUG-172. (The sized numerics int32/float64/etc.
+        # are non-keyword identifiers that the parser rejects as a type arg
+        # upstream, so they don't reach here — a separate, lower-priority gap.)
+        if name == "char" or name == "uint"
+            return true
         if name == "nil" or name == "true" or name == "false"
             return true
         if name == "this" or name == "print" or name == "assert"

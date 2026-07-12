@@ -4,7 +4,7 @@
 
 ---
 
-## BUG-172: `List(char)` as a constructor argument — round-trip divergence ⚠️ OPEN
+## BUG-172: `char`/`uint` as a generic type argument — resolver gap ✅ FIXED (2026-07-12)
 
 **Severity:** low-medium (bootstrap/selfhost divergence; narrow trigger).
 Surfaced 2026-07-10 building the LSP hover/definition (`var chars: List(char) =
@@ -26,8 +26,25 @@ builtin-type case in the generic-arg resolution path (parallels how `int`/`str`
 are handled). Needs a minimal repro + a resolver/codegen arm for `char` (and
 probably `bool`/`float`) as generic args.
 
-**Workaround:** avoid `List(char)`; use string slicing (`s[a..b]`) + a char-at
-helper, as the Lexer does. `main.zbr` `lspWordAt` uses this.
+**Fix (2026-07-12):** the real root was narrower and the *opposite* asymmetry from
+the note above — the **selfhost** resolver rejected it while the **bootstrap**
+accepted it. `selfhost/Resolver.zbr` `isBuiltin()` whitelisted only
+`int/str/bool/float` as builtin type names; `char` and `uint` (both keyword
+primitives, both already handled by `typeFromName` → `Type_.char_`/`uint_` and by
+codegen → `u21`/`u…`) were missing, so in type position (e.g. the generic arg of
+`List(char)`) they resolved as "undefined name". Added `char`/`uint` to `isBuiltin`.
+Verified: `List(char)`/`List(uint)` now emit `std.ArrayList(u21)`/`…` and run on
+BOTH compilers. Regression test: `test/bug172_list_char_test.zbr` (smoke).
+
+**Related gap (lower priority, NOT fixed):** the sized numeric types (`int32`,
+`uint64`, `float64`, `byte`, `usize`, …) are *non-keyword* identifiers, so as a
+generic arg (`List(int32)`) they fail earlier — at the **parser**
+(`unexpected expression token: 'int32'`) — not the resolver. `typeFromName` +
+codegen already handle them; a parser arm to accept them in type-arg position
+would close it. Discovered while fixing BUG-172.
+
+**Old workaround (no longer needed):** string slicing (`s[a..b]`) + a char-at
+helper. `main.zbr` `lspWordAt` still uses this but could now use `List(char)`.
 
 ---
 
