@@ -127,6 +127,23 @@ class Gen:
         if getcands and self.maybe(0.15):
             mk, kt = self.pick(getcands)
             return f'({mk}.get({self.gen_expr(kt, env, max(0, depth - 1))}) orelse {self.lit(ty)})'
+        # string methods on an in-scope str var — verified-equivalent, bounds-free
+        # subset only. The `indexOf` family is EXCLUDED (BUG-174: int? vs int/-1
+        # signature divergence between the compilers).
+        if self.caps.get('strmethods') and depth > 0 and ty in ('str', 'bool', 'int'):
+            svars = self.vars_of(env, 'str')
+            if svars and self.maybe(0.25):
+                s = self.pick(svars)
+                if ty == 'str':
+                    m = self.pick(('upper', 'lower', 'trim', 'trimLeft', 'trimRight', 'replace'))
+                    if m == 'replace':
+                        return f'{s}.replace({self.gen_expr("str", env, depth - 1)}, {self.gen_expr("str", env, depth - 1)})'
+                    return f'{s}.{m}()'
+                if ty == 'bool':
+                    m = self.pick(('contains', 'startsWith'))
+                    return f'{s}.{m}({self.gen_expr("str", env, depth - 1)})'
+                if ty == 'int':
+                    return f'{s}.len'
         # `.field` — a same-typed field of the enclosing class (inside a method body)
         if self._self_fields:
             sf = [fn for fn, ft in self._self_fields.items() if ft == ty]
@@ -636,6 +653,7 @@ DEFAULT_CAPS = {
     'throws': True,      # `throws` fns + `?` propagation + method-level `catch` (§28b surface)
     'chars': True,       # `char` as a List(char) element (BUG-172 shape; leaf-only)
     'maps': True,        # HashMap(K,V) — construct, .set, .get orelse, .len, entries for-in
+    'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
 }
 
 

@@ -1,6 +1,43 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-173. Next new bug: BUG-174.**
+**Last bug number generated: BUG-174. Next new bug: BUG-175.**
+
+---
+
+## BUG-174: `str.indexOf` signature divergence — int? (docs+selfhost) vs int/-1 (bootstrap) ⚠️ OPEN (design call)
+
+**Severity:** medium (equivalence divergence on a documented stdlib method; the
+selfhost additionally emits invalid Zig). Surfaced 2026-07-12 hand-testing the
+string-method surface before adding it to the fuzzer.
+
+**Three-way inconsistency:**
+- **QUICKSTART** (lines 972, 1038-1041) documents `indexOf`/`lastIndexOf`/
+  `indexOfFrom`/`indexOfIgnoreCase` as returning **`int?`** ("nil if not found").
+- **Selfhost** TC agrees (`TypeChecker.zbr:1275` → `optional(int_)`), BUT its
+  codegen is **broken**: `CodeGen.zbr:10345` (and `:11259`) emits
+  `blk: { … break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }` — Zig
+  fixes the block type to `i64` from the first branch, so `else null` fails with
+  `expected type 'i64', found '@TypeOf(null)'`. So even the *documented* usage
+  (`var x: int? = s.indexOf(y)`) doesn't compile on the selfhost.
+- **Bootstrap** contradicts the docs: types it as **`int`** and emits
+  `(if (std.mem.indexOf(...)) |_i| @as(i64, @intCast(_i)) else @as(i64, -1))`
+  (−1 sentinel) — self-consistent, compiles, runs.
+- A **test comment** (`test/stdlib_str_test.zbr:19`) says "returns -1 when not
+  found", contradicting QUICKSTART — so the spec itself is ambiguous.
+
+**Resolution is a DESIGN CALL (deferred to Sean).** Two clean options:
+1. **Commit to `int?` per QUICKSTART** (recommended — matches the docs + the
+   language's nil-tracking ethos): fix selfhost codegen to emit a valid `?i64`
+   (`@as(?i64, @as(i64, @intCast(_i)))` in the found branch, `null` else); change
+   bootstrap TC (indexOf/lastIndexOf → optional int) + codegen (`else null`);
+   update the stdlib_str_test comment + any `== -1` assertions. Covers the whole
+   indexOf family.
+2. **Change to `int` (−1)**: update QUICKSTART + selfhost TC/codegen to match the
+   bootstrap. Simpler but less idiomatic.
+
+Until resolved, the `indexOf` family is **excluded from the fuzzer's string-method
+cap** (it would generate divergent programs). Other string methods (upper/lower/
+trim/trimLeft/trimRight/replace/contains/startsWith/len) verified equivalent.
 
 ---
 
