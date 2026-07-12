@@ -109,11 +109,24 @@ class Gen:
         optcands = self.vars_of(env, ty + '?')
         if optcands and self.maybe(0.2):
             return f'({self.pick(optcands)} orelse {self.lit(ty)})'
-        # `list.len` → int
+        # `list.len` / `map.len` → int
         if ty == 'int':
             lists = [k for k, v in env.items() if v.startswith('List(')]
             if lists and self.maybe(0.2):
                 return f'{self.pick(lists)}.len'
+            maps = [k for k, v in env.items() if v.startswith('HashMap(')]
+            if maps and self.maybe(0.15):
+                return f'{self.pick(maps)}.len'
+        # `(map.get(key) orelse default)` → V — exercises the optional get path
+        getcands = []
+        for mk, mv in env.items():
+            if mv.startswith('HashMap('):
+                kt, vt = [x.strip() for x in mv[8:-1].split(',', 1)]
+                if vt == ty:
+                    getcands.append((mk, kt))
+        if getcands and self.maybe(0.15):
+            mk, kt = self.pick(getcands)
+            return f'({mk}.get({self.gen_expr(kt, env, max(0, depth - 1))}) orelse {self.lit(ty)})'
         # `.field` — a same-typed field of the enclosing class (inside a method body)
         if self._self_fields:
             sf = [fn for fn, ft in self._self_fields.items() if ft == ty]
@@ -194,17 +207,21 @@ class Gen:
         # params are const in Zig; List vars are construct-once (never reassigned —
         # gen_expr produces no List values, and reassigning a list isn't interesting)
         assignable = [k for k in env if k not in self._params and not env[k].startswith('List(')
+                      and not env[k].startswith('HashMap(')
                       and env[k] not in self.structs and env[k] not in self.classes
                       and env[k] not in self.enums and env[k] not in self.unions]
         if assignable:
             choices += ['assign', 'assign']
         opt_in_scope = [k for k, v in env.items() if v.endswith('?')]
         list_in_scope = [k for k, v in env.items() if v.startswith('List(')]
+        map_in_scope = [k for k, v in env.items() if v.startswith('HashMap(')]
         # struct + class instances share field-write; struct/class construction
         # is offered whenever a type exists.
         udt_in_scope = [k for k, v in env.items() if v in self.structs or v in self.classes]
         if self.caps.get('lists'):
             choices += ['listdecl']
+        if self.caps.get('maps'):
+            choices += ['mapdecl']
         if self.structs:
             choices += ['structdecl']
         if self.classes:
@@ -225,6 +242,8 @@ class Gen:
                 choices += ['ifas']    # `if optvar as bound` — nil-narrowing
             if list_in_scope:
                 choices += ['forin']   # `for e in list`
+            if map_in_scope:
+                choices += ['mapforin']  # `for k, v in m.entries()`
             if self.caps.get('ranges'):
                 choices += ['fornum']  # `for i in a : b [: s]` / `a..b` (BUG-165/F9)
             if tagged_in_scope:
@@ -242,6 +261,15 @@ class Gen:
             for _ in range(self.rng.randint(0, 3)):
                 lines.append(f'{ind}{name}.add({self.gen_expr(et, env, d)})')
             env[name] = f'List({et})'
+            return lines
+        if k == 'mapdecl':
+            kt = self.pick(('str', 'int'))       # keys: str / int
+            vt = self.pick(PRIMS)                # values: any prim
+            name = self.fresh('m')
+            lines = [f'{ind}var {name}: HashMap({kt}, {vt}) = HashMap({kt}, {vt})()']
+            for _ in range(self.rng.randint(0, 3)):
+                lines.append(f'{ind}{name}.set({self.gen_expr(kt, env, d)}, {self.gen_expr(vt, env, d)})')
+            env[name] = f'HashMap({kt}, {vt})'
             return lines
         if k == 'fornum':
             # Numeric range loop — all three spellings lower to the same i64
@@ -312,6 +340,15 @@ class Gen:
             # No unused-var guard: since BUG-164 the compilers discard unused
             # loop captures themselves — generating them keeps that tested.
             return [f'{ind}for {e} in {lv}'] + body
+        if k == 'mapforin':
+            mv = self.pick(map_in_scope)
+            kt, vt = [x.strip() for x in env[mv][8:-1].split(',', 1)]  # HashMap(K, V)
+            kb = self.fresh('k'); vb = self.fresh('v')
+            env2 = dict(env); env2[kb] = kt; env2[vb] = vt
+            self._params.add(kb); self._params.add(vb)   # captures read-only
+            body = self.gen_block(env2, indent + 1, budget)
+            self._params.discard(kb); self._params.discard(vb)
+            return [f'{ind}for {kb}, {vb} in {mv}.entries()'] + body
         if k == 'structdecl':
             sname = self.pick(list(self.structs.keys()))
             args = ', '.join(self.gen_expr(ft, env, d) for _, ft in self.structs[sname])
@@ -598,6 +635,7 @@ DEFAULT_CAPS = {
     'ranges': True,      # for_num range loops: `a : b [: s]` and `a..b` (BUG-165/F9)
     'throws': True,      # `throws` fns + `?` propagation + method-level `catch` (§28b surface)
     'chars': True,       # `char` as a List(char) element (BUG-172 shape; leaf-only)
+    'maps': True,        # HashMap(K,V) — construct, .set, .get orelse, .len, entries for-in
 }
 
 
