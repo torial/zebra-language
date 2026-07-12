@@ -155,10 +155,22 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
   correctness work:** the risk surface is *combinatorial* (BUG-172 = char × generic-
   ctor-arg, a combo nothing randomly tests), so the highest-leverage move is
   **growing the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) to pull high-bug-history
-  constructs into random combination — priority order: (1) `char` as a container/
-  generic element [closes BUG-172 class], (2) string methods, (3) HashMap, (4) `^T`
-  boxing, (5) interfaces+`is`, (6) generics/backed-enums/chained-cmp. Plus: write
-  `test/strset_test.zbr` (the only cluster with ZERO dedicated test) and fix BUG-172.
+  constructs into random combination.
+
+- **Progress 2026-07-12 (overnight):**
+  - ✅ **BUG-172 fixed** (96c804e) — `char`/`uint` as a generic arg (selfhost
+    `Resolver.isBuiltin` gap). Regression test `test/bug172_list_char_test.zbr`.
+  - ✅ **Fuzzer cap (1) `char` added** (f2290ae) — `char` as a `List(char)` element,
+    leaf-only. Commit-gate 25/25 ok. It immediately EXPOSED a pre-existing bug:
+  - ⚠️ **BUG-173 / fuzz F12 OPEN** — selfhost string-literal-vs-slice coercion
+    divergence (`*const [N:0]u8` vs `[]const u8`), seeds 80/83. NOT char-related
+    (shrink removed char); not yet minimally reduced (two hypotheses ruled out —
+    see F12). **Needs supervised bisection + a codegen fix — the top follow-up.**
+  - Remaining caps to add (each will likely surface more latent bugs — triage as
+    you go): (2) string methods, (3) HashMap, (4) `^T` boxing, (5) interfaces+`is`,
+    (6) generics/backed-enums/chained-cmp. Also: sized numerics (`List(int32)`)
+    fail at the *parser* (BUGS.md, BUG-172 follow-on).
+  - StrSet reclassified: compiler-internal, not user-facing — no test needed.
 
 ---
 
