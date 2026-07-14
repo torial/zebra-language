@@ -423,6 +423,45 @@ def zigTypeForListElem(t: Type_): str
         else
             return "[]const u8"
 
+# Map an inferred Type_ to the Zig type annotation for an untyped local
+# `var`/`const` whose init is NOT a bare literal.  Mirrors src/CodeGen.zig
+# `tcTypeAnnotation`: without it Zig defaults such a binding to comptime_int /
+# comptime_float, or to a fixed-size `*const [N:0]u8` string-literal array which
+# then fails to unify with a later differently-sized string assignment (BUG-173).
+# Returns "" when no annotation is needed — named/generic/stdlib types, where Zig
+# infers the type correctly from the constructor/return.
+def tcTypeAnnotation(t: Type_): str
+    branch t
+        on Type_.int_
+            return "i64"
+        on Type_.uint_
+            return "u64"
+        on Type_.float_
+            return "f64"
+        on Type_.bool_
+            return "bool"
+        on Type_.char_
+            return "u21"
+        on Type_.string_
+            return "[]const u8"
+        on Type_.str_slice
+            return "[]const []const u8"
+        on Type_.void_
+            return "void"
+        on Type_.int_n as n
+            return "i" + n.toString()
+        on Type_.uint_n as n
+            return "u" + n.toString()
+        on Type_.float_n as n
+            return "f" + n.toString()
+        on Type_.optional as inner
+            var innerAnn = tcTypeAnnotation(inner)
+            if innerAnn == ""
+                return ""
+            return "?" + innerAnn
+        else
+            return ""
+
 def isUnionLikeName(name: str): bool
     # Known union type names from cross-module imports
     if name == "PNode" or name == "PParam"
@@ -5002,15 +5041,16 @@ struct Generator
                             else
                                 pass
                 else
-                    # BUG-159 (fuzzer): a non-literal comptime-numeric init (e.g.
-                    # `var v = (8 * 2)`) stays comptime_int/float without an annotation
-                    # → Zig "must be const or comptime".  The literal-shape checks above
-                    # miss it; fall back to the inferred init type (matches the bootstrap,
-                    # which annotates untyped vars from the TC-inferred type).
-                    if lv_infer_t is Type_.int_
-                        w.emit(": i64")
-                    else if lv_infer_t is Type_.float_
-                        w.emit(": f64")
+                    # BUG-159 / BUG-173 (fuzzer): a non-literal init has no literal
+                    # shape above, so Zig would default it to comptime_int/float
+                    # (`var v = (8 * 2)` → "must be const or comptime") or to a
+                    # fixed-size `*const [N:0]u8` string-literal array (`var v =
+                    # if(c, "gg", " d")` → later `v = "f"` fails to unify — BUG-173).
+                    # Annotate from the TC-inferred type, mirroring the bootstrap
+                    # (src/CodeGen.zig genLocalVar + tcTypeAnnotation).
+                    var lv_ann = tcTypeAnnotation(lv_infer_t)
+                    if lv_ann != ""
+                        w.emit(": " + lv_ann)
         w.emit(" = ")
         if mc_recv.len > 0
             if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr

@@ -1,0 +1,35 @@
+# BUG-173 regression: string-literal-vs-slice coercion for untyped local vars.
+#
+# The selfhost's genLocalVar annotated an untyped local from its initializer only
+# for INT/FLOAT *literal shapes*; a string-typed NON-literal init (a ternary,
+# concat, or call) fell through the inferred-type fallback unannotated, so Zig
+# inferred a fixed-size `*const [N:0]u8` from the initializer. A later assignment
+# of a different-length string literal then failed to unify
+# (`expected '*const [2:0]u8', found '*const [1:0]u8'`). The bootstrap annotated
+# `: []const u8` via tcTypeAnnotation; the selfhost now mirrors it (string_ — plus
+# uint/char/str_slice/optional — arms in the inferred-type fallback).
+# Surfaced by the differential fuzzer as F12 (seeds 80/83/89).
+
+def pick(c: bool): str
+    if c
+        return "hello"
+    return "hi"
+
+def main()
+    # 1. ternary-of-string-literals init, then reassign shorter/longer literals
+    var a = if(true, "ggbb", " d")
+    a = "f"
+    a = "cdgea"
+    assert a == "cdgea"
+
+    # 2. string concat init, then reassign a different-length literal
+    var b = ("ad b c" + a)
+    b = "aa"
+    assert b == "aa"
+
+    # 3. string-returning call init, then reassign
+    var c = pick(true)
+    c = "x"
+    assert c == "x"
+
+    print("bug173: OK")

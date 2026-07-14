@@ -41,26 +41,43 @@ trim/trimLeft/trimRight/replace/contains/startsWith/len) verified equivalent.
 
 ---
 
-## BUG-173: selfhost string-literal-vs-slice coercion — emit divergence ⚠️ OPEN
+## BUG-173: selfhost string-literal-vs-slice coercion — emit divergence ✅ FIXED (2026-07-13)
 
-**Severity:** medium (selfhost emits invalid Zig where bootstrap is correct — a
+**Severity:** medium (selfhost emitted invalid Zig where bootstrap was correct — a
 real equivalence bug). Surfaced 2026-07-12 by the fuzzer (fuzz finding **F12**).
 
-**Symptom:** on some programs, the **selfhost** emits Zig that `zig` rejects with
-`expected type '*const [N:0]u8', found '[]const u8'` — a fixed-size string-literal
-type is expected but a string slice is supplied. The **bootstrap** emits code
-`zig` accepts. Verdict `zig-diverge-B` (selfhost side). Reproducers:
-`fuzz/findings/seed80,83_zig-diverge-B.zbr`.
+**Symptom:** on some programs, the **selfhost** emitted Zig that `zig` rejected with
+`expected type '*const [N:0]u8', found '[]const u8'` (or the reverse `[1:0]u8`
+cannot cast into `[2:0]u8`) — a fixed-size string-literal array type where a slice
+was needed. The **bootstrap** emitted code `zig` accepts. Verdict `zig-diverge-B`
+(selfhost side). Reproducers: `fuzz/findings/seed{80,83,89}_zig-diverge-B.zbr`.
 
-**Root (suspected):** the selfhost fixes some string value's Zig type to the
-initializer literal's array shape (`*const [N:0]u8`) instead of the general
-`[]const u8` slice, so a later use that provides a slice (a concat result / fn
-return / union payload) mismatches. Bootstrap uses `[]const u8` throughout.
+**Root (confirmed, NOT the suspected union/struct path):** `genLocalVar` in the
+selfhost annotated an untyped local from its initializer *only for INT/FLOAT
+literal shapes* (`int_lit`/`float_lit`/neg-unary). Its non-literal fallback
+covered only `int_`/`float_` from the TC-inferred type. A **string-typed
+non-literal init** — a ternary (`var v7 = if(c, "ggbb", " d")`), a concat, or a
+`str`-returning call — therefore fell through with **no annotation**, so Zig
+inferred `*const [N:0]u8` from the initializer literal. A later assignment of a
+different-length string literal (`v7 = "f"`) then failed to unify. The bootstrap
+annotates `var v7: []const u8 = …` via `tcTypeAnnotation` (src/CodeGen.zig
+`genLocalVar`).
 
-**Not char-related** (shrink removed all char). **Not minimally reduced** — two
-simple hypotheses ruled out (see F12 in `fuzz/FINDINGS.md`); the trigger is a more
-specific combination (likely a string flowing through a union variant / struct
-field / method return). Needs careful bisection; deferred to a supervised session.
+**Fix:** ported the bootstrap's `tcTypeAnnotation` helper into
+`selfhost/CodeGen.zbr` (maps a `Type_` → Zig annotation: int/uint/float/bool/
+char/**string**/str_slice/void/sized-numerics/optional-recurse; `""` for
+named/generic/stdlib where Zig infers correctly) and replaced the `int_`/`float_`-
+only fallback in `genLocalVar` with a call to it. This closes the `string_` gap
+that was BUG-173 and pre-emptively the sibling gaps (`uint_`/`char_`/`str_slice`/
+`optional`). Verified: all three reproducers compile; fuzzer oracle `ok` on seeds
+80/83/89; smoke 233/233; full round-trip byte-identical. Regression:
+`test/bug173_string_coerce_test.zbr` (ternary / concat / call string inits +
+reassignment).
+
+**Why the earlier hypotheses missed it:** F12's ruled-out probes (string `==`
+ternary; string var-lit → reassign) both happen to take literal-shape paths or
+same-length reassignment, so neither hit the non-literal-init + different-length
+combination that is the real trigger.
 
 ---
 

@@ -8,9 +8,26 @@ equivalence bugs; genuine equivalence bugs show as `run-divergence` /
 
 ---
 
-## F12 — selfhost string-literal-vs-slice coercion divergence  ⚠️ EQUIVALENCE BUG (open — see BUG-173)
+## F12 — selfhost string-literal-vs-slice coercion divergence  ✅ FIXED — BUG-173 (2026-07-13)
 
-**Surfaced 2026-07-12** by growing the generator: added a `chars` cap so `char`
+**FIXED 2026-07-13 (supervised session).** Root was NOT the suspected union/
+struct/method-return path below — it was `genLocalVar`: the selfhost annotated an
+untyped local from its init only for INT/FLOAT *literal shapes*, and its non-
+literal fallback covered only `int_`/`float_`. A **string-typed non-literal init**
+(ternary `var v = if(c,"ggbb"," d")`, concat, or `str`-returning call) fell through
+unannotated → Zig inferred `*const [N:0]u8` → a later different-length string
+assignment failed to unify. Fixed by porting the bootstrap's `tcTypeAnnotation`
+into `selfhost/CodeGen.zbr` and using it in the fallback (adds string_ + uint/char/
+str_slice/optional). Seeds 80/83/89 → `ok`; smoke 233/233; full round-trip clean.
+Regression: `test/bug173_string_coerce_test.zbr`. See BUG-173.
+
+**Diagnosis note:** the "not yet minimally reduced" guess below (union/struct/
+method-return) was WRONG — hand-reading the emitted Zig around the error line
+(`var v7 = …` vs bootstrap's `var v7: []const u8 = …`) pinpointed it in minutes,
+faster than shrinking would have. The two ruled-out probes missed because both
+take literal-shape paths or same-length reassignment.
+
+**Original finding (surfaced 2026-07-12):** by growing the generator: added a `chars` cap so `char`
 appears as a `List(char)` element (the BUG-172 shape; leaf-only, not in `PRIMS`).
 The cap itself is clean — 98/100 seeds `ok`, valid char programs, no `both-reject`
 noise. But its RNG shift moved **seeds 80 and 83** onto a program shape the fuzzer
@@ -36,11 +53,11 @@ identically on BOTH compilers, so neither is the trigger):
 - string literal `==` a ternary-of-strings (`"x" == if(c, "y", f())`) — fine.
 - string var from a literal then reassigned to a concat/slice (`var v = "x"; v = a + b`) — fine (both emit `var v: []const u8`).
 
-So the trigger is a more specific combination in seed 80/83 (likely a string
-payload flowing through a union variant / struct field / method return where the
-selfhost fixes the type to the initializer's literal array shape instead of the
-general `[]const u8`). Needs careful bisection — deferred to a supervised session;
-filed as BUG-173.
+So the trigger is a more specific combination in seed 80/83 (at the time
+hypothesized as a string payload flowing through a union variant / struct field /
+method return). *That hypothesis was wrong* — see the FIXED note above: the real
+trigger was a string-typed non-literal **var initializer**, resolved by reading
+the emitted Zig rather than by bisection.
 
 ## F11 — unused capture/local discard skipped when the body holds an unmodeled expr (shared, ✅ FIXED — BUG-169)
 

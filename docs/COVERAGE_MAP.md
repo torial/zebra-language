@@ -117,8 +117,9 @@ Now randomly combined by `fuzz/gen.py` (`DEFAULT_CAPS`):
 - **string methods** (clean subset) — upper/lower/trim\*/replace/contains/startsWith/len.
 
 What growing them found (the thesis, repeatedly): the char cap exposed **BUG-173**
-(a latent selfhost string-coercion divergence), and hand-testing the string surface
-exposed **BUG-174** (`str.indexOf` int? vs int/-1 signature divergence). HashMap and
+(a latent selfhost string-coercion divergence in untyped-var annotation — since
+fixed 2026-07-13), and hand-testing the string surface exposed **BUG-174**
+(`str.indexOf` int? vs int/-1 signature divergence). HashMap and
 the string subset are equivalence-clean (only shared `both-zig-fail` robustness gaps,
 no divergence). Still 🔴/🟡 and not yet fuzzed: **`^T` boxing, interfaces+`is`,
 generics/backed-enums/chained-cmp** — higher-complexity generation (class

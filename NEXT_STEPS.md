@@ -164,10 +164,13 @@ Written **in Zebra** (flagship dogfood + reuses the front-end directly).
     (2) `HashMap(K,V)` construct/set/get/len/entries (be5a77b), (3) `strmethods`
     clean subset (d2b4847). Each commit-gate 25/25 ok; batches mostly `ok` (the
     few non-ok are `both-zig-fail` shared robustness gaps, not divergences).
-  - ⚠️ **BUG-173 / fuzz F12 OPEN** — selfhost string-literal-vs-slice coercion
-    divergence (`*const [N:0]u8` vs `[]const u8`), exposed by the char cap's RNG
-    shift. NOT char-related (shrink removed char); not minimally reduced (two
-    hypotheses ruled out). **Needs supervised bisection + codegen fix.**
+  - ✅ **BUG-173 / fuzz F12 FIXED (2026-07-13)** — selfhost string-literal-vs-slice
+    coercion divergence (`*const [N:0]u8` vs `[]const u8`). Root: `genLocalVar`
+    annotated untyped locals from their init only for INT/FLOAT literal shapes, so
+    a string-typed *non-literal* init (ternary/concat/call) went unannotated and
+    Zig inferred a fixed array. Fixed by porting the bootstrap's `tcTypeAnnotation`
+    into `selfhost/CodeGen.zbr`. Regression `test/bug173_string_coerce_test.zbr`;
+    round-trip clean. Diagnosed by reading emitted Zig, not bisection.
   - ⚠️ **BUG-174 OPEN (design call)** — `str.indexOf` signature: QUICKSTART +
     selfhost say `int?`, bootstrap says `int/-1`, and the selfhost's `int?` codegen
     is broken (invalid `?i64`). Found by hand-testing the string surface. Filed

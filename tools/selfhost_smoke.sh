@@ -820,6 +820,12 @@ smoke_run test/bug168_crossmod_prim_return_test.zbr "bug168: OK"
 # was rejected as "undefined name" by the selfhost resolver (isBuiltin gap).
 smoke_run test/bug172_list_char_test.zbr "bug172: OK"
 
+# BUG-173: untyped local `var` from a string-typed NON-literal init (ternary /
+# concat / call) was emitted without a `: []const u8` annotation, so Zig inferred
+# a fixed-size `*const [N:0]u8` and a later differently-sized string assignment
+# failed to unify. Fixed by mirroring the bootstrap's tcTypeAnnotation fallback.
+smoke_run test/bug173_string_coerce_test.zbr "bug173: OK"
+
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
 
