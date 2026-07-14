@@ -8327,6 +8327,17 @@ struct Generator
                     is_hm_idx = fieldAwareIsHashMap(idx_nm)
                     if not is_hm_idx
                         is_list_idx = fieldAwareIsList(idx_nm)
+                else
+                    # BUG-177: a non-name base — e.g. a List-returning call `f()[i]` —
+                    # is invisible to the name-based check above, so `.items` was
+                    # omitted and Zig rejected the ArrayList index. Use the inferred
+                    # type. This converges with the bootstrap, which already emits
+                    # `.items` here. (A nested index base `x[i][j]` is left to the
+                    # `.at(i).at(j)` idiom — a shared gap with the bootstrap.)
+                    if .infer_ctx != nil
+                        if ix.object is Expr.call
+                            if inferExpr(ix.object, .infer_ctx!) is Type_.list_
+                                is_list_idx = true
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
@@ -10467,9 +10478,10 @@ struct Generator
                         w.emit(") catch unreachable)")
                         return
                     if mname == "toString"
-                        w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
+                        # BUG-178: str.toString() is identity — the receiver is already a
+                        # string (this arm is the str-method dispatch). A `{}` allocPrint on
+                        # a []const u8 fails ("cannot format slice without a specifier").
                         genExpr(m.object)
-                        w.emit("}) catch unreachable)")
                         return
                     if mname == "toFloat"
                         w.emit("(std.fmt.parseFloat(f64, ")

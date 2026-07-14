@@ -15891,6 +15891,12 @@ const Generator = struct {
                     // Fall through to normal method call codegen below.
                 } else if (obj_tc == .named and obj_tc.named.kind == .struct_ and obj_tc.named.decl.struct_.mods.derive_debug) {
                     // @derive(Debug) structs also fall through.
+                } else if (obj_tc == .string) {
+                    // BUG-178: str.toString() is identity — the value is already a
+                    // string. A `{}`/allocPrint on a []const u8 fails ("cannot format
+                    // slice without a specifier").
+                    try g.genExpr(mem.object);
+                    return;
                 } else {
                     const fmt: []const u8 = switch (obj_tc) {
                         .float => "{d}",

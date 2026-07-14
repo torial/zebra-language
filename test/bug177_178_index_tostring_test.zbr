@@ -1,0 +1,32 @@
+# BUG-178: str.toString() is identity (was `{}` allocPrint on a []const u8, which
+#          Zig rejects). int/float/bool toString still work.
+# BUG-177: indexing a List-returning call result directly — `f()[i]` — now emits
+#          `.items[i]` (was a bare index on an ArrayList). Converges the selfhost
+#          with the bootstrap. (Nested `x[i][j]` stays on the `.at(i).at(j)` idiom.)
+
+def makeFloats(): List(float)
+    var v = List(float)()
+    v.add(3.14)
+    v.add(2.71)
+    return v
+
+def main()
+    # BUG-178: toString across types
+    var s = "hi"
+    assert s.toString() == "hi"
+    assert (5).toString() == "5"
+    assert true.toString() == "true"
+
+    # BUG-177: call-result index
+    assert makeFloats()[0] == 3.14
+    assert makeFloats()[1] == 2.71
+
+    # nested index via the .at() idiom (the documented workaround)
+    var g: List(List(int)) = List(List(int))()
+    var r: List(int) = List(int)()
+    r.add(7)
+    r.add(8)
+    g.add(r)
+    assert g.at(0).at(1) == 8
+
+    print("bug177_178: OK")

@@ -89,7 +89,7 @@ intermediate var (a call-result index) — the BUG-177 family; bind to a var fir
 
 ---
 
-## BUG-177: indexing a call-result list expression (`f()[i]`) omits `.items` ⚠️ OPEN
+## BUG-177: bracket-index on a non-name base omits `.items` ✅ FIXED for `f()[i]` (2026-07-14); `x[i][j]` remains a shared gap
 
 **Severity:** low — narrow; trivial workaround (bind the call to a var first).
 Surfaced while reducing Mosaic finding #6.
@@ -110,32 +110,40 @@ rejected by **both** compilers (`array_list.Aligned does not support indexing`).
 a call result *or* an index result — is missed. The two cases differ only in
 bootstrap coverage: it handles the call-result base but not the nested-index base.
 
-**Convergence/fix note:** the call-result case is a **selfhost-only divergence**
-(bootstrap emits `makeFloats().items[@intCast(1)]` correctly — a safe convergence
-like BUG-173; minor aside: it formats with `{any}` vs the selfhost's `{d}`). The
-nested-index case is a **shared gap** (fix both). Deferred as a supervised task: the
-fix touches the index-read codegen's base-kind decision in both compilers, and the
-round-trip gate does NOT catch selfhost-vs-bootstrap divergence, so it needs the
-differential index-pattern battery (`tools/dogfood/`) to validate. Workaround today:
-`.at(i)` instead of `[i]` on a non-name base.
+**FIXED for `f()[i]` (2026-07-14, selfhost convergence):** the call-result case was a
+**selfhost-only divergence** (the bootstrap already emitted
+`makeFloats().items[@intCast(1)]`). Fixed in `selfhost/CodeGen.zbr`'s index-read: when
+the base is a non-name expression, if it's an `Expr.call` whose inferred type is
+`list_`, emit `.items`. Now byte-identical on both compilers (verified via
+`tools/dogfood/`). Regression `test/bug177_178_index_tostring_test.zbr`.
+
+**`x[i][j]` (nested index base) remains a SHARED gap** — both compilers reject it, so
+it's consistent (not a divergence). The bootstrap fix needs general `List(T)[i]→T`
+element typing (the bootstrap TC only types `str_slice[i]`/`string[i]`, not arbitrary
+`List(T)[i]`), which is a larger TC change on the phasing-out compiler — deferred.
+Workaround: `.at(i).at(j)` (works on both). The selfhost fix was deliberately scoped
+to call bases (not index bases) so it stays consistent with the bootstrap rather than
+introducing a self-ok/boot-fail divergence.
 
 ---
 
-## BUG-178: `str.toString()` emits `{}` (no specifier) instead of `{s}` ⚠️ OPEN
+## BUG-178: `str.toString()` emitted `{}` (no specifier) — now identity ✅ FIXED (2026-07-14)
 
 **Severity:** low — an identity call you'd rarely write directly, but a hazard for
 generic `@derive`/interface code that calls `.toString()` on a value that happens to
 be a `str`. Surfaced verifying the numeric-conversion matrix (Mosaic finding #3).
 
-**Symptom:** `var s = "hi"; s.toString()` emits a format with a bare `{}` on a
-`[]const u8`, which Zig rejects (`cannot format slice without a specifier`).
-`toString()` on int/float/bool works. Fix: emit `{s}` (or a no-op identity) for a
-str receiver.
+**Symptom (was):** `var s = "hi"; s.toString()` emitted `std.fmt.allocPrint("{}", .{s})`
+— a bare `{}` on a `[]const u8`, which Zig rejects (`cannot format slice without a
+specifier`). `toString()` on int/float/bool worked. Failed identically on **both**
+compilers (shared bug, no reference to converge to).
 
-**Shared bug (both compilers fail identically), so NOT a convergence** — there is
-no correct reference to match; the fix must change both compilers in a new way and
-be validated differentially (the round-trip gate doesn't cover selfhost-vs-bootstrap
-divergence). Supervised task, same class as BUG-176.
+**Fix:** `str.toString()` is an **identity** — the receiver is already a string — so
+emit the receiver directly (no `allocPrint`). Both compilers: `src/CodeGen.zig` (a
+`.string` arm in the toString method codegen) and `selfhost/CodeGen.zbr` (the
+str-method dispatch's toString arm). Verified byte-identical (`s.toString()`,
+`(5).toString()`, `true.toString()` all agree); regression
+`test/bug177_178_index_tostring_test.zbr`.
 
 ---
 

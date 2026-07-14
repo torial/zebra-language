@@ -830,6 +830,10 @@ smoke_run test/bug173_string_coerce_test.zbr "bug173: OK"
 # List(str) so it is indexable (cols[i], cols.len, cols.at(i)); for-in stays lazy.
 smoke_run test/bug176_split_list_test.zbr "bug176: OK"
 
+# BUG-178: str.toString() is identity (not `{}` allocPrint). BUG-177: a List-returning
+# call result indexed directly — `f()[i]` — emits `.items[i]` (converges selfhost).
+smoke_run test/bug177_178_index_tostring_test.zbr "bug177_178: OK"
+
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
 
