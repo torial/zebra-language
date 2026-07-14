@@ -2267,8 +2267,15 @@ const TypeChecker = struct {
             .index          => |e| blk: {
                 const ot = try tc.inferExpr(e.object);
                 _ = try tc.inferExpr(e.index);
-                // string[i] → char
-                break :blk if (ot == .string) .char else .unknown;
+                // string[i] → char; str_slice[i] / List(str)[i] → string (the element).
+                // The latter fixes indexed-List(str) interpolation, which otherwise
+                // fell through to `{any}` (byte-array output) — the POC's finding #6 on
+                // the bootstrap, and what BUG-176's inferred split materialization needs.
+                break :blk switch (ot) {
+                    .string    => .char,
+                    .str_slice => .string,
+                    else       => .unknown,
+                };
             },
             .slice          => |e| blk: {
                 const ot = try tc.inferExpr(e.object);
@@ -4013,7 +4020,7 @@ const TypeChecker = struct {
                 .{ "trimLeft",  {} }, .{ "trimRight", {} },
                 .{ "upper",     {} }, .{ "lower",     {} }, .{ "replace",   {} }, .{ "repeat",    {} },
                 .{ "padLeft",   {} }, .{ "padRight",  {} }, .{ "center",    {} }, .{ "bytes",     {} },
-                .{ "join",           {} }, .{ "lines",        {} }, .{ "reverse",    {} },
+                .{ "join",           {} }, .{ "reverse",    {} },
                 .{ "toHex",          {} }, .{ "fromHex",      {} }, .{ "chars",      {} },
                 .{ "substring",      {} }, .{ "encodeBase64", {} }, .{ "decodeBase64", {} },
             });
@@ -4029,6 +4036,11 @@ const TypeChecker = struct {
                 .{ "isPrintable",           {} }, .{ "startsWithIgnoreCase", {} }, .{ "endsWithIgnoreCase", {} },
                 .{ "containsIgnoreCase",    {} },
             });
+            // split/lines return a str_slice (List(str)); their element (via index or
+            // for-in) is string. `lines` was previously miscategorised in str_string
+            // (→ .string), so `lines()[i]` typed as char (`{u}`) — checked first here so
+            // that removal is belt-and-suspenders.
+            if (std.mem.eql(u8, method, "split") or std.mem.eql(u8, method, "lines")) return .str_slice;
             if (str_string.get(method) != null) return .string;
             if (str_int.get(method)    != null) return .int;
             if (str_bool.get(method)   != null) return .bool;

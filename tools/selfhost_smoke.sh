@@ -826,6 +826,10 @@ smoke_run test/bug172_list_char_test.zbr "bug172: OK"
 # failed to unify. Fixed by mirroring the bootstrap's tcTypeAnnotation fallback.
 smoke_run test/bug173_string_coerce_test.zbr "bug173: OK"
 
+# BUG-176: inferred `var cols = s.split(sep)` / `s.lines()` now materializes into a
+# List(str) so it is indexable (cols[i], cols.len, cols.at(i)); for-in stays lazy.
+smoke_run test/bug176_split_list_test.zbr "bug176: OK"
+
 # BUG-155 (List.set element setter) + BUG-156 (str method on a List.at() result).
 smoke_run test/list_setter_parse_test.zbr "list_setter_parse_test OK"
 

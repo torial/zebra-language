@@ -49,23 +49,43 @@ already embeds).
 
 ---
 
-## BUG-176: `split()` yields a lazy SplitIterator, not an indexable `List(str)` ⚠️ OPEN
+## BUG-176: inferred `split()`/`lines()` now materializes to an indexable `List(str)` ✅ FIXED (2026-07-14)
 
 **Severity:** medium — documented as `List(str)` (QUICKSTART) but not indexable in
-the common inferred/indexed forms. Surfaced by the Mosaic POC (finding #2).
+the common inferred form. Surfaced by the Mosaic POC (finding #2).
 
-**Symptom:** `s.split(sep)` lowers to `std.mem.splitSequence` (a lazy iterator).
-`for x in s.split(sep)` works; `var cols = s.split(sep)` then `cols[0]`, or
-`s.split(sep)[0]` directly, fails to compile (`SplitIterator does not support
-indexing`). Materialization into a `List(str)` happens **only** when the target is
-explicitly annotated `var cols: List(str) = s.split(sep)` (the BUG-092 path).
+**Symptom (was):** `s.split(sep)` lowers to `std.mem.splitSequence` (a lazy
+iterator). `for x in s.split(sep)` worked; `var cols = s.split(sep)` then `cols[0]`
+failed to compile (`SplitIterator does not support indexing`). Materialization into
+a `List(str)` happened **only** when the target was explicitly annotated
+`var cols: List(str) = s.split(sep)` (the BUG-092 path).
 
-**Decision (Sean, 2026-07-14): make `split()` return a `List(str)`.** Extend
-materialization to the inferred-type and expression/indexed positions (infer
-`split()` as `List(str)`, materialize to an `ArrayList`), while keeping the lazy
-iterator for the `for x in s.split()` fast path (the for-in codegen already
-intercepts split). Must land in **both** compilers (equivalence) with the round-trip
-green. Its own gated pass.
+**Fix (both compilers):** when a var's init is a `split`/`lines` call with **no
+annotation**, materialize the iterator into a `List(str)` — the inferred/indexed
+case now behaves like the annotated one. `for x in s.split()` stays lazy (it's an
+inline split, not a var initializer, and is intercepted in the for-loop codegen).
+- **Selfhost** (`CodeGen.zbr` genLocalVar): a self-contained branch emits the
+  `std.ArrayList([]const u8)` materialization and binds the local as `list_(string_)`.
+- **Bootstrap** (`src/CodeGen.zig` genLocalVar): synthesizes a `List(str)` `type_` so
+  the existing annotated materialization + `objIsList` (→ `.items`) treat it as a
+  List. Idempotent, codegen-last-pass.
+
+**Also fixed the POC's #6 on the bootstrap side (prerequisite):** indexing a
+`List(str)` in interpolation emitted `{any}` (byte-array output) — and `.lines()`
+elements emitted `{u}` (char, a compile error) — because the bootstrap TC didn't type
+`str_slice[i]` as string and miscategorised `lines` as returning `.string`. Fixed in
+`src/TypeChecker.zig`: `index` typing gained a `.str_slice → .string` arm, and
+`split`/`lines` now consistently type as `.str_slice` (moved `lines` out of the
+returns-`.string` set). (`#6` was only ever verified fixed on the selfhost before.)
+
+**Verified:** the full split/lines battery (index / `.len` / `.at` / for-in /
+annotated) produces **byte-identical output on both compilers**; `tools/dogfood`
+`split_inferred` flipped SHARED-GAP → clean with no new divergences; full round-trip
+byte-identical; smoke 233/233; fuzzer 0-99 clean. Regression:
+`test/bug176_split_list_test.zbr`.
+
+**Not covered (rare, documented):** `s.split(sep)[i]` indexed *directly* without an
+intermediate var (a call-result index) — the BUG-177 family; bind to a var first.
 
 ---
 

@@ -6816,6 +6816,24 @@ const Generator = struct {
             try g.w.writeAll(";\n");
             return;
         }
+        // BUG-176: inferred `var cols = s.split(sep)` / `s.lines()` (no annotation) —
+        // synthesize a `List(str)` type so the existing annotated materialization (the
+        // BUG-092 block below) and list tracking (objIsList → `.items`) treat cols as a
+        // List(str), making it indexable (cols[i], cols.len).  Matches the selfhost
+        // (CodeGen.zbr).  `for x in s.split()` stays lazy — it is an inline split, not a
+        // var initializer, so this never fires for it.  Idempotent + codegen-last-pass.
+        if (n.type_ == null) {
+            if (n.init) |e| {
+                if (e.* == .call and e.call.callee.* == .member) {
+                    const m = e.call.callee.member.member;
+                    if (std.mem.eql(u8, m, "split") or std.mem.eql(u8, m, "lines")) {
+                        const str_args = try g.alloc.alloc(Ast.TypeRef, 1);
+                        str_args[0] = Ast.TypeRef{ .named = .{ .span = n.span, .name = "str" } };
+                        n.type_ = Ast.TypeRef{ .generic = .{ .span = n.span, .name = "List", .args = str_args } };
+                    }
+                }
+            }
+        }
         try g.writeIndent();
         // Use `const` unless the variable is actually reassigned somewhere in
         // the body (Zig treats `var` that is never mutated as a compile error).

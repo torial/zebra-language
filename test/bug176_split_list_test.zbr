@@ -1,0 +1,34 @@
+# BUG-176 regression: an inferred `var cols = s.split(sep)` / `s.lines()` (no
+# annotation) is now materialized into a List(str) so it is indexable (cols[i],
+# cols.len, cols.at(i)) — matching the documented `# List(str)` semantics.  Before,
+# it stayed a lazy SplitIterator that Zig would not index.  `for x in s.split()`
+# still lowers to the lazy iterator (verified by C below).  Both compilers agree.
+
+def main()
+    var line = "id,name,score"
+    # inferred split → index + len
+    var cols = line.split(",")
+    assert cols[0] == "id"
+    assert cols[2] == "score"
+    assert cols.len == 3
+    assert cols.at(1) == "name"
+
+    # for-in over the materialized list
+    var joined = ""
+    for c in cols
+        joined = joined + c
+    assert joined == "idnamescore"
+
+    # direct for-in over split stays lazy + correct
+    var wc = 0
+    for w in "a b c".split(" ")
+        wc = wc + 1
+    assert wc == 3
+
+    # inferred lines()
+    var text = "l1\nl2\nl3"
+    var ls = text.lines()
+    assert ls.len == 3
+    assert ls[0] == "l1"
+
+    print("bug176: OK")

@@ -4634,6 +4634,58 @@ struct Generator
                 w.emit("undefined")
             w.emit(";\n")
             return
+        # BUG-176: inferred `var cols = s.split(sep)` / `s.lines()` (no annotation) —
+        # materialize the lazy SplitIterator into a List(str) (std.ArrayList([]const u8))
+        # so cols is indexable (cols[i], cols.len) exactly like the annotated
+        # `var cols: List(str) = ...` path (BUG-092).  `for x in s.split()` stays lazy —
+        # it is intercepted in the for-loop codegen, never reaching genLocalVar.  Bind
+        # cols as a List(str) local so downstream index / len / str-element formatting
+        # dispatch treats it as a list.
+        if n.type_ == nil and n.init_expr != nil
+            if isSplitIter(n.init_expr!)
+                if .infer_ctx as ic_sl
+                    ic_sl.bind(n.name, Type_.list_(Type_.string_))
+                var is_mut_sl = false
+                if mut_set != nil
+                    is_mut_sl = mut_set!.contains_(n.name)
+                if n.is_const
+                    is_mut_sl = false
+                # Build temp names by concatenation and emit the Zig syntax as PLAIN
+                # (non-interpolated) literals — mixing `${...}` interpolation with literal
+                # `{`/`}`/`\"`/`\n` in one Zebra string trips genStringInterp escaping.
+                var us_sl: str = w.nextUid().toString()
+                var lbl_sl: str = "blk_sl_" + us_sl
+                var ll_sl: str = "_ll_" + us_sl
+                var si_sl: str = "_si_" + us_sl
+                var se_sl: str = "_se_" + us_sl
+                writeIndent()
+                if is_mut_sl
+                    w.emit("var ")
+                else
+                    w.emit("const ")
+                emitName(n.name)
+                w.emit(": std.ArrayList([]const u8) = ")
+                w.emit(lbl_sl)
+                w.emit(": { var ")
+                w.emit(ll_sl)
+                w.emit(": std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var ")
+                w.emit(si_sl)
+                w.emit(" = ")
+                genExpr(n.init_expr!)
+                w.emit("; while (")
+                w.emit(si_sl)
+                w.emit(".next()) |")
+                w.emit(se_sl)
+                w.emit("| { ")
+                w.emit(ll_sl)
+                w.emit(".append(_allocator, ")
+                w.emit(se_sl)
+                w.emit(") catch @panic(\"OOM\"); } break :")
+                w.emit(lbl_sl)
+                w.emit(" ")
+                w.emit(ll_sl)
+                w.emit("; };\n")
+                return
         # Seed infer_ctx with this variable's type so subsequent statements
         # in the same method body can resolve it via inferExpr(Expr.ident(n.name)).
         # This covers generic class instances (Box(int)(42) → Type_.named("Box"))

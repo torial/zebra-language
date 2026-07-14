@@ -1,4 +1,5 @@
-# SHARED-GAP (BUG-176): inferred/indexed split stays a lazy SplitIterator (not indexable)
+# clean (BUG-176 fixed): inferred `var cols = s.split(sep)` materializes into a
+# List(str), so cols[0] is indexable. (Was SHARED-GAP: a lazy SplitIterator.)
 def main()
     var line = "a,b,c"
     var cols = line.split(",")
