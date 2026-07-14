@@ -156,12 +156,31 @@ if [[ $QUICK -eq 1 ]]; then
         # the chicken-and-egg where selfhost-A has a codegen bug that regenerates
         # itself incorrectly.  Bootstrap is the authoritative, self-contained emitter.
         # The round-trip fidelity test (selfhost-A == selfhost-B) lives in full mode.
+        #
+        # Kill-safety: emit every file into a temp dir FIRST, validate each is
+        # non-empty, and only then atomically `mv` them into selfhost/.  A redirect
+        # `> selfhost/$f.zig` truncates the target the instant it opens, so a kill
+        # mid-emit (timeout / OOM under memory pressure) used to leave a source
+        # `.zig` empty — a half-regenerated tree that broke subsequent builds
+        # (observed repeatedly 2026-07-14).  Writing to a temp then moving means an
+        # interrupted run never touches the checked-in files; the final mv loop is
+        # sub-second (11 renames) so its own kill window is negligible, and even
+        # then each moved file is complete (never truncated).
+        BS_UP=/tmp/bs-up
+        rm -rf "$BS_UP"; mkdir -p "$BS_UP"
         for f in "${FILES[@]}"; do
-            if ! "$ZEBRA" --emit-zig "selfhost/$f.zbr" > "selfhost/$f.zig" 2>/tmp/bs-update-err; then
+            if ! "$ZEBRA" --emit-zig "selfhost/$f.zbr" > "$BS_UP/$f.zig" 2>/tmp/bs-update-err; then
                 echo "FAIL: bootstrap could not emit selfhost/$f.zig" >&2
                 grep -v "^wrote " /tmp/bs-update-err >&2 || true
                 exit 1
             fi
+            if [[ ! -s "$BS_UP/$f.zig" ]]; then
+                echo "FAIL: emitted $f.zig is empty — refusing to overwrite selfhost/$f.zig" >&2
+                exit 1
+            fi
+        done
+        for f in "${FILES[@]}"; do
+            mv "$BS_UP/$f.zig" "selfhost/$f.zig"
         done
         echo "PASS: selfhost/*.zig updated — run 'zig build' to rebuild zebra.exe"
     else
