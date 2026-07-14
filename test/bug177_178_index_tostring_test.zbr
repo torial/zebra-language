@@ -21,12 +21,15 @@ def main()
     assert makeFloats()[0] == 3.14
     assert makeFloats()[1] == 2.71
 
-    # nested index via the .at() idiom (the documented workaround)
+    # nested bracket index x[i][j] — works on the selfhost (the primary compiler).
+    # The bootstrap TC lacks general List(T)[i]→T typing, so it still needs
+    # `.at(i).at(j)`; both are asserted here (this fixture runs under the selfhost).
     var g: List(List(int)) = List(List(int))()
     var r: List(int) = List(int)()
     r.add(7)
     r.add(8)
     g.add(r)
+    assert g[0][1] == 8
     assert g.at(0).at(1) == 8
 
     print("bug177_178: OK")

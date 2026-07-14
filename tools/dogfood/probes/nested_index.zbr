@@ -1,4 +1,6 @@
-# SHARED-GAP (BUG-177 nested case): x[i][j] misses .items on both; use .at(i).at(j)
+# DIVERGE self-ok/boot-fails (BUG-177): nested bracket index `x[i][j]` now works on
+# the selfhost (primary); the bootstrap TC lacks general List(T)[i]->T typing, so it
+# still needs `.at(i).at(j)`. Selfhost-ahead (drop-bootstrap; see BUG-177/BUG-179).
 def main()
     var g: List(List(int)) = List(List(int))()
     var r: List(int) = List(int)()

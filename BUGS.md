@@ -89,7 +89,7 @@ intermediate var (a call-result index) — the BUG-177 family; bind to a var fir
 
 ---
 
-## BUG-177: bracket-index on a non-name base omits `.items` ✅ FIXED for `f()[i]` (2026-07-14); `x[i][j]` remains a shared gap
+## BUG-177: bracket-index on a non-name base omits `.items` ✅ FIXED on the selfhost (2026-07-14); bootstrap selfhost-ahead for `x[i][j]`
 
 **Severity:** low — narrow; trivial workaround (bind the call to a var first).
 Surfaced while reducing Mosaic finding #6.
@@ -117,13 +117,16 @@ the base is a non-name expression, if it's an `Expr.call` whose inferred type is
 `list_`, emit `.items`. Now byte-identical on both compilers (verified via
 `tools/dogfood/`). Regression `test/bug177_178_index_tostring_test.zbr`.
 
-**`x[i][j]` (nested index base) remains a SHARED gap** — both compilers reject it, so
-it's consistent (not a divergence). The bootstrap fix needs general `List(T)[i]→T`
-element typing (the bootstrap TC only types `str_slice[i]`/`string[i]`, not arbitrary
-`List(T)[i]`), which is a larger TC change on the phasing-out compiler — deferred.
-Workaround: `.at(i).at(j)` (works on both). The selfhost fix was deliberately scoped
-to call bases (not index bases) so it stays consistent with the bootstrap rather than
-introducing a self-ok/boot-fail divergence.
+**`x[i][j]` (nested index base) — FIXED on the selfhost (2026-07-14); bootstrap is
+selfhost-ahead.** The selfhost index-read now emits `.items` for *any* non-name base
+whose inferred type is a list (via `inferExpr`), so `x[i][j]` — and arbitrary depth
+`x[i][j][k]` — work on the **primary** compiler. The **bootstrap still fails** it: its
+TC lacks a real typed-List representation (it limps via `{any}` + `str_slice`
+special-cases and has no general `List(T)[i]→T` element typing), so bringing it to
+parity would be a major TC refactor of a phasing-out compiler. Per the drop-bootstrap
+policy ([[feedback_drop_bootstrap_parity_ok]]) this is left **selfhost-ahead** and
+tracked under BUG-179; `.at(i).at(j)` remains the bootstrap-compatible idiom. The
+selfhost source uses `.at()`, so the round-trip / `--update` are unaffected.
 
 ---
 
@@ -147,27 +150,36 @@ str-method dispatch's toString arm). Verified byte-identical (`s.toString()`,
 
 ---
 
-## BUG-179: selfhost accepts constructs the bootstrap rejects — latent `--update` traps ⚠️ OPEN (documentation / low)
+## BUG-179: selfhost-ahead constructs the bootstrap rejects — WON'T-FIX on bootstrap (drop-parity), latent `--update` traps ✅ RESOLVED-AS-DOCUMENTED (2026-07-14)
 
 **Severity:** low — harmless for users (the selfhost is the primary compiler), but a
 latent trap for **compiler source**: `--update` regenerates `selfhost/*.zig` via the
 **bootstrap**, so any selfhost `.zbr` that uses a selfhost-only construct would fail
 to regen. Surfaced by the differential dogfood sweep (`tools/dogfood/`, 2026-07-14).
 
-**Known selfhost-ahead constructs (bootstrap rejects, selfhost accepts):**
-- **`expr.len.toFloat()`** — a numeric conversion on a `.len` result. The bootstrap
-  emits an unlowered `.toFloat()` method call on the (usize/i64) length and `zig`
-  rejects it (`no member 'toFloat' in 'i64'`); the selfhost lowers it. NB
-  `expr.len.toString()` works on **both** (it IS used in selfhost source, e.g.
-  `CodeGen.zbr` / `lexer_test.zbr`) — the gap is specific to `toFloat` on `.len`.
-- **`var (a, b) = call()`** — positional destructure of a tuple-returning call. The
-  bootstrap fails to emit it; the selfhost handles it.
+**Decision (2026-07-14): these are deliberately left selfhost-ahead — the bootstrap
+will NOT be brought to parity.** They all trace to the bootstrap TC lacking a real
+typed-List representation (it limps via `{any}` + `str_slice` special-cases), so
+fixing them is a major TC refactor of a phasing-out compiler. Per the drop-bootstrap
+policy ([[feedback_drop_bootstrap_parity_ok]]), that investment isn't warranted; the
+selfhost (primary) handles all of them. The hard constraint holds: none appear in
+`selfhost/*.zbr`, so the round-trip / `--update` stay green.
 
-**Currently safe:** neither construct appears in `selfhost/*.zbr` (round-trip +
-`--update` are green). This entry is a **standing caution**: if you add
-`.len.toFloat()` or `var (a,b) = f()` to compiler source, `--update` will break with
-a bootstrap emit/compile error — hoist to a plain `int` local (`var n = x.len; var
-f = n.toFloat()`) or use `.0`/`.1` tuple field access instead.
+**Known selfhost-ahead constructs (bootstrap rejects, selfhost accepts):**
+- **`expr.len.toFloat()`** — the bootstrap TC types `List.len` as unknown (not
+  `.int`), so `.toFloat()` doesn't dispatch to the numeric lowering and `zig` rejects
+  the literal `.toFloat()` call. NB `expr.len.toString()` works on **both** (used in
+  selfhost source) — the gap is `toFloat` specifically.
+- **`var (a, b) = call()`** — positional destructure of a tuple-returning call; the
+  bootstrap TC rejects it (`expected 'tuple'`).
+- **`x[i][j]` / deeper nested bracket index** — the selfhost emits `.items` for any
+  list-typed non-name base; the bootstrap lacks general `List(T)[i]→T` typing. See
+  BUG-177.
+
+**Standing caution for compiler source:** if you add any of these to `selfhost/*.zbr`,
+`--update` will break with a bootstrap emit/compile error. Hoist to a plain `int`
+local (`var n = x.len; var f = n.toFloat()`), use `.0`/`.1` tuple field access, and
+`.at(i).at(j)` for nested indexing.
 
 **Also observed (by design, not a bug):** `int * float` mixed arithmetic is rejected
 (no implicit promotion — use `.toFloat()`), but the two compilers fail *differently*

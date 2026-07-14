@@ -8328,16 +8328,17 @@ struct Generator
                     if not is_hm_idx
                         is_list_idx = fieldAwareIsList(idx_nm)
                 else
-                    # BUG-177: a non-name base — e.g. a List-returning call `f()[i]` —
-                    # is invisible to the name-based check above, so `.items` was
-                    # omitted and Zig rejected the ArrayList index. Use the inferred
-                    # type. This converges with the bootstrap, which already emits
-                    # `.items` here. (A nested index base `x[i][j]` is left to the
-                    # `.at(i).at(j)` idiom — a shared gap with the bootstrap.)
+                    # BUG-177: a non-name base — a List-returning call `f()[i]`, or a
+                    # nested index `x[i][j]` (the element of a List(List(...))) — is
+                    # invisible to the name-based check above, so `.items` was omitted
+                    # and Zig rejected the ArrayList index. Use the inferred type: if the
+                    # base produces a List, index its backing slice.  `f()[i]` converges
+                    # with the bootstrap (which already emits `.items` here); `x[i][j]`
+                    # is selfhost-ahead — the bootstrap TC lacks general `List(T)[i]→T`
+                    # typing (see BUG-177 / BUG-179; `.at(i).at(j)` works on both).
                     if .infer_ctx != nil
-                        if ix.object is Expr.call
-                            if inferExpr(ix.object, .infer_ctx!) is Type_.list_
-                                is_list_idx = true
+                        if inferExpr(ix.object, .infer_ctx!) is Type_.list_
+                            is_list_idx = true
                 if is_hm_idx
                     genExpr(ix.object)
                     w.emit(".get(")
