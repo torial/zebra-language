@@ -1,0 +1,7 @@
+# clean: interpolation of int/float/bool/str in one string
+def main()
+    var n = 42
+    var f = 3.14
+    var b = true
+    var s = "hi"
+    print("n=${n} f=${f} b=${b} s=${s}")

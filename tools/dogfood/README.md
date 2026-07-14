@@ -36,9 +36,13 @@ expected verdict. Keep each probe minimal and focused on one idiom combination.
 
 ## Findings snapshot (2026-07-14)
 
-- **clean:** `csv_split_annotated`, `word_freq`, `list_hof` — common real-world
-  patterns (annotated split-to-List, HashMap frequency count, expression-lambda
-  filter/any) work identically on both compilers.
+- **clean (9):** `csv_split_annotated`, `word_freq`, `list_hof`, `class_method`,
+  `range_loop`, `optional_bind`, `nested_hashmap`, `str_join_idx`,
+  `multi_type_interp` — a broad spread of real-world patterns (annotated
+  split-to-List, HashMap frequency count, expression-lambda filter/any, classes with
+  cue-init + methods, numeric ranges, `if x as v` binding, nested-generic HashMap
+  value, join+index, mixed-type interpolation) all work identically on both
+  compilers.
 - **SHARED-GAP:** `split_inferred` (BUG-176), `nested_index` (BUG-177 nested case —
   `x[i][j]` misses `.items`; `.at(i).at(j)` works), `int_mul_float` (no implicit
   int→float promotion — by design; use `.toFloat()`).

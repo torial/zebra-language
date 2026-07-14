@@ -1,0 +1,11 @@
+# clean: optional return + `if x as v` binding with else
+def lookup(b: bool): int?
+    if b
+        return 7
+    return nil
+def main()
+    var r = lookup(true)
+    if r as v
+        print("bound ${v}")
+    else
+        print("nil")

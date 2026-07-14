@@ -1,0 +1,9 @@
+# clean: HashMap(str, List(int)) — nested generic value, get orelse
+def main()
+    var m: HashMap(str, List(int)) = HashMap(str, List(int))()
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    xs.add(2)
+    m.set("k", xs)
+    var got = m.get("k") orelse List(int)()
+    print("len=${got.len}")

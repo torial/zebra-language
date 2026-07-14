@@ -1,0 +1,7 @@
+# clean: List(str).join + index on an annotated list
+def main()
+    var parts: List(str) = List(str)()
+    parts.add("a")
+    parts.add("b")
+    var joined = parts.join("-")
+    print("joined=${joined} first=${parts[0]}")

@@ -1,0 +1,14 @@
+# clean: class with cue init + mutating method + accessor
+class Counter
+    var count: int
+    cue init()
+        .count = 0
+    def bump()
+        .count += 1
+    def value(): int
+        return .count
+def main()
+    var c = Counter()
+    c.bump()
+    c.bump()
+    print("count=${c.value()}")

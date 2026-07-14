@@ -1,0 +1,6 @@
+# clean: numeric range for-loop
+def main()
+    var total = 0
+    for i in 0..5
+        total = total + i
+    print("total=${total}")
