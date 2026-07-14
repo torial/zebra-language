@@ -100,6 +100,17 @@ pub fn build(b: *std.Build) void {
     );
     b.getInstallStep().dependOn(&install_sqlite.step);
 
+    // Install the stdlib preamble alongside zebra.exe so the selfhost compiler can
+    // find it when invoked from any directory (it reads the preamble at codegen
+    // time).  Without this, `zebra.exe` only works with cwd = the repo root — the
+    // cwd-dependent-panic bug.  main.zbr resolves repo-relative first, then this
+    // exe-adjacent copy.
+    const install_preamble = b.addInstallFile(
+        b.path("selfhost/stdlib_preamble.zig"),
+        "bin/stdlib_preamble.zig",
+    );
+    b.getInstallStep().dependOn(&install_preamble.step);
+
     const run = b.addRunArtifact(exe);
     run.addArgs(b.args orelse &.{});
     const run_step = b.step("run", "Run the Zebra compiler");

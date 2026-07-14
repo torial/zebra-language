@@ -1,6 +1,98 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-174. Next new bug: BUG-175.**
+**Last bug number generated: BUG-178. Next new bug: BUG-179.**
+
+---
+
+## Mosaic POC dogfood (2026-07-14)
+
+A separate Claude session port-tested Zebra on a real differential task (a Greek-NT
+intertextual/statistical computation, Python oracle vs Zebra product, byte-identical
+output). Its ledger: `C:\Projects\mosaic\docs\ZEBRA_FINDINGS.md` (8 findings, logged
+against "0.1.0 Phase 22"). Re-verified against HEAD on 2026-07-14:
+
+- **Already fixed since Phase 22:** escape sequences in interpolation (`\t`);
+  indexed `List(str)`/`List(float)` corruption for locals **and** struct fields
+  (both emit correct `.items[i]` with `{s}`/`{d}`); the ternary-truncation symptom.
+- **Not bugs:** numeric conversions (`toString`/`toFloat`/`toInt` all work and are
+  correctly documented — the POC guessed `toStr`, which isn't the API); tolerant-zero
+  `toInt` on CRLF (data hygiene); print→stderr (known fast-backend quirk).
+- **Live → filed below:** BUG-175 (fixed here), BUG-176, BUG-177, BUG-178.
+
+---
+
+## BUG-175: `zebra.exe` panics `File.read error` when run outside the repo dir ✅ FIXED (2026-07-14)
+
+**Severity:** high — a shipped compiler that only runs inside its own source tree
+is a 0.9 ("ready for others") adoption blocker. Surfaced by the Mosaic POC (finding
+#1).
+
+**Symptom:** the selfhost `zebra.exe` panics `File.read error` (after "resolved OK")
+on ANY program — hello world included — when the cwd is not the repo root. The
+**bootstrap** works anywhere.
+
+**Root:** the selfhost reads the stdlib preamble at codegen time via
+`File.read("selfhost/stdlib_preamble.zig")` — a **cwd-relative** path
+(`main.zbr`). The bootstrap **embeds** the preamble at build time
+(`build_options.stdlib_preamble_pre_gui/post_gui`), so it needs no runtime file.
+This was both a usability bug and a self-hosting equivalence gap (the bootstrap ran
+anywhere; the selfhost did not).
+
+**Fix:** resolve the preamble repo-relative first (keeps every gate — all run from
+the repo root — byte-identical), then fall back to a copy installed alongside the
+exe. Mirrors the existing sqlite3.c exe-dir pattern (`sys.selfExe()` +
+`Path.dirname()`, `main.zbr:2189`). `build.zig` now installs
+`selfhost/stdlib_preamble.zig` → `bin/stdlib_preamble.zig` next to `zebra.exe`.
+Verified: runs from the repo root, from `scratchpad/`, and from `C:\tmp`; full
+round-trip byte-identical; smoke 233/233. Selfhost-only convergence (bootstrap
+already embeds).
+
+---
+
+## BUG-176: `split()` yields a lazy SplitIterator, not an indexable `List(str)` ⚠️ OPEN
+
+**Severity:** medium — documented as `List(str)` (QUICKSTART) but not indexable in
+the common inferred/indexed forms. Surfaced by the Mosaic POC (finding #2).
+
+**Symptom:** `s.split(sep)` lowers to `std.mem.splitSequence` (a lazy iterator).
+`for x in s.split(sep)` works; `var cols = s.split(sep)` then `cols[0]`, or
+`s.split(sep)[0]` directly, fails to compile (`SplitIterator does not support
+indexing`). Materialization into a `List(str)` happens **only** when the target is
+explicitly annotated `var cols: List(str) = s.split(sep)` (the BUG-092 path).
+
+**Decision (Sean, 2026-07-14): make `split()` return a `List(str)`.** Extend
+materialization to the inferred-type and expression/indexed positions (infer
+`split()` as `List(str)`, materialize to an `ArrayList`), while keeping the lazy
+iterator for the `for x in s.split()` fast path (the for-in codegen already
+intercepts split). Must land in **both** compilers (equivalence) with the round-trip
+green. Its own gated pass.
+
+---
+
+## BUG-177: indexing a call-result list expression (`f()[i]`) omits `.items` ⚠️ OPEN
+
+**Severity:** low — narrow; trivial workaround (bind the call to a var first).
+Surfaced while reducing Mosaic finding #6.
+
+**Symptom:** indexing the direct result of a `List`-returning call —
+`makeFloats()[1]` — emits `makeFloats()[i]` instead of `makeFloats().items[i]`, so
+Zig rejects it (`array_list.Aligned does not support indexing`). Local-var and
+struct-field list indexing both correctly emit `.items[i]`. The index-lowering only
+inserts `.items` for a base it recognizes as a list local/field, not for a raw call
+expression.
+
+---
+
+## BUG-178: `str.toString()` emits `{}` (no specifier) instead of `{s}` ⚠️ OPEN
+
+**Severity:** low — an identity call you'd rarely write directly, but a hazard for
+generic `@derive`/interface code that calls `.toString()` on a value that happens to
+be a `str`. Surfaced verifying the numeric-conversion matrix (Mosaic finding #3).
+
+**Symptom:** `var s = "hi"; s.toString()` emits a format with a bare `{}` on a
+`[]const u8`, which Zig rejects (`cannot format slice without a specifier`).
+`toString()` on int/float/bool works. Fix: emit `{s}` (or a no-op identity) for a
+str receiver.
 
 ---
 

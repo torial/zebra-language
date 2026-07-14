@@ -2052,7 +2052,18 @@ def main()
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
-    const preamble_path      = "selfhost/stdlib_preamble.zig"
+    # Preamble resolution (BUG: cwd-dependent File.read).  Prefer the repo-relative
+    # path so every gate (all run from the repo root) is byte-identical; fall back to
+    # a copy installed alongside the exe so `zebra.exe` works when invoked from any
+    # directory — mirrors the sqlite3.c exe-dir pattern below.  The bootstrap embeds
+    # the preamble via build_options; this brings the selfhost to the same "runs
+    # anywhere" behaviour without embedding.
+    var preamble_path        = "selfhost/stdlib_preamble.zig"
+    if not File.exists(preamble_path)
+        var pre_exe_dir: str = Path.dirname(sys.selfExe())
+        if pre_exe_dir == ""
+            pre_exe_dir = "."
+        preamble_path = pre_exe_dir + "/stdlib_preamble.zig"
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
     # --module-path DIR: extra search dir for `use` deps not adjacent to the
