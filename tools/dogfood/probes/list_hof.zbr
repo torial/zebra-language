@@ -1,0 +1,7 @@
+# clean: filter/any with expression lambdas
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    xs.add(4)
+    var evens: List(int) = xs.filter(def(n) = n % 2 == 0)
+    print("evens=${evens.len} any>3=${xs.any(def(n) = n > 3)}")

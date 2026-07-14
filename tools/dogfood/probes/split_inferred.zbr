@@ -1,0 +1,5 @@
+# SHARED-GAP (BUG-176): inferred/indexed split stays a lazy SplitIterator (not indexable)
+def main()
+    var line = "a,b,c"
+    var cols = line.split(",")
+    print("first=${cols[0]}")

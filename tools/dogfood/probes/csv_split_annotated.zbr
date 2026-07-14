@@ -1,0 +1,5 @@
+# clean: annotated split-to-List(str) materializes and indexes
+def main()
+    var line = "id,name,score"
+    var cols: List(str) = line.split(",")
+    print("first=${cols[0]} n=${cols.len}")

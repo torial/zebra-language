@@ -1,0 +1,7 @@
+# SHARED-GAP (BUG-177 nested case): x[i][j] misses .items on both; use .at(i).at(j)
+def main()
+    var g: List(List(int)) = List(List(int))()
+    var r: List(int) = List(int)()
+    r.add(7)
+    g.add(r)
+    print("${g[0][0]}")

@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-178. Next new bug: BUG-179.**
+**Last bug number generated: BUG-179. Next new bug: BUG-180.**
 
 ---
 
@@ -81,14 +81,23 @@ struct-field list indexing both correctly emit `.items[i]`. The index-lowering o
 inserts `.items` for a base it recognizes as a list local/field (name-keyed via
 `fieldAwareIsList(name)`), not for a raw call expression.
 
-**Convergence target (safe fix):** the **bootstrap emits it correctly** —
-`makeFloats().items[@intCast(1)]` — so this is a selfhost-only divergence to
-converge (like BUG-173), not a shared design gap. (Minor aside: the bootstrap
-formats the element with `{any}` where the selfhost would use `{d}`; the `.items`
-insertion is the compile-blocking part.) Deferred as a supervised task: the fix
-touches the index-read codegen's base-kind decision, and the round-trip gate does
-NOT catch selfhost-vs-bootstrap divergence, so it needs a differential index-pattern
-battery to validate.
+**Related manifestation — nested bracket index `x[i][j]` (SHARED, both fail).**
+The dogfood sweep (2026-07-14) found that chaining bracket indexes — `grid[0][1]`
+where `grid: List(List(int))` — misses `.items` on the *inner* result and is
+rejected by **both** compilers (`array_list.Aligned does not support indexing`).
+`grid.at(0).at(1)` works on both. Same root as the call-result case: the index-read
+`.items` insertion is name-keyed (`fieldAwareIsList(name)`), so any non-name base —
+a call result *or* an index result — is missed. The two cases differ only in
+bootstrap coverage: it handles the call-result base but not the nested-index base.
+
+**Convergence/fix note:** the call-result case is a **selfhost-only divergence**
+(bootstrap emits `makeFloats().items[@intCast(1)]` correctly — a safe convergence
+like BUG-173; minor aside: it formats with `{any}` vs the selfhost's `{d}`). The
+nested-index case is a **shared gap** (fix both). Deferred as a supervised task: the
+fix touches the index-read codegen's base-kind decision in both compilers, and the
+round-trip gate does NOT catch selfhost-vs-bootstrap divergence, so it needs the
+differential index-pattern battery (`tools/dogfood/`) to validate. Workaround today:
+`.at(i)` instead of `[i]` on a non-name base.
 
 ---
 
@@ -107,6 +116,36 @@ str receiver.
 no correct reference to match; the fix must change both compilers in a new way and
 be validated differentially (the round-trip gate doesn't cover selfhost-vs-bootstrap
 divergence). Supervised task, same class as BUG-176.
+
+---
+
+## BUG-179: selfhost accepts constructs the bootstrap rejects — latent `--update` traps ⚠️ OPEN (documentation / low)
+
+**Severity:** low — harmless for users (the selfhost is the primary compiler), but a
+latent trap for **compiler source**: `--update` regenerates `selfhost/*.zig` via the
+**bootstrap**, so any selfhost `.zbr` that uses a selfhost-only construct would fail
+to regen. Surfaced by the differential dogfood sweep (`tools/dogfood/`, 2026-07-14).
+
+**Known selfhost-ahead constructs (bootstrap rejects, selfhost accepts):**
+- **`expr.len.toFloat()`** — a numeric conversion on a `.len` result. The bootstrap
+  emits an unlowered `.toFloat()` method call on the (usize/i64) length and `zig`
+  rejects it (`no member 'toFloat' in 'i64'`); the selfhost lowers it. NB
+  `expr.len.toString()` works on **both** (it IS used in selfhost source, e.g.
+  `CodeGen.zbr` / `lexer_test.zbr`) — the gap is specific to `toFloat` on `.len`.
+- **`var (a, b) = call()`** — positional destructure of a tuple-returning call. The
+  bootstrap fails to emit it; the selfhost handles it.
+
+**Currently safe:** neither construct appears in `selfhost/*.zbr` (round-trip +
+`--update` are green). This entry is a **standing caution**: if you add
+`.len.toFloat()` or `var (a,b) = f()` to compiler source, `--update` will break with
+a bootstrap emit/compile error — hoist to a plain `int` local (`var n = x.len; var
+f = n.toFloat()`) or use `.0`/`.1` tuple field access instead.
+
+**Also observed (by design, not a bug):** `int * float` mixed arithmetic is rejected
+(no implicit promotion — use `.toFloat()`), but the two compilers fail *differently*
+— the bootstrap rejects cleanly at TC, the selfhost emits invalid Zig. Minor
+selfhost robustness gap: it should reject mixed-numeric arithmetic at TC like the
+bootstrap rather than emit un-compilable output.
 
 ---
 

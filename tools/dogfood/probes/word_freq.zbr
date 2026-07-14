@@ -1,0 +1,9 @@
+# clean: HashMap frequency count over split words (the Mosaic POC domain)
+def main()
+    var text = "a b a c b a"
+    var freq: HashMap(str, int) = HashMap(str, int)()
+    for w in text.split(" ")
+        var cur = freq.get(w) orelse 0
+        freq.set(w, cur + 1)
+    var a = freq.get("a") orelse 0
+    print("a=${a}")

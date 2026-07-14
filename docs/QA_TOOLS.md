@@ -151,6 +151,16 @@ test file through **both** compilers and diffs exit code + program output. Rando
 where the fuzzer is; fixed-corpus where the fuzzer is random. `zig build run --
 tools/parity_check.zbr`.
 
+**`tools/dogfood/run.sh`** — hand-directed differential sweep. Where the fuzzer is
+random and `parity_check` runs the existing test corpus, this curates *realistic*
+programs exercising stdlib/idiom **combinations** a real user reaches for (the kind
+that surfaced the Mosaic POC findings). Each probe is emitted by both compilers and
+compile-checked, then classified `clean` / `SHARED-GAP` / `DIVERGE self-fails`
+(converge selfhost) / `DIVERGE boot-fails` (selfhost-ahead). Because the round-trip
+gate can't see selfhost-vs-bootstrap divergence, this is the differential net for
+real-world shapes. Add a `probes/*.zbr` with a header comment stating its expected
+verdict. See `tools/dogfood/README.md`. `bash tools/dogfood/run.sh`.
+
 **`tools/corpus_snapshot.sh`** — before/after emit-shift detector for wave edits.
 Writes a `file<TAB>backend<TAB>exit<TAB>content_sha<TAB>stderr_sha` TSV; `diff` the
 pre/post. A changed `content_sha` with `exit=0` on both sides is the sneaky case

@@ -1,0 +1,9 @@
+# DIVERGE (selfhost-ahead, BUG-179): var (a,b) = tuple-returning call — bootstrap rejects
+def minmax(xs: List(int)): (int, int)
+    return (xs[0], xs[1])
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(5)
+    xs.add(9)
+    var (lo, hi) = minmax(xs)
+    print("lo=${lo} hi=${hi}")

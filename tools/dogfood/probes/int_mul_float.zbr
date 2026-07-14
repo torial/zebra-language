@@ -1,0 +1,5 @@
+# SHARED-GAP (by design: no implicit promotion) — use i.toFloat(); selfhost emits bad Zig vs boot clean-reject
+def main()
+    var i = 5
+    var f = i * 1.0
+    print("${f}")

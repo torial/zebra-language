@@ -1,0 +1,7 @@
+# DIVERGE (selfhost-ahead, BUG-179): .len.toFloat() — bootstrap rejects (usize has no toFloat)
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(2)
+    xs.add(4)
+    var mean = 6.0 / xs.len.toFloat()
+    print("mean=${mean}")
