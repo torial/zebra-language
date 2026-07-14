@@ -78,8 +78,17 @@ Surfaced while reducing Mosaic finding #6.
 `makeFloats()[1]` — emits `makeFloats()[i]` instead of `makeFloats().items[i]`, so
 Zig rejects it (`array_list.Aligned does not support indexing`). Local-var and
 struct-field list indexing both correctly emit `.items[i]`. The index-lowering only
-inserts `.items` for a base it recognizes as a list local/field, not for a raw call
-expression.
+inserts `.items` for a base it recognizes as a list local/field (name-keyed via
+`fieldAwareIsList(name)`), not for a raw call expression.
+
+**Convergence target (safe fix):** the **bootstrap emits it correctly** —
+`makeFloats().items[@intCast(1)]` — so this is a selfhost-only divergence to
+converge (like BUG-173), not a shared design gap. (Minor aside: the bootstrap
+formats the element with `{any}` where the selfhost would use `{d}`; the `.items`
+insertion is the compile-blocking part.) Deferred as a supervised task: the fix
+touches the index-read codegen's base-kind decision, and the round-trip gate does
+NOT catch selfhost-vs-bootstrap divergence, so it needs a differential index-pattern
+battery to validate.
 
 ---
 
@@ -93,6 +102,11 @@ be a `str`. Surfaced verifying the numeric-conversion matrix (Mosaic finding #3)
 `[]const u8`, which Zig rejects (`cannot format slice without a specifier`).
 `toString()` on int/float/bool works. Fix: emit `{s}` (or a no-op identity) for a
 str receiver.
+
+**Shared bug (both compilers fail identically), so NOT a convergence** — there is
+no correct reference to match; the fix must change both compilers in a new way and
+be validated differentially (the round-trip gate doesn't cover selfhost-vs-bootstrap
+divergence). Supervised task, same class as BUG-176.
 
 ---
 

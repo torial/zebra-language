@@ -1878,6 +1878,9 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
 | Int-to-float         | `x.toFloat()`                  | explicit conversion                      |
+| Float-to-int         | `x.toInt()`                    | explicit conversion (drops fraction)     |
+| Number-to-string     | `x.toString()`                 | on int/float/bool; or `"${x}"` interp    |
+| String-to-number     | `s.toInt()` / `s.toFloat()`    | 0 on bad input; `tryInt`/`tryFloat` to detect |
 | Divide integers      | `int` division                 | use `%` for modulo                       |
 | Field access (self)  | `.field`                       | leading-dot shorthand; shadow-resilient  |
 
