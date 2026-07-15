@@ -1740,6 +1740,24 @@ def recordImplicitTry(site: str)
 def implicitTrySites(): List(str)
     return _implicit_try_sites
 
+# §28a step 1 (selfhost measure): a type-dispatch site that guessed the emit
+# because inference could not PROVE the operand/receiver type.  Three sites, each
+# mirroring a bootstrap guess (src/CodeGen.zig):
+#   add           numeric `+` emitted without proving both operands numeric
+#   len_count     `.len`/`.count` fallback on an unproven receiver
+#   list_dispatch unknown receiver + List-shaped method name → assume List
+# Collected unconditionally (behavior-neutral, like _implicit_try_sites); main.zbr
+# reports them under --warn-inference-guess (measure) and — once the flip lands —
+# rejects unless --allow-inference-guess.  File-scope so it accumulates across
+# every module generated in one process (deps + root).
+var _inference_guess_sites: List(str) = List(str)()
+
+def recordInferenceGuess(site: str)
+    _inference_guess_sites.add(site)
+
+def inferenceGuessSites(): List(str)
+    return _inference_guess_sites
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -2117,6 +2135,22 @@ struct Generator
                 return true
             else
                 return false
+
+    # §28a step 1: the List-shaped method names — the same set the bootstrap's
+    # list_dispatch guess is gated on (src/CodeGen.zig ~7503).  When the receiver
+    # type is unproven and the method name is one of these, the name-based
+    # heuristic below routes to List codegen purely by name (the Mode-2 guess).
+    def isListShapedMethodName(nm: str): bool
+        return nm == "add" or nm == "at" or nm == "remove" or nm == "clear" or nm == "contains" or nm == "count" or nm == "sort" or nm == "sortBy" or nm == "any" or nm == "all" or nm == "find" or nm == "join"
+
+    # §28a step 1: true when inference cannot supply a concrete type for `e`
+    # (no infer_ctx, or the inferred type is `unknown_`).  A guess at a
+    # type-dispatch site is only counted when the receiver/operand is unproven.
+    def typeIsUnknown(e: Expr): bool
+        if .infer_ctx == nil
+            return true
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        return t is Type_.unknown_
 
     def withMethodCtx(ms: StrSet?, rs: StrSet?, throws_: bool, members: List(Decl), pnames: StrSet?, sparams: StrSet, sname: str): Generator
         var g = this except
@@ -8273,6 +8307,13 @@ struct Generator
                                 pass
                     # str.len or any other .len — always usize in Zig, cast to i64
                     if m.member == "len"
+                        # §28a step 1 (measure): the field/inference checks above did not
+                        # prove List or HashMap, so we fall back to `.len` (string-shaped).
+                        # That is only PROVEN correct for a str; on an unproven receiver
+                        # it is a guess (the bootstrap's opposite default, `.items.len`,
+                        # is the same guess in the other direction — len_count site).
+                        if not .isStringBoth(m.object, "len_recv")
+                            recordInferenceGuess("len_count: " + source_file + ":" + w.cur_line.toString())
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
                         w.emit(".len))")
@@ -8825,6 +8866,13 @@ struct Generator
                 genExpr(b.right)
                 w.emit(", _allocator)")
                 return
+            # §28a step 1 (measure): neither operand proved string (above), so we fall
+            # through to numeric `+` at the bottom of genBinary.  That is only PROVEN
+            # correct when both operands are known-numeric; otherwise we are guessing
+            # numeric over string-concat — the F7/BUG-168 defect.  Matches the
+            # bootstrap's `!(lt.isNumeric() and rt.isNumeric())` guard (CodeGen.zig).
+            if not (.isPrimType(b.left) and .isPrimType(b.right))
+                recordInferenceGuess("add: " + source_file + ":" + w.cur_line.toString())
         if b.op == BinaryOp.mod
             w.emit("@mod(")
             genExpr(b.left)
@@ -10893,6 +10941,14 @@ struct Generator
                         um_ai = um_ai + 1
                     w.emit(")")
                     return
+        # §28a step 1 (measure): reaching the name-based heuristic below means no
+        # typed arm matched — the receiver type was not proven.  If the method name
+        # is List-shaped, the heuristic routes to List codegen purely by name (the
+        # Mode-2 guess: `.append`/`.items[…]`/`.orderedRemove` on an un-inferred
+        # receiver).  Count only when the receiver is genuinely unknown, so a
+        # proven-but-arm-less type (e.g. StringBuilder) is not miscounted.
+        if isListShapedMethodName(mname) and typeIsUnknown(m.object)
+            recordInferenceGuess("list_dispatch: " + source_file + ":" + w.cur_line.toString())
         # StringBuilder
         if mname == "append"
             # Guard: File.append is a static file op handled later — don't let the

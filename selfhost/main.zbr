@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -2095,6 +2095,17 @@ def main()
                 for itry_site in itry_sites
                     sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)")
                 sys.exit(1)
+
+        # §28a step 1 (selfhost measure): --warn-inference-guess reports every
+        # type-dispatch site that guessed the emit without a proven type (numeric
+        # add / len fallback / name-based List routing).  Measure mode — reports to
+        # stderr, no exit.  compileDep accumulated the sites across deps + root.
+        # The flip (guess → compile error, gated by --allow-inference-guess) follows
+        # the §28b template above.
+        if args.contains("--warn-inference-guess")
+            var ig_sites: List(str) = inferenceGuessSites()
+            for ig_site in ig_sites
+                sys.errln("INFER_GUESS: " + ig_site)
 
         if mode_emit
             # --emit-zig: print(root file's Zig source to stdout)

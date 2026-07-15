@@ -1,6 +1,38 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-180. Next new bug: BUG-181.**
+**Last bug number generated: BUG-181. Next new bug: BUG-182.**
+
+---
+
+## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` (>300s timeout) ⚠️ OPEN (pre-existing; self-hosting gap)
+
+The self-hosted `zebra.exe` does not finish compiling its own entry file
+`selfhost/main.zbr` — it runs past a 300s cap without producing output.
+`selfhost/pipeline_test.zbr` shows the same. Smaller selfhost modules
+(`CodeGen.zbr`, `TypeChecker.zbr`, `CgHelpers.zbr`, …) compile fine.
+
+**Not a regression.** Confirmed on the clean, committed tree (pre any §28a
+instrumentation): `git stash` the working changes, rebuild `zebra.exe`, time
+`zebra.exe --output-dir TMP selfhost/main.zbr` → 300s timeout. So this is a
+long-standing self-hosting limitation, not caused by recent work.
+
+**Why unnoticed.** No gate self-compiles `main.zbr`. The `.zbr → .zig` regen
+(`tools/bootstrap_check.sh`, `zig build update-selfhost`) is performed by the
+**bootstrap** (`zebra-bootstrap.exe`, the Zig-implemented compiler — regen
+authority), which compiles `main.zbr` in seconds. `tools/selfhost_smoke.sh`
+runs `zebra.exe --emit-zig` only on small fixtures, never on `main.zbr`.
+
+**Impact.** (a) The selfhost is not yet able to compile its own driver, a gap on
+the road to Zig-only-in-special-cases. (b) It constrains §28a Phase-4 validation:
+"both compilers reject the same programs" cannot be exercised on `main.zbr`
+because the selfhost cannot compile it at all.
+
+**Where to look.** A pathological (likely super-linear) cost in the selfhost
+pipeline on the largest/most-complex input — candidates: `inferExpr` /
+`methodReturnAny` scans invoked per-node during codegen, or an O(n²) pass over
+module decls. Profile `zebra.exe` on `main.zbr` (or bisect by trimming `main.zbr`)
+to localize. The bootstrap does the same work in seconds, so compare the two
+implementations' hot paths.
 
 ---
 

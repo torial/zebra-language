@@ -23,11 +23,13 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 
 ## Pre-1.0 blockers (the road to 0.9 / 1.0)
 
-- [ ] **§28a step 4 — inference-or-error language flip.** Convert the residual
-  typed-dispatch *guess* into a Zebra-level "cannot infer type of X; annotate"
-  compile error in BOTH compilers. Corpus is at 0 guesses and `check_inference_guess.sh`
-  protects it, so this is a rare backstop, not a common path. Needs its own gated,
-  supervised session (semantic + irreversible). → *Open detail §28a.*
+- [ ] **§28a step 4 — inference-or-error language flip (selfhost).** Phase 1 (measure)
+  DONE 2026-07-15: instrumented the 3 selfhost guess sites; 80 unique sites but ~0 genuine
+  ambiguity — the gap is selfhost *inference strength*, not a flip. **Step 2 open: close the
+  ~5–8 inference root causes** (`.len`→int, arith-of-prims→prim, call-return propagation,
+  user-class field typing; overlaps §24e), re-measure toward 0, THEN flip. Bootstrap corpus
+  stays at 0 (`check_inference_guess.sh`), so the user-facing guarantee already holds. Gated,
+  supervised. Also surfaced BUG-181 (selfhost can't self-compile `main.zbr`). → *Open detail §28a.*
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*
@@ -161,21 +163,46 @@ but **ungated** — so the flip = add the `isPrimType` gate and turn "neither st
 proven-prim" into an error.
 
 **This is the §28a campaign re-run on the selfhost (not a one-shot). Measure-first,
-per §28a's own discipline:**
-1. Instrument the 3 selfhost guess sites in warn mode (record when the else-branch
-   fires without a proven type) — mirror the bootstrap's step 1.
-2. Measure the corpus: how many "unproven" sites? (0 → flip freely; N → inference gaps
-   to close first, like the bootstrap's step 2. Selfhost TC is ahead of bootstrap, so
-   expect few — but that's the empirical question.)
-3. Close any gaps.
-4. Flip to error + `--allow-inference-guess` hatch + a selfhost gate. Follow the §28b
-   template (commit 0a591ce): module-global sites list (mirror `boss_director`'s
-   registry), driver-level reject in `main.zbr` (NOT `@compileError` — malforms
-   expression-position sites), `cur_line` on the shared Writer for the location.
-   **The round-trip won't catch selfhost-vs-bootstrap divergence** — the flip acts as a
-   differential probe (§28b caught `Parser.zbr:3164` this way; expect §28a to surface
-   similar), so run the full round-trip + validate both compilers reject the same
-   programs.
+per §28a's own discipline.**
+
+**Phase 1 (measure) — DONE 2026-07-15.** Instrumented the 3 selfhost guess sites
+(`selfhost/CodeGen.zbr`: `add` ~8874, `len_count` ~8315, `list_dispatch` ~10950),
+recording unconditionally via the §28b `_implicit_try_sites` mechanism; reported under
+`--warn-inference-guess` (behavior-neutral, no exit). Tool: `tools/measure_selfhost_guess.sh`.
+
+**Result: 80 unique sites** in `selfhost/*.zbr` (add 6, len_count 30, list_dispatch 44;
+60 in `CodeGen.zbr`) — **NOT 0**, so not "flip freely". BUT triage found **~zero genuine
+ambiguity** — every sampled site emits CORRECT code. Two causes:
+1. *Non-guesses the instrumentation over-flags* — user-class field/method on an un-inferred
+   receiver: `StrSet.len` (a real `var len: int` field), `args.contains()` (`args = Arg.parse()`,
+   a user `Arg` method). ~15 of 44 list_dispatch are `args.contains` alone.
+2. *Benign under-inference* — e.g. `(l.len - t.len) + kw.len` is int arithmetic flagged only
+   because `inferExpr` doesn't type `.len` → int; `x = c.items(); x.at(i)` routes right by name
+   because the `.items()` return type isn't propagated.
+
+**Why ≠ bootstrap (which reached 0 standalone):** the bootstrap consults a global per-expr
+type map (`tc.expr_types.get(e)`); the selfhost `InferCtx` has only `scope: HashMap(str,Type_)`
++ on-demand `inferExpr`, which returns `unknown_` for `.len`, call-returns, user-class fields.
+No per-expr map exists → precision = strengthening inference, not a lookup.
+
+**Decision (Sean 2026-07-15): land Phase 1 record-only, then step 2, then flip.** NOT the
+scope-down (bootstrap gate already provides the user-facing guarantee at 0) and NOT a rush to
+flip (would convert ~80 benign under-inferences into false errors).
+
+**Step 2 (open) — close the ~5–8 inference root causes**, re-measuring toward 0:
+- `inferExpr(.len / .count())` → int
+- `inferExpr(arith of prims)` → prim (so `int + int` proves)
+- propagate call-return types into scope: `x = f.items()` → List; `args = Arg.parse()` → Arg
+- `inferExpr(user-class field access)` → the field's declared type (StrSet.len → int)
+- user-class method-return typing — **overlaps §24e** (fold in; §24e priority already raised by §28a)
+
+**Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
+hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
+module-global sites list, driver-level reject in `main.zbr` (NOT `@compileError` — malforms
+expression-position sites), `cur_line` on the shared Writer for the location. **The round-trip
+won't catch selfhost-vs-bootstrap divergence** — the flip acts as a differential probe (§28b
+caught `Parser.zbr:3164`). CONSTRAINT: `main.zbr` can't be part of the both-compilers-reject
+validation — the selfhost can't compile it (BUG-181).
 
 Also consider (Sean, if bootstrap kept longer): flip the bootstrap's 3 sites too
 (mirror §28b's `rejectImplicitTry`) for user-code parity — low-risk, marginal value
