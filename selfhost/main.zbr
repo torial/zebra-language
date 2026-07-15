@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -2084,6 +2084,17 @@ def main()
         mc.module_path = module_path
         mc.node_addon = mode_node
         mc.compileDep(path, true)?
+
+        # §28b step 5 (the flip): reject implicit error propagation (a throws call
+        # the user did not mark with `?`) unless --allow-implicit-try.  compileDep
+        # accumulated every auto-`try` site across deps + root; a valid `try` was
+        # still emitted, so this is a clean driver rejection.
+        if not args.contains("--allow-implicit-try")
+            var itry_sites: List(str) = implicitTrySites()
+            if itry_sites.len > 0
+                for itry_site in itry_sites
+                    sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)")
+                sys.exit(1)
 
         if mode_emit
             # --emit-zig: print(root file's Zig source to stdout)

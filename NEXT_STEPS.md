@@ -28,10 +28,6 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   compile error in BOTH compilers. Corpus is at 0 guesses and `check_inference_guess.sh`
   protects it, so this is a rare backstop, not a common path. Needs its own gated,
   supervised session (semantic + irreversible). → *Open detail §28a.*
-- [ ] **§28b step 5 — implicit-try → compile error flip.** Make an omitted `?` on a
-  throws call a driver-level diagnostic (not `@compileError`; see the design note),
-  with `--allow-implicit-try` as the one-release hatch. `check_explicit_try.sh`
-  holds the repo at 0 meanwhile. Own gated session. → *Open detail §28b.*
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*
@@ -157,19 +153,33 @@ diverges). On current evidence this is a rare backstop, not a common diagnostic;
 gate is the durable protection until the flip. Systemic fix for the F7/BUG-162/BUG-168
 class. Raises the priority of §24e (the method-descriptor table).
 
-## §28b — unify error propagation on always-explicit `?` (step 5 open) [APPROVED]
+## §28b — unify error propagation on always-explicit `?` ✅ DONE (step 5 flipped 2026-07-15)
 
-Steps 1–4 done: instrumentation → swept `?` into all 441 auto-try sites → inventory
-0 → `check_explicit_try.sh` gate (incremental; ~0.4s no-change, full 3m21s; wire it
-as a pre-commit hook, not inside the post-build pipeline). **Step 5 open (own gated
-session):** the language-level flip for external code too. **Design note:** do NOT
-emit `@compileError` at the auto-try sites — 4 of 5 are expression-position, so it
-malforms the surrounding expression. Correct approach = **driver-level diagnostic**:
-the sites record spans; after emission, if non-empty and not `--allow-implicit-try`,
-`main` prints `file:line:col: throws call needs '?'` and exits non-zero (valid `try`
-still written; compile rejected at the driver). Mirror in selfhost, gate, then flip
-default-on with `--allow-implicit-try` as the one-release hatch. CHANGELOG entry at
-flip time (biggest breaking change since the `arena` keyword removal).
+All five steps complete. Steps 1–4 (2026-07-02): instrumentation → swept `?` into
+441 auto-try sites → inventory 0 → `check_explicit_try.sh` gate. **Step 5 (the flip,
+2026-07-15):** an omitted `?` on a throws call is now a **compile error in both
+compilers**, via a **driver-level diagnostic** (NOT `@compileError` — 4 of 5 sites
+are expression-position and would malform the emit). A valid `try` is still emitted;
+the driver collects the sites and rejects with `file:line: throws call needs '?'`
+after codegen. `--allow-implicit-try` is the one-release migration hatch. Bootstrap:
+a `pub var implicit_try_sites` global + `rejectImplicitTry` in `main.zig`. Selfhost:
+a file-scope `_implicit_try_sites` (mirroring `boss_director`'s registry) + `cur_line`
+on the shared Writer + the check in `main.zbr`. Gates: smoke 236/236, round-trip
+byte-identical, corpus 0. QUICKSTART §12 + CHANGELOG updated. Regression:
+`test/fail_fixtures/implicit_try_rejected_test.zbr` (smoke_tc_fail).
+
+**Surfaced + fixed:** the flip caught `selfhost/Parser.zbr:3164` (`return
+p.parseModule()`) — a genuine implicit-try the bootstrap's instrumentation never
+flagged because the bootstrap emits an **error-union passthrough** (`return X`, no
+`try`) there while the selfhost auto-`try`s it. Adding `?` converged both emitters
+(→ `return try …`) and completed the sweep.
+
+**Residual divergence (acceptable, documented):** the selfhost flip rejects
+return-position throws calls on a local (`return x.method()` without `?`); the
+bootstrap uses passthrough there, so it does *not* reject them. Selfhost-stricter is
+the acceptable direction (bootstrap phasing out); a user hitting the selfhost
+rejection just adds `?` (the intended fix). Close by extending the bootstrap's
+return-path detection if the bootstrap is kept longer.
 
 ## §28e — spec `str` ownership per stdlib call
 
@@ -349,7 +359,8 @@ Tooling section above.
 
 ## §28 — pre-1.0 design-review campaign (Fable/Opus/Sonnet, 2026-07-02 → 07-04) — mostly ✅
 
-Open tails (§28a step 4, §28b step 5, §28e, §28f, §28j step b) are in Open-detail
+Open tails (§28a step 4, §28e, §28f, §28j step b) are in Open-detail (§28b flipped
+2026-07-15 — see the §28b section above, now DONE)
 above. Completed pieces:
 
 - **§28c ✅ (07-04)** — exhaustiveness default-on (`--no-warn-non-exhaustive` to opt

@@ -12,6 +12,21 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## [0.15] — 2026-05 (in progress)
 
+### Error propagation is now always explicit (`?`) — BREAKING
+
+- **An omitted `?` on a `throws` call is a compile error** (§28b step 5). The
+  legacy auto-propagation for same-file statement-position calls — the last place
+  error propagation was implicit — is removed. Both compilers reject it with a
+  source-located `throws call needs '?'` diagnostic (driver-level, after codegen,
+  so a valid `try` is still emitted and the message is clean rather than a broken
+  Zig compile). This closes the "invisible rule keyed to file boundaries" where
+  moving a function between files silently changed call-site semantics.
+- **Migration hatch:** `--allow-implicit-try` accepts the old implicit form for
+  one release — a bridge for un-updated external code (e.g. a GameEngine build or
+  ported scripts). The repository corpus was already fully explicit (441 sites
+  swept 2026-07-02; `tools/check_explicit_try.sh` holds it at 0), so nothing
+  internal changed. Biggest breaking change since the `arena` keyword removal.
+
 ### GUI: libui-ng backend (native OS widgets)
 
 - **File dialogs** — `g.openFile()→str?`, `g.saveFile()→str?`,

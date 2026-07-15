@@ -803,12 +803,12 @@ var r = someObj.method()?            # propagates if method throws
 ```
 
 - `throws` on a `def` makes it return `anyerror!T`.
-- **Write `?` on every call to a `throws` function** (§28b, 2026-07-02: the
-  corpus is fully explicit; the legacy auto-propagation for same-file
-  statement-position calls still compiles but is DEPRECATED and will become
-  a compile error — `--warn-implicit-try` lists any remaining sites).
-  For cross-module `throws` calls or
-  calls on local variables, use explicit `?` suffix.
+- **Write `?` on every call to a `throws` function.** As of §28b step 5
+  (2026-07-15) the legacy auto-propagation is a **compile error**: an omitted
+  `?` on a throws call is rejected with `throws call needs '?'` in both
+  compilers. Use explicit `?` everywhere — same-file, cross-module, and calls on
+  local variables alike. Migration hatch for un-updated external code:
+  `--allow-implicit-try` (accepts the old implicit form for one release).
 - **Migration note**: The `try expr` prefix form was removed in 0.15.
   Replace every `try f()` with `f()?`; the semantics are identical.
 - `raise "msg"` creates an error string; `raise "msg", obj` attaches a
@@ -1874,7 +1874,7 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Substring test       | `"needle" in str`              | preferred over `.contains`               |
 | Optional chain       | `obj?.field`                   | propagates nil                           |
 | Error propagation    | `expr?`                        | explicit in cross-module / local-var calls |
-| Error propagation    | `expr?`                        | explicit everywhere (auto-try deprecated) |
+| Error propagation    | `expr?`                        | explicit everywhere (implicit auto-try is a compile error; `--allow-implicit-try` bridges old code) |
 | Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
 | Int-to-float         | `x.toFloat()`                  | explicit conversion                      |

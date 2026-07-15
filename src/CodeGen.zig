@@ -79,6 +79,18 @@ const module_var_prefix = "_zbr_mv_";
 /// error (§28b step 5).
 pub var warn_implicit_try: bool = false;
 
+/// §28b step 5 (the flip): implicit error propagation is now an error.  Every
+/// auto-`try` site is collected here during codegen; the driver (main.zig)
+/// rejects the compile with a source-located `throws call needs '?'` diagnostic
+/// unless `allow_implicit_try` is set (the --allow-implicit-try migration
+/// hatch).  A valid `try` is still emitted, so the message is clean rather than
+/// a broken Zig compile (4 of the 5 sites are expression-position, so an
+/// @compileError at the emit site would malform the surrounding expression —
+/// hence a driver-level diagnostic).
+pub const ImplicitTrySite = struct { file: []const u8, span: Ast.Span };
+pub var implicit_try_sites: std.ArrayListUnmanaged(ImplicitTrySite) = .empty;
+pub var allow_implicit_try: bool = false;
+
 /// §28a step 1 (inference-or-error migration): when set (--warn-inference-guess),
 /// every type-dispatched emitter that falls through to a GUESS because the
 /// TypeChecker could not supply the operand/receiver type prints a
@@ -6523,6 +6535,8 @@ const Generator = struct {
     /// those collision-free, and `_p_@"i8"` would be invalid Zig.
     /// §28b step 1: report an implicit-try site (see warn_implicit_try).
     fn noteImplicitTry(g: Generator, span: Ast.Span) void {
+        // §28b step 5: always collect for the driver-level flip check.
+        implicit_try_sites.append(g.alloc, .{ .file = g.source_file, .span = span }) catch {};
         if (!warn_implicit_try) return;
         std.debug.print("IMPLICIT_TRY: {s}:{d}:{d}:{d}:{d}\n",
             .{ g.source_file, span.line, span.col, span.end_line, span.end_col });

@@ -435,6 +435,8 @@ smoke_test test/random_instance_test.zbr
 
 # `expr to!` removed (#218): force-unwrap is `expr!`. `to!` must no longer parse.
 smoke_tc_fail test/to_bang_removed_test.zbr "'to'"
+# §28b step 5: implicit error propagation (a throws call without `?`) is now rejected.
+smoke_tc_fail test/fail_fixtures/implicit_try_rejected_test.zbr "throws call needs"
 
 # `print X` statement form removed (#220): print is a function `print(X)`.
 smoke_tc_fail test/print_stmt_removed_test.zbr "expected '('"

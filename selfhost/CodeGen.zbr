@@ -1726,12 +1726,30 @@ def tryChain(e: Expr): CallChain?
                 return CallChain(m.object, m.member, c.args)
     return nil
 
+# §28b step 5 (the flip): implicit error propagation (a throws call the user did
+# not mark with `?`) is now an error.  Every auto-`try` site is collected here
+# during codegen; main.zbr rejects the compile unless --allow-implicit-try.  A
+# valid `try` is still emitted, so this is a clean driver rejection, not a broken
+# Zig compile.  File-scope (like boss_director's registry) so it accumulates
+# across every module generated in one process (deps + root).
+var _implicit_try_sites: List(str) = List(str)()
+
+def recordImplicitTry(site: str)
+    _implicit_try_sites.add(site)
+
+def implicitTrySites(): List(str)
+    return _implicit_try_sites
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
 class Writer
     var _buf: StringBuilder
     var _uid: int
+    # §28b step 5: current source line (set from stmtLine in genStmt), used to
+    # locate the implicit-try diagnostic.  On the Writer (shared, mutable) so
+    # `except`-derived Generators all see the same current line.
+    var cur_line: int
     # When true, genMethod skips an @once method's cache FIELD (genClass emits it
     # in the fields pass so all struct fields stay contiguous). On the Writer
     # (shared, mutable) so `except`-derived Generators all see it.
@@ -1740,6 +1758,7 @@ class Writer
     cue init()
         _buf = StringBuilder()
         _uid = 0
+        cur_line = 0
         suppress_once_field = false
 
     def emit(s: str)
@@ -1754,6 +1773,10 @@ class Writer
     def nextUid(): int
         _uid = _uid + 1
         return _uid
+
+    # §28b step 5: record the current statement's source line (see genStmt).
+    def noteLine(n: int)
+        cur_line = n
 
 # ── Generator ─────────────────────────────────────────────────────────────────
 
@@ -4511,13 +4534,17 @@ struct Generator
         return alias_decl!.constraint != nil
 
     def genStmt(s: Stmt)
+        # §28b step 5: track the current statement line for the implicit-try
+        # diagnostic (also drives the // zbr: source-map marker below).
+        var _ln = stmtLine(s)
+        if _ln > 0
+            w.noteLine(_ln)
         if source_file != ""
-            var ln = stmtLine(s)
-            if ln > 0
+            if _ln > 0
                 w.emit("// zbr:")
                 w.emit(fwdSlashes(source_file))
                 w.emit(":")
-                w.emit(ln.toString())
+                w.emit(_ln.toString())
                 w.emit("\n")
         branch s
             on Stmt.var_ as n
@@ -5106,6 +5133,7 @@ struct Generator
         w.emit(" = ")
         if mc_recv.len > 0
             if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                recordImplicitTry(source_file + ":" + w.cur_line.toString())
                 w.emit("try ")
             w.emit("${mc_recv}.${mc_field}(")
             if n.init_expr != nil
@@ -5858,6 +5886,7 @@ struct Generator
                         if isClassMethodThrows(recv_cn, method_name)
                             stmt_is_throws = true
                 if stmt_is_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                    recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 w.emit("${mc}.${method_name}(")
                 genArgList(call_args)
@@ -9767,6 +9796,7 @@ struct Generator
             if in_method and owner != "" and isOwnerMethod(id.name)
                 var callee_throws = isOwnerMethodThrows(id.name)
                 if callee_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                    recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 if isOwnerSharedMethod(id.name)
                     w.emit(owner)
@@ -10827,6 +10857,7 @@ struct Generator
             if um_recv_t is Type_.named as um_cname
                 if .infer_ctx!.methodReturnAny(um_cname, mname) != nil
                     if isClassMethodThrows(um_cname, mname) and current_method_throws and try_block_label == nil and not in_try_expr
+                        recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
                     genExpr(m.object)
                     w.emit("." + mname + "(")
@@ -11945,6 +11976,7 @@ struct Generator
             else
                 pass
         if callee_throws2 and current_method_throws and try_block_label == nil and not in_try_expr
+            recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
         genExpr(m.object)
         w.emit(".")

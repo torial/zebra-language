@@ -3161,4 +3161,4 @@ class Parser
     static def parse(src: str, file_name: str): PNode throws
         var toks = Lexer.tokenize(src)?
         var p = Parser(toks, file_name, src)
-        return p.parseModule()
+        return p.parseModule()?

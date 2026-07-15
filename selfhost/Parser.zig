@@ -9547,7 +9547,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:3163
         const p = Parser.init(toks, file_name, src);
 // zbr:selfhost/Parser.zbr:3164
-        return p.parseModule();
+        return (try p.parseModule());
     }
 
 };

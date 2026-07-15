@@ -1,0 +1,22 @@
+# §28b step 5 (the flip): implicit error propagation is a compile error.
+#
+# A throws call the author did NOT mark with `?` used to auto-propagate; it is
+# now rejected with "throws call needs '?'".  This fixture MUST fail to compile.
+# Registered via smoke_tc_fail in tools/selfhost_smoke.sh.
+#
+# It lives in test/fail_fixtures/ (not test/) on purpose: it is the one file in
+# the repo that legitimately contains an implicit-try site, and the maxdepth-1
+# check_explicit_try / check_inference_guess / corpus scanners must not see it.
+#
+# The migration hatch is `--allow-implicit-try` (accepts this file, exit 0).
+
+class Foo
+    def helper(): int throws
+        raise "boom"
+
+    def caller(): int throws
+        var x = .helper()        # implicit try — no `?` — now rejected
+        return x
+
+def main()
+    print("unreachable")

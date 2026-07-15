@@ -181,6 +181,11 @@ pub fn main(init: std.process.Init) void {
             // for every auto-inserted `try`.  Global so dep compilation
             // reports too; no behavior change.
             CodeGen.warn_implicit_try = true;
+        } else if (std.mem.eql(u8, arg, "--allow-implicit-try")) {
+            // §28b step 5 (the flip): migration hatch — accept an omitted `?`
+            // on a throws call (implicit error propagation) instead of rejecting
+            // it.  One-release bridge for un-migrated external code.
+            CodeGen.allow_implicit_try = true;
         } else if (std.mem.eql(u8, arg, "--warn-inference-guess")) {
             // §28a step 1 (inference-or-error migration): print INFER_GUESS
             // lines for every type-dispatch site that falls through to a guess.
@@ -470,6 +475,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, (mode == .node_addon));
+        if (rejectImplicitTry()) return 1;
         buf = aw.toArrayList();
         try std.Io.File.stdout().writeStreamingAll(_io, buf.items);
         return 0;
@@ -486,6 +492,7 @@ fn run(src: []const u8, path: []const u8, mode: Mode, gui_backend: CodeGen.GuiBa
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         _ = try CodeGen.generate(module, &resolve, &tc, alloc, &aw.writer, gui_backend, &native_uses, false, &imported_modules, turbo, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, false);
+        if (rejectImplicitTry()) return 1;
         buf = aw.toArrayList();
         const zf = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer zf.close(_io);
@@ -1064,6 +1071,21 @@ fn compileZbrToZig(
 
 // ── Backend: emit Zig file + invoke zig compiler ──────────────────────────────
 
+/// §28b step 5 (the flip): after codegen, reject the compile if any throws call
+/// relied on implicit error propagation (an omitted `?`), unless the
+/// --allow-implicit-try hatch is set.  Returns true when the caller should stop
+/// with a non-zero status.  The diagnostic is source-located; a valid `try` was
+/// still emitted, so this is a clean driver rejection, not a broken Zig compile.
+fn rejectImplicitTry() bool {
+    if (CodeGen.allow_implicit_try) return false;
+    if (CodeGen.implicit_try_sites.items.len == 0) return false;
+    for (CodeGen.implicit_try_sites.items) |s| {
+        std.debug.print("{s}:{d}:{d}: error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)\n",
+            .{ s.file, s.span.line, s.span.col });
+    }
+    return true;
+}
+
 fn backend(
     module:           Ast.Module,
     resolve:          *const Resolver.ResolveResult,
@@ -1091,6 +1113,7 @@ fn backend(
         defer buf.deinit(alloc);
         var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         const r = try CodeGen.generate(module, resolve, tc, alloc, &aw.writer, gui_backend, native_uses, emit_exports, imported_modules, strip_contracts, test_mode, build_mode, list_targets_mode, tag_filter, library_mode, (mode == .node_addon));
+        if (rejectImplicitTry()) return 1;
         buf = aw.toArrayList();
         const f = try std.Io.Dir.cwd().createFile(_io, zig_path, .{});
         defer f.close(_io);
