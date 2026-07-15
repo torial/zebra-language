@@ -110,8 +110,6 @@ foundation and needs a supervised session.
 
 ## Environment / repo cleanup (safe, unattended)
 
-- [ ] **`MEMORY.md` is over its size limit** (~38.5 KB vs 24.4 KB) — trim index lines
-  to one-liners, move detail into topic files.
 - [ ] Prune the stale session task list to the genuinely-open few.
 - [ ] **Wiki sync** — N-API, First Horseman, bootstrap convergence, the GameEngine
   boss-move layer → `project_zebra.md`; lint dates.
