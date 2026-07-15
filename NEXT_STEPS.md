@@ -144,12 +144,42 @@ everything since).
 
 No typed-dispatch site may guess: if inference is empty, emit a diagnostic, not a
 guessed emit. Steps 1–3 done (instrumentation → closed every corpus inference gap →
-`check_inference_guess.sh` gate, corpus at 0). **Step 4 open (gated session):** the
-language-level flip — a residual guess becomes a "cannot infer type of X; annotate"
-compile error in both compilers (selfhost must make the same decision or round-trip
-diverges). On current evidence this is a rare backstop, not a common diagnostic; the
-gate is the durable protection until the flip. Systemic fix for the F7/BUG-162/BUG-168
-class. Raises the priority of §24e (the method-descriptor table).
+`check_inference_guess.sh` gate, corpus at 0). **Step 4 open:** the language-level
+flip — a residual guess becomes a "cannot infer type of X; annotate" compile error.
+Systemic fix for the F7/BUG-162/BUG-168 class. Raises the priority of §24e.
+
+**Spike findings (2026-07-15) — scope decided [Sean: "flip the selfhost if it guesses"]:**
+The guess INSTRUMENTATION + gate are **bootstrap-only** (bootstrap sites:
+`src/CodeGen.zig` ~7503 list_dispatch, ~7562 len_count, ~16196 add; `noteInferenceGuess`
++ `warn_inference_guess`). But the **selfhost guesses too** — `genBinary` add
+(`selfhost/CodeGen.zbr:8818`) does `if isStringBoth(l/r) → _str_concat; else → numeric +`,
+so an un-inferable operand silently defaults to numeric `+` (the same F7/BUG-168
+fallback). `isPrimType` (just below `isStringBoth`) is the "proven-prim" check the gate
+needs. The other two selfhost sites (len/count, List-method routing) share the shape.
+On the corpus the guess is always *correct* (smoke 236/236, round-trip byte-identical)
+but **ungated** — so the flip = add the `isPrimType` gate and turn "neither string nor
+proven-prim" into an error.
+
+**This is the §28a campaign re-run on the selfhost (not a one-shot). Measure-first,
+per §28a's own discipline:**
+1. Instrument the 3 selfhost guess sites in warn mode (record when the else-branch
+   fires without a proven type) — mirror the bootstrap's step 1.
+2. Measure the corpus: how many "unproven" sites? (0 → flip freely; N → inference gaps
+   to close first, like the bootstrap's step 2. Selfhost TC is ahead of bootstrap, so
+   expect few — but that's the empirical question.)
+3. Close any gaps.
+4. Flip to error + `--allow-inference-guess` hatch + a selfhost gate. Follow the §28b
+   template (commit 0a591ce): module-global sites list (mirror `boss_director`'s
+   registry), driver-level reject in `main.zbr` (NOT `@compileError` — malforms
+   expression-position sites), `cur_line` on the shared Writer for the location.
+   **The round-trip won't catch selfhost-vs-bootstrap divergence** — the flip acts as a
+   differential probe (§28b caught `Parser.zbr:3164` this way; expect §28a to surface
+   similar), so run the full round-trip + validate both compilers reject the same
+   programs.
+
+Also consider (Sean, if bootstrap kept longer): flip the bootstrap's 3 sites too
+(mirror §28b's `rejectImplicitTry`) for user-code parity — low-risk, marginal value
+(bootstrap phasing out; divergence is bootstrap-conservative = safe direction).
 
 ## §28b — unify error propagation on always-explicit `?` ✅ DONE (step 5 flipped 2026-07-15)
 
