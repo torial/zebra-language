@@ -1772,6 +1772,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ent_elems.add(hmt.key_t)
                                 ent_elems.add(hmt.val_t)
                                 return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
+                        on Type_.str_set
+                            # §28a step 2: StrSet is a user class with a dedicated
+                            # Type_.str_set variant (typeFromName), so a param/field
+                            # typed `StrSet` infers to str_set — which no arm above
+                            # matched, leaving `.items()` unresolved.  A `StrSet()`
+                            # ctor infers to named("StrSet") and DOES resolve via
+                            # methodReturnAny, so this arm closes that param/field gap.
+                            # Its `.items()` returns List(str); the result then
+                            # dispatches correctly on the list_ arm (`.at`/`.len`).
+                            var ssmname: str = mem.member
+                            if ssmname == "items"
+                                return Type_.list_(Type_.string_)
+                            if ssmname == "contains_"
+                                return Type_.bool_
                         else
                             pass
                     # Cross-module constructor: ModuleName.ClassName(args).
