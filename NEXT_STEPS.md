@@ -70,7 +70,14 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] Audit/regenerate stale engine-style `.zig` with the converged bootstrap
   (`pathfinding.zig` was stale; others likely are); add a numeric-conversion
   compiler test; correct QUICKSTART §21.
-- [ ] Run full `compile_check.sh` corpus (JOBS-paced) + triage regressions.
+- [x] Run full `compile_check.sh` corpus (JOBS-paced) + triage regressions. **DONE
+  2026-07-16: 198 passed / 0 FAILED / 3 skipped (selfhost, JOBS=3)** — the §28a step-2
+  changes introduced no emitted-Zig regressions. `compile_check` is the *independent
+  witness* the round-trip lacks (round-trip diffs the selfhost against itself → blind to
+  wrong-but-compiling output AND to programs it never compiles; `compile_check` runs
+  `zig build-exe` on emitted corpus programs). **Recommend gating it** (per-commit or at
+  least per-session) — it is currently a manual tool, so the coverage-blindness it closes
+  is only closed on the days someone remembers to run it. Cost: a few min at JOBS=3.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
@@ -208,6 +215,15 @@ Done (2026-07-15/16):
   round-trip shares the same (wrong) inference on both sides. Added a `str_set` arm
   (`items()`→List(str), `contains_()`→bool). A probe that miscompiled now compiles+runs.
   Cleared the whole CodeGen cluster: len_count 18 → 9, list_dispatch 27 → 18.
+  **Precision caveat (2026-07-16, not overclaiming severity):** `StrSet` is *compiler-internal*
+  (not user-facing), so this miscompile's blast radius is narrow — it can only appear in
+  selfhost code, and the compiler-source usages that would trigger it are mostly guarded by
+  `localIsList`-style tracking (which is why the round-trip's A/B builds passed with the bug
+  present — the pattern wasn't hit in a breaking form in the compiled path). It is a REAL
+  latent miscompile (the probe proves it) and the fix is correct, but it is not a user-facing
+  crisis. The generalizable thread worth a future check: are there OTHER dedicated-`Type_`-
+  variant stdlib types whose methods the call handler leaves unresolved the same way — and are
+  any of THOSE user-facing (→ user-reachable)?
 
 **This overturns the Phase-1 "~0 genuine ambiguity / emit always correct" read:** for the
 selfhost's OWN emit the guesses were producing wrong code; only bootstrap regen masked it.
