@@ -189,12 +189,28 @@ No per-expr map exists → precision = strengthening inference, not a lookup.
 scope-down (bootstrap gate already provides the user-facing guarantee at 0) and NOT a rush to
 flip (would convert ~80 benign under-inferences into false errors).
 
-**Step 2 (open) — close the ~5–8 inference root causes**, re-measuring toward 0:
-- `inferExpr(.len / .count())` → int
-- `inferExpr(arith of prims)` → prim (so `int + int` proves)
-- propagate call-return types into scope: `x = f.items()` → List; `args = Arg.parse()` → Arg
-- `inferExpr(user-class field access)` → the field's declared type (StrSet.len → int)
-- user-class method-return typing — **overlaps §24e** (fold in; §24e priority already raised by §28a)
+**Step 2 (in progress) — close the inference root causes**, re-measuring toward 0.
+Measurable selfhost/* count (excl. main.zbr/pipeline_test, BUG-181): started **add 6 /
+len_count 30 / list_dispatch 27**.
+
+Done (2026-07-15):
+- ✅ **`inferExpr(.len / .count())` → int** (commit 5c78c17) — `add` bucket 6 → 0. Also
+  covers `inferExpr(arith of prims)` since the existing binary handler already propagated
+  numeric; the only gap was `.len` not being numeric.
+- ✅ **`len_count` guard → `typeIsUnknown`** (commit 9204a0b) — 30 → 18. Dropped proven-receiver
+  false positives (StrSet-param `.len` field reads were never ambiguous). Emit-neutral.
+
+Remaining (harder — deeper inference-engine work; **current: len_count 18 / list_dispatch 27**):
+- **Dep-class user-method returns don't resolve** (`x = strset.items()` on a `CgHelpers`
+  dep class → `x` unknown; same-module `Bag.items()` resolves fine). Isolated to the shared
+  `inferExpr`/`methodReturnAny`/`dep_types` path. Fixing it clears the CodeGen `.items()`
+  cluster (~19 sites across both buckets). **Overlaps §24e** (method-return typing).
+- **Cross-module STATIC returns** (`toks = Lexer.tokenize()` on a module name → unknown).
+  lexer_test cluster (~23 sites, test code — lower value than compiler source).
+- Singletons: `Parser.zbr:1511`, `AstBuilder.zbr:1153`.
+
+These touch dep-type resolution (more load-bearing / higher regression risk than the isolated
+changes above) — a supervised-checkpoint boundary.
 
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
