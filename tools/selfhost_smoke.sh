@@ -6,6 +6,11 @@
 # lex→parse→resolve→TC→codegen pipeline succeeded).  No Zig compilation is
 # performed so this runs fast (~0.5–2 s per test, shared Zig cache).
 #
+# BLIND SPOT: because it only --emit-zig's, it CANNOT catch emitted Zig that fails
+# to compile (stale stdlib APIs, codegen bugs). To check that the emitted Zig actually
+# compiles, run the independent witness: JOBS=3 bash tools/compile_check.sh
+# (See CLAUDE.md "Verification gates".)
+#
 # Called by: `zig build test` (via the selfhost_smoke build step).
 # Also safe to run manually: bash tools/selfhost_smoke.sh
 

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # bootstrap_check.sh — verify selfhost round-trip and level-2 fixed point.
 #
+# BLIND SPOT (important): this checks SELF-CONSISTENCY, not correctness. It diffs the
+# selfhost against itself, so it cannot see (1) wrong-but-still-valid Zig (both passes
+# share the bend → identical wrong output, clean diff), nor (2) any program it never
+# compiles (the test corpus, ad-hoc probes). To check that emitted Zig actually
+# COMPILES, run the independent witness:  JOBS=3 bash tools/compile_check.sh
+# (See CLAUDE.md "Verification gates" for the full picture.)
+#
 # Usage:
 #   tools/bootstrap_check.sh           # full 5-step round-trip (commit gate)
 #   tools/bootstrap_check.sh --quick   # stop after step 2 (iterative rebuild)

@@ -52,6 +52,35 @@ zbuild.bat                                   # convenience wrapper (Windows)
 Module resolution: `use module_name` is looked up relative to the input file,
 then in `selfhost/`, `test/`, and stdlib paths.
 
+## Verification gates (and what each one CANNOT catch)
+
+Three complementary checks. They have **different blind spots** — running one is
+not a substitute for another. After any codegen / inference / stdlib change, run
+all three (`compile_check.sh` is the one most often forgotten and the one that most
+often catches real emit bugs):
+
+```bash
+bash tools/selfhost_smoke.sh    # emits + runs fixtures. Blind to: emitted Zig that
+                                #   fails to COMPILE (it only --emit-zig's most tests).
+bash tools/bootstrap_check.sh   # selfhost round-trip (A/B byte-identical). Blind to:
+                                #   (1) wrong-but-still-valid Zig (A & B share the bend
+                                #   → identical wrong output, clean diff); (2) any program
+                                #   it never compiles (the test corpus, ad-hoc probes).
+JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every positive
+                                #   test/*.zbr with the selfhost and runs `zig build-exe`
+                                #   on the output. Catches emit bugs the other two miss
+                                #   because `zig` fails DIFFERENTLY than the selfhost does.
+                                #   Currently a MANUAL tool (not gated) — so its coverage
+                                #   is only real on days it's run. `--only <substr>` for a
+                                #   tight loop; `--bootstrap` to check the bootstrap's emit.
+```
+
+Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that
+what it emits is *correct*. The independent witness (`zig`, which has no idea what Zebra
+intended) is the only gate that checks correctness of arbitrary emitted programs. A real
+latent miscompile hid behind green round-trip + smoke once (see the §28a selfhost notes);
+`compile_check.sh` is how you avoid rediscovering that class the hard way.
+
 ## Self-hosting
 
 The self-hosting effort lives in `selfhost/`. Rule of thumb for this port:
