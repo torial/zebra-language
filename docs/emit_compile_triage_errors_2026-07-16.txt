@@ -1,0 +1,52 @@
+bug099_unresolved_test :: C:\Users\Sean\AppData\Local\Temp\tmp.7kG5PRXgV7\bug099_unresolved_test.zig:3722:20: error: use of undeclared identifier 'Math'
+bug105_enum_member_test :: C:\Users\Sean\AppData\Local\Temp\tmp.mWl02mBGW6\bug105_enum_member_test.zig:3728:25: error: expected type 'i64', found 'bug105_enum_member_test.Color'
+bug105_union_variant_test :: C:\Users\Sean\AppData\Local\Temp\tmp.WNU498gU53\bug105_union_variant_test.zig:3727:24: error: expected type 'i64', found '@typeInfo(bug105_union_variant_test.Wrap).@"union".tag_type.?'
+bug106_heterogeneous_list_test :: C:\Users\Sean\AppData\Local\Temp\tmp.eqRnOES3Ws\bug106_heterogeneous_list_test.zig:3722:161: error: expected type 'i64', found '*const [3:0]u8'
+c_interop_test :: C:\Users\Sean\AppData\Local\Temp\tmp.DkBfnlLg8s\CUtils.zig:1:1: error: unable to load 'CUtils.zig': FileNotFound
+bug108_this_outside_class_test :: C:\Users\Sean\AppData\Local\Temp\tmp.u9cTRmieqO\bug108_this_outside_class_test.zig:3722:15: error: use of undeclared identifier 'self'
+counter :: C:\Users\Sean\AppData\Local\Temp\tmp.kKfClwxKTV\counter.zig:294:41: error: function parameter shadows declaration of 'init'
+crossmod_expose_test :: C:\Users\Sean\AppData\Local\Temp\tmp.9F9dRjIBYt\crossmod_expose_test.zig:3762:11: error: type 'array_list.Aligned(crossmod_expose_lib.Tag,null)' is not indexable and not a range
+csv_test :: C:\Users\Sean\AppData\Local\Temp\tmp.dUXFlBL2yu\csv_test.zig:3838:18: error: use of undeclared identifier 'CsvWriter'
+datetime_test :: C:\Users\Sean\AppData\Local\Temp\tmp.YZC3eoXZyt\datetime_test.zig:3737:39: error: no field or member function named 'toEpoch' in 'datetime_test._DateTime'
+derive_test :: C:\Users\Sean\AppData\Local\Temp\tmp.2HFmmdXchp\derive_test.zig:3780:13: error: operator == not allowed for type 'derive_test.Point'
+dns_test :: C:\Users\Sean\AppData\Local\Temp\tmp.2M8tSIaMQ9\dns_test.zig:3742:178: error: no field named 'len' in struct 'array_list.Aligned([]const u8,null)'
+expose_dotted_test :: C:\Users\Sean\AppData\Local\Temp\tmp.02ZDu3wll6\expose_dotted_test.zig:3715:20: error: expected ';' after declaration
+escape_field_test :: C:\Users\Sean\AppData\Local\Temp\tmp.NjmSS0flle\escape_field_test.zig:3721:19: error: missing struct field: items
+expressiveness_test :: C:\Users\Sean\AppData\Local\Temp\tmp.6NULqRZnHV\expressiveness_test.zig:3746:10: error: member function expected 2 argument(s), found 1
+extend_test :: C:\Users\Sean\AppData\Local\Temp\tmp.OBtO6Ta8OK\extend_test.zig:3741:35: error: no field or member function named 'shout' in '[]const u8'
+field_not_found_test :: C:\Users\Sean\AppData\Local\Temp\tmp.44CE5VKFf9\field_not_found_test.zig:3740:74: error: no field named 'y' in struct 'field_not_found_test.P'
+file_dialog_smoke :: C:\Users\Sean\AppData\Local\Temp\tmp.6nhO9eBWDP\file_dialog_smoke.zig:294:41: error: function parameter shadows declaration of 'init'
+file_io_test :: C:\Users\Sean\AppData\Local\Temp\tmp.sga9iIfauV\file_io_test.zig:3740:24: error: unreachable code
+forgot_parens_test :: C:\Users\Sean\AppData\Local\Temp\tmp.nj66bnuhzN\forgot_parens_test.zig:3726:5: error: value of type 'fn () void' ignored
+fuzzy_match :: C:\Users\Sean\AppData\Local\Temp\tmp.44IUEOFO0P\fuzzy_match.zig:3735:42: error: no field or member function named 'concat' in '[]u8'
+fuzzy_selfhost :: C:\Users\Sean\AppData\Local\Temp\tmp.UX4WArPVbz\fuzzy_selfhost.zig:3735:42: error: no field or member function named 'concat' in '[]u8'
+generic_pair_test :: C:\Users\Sean\AppData\Local\Temp\tmp.sV2vYWXqux\generic_pair_test.zig:3732:35: error: expected type 'T', found '*T'
+gui_test :: C:\Users\Sean\AppData\Local\Temp\tmp.eYvn0GGoXK\gui_test.zig:3722:9: error: local variable is never mutated
+hbox_smoke :: C:\Users\Sean\AppData\Local\Temp\tmp.9psLK5Ptub\hbox_smoke.zig:294:41: error: function parameter shadows declaration of 'init'
+http_test :: C:\Users\Sean\AppData\Local\Temp\tmp.eWnwcIxbWy\http_test.zig:3722:22: error: use of undeclared identifier 'Http'
+https_test :: C:\Users\Sean\AppData\Local\Temp\tmp.WWIJAShh2S\https_test.zig:3722:15: error: use of undeclared identifier 'Http'
+json_parse_typed_test :: C:\Users\Sean\AppData\Local\Temp\tmp.49hCJIn976\json_parse_typed_test.zig:3820:21: error: no field or member function named 'getString' in 'json.dynamic.Value'
+json_test :: C:\Users\Sean\AppData\Local\Temp\tmp.pUX8dun9ZB\json_test.zig:3722:33: error: expected ';' after statement
+log_test :: C:\Users\Sean\AppData\Local\Temp\tmp.1y88RxTpzm\log_test.zig:3723:24: error: expected type 'u8', found '*const [5:0]u8'
+math_test :: C:\Users\Sean\.zvm\0.16.0\lib\std\math\atan2.zig:38:17: error: atan2 not implemented for comptime_float
+method_chain_throws_test :: C:\Users\Sean\AppData\Local\Temp\tmp.xn7mjJHO3J\method_chain_throws_test.zig:3755:46: error: expected type '*T', found '*const T'
+method_not_found_test :: C:\Users\Sean\AppData\Local\Temp\tmp.m3d5Sd3yhw\method_not_found_test.zig:3723:35: error: no field or member function named 'shout' in '[]const u8'
+panel_smoke :: C:\Users\Sean\AppData\Local\Temp\tmp.IitViUM5hQ\panel_smoke.zig:294:41: error: function parameter shadows declaration of 'init'
+plugin_host :: C:\Users\Sean\.zvm\0.16.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+progress_test :: C:\Users\Sean\AppData\Local\Temp\tmp.QuDnK2GXVT\progress_test.zig:3535:65: error: expected 2 argument(s), found 1
+raise_details_test :: C:\Users\Sean\AppData\Local\Temp\tmp.McCLIZ3CnS\raise_details_test.zig:3756:20: error: error union is ignored
+reflect_test :: C:\Users\Sean\AppData\Local\Temp\tmp.blKgBQJ9av\reflect_test.zig:3722:19: error: missing struct field: name
+selfhost_probe5 :: C:\Users\Sean\AppData\Local\Temp\tmp.puEIrBJ26w\selfhost_probe5.zig:3986:26: error: expected type '*selfhost_probe5.Expr', found 'selfhost_probe5.Expr'
+selfhost_probe6 :: C:\Users\Sean\AppData\Local\Temp\tmp.jg3FZcv9bR\selfhost_probe6.zig:3727:47: error: expected ',' after initializer
+string_methods_test :: C:\Users\Sean\AppData\Local\Temp\tmp.NSYnMMbNhc\string_methods_test.zig:3740:58: error: expected type '[]const u8', found 'array_list.Aligned([]const u8,null)'
+tc_check_test :: C:\Users\Sean\AppData\Local\Temp\tmp.SloNVVdPrV\tc_check.zig:3731:27: error: expected type '*tc_infer.TcExpr', found 'tc_infer.TcExpr'
+tc_infer_test :: C:\Users\Sean\AppData\Local\Temp\tmp.NjXNasQyJY\tc_infer.zig:3729:25: error: expected type '*tc_infer.TcExpr', found 'tc_infer.TcExpr'
+tc_types_test :: C:\Users\Sean\AppData\Local\Temp\tmp.80Hmow8D8f\tc_types_test.zig:3837:44: error: struct 'tc_types.TcTypes' has no member named 'len'
+tcp_advanced_test :: C:\Users\Sean\AppData\Local\Temp\tmp.PpxwEHQx2U\tcp_advanced_test.zig:3725:13: error: no field or member function named 'write' in '?tcp_advanced_test.TcpConn'
+test_gui_simple :: C:\Users\Sean\AppData\Local\Temp\tmp.cOVyE0Ruix\test_gui_simple.zig:1596:15: error: local constant shadows declaration of 'frame'
+throws_autoprop_test :: C:\Users\Sean\AppData\Local\Temp\tmp.UKyTEsY40D\throws_autoprop_test.zig:3733:27: error: error union is ignored
+typechecker_test :: C:\Users\Sean\AppData\Local\Temp\tmp.96oVuEECST\typechecker.zig:3799:42: error: unused function parameter
+unicode_test :: C:\Users\Sean\AppData\Local\Temp\tmp.tQ1NLdDrXb\unicode_test.zig:3741:9: error: local variable is never mutated
+widget_smoke :: C:\Users\Sean\AppData\Local\Temp\tmp.9t62SK4KFX\widget_smoke.zig:294:41: error: function parameter shadows declaration of 'init'
+zig_interop_test :: C:\Users\Sean\AppData\Local\Temp\tmp.E6fF6WEtdS\ZigMath.zig:1:1: error: unable to load 'ZigMath.zig': FileNotFound
+zebra_ide :: C:\Users\Sean\AppData\Local\Temp\tmp.zodI44LYjB\zebra_ide.zig:3720:52: error: use of undeclared identifier 'List'

@@ -1,0 +1,136 @@
+# Emit compile-check triage — full-corpus independent-witness sweep (2026-07-16)
+
+**What this is.** A one-time broad sweep compiled EVERY `test/*.zbr` + `examples/*.zbr`
+(399 files) with the selfhost (`zebra.exe --emit-zig` → `zig build-exe -fno-emit-bin`),
+not just the ~201 smoke-registered files that `tools/compile_check.sh` normally covers.
+Goal: surface latent emit miscompiles (the BUG-182 class) hiding in un-gated files.
+
+**Headline: 293 PASS / 52 FAIL / 54 SKIP.** The 52 FAILs triage below. This was found
+while hunting the generalized BUG-182 (dedicated-`Type_`-variant) class; BUG-182 was the
+visible tip of a much larger un-gated emit surface.
+
+**Honest caveats (do not over-read the "52"):**
+- It is NOT "52 bugs." ~11 are expected-fail (negative tests) or harness limits.
+- Of the ~41 remaining, buckets are error SIGNATURES, spot-checked as real on current
+  APIs (`Http`, `CsvWriter`, `Math` all verified current), but NOT every file was
+  individually confirmed real-vs-stale. Some may be stale tests using evolved APIs.
+- Many files share a ROOT CAUSE (e.g. 5 GUI files, one `param shadows 'init'` bug), so the
+  real work is ~15–20 root causes, not 40 fixes.
+
+**Status legend:** `NEG` expected-fail test · `HARNESS` external dep/platform ·
+`REAL?` real-looking, unverified · `REAL✓` confirmed · `FIXED` ·
+
+---
+
+## A. Negative / error-detection tests (expected to fail) — ~8, not bugs
+(Some emit broken Zig instead of a clean TC error — a minor quality gap, not a miscompile.)
+
+| File | Error | Status |
+|---|---|---|
+| field_not_found_test | no field 'y' in P | NEG (registered smoke-negative) |
+| method_not_found_test | no method 'shout' in []const u8 | NEG (registered) |
+| forgot_parens_test | value of type 'fn() void' ignored | NEG (compile_check SKIP) |
+| bug108_this_outside_class_test | undeclared 'self' | NEG (`this` outside class) |
+| bug106_heterogeneous_list_test | expected i64, found *const [3:0]u8 | NEG? (heterogeneous list) |
+| bug105_enum_member_test | expected i64, found Color | NEG? (verify) |
+| bug105_union_variant_test | expected i64, found union tag | NEG? (verify) |
+| bug099_unresolved_test | undeclared 'Math' | NEG? (unresolved-detection; Math IS current) |
+
+## B. Harness limits (external deps / platform) — 3, not bugs
+| File | Error | Status |
+|---|---|---|
+| c_interop_test | unable to load 'CUtils.zig' (FileNotFound) | HARNESS (external C) |
+| zig_interop_test | unable to load 'ZigMath.zig' (FileNotFound) | HARNESS (external Zig) |
+| plugin_host | unsupported platform (dynamic_library) | HARNESS (platform) |
+
+## C. GUI struct-init shadowing — ONE root cause, ~6 files — REAL✓
+All fail identically at emitted **line 294:41 `function parameter shadows declaration of 'init'`**
+(plus `test_gui_simple`: `local constant shadows 'frame'`). A single emitted GUI struct/preamble
+names a parameter `init` that shadows a declaration. Fix once → clears 5–6 files.
+
+`counter · file_dialog_smoke · hbox_smoke · panel_smoke · widget_smoke · test_gui_simple`
+
+## D. Genuine codegen / type miscompiles on CURRENT constructs — ~30, clustered
+
+### D1 — undeclared type not emitted (stdlib type used but not materialized) — REAL?
+| File | Undeclared | Note |
+|---|---|---|
+| csv_test | `CsvWriter` | CsvWriter is current (QUICKSTART, Resolver) → real emit gap |
+| http_test | `Http` | Http is current (CodeGen 11597); client `.get` path? |
+| https_test | `Http` | same |
+| zebra_ide | `List` | List undeclared — investigate |
+
+### D2 — SYNTAX errors in emitted Zig (malformed emit) — REAL✓ (Zig can't even parse it)
+| File | Error |
+|---|---|
+| json_test | expected ';' after statement |
+| expose_dotted_test | expected ';' after declaration |
+| selfhost_probe6 | expected ',' after initializer |
+
+### D3 — `.len`/`.member` on ArrayList / str-vs-list confusion (StrSet/BUG-182 family) — REAL?
+| File | Error |
+|---|---|
+| dns_test | no field 'len' in ArrayList([]const u8) |
+| tc_types_test | struct 'TcTypes' has no member 'len' |
+| string_methods_test | expected []const u8, found ArrayList([]const u8) |
+| crossmod_expose_test | ArrayList(Tag) is not indexable |
+
+### D4 — `^T`-box pointer mismatch (`*T` vs `T` / `*const T`) — REAL?
+| File | Error |
+|---|---|
+| generic_pair_test | expected 'T', found '*T' |
+| method_chain_throws_test | expected '*T', found '*const T' |
+| selfhost_probe5 | expected '*Expr', found 'Expr' |
+| tc_check_test | expected '*TcExpr', found 'TcExpr' |
+| tc_infer_test | expected '*TcExpr', found 'TcExpr' (same as tc_check) |
+
+### D5 — method on a mis-typed receiver (BUG-182 class) — REAL?
+| File | Error |
+|---|---|
+| datetime_test | no method 'toEpoch' in _DateTime |
+| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) |
+| extend_test | no method 'shout' in []const u8 (extension method) |
+| json_parse_typed_test | no method 'getString' in json.dynamic.Value |
+| fuzzy_match | no method 'concat' in []u8 |
+| fuzzy_selfhost | no method 'concat' in []u8 (same as fuzzy_match) |
+
+### D6 — argument-count mismatch — REAL?
+| File | Error |
+|---|---|
+| expressiveness_test | member function expected 2 arg(s), found 1 |
+| progress_test | expected 2 argument(s), found 1 |
+
+### D7 — emitted Zig trips Zig strictness (const/var, unused, unreachable) — REAL? (lower severity)
+| File | Error |
+|---|---|
+| gui_test | local variable is never mutated (var should be const) |
+| unicode_test | local variable is never mutated |
+| typechecker_test | unused function parameter |
+| file_io_test | unreachable code |
+
+### D8 — misc singletons — REAL?
+| File | Error |
+|---|---|
+| derive_test | operator == not allowed for type 'Point' (@derive == gap?) |
+| reflect_test | missing struct field: name |
+| escape_field_test | missing struct field: items |
+| log_test | expected 'u8', found '*const [5:0]u8' (char vs string) |
+| math_test | atan2 not implemented for comptime_float (emit should coerce to runtime) |
+| raise_details_test | error union is ignored |
+| throws_autoprop_test | error union is ignored (same signature) |
+
+---
+
+## Recommended campaign (for 1.0)
+
+1. **Verify each D-cluster real-vs-stale** (spot-checks say real; confirm the rest). Sean's
+   context on which tests are live vs abandoned will sharpen this fast.
+2. **Fix by root cause, not by file** — C is 1 fix for ~6 files; D4/D5 share mechanisms
+   (`^T` boxing, mis-typed-receiver dispatch — the BUG-182 family). Est. ~15–20 root causes.
+3. **Gate `compile_check` over the triaged-clean corpus** (see CLAUDE.md "Verification gates";
+   currently manual) so this surface cannot silently regrow.
+4. Prune genuinely-stale tests (quarantine, don't delete — note why).
+
+Raw per-file error capture:
+`scratchpad/errors.txt` (session artifact) — regenerate via the broad sweep in
+`tools/compile_check.sh` extended to the full corpus.

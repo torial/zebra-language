@@ -78,6 +78,16 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `zig build-exe` on emitted corpus programs). **Recommend gating it** (per-commit or at
   least per-session) — it is currently a manual tool, so the coverage-blindness it closes
   is only closed on the days someone remembers to run it. Cost: a few min at JOBS=3.
+- [ ] **⚠️ 1.0 BLOCKER — emit-compile triage campaign** → **`docs/emit_compile_triage.md`**.
+  A full-corpus independent-witness sweep (all 399 `test/`+`examples/` `.zbr`, not just the
+  ~201 smoke-registered) found **52 standalone-compile FAILs**: ~11 negative/harness, and
+  **~30 genuine codegen/type miscompiles on current constructs**, clustered into ~15–20 root
+  causes (undeclared-type-not-emitted `Http`/`CsvWriter`; syntax errors in emitted Zig `json`;
+  `.len`-on-ArrayList `dns`; `^T`-box `*T`-vs-`T`; BUG-182-class mis-typed-receiver dispatch;
+  one GUI `param shadows 'init'` bug covering ~6 files). BUG-182 was the tip. Campaign: verify
+  real-vs-stale per cluster, fix by root cause (~15–20 fixes clear ~30 files), gate
+  `compile_check` over the triaged-clean corpus so it can't regrow, prune stale tests. Found
+  2026-07-16 by casting the witness wider than the curated smoke set.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
