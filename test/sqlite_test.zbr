@@ -16,5 +16,14 @@ def main()
     var rows2 = d.query("SELECT id, name FROM t ORDER BY id")
     for row2 in rows2
         print(row2.asInt("id").toString() + " " + row2.asStr("name"))
+    # Random access into a query result (regression guard for BUG-182): `rows.at(i)`
+    # must type its result as a sqlite_row so `.asInt`/`.asStr`/`.asFloat` dispatch
+    # correctly.  Before the fix this emitted a raw `.asInt` call on `_SqliteRow`
+    # (which only has `int_`/`str_`) → a compile error that no gate but compile_check
+    # would catch.  Skipping X rows to read row X+1 is a real use case.
+    var rows3 = d.query("SELECT id, name FROM t ORDER BY id")
+    if rows3.count() > 1
+        var second = rows3.at(1)
+        print("row[1] = " + second.asInt("id").toString() + " " + second.asStr("name"))
     d.close()
     print("sqlite_test OK")

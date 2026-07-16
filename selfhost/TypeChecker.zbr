@@ -1712,6 +1712,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if sqrmname == "asFloat"
                                 return Type_.float_
                             return Type_.unknown_
+                        on Type_.sqlite_row_list
+                            # A query result (`db.query(...)`) is a materialized,
+                            # random-accessible row list, so `.at(i)` yields a
+                            # `sqlite_row` (whose `.asInt`/`.asStr`/`.asFloat` then
+                            # dispatch correctly).  Without this arm the result of
+                            # `rows.at(0)` was untyped and `rows.at(0).asStr(..)`
+                            # emitted a raw `.asStr` call on `_SqliteRow` → a compile
+                            # error (the StrSet-class bug; for-in already seeds the
+                            # row type but random access did not).  `count`/`len` are
+                            # int (handled by the numeric fall-through below too).
+                            var sqlmname: str = mem.member
+                            if sqlmname == "at"
+                                return Type_.sqlite_row
+                            if sqlmname == "count" or sqlmname == "len"
+                                return Type_.int_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
                             if lmname == "at" or lmname == "fetch"

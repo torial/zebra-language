@@ -1,6 +1,44 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-181. Next new bug: BUG-182.**
+**Last bug number generated: BUG-182. Next new bug: BUG-183.**
+
+---
+
+## BUG-182: random access into a query result miscompiles — `db.query(...).at(i)` yields an untyped row ✅ FIXED in selfhost (2026-07-16); bootstrap divergence documented
+
+**User-facing.** `db.query(sql)` returns a materialized, random-accessible row list, but
+indexing it with `.at(i)` produced a result whose type was **not** inferred as `sqlite_row`,
+so a method on that result miscompiled:
+
+```
+var rows = d.query("SELECT id, name FROM t")
+var r = rows.at(1)          # skip row 0, read row 1 — a real use case
+print(r.asInt("id"))        # ERROR: no field or member function named 'asInt' in '_SqliteRow'
+```
+
+`asInt`/`asStr`/`asFloat` are special codegen dispatch (emit `_SqliteRow.int_`/`.str_`),
+triggered only when the receiver is *typed* `sqlite_row`. Only `for row in rows` worked,
+because that path seeds the row type into `infer_ctx`; random access did not. The StrSet-class
+bug (a method whose result loses its type → downstream dispatch breaks), found by sweeping the
+dedicated-`Type_`-variant call-handler arms rather than the test corpus.
+
+**Why no gate caught it:** round-trip diffs the selfhost against itself (self-consistency,
+blind to this); smoke only `--emit-zig`s (blind to compile-failures); no test exercised `.at()`
+on a query result. `compile_check.sh` (the independent witness) is what confirmed it.
+
+**Fix (selfhost, `selfhost/TypeChecker.zbr`):** added a `Type_.sqlite_row_list` arm to the
+`inferExpr` call handler — `at` → `sqlite_row`, `count`/`len` → int. Verified: a probe that
+miscompiled now compiles + emits `rows.items[i]` → `r.int_(...)`. Regression guard added to
+`test/sqlite_test.zbr` (random-access section, so `compile_check` covers it).
+
+**Bootstrap divergence (documented, acceptable):** the bootstrap (`src/TypeChecker.zig`) has no
+`sqlite_row_list` type — it types `query` as `.unknown` (line ~4072) and relies entirely on
+for-in's separate element inference, so it still miscompiles `rows.at(i).asInt(...)`. Fixing it
+means adding a type variant or threading query-provenance into method-return inference — a
+larger change to a phasing-out compiler. Selfhost-ahead is the acceptable direction (the primary
+`zebra.exe` is fixed; the bootstrap is `--zig-backend` escape-hatch only; regen authority is
+untouched — the selfhost compiler source uses no sqlite). Close by adding a `sqlite_row_list`
+type to the bootstrap if it is kept longer.
 
 ---
 
