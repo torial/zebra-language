@@ -8307,12 +8307,15 @@ struct Generator
                                 pass
                     # str.len or any other .len — always usize in Zig, cast to i64
                     if m.member == "len"
-                        # §28a step 1 (measure): the field/inference checks above did not
-                        # prove List or HashMap, so we fall back to `.len` (string-shaped).
-                        # That is only PROVEN correct for a str; on an unproven receiver
-                        # it is a guess (the bootstrap's opposite default, `.items.len`,
-                        # is the same guess in the other direction — len_count site).
-                        if not .isStringBoth(m.object, "len_recv")
+                        # §28a: the field/inference checks above did not prove List or
+                        # HashMap, so we fall back to `.len` (string-shaped).  `.len` is
+                        # correct for a str AND for a proven user class carrying an int
+                        # `len` field (e.g. StrSet); it is only a GUESS when the receiver
+                        # type is unprovable.  Guard on typeIsUnknown (matching the
+                        # list_dispatch site) so a proven receiver is not miscounted.
+                        # (Step-2 tightening from the Phase-1 `not isStringBoth`, which
+                        # over-flagged StrSet.len and similar.)  Emit is unchanged.
+                        if typeIsUnknown(m.object)
                             recordInferenceGuess("len_count: " + source_file + ":" + w.cur_line.toString())
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
