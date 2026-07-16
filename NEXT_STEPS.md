@@ -220,10 +220,17 @@ timeout) is **143 unique sites: add 40 / len_count 30 / list_dispatch 73.** So "
 holds ONLY for the non-`main` compiler files; corpus-wide much remains. Distribution: lexer_test 33,
 test/csv_test 24, `main.zbr` 19, test/list_functional 10, Parser 9, AstBuilder 5, +~30 other test/
 files, examples/life 4. Root-cause patterns still open:
-- **Untyped functional-trio lambda params** (biggest `add` driver): `def(acc, x) = acc + x`,
-  `def(x) = x + x` — lambda params carry no inferred type, so `acc + x` can't be proven numeric.
-  Even `def(x: int) = x + x` guesses → the lambda body's inference scope isn't seeded with the
-  (declared or higher-order-fn-derived) param types. Affects list_functional / csv / many tests.
+- ✅ **Typed lambda params** (commit c9c85f9) — `genLambdaEx` now seeds a fresh InferCtx with
+  the lambda's DECLARED param types (mirroring genMethod), used for BOTH the `@TypeOf(body)`
+  return-type inference and the body. `def(x: int) = x + x` / `def(acc: int, x: int) = acc + x`
+  no longer guess. Round-trip byte-identical, smoke 236/236.
+- **Untyped functional-trio lambda params** (the remaining `add` driver): `def(acc, x) = acc + x`,
+  `def(x) = x * 2` — params carry no declared type, so they bind unknown and still guess. Their
+  types must be DERIVED from the higher-order fn's signature: for `nums.reduce(0, def(acc,x)=…)`
+  with `nums: List(E)`, `acc` = init's type, `x` = `E`; for `map`/`filter`, `x` = `E`. Needs
+  call-site→lambda param-type plumbing (the reduce/map/filter codegen passes derived types into
+  `genLambdaEx`), method-specific — moderate risk, a supervised session. Affects list_functional /
+  csv / many tests.
 - **Cross-module STATIC returns** (`toks = Lexer.tokenize()` on a module name → unknown) —
   lexer_test cluster (~23). Module-static method-return resolution across deps; helps user
   `Module.staticFn()` too.
