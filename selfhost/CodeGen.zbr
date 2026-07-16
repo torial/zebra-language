@@ -9138,8 +9138,29 @@ struct Generator
             return
         # plain / nosub: emit: Zig string literal
         w.emit("\"")
-        w.emit(sl.text)
+        w.emit(escapePlainStr(sl.text))
         w.emit("\"")
+
+    # Escape a plain string literal's text for embedding in a Zig double-quoted
+    # string.  A `plain` literal keeps DOUBLE-quoted escape sequences as raw
+    # two-char forms (\" \n \\), but a SINGLE-quoted Zebra string ('…') carries a
+    # LITERAL `"` — which must be escaped for Zig, WITHOUT double-escaping an
+    # existing \".  The bootstrap (src/CodeGen.zig ~16418) distinguishes the two
+    # via the preserved quote delimiter; the selfhost AST drops the delimiter, so
+    # we escape IDEMPOTENTLY: split on the already-escaped \" (protecting them),
+    # escape any bare `"` in each segment, then rejoin.  Double-quoted text (all
+    # `\"`) passes through unchanged; single-quoted literal `"` gets escaped.
+    # (Fixes a syntax error in emitted Zig for e.g. `'{"a": 1}'` — BUG-183.)
+    def escapePlainStr(s: str): str
+        var segs: List(str) = s.split("\\\"")
+        var out: str = ""
+        var i: int = 0
+        for seg in segs
+            if i > 0
+                out = out + "\\\""
+            out = out + seg.replace("\"", "\\\"")
+            i = i + 1
+        return out
 
     def genDocStringLit(text: str)
         # Strip """ delimiters, leading newline; escape " and actual newlines for Zig output.

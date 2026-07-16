@@ -1,6 +1,36 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-182. Next new bug: BUG-183.**
+**Last bug number generated: BUG-183. Next new bug: BUG-184.**
+
+---
+
+## BUG-183: single-quoted string literals with embedded `"` emit unescaped Zig (syntax error) ✅ FIXED in selfhost (2026-07-16); selfhost-only (bootstrap was correct)
+
+**User-facing.** A single-quoted Zebra string containing a literal `"` (natural for JSON,
+HTML, etc.) emitted an unescaped `"` into the Zig double-quoted string, producing a **syntax
+error** in the generated Zig:
+
+```
+var json = '{"name": "Alice"}'
+```
+→ emitted `const json: []const u8 = "{"name": "Alice"}";`  (the Zig string ends at `"{"` → `error: expected ';' after statement`)
+
+**Root cause.** `StringKind` collapses single- and double-quoted literals to `plain`, and the
+selfhost AST drops the quote delimiter — so `genStringLit`'s plain path could not tell them
+apart and emitted `sl.text` raw. Double-quoted strings store `"` pre-escaped as `\"` (fine);
+single-quoted strings carry a literal `"` (broken). The **bootstrap was correct** — it preserves
+the delimiter (`src/CodeGen.zig` ~16418) and escapes single-quoted content; this was a selfhost
+divergence.
+
+**Fix (`selfhost/CodeGen.zbr`, `escapePlainStr`).** Escape IDEMPOTENTLY without the delimiter:
+split on the already-escaped `\"` (protecting them), escape any bare `"` in each segment, rejoin.
+Double-quoted text (all `\"`) passes through unchanged; single-quoted literal `"` gets escaped.
+Verified: `'{"name": "Alice"}'` now emits `"{\"name\": \"Alice\"}"`, compiles, and runs correctly;
+`"normal with \"escaped\""` is unchanged.
+
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster D2).
+`json_test` still fails on a *separate* bug (D7 `local variable is never mutated` — const/var
+mutation analysis), tracked in the triage.
 
 ---
 

@@ -61,11 +61,16 @@ names a parameter `init` that shadows a declaration. Fix once → clears 5–6 f
 | zebra_ide | `List` | List undeclared — investigate |
 
 ### D2 — SYNTAX errors in emitted Zig (malformed emit) — REAL✓ (Zig can't even parse it)
-| File | Error |
-|---|---|
-| json_test | expected ';' after statement |
-| expose_dotted_test | expected ';' after declaration |
-| selfhost_probe6 | expected ',' after initializer |
+| File | Error | Status |
+|---|---|---|
+| json_test | expected ';' after statement | **root cause FIXED (BUG-183)** — single-quoted string with embedded `"` emitted unescaped. json_test still fails on a *separate* D7 bug (never-mutated). |
+| expose_dotted_test | expected ';' after declaration | OPEN — likely a *different* malformed emit (verify; not the string-escape cause) |
+| selfhost_probe6 | expected ',' after initializer | OPEN — likely a different malformed emit (verify) |
+
+**BUG-183 (FIXED 2026-07-16):** single-quoted string literals with an embedded literal `"`
+emitted unescaped Zig (`'{"a":1}'` → `"{"a":1}"` → syntax error). Selfhost-only (bootstrap was
+correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.zbr`). This is a
+*class* fix — any single-quoted string with embedded quotes (JSON/HTML/etc.) across the corpus.
 
 ### D3 — `.len`/`.member` on ArrayList / str-vs-list confusion (StrSet/BUG-182 family) — REAL?
 | File | Error |
