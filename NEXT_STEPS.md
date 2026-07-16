@@ -221,9 +221,14 @@ Done (2026-07-15/16):
   `localIsList`-style tracking (which is why the round-trip's A/B builds passed with the bug
   present — the pattern wasn't hit in a breaking form in the compiled path). It is a REAL
   latent miscompile (the probe proves it) and the fix is correct, but it is not a user-facing
-  crisis. The generalizable thread worth a future check: are there OTHER dedicated-`Type_`-
-  variant stdlib types whose methods the call handler leaves unresolved the same way — and are
-  any of THOSE user-facing (→ user-reachable)?
+  crisis. **The generalizable thread was hunted (2026-07-16) and the class is now BOUNDED:** of
+  the 4 dedicated-`Type_` variants with no `inferExpr` call-handler arm (`str_slice`,
+  `allocator_ctx`, `sqlite_row_list`, `gui_context`), only **`sqlite_row_list` was a real
+  user-facing bug** → **BUG-182** (`db.query(...).at(i)` result untyped → `.asInt`/`.asStr`
+  miscompile), fixed in the selfhost. `gui_context` is safe (its value-returners are primitives,
+  no struct-dispatch hazard), `str_slice` is a handled sentinel, `allocator_ctx` is internal.
+  The hazard requires a *struct-returning* method whose result loses its type; primitive-returners
+  don't trip it. Found via the independent witness (`compile_check`), not the corpus.
 
 **This overturns the Phase-1 "~0 genuine ambiguity / emit always correct" read:** for the
 selfhost's OWN emit the guesses were producing wrong code; only bootstrap regen masked it.
