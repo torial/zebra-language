@@ -1502,6 +1502,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             var mm: str = m.member
             if mm == "stdout" or mm == "stderr"
                 return Type_.string_
+            # §28a step 2 (inference gap): `.len` (and a bare `.count`) property yields
+            # int on any receiver — the emit is always `@as(i64, @intCast(….len))`.
+            # Reached only when the receiver was NOT a known named class carrying that
+            # field (handled above, which returns the real field type), so this closes
+            # the numeric-context gap without overriding a genuine user field.
+            if mm == "len" or mm == "count"
+                return Type_.int_
             return Type_.unresolved
         on Expr.call as c
             # Constructor or class name used: callee: `Foo(args)` → named("Foo").
@@ -1777,6 +1784,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if not ctx.hasLocal(mid.name) and not ctx.hasClassAny(mid.name)
                                 if ctx.dep_types.hasClass(mem.member)
                                     return Type_.named(internString(mem.member))
+                    # §28a step 2 (inference gap): `.len()`/`.count()` yields int on any
+                    # receiver — List/HashMap/StrSet/str all emit `@intCast(…)` → i64.
+                    # Reached only when the receiver type wasn't proven by an arm above
+                    # (a known named class returns its real method type via methodReturnAny).
+                    if mem.member == "len" or mem.member == "count"
+                        return Type_.int_
                     return Type_.unresolved
                 on Expr.call as gc
                     # Generic constructor: Box(int)(args) — outer callee is Box(int) type-application.
