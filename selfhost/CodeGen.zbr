@@ -12797,6 +12797,28 @@ struct Generator
                 else
                     w.emit("anytype")
             w.emit(") ")
+            # §28a step 2: seed a fresh InferCtx with the lambda's DECLARED param
+            # types so BOTH the `@TypeOf(body)` return-type inference AND the body
+            # emit can prove operand types (e.g. genBinary's isPrimType).  Without
+            # this, `def(x: int) = x + x` guesses `add` because `x` is unbound in the
+            # enclosing ctx — and the return-type `@TypeOf(x + x)`, emitted before the
+            # body, guesses first.  Mirrors genMethod's ctx17c; a fresh ctx (not the
+            # enclosing one) avoids leaking these bindings back out.  Untyped params
+            # bind unknown (their type would need the higher-order fn's signature —
+            # future work), so untyped lambdas still guess; typed ones no longer do.
+            var cf = StrSet()
+            for cv in lam.captures
+                cf.add(cv.name)
+            var lam_ctx = InferCtx(.module_types, owner)
+            lam_ctx.withDepTypes(.dep_types)
+            if lam.return_type != nil
+                lam_ctx.withReturnType(typeFromRef(lam.return_type!))
+            for lp in lam.params
+                if lp.type_ != nil
+                    lam_ctx.bind(lp.name, typeFromRef(lp.type_!))
+                else
+                    lam_ctx.bind(lp.name, Type_.unknown_)
+            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx)
             # Return type
             if lam.return_type != nil
                 genType(lam.return_type!)
@@ -12804,18 +12826,12 @@ struct Generator
                 branch lam.body_
                     on LambdaBody.expr_ as ex
                         w.emit("@TypeOf(")
-                        genExpr(ex)
+                        lg.genExpr(ex)
                         w.emit(")")
                     on LambdaBody.stmts as ss
-                        if not emitLambdaStmtsRetType(ss)
+                        if not lg.emitLambdaStmtsRetType(ss)
                             w.emit("void")
             w.emit(" {")
-            # Build capture context for body
-            var cf = StrSet()
-            for cv in lam.captures
-                cf.add(cv.name)
-            var mg = asMethod()
-            var lg = mg.withCaptureFields(cf)
             branch lam.body_
                 on LambdaBody.expr_ as ex
                     w.emit(" return ")

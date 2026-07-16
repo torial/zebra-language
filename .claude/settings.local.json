@@ -18,7 +18,19 @@
       "PowerShell(zig version *)",
       "PowerShell(cmd /c \"where zig\" 2>&1)",
       "PowerShell(Start-Process -FilePath \"C:\\\\Projects\\\\zebra-language\\\\IDE\\\\ZebraIDE_gui_tui\\\\zig-out\\\\bin\\\\app.exe\" -Wait -NoNewWindow -PassThru | Select-Object -ExpandProperty ExitCode)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; \"FreeRAM_GB={0:N1} of {1:N1}\" -f \\($os.FreePhysicalMemory/1MB\\), \\($os.TotalVisibleMemorySize/1MB\\); \"CPU_Load%=$\\($cpu.LoadPercentage\\)\")",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; \"FreeRAM_GB={0:N1}/{1:N1}\" -f \\($os.FreePhysicalMemory/1MB\\),\\($os.TotalVisibleMemorySize/1MB\\); try { $c=\\(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average\\).Average; \"CPU_avg%=$c\" } catch { \"CPU n/a\" })",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; \"FreeRAM_GB={0:N1}/{1:N1}\" -f \\($os.FreePhysicalMemory/1MB\\),\\($os.TotalVisibleMemorySize/1MB\\); try { $c=\\(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average\\).Average; \"CPU%=$c\" } catch {})",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; \"$\\([math]::Round\\($os.FreePhysicalMemory/1024\\)\\) MB free / $\\([math]::Round\\($os.TotalVisibleMemorySize/1024\\)\\) MB total\"; \"CPU load: $\\(\\(Get-CimInstance Win32_Processor\\).LoadPercentage\\)%\")",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; \"$\\([math]::Round\\($os.FreePhysicalMemory/1024\\)\\) MB free\")",
+      "PowerShell($os = Get-CimInstance Win32_OperatingSystem; \"$\\([math]::Round\\($os.FreePhysicalMemory/1024\\)\\) MB free\"; \"CPU: $\\(\\(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average\\).Average\\)%\")",
+      "Read(//c/Presolved/tmp/claude/C--Projects-zebra-language/b46cbbaa-d385-4b79-aed5-8372aaae49c9/tasks/**)",
+      "Bash(rm -rf \"/c/Users/Sean/.vscode/extensions/zebra.zebra-language-0.1.0\")",
+      "Bash(code --install-extension \"$\\(pwd\\)/zebra-language-0.1.0.vsix\" --force)",
+      "Bash(code --list-extensions --show-versions)",
+      "Skill(artifact-design)",
+      "Artifact"
     ]
   }
 }
