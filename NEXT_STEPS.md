@@ -216,14 +216,18 @@ tidying benign guesses.
 
 **⚠️ SCOPE CORRECTION (2026-07-16 full-corpus measure).** The per-file iteration above measured
 only NON-`main` selfhost source. The authoritative full-corpus measure (420 files, per-file
-timeout) is **143 unique sites: add 40 / len_count 30 / list_dispatch 73.** So "add bucket → 0"
-holds ONLY for the non-`main` compiler files; corpus-wide much remains. Distribution: lexer_test 33,
+timeout) was **143 unique sites: add 40 / len_count 30 / list_dispatch 73** → now **140 (add 37 /
+len_count 30 / list_dispatch 73)** after the typed-lambda fix. So "add bucket → 0" holds ONLY for
+the non-`main` compiler files; corpus-wide much remains. Distribution: lexer_test 33,
 test/csv_test 24, `main.zbr` 19, test/list_functional 10, Parser 9, AstBuilder 5, +~30 other test/
 files, examples/life 4. Root-cause patterns still open:
 - ✅ **Typed lambda params** (commit c9c85f9) — `genLambdaEx` now seeds a fresh InferCtx with
   the lambda's DECLARED param types (mirroring genMethod), used for BOTH the `@TypeOf(body)`
   return-type inference and the body. `def(x: int) = x + x` / `def(acc: int, x: int) = acc + x`
-  no longer guess. Round-trip byte-identical, smoke 236/236.
+  no longer guess. Round-trip byte-identical, smoke 236/236. **Corpus delta: 143 → 140 (add 40 →
+  37) — only 3 sites, because the corpus lambda-`add` guesses are dominated by UNTYPED functional-
+  trio lambdas (below).** Value is the seeding INFRASTRUCTURE the untyped work builds on, not the
+  raw count.
 - **Untyped functional-trio lambda params** (the remaining `add` driver): `def(acc, x) = acc + x`,
   `def(x) = x * 2` — params carry no declared type, so they bind unknown and still guess. Their
   types must be DERIVED from the higher-order fn's signature: for `nums.reduce(0, def(acc,x)=…)`
