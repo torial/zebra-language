@@ -193,24 +193,40 @@ flip (would convert ~80 benign under-inferences into false errors).
 Measurable selfhost/* count (excl. main.zbr/pipeline_test, BUG-181): started **add 6 /
 len_count 30 / list_dispatch 27**.
 
-Done (2026-07-15):
+Done (2026-07-15/16):
 - ✅ **`inferExpr(.len / .count())` → int** (commit 5c78c17) — `add` bucket 6 → 0. Also
   covers `inferExpr(arith of prims)` since the existing binary handler already propagated
   numeric; the only gap was `.len` not being numeric.
 - ✅ **`len_count` guard → `typeIsUnknown`** (commit 9204a0b) — 30 → 18. Dropped proven-receiver
   false positives (StrSet-param `.len` field reads were never ambiguous). Emit-neutral.
+- ✅ **StrSet method returns on param/field receivers** (commit 04231dc) — **a real latent
+  selfhost MISCOMPILE**, not a benign guess. `StrSet` has a dedicated `Type_.str_set` variant,
+  so a param/field typed `StrSet` infers to `str_set` (a `StrSet()` ctor infers to
+  `named("StrSet")` and worked); the call handler had no `str_set` arm, so `strset.items()`
+  was unresolved and the result local emitted `.len` (string-shaped) — WRONG on an ArrayList
+  (`no field named 'len'`). Hidden because the committed `.zig` is bootstrap-generated and the
+  round-trip shares the same (wrong) inference on both sides. Added a `str_set` arm
+  (`items()`→List(str), `contains_()`→bool). A probe that miscompiled now compiles+runs.
+  Cleared the whole CodeGen cluster: len_count 18 → 9, list_dispatch 27 → 18.
 
-Remaining (harder — deeper inference-engine work; **current: len_count 18 / list_dispatch 27**):
-- **Dep-class user-method returns don't resolve** (`x = strset.items()` on a `CgHelpers`
-  dep class → `x` unknown; same-module `Bag.items()` resolves fine). Isolated to the shared
-  `inferExpr`/`methodReturnAny`/`dep_types` path. Fixing it clears the CodeGen `.items()`
-  cluster (~19 sites across both buckets). **Overlaps §24e** (method-return typing).
-- **Cross-module STATIC returns** (`toks = Lexer.tokenize()` on a module name → unknown).
-  lexer_test cluster (~23 sites, test code — lower value than compiler source).
-- Singletons: `Parser.zbr:1511`, `AstBuilder.zbr:1153`.
+**This overturns the Phase-1 "~0 genuine ambiguity / emit always correct" read:** for the
+selfhost's OWN emit the guesses were producing wrong code; only bootstrap regen masked it.
+§28a is fixing real latent miscompiles on the road to selfhost-as-regen-authority, not just
+tidying benign guesses.
 
-These touch dep-type resolution (more load-bearing / higher regression risk than the isolated
-changes above) — a supervised-checkpoint boundary.
+**Compiler-source guesses are essentially cleared.** Remaining (**current: len_count 9 /
+list_dispatch 18**), all lower-value:
+- **Cross-module STATIC returns** (`toks = Lexer.tokenize()` on a module name → unknown) —
+  the lexer_test cluster (~23 sites, test code). A distinct inference feature (module-static
+  method-return resolution across deps); would also help user `Module.staticFn()` calls.
+- 2 compiler-source singletons, both known-hard/low-value: `AstBuilder.zbr:1152` (flow-sensitive
+  `var a2 = a` then reassigned — decl-time binding doesn't re-infer on reassignment);
+  `Parser.zbr` `variants.add` (cur_line attribution noise on a proven-List receiver).
+
+Next: the flip (step 3) is close for compiler source. Before flipping, either (a) do the
+cross-module-static feature to zero out lexer_test too, or (b) accept the residual as
+`--allow-inference-guess`-gated and flip with the remaining sites documented. Re-assess with
+Sean.
 
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
