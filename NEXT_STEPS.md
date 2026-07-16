@@ -214,19 +214,32 @@ selfhost's OWN emit the guesses were producing wrong code; only bootstrap regen 
 §28a is fixing real latent miscompiles on the road to selfhost-as-regen-authority, not just
 tidying benign guesses.
 
-**Compiler-source guesses are essentially cleared.** Remaining (**current: len_count 9 /
-list_dispatch 18**), all lower-value:
+**⚠️ SCOPE CORRECTION (2026-07-16 full-corpus measure).** The per-file iteration above measured
+only NON-`main` selfhost source. The authoritative full-corpus measure (420 files, per-file
+timeout) is **143 unique sites: add 40 / len_count 30 / list_dispatch 73.** So "add bucket → 0"
+holds ONLY for the non-`main` compiler files; corpus-wide much remains. Distribution: lexer_test 33,
+test/csv_test 24, `main.zbr` 19, test/list_functional 10, Parser 9, AstBuilder 5, +~30 other test/
+files, examples/life 4. Root-cause patterns still open:
+- **Untyped functional-trio lambda params** (biggest `add` driver): `def(acc, x) = acc + x`,
+  `def(x) = x + x` — lambda params carry no inferred type, so `acc + x` can't be proven numeric.
+  Even `def(x: int) = x + x` guesses → the lambda body's inference scope isn't seeded with the
+  (declared or higher-order-fn-derived) param types. Affects list_functional / csv / many tests.
 - **Cross-module STATIC returns** (`toks = Lexer.tokenize()` on a module name → unknown) —
-  the lexer_test cluster (~23 sites, test code). A distinct inference feature (module-static
-  method-return resolution across deps); would also help user `Module.staticFn()` calls.
-- 2 compiler-source singletons, both known-hard/low-value: `AstBuilder.zbr:1152` (flow-sensitive
-  `var a2 = a` then reassigned — decl-time binding doesn't re-infer on reassignment);
-  `Parser.zbr` `variants.add` (cur_line attribution noise on a proven-List receiver).
+  lexer_test cluster (~23). Module-static method-return resolution across deps; helps user
+  `Module.staticFn()` too.
+- **`main.zbr`'s own 19 sites** (2 add: 755/1113; 17 list_dispatch: the `args.contains` /
+  `Arg.parse()` cluster — `Arg.parse()` return type not propagated). Never measured pre-fix
+  (main.zbr didn't finish compiling; see BUG-181, now ~6s).
+- 2 known-hard singletons (flow-sensitive `var a2=a` reassignment; cur_line noise).
 
-Next: the flip (step 3) is close for compiler source. Before flipping, either (a) do the
-cross-module-static feature to zero out lexer_test too, or (b) accept the residual as
-`--allow-inference-guess`-gated and flip with the remaining sites documented. Re-assess with
-Sean.
+NON-main compiler source IS essentially cleared (0/9/18 on those files) and a real miscompile
+was fixed — but the flip (step 3) is NOT close corpus-wide; the lambda-param feature is the
+largest remaining lever. Re-assess scope with Sean.
+
+**BUG-181 update:** `main.zbr` self-compile was >120s (slow, real) pre-session; step-2 fixes cut
+it to ~6s but it now fails on 3 pre-existing selfhost EMIT bugs (`.len`-lvalue `@intCast`,
+`invalid escape '{'`, never-mutated) — see BUG-181. Those block self-compilation of the driver
+independent of §28a.
 
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):

@@ -4,35 +4,44 @@
 
 ---
 
-## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` (>300s timeout) ⚠️ OPEN (pre-existing; self-hosting gap)
+## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` ⚠️ OPEN (pre-existing; self-hosting gap) — SLOWNESS FIXED by §28a step 2; now blocked by emit bugs
 
-The self-hosted `zebra.exe` does not finish compiling its own entry file
-`selfhost/main.zbr` — it runs past a 300s cap without producing output.
-`selfhost/pipeline_test.zbr` shows the same. Smaller selfhost modules
-(`CodeGen.zbr`, `TypeChecker.zbr`, `CgHelpers.zbr`, …) compile fine.
+The self-hosted `zebra.exe` cannot compile its own entry file `selfhost/main.zbr`.
+Smaller selfhost modules (`CodeGen.zbr`, `TypeChecker.zbr`, `CgHelpers.zbr`, …)
+compile fine.
 
-**Not a regression.** Confirmed on the clean, committed tree (pre any §28a
-instrumentation): `git stash` the working changes, rebuild `zebra.exe`, time
-`zebra.exe --output-dir TMP selfhost/main.zbr` → 300s timeout. So this is a
-long-standing self-hosting limitation, not caused by recent work.
+**History / correction (2026-07-16).** Originally filed as a >300s *timeout*. That
+slowness was real (confirmed on the pre-session tree: >120s), NOT contention — an
+earlier in-session doubt about contention was itself mistaken. **§28a step-2 inference
+fixes (commits 5c78c17 / 9204a0b / 04231dc) incidentally cut it from >120s to ~6s** —
+the pre-session compiler's weak inference (unresolved `.len`/`.items()`/dep types)
+caused pathological repeated-inference cost; resolving those types made the compile
+fast. So the timing symptom is fixed as a side effect.
+
+**Current blocker: pre-existing selfhost EMIT bugs**, previously hidden behind the
+slowness (the compile never reached emit). Now `main.zbr` self-compiles in ~6s and
+fails Zig compilation with (at least):
+1. `TypeChecker.zbr:64` (`TupleType_` ctor `len = elems.items.len`) → emits
+   `@as(i64, @intCast(_self.len)) = …` — a `.len` **lvalue** wrongly wrapped in the
+   read-side `@intCast`. The len-member codegen (`CodeGen.zbr` ~8309) applies the
+   `@as(i64,@intCast(x.len))` read form even when `x.len` is an assignment TARGET.
+2. `CodeGen.zig:17173` → `invalid escape character: '{'` (an emitted string literal).
+3. `main.zbr:1464` → `local variable is never mutated` (const/var mutation analysis).
+None are §28a inference-guesses; all are in the emit path (untouched by §28a). They
+are latent selfhost codegen gaps, not regressions.
 
 **Why unnoticed.** No gate self-compiles `main.zbr`. The `.zbr → .zig` regen
 (`tools/bootstrap_check.sh`, `zig build update-selfhost`) is performed by the
-**bootstrap** (`zebra-bootstrap.exe`, the Zig-implemented compiler — regen
-authority), which compiles `main.zbr` in seconds. `tools/selfhost_smoke.sh`
-runs `zebra.exe --emit-zig` only on small fixtures, never on `main.zbr`.
+**bootstrap** (`zebra-bootstrap.exe` — regen authority), which compiles `main.zbr` in
+seconds. `tools/selfhost_smoke.sh` runs `zebra.exe --emit-zig` only on small fixtures.
 
-**Impact.** (a) The selfhost is not yet able to compile its own driver, a gap on
-the road to Zig-only-in-special-cases. (b) It constrains §28a Phase-4 validation:
-"both compilers reject the same programs" cannot be exercised on `main.zbr`
-because the selfhost cannot compile it at all.
+**Impact.** (a) The selfhost cannot yet compile its own driver — a gap on the road to
+Zig-only-in-special-cases. (b) §28a validation on `main.zbr` requires clearing these
+emit bugs first.
 
-**Where to look.** A pathological (likely super-linear) cost in the selfhost
-pipeline on the largest/most-complex input — candidates: `inferExpr` /
-`methodReturnAny` scans invoked per-node during codegen, or an O(n²) pass over
-module decls. Profile `zebra.exe` on `main.zbr` (or bisect by trimming `main.zbr`)
-to localize. The bootstrap does the same work in seconds, so compare the two
-implementations' hot paths.
+**Next.** Fix the three emit bugs (start with the `.len`-lvalue: the assignment
+codegen should emit a plain field store for a `.len` TARGET, not the `@intCast` read
+form). Then add a gate that self-compiles `main.zbr` so it stays working.
 
 ---
 
