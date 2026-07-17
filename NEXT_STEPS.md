@@ -88,6 +88,16 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   real-vs-stale per cluster, fix by root cause (~15–20 fixes clear ~30 files), gate
   `compile_check` over the triaged-clean corpus so it can't regrow, prune stale tests. Found
   2026-07-16 by casting the witness wider than the curated smoke set.
+  - [ ] **Follow-up (D7 residual) — per-method struct mutation tracking.** BUG-191 (2026-07-17)
+    made the `var`/`const` scan type-driven for VALUE receivers (primitives/char/str/json →
+    `const` unless an explicit mutator), killing the `never mutated` class at the root. USER-STRUCT
+    receivers still use the name-based fallback, so a struct whose non-mutating method the selfhost
+    emits as `self: *const Self` (e.g. the `gui_test` MVU model struct literal) can still be
+    over-marked `var`. Exact fix: key the decision on whether the SPECIFIC called method mutates
+    `self` (`methodMutatesSelf` on the callee body — the same predicate the emitter uses at
+    `CodeGen.zbr:3681`), which needs a method-body lookup reachable from inside `scanMutations`
+    without creating a CgHelpers↔TypeChecker import cycle (e.g. a precomputed per-method
+    `mutates_self` map on `ModuleTypes`, populated in codegen where both are already in scope).
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
