@@ -92,15 +92,19 @@ correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.z
 | tc_check_test | expected '*TcExpr', found 'TcExpr' |
 | tc_infer_test | expected '*TcExpr', found 'TcExpr' (same as tc_check) |
 
-### D5 — method on a mis-typed receiver (BUG-182 class) — REAL?
-| File | Error |
-|---|---|
-| datetime_test | no method 'toEpoch' in _DateTime |
-| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) |
-| extend_test | no method 'shout' in []const u8 (extension method) |
-| json_parse_typed_test | no method 'getString' in json.dynamic.Value |
-| fuzzy_match | no method 'concat' in []u8 |
-| fuzzy_selfhost | no method 'concat' in []u8 (same as fuzzy_match) |
+### D5 — method on a mis-typed receiver (BUG-182 class) — partly FIXED
+| File | Error | Status |
+|---|---|---|
+| fuzzy_match | no method 'concat' in []u8 | **FIXED (BUG-185)** — chained string method materialization |
+| fuzzy_selfhost | no method 'concat' in []u8 | concat FIXED (BUG-185); now surfaces a **D3** HashMap `.len` |
+| datetime_test | no method 'toEpoch' in _DateTime | OPEN |
+| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) | OPEN — optional-receiver dispatch |
+| extend_test | no method 'shout' in []const u8 (extension method) | OPEN — `extend` feature |
+| json_parse_typed_test | no method 'getString' in json.dynamic.Value | OPEN |
+
+**Note:** the two `concat` files were a *different* root cause than the rest of D5 (method-chain
+materialization on a string temp, BUG-185, not receiver-type inference). The remaining 4 are the
+true "receiver type not inferred → wrong dispatch" family (BUG-182 shape).
 
 ### D6 — argument-count mismatch — REAL?
 | File | Error |

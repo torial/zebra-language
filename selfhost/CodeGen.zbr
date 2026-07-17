@@ -4804,13 +4804,21 @@ struct Generator
             var ch = tryChain(n.init_expr!)
             if ch != nil
                 var chain = ch!
-                mc_recv = hoistCallChain(chain.recv)
-                mc_field = chain.method
-                if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx!)
-                    if recv_t is Type_.named as cn
-                        if isClassMethodThrows(cn, chain.method)
-                            mc_throws = true
+                # Don't materialize a chain whose RECEIVER is a string: string methods
+                # emit a by-value special form (`std.mem.concat(recv, …)`, not
+                # `recv.method()`), so a materialized `_mc_N.concat(…)` is invalid Zig
+                # ("no member named 'concat' in '[]u8'").  genExpr handles the nested
+                # string chain directly.  Materialization (BUG-079) is only needed for
+                # STRUCT temporaries needing a stable address; string slices pass by
+                # value.  Fixes chained `s.concat(a).concat(b)` (BUG-185).
+                if not isStringExpr(chain.recv)
+                    mc_recv = hoistCallChain(chain.recv)
+                    mc_field = chain.method
+                    if .infer_ctx != nil
+                        var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx!)
+                        if recv_t is Type_.named as cn
+                            if isClassMethodThrows(cn, chain.method)
+                                mc_throws = true
         # Mutable fn-ref vars: Zig requires `*const fn(P) R` type.
         # Detect `var pred = isAlpha` where isAlpha is a top-level def,
         # and emit `var pred: @TypeOf(&isAlpha) = &isAlpha;` instead.
@@ -5469,10 +5477,13 @@ struct Generator
     # ── genAssign ─────────────────────────────────────────────────────────────
 
     def genAssign(a: StmtAssign)
-        # BUG-079: auto-hoist method chain on struct temporary in assignment RHS
+        # BUG-079: auto-hoist method chain on struct temporary in assignment RHS.
+        # BUG-185: but NOT when the receiver is a string — string methods emit a
+        # by-value special form, so `_mc_N.concat(…)` would be invalid Zig; genExpr
+        # handles the string chain.  (Mirrors the var-init and return paths.)
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
-            if ch != nil
+            if ch != nil and not isStringExpr((ch!).recv)
                 var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()

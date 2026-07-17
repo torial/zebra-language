@@ -1,6 +1,32 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-184. Next new bug: BUG-185.**
+**Last bug number generated: BUG-185. Next new bug: BUG-186.**
+
+---
+
+## BUG-185: chained string methods miscompile — `s.concat(a).concat(b)` emits `_mc.concat(...)` ✅ FIXED (2026-07-16)
+
+**User-facing.** A chained string method (e.g. `clist.at(i).concat(a).concat(b)`) miscompiled:
+the BUG-079 auto-hoist (which materializes a method chain's receiver into a `var _mc_N = …`
+temp for struct temporaries needing a stable address) misfired on the string chain, emitting:
+
+```
+var _mc_1 = (std.mem.concat(...) catch unreachable);          // _mc_1 : []u8
+const tri: []const u8 = _mc_1.concat(clist.items[i+2]);        // → error: no field or member function named 'concat' in '[]u8'
+```
+
+String methods emit a **by-value special form** (`std.mem.concat(recv, …)`), never
+`recv.method()`, so a materialized `_mc_N.concat(…)` is invalid Zig.
+
+**Fix (`selfhost/CodeGen.zbr`).** Skip materialization when the chain's receiver is a string
+(`not isStringExpr(chain.recv)`) — `genExpr` handles the nested string chain directly, emitting
+`std.mem.concat(std.mem.concat(a, b), c)`. Applied to the var-init and assignment paths; the
+return path already guarded on `recv_t is Type_.named` (structs only), so it was safe. Materialization
+(BUG-079) is only needed for struct temporaries; string slices pass by value.
+
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster D5). Cleared
+`fuzzy_match` outright; `fuzzy_selfhost`'s concat error is gone (it now surfaces a separate D3
+HashMap `.len` bug). Gates: round-trip byte-identical, smoke 236/236.
 
 ---
 
