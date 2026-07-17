@@ -257,11 +257,11 @@ def testScanMutations() throws
     # x = 1 -> x is mutated
     var stmts = List(Stmt)()
     stmts.add(Stmt.assign(StmtAssign(sp, id_x, AssignOp.assign, lit)))
-    var mut = scanMutations(stmts)
+    var mut = scanMutations(stmts, nil)
     assert     mut.contains_("x")
     assert not mut.contains_("y")
     # empty body -> nothing mutated
-    assert scanMutations(List(Stmt)()).len == 0
+    assert scanMutations(List(Stmt)(), nil).len == 0
     print("10. scanMutations: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────

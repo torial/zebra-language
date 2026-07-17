@@ -4531,7 +4531,11 @@ struct Generator
         # restore on exit. This prevents sibling branch arms from polluting each
         # other's const/var decisions via the method-wide mut_set.
         var saved_ms = mut_set
-        var ms: StrSet = scanMutations(stmts)
+        # Type-driven mutation analysis: pass the InferCtx so scanMutations can
+        # ask the receiver's inferred type (value types → const unless an explicit
+        # mutator) instead of guessing from the method name. nil ic (unseeded
+        # emission paths) falls back to the name-based over-approximation.
+        var ms: StrSet = scanMutations(stmts, .infer_ctx)
         # BUG-091: idents passed as `&` to mutating-container params must be
         # declared `var`, otherwise `&items` is `*const ArrayList`.
         addAddrOfMutationsInStmts(stmts, ms)

@@ -36,6 +36,12 @@
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
 use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
+# Type-driven mutation analysis (scanMutations): the InferCtx lets us ask the
+# receiver's inferred type instead of guessing from the method NAME. Value-type
+# receivers (primitives, str, json) are passed by value, so only an explicit
+# mutating method requires the local to be `var`. TypeChecker imports only Ast,
+# so this does not create an import cycle.
+use TypeChecker exposing InferCtx, Type_, inferExpr
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -1305,53 +1311,120 @@ def isReadOnlyMethod(name: str): bool
         return true
     return false
 
-def scanMutationsInExpr(expr: Expr, out: StrSet)
+# Methods that STRUCTURALLY mutate their receiver in place — the small,
+# explicit allow-list used for value-type receivers (see isValueTypeForMutation).
+# Mirrors the `mutating_methods` set in src/CodeGen.zig::scanMutationsInExpr.
+# For a value-type receiver, ONLY these require the local to be emitted `var`;
+# every other method (queries, builders that return a new value, char/string
+# predicates) leaves the receiver `const`.
+def isMutatingMethod(name: str): bool
+    # List — in-place
+    if name == "add" or name == "remove" or name == "clear" or name == "reverse"
+        return true
+    # HashMap / set — in-place
+    if name == "set"
+        return true
+    # StringBuilder — write methods
+    if name == "append" or name == "appendLine" or name == "appendChar"
+        return true
+    if name == "appendInt" or name == "appendFloat" or name == "appendBool"
+        return true
+    # JsonValue — mutating builders (object + array)
+    if name == "put" or name == "putInt" or name == "putFloat" or name == "putBool"
+        return true
+    # CsvWriter — write
+    if name == "writeRow"
+        return true
+    return false
+
+# True iff `t` is a value type whose methods are passed the receiver BY VALUE
+# (or as `*const`), so a method call never requires the receiver local to be
+# `var` unless the method is on isMutatingMethod's list. This is the type-driven
+# replacement for the isReadOnlyMethod name allow-list: instead of enumerating
+# every read-only method (a list that silently rots — BUG-190 et al.), we ask
+# the inferred type. Only genuinely-immutable / by-value categories are listed
+# here; user structs, containers, cross-module and unknown types stay on the
+# conservative name-based path so this change cannot introduce spurious `var`
+# (or, worse, a `const` on something actually mutated).
+def isValueTypeForMutation(t: Type_): bool
+    branch t
+        on Type_.int_        return true
+        on Type_.uint_       return true
+        on Type_.float_      return true
+        on Type_.bool_       return true
+        on Type_.char_       return true
+        on Type_.int_n       return true
+        on Type_.uint_n      return true
+        on Type_.float_n     return true
+        on Type_.string_     return true
+        on Type_.str_slice   return true
+        on Type_.json_value  return true
+        else
+            return false
+
+# ── scanMutations receiver decision ───────────────────────────────────────────
+# Should a method-call receiver ident be marked `var`? When we have an InferCtx
+# we consult the receiver's inferred type (type-driven); otherwise we fall back
+# to the name-based over-approximation (isReadOnlyMethod).
+def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
+    if ic as ic_v
+        var rt: Type_ = inferExpr(obj, ic_v)
+        if isValueTypeForMutation(rt)
+            # Value receiver → only an explicit in-place mutator forces `var`.
+            return isMutatingMethod(method)
+        # Non-value (struct / container / cross-module / unknown): keep the
+        # conservative name-based decision to avoid regressions.
+        return not isReadOnlyMethod(method)
+    # No type info available (unit tests, pre-seed emission paths): name-based.
+    return not isReadOnlyMethod(method)
+
+def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
     branch expr
         on Expr.call as c
             if c.callee is Expr.member as m
-                if not isReadOnlyMethod(m.member)
-                    if m.object is Expr.ident as id
+                if m.object is Expr.ident as id
+                    if receiverNeedsVar(m.object, m.member, ic)
                         out.add(id.name)
             for arg in c.args
-                scanMutationsInExpr(arg.value, out)
+                scanMutationsInExpr(arg.value, out, ic)
         on Expr.binary as b
-            scanMutationsInExpr(b.left, out)
-            scanMutationsInExpr(b.right, out)
+            scanMutationsInExpr(b.left, out, ic)
+            scanMutationsInExpr(b.right, out, ic)
         on Expr.unary as u
-            scanMutationsInExpr(u.operand, out)
+            scanMutationsInExpr(u.operand, out, ic)
         on Expr.member as m
-            scanMutationsInExpr(m.object, out)
+            scanMutationsInExpr(m.object, out, ic)
         on Expr.try_ as t
-            scanMutationsInExpr(t.expr, out)
+            scanMutationsInExpr(t.expr, out, ic)
         on Expr.type_check as t
-            scanMutationsInExpr(t.expr, out)
+            scanMutationsInExpr(t.expr, out, ic)
         on Expr.if_expr as i
-            scanMutationsInExpr(i.cond, out)
-            scanMutationsInExpr(i.then_expr, out)
-            scanMutationsInExpr(i.else_expr, out)
+            scanMutationsInExpr(i.cond, out, ic)
+            scanMutationsInExpr(i.then_expr, out, ic)
+            scanMutationsInExpr(i.else_expr, out, ic)
         on Expr.orelse_ as o
-            scanMutationsInExpr(o.expr, out)
-            scanMutationsInExpr(o.fallback, out)
+            scanMutationsInExpr(o.expr, out, ic)
+            scanMutationsInExpr(o.fallback, out, ic)
         on Expr.catch_ as ca
-            scanMutationsInExpr(ca.expr, out)
-            scanMutationsInExpr(ca.fallback, out)
+            scanMutationsInExpr(ca.expr, out, ic)
+            scanMutationsInExpr(ca.fallback, out, ic)
         on Expr.dict_lit as d
             for entry in d.entries
-                scanMutationsInExpr(entry.key, out)
-                scanMutationsInExpr(entry.value, out)
+                scanMutationsInExpr(entry.key, out, ic)
+                scanMutationsInExpr(entry.value, out, ic)
         on Expr.string_interp as si
             for part in si.parts
                 if part is StringPart.expr_ as e
-                    scanMutationsInExpr(e, out)
+                    scanMutationsInExpr(e, out, ic)
         on Expr.chained_cmp as cc
             for op in cc.operands
-                scanMutationsInExpr(op, out)
+                scanMutationsInExpr(op, out, ic)
         else
             pass
 
 # ── scanMutationsInto / scanMutations ─────────────────────────────────────────
 
-def scanMutationsInto(stmts: List(Stmt), out: StrSet)
+def scanMutationsInto(stmts: List(Stmt), out: StrSet, ic: InferCtx?)
     for s in stmts
         branch s
             on Stmt.assign as a
@@ -1368,38 +1441,38 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                     else
                         pass
             on Stmt.if_ as si
-                scanMutationsInto(si.then_stmts, out)
+                scanMutationsInto(si.then_stmts, out, ic)
                 for ei in si.else_ifs
-                    scanMutationsInto(ei.stmts, out)
+                    scanMutationsInto(ei.stmts, out, ic)
                 if si.else_stmts as se
-                    scanMutationsInto(se, out)
+                    scanMutationsInto(se, out, ic)
             on Stmt.while_ as w
-                scanMutationsInto(w.stmts, out)
+                scanMutationsInto(w.stmts, out, ic)
             on Stmt.for_in as f
-                scanMutationsInto(f.stmts, out)
+                scanMutationsInto(f.stmts, out, ic)
                 if f.else_ as fe
-                    scanMutationsInto(fe, out)
+                    scanMutationsInto(fe, out, ic)
             on Stmt.for_num as fnum
-                scanMutationsInto(fnum.stmts, out)
+                scanMutationsInto(fnum.stmts, out, ic)
             on Stmt.branch_ as b
                 for c in b.cases
-                    scanMutationsInto(c.stmts, out)
+                    scanMutationsInto(c.stmts, out, ic)
                 if b.else_ as be
-                    scanMutationsInto(be, out)
+                    scanMutationsInto(be, out, ic)
             on Stmt.var_ as n
                 if n.init_expr != nil
-                    scanMutationsInExpr(n.init_expr!, out)
+                    scanMutationsInExpr(n.init_expr!, out, ic)
             on Stmt.return_ as r
                 if r.value != nil
-                    scanMutationsInExpr(r.value!, out)
+                    scanMutationsInExpr(r.value!, out, ic)
             on Stmt.expr as e
-                scanMutationsInExpr(e, out)
+                scanMutationsInExpr(e, out, ic)
             on Stmt.with_ as w
                 if w.target is Expr.ident as id
                     out.add(id.name)
-                scanMutationsInto(w.stmts, out)
+                scanMutationsInto(w.stmts, out, ic)
             on Stmt.in_scope as si_m
-                scanMutationsInto(si_m.stmts, out)
+                scanMutationsInto(si_m.stmts, out, ic)
             on Stmt.copy_out as co
                 if co.target is Expr.ident as id
                     out.add(id.name)
@@ -1407,36 +1480,38 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet)
                     if m.object is Expr.ident as id
                         out.add(id.name)
             on Stmt.try_catch as tc
-                scanMutationsInto(tc.stmts, out)
+                scanMutationsInto(tc.stmts, out, ic)
                 for cl in tc.clauses
-                    scanMutationsInto(cl.stmts, out)
+                    scanMutationsInto(cl.stmts, out, ic)
             on Stmt.guard_ as g
-                scanMutationsInto(g.else_stmts, out)
+                scanMutationsInto(g.else_stmts, out, ic)
             on Stmt.allocate_ as al
-                scanMutationsInto(al.stmts, out)
+                scanMutationsInto(al.stmts, out, ic)
             on Stmt.assert_ as a
-                scanMutationsInExpr(a.cond, out)
+                scanMutationsInExpr(a.cond, out, ic)
             on Stmt.assert_eq_ as a
-                scanMutationsInExpr(a.lhs, out)
-                scanMutationsInExpr(a.rhs, out)
+                scanMutationsInExpr(a.lhs, out, ic)
+                scanMutationsInExpr(a.rhs, out, ic)
             on Stmt.assert_ne_ as a
-                scanMutationsInExpr(a.lhs, out)
-                scanMutationsInExpr(a.rhs, out)
+                scanMutationsInExpr(a.lhs, out, ic)
+                scanMutationsInExpr(a.rhs, out, ic)
             on Stmt.assert_true_ as a
-                scanMutationsInExpr(a.expr, out)
+                scanMutationsInExpr(a.expr, out, ic)
             on Stmt.assert_false_ as a
-                scanMutationsInExpr(a.expr, out)
+                scanMutationsInExpr(a.expr, out, ic)
             on Stmt.print_ as p
                 var pi = 0
                 while pi < p.args.len
-                    scanMutationsInExpr(p.args.at(pi), out)
+                    scanMutationsInExpr(p.args.at(pi), out, ic)
                     pi += 1
             else
                 pass
 
-def scanMutations(stmts: List(Stmt)): StrSet
+# `ic` (an InferCtx) enables type-driven receiver-mutation analysis; pass `nil`
+# to fall back to the name-based over-approximation (isReadOnlyMethod).
+def scanMutations(stmts: List(Stmt), ic: InferCtx?): StrSet
     var out = StrSet()
-    scanMutationsInto(stmts, out)
+    scanMutationsInto(stmts, out, ic)
     return out
 
 # ── Receiver-mutability analysis (method_chain) ───────────────────────────────
@@ -1704,6 +1779,6 @@ def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
     if p.type_ == nil: return false
     if not isContainerTypeRef(p.type_!): return false
     if body as b
-        var ms: StrSet = scanMutations(b)
+        var ms: StrSet = scanMutations(b, nil)
         return ms.contains_(p.name)
     return false

@@ -119,13 +119,20 @@ true "receiver type not inferred → wrong dispatch" family (BUG-182 shape).
 | expressiveness_test | member function expected 2 arg(s), found 1 |
 | progress_test | expected 2 argument(s), found 1 |
 
-### D7 — emitted Zig trips Zig strictness (const/var, unused, unreachable) — REAL? (lower severity)
-| File | Error |
-|---|---|
-| gui_test | local variable is never mutated (var should be const) |
-| unicode_test | local variable is never mutated |
-| typechecker_test | unused function parameter |
-| file_io_test | unreachable code |
+### D7 — emitted Zig trips Zig strictness (const/var, unused, unreachable) — **`never mutated` FIXED (BUG-191)**
+| File | Error | Status |
+|---|---|---|
+| unicode_test | local variable is never mutated | **FULLY FIXED (BUG-191)** — compiles end-to-end. |
+| json_test | local variable is never mutated | `never mutated` **FIXED (BUG-191)**; 1 separate error remains (next layer). |
+| file_io_test | local variable is never mutated / unreachable code | `never mutated` **FIXED (BUG-191)**; `unreachable code` remains (separate). |
+| gui_test | local variable is never mutated (var should be const) | mostly fixed; 1 residual `never mutated` on the MVU model **struct-literal** (BUG-191 known residual — struct receivers stay name-based). |
+| typechecker_test | unused function parameter | `never mutated` cleared (BUG-191); `unused parameter` + D4 `*TcExpr` remain. |
+
+**BUG-191 (FIXED 2026-07-17):** the `var`/`const` mutation scan guessed from the method NAME
+(`isReadOnlyMethod` allow-list). Replaced with type-driven analysis: value-type receivers
+(primitives/char/str/json) → `const` unless an explicit in-place mutator. Kills the whole
+`never mutated` class at the root instead of adding more names to the list. Residual: user-struct
+receivers emitting `*const Self` (needs per-method mutation tracking — a follow-up).
 
 ### D8 — misc singletons — REAL?
 | File | Error |

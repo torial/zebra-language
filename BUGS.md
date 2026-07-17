@@ -1,6 +1,46 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-190. Next new bug: BUG-191.**
+**Last bug number generated: BUG-191. Next new bug: BUG-192.**
+
+---
+
+## BUG-191: `var`/`const` mutation scan guessed from the method NAME → spurious "never mutated" (D7 cluster) ✅ FIXED (2026-07-17)
+
+The self-hosted mutation scan (`CgHelpers.scanMutations`) decided whether a local must be
+emitted `var` by asking whether the *called method's name* was on `isReadOnlyMethod`'s
+allow-list. Any method not on the list marked its receiver `var`. That is a name-based
+over-approximation with no type information, and it rotted continuously: every read-only
+stdlib method that was missing (`isDigit`/`isUpper`/`toLower` on `char`, `isObject`/`isArray`/
+`isNull` on a JSON value, `before`/`after`/`equals` on `DateTime` — BUG-190) produced a
+`var` on a value that is never mutated, which Zig 0.16 rejects with
+`local variable is never mutated`. This was the D7 cluster in `docs/emit_compile_triage.md`
+(`unicode_test`, `json_test`, `typechecker_test`, `file_io_test`, `gui_test`).
+
+**The fix (type-driven, the real one — not another name added to the list):** thread the
+`InferCtx` through `scanMutations`/`scanMutationsInto`/`scanMutationsInExpr` (mirroring the
+`tc_opt` the Zig reference `src/CodeGen.zig` already threads) and, for a method-call receiver,
+consult the receiver's **inferred type**. When the type is a value category that is passed by
+value — primitives, `char`, `str`, `str_slice`, `json_value` — only an explicit in-place
+mutator (`add`/`set`/`put*`/`append*`/`writeRow`/`clear`/`reverse`) forces `var`; every query,
+predicate, or new-value builder leaves the receiver `const`, regardless of its name. Structs,
+containers, cross-module and unknown receivers stay on the conservative name-based path, so the
+change cannot introduce a spurious `var` (or, worse, a `const` on something actually mutated).
+`isReadOnlyMethod` survives only as the no-type-info fallback (unit tests, pre-seed emission
+paths); it no longer drives the primary decision and can shrink over time.
+
+Result: `unicode_test` now compiles end-to-end (0 errors, was all `never mutated`); the
+`never mutated` errors are eliminated for value-type receivers across `json_test`,
+`typechecker_test`, and `file_io_test` (their remaining failures are other clusters).
+Gates: round-trip byte-identical, smoke 236/236, compile_check 198/0/3 (no regression).
+
+**Known residual (documented, not yet fixed):** a *user-struct* receiver whose non-mutating
+method the selfhost emits as `self: *const Self` (e.g. the MVU model struct-literal in
+`gui_test`) can still be over-marked `var`. Structs stay on the name-based path precisely to
+avoid regressing struct getters, but the exact fix is to key the decision on whether the
+*specific* called method mutates `self` (`methodMutatesSelf` on the callee body / a precomputed
+per-method map), matching what the emitter at `CodeGen.zbr:3681` already does for the receiver
+param. That needs method-body lookup inside the scan (an import-cycle-free way to reach it) and
+is a follow-up. See [[project_emit_compile_campaign]].
 
 ---
 
