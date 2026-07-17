@@ -734,11 +734,22 @@ Field declarations use the type without an initializer; the constructor (or
 var x: int? = nil
 var y: int? = 42
 
-# Nil check + force-unwrap:
+# Nil check — `x` is AUTO-NARROWED to non-optional inside the block:
 if x != nil
-    print(x!)                         # `x!` = force-unwrap (panics if nil)
+    print(x)                          # x used as non-optional (compiles to x.?)
+    print(x + 1)                      # arithmetic on the narrowed value
+# `x!` (explicit force-unwrap) also still works and is equivalent here:
+if x != nil
+    print(x!)
 
-# Optional-unwrap binding form:
+# Auto-narrowing scope (2026-07-16): applies when the condition is a plain
+# `<local> != nil` and the local is NOT reassigned in the block. It narrows the
+# whole then-block. NOT (yet) narrowed — use explicit `x!` for these:
+#   - `and`-chains: `if x != nil and x.ok` (narrow only via `x!` in the 2nd operand)
+#   - the `== nil` else-branch; non-local receivers (`if obj.field != nil`)
+#   - a block that reassigns `x` (narrowing is skipped, since `x` may become nil)
+
+# Optional-unwrap binding form (also non-optional inside):
 if y as n
     print("y is ${n}")                # n is non-optional int
 

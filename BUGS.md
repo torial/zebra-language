@@ -28,7 +28,30 @@ byte-identical, smoke 236/236.
 
 ---
 
-## BUG-187: `if x != nil` does NOT auto-narrow `x` — DESIGN DECISION (not a plain bug) ⚠️ OPEN — needs Sean's call
+## BUG-187: `if x != nil` now AUTO-NARROWS `x` (feature implemented) ✅ FIXED (2026-07-16, Sean chose to implement)
+
+**Resolution: implemented auto-narrowing** (option 1). Inside `if x != nil`, a plain local `x`
+that is not reassigned in the block is treated as non-optional — every value use emits `x.?`, so
+`x.field` / `x.method()` / `x + 1` work directly (matching Kotlin/TS/Swift smart-casts, Eiffel
+attachment patterns, and the `nil_narrowed` stub's original intent).
+
+**Implementation (`selfhost/CodeGen.zbr`):** `genIf` narrows the then-block via an
+`except`-derived Generator (scope-safe — never leaks out) when the condition is `<ident> != nil`
+and the ident isn't reassigned in the block (the reassignment guard also makes it safe: a
+narrowed var is never an assignment target). `genIdent` emits `x.?` for a narrowed local; the
+`x!` (to_non_nil) emit is guarded so an explicit `x!` on an already-narrowed `x` stays single
+(`x.?`, not `x.?.?`). QUICKSTART §11 updated. Cleared `http_test`, `https_test`.
+
+**Deferred (fall back to explicit `x!`, documented):** `and`-chains, `== nil` else-branch,
+non-local receivers (`if obj.field != nil`), reassignment invalidation. `tcp_advanced_test`
+narrows correctly (`?TcpConn` → `TcpConn`) but then hits a SEPARATE bug — `TcpConn.write` isn't
+dispatched on a proven `TcpConn` receiver (the BUG-182/sqlite family); see triage D5.
+
+Gates: round-trip byte-identical, smoke 236/236, compile_check 198/0, runtime verified.
+
+---
+
+## (superseded) BUG-187 original characterization — DESIGN DECISION
 
 **Finding (2026-07-16).** Several tests write `if x != nil` then access `x.field` / `x.method()`
 directly:

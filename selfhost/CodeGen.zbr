@@ -6104,7 +6104,19 @@ struct Generator
             w.emit("if (")
             genExpr(si.cond)
             w.emit(") {\n")
-            ig.genStmts(si.then_stmts)
+            # BUG-187: nil-narrowing — if the condition is `x != nil` for a plain
+            # local that is NOT reassigned in the then-block, narrow x to
+            # non-optional inside the block (so `x.field`/`x.method()` emit `x.?…`).
+            # The reassignment guard makes it safe: a narrowed var is never an
+            # assignment target, so no `x.? = …` can arise.
+            var then_g = ig
+            var nn_id: str? = nilCheckedIdent(si.cond)
+            if nn_id != nil
+                var nn_assigned = StrSet()
+                collectAssignedIdents(si.then_stmts, nn_assigned)
+                if not nn_assigned.contains_(nn_id!)
+                    then_g = ig.withNilNarrowed(nn_id!)
+            then_g.genStmts(si.then_stmts)
             writeIndent()
             w.emit("}")
         for ei in si.else_ifs
@@ -8475,8 +8487,15 @@ struct Generator
                 genExpr(ca.expr)
                 w.emit(")")
             on Expr.to_non_nil as tnn
+                # BUG-187: `x!` on an already nil-narrowed `x` — genExpr already emits
+                # `x.?`, so don't append a second `.?` (would be `x.?.?`).
+                var tnn_narrowed = false
+                if tnn.expr is Expr.ident as tnn_nid
+                    if isNilNarrowed(tnn_nid.name)
+                        tnn_narrowed = true
                 genExpr(tnn.expr)
-                w.emit(".?")
+                if not tnn_narrowed
+                    w.emit(".?")
                 # If inner expr is a member access to a ^T? field, deref after unwrap
                 if tnn.expr is Expr.member as tnn_m
                     var tnn_obj = getIdentName(tnn_m.object)
@@ -8805,7 +8824,54 @@ struct Generator
 
     # ── genIdent ──────────────────────────────────────────────────────────────
 
+    # BUG-187: nil-narrowing.  Inside `if x != nil` (where x is a plain local not
+    # reassigned in the block), x is treated as non-optional: every VALUE use emits
+    # `x.?`.  The set is scoped to the then-block via an `except`-derived Generator
+    # (see genIf), so it never leaks out.  A `x!` on an already-narrowed x is handled
+    # at the to_non_nil emit (don't double to `x.?.?`).  Deferred cases (and-chains,
+    # `== nil` else, non-local receivers, reassignment) fall back to explicit `x!`.
+    def isNilNarrowed(name: str): bool
+        if nil_narrowed as nn
+            return nn.contains_(name)
+        return false
+
+    # A copy of this Generator with `name` added to the nil-narrowed set (fresh set,
+    # so sibling scopes are unaffected).
+    def withNilNarrowed(name: str): Generator
+        var fresh = StrSet()
+        if nil_narrowed as nn
+            # Materialize into a typed local before for-in: `for x in nn.items()`
+            # (for-in over a `.items()` call result) does not codegen correctly.
+            var prevs: List(str) = nn.items()
+            for prev in prevs
+                fresh.add(prev)
+        fresh.add(name)
+        var g = this except
+            nil_narrowed = fresh
+        return g
+
+    # If `cond` is a nil-check of a plain identifier (`x != nil` / `nil != x`),
+    # return that identifier's name, else nil.  Used to narrow the then-block.
+    def nilCheckedIdent(cond: Expr): str?
+        if cond is Expr.binary as b
+            if b.op == BinaryOp.ne
+                if b.right is Expr.nil_
+                    if b.left is Expr.ident as lid
+                        return lid.name
+                if b.left is Expr.nil_
+                    if b.right is Expr.ident as rid
+                        return rid.name
+        return nil
+
     def genIdent(id: ExprIdent)
+        # BUG-187: a nil-narrowed local emits `x.?` at every value use.
+        if isNilNarrowed(id.name)
+            genIdentRaw(id)
+            w.emit(".?")
+            return
+        genIdentRaw(id)
+
+    def genIdentRaw(id: ExprIdent)
         if capture_fields.contains_(id.name)
             w.emit("self.")
             w.emit(id.name)

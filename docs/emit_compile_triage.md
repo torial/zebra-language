@@ -63,11 +63,12 @@ file_dialog_smoke`.** The other 3 were failing on `init` FIRST; now reclassified
 | csv_test | `CsvWriter` | OPEN — CsvWriter is current (QUICKSTART, Resolver) → real emit gap |
 | zebra_ide | `List` | OPEN — `List` undeclared, investigate |
 
-### D9 (new) — nil-narrowing: `if x != nil` then `x.field`/`x.method()` on a stdlib-returned optional — **BUG-187 (OPEN)**
-Inside `if x != nil`, member access on `x` isn't narrowed to `x.?` — emits raw optional field
-access. Affects `http_test`, `https_test` (post BUG-186), and `tcp_advanced_test` (`no method
-'write' in '?TcpConn'`, previously filed under D5 — same root). Likely keyed on declared `T?`
-locals but not stdlib-returned optionals (`?HttpResponse`, `?TcpConn`).
+### D9 — nil-narrowing: `if x != nil` then `x.field` — **BUG-187 (FIXED — implemented auto-narrowing)**
+Inside `if x != nil`, a plain non-reassigned local is now auto-narrowed to non-optional (`x.?`).
+Cleared `http_test`, `https_test`. `tcp_advanced_test` now narrows `?TcpConn` → `TcpConn` but hits
+a SEPARATE bug: `TcpConn.write` isn't dispatched on a proven `TcpConn` receiver (→ D5, the
+BUG-182/sqlite receiver-dispatch family). Deferred narrowing cases (`and`-chains, `==nil` else,
+non-local receivers) fall back to explicit `x!` (QUICKSTART §11).
 
 ### D2 — SYNTAX errors in emitted Zig (malformed emit) — REAL✓ (Zig can't even parse it)
 | File | Error | Status |
