@@ -105,7 +105,7 @@ correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.z
 | fuzzy_match | no method 'concat' in []u8 | **FIXED (BUG-185)** — chained string method materialization |
 | fuzzy_selfhost | no method 'concat' in []u8 | concat FIXED (BUG-185); now surfaces a **D3** HashMap `.len` |
 | datetime_test | no method 'toEpoch' in _DateTime | **FULLY FIXED (BUG-189 + BUG-190)** — dispatch batch + toIso8601/format + D7 never-mutated (before/after/equals → isReadOnlyMethod) + DateTime-chain materialization. Compiles AND runs correctly. |
-| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) | **FIXED (BUG-188)** — dispatch now unwraps optional/^T. Now surfaces a D7 `never mutated`. |
+| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) | **FULLY FIXED (BUG-188 + BUG-191)** — dispatch unwraps optional/^T (188); the follow-on D7 `never mutated` on the `tcp_conn` handle is fixed by 191 (handle types are by-value → `const`). Compiles end-to-end. |
 | extend_test | no method 'shout' in []const u8 (extension method) | OPEN — `extend` feature |
 | json_parse_typed_test | no method 'getString' in json.dynamic.Value | OPEN |
 
@@ -123,16 +123,19 @@ true "receiver type not inferred → wrong dispatch" family (BUG-182 shape).
 | File | Error | Status |
 |---|---|---|
 | unicode_test | local variable is never mutated | **FULLY FIXED (BUG-191)** — compiles end-to-end. |
+| string_methods_test | never mutated (`str.reverse()`) | `never mutated` **FIXED (BUG-191 rd2)** — str is fully immutable; 1 separate D3 error remains (`.split()` → ArrayList vs `[]const u8`). |
 | json_test | local variable is never mutated | `never mutated` **FIXED (BUG-191)**; 1 separate error remains (next layer). |
 | file_io_test | local variable is never mutated / unreachable code | `never mutated` **FIXED (BUG-191)**; `unreachable code` remains (separate). |
-| gui_test | local variable is never mutated (var should be const) | mostly fixed; 1 residual `never mutated` on the MVU model **struct-literal** (BUG-191 known residual — struct receivers stay name-based). |
+| gui_test | local variable is never mutated | **NOT a struct case** — `frame` is a **closure** passed by value to `Gui.run`; `var` comes from closure lowering, not scanMutations. Separate closure-codegen follow-up (NEXT_STEPS); also fails on unrelated `GuiContext has no member 'run'`. |
 | typechecker_test | unused function parameter | `never mutated` cleared (BUG-191); `unused parameter` + D4 `*TcExpr` remain. |
 
-**BUG-191 (FIXED 2026-07-17):** the `var`/`const` mutation scan guessed from the method NAME
-(`isReadOnlyMethod` allow-list). Replaced with type-driven analysis: value-type receivers
-(primitives/char/str/json) → `const` unless an explicit in-place mutator. Kills the whole
-`never mutated` class at the root instead of adding more names to the list. Residual: user-struct
-receivers emitting `*const Self` (needs per-method mutation tracking — a follow-up).
+**BUG-191 (FIXED 2026-07-17, two rounds):** the `var`/`const` mutation scan guessed from the
+method NAME (`isReadOnlyMethod` allow-list). Replaced with type-driven analysis:
+`isImmutableValueType` (primitives/char/str/str_slice → never `var`) + `isByValueHandleType`
+(json/tcp/ws/udp/sqlite/regex → `const` unless an explicit in-place mutator), with
+optional/`^T` unwrap (`unwrapForMutation`). Kills the whole `never mutated` class at the root
+corpus-wide instead of adding names to the list. Only residual: `gui_test`'s **closure** local
+(separate subsystem). No named-struct-getter case exists → the per-method struct map is not needed.
 
 ### D8 — misc singletons — REAL?
 | File | Error |

@@ -1337,16 +1337,14 @@ def isMutatingMethod(name: str): bool
         return true
     return false
 
-# True iff `t` is a value type whose methods are passed the receiver BY VALUE
-# (or as `*const`), so a method call never requires the receiver local to be
-# `var` unless the method is on isMutatingMethod's list. This is the type-driven
-# replacement for the isReadOnlyMethod name allow-list: instead of enumerating
-# every read-only method (a list that silently rots — BUG-190 et al.), we ask
-# the inferred type. Only genuinely-immutable / by-value categories are listed
-# here; user structs, containers, cross-module and unknown types stay on the
-# conservative name-based path so this change cannot introduce spurious `var`
-# (or, worse, a `const` on something actually mutated).
-def isValueTypeForMutation(t: Type_): bool
+# FULLY-IMMUTABLE value types: NO method mutates the receiver in place, so a
+# method call NEVER requires the local to be `var`. Strings are the load-bearing
+# case: `s.reverse()` returns a NEW string (it does not reverse in place), yet
+# `reverse` is on isMutatingMethod's list for List — so strings must be answered
+# `false` unconditionally, not routed through the small mutating list. Mirrors
+# src/CodeGen.zig::scanMutationsInExpr, which special-cases `obj_type == .string`
+# (and primitives) to `break :blk false`.
+def isImmutableValueType(t: Type_): bool
     branch t
         on Type_.int_        return true
         on Type_.uint_       return true
@@ -1358,9 +1356,42 @@ def isValueTypeForMutation(t: Type_): bool
         on Type_.float_n     return true
         on Type_.string_     return true
         on Type_.str_slice   return true
-        on Type_.json_value  return true
         else
             return false
+
+# BY-VALUE HANDLE types: the receiver is passed by value (or as a handle/pointer
+# the method dereferences) to a free function `_xxx(handle, …)`, so a method call
+# needs `var` only when the method is an explicit in-place mutator (isMutatingMethod).
+# json builders (put/append*) mutate; queries (isObject/getString) do not. The
+# network/db handles (tcp/ws/udp/sqlite) and regex expose no method that reassigns
+# or takes a mutable address of the LOCAL, so they resolve to `const` — this is the
+# type-driven replacement for enumerating each handle's read-only methods by name.
+def isByValueHandleType(t: Type_): bool
+    branch t
+        on Type_.json_value      return true
+        on Type_.tcp_conn        return true
+        on Type_.ws_conn         return true
+        on Type_.udp_socket      return true
+        on Type_.sqlite_db       return true
+        on Type_.sqlite_row      return true
+        on Type_.sqlite_row_list return true
+        on Type_.regex           return true
+        else
+            return false
+
+# Peel optional (`T?`) and ^T (ref) layers to reach the underlying value/handle
+# type. A receiver declared `TcpConn?` (e.g. `var conn = Tcp.connect(…)`, then
+# used under `if conn != nil`) infers as optional(tcp_conn); the mutation decision
+# depends on the UNDERLYING tcp_conn, not the optional wrapper. Mirrors the
+# optional/ref_to unwrap genMemberCall does before its receiver-type branch (BUG-188).
+def unwrapForMutation(t: Type_): Type_
+    branch t
+        on Type_.optional as inner
+            return unwrapForMutation(inner)
+        on Type_.ref_to as inner
+            return unwrapForMutation(inner)
+        else
+            return t
 
 # ── scanMutations receiver decision ───────────────────────────────────────────
 # Should a method-call receiver ident be marked `var`? When we have an InferCtx
@@ -1368,12 +1399,15 @@ def isValueTypeForMutation(t: Type_): bool
 # to the name-based over-approximation (isReadOnlyMethod).
 def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
     if ic as ic_v
-        var rt: Type_ = inferExpr(obj, ic_v)
-        if isValueTypeForMutation(rt)
-            # Value receiver → only an explicit in-place mutator forces `var`.
+        var rt: Type_ = unwrapForMutation(inferExpr(obj, ic_v))
+        # Fully-immutable value receiver → never `var`, regardless of method name.
+        if isImmutableValueType(rt)
+            return false
+        # By-value handle → `var` only for an explicit in-place mutator.
+        if isByValueHandleType(rt)
             return isMutatingMethod(method)
-        # Non-value (struct / container / cross-module / unknown): keep the
-        # conservative name-based decision to avoid regressions.
+        # Structs / containers / cross-module / unknown: keep the conservative
+        # name-based decision to avoid regressions.
         return not isReadOnlyMethod(method)
     # No type info available (unit tests, pre-seed emission paths): name-based.
     return not isReadOnlyMethod(method)

@@ -33,14 +33,30 @@ Result: `unicode_test` now compiles end-to-end (0 errors, was all `never mutated
 `typechecker_test`, and `file_io_test` (their remaining failures are other clusters).
 Gates: round-trip byte-identical, smoke 236/236, compile_check 198/0/3 (no regression).
 
-**Known residual (documented, not yet fixed):** a *user-struct* receiver whose non-mutating
-method the selfhost emits as `self: *const Self` (e.g. the MVU model struct-literal in
-`gui_test`) can still be over-marked `var`. Structs stay on the name-based path precisely to
-avoid regressing struct getters, but the exact fix is to key the decision on whether the
-*specific* called method mutates `self` (`methodMutatesSelf` on the callee body / a precomputed
-per-method map), matching what the emitter at `CodeGen.zbr:3681` already does for the receiver
-param. That needs method-body lookup inside the scan (an import-cycle-free way to reach it) and
-is a follow-up. See [[project_emit_compile_campaign]].
+**Round 2 (2026-07-17, same commit series):** a corpus-wide `never mutated` scan found the
+initial value-type bucket was both too coarse and too narrow:
+- **`str` is fully immutable, not "small-mutating-list".** `greeting.reverse()` returns a *new*
+  string, but `reverse` is on `isMutatingMethod`'s list (for List's in-place reverse), so a
+  string receiver was wrongly marked `var` (`string_methods_test`). Split the value bucket into
+  `isImmutableValueType` (primitives/char/str/str_slice → **never** `var`, mirroring the Zig
+  reference's `obj_type == .string → false` special-case) and `isByValueHandleType`
+  (json + network/db handles → small-mutating-list).
+- **Stdlib handle types were missing.** `tcp_conn`/`ws_conn`/`udp_socket`/`sqlite_*`/`regex` are
+  by-value handles whose methods emit `_xxx(handle, …)`; added them to `isByValueHandleType`.
+- **Optional receivers weren't unwrapped.** `var conn = Tcp.connect(…)` infers as
+  `optional(tcp_conn)`; the decision must peel `optional`/`ref_to` first (`unwrapForMutation`),
+  the same unwrap `genMemberCall` does (BUG-188). `tcp_advanced_test` now compiles end-to-end.
+
+After round 2, the `never mutated` class is gone corpus-wide for every value/handle receiver.
+
+**Known residual (documented, not a struct-getter after all):** the only remaining `never mutated`
+is `gui_test`, and it is NOT a struct receiver — `frame` is a **closure** (`var frame = def(g)…`)
+passed by value to `Gui.run`; its `var` comes from closure lowering (the closure mutates a
+captured var), not from `scanMutations` (`frame` is never a method-call receiver). A separate
+closure-codegen fix, tracked in NEXT_STEPS; `gui_test` also fails on an unrelated
+`GuiContext has no member 'run'`. No named-struct-getter `never mutated` case exists in the
+corpus, so the per-method struct-mutation map is not currently needed. See
+[[project_emit_compile_campaign]].
 
 ---
 

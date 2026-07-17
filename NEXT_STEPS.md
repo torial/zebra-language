@@ -88,16 +88,19 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   real-vs-stale per cluster, fix by root cause (~15–20 fixes clear ~30 files), gate
   `compile_check` over the triaged-clean corpus so it can't regrow, prune stale tests. Found
   2026-07-16 by casting the witness wider than the curated smoke set.
-  - [ ] **Follow-up (D7 residual) — per-method struct mutation tracking.** BUG-191 (2026-07-17)
-    made the `var`/`const` scan type-driven for VALUE receivers (primitives/char/str/json →
-    `const` unless an explicit mutator), killing the `never mutated` class at the root. USER-STRUCT
-    receivers still use the name-based fallback, so a struct whose non-mutating method the selfhost
-    emits as `self: *const Self` (e.g. the `gui_test` MVU model struct literal) can still be
-    over-marked `var`. Exact fix: key the decision on whether the SPECIFIC called method mutates
-    `self` (`methodMutatesSelf` on the callee body — the same predicate the emitter uses at
-    `CodeGen.zbr:3681`), which needs a method-body lookup reachable from inside `scanMutations`
-    without creating a CgHelpers↔TypeChecker import cycle (e.g. a precomputed per-method
-    `mutates_self` map on `ModuleTypes`, populated in codegen where both are already in scope).
+  - [ ] **Follow-up (D7 residual) — closure local over-marked `var`.** BUG-191 (2026-07-17, two
+    rounds) made the `var`/`const` scan type-driven for value + by-value-handle receivers
+    (immutable str/primitives → never `var`; json/tcp/ws/udp/sqlite/regex → `const` unless an
+    explicit mutator; optional/`^T` unwrapped), killing the `never mutated` class corpus-wide.
+    The ONE remaining `never mutated` (in `gui_test`) is NOT a scanMutations case: `frame` is a
+    **closure** (`var frame = def(g)…`) passed by value to `Gui.run`, marked `var` by closure
+    lowering because the closure body mutates a captured var — yet `frame` itself is copied into a
+    heap slot and never mutated locally. Fix lives in the closure/lambda codegen (emit the closure
+    temp `const` when it is only passed by value and never locally re-invoked with mutation), not
+    in `scanMutations`. Low priority: 1 file, which also fails on an unrelated
+    `GuiContext has no member 'run'`. NOTE: a measured corpus scan found **no** named-struct-getter
+    `never mutated` case, so the earlier "per-method struct mutation map" idea is unnecessary —
+    structs correctly stay on the name-based fallback.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
