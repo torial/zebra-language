@@ -1,6 +1,29 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-188. Next new bug: BUG-189.**
+**Last bug number generated: BUG-189. Next new bug: BUG-190.**
+
+---
+
+## BUG-189: DateTime instance methods not dispatched — `dt.toEpoch()/addDays()/before()/…` emit raw ✅ FIXED (2026-07-17)
+
+**User-facing.** A batch of `DateTime` instance methods emitted a raw `.method()` call on the
+`_DateTime` struct (which has only `epoch_ms`), so they failed to compile:
+`toEpoch`, `addDays`/`addHours`/`addMinutes`/`addSeconds`/`addMonths`/`addYears`, `before`/`after`/
+`equals`, `daysBetween`/`secondsBetween`, `inCalendar`. All are documented (QUICKSTART) and handled
+by the bootstrap; the selfhost's `genMemberCall` simply lacked the dispatch — even though **all the
+preamble helpers already existed** (`_dt_add_*`, `_dt_days_between`, `_dt_seconds_between`,
+`_dt_in_calendar`). A pure dispatch gap.
+
+**Fix (`selfhost/CodeGen.zbr`).** Added an `isDateTimeExpr(m.object)`-gated block (bootstrap parity,
+src/CodeGen.zig ~8420-8520): arith → `_dt_add_X(obj, n)`; comparison → `obj.epoch_ms </>/== other.epoch_ms`
+(other defaults to `_dt_now()`); interval → `_dt_{days,seconds}_between(obj, other)`; `inCalendar` →
+`_dt_in_calendar(obj, cal)` (defaults to `Calendar.Gregorian`); `toEpoch` → `obj.epoch_ms` (ms, distinct
+from `timestamp` = seconds). Gated on a DateTime receiver so common names (`before`/`equals`) don't
+intercept user methods.
+
+**Found via** the emit-compile sweep (D5). Cleared every DateTime-method error in `datetime_test`,
+which now surfaces a separate **D7 `never mutated`** bug (const/var analysis — shared with
+tcp_advanced). Gates: round-trip byte-identical, smoke 236/236.
 
 ---
 

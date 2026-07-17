@@ -10025,6 +10025,81 @@ struct Generator
                 genExpr(m.object)
                 w.emit(".epoch_ms, 1000)")
                 return
+        # DateTime.toEpoch → milliseconds since epoch (the raw epoch_ms; QUICKSTART §…
+        # documents this as ms, distinct from `timestamp` which is seconds).  Bootstrap
+        # parity (src/CodeGen.zig ~8478).  BUG-189.
+        if mname == "toEpoch"
+            if isDateTimeExpr(m.object)
+                genExpr(m.object)
+                w.emit(".epoch_ms")
+                return
+        # DateTime instance methods — arithmetic / comparison / interval / calendar.
+        # Bootstrap parity (src/CodeGen.zig ~8420-8520); the preamble helpers
+        # (_dt_add_*, _dt_days_between, _dt_seconds_between, _dt_in_calendar) all exist.
+        # Gated on a DateTime receiver so common names (`before`/`equals`/…) don't
+        # intercept user methods.  BUG-189.
+        if isDateTimeExpr(m.object)
+            var dt_arith: str = ""
+            if mname == "addDays"
+                dt_arith = "_dt_add_days"
+            if mname == "addHours"
+                dt_arith = "_dt_add_hours"
+            if mname == "addMinutes"
+                dt_arith = "_dt_add_minutes"
+            if mname == "addSeconds"
+                dt_arith = "_dt_add_seconds"
+            if mname == "addMonths"
+                dt_arith = "_dt_add_months"
+            if mname == "addYears"
+                dt_arith = "_dt_add_years"
+            if dt_arith != ""
+                w.emit(dt_arith + "(")
+                genExpr(m.object)
+                w.emit(", ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("0")
+                w.emit(")")
+                return
+            if mname == "before" or mname == "after" or mname == "equals"
+                genExpr(m.object)
+                w.emit(".epoch_ms ")
+                if mname == "before"
+                    w.emit("< ")
+                if mname == "after"
+                    w.emit("> ")
+                if mname == "equals"
+                    w.emit("== ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("_dt_now()")
+                w.emit(".epoch_ms")
+                return
+            if mname == "daysBetween" or mname == "secondsBetween"
+                if mname == "daysBetween"
+                    w.emit("_dt_days_between(")
+                else
+                    w.emit("_dt_seconds_between(")
+                genExpr(m.object)
+                w.emit(", ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("_dt_now()")
+                w.emit(")")
+                return
+            if mname == "inCalendar"
+                w.emit("_dt_in_calendar(")
+                genExpr(m.object)
+                w.emit(", ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("Calendar.Gregorian")
+                w.emit(")")
+                return
         # Regex instance methods: re.match/find/findAll/replace/groups
         if .infer_ctx != nil
             var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
