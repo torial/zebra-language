@@ -1,6 +1,41 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-191. Next new bug: BUG-192.**
+**Last bug number generated: BUG-192. Next new bug: BUG-193.**
+
+---
+
+## BUG-192: `^T` field assigned a value in `cue init` not auto-boxed (D4 `*T`-vs-`T`) ✅ FIXED same-module (2026-07-17)
+
+A `^T` (heap-indirection) field initialised from a value inside a constructor emitted the value
+straight into the `*T` slot — `expected '*Expr', found 'Expr'`. Two causes, both in
+`selfhost/CodeGen.zbr`:
+
+1. **Bare-ident field target not recognised.** Inside `cue init`, `left = l` has target
+   `Expr.ident("left")` (a bare field name), not `self.left`. `getAssignFieldType` only handled
+   *member* targets, so the ref-box path never saw the field type. Extended it to resolve a
+   bare-ident target that is a field of the current owner (a local var shadows a field, so a known
+   local is excluded).
+2. **Union payloads not boxed.** The ref-box path only boxed `struct_names`, but `^T` fields also
+   hold **unions** (`^Expr`, `^TcExpr` where `Expr`/`TcExpr` are `union`s). Extended the box
+   condition to `.module_types.hasUnion(tn)` as well. (`^Class` is a hard error, so `^T` is always
+   a struct or a union — never a class.)
+
+**Regression caught + fixed by the gate:** the union extension boxed `cue init(opt_val: ^Val?)
+{ .opt_val = opt_val }` — but `opt_val` is *already* a `?*Val` pointer, so boxing tried to store a
+`*Val` into a `Val` slot (broke `val_test`). Auto-box converts a *value* to a heap pointer, so it
+must not fire when the RHS is already a ref. Added `rhsIsAlreadyRef` (inferExpr → `^T`/`^T?`) as a
+guard on the box path — which also hardens the pre-existing struct case against the same shape.
+
+Result: `selfhost_probe5` compiles end-to-end; `tc_infer_test`'s `^T`-box error is cleared (it now
+fails on an unrelated D3 `.len`-on-struct). Gates: round-trip byte-identical, smoke 236/236,
+compile_check 198/0/3.
+
+**Follow-up (cross-module unions):** `tc_check_test` assigns a `^tc_infer.TcExpr` field
+cross-module; the box condition checks `.module_types.hasUnion` (same-module only) and the create
+type name would need the qualified `tc_infer.TcExpr`. The dotted name is already correct for
+`create(...)`; only the union *check* needs a `dep_types.hasUnion(bareName)` arm. Deferred — the
+box path has proven regression-prone (see above), and `tc_check_test` won't pass regardless (other
+errors + its `tc_infer` dep's D3 bug). See [[project_emit_compile_campaign]].
 
 ---
 

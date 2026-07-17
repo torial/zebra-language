@@ -5563,7 +5563,16 @@ struct Generator
                         else
                             pass
                     if box_tn as tn
-                        if struct_names.contains_(tn)
+                        # A ^T field holds a STRUCT or a UNION (value types); classes
+                        # are already pointers (`^Class` is a hard error). Both must be
+                        # heap-boxed when a VALUE is assigned. Same-module only here —
+                        # a bare `create(tn)` for a cross-module union would emit an
+                        # unqualified type not in scope (tracked as a D4 follow-up).
+                        # Guard: auto-box converts a *value* to a heap pointer, so it
+                        # must NOT fire when the RHS is already a ref (`^T`/`^T?`) — e.g.
+                        # `cue init(opt_val: ^Val?) { .opt_val = opt_val }` is a direct
+                        # pointer copy, not a box (BUG: union-box regressed val_test here).
+                        if (struct_names.contains_(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
                             w.emit("{ const _rp = _allocator.create(" + tn + ") catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
@@ -5607,11 +5616,45 @@ struct Generator
                     return true
         return false
 
+    # True iff the RHS of an assignment is already a ref (`^T` or `^T?`), i.e. a
+    # pointer, not a value. Used to suppress ^T-field auto-boxing when the value
+    # being assigned is itself a boxed pointer (a direct pointer copy) — boxing it
+    # would try to store a `*T` into a `T` slot. Needs a seeded InferCtx; returns
+    # false (box as before) when types are unavailable.
+    def rhsIsAlreadyRef(v: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var vt: Type_ = inferExpr(v, .infer_ctx!)
+        branch vt
+            on Type_.ref_to as _
+                return true
+            on Type_.optional as inner
+                # `^T?` — optional of a ref is still a pointer.
+                branch inner
+                    on Type_.ref_to as _
+                        return true
+                    else
+                        return false
+            else
+                return false
+
     def getAssignFieldType(a: StmtAssign): TypeRef?
         # If target is a member expression (self.field), extract field name and look up type
         var fname = getMemberFieldName(a.target)
         if fname != nil
             return lookupFieldType(fname!)
+        # BUG-191/D4: bare-ident field target — e.g. `left = l` inside a `cue init`
+        # (or a method), where `left` is a field of the current owner rather than a
+        # member access. Without this, ^T fields assigned from a value ctor param are
+        # not recognised, so the ref-box path below never fires and the value is
+        # emitted straight into a `*T` slot (`expected '*Expr', found 'Expr'`). A local
+        # var shadows a field, so a known local is NOT a field assignment.
+        if a.target is Expr.ident as tid
+            if .infer_ctx != nil
+                if (.infer_ctx!).hasLocal(tid.name)
+                    return nil
+            if isFieldName(tid.name)
+                return lookupFieldType(tid.name)
         return nil
 
     def isStringField(e: Expr): bool

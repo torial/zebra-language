@@ -90,14 +90,20 @@ correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.z
 | string_methods_test | expected []const u8, found ArrayList([]const u8) |
 | crossmod_expose_test | ArrayList(Tag) is not indexable |
 
-### D4 — `^T`-box pointer mismatch (`*T` vs `T` / `*const T`) — REAL?
-| File | Error |
-|---|---|
-| generic_pair_test | expected 'T', found '*T' |
-| method_chain_throws_test | expected '*T', found '*const T' |
-| selfhost_probe5 | expected '*Expr', found 'Expr' |
-| tc_check_test | expected '*TcExpr', found 'TcExpr' |
-| tc_infer_test | expected '*TcExpr', found 'TcExpr' (same as tc_check) |
+### D4 — `^T`-box pointer mismatch — **splits into 3 signatures; the `^T`-field-value sub-cluster FIXED (BUG-192)**
+| File | Error | Status |
+|---|---|---|
+| selfhost_probe5 | expected '*Expr', found 'Expr' | **FIXED (BUG-192)** — `^T` union field from a value ctor param now auto-boxes; compiles end-to-end. |
+| tc_infer_test | expected '*TcExpr', found 'TcExpr' | `^T`-box **FIXED (BUG-192)**; now fails on unrelated D3 `.len`-on-struct (`TcTypes has no member len`). |
+| tc_check_test | expected '*tc_infer.TcExpr', found 'tc_infer.TcExpr' | CROSS-MODULE union — deferred (BUG-192 follow-up; needs `dep_types.hasUnion` arm). Also has other errors. |
+| generic_pair_test | expected 'T', found '*T' | OPEN — **different signature** (generic `T` value-vs-pointer, not `^T` field-box). |
+| method_chain_throws_test | expected '*T', found '*const T' | OPEN — **different signature** (const-ness `*T` vs `*const T`, generic). |
+
+**BUG-192 (FIXED same-module 2026-07-17):** a `^T` (struct OR union) field assigned a value inside
+`cue init` wasn't auto-boxed — the ref-box path missed bare-ident field targets (`left = l`) and
+didn't box unions. Fixed both; guarded with `rhsIsAlreadyRef` so an already-pointer RHS (`^T?`
+param) isn't double-boxed (caught a `val_test` regression on the gate). The remaining D4 files are
+two genuinely-separate generic-`T` pointer/const signatures.
 
 ### D5 — method on a mis-typed receiver (BUG-182 class) — partly FIXED
 | File | Error | Status |
