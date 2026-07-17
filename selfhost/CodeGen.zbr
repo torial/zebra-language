@@ -10028,6 +10028,20 @@ struct Generator
         # Regex instance methods: re.match/find/findAll/replace/groups
         if .infer_ctx != nil
             var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
+            # BUG-188: unwrap optional / ^T so a method on a narrowed or checked
+            # optional receiver dispatches on the UNDERLYING type.  inferExpr reports
+            # the declared optional type (`?TcpConn`) even inside `if conn != nil`
+            # (nil-narrowing is codegen-only), so without this the type-specific arms
+            # below (`on Type_.tcp_conn`, …) never match and the call falls through to
+            # a raw `.write()` — "no member named 'write' in TcpConn".  Narrowing/`!`
+            # already emits `conn.?`, so the unwrapped dispatch is value-correct.
+            branch recv_t
+                on Type_.optional as _ro_t
+                    recv_t = _ro_t
+                on Type_.ref_to as _rr_t
+                    recv_t = _rr_t
+                else
+                    pass
             branch recv_t
                 on Type_.regex
                     if mname == "match"

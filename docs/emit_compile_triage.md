@@ -105,7 +105,7 @@ correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.z
 | fuzzy_match | no method 'concat' in []u8 | **FIXED (BUG-185)** — chained string method materialization |
 | fuzzy_selfhost | no method 'concat' in []u8 | concat FIXED (BUG-185); now surfaces a **D3** HashMap `.len` |
 | datetime_test | no method 'toEpoch' in _DateTime | OPEN |
-| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) | OPEN — optional-receiver dispatch |
+| tcp_advanced_test | no method 'write' in **?**TcpConn (optional not unwrapped) | **FIXED (BUG-188)** — dispatch now unwraps optional/^T. Now surfaces a D7 `never mutated`. |
 | extend_test | no method 'shout' in []const u8 (extension method) | OPEN — `extend` feature |
 | json_parse_typed_test | no method 'getString' in json.dynamic.Value | OPEN |
 

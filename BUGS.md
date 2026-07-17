@@ -1,6 +1,33 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-186. Next new bug: BUG-187.**
+**Last bug number generated: BUG-188. Next new bug: BUG-189.**
+
+---
+
+## BUG-188: method on an optional/narrowed receiver doesn't dispatch — `conn.write()` on `?TcpConn` ✅ FIXED (2026-07-17)
+
+**User-facing.** A method call on an optional-typed receiver (even after nil-narrowing) fell
+through to a raw `.method()` instead of the type-specific dispatch:
+
+```
+var conn = Tcp.connect(host, port)   # ?TcpConn
+if conn != nil
+    conn.write(data)                 # → error: no member named 'write' in 'TcpConn'
+```
+
+`genMemberCall`'s main receiver-type branch computed `recv_t = inferExpr(m.object)` but did NOT
+unwrap `optional`/`^T` before matching. `conn` infers to `optional(tcp_conn)` (Tcp.connect returns
+`?TcpConn`), and nil-narrowing is codegen-only — it emits `conn.?` but doesn't change `inferExpr`.
+So `on Type_.tcp_conn` never matched and the call emitted a raw `.write()`.
+
+**Fix (`selfhost/CodeGen.zbr`).** Unwrap `optional`/`ref_to` from `recv_t` before the type branch,
+so a method on a narrowed/checked optional (or a `^T`) dispatches on the underlying type. Narrowing
+/ `!` already emits `conn.?`, so `_tcp_write(conn.?, …)` is value-correct. General fix for the D5
+"method on optional receiver" sub-family. Cleared the `write`/`readLine`/`readBytes` dispatch in
+`tcp_advanced_test` (which now surfaces a separate D7 `never mutated` bug).
+
+Gates: round-trip byte-identical, smoke 236/236, compile_check 198/0 (broad dispatch change — no
+regressions). Found via the emit-compile sweep (D5).
 
 ---
 
