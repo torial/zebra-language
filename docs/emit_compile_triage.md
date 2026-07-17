@@ -43,12 +43,15 @@ visible tip of a much larger un-gated emit surface.
 | zig_interop_test | unable to load 'ZigMath.zig' (FileNotFound) | HARNESS (external Zig) |
 | plugin_host | unsupported platform (dynamic_library) | HARNESS (platform) |
 
-## C. GUI struct-init shadowing — ONE root cause, ~6 files — REAL✓
-All fail identically at emitted **line 294:41 `function parameter shadows declaration of 'init'`**
-(plus `test_gui_simple`: `local constant shadows 'frame'`). A single emitted GUI struct/preamble
-names a parameter `init` that shadows a declaration. Fix once → clears 5–6 files.
-
-`counter · file_dialog_smoke · hbox_smoke · panel_smoke · widget_smoke · test_gui_simple`
+## C. Preamble `reduce` param shadows top-level `init` — **FIXED (BUG-184)** — cleared 3 files
+The preamble helper `_zebra_list_reduce` had a parameter `init` that shadowed a user top-level
+`pub fn init` (MVU model ctor). Renamed → `init_val`. **Cleared: `counter · hbox_smoke ·
+file_dialog_smoke`.** The other 3 were failing on `init` FIRST; now reclassified to their next bug:
+- `panel_smoke` → **new**: `function parameter 'g' shadows function parameter from outer scope`
+  (nested closure param `g` shadowing the outer `g` — a distinct shadowing bug).
+- `widget_smoke` → **D4** (`^T`-box `*T` vs `*const T`).
+- `test_gui_simple` → `local constant shadows declaration of 'frame'` (const-shadow, akin to C but
+  a local `frame` — likely a `with`/capture-block re-binding).
 
 ## D. Genuine codegen / type miscompiles on CURRENT constructs — ~30, clustered
 

@@ -1,6 +1,32 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-183. Next new bug: BUG-184.**
+**Last bug number generated: BUG-184. Next new bug: BUG-185.**
+
+---
+
+## BUG-184: preamble `_zebra_list_reduce` parameter `init` shadows a user top-level `init` ✅ FIXED (2026-07-16)
+
+**User-facing.** The runtime preamble helper `_zebra_list_reduce` (emitted into every program
+that uses `List.reduce`) had a parameter named `init`. Any program that ALSO emits a top-level
+`pub fn init` — e.g. an MVU/GUI model's `init()` returning the Model — hit a Zig error:
+
+```
+selfhost/stdlib_preamble.zig-derived line: fn _zebra_list_reduce(comptime T: type, init: anytype, ...)
+→ error: function parameter shadows declaration of 'init'
+```
+
+Zig forbids a function parameter shadowing a file-scope declaration. `reduce` + a top-level
+`init` is a natural combination (the functional trio is common; `init` is the canonical MVU
+model constructor), so this bit the GUI examples.
+
+**Fix (`selfhost/stdlib_preamble.zig`).** Renamed the parameter `init` → `init_val` (signature,
+return-type `@TypeOf`, and body). Cleared 3 GUI examples outright (`counter`, `hbox_smoke`,
+`file_dialog_smoke`); the class is fixed for any `reduce` + top-level-`init` program.
+
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster C).
+Gates: round-trip byte-identical, smoke 236/236. The other 3 GUI files in cluster C were failing
+on this shadow FIRST and now surface distinct next-layer bugs (nested `g` param shadow;
+`^T`-box `*T`-vs-`*const T`; a `frame` const-shadow) — reclassified in the triage.
 
 ---
 

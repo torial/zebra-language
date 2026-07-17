@@ -288,11 +288,13 @@ fn _zebra_list_filter(comptime T: type, pred: anytype, list: std.ArrayList(T)) s
     for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
     return out;
 }
-fn _zebra_list_reduce(comptime T: type, init: anytype, f: anytype, list: std.ArrayList(T)) @TypeOf(f(init, @as(T, undefined))) {
+fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: std.ArrayList(T)) @TypeOf(f(init_val, @as(T, undefined))) {
     // Accumulator type = the fold function's result type (concrete, since it
     // combines with the runtime element T), so a `comptime_int` init like `0`
     // coerces to it instead of leaving the return type comptime-only.
-    var acc: @TypeOf(f(init, @as(T, undefined))) = init;
+    // (Param named `init_val`, not `init`, so it never shadows a user-emitted
+    // top-level `pub fn init` — e.g. an MVU GUI model's `init()` — BUG-184.)
+    var acc: @TypeOf(f(init_val, @as(T, undefined))) = init_val;
     for (list.items) |item| acc = f(acc, item);
     return acc;
 }
