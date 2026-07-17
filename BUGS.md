@@ -1,6 +1,31 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-189. Next new bug: BUG-190.**
+**Last bug number generated: BUG-190. Next new bug: BUG-191.**
+
+---
+
+## BUG-190: DateTime completion round 2 — comparisons over-marked `var`, `toIso8601`/`format` shadowed, chains ✅ FIXED (2026-07-17)
+
+Follow-on to BUG-189; together these make `datetime_test` fully compile AND run correctly.
+Four distinct issues:
+
+1. **Const/var (D7):** `var a = DateTime.of(…); a.before(b)` marked `a` as `var` → Zig
+   "local variable is never mutated" (the comparison emits `a.epoch_ms < b.epoch_ms`, a read).
+   `before`/`after`/`equals` were missing from `isReadOnlyMethod` (`selfhost/CgHelpers.zbr`) —
+   added. (The mutation scan conservatively marks every method-call receiver `var` unless the
+   method is on the read-only allow-list.)
+2. **`toIso8601` not dispatched** (missed in BUG-189) → raw `.toIso8601()`. Added
+   `_dt_to_iso8601(dt)` + registered it as string-returning in `isStringExpr` (so `print` uses
+   `{s}`, not `{any}` — it was printing the ISO string as a byte array).
+3. **`dt.format(fmt)` shadowed** by the string `.format` heuristic (emitted
+   `std.fmt.allocPrint(_allocator, dt, …)` → "unable to resolve comptime value"). Added a
+   DateTime-gated `format` → `_dt_format(dt, fmt)` handler that runs before the string heuristic.
+4. **DateTime method chains** (`DateTime.of(…).addDays(10)`) mis-materialized to raw
+   `_mc.addDays(…)` — the same BUG-079/185 misfire. Extended the BUG-185 guard to skip
+   materialization for DateTime receivers too (`not isDateTimeExpr(chain.recv)`).
+
+Verified: datetime_test compiles and runs with correct output (dates, ISO strings, formats,
+comparisons). Gates: round-trip byte-identical, smoke 236/236, compile_check 198/0.
 
 ---
 

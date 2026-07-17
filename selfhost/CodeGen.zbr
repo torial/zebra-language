@@ -4826,7 +4826,7 @@ struct Generator
                 # string chain directly.  Materialization (BUG-079) is only needed for
                 # STRUCT temporaries needing a stable address; string slices pass by
                 # value.  Fixes chained `s.concat(a).concat(b)` (BUG-185).
-                if not isStringExpr(chain.recv)
+                if not isStringExpr(chain.recv) and not isDateTimeExpr(chain.recv)
                     mc_recv = hoistCallChain(chain.recv)
                     mc_field = chain.method
                     if .infer_ctx != nil
@@ -5498,7 +5498,7 @@ struct Generator
         # handles the string chain.  (Mirrors the var-init and return paths.)
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
-            if ch != nil and not isStringExpr((ch!).recv)
+            if ch != nil and not isStringExpr((ch!).recv) and not isDateTimeExpr((ch!).recv)
                 var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
@@ -9154,7 +9154,7 @@ struct Generator
             on Expr.call as c
                 # .toString() / .concat() / other string-returning calls
                 if c.callee is Expr.member as cm
-                    if cm.member == "toString" or cm.member == "concat" or cm.member == "format" or cm.member == "join" or cm.member == "trim" or cm.member == "upper" or cm.member == "lower" or cm.member == "substring" or cm.member == "replace" or cm.member == "replaceAll"
+                    if cm.member == "toString" or cm.member == "concat" or cm.member == "format" or cm.member == "join" or cm.member == "trim" or cm.member == "upper" or cm.member == "lower" or cm.member == "substring" or cm.member == "replace" or cm.member == "replaceAll" or cm.member == "toIso8601"
                         return true
                     # .at(i) on a List(str) local returns a string
                     if cm.member == "at"
@@ -10033,6 +10033,12 @@ struct Generator
                 genExpr(m.object)
                 w.emit(".epoch_ms")
                 return
+        if mname == "toIso8601"
+            if isDateTimeExpr(m.object)
+                w.emit("_dt_to_iso8601(")
+                genExpr(m.object)
+                w.emit(")")
+                return
         # DateTime instance methods — arithmetic / comparison / interval / calendar.
         # Bootstrap parity (src/CodeGen.zig ~8420-8520); the preamble helpers
         # (_dt_add_*, _dt_days_between, _dt_seconds_between, _dt_in_calendar) all exist.
@@ -10098,6 +10104,20 @@ struct Generator
                     genExpr(args.at(0).value)
                 else
                     w.emit("Calendar.Gregorian")
+                w.emit(")")
+                return
+            # DateTime.format(fmt) → _dt_format(dt, fmt).  Must be handled HERE (early,
+            # isDateTimeExpr-gated), before the STRING `.format` heuristic below which
+            # would emit `std.fmt.allocPrint(_allocator, dt, .{fmt})` (a DateTime is not
+            # a format string → "unable to resolve comptime value").
+            if mname == "format"
+                w.emit("_dt_format(")
+                genExpr(m.object)
+                w.emit(", ")
+                if args.len > 0
+                    genExpr(args.at(0).value)
+                else
+                    w.emit("\"\"")
                 w.emit(")")
                 return
         # Regex instance methods: re.match/find/findAll/replace/groups

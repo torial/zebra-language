@@ -1276,6 +1276,10 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "addMonths" or name == "addYears" or name == "daysBetween" or name == "secondsBetween"
         return true
+    # DateTime comparisons — read-only (emit `a.epoch_ms </>/== b.epoch_ms`), so the
+    # receiver must stay const or Zig 0.16 errors "local variable is never mutated".
+    if name == "before" or name == "after" or name == "equals"
+        return true
     if name == "format"
         return true
     # List predicates + functional trio (§28f) + extra string queries / codecs
