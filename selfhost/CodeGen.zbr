@@ -2136,6 +2136,21 @@ struct Generator
             else
                 return false
 
+    # BUG-186: the stdlib static-namespace idents (Http, Sqlite, Csv, …) dispatched
+    # by name in genMemberCall's namespace block.  A call like `Http.get(url)` must
+    # reach that block — but the container method-name heuristics run first, and the
+    # HashMap-style `.get` heuristic would otherwise catch `Http.get` and emit a raw
+    # `Http.get(...)` (undeclared identifier 'Http').  Used to guard `.get` (and any
+    # future colliding heuristic) so a namespace receiver falls through to dispatch.
+    def isStdlibNamespace(nm: str): bool
+        return nm == "Math" or nm == "File" or nm == "sys" or nm == "Arg" or nm == "Json" or nm == "DynLib" or nm == "Http" or nm == "Ws" or nm == "HttpResponse" or nm == "Regex" or nm == "DateTime" or nm == "Hash" or nm == "Crypto" or nm == "Random" or nm == "Terminal" or nm == "Log" or nm == "Csv" or nm == "Timer" or nm == "Progress" or nm == "Profile" or nm == "Uri" or nm == "Compress" or nm == "Mime" or nm == "Tcp" or nm == "Udp" or nm == "Sqlite" or nm == "Net" or nm == "Gui" or nm == "Shell" or nm == "Dir" or nm == "Path" or nm == "Reflect" or nm == "Build"
+
+    # True when the member's object is a stdlib namespace ident (see isStdlibNamespace).
+    def isNamespaceReceiver(m: ExprMember): bool
+        if m.object is Expr.ident as _nid
+            return isStdlibNamespace(_nid.name)
+        return false
+
     # §28a step 1: the List-shaped method names — the same set the bootstrap's
     # list_dispatch guess is gated on (src/CodeGen.zig ~7503).  When the receiver
     # type is unproven and the method name is one of these, the name-based
@@ -11364,7 +11379,9 @@ struct Generator
                 else
                     genExpr(args.at(1).value)
             return
-        if mname == "get"
+        if mname == "get" and not isNamespaceReceiver(m)
+            # BUG-186: skip the HashMap-style `.get` for a namespace receiver
+            # (`Http.get(url)`), so it reaches the namespace dispatch below.
             genExpr(m.object)
             w.emit(".get(")
             if args.len > 0

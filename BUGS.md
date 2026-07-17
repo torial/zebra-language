@@ -1,6 +1,55 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-185. Next new bug: BUG-186.**
+**Last bug number generated: BUG-186. Next new bug: BUG-187.**
+
+---
+
+## BUG-186: `Http.get(url)` emits undeclared `Http` — HashMap `.get` heuristic shadows the namespace ✅ FIXED (2026-07-16)
+
+**User-facing.** `Http.get(url)` / `Http.post(url, body)` emitted a raw `Http.get(...)` →
+`error: use of undeclared identifier 'Http'`. The Http *client* API was implemented
+(`genHttpCall` → `_http_get`/`_http_post`, both in the preamble) and dispatched at
+`genMemberCall`'s namespace block — but the container **method-name heuristic** `if mname
+== "get"` (for `HashMap.get`) runs *earlier* and caught `Http.get`, emitting it raw and
+returning before the namespace dispatch. (`Http.post`/`serve` have no colliding heuristic.)
+
+**Fix (`selfhost/CodeGen.zbr`).** Guard the `.get` heuristic with `not isNamespaceReceiver(m)`
+so a stdlib-namespace receiver (`Http`, `Sqlite`, `Csv`, … — see `isStdlibNamespace`, 33 names)
+falls through to the namespace dispatch. Verified: `Http.get`/`Http.post` now emit
+`_http_get`/`_http_post` and compile clean.
+
+**Principle:** a call on a stdlib-namespace ident must dispatch by namespace, not by a
+container method-name heuristic. `.get` was the only current collision; the helper makes future
+ones easy to guard (or move the namespace block ahead of the heuristics — a cleaner refactor).
+
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, D1). `http_test`/
+`https_test` now surface a separate **nil-narrowing** bug (see BUG-187). Gates: round-trip
+byte-identical, smoke 236/236.
+
+---
+
+## BUG-187: nil-narrowing not applied — `if x != nil` then `x.field` emits raw optional field access ⚠️ OPEN
+
+**User-facing.** The canonical optional idiom miscompiles:
+
+```
+var response = Http.get(url)      # ?HttpResponse
+if response != nil
+    print(response.status)         # emits `response.status` on a `?HttpResponse`
+                                   # → error: optional type '?HttpResponse' does not support field access
+```
+
+Inside `if x != nil`, `x` should be narrowed to non-optional (emit `x.?.field` / `x.?.method()`).
+Affects the optional-receiver cluster: `http_test`, `https_test`, and `tcp_advanced_test`
+(`no field or member function named 'write' in '?TcpConn'` — same root: method/field on a
+non-narrowed optional). Emitted line: `if ((response != null)) { … response.status … }` — the
+narrowing to `response.?` inside the guarded block is missing.
+
+**Where to look.** The `if <x> != nil` codegen / flow-narrowing: inside the then-block, member
+access on `x` should unwrap. May already work for some optional shapes (locals of a known
+optional type) but not for stdlib-returned optionals (`?HttpResponse`, `?TcpConn`) — verify the
+narrowing is keyed on the guard condition, not only on a declared `T?` local. Found by the
+emit-compile sweep (triage cluster: promote to its own "nil-narrowing" group).
 
 ---
 

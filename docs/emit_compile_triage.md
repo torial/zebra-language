@@ -55,13 +55,19 @@ file_dialog_smoke`.** The other 3 were failing on `init` FIRST; now reclassified
 
 ## D. Genuine codegen / type miscompiles on CURRENT constructs — ~30, clustered
 
-### D1 — undeclared type not emitted (stdlib type used but not materialized) — REAL?
-| File | Undeclared | Note |
+### D1 — undeclared type not emitted (stdlib type used but not materialized) — partly FIXED
+| File | Undeclared | Status |
 |---|---|---|
-| csv_test | `CsvWriter` | CsvWriter is current (QUICKSTART, Resolver) → real emit gap |
-| http_test | `Http` | Http is current (CodeGen 11597); client `.get` path? |
-| https_test | `Http` | same |
-| zebra_ide | `List` | List undeclared — investigate |
+| http_test | `Http` | **FIXED (BUG-186)** — `.get` heuristic shadowed the Http namespace. Now surfaces BUG-187 (nil-narrowing). |
+| https_test | `Http` | **FIXED (BUG-186)**; now BUG-187 (nil-narrowing). |
+| csv_test | `CsvWriter` | OPEN — CsvWriter is current (QUICKSTART, Resolver) → real emit gap |
+| zebra_ide | `List` | OPEN — `List` undeclared, investigate |
+
+### D9 (new) — nil-narrowing: `if x != nil` then `x.field`/`x.method()` on a stdlib-returned optional — **BUG-187 (OPEN)**
+Inside `if x != nil`, member access on `x` isn't narrowed to `x.?` — emits raw optional field
+access. Affects `http_test`, `https_test` (post BUG-186), and `tcp_advanced_test` (`no method
+'write' in '?TcpConn'`, previously filed under D5 — same root). Likely keyed on declared `T?`
+locals but not stdlib-returned optionals (`?HttpResponse`, `?TcpConn`).
 
 ### D2 — SYNTAX errors in emitted Zig (malformed emit) — REAL✓ (Zig can't even parse it)
 | File | Error | Status |
