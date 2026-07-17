@@ -28,28 +28,39 @@ byte-identical, smoke 236/236.
 
 ---
 
-## BUG-187: nil-narrowing not applied — `if x != nil` then `x.field` emits raw optional field access ⚠️ OPEN
+## BUG-187: `if x != nil` does NOT auto-narrow `x` — DESIGN DECISION (not a plain bug) ⚠️ OPEN — needs Sean's call
 
-**User-facing.** The canonical optional idiom miscompiles:
+**Finding (2026-07-16).** Several tests write `if x != nil` then access `x.field` / `x.method()`
+directly:
 
 ```
 var response = Http.get(url)      # ?HttpResponse
 if response != nil
-    print(response.status)         # emits `response.status` on a `?HttpResponse`
-                                   # → error: optional type '?HttpResponse' does not support field access
+    print(response.status)         # → error: optional type '?HttpResponse' does not support field access
 ```
 
-Inside `if x != nil`, `x` should be narrowed to non-optional (emit `x.?.field` / `x.?.method()`).
-Affects the optional-receiver cluster: `http_test`, `https_test`, and `tcp_advanced_test`
-(`no field or member function named 'write' in '?TcpConn'` — same root: method/field on a
-non-narrowed optional). Emitted line: `if ((response != null)) { … response.status … }` — the
-narrowing to `response.?` inside the guarded block is missing.
+This is **not implemented in EITHER compiler** (verified: both emit raw `response.status`). And
+**QUICKSTART §11 documents the current idiom as EXPLICIT unwrap:** `if x != nil: print(x!)`, or the
+unwrap-binding `if x as n: …`. So by the current documented design, the failing tests are simply
+written wrong — `response!.status` compiles clean (verified).
 
-**Where to look.** The `if <x> != nil` codegen / flow-narrowing: inside the then-block, member
-access on `x` should unwrap. May already work for some optional shapes (locals of a known
-optional type) but not for stdlib-returned optionals (`?HttpResponse`, `?TcpConn`) — verify the
-narrowing is keyed on the guard condition, not only on a declared `T?` local. Found by the
-emit-compile sweep (triage cluster: promote to its own "nil-narrowing" group).
+**But** it is likely an *intended-yet-unfinished* feature: `CodeGen.zbr` has a `nil_narrowed:
+StrSet?` field ("variables narrowed to non-nil in current scope") that is **declared and
+initialized but never populated or consumed** — a scaffold for auto-narrowing that was never
+wired. Auto-narrowing (Kotlin/TS/Swift smart-casts; Eiffel Certified-Attachment-Patterns) fits
+Zebra's "safe by default" + Eiffel lineage, and several tests assume it.
+
+**Two resolutions — Sean's call (language design):**
+1. **Implement auto-narrowing** — finish the stub: in `if x != nil` (and `x == nil` else-branch,
+   `and`-chains, etc.) narrow `x` to non-optional within the guarded scope; invalidate on
+   reassignment. A real feature in BOTH compilers, with real edge cases (scoping, reassignment,
+   nested/`orelse`). Ergonomic + safety win; matches the stub's intent.
+2. **Keep explicit `!`** (current documented design) — fix the tests to use `x!` (`response!.status`).
+   Small; clears the emit-triage cluster (`http_test`, `https_test`, `tcp_advanced_test`) as
+   test-code corrections. Optionally remove the dead `nil_narrowed` stub.
+
+Affects `http_test`, `https_test`, `tcp_advanced_test` (the "nil-narrowing" cluster in
+`docs/emit_compile_triage.md`). These are TEST bugs under design (2), or feature-blocked under (1).
 
 ---
 
