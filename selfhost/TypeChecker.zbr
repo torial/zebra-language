@@ -583,6 +583,31 @@ def typeFromName(n: str): Type_
         return Type_.uint_n(8)
     if n == "usize"
         return Type_.uint_n(64)
+    # Short spellings (Zig-style) so `List(f32)` element inference matches
+    # `List(float32)` — a bare f32/i32/u8 must type as float_n/int_n/uint_n, not
+    # named("f32"), or isFloatExpr etc. miss it (completes the SIMD data bridge).
+    if n == "f16"
+        return Type_.float_n(16)
+    if n == "f32"
+        return Type_.float_n(32)
+    if n == "f64"
+        return Type_.float_n(64)
+    if n == "i8"
+        return Type_.int_n(8)
+    if n == "i16"
+        return Type_.int_n(16)
+    if n == "i32"
+        return Type_.int_n(32)
+    if n == "i64"
+        return Type_.int_n(64)
+    if n == "u8"
+        return Type_.uint_n(8)
+    if n == "u16"
+        return Type_.uint_n(16)
+    if n == "u32"
+        return Type_.uint_n(32)
+    if n == "u64"
+        return Type_.uint_n(64)
     return Type_.named(internString(n))
 
 # ── TypeRef → Type_ mapping ──────────────────────────────────────────────────
