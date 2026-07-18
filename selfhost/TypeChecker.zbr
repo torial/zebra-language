@@ -1626,6 +1626,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "open"
                                 return Type_.optional(Type_.sqlite_db)
                             return Type_.void_
+                        # Net.resolve → List(str). Without this the result infers as
+                        # unresolved, so `results.len` emits raw `.len` on an ArrayList
+                        # instead of `.items.len` (divergence audit: dns_test). Bootstrap
+                        # types it as a string slice; List(str) gives the same `.len`.
+                        if bname == "Net" and mem.member == "resolve"
+                            return Type_.list_(Type_.string_)
                         if bname == "Path"
                             if mem.member == "isAbsolute"
                                 return Type_.bool_
