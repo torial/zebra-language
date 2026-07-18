@@ -11822,6 +11822,12 @@ struct Generator
                 w.emit("(std.fmt.parseFloat(f64, ")
                 genExpr(m.object)
                 w.emit(") catch 0.0)")
+            else if isFloatExpr(m.object)
+                # A float source (e.g. an f32 from a List(f32)/SIMD lane) widens via
+                # @floatCast, not @floatFromInt — identity for f64, widening for f32.
+                w.emit("@as(f64, @floatCast(")
+                genExpr(m.object)
+                w.emit("))")
             else
                 w.emit("@as(f64, @floatFromInt(")
                 genExpr(m.object)

@@ -1402,6 +1402,27 @@ class TcResult
         var key: str = class_name + "." + method_name
         return method_ctxs.contains(key)
 
+# True for SIMD vector type names (`f32x8`, `i32x4`, `u8x16`, …). Mirrors the
+# CodeGen helper of the same name. Used so a SIMD constructor `f32x8(…)` infers as
+# a named SIMD type, which lets un-annotated `var v = f32x8(…)` dispatch `.sum()`/
+# `.dot()` to @reduce (they gate on a provably-SIMD receiver).
+def isSimdTypeName(name: str): bool
+    if not name.contains("x")
+        return false
+    var parts: List(str) = name.split("x")
+    if parts.len != 2
+        return false
+    if parts.at(1) == ""
+        return false
+    var prefix = parts.at(0)
+    if prefix == "f16" or prefix == "f32" or prefix == "f64"
+        return true
+    if prefix == "i8" or prefix == "i16" or prefix == "i32" or prefix == "i64"
+        return true
+    if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
+        return true
+    return false
+
 def inferExpr(e: Expr, ctx: InferCtx): Type_
     branch e
         on Expr.int_lit as _
@@ -1515,6 +1536,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             branch c.callee
                 on Expr.ident as id
                     var cname: str = id.name
+                    # SIMD constructor `f32x8(…)` → named SIMD type, so an
+                    # un-annotated `var v = f32x8(…)` types as f32x8 and can call
+                    # .sum()/.dot() (which require a provably-SIMD receiver).
+                    if isSimdTypeName(cname)
+                        return Type_.named(cname)
                     if ctx.hasClassAny(cname)
                         return Type_.named(cname)
                     # Primitive-name ctors like `int(x)` cast to that primitive.

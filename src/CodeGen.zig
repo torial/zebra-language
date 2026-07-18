@@ -7387,7 +7387,11 @@ const Generator = struct {
     fn genNumericConv(g: Generator, object: *const Ast.Expr, recv_is_float: bool, method: []const u8) anyerror!bool {
         if (std.mem.eql(u8, method, "toFloat")) {
             if (recv_is_float) {
+                // Widen via @floatCast (identity for f64, f32→f64 for a SIMD lane /
+                // List(f32) element) so the result is always f64.
+                try g.w.writeAll("@as(f64, @floatCast(");
                 try g.genExpr(object);
+                try g.w.writeAll("))");
             } else {
                 try g.w.writeAll("@as(f64, @floatFromInt(");
                 try g.genExpr(object);
