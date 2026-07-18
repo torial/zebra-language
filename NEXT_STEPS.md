@@ -65,6 +65,23 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 
 ## Compiler hardening (gated; unattended-safe — deterministic, round-trip-checked)
 
+- [ ] **Selfhost↔bootstrap divergence burn-down** (`tools/divergence_check.sh`,
+  `docs/divergence_audit.md`). New harness (2026-07-18) catches drift the other gates
+  can't (they all emit with one compiler). First run: 272 agree-pass, **19 → 17 selfhost
+  gaps** after the Build fix (`e5f34d8`). Every remaining gap has a known-good bootstrap
+  emit to diff against — a `diff bootstrap-emit vs selfhost-emit → converge` workflow.
+  - [ ] **Close the 17 remaining selfhost gaps** (mostly the emit-compile D-clusters, now
+    bootstrap-confirmed): derive/dns/escape_field/extend/expressiveness/file_io/forgot_parens/
+    fuzzy_selfhost/json/log/math/method_chain_throws/nil_tracking/reflect/selfhost_probe6/
+    string_methods/throws_autoprop. `method_chain_throws` = a D4 repro; `dns`/`fuzzy_selfhost`
+    = `.len`-on-container (D3).
+  - [ ] **Root fix — unify the stdlib-namespace list.** `Resolver.isBuiltin` and
+    `CodeGen.isStdlibNamespace` are two hand-maintained copies that drift (the Build bug's
+    cause). One shared source both consult prevents the whole sub-class.
+  - [ ] **Gate it once the 17 close** — then it guarantees the compilers never silently
+    diverge again (diagnostic-only until then, like compile_check was pre-clean-corpus).
+  - Note: **14 BOOTSTRAP gaps** (SIMD/generics/functional) = selfhost LEADS; no fix needed
+    (bootstrap sunsets), documented in the audit.
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
   correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,
