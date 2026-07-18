@@ -1376,6 +1376,12 @@ def isByValueHandleType(t: Type_): bool
         on Type_.sqlite_row      return true
         on Type_.sqlite_row_list return true
         on Type_.regex           return true
+        # Build-system handles (`b.addExe(…)`, `exe.linkLib(…)`): opaque handles whose
+        # methods emit `_build_*(handle, …)` by value → the local never needs `var`.
+        # Found by the divergence audit (build_declarative_test/build_smoke_test's
+        # `never mutated`); the bootstrap already marks these const.
+        on Type_.build_ctx       return true
+        on Type_.build_target    return true
         else
             return false
 
