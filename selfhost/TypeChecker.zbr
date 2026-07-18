@@ -1806,8 +1806,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                         on Type_.json_value
                             var jmname: str = mem.member
-                            if jmname == "getStr" or jmname == "getObj"
+                            if jmname == "getStr"
                                 return Type_.string_
+                            # getObj returns a nested json object (a Value), NOT a
+                            # string — it was grouped with getStr, so `var o = j.getObj(…)`
+                            # got annotated `[]const u8` and collided with the Value the
+                            # accessor returns (divergence audit: json_test). Bootstrap
+                            # returns .json_value (src/TypeChecker.zig:4178).
+                            if jmname == "getObj"
+                                return Type_.json_value
                             if jmname == "getInt"
                                 return Type_.int_
                             if jmname == "getFloat"

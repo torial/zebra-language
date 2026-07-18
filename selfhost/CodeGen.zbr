@@ -12695,6 +12695,49 @@ struct Generator
                 w.emit("0")
             w.emit("))")
             return
+        # atan2(y, x) — cast both args to f64 (std.math.atan2 rejects comptime_float).
+        # Selfhost had no handler → raw emit failed (divergence audit: math_test).
+        if mname == "atan2"
+            w.emit("std.math.atan2(@as(f64, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("), @as(f64, ")
+            if args.len >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        # log/isNaN/isInf lacked handlers → the generic fallthrough emitted
+        # `std.math.log` (a 3-arg fn — BUG-194!) and `std.math.isNaN` (Zig's name is
+        # `isNan`). Mirror the bootstrap (divergence audit: math_test). `log` is the
+        # NATURAL log: std.math.log(f64, e, x).
+        if mname == "log"
+            w.emit("std.math.log(f64, std.math.e, @as(f64, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        if mname == "isNaN"
+            w.emit("std.math.isNan(@as(f64, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
+        if mname == "isInf"
+            w.emit("std.math.isInf(@as(f64, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("0")
+            w.emit("))")
+            return
         # Linear interpolation: lerp(a, b, t)
         if mname == "lerp"
             w.emit("std.math.lerp(@as(f64, ")
@@ -14129,17 +14172,48 @@ struct Generator
             w.emit(")")
             return
         if mname == "setLevel"
+            # `_log_set_level` takes a u8 level number; a string-literal level name is
+            # mapped to its number at emit time (debug=0/info=1/warn=2/err=3). Without
+            # this the string was passed straight through → "expected u8, found …u8"
+            # (divergence audit: log_test). Mirrors src/CodeGen.zig setLevel.
             w.emit("_log_set_level(")
             if args.len > 0
-                genExpr(args.at(0).value)
+                var lvarg = args.at(0).value
+                var mapped = false
+                if lvarg is Expr.string_lit as slv
+                    var lv = slv.text
+                    if lv == "debug"
+                        w.emit("0")
+                        mapped = true
+                    else if lv == "info"
+                        w.emit("1")
+                        mapped = true
+                    else if lv == "warn"
+                        w.emit("2")
+                        mapped = true
+                    else if lv == "err"
+                        w.emit("3")
+                        mapped = true
+                if not mapped
+                    genExpr(lvarg)
             else
                 w.emit("1")
             w.emit(")")
             return
         if mname == "setOutput"
+            # `_log_set_output_stderr` takes a bool; the string level ("stdout"/"stderr")
+            # maps to it at emit time (stdout=false, else true). Mirrors src/CodeGen.zig
+            # (divergence audit: log_test, second layer).
             w.emit("_log_set_output_stderr(")
             if args.len > 0
-                genExpr(args.at(0).value)
+                var oarg = args.at(0).value
+                if oarg is Expr.string_lit as osl
+                    if osl.text == "stdout"
+                        w.emit("false")
+                    else
+                        w.emit("true")
+                else
+                    w.emit("true")
             else
                 w.emit("true")
             w.emit(")")

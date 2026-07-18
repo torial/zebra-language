@@ -17,10 +17,12 @@ Documented (QUICKSTART File table) and implemented in the bootstrap
 (`src/CodeGen.zig:7752`), but the selfhost emits
 `@compileError("selfhost: unknown File.listDir")`. Small port from the bootstrap.
 
-### BUG-194: `Math.log` missing in the selfhost ⛔ OPEN (selfhost-lags-bootstrap)
-In the bootstrap (`src/CodeGen.zig:8055`) but not selfhost `genMathCall` —
-`Math.log(x)` errors "expected 3 argument(s), found 1". (Workaround exists:
-`ln(N/df) = log1p(N/df − 1)`; `log1p` is supported.) Small port.
+### BUG-194: `Math.log` missing in the selfhost ✅ FIXED (2026-07-18, divergence burn-down)
+Was: in the bootstrap (`src/CodeGen.zig:8055`) but not selfhost `genMathCall` —
+`Math.log(x)` fell through to `std.math.log` (a 3-arg fn) → "expected 3 argument(s),
+found 1". Added the natural-log handler `std.math.log(f64, std.math.e, @as(f64, x))`
+(+ `isNaN`→`isNan`, `isInf`, `atan2` while converging `math_test`). Surfaced again by
+the selfhost↔bootstrap divergence audit.
 
 ### BUG-195: `.entries()` on a HashMap *parameter* fails ⛔ OPEN
 The `_zebra_map_entries` preamble does `@TypeOf(map).KV`; a HashMap passed as a

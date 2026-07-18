@@ -16,7 +16,7 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ```
 single-module: 272 agree-pass · 46 agree-fail · 18 library(no-main)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 16 after the Build + dns fixes below)
+SELFHOST GAPS: 19  (→ 12 after Build ×2, dns, log, math fixes below; json partial)
 BOOTSTRAP GAPS: 14
 ```
 
@@ -34,23 +34,27 @@ targets, not open design questions.
   `build_target` handles were over-marked `var` → "never mutated" (added them to
   `isByValueHandleType`, extending BUG-191). Both now converge.
 
-- `dns_test` — **FIXED** (`2f3d4bf`): `Net.resolve` return type unregistered →
-  `results.len` emitted raw on an ArrayList. Registered `Net.resolve → List(str)`.
+**FIXED this pass** (each verified 0-gap + gated):
+- `dns_test` (`2f3d4bf`) — registered `Net.resolve → List(str)` so `results.len` →
+  `.items.len`.
+- `log_test` — `Log.setLevel("debug")`/`setOutput("stdout")` map the string level →
+  the `u8`/`bool` the preamble fn takes (was passing the string through). Two layers.
+- `math_test` — added `atan2`/`log`/`isNaN`/`isInf` handlers (fell through to a 3-arg
+  `std.math.log` and mis-cased `std.math.isNaN`). **Also closes BUG-194** (`Math.log`).
 
-**REMAINING (16) — diagnosed roots** (each has a known-good bootstrap emit to diff
-against — a `diff bootstrap vs selfhost emit → converge` workflow):
+**PARTIAL:**
+- `json_test` — `getObj` now infers `json_value` (was grouped with `getStr`→str, so the
+  result got a bad `[]const u8` annotation) — FIXED. But a next layer remains:
+  `getList` returns a `[]Value` *slice*, yet the selfhost types it `list_` so for-in
+  emits `.items` (bootstrap types it as a slice, iterates directly). Needs a slice-of-T
+  type or for-in handling — deferred.
 
-*Diagnosed this pass:*
+**REMAINING (12) — diagnosed roots** (each has a known-good bootstrap emit to diff):
 - `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped
-  args: `join(_allocator, words, ", ".items)` instead of `join(_allocator, ", ", words.items)`.
-  Likely string-temp materialization interacting with the sep.join(list) handler
-  (CodeGen ~14719). Not a return-type fix.
-- `json_test` — `_json_get_obj(nd, "user")` returns a json `Value` but is assigned to
-  `[]const u8`. Json-accessor return-type / genJsonCall mismatch.
-- `selfhost_probe6` — a `{s}` format emitted for an `i64` (string-interp `${n}` where
-  `n` is an int union payload → wrong format char picked). Print-format inference.
-- `log_test` — "expected u8, found *const [5:0]u8": a `Log.*` preamble signature takes
-  a `u8` where a string level is passed. Preamble signature mismatch.
+  args (`join(…, words, ", ".items)`). String-temp materialization × sep.join(list)
+  handler (CodeGen ~14719).
+- `selfhost_probe6` — a `{s}` format emitted for an `i64` (string-interp of an int union
+  payload → wrong format char). Print-format inference.
 
 *Not yet diagnosed (signature only):*
 - `derive_test` (`operator == not allowed for Point` — @derive(Eq) gap) ·
