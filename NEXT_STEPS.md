@@ -41,14 +41,11 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     selfhost→bootstrap convergence); `f32.toFloat()` widens via `@floatCast` instead of
     `@floatFromInt`; short type names `f32`/`i32`/`u8`/… map in `typeFromName` so `List(f32)` is
     inference-consistent with `List(float32)`.
-  - [ ] **Tier 3 (open, ergonomics only) — `f32x8.load(list, offset)`.** A minimal `f32x8.load(slice)`
-    (offset-0, slice-only) already exists (`genSimdStaticCall`, `CodeGen.zbr` ~12558). The useful
-    hot-loop form loads 8 lanes from a `List(f32)` at an offset — `f32x8.load(WF, o)` →
-    `(WF).items[@as(usize,@intCast(o))..][0..8].*` — so loops don't hand-write eight `.at()` calls.
-    **DESIGN CALL for Sean** (why deferred from the overnight pass): the existing 1-arg `.load(x)`
-    treats `x` as an already-sliceable value; extending to `(list, offset)` means emitting `.items`
-    for a List arg, which changes/overloads the 1-arg semantics. Recommendation: make `.load(list, off)`
-    the primary List+offset form, keep 1-arg as offset-0. Own gated pass once the API is chosen.
+  - [x] **Tier 3 DONE 2026-07-18** (commit `736a7d6`) — `f32x8.load(list, offset)` on Sean's
+    approved API: `f32x8.load(WF, o)` → `(WF).items[@as(usize,@intCast(o))..][0..8].*`; 1-arg
+    `.load(slice)` (offset 0) unchanged. Benchmark rewritten to it — byte-identical, four one-line
+    loads for four eight-arg constructors. **All three SIMD-data-bridge tiers complete; BUG-197
+    fully resolved.**
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*
