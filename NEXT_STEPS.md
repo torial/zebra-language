@@ -33,8 +33,9 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] **SIMD data bridge (BUG-197) — make `f32x8` usable on real data.** Found by the
   2026-07-17 Greek-NT dogfood: `f32x8` currently ingests only inline literals — it cannot take
   a computed value, a `List`, or loop-varying data, so the TF-IDF/cosine/embedding workloads
-  that motivated SIMD can't be written. The fix is **tiered and mostly localized** (not a
-  redesign); do it in selfhost + bootstrap, gated:
+  that motivated SIMD can't be written. **Sean wants ALL THREE tiers (2026-07-17)** — not just
+  the minimal unblock. The fix is **tiered and mostly localized** (not a redesign); do it in
+  selfhost + bootstrap, gated:
   1. **Minimal unblock — a runtime `f64 → f32` narrowing conversion.** Add e.g. `.toFloat32()`
      → `@as(f32, @floatCast(x))`, a ~5-line mirror of the `toFloat` branch (`CodeGen.zbr:11802`,
      which emits `@as(f64, @floatFromInt(...))`) + resolver method recognition. With just this,
