@@ -3043,9 +3043,10 @@ var a: f32x8 = f32x8(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
 # Splat — broadcast a scalar to all lanes
 var zero: f32x8 = f32x8.splat(0.0)
 
-# Load from a slice — slice must have at least N elements
-var data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-var v: f32x8 = f32x8.load(data)
+# Load N lanes from a List at an offset (the hot-loop form)
+var vec = List(f32)()            # …filled with at least offset+N elements
+var v: f32x8 = f32x8.load(vec, offset)
+# 1-arg form loads offset 0 from an already-sliceable value:  f32x8.load(slice)
 
 # Native arithmetic — element-wise, same type
 var b: f32x8 = a + zero
@@ -3076,9 +3077,8 @@ var vec = List(float32)()        # or List(f32)
 for x in raw_f64_values
     vec.add(x.toFloat32())       # f64 → f32 (also works on int / str)
 
-# build a lane group from the list (offset o, 8 lanes)
-var v: f32x8 = f32x8(vec.at(o), vec.at(o+1), vec.at(o+2), vec.at(o+3),
-                     vec.at(o+4), vec.at(o+5), vec.at(o+6), vec.at(o+7))
+# load 8 lanes from the list at an offset (pad the list to a multiple of 8)
+var v: f32x8 = f32x8.load(vec, o)
 var dot: float32 = v.dot(v)
 var back: float = dot.toFloat()  # f32 → f64 widening
 ```

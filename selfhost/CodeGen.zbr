@@ -12562,19 +12562,32 @@ struct Generator
             w.emit(")))")
             return
         if mname == "load"
-            # f32x8.load(slice) → @as(@Vector(8, f32), slice[0..8].*)
+            # Tier 3 (BUG-197): two forms.
+            #   f32x8.load(list, off) → @as(@Vector(8,f32), (list).items[off..][0..8].*)
+            #     — the hot-loop form: 8 lanes from a List(f32) at an offset.
+            #   f32x8.load(slice)     → @as(@Vector(8,f32), slice[0..8].*)  (offset 0).
             w.emit("@as(@Vector(")
             w.emit(lanes)
             w.emit(", ")
             w.emit(elem_zig)
             w.emit("), ")
-            if args.len > 0
+            if args.len >= 2
+                w.emit("(")
                 genExpr(args.at(0).value)
+                w.emit(").items[@as(usize, @intCast(")
+                genExpr(args.at(1).value)
+                w.emit("))..][0..")
+                w.emit(lanes)
+                w.emit("].*)")
+            else if args.len == 1
+                genExpr(args.at(0).value)
+                w.emit("[0..")
+                w.emit(lanes)
+                w.emit("].*)")
             else
-                w.emit("undefined")
-            w.emit("[0..")
-            w.emit(lanes)
-            w.emit("].*)")
+                w.emit("undefined[0..")
+                w.emit(lanes)
+                w.emit("].*)")
             return
 
     def genSimdInstanceCall(obj: Expr, mname: str, args: List(Arg))

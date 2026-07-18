@@ -7985,10 +7985,22 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "load")) {
-            // f32x8.load(slice) → @as(@Vector(8, f32), slice[0..8].*)
+            // Two forms:
+            //   f32x8.load(list, off) → @as(@Vector(8,f32), (list).items[off..][0..8].*)
+            //   f32x8.load(slice)     → @as(@Vector(8,f32), slice[0..8].*)  (offset 0)
             try g.w.print("@as(@Vector({d}, {s}), ", .{ si.lanes, si.elem_zig });
-            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("&.{}");
-            try g.w.print("[0..{d}].*)", .{si.lanes});
+            if (args.len >= 2) {
+                try g.w.writeAll("(");
+                try g.genExpr(args[0].value);
+                try g.w.writeAll(").items[@as(usize, @intCast(");
+                try g.genExpr(args[1].value);
+                try g.w.print("))..][0..{d}].*)", .{si.lanes});
+            } else if (args.len == 1) {
+                try g.genExpr(args[0].value);
+                try g.w.print("[0..{d}].*)", .{si.lanes});
+            } else {
+                try g.w.print("undefined[0..{d}].*)", .{si.lanes});
+            }
             return true;
         }
         return false;
