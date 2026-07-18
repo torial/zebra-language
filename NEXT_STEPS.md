@@ -36,12 +36,19 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   SIMD-vs-scalar all-pairs cosine on the Greek vectors runs at **~7.8×** (f32x8 0.39 ms vs scalar
   3.03 ms, ReleaseFast), identical results, exact clustering. **Tier 2 was a selfhost-lags-bootstrap
   convergence** (the bootstrap already accepted `List(float32)`).
-  - [ ] **Tier 3 (open, ergonomics only) — slice → `f32x8` load builtin** so hot loops don't
-    hand-write eight `.at()` calls (`f32x8(WF.at(o), WF.at(o+1), …)`). Not required for correctness
-    — Tiers 1+2 make SIMD fully usable. A codegen builtin (e.g. `f32x8.load(list, off)` →
-    a `@Vector` slice load); its own gated pass. Also noticed en route: `.sum()`/`.dot()` on an
-    *un-annotated* `f32x8` value aren't rewritten to `@reduce` (annotate `var v: f32x8 = …`); and
-    `.toFloat()` on an `f32` tries `@floatFromInt` (no f32→f64 widening) — minor follow-ups.
+  - [x] **Ergonomic follow-ups DONE 2026-07-18** (commits `ee69570`, `ce12e9f`, all gated):
+    un-annotated `var v = f32x8(…)` now dispatches `.sum()`/`.dot()` (SIMD-ctor inference — another
+    selfhost→bootstrap convergence); `f32.toFloat()` widens via `@floatCast` instead of
+    `@floatFromInt`; short type names `f32`/`i32`/`u8`/… map in `typeFromName` so `List(f32)` is
+    inference-consistent with `List(float32)`.
+  - [ ] **Tier 3 (open, ergonomics only) — `f32x8.load(list, offset)`.** A minimal `f32x8.load(slice)`
+    (offset-0, slice-only) already exists (`genSimdStaticCall`, `CodeGen.zbr` ~12558). The useful
+    hot-loop form loads 8 lanes from a `List(f32)` at an offset — `f32x8.load(WF, o)` →
+    `(WF).items[@as(usize,@intCast(o))..][0..8].*` — so loops don't hand-write eight `.at()` calls.
+    **DESIGN CALL for Sean** (why deferred from the overnight pass): the existing 1-arg `.load(x)`
+    treats `x` as an already-sliceable value; extending to `(list, offset)` means emitting `.items`
+    for a List arg, which changes/overloads the 1-arg semantics. Recommendation: make `.load(list, off)`
+    the primary List+offset form, keep 1-arg as offset-0. Own gated pass once the API is chosen.
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*

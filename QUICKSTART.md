@@ -3066,10 +3066,32 @@ var iv: i32x4 = i32x4(10, 20, 30, 40)
 var isum: int32 = iv.sum()
 ```
 
+### Feeding computed data into SIMD
+
+`f32x8` lanes are `f32`, so computed `float` (f64) values must be narrowed. Store
+vectors in `List(float32)` (or `List(f32)`) and build lanes from them:
+
+```zebra
+var vec = List(float32)()        # or List(f32)
+for x in raw_f64_values
+    vec.add(x.toFloat32())       # f64 → f32 (also works on int / str)
+
+# build a lane group from the list (offset o, 8 lanes)
+var v: f32x8 = f32x8(vec.at(o), vec.at(o+1), vec.at(o+2), vec.at(o+3),
+                     vec.at(o+4), vec.at(o+5), vec.at(o+6), vec.at(o+7))
+var dot: float32 = v.dot(v)
+var back: float = dot.toFloat()  # f32 → f64 widening
+```
+
+`.toFloat32()` narrows a `float`/int/`str` to `f32`; `.toFloat()` widens an `f32`
+back to `float` (f64). A reduction (`.sum()`/`.dot()`) works on an un-annotated
+`var v = f32x8(...)` too — the annotation is optional.
+
 ### Notes
 
 - SIMD types use Zig/C short names (`f32`, `i16`) not Zebra long names
-  (`float32`, `int16`) as the element prefix.
+  (`float32`, `int16`) as the element prefix. Both spellings now work as
+  `List` element types (`List(f32)` ≡ `List(float32)`).
 - Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise.
 - Comparison and logical operators on SIMD vectors are not yet supported.
 - Selfhost parity (for `selfhost/*.zbr` round-trip) is tracked as a future sprint.
