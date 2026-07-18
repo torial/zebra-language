@@ -16,7 +16,7 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ```
 single-module: 272 agree-pass · 46 agree-fail · 18 library(no-main)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 17 after the Build fix below)
+SELFHOST GAPS: 19  (→ 16 after the Build + dns fixes below)
 BOOTSTRAP GAPS: 14
 ```
 
@@ -34,16 +34,38 @@ targets, not open design questions.
   `build_target` handles were over-marked `var` → "never mutated" (added them to
   `isByValueHandleType`, extending BUG-191). Both now converge.
 
-**REMAINING (17) — mostly the emit-compile campaign's D-clusters, now confirmed
-bootstrap-correct** (see `docs/emit_compile_triage.md`):
-`derive_test · dns_test · escape_field_test · extend_test · expressiveness_test ·
-file_io_test · forgot_parens_test · fuzzy_selfhost · json_test · log_test · math_test ·
-method_chain_throws_test · nil_tracking_test · reflect_test · selfhost_probe6 ·
-string_methods_test · throws_autoprop_test`
-- The audit's contribution: each is now a **diff bootstrap-emit vs selfhost-emit →
-  find the exact divergence → converge** workflow, far more tractable than the
-  original blind triage. `method_chain_throws_test` is a D4 `*T`-vs-`*const T` repro;
-  `dns_test`/`fuzzy_selfhost` are `.len`-on-container (D3); etc.
+- `dns_test` — **FIXED** (`2f3d4bf`): `Net.resolve` return type unregistered →
+  `results.len` emitted raw on an ArrayList. Registered `Net.resolve → List(str)`.
+
+**REMAINING (16) — diagnosed roots** (each has a known-good bootstrap emit to diff
+against — a `diff bootstrap vs selfhost emit → converge` workflow):
+
+*Diagnosed this pass:*
+- `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped
+  args: `join(_allocator, words, ", ".items)` instead of `join(_allocator, ", ", words.items)`.
+  Likely string-temp materialization interacting with the sep.join(list) handler
+  (CodeGen ~14719). Not a return-type fix.
+- `json_test` — `_json_get_obj(nd, "user")` returns a json `Value` but is assigned to
+  `[]const u8`. Json-accessor return-type / genJsonCall mismatch.
+- `selfhost_probe6` — a `{s}` format emitted for an `i64` (string-interp `${n}` where
+  `n` is an int union payload → wrong format char picked). Print-format inference.
+- `log_test` — "expected u8, found *const [5:0]u8": a `Log.*` preamble signature takes
+  a `u8` where a string level is passed. Preamble signature mismatch.
+
+*Not yet diagnosed (signature only):*
+- `derive_test` (`operator == not allowed for Point` — @derive(Eq) gap) ·
+  `escape_field_test`/`reflect_test` (`missing struct field` — reflect/@derive) ·
+  `extend_test` (extension method dispatch) · `expressiveness_test` (member fn arg
+  count / default args) · `file_io_test` (`unreachable code`) · `math_test`
+  (`atan2 not implemented for comptime_float` — coerce to runtime) ·
+  `method_chain_throws_test` (D4 `*T`-vs-`*const T`) · `nil_tracking_test`
+  (`expected optional, found []const u8` — nil-narrowing) · `throws_autoprop_test`
+  (`error union is ignored`) · `fuzzy_selfhost` (`.len` on List(HashMap)) ·
+  `forgot_parens_test` (NEGATIVE test — verify it should even A/B).
+
+Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
+type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
+down a few per session rather than in one rushed batch.
 
 ## ▶ BOOTSTRAP GAPS (selfhost OK, bootstrap fails) — the selfhost LEADS
 
