@@ -1,6 +1,57 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-192. Next new bug: BUG-193.**
+**Last bug number generated: BUG-197. Next new bug: BUG-198.**
+
+---
+
+## Dogfood findings — Greek NT n-gram program (2026-07-17)
+
+Surfaced by writing a real text-analytics program in Zebra (SBLGNT n-gram +
+TF-IDF cosine). Full context: wiki `concept_greek-nt-ngram-stylometry`; repro
+programs in that session's scratchpad (`gng/`). Recurring theme across several:
+**nested generics + non-`str` element types are under-supported in the selfhost's
+container-method dispatch and pointer-mutation analysis.**
+
+### BUG-193: `File.listDir` missing in the selfhost ⛔ OPEN (selfhost-lags-bootstrap)
+Documented (QUICKSTART File table) and implemented in the bootstrap
+(`src/CodeGen.zig:7752`), but the selfhost emits
+`@compileError("selfhost: unknown File.listDir")`. Small port from the bootstrap.
+
+### BUG-194: `Math.log` missing in the selfhost ⛔ OPEN (selfhost-lags-bootstrap)
+In the bootstrap (`src/CodeGen.zig:8055`) but not selfhost `genMathCall` —
+`Math.log(x)` errors "expected 3 argument(s), found 1". (Workaround exists:
+`ln(N/df) = log1p(N/df − 1)`; `log1p` is supported.) Small port.
+
+### BUG-195: `.entries()` on a HashMap *parameter* fails ⛔ OPEN
+The `_zebra_map_entries` preamble does `@TypeOf(map).KV`; a HashMap passed as a
+fn parameter is a `*HashMap`, and `.KV` is not a member of the pointer. Works on
+a local map. `.get`/`.set` on a HashMap param DO work. Fix: preamble should use
+`@TypeOf(map.*)` / deref, or the call site should pass the value.
+
+### BUG-196: container-method dispatch broken on `List(List(T))` ⛔ OPEN
+Two faces of the same nested-generic gap: (a) `.len`/`.at` on a `for` binding over
+`List(List(T))` → "no field 'len' in ArrayList(...)" (rebinding to a typed local
+fixes it); (b) `.add` on a `List(List(float))` local → "no member function named
+'add'". `List(List(str))` fares better than `List(List(float))`/`List(List(int))`.
+
+### BUG-197: SIMD `f32x8` islanded — cannot ingest computed / collection data ⛔ OPEN (1.0-relevant)
+`f32x8` requires `f32` lanes, but there is no bridge from computed data:
+- `List(f32)` → resolver "undefined name 'f32'"; `List(float32)` → parser
+  "unexpected expression token" (the value-position `List(T)()` ctor-call path
+  parses `T` as an expression and rejects sized-numeric names, though the type-
+  *annotation* path `var c: float32` accepts them via `isSizedTypeName`).
+- No runtime `f64 → f32` conversion: `float32(x)` doesn't parse, no `as` cast,
+  `var a: float32 = <runtime f64>` is rejected. Only comptime float literals coerce.
+So `f32x8` works only with inline literals (`simd_test.zbr`); it cannot take a
+computed vector, a `List`, or loop-varying data — blocking the TF-IDF/cosine and
+embedding workloads that motivated SIMD. **Fix is tiered and mostly localized —
+see NEXT_STEPS "SIMD data bridge".** Not a redesign.
+
+**Also surfaced — two concrete minimal repros of the OPEN D4 `*T`-vs-`*const T`
+cluster:** sorting `List((int,int))` with a lambda comparator, and passing a
+`List(List(int))` to a fn parameter, both fail — while the `str`-element versions
+(`List((str,int))` sort, `List(List(str))` param) work. The **element-type
+dependence is a strong root-cause clue** for the D4 fix. See NEXT_STEPS.
 
 ---
 

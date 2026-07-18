@@ -30,6 +30,22 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   user-class field typing; overlaps §24e), re-measure toward 0, THEN flip. Bootstrap corpus
   stays at 0 (`check_inference_guess.sh`), so the user-facing guarantee already holds. Gated,
   supervised. Also surfaced BUG-181 (selfhost can't self-compile `main.zbr`). → *Open detail §28a.*
+- [ ] **SIMD data bridge (BUG-197) — make `f32x8` usable on real data.** Found by the
+  2026-07-17 Greek-NT dogfood: `f32x8` currently ingests only inline literals — it cannot take
+  a computed value, a `List`, or loop-varying data, so the TF-IDF/cosine/embedding workloads
+  that motivated SIMD can't be written. The fix is **tiered and mostly localized** (not a
+  redesign); do it in selfhost + bootstrap, gated:
+  1. **Minimal unblock — a runtime `f64 → f32` narrowing conversion.** Add e.g. `.toFloat32()`
+     → `@as(f32, @floatCast(x))`, a ~5-line mirror of the `toFloat` branch (`CodeGen.zbr:11802`,
+     which emits `@as(f64, @floatFromInt(...))`) + resolver method recognition. With just this,
+     `f32x8(x.toFloat32(), …)` from an existing `List(float)` works — enough to run the
+     SIMD-vs-scalar benchmark.
+  2. **Native f32 vectors — `List(f32)`/`List(float32)`.** Parser: the value-position `List(T)()`
+     ctor-call arg parser must accept sized-numeric names (it parses `T` as an expression;
+     `eatTypeName`/`isSizedTypeName` already handle them in annotations). Resolver: add
+     `f32`/`float32`/`int32`/… to the known-primitive check (`Resolver.zbr:407`). Type-system-
+     adjacent → careful gating.
+  3. **(Ideal) slice → `f32x8` load builtin** so hot loops don't hand-write 8 `.at()` calls.
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*

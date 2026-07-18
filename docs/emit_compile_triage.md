@@ -99,6 +99,13 @@ correct). Fixed via idempotent escaping in `escapePlainStr` (`selfhost/CodeGen.z
 | generic_pair_test | expected 'T', found '*T' | OPEN — **different signature** (generic `T` value-vs-pointer, not `^T` field-box). |
 | method_chain_throws_test | expected '*T', found '*const T' | OPEN — **different signature** (const-ness `*T` vs `*const T`, generic). |
 
+**Root-cause clue (2026-07-17 Greek-NT dogfood, BUG-197 context):** the open `*T`-vs-`*const T`
+signature is **element-type-dependent**. Two minimal repros: sorting `List((int,int))` with a
+lambda comparator, and passing a `List(List(int))` to a fn parameter — both fail, while the
+`str`-element versions (`List((str,int))` sort, `List(List(str))` param) compile cleanly. So the
+container-param `*T`/`*const T` decision (`paramNeedsAddrOf` / mutation analysis) treats `str`
+elements differently from `int`/tuple elements. Start there.
+
 **BUG-192 (FIXED same-module 2026-07-17):** a `^T` (struct OR union) field assigned a value inside
 `cue init` wasn't auto-boxed — the ref-box path missed bare-ident field targets (`left = l`) and
 didn't box unions. Fixed both; guarded with `rhsIsAlreadyRef` so an already-pointer RHS (`^T?`
