@@ -7395,6 +7395,18 @@ const Generator = struct {
             }
             return true;
         }
+        // SIMD data bridge (Tier 1): narrow to f32 so computed f64 values can feed
+        // f32x8(...) which requires f32 lanes (BUG-197). float→@floatCast, int→@floatFromInt.
+        if (std.mem.eql(u8, method, "toFloat32")) {
+            if (recv_is_float) {
+                try g.w.writeAll("@as(f32, @floatCast(");
+            } else {
+                try g.w.writeAll("@as(f32, @floatFromInt(");
+            }
+            try g.genExpr(object);
+            try g.w.writeAll("))");
+            return true;
+        }
         if (std.mem.eql(u8, method, "toInt")) {
             if (recv_is_float) {
                 try g.w.writeAll("@as(i64, @intFromFloat(");
@@ -10616,6 +10628,12 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "toFloat")) {
             try g.w.writeAll("(std.fmt.parseFloat(f64, ");
+            try g.genExpr(obj);
+            try g.w.writeAll(") catch 0.0)");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "toFloat32")) {
+            try g.w.writeAll("(std.fmt.parseFloat(f32, ");
             try g.genExpr(obj);
             try g.w.writeAll(") catch 0.0)");
             return true;

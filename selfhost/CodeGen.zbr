@@ -2136,6 +2136,19 @@ struct Generator
             else
                 return false
 
+    # True iff `e` infers to a floating-point type (f64 or a sized float). Used by
+    # `.toFloat32()` to choose @floatCast (float source) over @floatFromInt (int).
+    def isFloatExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        branch t
+            on Type_.float_ return true
+            on Type_.float_n as _
+                return true
+            else
+                return false
+
     # BUG-186: the stdlib static-namespace idents (Http, Sqlite, Csv, …) dispatched
     # by name in genMemberCall's namespace block.  A call like `Http.get(url)` must
     # reach that block — but the container method-name heuristics run first, and the
@@ -11821,6 +11834,23 @@ struct Generator
                 w.emit(", 10) catch 0)")
             else
                 w.emit("@as(i64, @intFromFloat(")
+                genExpr(m.object)
+                w.emit("))")
+            return
+        # SIMD data bridge (Tier 1): narrow to f32. A float source uses @floatCast,
+        # an int uses @floatFromInt, a string parses. Lets computed f64 values feed
+        # `f32x8(...)` etc., which require f32 lanes (BUG-197).
+        if mname == "toFloat32"
+            if isStringBoth(m.object, "toFloat32")
+                w.emit("(std.fmt.parseFloat(f32, ")
+                genExpr(m.object)
+                w.emit(") catch 0.0)")
+            else if isFloatExpr(m.object)
+                w.emit("@as(f32, @floatCast(")
+                genExpr(m.object)
+                w.emit("))")
+            else
+                w.emit("@as(f32, @floatFromInt(")
                 genExpr(m.object)
                 w.emit("))")
             return

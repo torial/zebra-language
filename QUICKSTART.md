@@ -1888,7 +1888,8 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Error propagation    | `expr?`                        | explicit everywhere (implicit auto-try is a compile error; `--allow-implicit-try` bridges old code) |
 | Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
-| Int-to-float         | `x.toFloat()`                  | explicit conversion                      |
+| Int-to-float         | `x.toFloat()`                  | explicit conversion (to `float`/f64)     |
+| Narrow to f32        | `x.toFloat32()`                | `float`/int/`str` → `float32` (feeds `f32x8` lanes) |
 | Float-to-int         | `x.toInt()`                    | explicit conversion (drops fraction)     |
 | Number-to-string     | `x.toString()`                 | on int/float/bool; or `"${x}"` interp    |
 | String-to-number     | `s.toInt()` / `s.toFloat()`    | 0 on bad input; `tryInt`/`tryFloat` to detect |
