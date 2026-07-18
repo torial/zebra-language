@@ -16,7 +16,7 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ```
 single-module: 272 agree-pass · 46 agree-fail · 18 library(no-main)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 12 after Build ×2, dns, log, math fixes below; json partial)
+SELFHOST GAPS: 19  (→ 14 remain: 5 fixed [Build ×2, dns, log, math]; json partial [1 of 2 layers])
 BOOTSTRAP GAPS: 14
 ```
 
@@ -49,12 +49,18 @@ targets, not open design questions.
   emits `.items` (bootstrap types it as a slice, iterates directly). Needs a slice-of-T
   type or for-in handling — deferred.
 
-**REMAINING (12) — diagnosed roots** (each has a known-good bootstrap emit to diff):
+**REMAINING (13) — diagnosed roots** (each has a known-good bootstrap emit to diff):
 - `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped
   args (`join(…, words, ", ".items)`). String-temp materialization × sep.join(list)
   handler (CodeGen ~14719).
 - `selfhost_probe6` — a `{s}` format emitted for an `i64` (string-interp of an int union
   payload → wrong format char). Print-format inference.
+- Not yet diagnosed (signature only): `derive_test` (@derive(Eq) `==`) ·
+  `escape_field_test`/`reflect_test` (missing struct field) · `extend_test` (ext method) ·
+  `expressiveness_test` (arg count) · `file_io_test` (unreachable) · `method_chain_throws_test`
+  (D4 `*T`/`*const T`) · `nil_tracking_test` (nil-narrowing) · `throws_autoprop_test`
+  (error union ignored) · `fuzzy_selfhost` (`.len` on List(HashMap)) · `forgot_parens_test`
+  (NEGATIVE test — verify it should A/B at all).
 
 *Not yet diagnosed (signature only):*
 - `derive_test` (`operator == not allowed for Point` — @derive(Eq) gap) ·
