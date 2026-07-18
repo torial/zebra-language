@@ -34,7 +34,21 @@ Two faces of the same nested-generic gap: (a) `.len`/`.at` on a `for` binding ov
 fixes it); (b) `.add` on a `List(List(float))` local → "no member function named
 'add'". `List(List(str))` fares better than `List(List(float))`/`List(List(int))`.
 
-### BUG-197: SIMD `f32x8` islanded — cannot ingest computed / collection data ⛔ OPEN (1.0-relevant)
+### BUG-197: SIMD `f32x8` islanded — cannot ingest computed / collection data ✅ FIXED (Tiers 1+2, 2026-07-18)
+**RESOLVED for real use** — the data bridge is in (commits `ac48cbe`, `015e8c3`):
+- **Tier 1 — `.toFloat32()`** (`float`/int/`str` → `f32`): `@floatCast`/`@floatFromInt`/
+  `parseFloat(f32)`. Both compilers. Lets computed f64 feed `f32x8` lanes.
+- **Tier 2 — `List(float32)`/`List(f32)`**: the selfhost had *diverged* from the
+  bootstrap (which already accepted them) — its parser rejected sized-numeric type
+  names in value position and its resolver didn't know them. Converged both.
+- **Payoff:** the SIMD-vs-scalar all-pairs cosine on the Greek book vectors (the
+  comparison the dogfood left blocked) now runs — **~7.8× faster** (f32x8 ~0.39 ms
+  vs scalar ~3.03 ms, ReleaseFast), numerically identical (checksum matches), and
+  reproduces the exact authorship clustering. Near-perfect 8-lane utilization.
+- **Tier 3 (open, ergonomics only)** — a slice→`f32x8` load builtin so hot loops
+  don't hand-write eight `.at()` calls. Not required for correctness; see NEXT_STEPS.
+
+Original report (for context):
 `f32x8` requires `f32` lanes, but there is no bridge from computed data:
 - `List(f32)` → resolver "undefined name 'f32'"; `List(float32)` → parser
   "unexpected expression token" (the value-position `List(T)()` ctor-call path

@@ -30,23 +30,18 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   user-class field typing; overlaps §24e), re-measure toward 0, THEN flip. Bootstrap corpus
   stays at 0 (`check_inference_guess.sh`), so the user-facing guarantee already holds. Gated,
   supervised. Also surfaced BUG-181 (selfhost can't self-compile `main.zbr`). → *Open detail §28a.*
-- [ ] **SIMD data bridge (BUG-197) — make `f32x8` usable on real data.** Found by the
-  2026-07-17 Greek-NT dogfood: `f32x8` currently ingests only inline literals — it cannot take
-  a computed value, a `List`, or loop-varying data, so the TF-IDF/cosine/embedding workloads
-  that motivated SIMD can't be written. **Sean wants ALL THREE tiers (2026-07-17)** — not just
-  the minimal unblock. The fix is **tiered and mostly localized** (not a redesign); do it in
-  selfhost + bootstrap, gated:
-  1. **Minimal unblock — a runtime `f64 → f32` narrowing conversion.** Add e.g. `.toFloat32()`
-     → `@as(f32, @floatCast(x))`, a ~5-line mirror of the `toFloat` branch (`CodeGen.zbr:11802`,
-     which emits `@as(f64, @floatFromInt(...))`) + resolver method recognition. With just this,
-     `f32x8(x.toFloat32(), …)` from an existing `List(float)` works — enough to run the
-     SIMD-vs-scalar benchmark.
-  2. **Native f32 vectors — `List(f32)`/`List(float32)`.** Parser: the value-position `List(T)()`
-     ctor-call arg parser must accept sized-numeric names (it parses `T` as an expression;
-     `eatTypeName`/`isSizedTypeName` already handle them in annotations). Resolver: add
-     `f32`/`float32`/`int32`/… to the known-primitive check (`Resolver.zbr:407`). Type-system-
-     adjacent → careful gating.
-  3. **(Ideal) slice → `f32x8` load builtin** so hot loops don't hand-write 8 `.at()` calls.
+- [x] **SIMD data bridge (BUG-197) — `f32x8` usable on real data. Tiers 1+2 DONE 2026-07-18.**
+  Found by the 2026-07-17 Greek-NT dogfood. **Tier 1 `.toFloat32()`** (commit `ac48cbe`) and
+  **Tier 2 `List(float32)`/`List(f32)`** (commit `015e8c3`) landed, gated. Payoff delivered: the
+  SIMD-vs-scalar all-pairs cosine on the Greek vectors runs at **~7.8×** (f32x8 0.39 ms vs scalar
+  3.03 ms, ReleaseFast), identical results, exact clustering. **Tier 2 was a selfhost-lags-bootstrap
+  convergence** (the bootstrap already accepted `List(float32)`).
+  - [ ] **Tier 3 (open, ergonomics only) — slice → `f32x8` load builtin** so hot loops don't
+    hand-write eight `.at()` calls (`f32x8(WF.at(o), WF.at(o+1), …)`). Not required for correctness
+    — Tiers 1+2 make SIMD fully usable. A codegen builtin (e.g. `f32x8.load(list, off)` →
+    a `@Vector` slice load); its own gated pass. Also noticed en route: `.sum()`/`.dot()` on an
+    *un-annotated* `f32x8` value aren't rewritten to `@reduce` (annotate `var v: f32x8 = …`); and
+    `.toFloat()` on an `f32` tries `@floatFromInt` (no f32→f64 widening) — minor follow-ups.
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*
