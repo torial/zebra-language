@@ -2975,8 +2975,10 @@ class Parser
             const name = .peek().text
             .advance()
             return PNode.expr_id(PExprId(name, id_line, id_col))
-        else if .isTypeKeyword()
-            # type keyword used: expression (e.g. in List(int), HashMap(str, bool))
+        else if .isTypeKeyword() or .isSizedTypeName()
+            # type keyword used: expression (e.g. in List(int), HashMap(str, bool)).
+            # isSizedTypeName covers int8/32/64, uint*, float32/float64 so they can
+            # be generic args in value position — `List(float32)()` for SIMD (BUG-197).
             const id_line = .peek().line
             const id_col = .peek().col
             const name = .peek().text

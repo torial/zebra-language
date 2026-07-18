@@ -409,10 +409,20 @@ class Resolver
         # char / uint are keyword primitives too, but were missing here — so in
         # type position (e.g. the generic arg `List(char)`) they were rejected as
         # "undefined name" even though typeFromName + codegen handle them
-        # (char -> u21). This was BUG-172. (The sized numerics int32/float64/etc.
-        # are non-keyword identifiers that the parser rejects as a type arg
-        # upstream, so they don't reach here — a separate, lower-priority gap.)
+        # (char -> u21). This was BUG-172.
         if name == "char" or name == "uint"
+            return true
+        # Sized numerics as generic type args — `List(float32)()` for SIMD (BUG-197,
+        # Tier 2). The parser now admits them (isSizedTypeName); typeFromName + genType
+        # map them (float32 -> f32, int32 -> i32, …). Accept both the `floatNN` spelling
+        # and the bare `fNN`/`iNN`/`uNN` identifier forms.
+        if name == "int8" or name == "int16" or name == "int32" or name == "int64"
+            return true
+        if name == "uint8" or name == "uint16" or name == "uint32" or name == "uint64"
+            return true
+        if name == "float16" or name == "float32" or name == "float64"
+            return true
+        if name == "f16" or name == "f32" or name == "f64"
             return true
         if name == "nil" or name == "true" or name == "false"
             return true
