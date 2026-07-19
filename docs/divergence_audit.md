@@ -16,7 +16,7 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ```
 single-module: 272 agree-pass · 46 agree-fail · 18 library(no-main)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 14 remain: 5 fixed [Build ×2, dns, log, math]; json partial [1 of 2 layers])
+SELFHOST GAPS: 19  (→ 11 remain: 8 fixed [Build ×2, dns, log, math, reflect, escape_field, derive]; json partial)
 BOOTSTRAP GAPS: 14
 ```
 
@@ -41,6 +41,12 @@ targets, not open design questions.
   the `u8`/`bool` the preamble fn takes (was passing the string through). Two layers.
 - `math_test` — added `atan2`/`log`/`isNaN`/`isInf` handlers (fell through to a 3-arg
   `std.math.log` and mis-cased `std.math.isNaN`). **Also closes BUG-194** (`Math.log`).
+- `reflect_test` + `escape_field_test` (shared root, `1d02980`) — a class with no
+  `cue init` gets a synthetic `self.* = .{}`, but non-defaulted fields lacked `= undefined`
+  → "missing struct field". `genFieldDecl` now emits `= undefined` (matches bootstrap).
+- `derive_test` (`1d02980`) — `p1 == p2` on a @derive(Eq) struct emitted raw `==` because
+  `Point.init(…)` inferred unresolved. `inferExpr` now types `ClassName.init(…)` →
+  named(ClassName), so `isDeriveEqExpr` fires and routes to `.eql()`.
 
 **PARTIAL:**
 - `json_test` — `getObj` now infers `json_value` (was grouped with `getStr`→str, so the
@@ -49,18 +55,26 @@ targets, not open design questions.
   emits `.items` (bootstrap types it as a slice, iterates directly). Needs a slice-of-T
   type or for-in handling — deferred.
 
-**REMAINING (13) — diagnosed roots** (each has a known-good bootstrap emit to diff):
-- `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped
-  args (`join(…, words, ", ".items)`). String-temp materialization × sep.join(list)
-  handler (CodeGen ~14719).
-- `selfhost_probe6` — a `{s}` format emitted for an `i64` (string-interp of an int union
-  payload → wrong format char). Print-format inference.
-- Not yet diagnosed (signature only): `derive_test` (@derive(Eq) `==`) ·
-  `escape_field_test`/`reflect_test` (missing struct field) · `extend_test` (ext method) ·
-  `expressiveness_test` (arg count) · `file_io_test` (unreachable) · `method_chain_throws_test`
-  (D4 `*T`/`*const T`) · `nil_tracking_test` (nil-narrowing) · `throws_autoprop_test`
-  (error union ignored) · `fuzzy_selfhost` (`.len` on List(HashMap)) · `forgot_parens_test`
-  (NEGATIVE test — verify it should A/B at all).
+**REMAINING (10 + json partial) — diagnosed roots** (deeper than the return-type/handler
+class above; each still has a known-good bootstrap emit to diff):
+- `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
+  `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
+  §28b throws-propagation interaction.
+- `nil_tracking_test` — `print(name)` inside `if name != nil` emits `name.?.?` (double
+  unwrap): the BUG-187 narrowing `name.?` collides with print's own optional-unwrap.
+- `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped args
+  (`join(…, words, ", ".items)`). String-temp materialization × sep.join(list) handler.
+- `selfhost_probe6` — `{s}` format emitted for an `i64` (string-interp of an int union
+  payload). Print-format inference.
+- `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
+  param isn't filled (§27b default-arg).
+- `extend_test` — extension-method dispatch (`s.shout()` on a `str`).
+- `file_io_test` — `File`-exists check emits an `unreachable`-after-break block.
+- `method_chain_throws_test` — D4 `*T`-vs-`*const T`.
+- `fuzzy_selfhost` — `.len` on a `List(HashMap)` local not rewritten to `.items.len`
+  (nested-generic inference weakness).
+- `forgot_parens_test` — NEGATIVE test; verify it should A/B at all.
+- `json_test` (PARTIAL, above) — getList slice-vs-list layer.
 
 *Not yet diagnosed (signature only):*
 - `derive_test` (`operator == not allowed for Point` — @derive(Eq) gap) ·
