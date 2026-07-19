@@ -1602,6 +1602,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # Builtin type constructors: Regex.compile → regex, etc.
                     if mem.object is Expr.ident as bid
                         var bname: str = bid.name
+                        # `ClassName.init(…)` constructs that class → named(ClassName).
+                        # Without this `var p = Point.init(…)` infers unresolved, so
+                        # type-driven codegen (e.g. @derive(Eq) `==`→`.eql()`) can't fire
+                        # (divergence audit: derive_test).
+                        if mem.member == "init" and ctx.hasClassAny(bname)
+                            return Type_.named(bname)
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
                         if bname == "sys" and mem.member == "spawn"

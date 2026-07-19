@@ -2669,6 +2669,13 @@ struct Generator
         if n.init_expr != nil
             w.emit(" = ")
             genExpr(n.init_expr!)
+        else
+            # No user default → `= undefined` so a synthetic init (`self.* = .{}`, for a
+            # class with no `cue init`) compiles; Zig otherwise requires every field in
+            # the literal. Mirrors the bootstrap (divergence audit: reflect_test /
+            # escape_field_test). Harmless for classes with an init (it overwrites) and
+            # for `.{ .f = v }` literals (they provide values).
+            w.emit(" = undefined")
         w.emit(",\n")
 
     # ── genEnum ───────────────────────────────────────────────────────────────
