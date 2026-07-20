@@ -14,15 +14,15 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ## First full run (test/ + examples/, JOBS=3)
 
 ```
-single-module: 284 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
+single-module: 286 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 7 remain: 12 fixed; see below)
+SELFHOST GAPS: 19  (→ 5 remain: 14 fixed; see below)
 BOOTSTRAP GAPS: 14  (unchanged)
 ```
 
-Update 2026-07-20: closed 4 more (nil_tracking, forgot_parens, string_methods,
-selfhost_probe6) — 12 of 19 fixed, **7 selfhost gaps remain**, 284 agree-pass,
-14 bootstrap gaps unchanged.
+Update 2026-07-20: closed 6 more (nil_tracking, forgot_parens, string_methods,
+selfhost_probe6, file_io, method_chain_throws) — 14 of 19 fixed, **5 selfhost gaps
+remain**, 286 agree-pass, 14 bootstrap gaps unchanged.
 
 The headline is reassuring: **284 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
@@ -76,8 +76,16 @@ targets, not open design questions.
   never bound into infer_ctx; (2) str_params aliases across arms (indented() `except`-copy
   shares the StrSet) so a reused name `n` lingered as a string. Bind payload type for all
   arms + removeOne for non-string payloads.
+- `file_io_test` (`416add2`) — `File.copy(src, dst)` fell through to the
+  `@compileError("selfhost: unknown File.copy")` fallback (whose divert also surfaced as a
+  misleading "unreachable code"). Added the File.copy handler (read src, create dst, stream)
+  matching src/CodeGen.zig.
+- `method_chain_throws_test` (`e20a17e`, D4) — `f().throwsMethod()?` emitted `try f().name()`,
+  calling a `self: *Widget` method on a `*const` temporary. genMemberCall's user-method
+  early-exit emitted `receiver.method()` directly, bypassing the BUG-027 materialization.
+  Skip the early-exit for a call-temporary receiver → falls through to the `var _mc_N` hoist.
 
-**REMAINING (7) — diagnosed roots** (deeper than the return-type/handler class above; each
+**REMAINING (5) — diagnosed roots** (deeper than the return-type/handler class above; each
 still has a known-good bootstrap emit to diff):
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
@@ -85,15 +93,13 @@ still has a known-good bootstrap emit to diff):
 - `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
   param isn't filled (§27b default-arg).
 - `extend_test` — extension-method dispatch (`s.shout()` on a `str`).
-- `file_io_test` — `File`-exists check emits an `unreachable`-after-break block.
-- `method_chain_throws_test` — D4 `*T`-vs-`*const T`.
 - `fuzzy_selfhost` — `.len` on a `List(HashMap)` local not rewritten to `.items.len`
   (nested-generic inference weakness).
 - `json_test` (PARTIAL) — getObj→json_value FIXED; getList returns a `[]Value` slice yet
   the selfhost types it `list_` so for-in emits `.items` (bootstrap iterates the slice
   directly). Needs a slice-of-T type or for-in handling.
 
-All 7 remaining gaps are now diagnosed (roots above); none is a shared root.
+All 5 remaining gaps are now diagnosed (roots above); none is a shared root.
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
