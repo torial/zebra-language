@@ -24,7 +24,7 @@ Update 2026-07-20: closed 6 more (nil_tracking, forgot_parens, string_methods,
 selfhost_probe6, file_io, method_chain_throws) — 14 of 19 fixed, **5 selfhost gaps
 remain**, 286 agree-pass, 14 bootstrap gaps unchanged.
 
-The headline is reassuring: **284 files agree**, and the divergences are a short,
+The headline is reassuring: **286 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
 
 ## ▶ SELFHOST GAPS (bootstrap OK, selfhost fails) — the priority
