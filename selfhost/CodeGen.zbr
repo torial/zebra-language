@@ -11243,7 +11243,13 @@ struct Generator
         if .infer_ctx != nil
             var um_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
             if um_recv_t is Type_.named as um_cname
-                if .infer_ctx!.methodReturnAny(um_cname, mname) != nil
+                # A call-temporary receiver (`f().method()`) must be materialised into a
+                # mutable `var _mc_N` so a pointer-receiver method can take `*T`. That is
+                # the BUG-027 block further below. Skip this direct-dispatch early-exit
+                # for a call receiver, else we emit `f().method()` on a `*const` temporary
+                # → "expected *T, found *const T". Divergence: method_chain_throws_test (D4).
+                var um_is_call_temp: bool = m.object is Expr.call
+                if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and not um_is_call_temp
                     if isClassMethodThrows(um_cname, mname) and current_method_throws and try_block_label == nil and not in_try_expr
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
