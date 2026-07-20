@@ -7305,9 +7305,24 @@ struct Generator
                         if vp_ == nil
                             vp_ = .dep_types.variantPayload(uname, vname)
                         if vp_ != nil
+                            # Bind the arm variable's payload type so inferExpr
+                            # resolves it (e.g. `n` in `on U.list_lit as n` → int).
+                            # Without this, print-format inference falls back to a
+                            # heuristic and mis-picks `{s}` for a non-string payload.
+                            # Divergence audit: selfhost_probe6 (`list[${n}]`, n:int).
+                            if iig.infer_ctx != nil
+                                iig.infer_ctx!.bind(cas.binding!, vp_!)
                             # Seed str_params so str methods work on the binding
                             if isString(vp_!)
                                 iig.str_params.add(cas.binding!)
+                            else
+                                # Non-string payload: clear any str_params entry a
+                                # sibling arm left behind. str_params aliases across
+                                # arms (the `except`-copy in indented() shares the
+                                # backing set), so a reused binding name (`n` used by
+                                # an earlier str arm) would otherwise be mistaken for
+                                # a string here.
+                                iig.str_params.removeOne(cas.binding!)
                             var sname = structNameFromType(vp_!)
                             if sname != nil
                                 var st_dot = sname! + "."
