@@ -4704,6 +4704,16 @@ struct Generator
                                         if atomic_locals.contains_(recv_at.name)
                                             if mem_at.member == "add" or mem_at.member == "sub" or mem_at.member == "swap" or mem_at.member == "load" or mem_at.member == "cas"
                                                 needs_discard = true
+                        # A bare top-level function name used as a statement (a
+                        # forgotten call, e.g. `greet`) is a non-void fn value;
+                        # Zig rejects discarding it implicitly. Emit `_ = greet;`
+                        # to match the bootstrap. inferExpr types the bare fn ref
+                        # as unknown_, so it slips past the checks above.
+                        # Divergence audit: forgot_parens_test.
+                        if not needs_discard
+                            if e is Expr.ident as fid_stmt
+                                if isTopLevelMethod(fid_stmt.name)
+                                    needs_discard = true
                         if needs_discard
                             w.emit("_ = ")
                         genExpr(e)
