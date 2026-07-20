@@ -13436,6 +13436,21 @@ struct Generator
                 w.emit("\"\"")
             w.emit(", _io) catch @panic(\"File.rename error\"))")
             return
+        if mname == "copy"
+            # File.copy(src, dst) → read src fully, create dst, stream contents.
+            # Matches the bootstrap's File.copy handler (src/CodeGen.zig).
+            w.emit("(blk_fcp: { const _fc_data = std.Io.Dir.cwd().readFileAlloc(_io, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", _allocator, .unlimited) catch @panic(\"File.copy read error\"); const _fc_f = std.Io.Dir.cwd().createFile(_io, ")
+            if args.len >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(", .{}) catch @panic(\"File.copy write error\"); defer _fc_f.close(_io); _fc_f.writeStreamingAll(_io, _fc_data) catch @panic(\"File.copy write error\"); break :blk_fcp {}; })")
+            return
         # Fallback: unknown File method
         w.emit("@compileError(\"selfhost: unknown File.")
         w.emit(mname)
