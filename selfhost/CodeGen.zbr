@@ -10803,6 +10803,22 @@ struct Generator
                         w.emit(")")
                         return
                 on Type_.string_
+                    if mname == "join"
+                        # sep.join(list) → std.mem.join(_allocator, sep, list.items)
+                        # The receiver IS the separator (string), the arg is the list.
+                        # Without this, a string-receiver join falls through to the
+                        # generic list.join(sep) handler and emits swapped args
+                        # (join(_allocator, list, sep.items)). Matches bootstrap
+                        # src/CodeGen.zig sep.join handler. Divergence: string_methods_test.
+                        w.emit("(std.mem.join(_allocator, ")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("&.{}")
+                        w.emit(".items) catch @panic(\"OOM\"))")
+                        return
                     if mname == "concat"
                         w.emit("(std.mem.concat(_allocator, u8, &.{ ")
                         genExpr(m.object)
