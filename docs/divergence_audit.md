@@ -14,13 +14,17 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ## First full run (test/ + examples/, JOBS=3)
 
 ```
-single-module: 272 agree-pass · 46 agree-fail · 18 library(no-main)
+single-module: 284 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 11 remain: 8 fixed [Build ×2, dns, log, math, reflect, escape_field, derive]; json partial)
-BOOTSTRAP GAPS: 14
+SELFHOST GAPS: 19  (→ 7 remain: 12 fixed; see below)
+BOOTSTRAP GAPS: 14  (unchanged)
 ```
 
-The headline is reassuring: **272 files agree**, and the divergences are a short,
+Update 2026-07-20: closed 4 more (nil_tracking, forgot_parens, string_methods,
+selfhost_probe6) — 12 of 19 fixed, **7 selfhost gaps remain**, 284 agree-pass,
+14 bootstrap gaps unchanged.
+
+The headline is reassuring: **284 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
 
 ## ▶ SELFHOST GAPS (bootstrap OK, selfhost fails) — the priority
@@ -55,17 +59,29 @@ targets, not open design questions.
   emits `.items` (bootstrap types it as a slice, iterates directly). Needs a slice-of-T
   type or for-in handling — deferred.
 
-**REMAINING (10 + json partial) — diagnosed roots** (deeper than the return-type/handler
-class above; each still has a known-good bootstrap emit to diff):
+**FIXED 2026-07-20 (this session):**
+- `nil_tracking_test` (`0bd2a63`) — `print(name)` inside `if name != nil` emitted
+  `name.?.?`: the BUG-187 codegen narrowing already rewrites the ident to `name.?`, and
+  print's own needs_unwrap added a second `.?`. Skip needs_unwrap for a nil-narrowed
+  print-arg ident.
+- `forgot_parens_test` (`efe8888`) — a bare top-level fn name used as a statement (`greet`)
+  emitted `greet;` (invalid Zig); bootstrap emits `_ = greet;`. inferExpr types the bare fn
+  ref as unknown_, so it slipped past the discard checks. Added an isTopLevelMethod check in
+  the Stmt.expr codegen. (It IS a positive test — should compile with a warning.)
+- `string_methods_test` (`6012c25`) — `", ".join(words)` (string-literal separator receiver)
+  fell through the Type_.string_ arm (no join handler) to the generic list.join(sep) handler,
+  emitting swapped args. Added a sep.join(list) handler to the string_ arm.
+- `selfhost_probe6` (`9bddb28`) — `{s}` format for a non-string union payload bound in a
+  branch arm (`on U.list_lit as n`, n:int → `list[${n}]`). Two roots: (1) arm payload type
+  never bound into infer_ctx; (2) str_params aliases across arms (indented() `except`-copy
+  shares the StrSet) so a reused name `n` lingered as a string. Bind payload type for all
+  arms + removeOne for non-string payloads.
+
+**REMAINING (7) — diagnosed roots** (deeper than the return-type/handler class above; each
+still has a known-good bootstrap emit to diff):
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
   §28b throws-propagation interaction.
-- `nil_tracking_test` — `print(name)` inside `if name != nil` emits `name.?.?` (double
-  unwrap): the BUG-187 narrowing `name.?` collides with print's own optional-unwrap.
-- `string_methods_test` — `", ".join(words)` (string-LITERAL receiver) emits swapped args
-  (`join(…, words, ", ".items)`). String-temp materialization × sep.join(list) handler.
-- `selfhost_probe6` — `{s}` format emitted for an `i64` (string-interp of an int union
-  payload). Print-format inference.
 - `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
   param isn't filled (§27b default-arg).
 - `extend_test` — extension-method dispatch (`s.shout()` on a `str`).
@@ -73,19 +89,11 @@ class above; each still has a known-good bootstrap emit to diff):
 - `method_chain_throws_test` — D4 `*T`-vs-`*const T`.
 - `fuzzy_selfhost` — `.len` on a `List(HashMap)` local not rewritten to `.items.len`
   (nested-generic inference weakness).
-- `forgot_parens_test` — NEGATIVE test; verify it should A/B at all.
-- `json_test` (PARTIAL, above) — getList slice-vs-list layer.
+- `json_test` (PARTIAL) — getObj→json_value FIXED; getList returns a `[]Value` slice yet
+  the selfhost types it `list_` so for-in emits `.items` (bootstrap iterates the slice
+  directly). Needs a slice-of-T type or for-in handling.
 
-*Not yet diagnosed (signature only):*
-- `derive_test` (`operator == not allowed for Point` — @derive(Eq) gap) ·
-  `escape_field_test`/`reflect_test` (`missing struct field` — reflect/@derive) ·
-  `extend_test` (extension method dispatch) · `expressiveness_test` (member fn arg
-  count / default args) · `file_io_test` (`unreachable code`) · `math_test`
-  (`atan2 not implemented for comptime_float` — coerce to runtime) ·
-  `method_chain_throws_test` (D4 `*T`-vs-`*const T`) · `nil_tracking_test`
-  (`expected optional, found []const u8` — nil-narrowing) · `throws_autoprop_test`
-  (`error union is ignored`) · `fuzzy_selfhost` (`.len` on List(HashMap)) ·
-  `forgot_parens_test` (NEGATIVE test — verify it should even A/B).
+All 7 remaining gaps are now diagnosed (roots above); none is a shared root.
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
