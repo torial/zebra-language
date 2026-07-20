@@ -7392,6 +7392,13 @@ struct Generator
                         needs_unwrap = true
                     else if poi is Type_.int_ or poi is Type_.uint_ or poi is Type_.bool_ or poi is Type_.float_ or poi is Type_.char_
                         needs_unwrap = true
+            # A nil-narrowed ident already emits `name.?` via genExpr (BUG-187 narrowing);
+            # print must NOT add a second `.?` (double-unwrap → error). inferExpr can't see
+            # the codegen-scoped narrowing, so it still reports optional here. Divergence
+            # audit: nil_tracking_test (`print(name)` inside `if name != nil` → `name.?.?`).
+            if parg is Expr.ident as pid
+                if isNilNarrowed(pid.name)
+                    needs_unwrap = false
             genExpr(parg)
             if needs_unwrap
                 w.emit(".?")
