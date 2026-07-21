@@ -108,10 +108,22 @@ targets, not open design questions.
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
   §28b throws-propagation interaction.
-- `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
-  param isn't filled (§27b default-arg).
+- `expressiveness_test` — §27b **named-argument resolution + default fill** at call sites.
+  `def greet(name: String, greeting: String = "Hello")` called three ways:
+  `g.greet(name: "Alice")` → bootstrap `g.greet("Alice", "Hello")` (fills default); selfhost
+  `g.greet("Alice")` (drops default). `g.greet(greeting: "Hi", name: "Carol")` → bootstrap
+  `g.greet("Carol", "Hi")` (reorders named→positional); selfhost `g.greet("Hi", "Carol")`
+  (emits in written order). The selfhost strips the arg labels and emits values as-written,
+  without (a) reordering named args to parameter order or (b) filling omitted defaulted
+  params. Fix = a call-site arg resolver: look up the callee Param list (names + default
+  exprs; module_decls / lookupFnParams), then for each param in order pick the matching
+  named arg, else the matching positional arg, else the param's default expr; emit
+  positionally. Touches the CORE call path (genArgList/genCall/genMemberCall) — many edge
+  cases (mixed positional+named, ctor calls, cross-module callees, defaults referencing
+  other params). Deserves a dedicated session; high regression surface if rushed.
 
-Both remaining gaps are diagnosed; neither is a shared root.
+Both remaining gaps are diagnosed; neither is a shared root. They are the two DEEPEST —
+each its own careful, dedicated change (error-model propagation; core call-site resolver).
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
