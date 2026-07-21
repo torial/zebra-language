@@ -16,19 +16,21 @@ def main()
     assert s.containsIgnoreCase("lo wo")
     assert not s.containsIgnoreCase("xyz")
 
-    # Case-insensitive indexOf (returns -1 when not found)
+    # Case-insensitive indexOf (returns int?, nil when not found — F2)
     var idx = s.indexOfIgnoreCase("world")
-    assert idx == 6
+    assert idx! == 6
     var idx2 = s.indexOfIgnoreCase("xyz")
-    assert idx2 == -1
+    assert idx2 == nil
 
     # lastIndexOf
     var rep = "aababc"
     assert rep.lastIndexOf("ab") == 3
 
-    # indexOfFrom
+    # indexOfFrom (int?, nil when not found — F2)
     var iof = "hello hello".indexOfFrom("hello", 1)
-    assert iof == 6
+    assert iof! == 6
+    var iof_none = "hello".indexOfFrom("z", 0)
+    assert iof_none == nil
 
     # toIntBase
     assert "ff".toIntBase(16) == 255

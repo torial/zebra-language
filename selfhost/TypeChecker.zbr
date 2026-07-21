@@ -1332,11 +1332,14 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "count" or name == "len"
         return Type_.int_
-    if name == "indexOf" or name == "lastIndexOf"
+    # F2: all index-search methods return int? (nil when not found), consistent with
+    # indexOf.  Previously indexOfFrom/indexOfIgnoreCase returned a non-optional int
+    # with a -1 sentinel — inconsistent with indexOf and the docs.
+    if name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase"
         return Type_.optional(Type_.int_)
     if name == "codePointCount" or name == "toInt"
         return Type_.int_
-    if name == "indexOfFrom" or name == "toIntBase" or name == "indexOfIgnoreCase"
+    if name == "toIntBase"
         return Type_.int_
     if name == "toFloat"
         return Type_.float_

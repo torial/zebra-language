@@ -4026,8 +4026,8 @@ const TypeChecker = struct {
             });
             const str_int = std.StaticStringMap(void).initComptime(&.{
                 .{ "toInt",           {} }, .{ "indexOf",          {} }, .{ "count",         {} },
-                .{ "codePointCount",  {} }, .{ "lastIndexOf",      {} }, .{ "indexOfFrom",   {} },
-                .{ "toIntBase",       {} }, .{ "indexOfIgnoreCase",{} },
+                .{ "codePointCount",  {} }, .{ "lastIndexOf",      {} },
+                .{ "toIntBase",       {} },
             });
             const str_bool = std.StaticStringMap(void).initComptime(&.{
                 .{ "contains",              {} }, .{ "startsWith",          {} }, .{ "endsWith",    {} },
@@ -4044,6 +4044,10 @@ const TypeChecker = struct {
             if (str_string.get(method) != null) return .string;
             if (str_int.get(method)    != null) return .int;
             if (str_bool.get(method)   != null) return .bool;
+            // F2: indexOfFrom/indexOfIgnoreCase return int? (nil when not found),
+            // consistent with indexOf and the docs (was a non-optional -1 sentinel).
+            if (std.mem.eql(u8, method, "indexOfFrom") or std.mem.eql(u8, method, "indexOfIgnoreCase"))
+                return .{ .optional = &_opt_int_payload };
             if (std.mem.eql(u8, method, "toFloat")) return .float;
             // BUG-146: nil-on-failure parse variants.
             if (std.mem.eql(u8, method, "tryFloat")) return .{ .optional = &_opt_float_payload };

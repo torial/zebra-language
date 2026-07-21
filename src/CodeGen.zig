@@ -10853,7 +10853,7 @@ const Generator = struct {
             try g.genExpr(obj);
             try g.w.writeAll(", ");
             if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(")) |_ii| @as(i64, @intCast(_ii)) else @as(i64, -1))");
+            try g.w.writeAll(")) |_ii| @as(i64, @intCast(_ii)) else null)");
             return true;
         }
         // ── indexOfFrom(sub, start) ───────────────────────────────────────────
@@ -10864,7 +10864,7 @@ const Generator = struct {
             if (args.len > 1) try g.genExpr(args[1].value) else try g.w.writeAll("0");
             try g.w.writeAll("), ");
             if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(")) |_if| @as(i64, @intCast(_if)) else @as(i64, -1))");
+            try g.w.writeAll(")) |_if| @as(i64, @intCast(_if)) else null)");
             return true;
         }
         // ── toIntBase(base) ───────────────────────────────────────────────────

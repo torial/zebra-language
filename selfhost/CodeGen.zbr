@@ -11268,7 +11268,7 @@ struct Generator
                         genExpr(m.object)
                         w.emit("; const _ioic_p = ")
                         genExpr(args.at(0).value)
-                        w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
+                        w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic null; })")
                         return
                     if mname == "indexOfFrom" and args.len >= 2
                         w.emit("(if (std.mem.indexOfPos(u8, ")
@@ -11277,7 +11277,7 @@ struct Generator
                         genExpr(args.at(1).value)
                         w.emit("), ")
                         genExpr(args.at(0).value)
-                        w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
+                        w.emit(")) |_iof| @as(i64, @intCast(_iof)) else null)")
                         return
                     if mname == "toIntBase" and args.len > 0
                         w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")
@@ -12465,7 +12465,7 @@ struct Generator
             genExpr(m.object)
             w.emit("; const _ioic_p = ")
             genExpr(args.at(0).value)
-            w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })")
+            w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic null; })")
             return
         if mname == "indexOfFrom" and args.len >= 2
             w.emit("(if (std.mem.indexOfPos(u8, ")
@@ -12474,7 +12474,7 @@ struct Generator
             genExpr(args.at(1).value)
             w.emit("), ")
             genExpr(args.at(0).value)
-            w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))")
+            w.emit(")) |_iof| @as(i64, @intCast(_iof)) else null)")
             return
         if mname == "toIntBase" and args.len > 0
             w.emit("(blk_tib: { const _tib_base: u8 = @intCast(")

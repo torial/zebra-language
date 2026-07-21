@@ -36,8 +36,8 @@ def main()
     assert "Hello".startsWithIgnoreCase("he")
     assert "Hello World".endsWithIgnoreCase("WORLD")
     assert "Hello World".containsIgnoreCase("HELLO")
-    assert "Hello World".indexOfIgnoreCase("world") == 6
-    assert "hello world".indexOfFrom("o", 5) == 7
+    assert "Hello World".indexOfIgnoreCase("world")! == 6
+    assert "hello world".indexOfFrom("o", 5)! == 7
     assert "FF".toIntBase(16) == 255
     assert "1010".toIntBase(2) == 10
     var parts = "  hello   world  ".tokenize(" ")

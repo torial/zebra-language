@@ -25754,7 +25754,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:11270
                         self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:11271
-                        self.w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })");
+                        self.w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic null; })");
 // zbr:selfhost/CodeGen.zbr:11272
                         return;
                     }
@@ -25773,7 +25773,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:11279
                         self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:11280
-                        self.w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))");
+                        self.w.emit(")) |_iof| @as(i64, @intCast(_iof)) else null)");
 // zbr:selfhost/CodeGen.zbr:11281
                         return;
                     }
@@ -28209,7 +28209,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12467
             self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:12468
-            self.w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic @as(i64, -1); })");
+            self.w.emit("; var _ioic_i: usize = 0; while (_ioic_i + _ioic_p.len <= _ioic_s.len) : (_ioic_i += 1) { if (std.ascii.eqlIgnoreCase(_ioic_s[_ioic_i.._ioic_i + _ioic_p.len], _ioic_p)) break :blk_ioic @as(i64, @intCast(_ioic_i)); } break :blk_ioic null; })");
 // zbr:selfhost/CodeGen.zbr:12469
             return;
         }
@@ -28228,7 +28228,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12476
             self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:12477
-            self.w.emit(")) |_iof| @as(i64, @intCast(_iof)) else @as(i64, -1))");
+            self.w.emit(")) |_iof| @as(i64, @intCast(_iof)) else null)");
 // zbr:selfhost/CodeGen.zbr:12478
             return;
         }
