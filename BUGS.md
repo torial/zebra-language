@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-197. Next new bug: BUG-198.**
+**Last bug number generated: BUG-198. Next new bug: BUG-199.**
 
 ---
 
@@ -35,6 +35,19 @@ Two faces of the same nested-generic gap: (a) `.len`/`.at` on a `for` binding ov
 `List(List(T))` → "no field 'len' in ArrayList(...)" (rebinding to a typed local
 fixes it); (b) `.add` on a `List(List(float))` local → "no member function named
 'add'". `List(List(str))` fares better than `List(List(float))`/`List(List(int))`.
+
+### BUG-198: assigning a union value to an OPTIONAL field drops the box type arg ⛔ OPEN (both compilers)
+Direct assignment of a non-optional union value to an optional heap-boxed field —
+e.g. `def withSelfType(t: Type_): .self_type_override = t` where the field is
+`Type_?` — emits `_allocator.create()` with **no type argument** (`create()` needs
+`create(T)`): `{ const _rp = _allocator.create() catch @panic("OOM"); _rp.* = t; self.f = _rp; }`
+→ "member function expected 1 argument(s), found 0". The auto-box path for
+`union → optional-field` omits `@TypeOf(t)`/the concrete type. Workaround used at the
+call site (extend self-typing): declare the setter param as the OPTIONAL type
+(`t: Type_?`) so the optional wrap happens at the call boundary (which boxes
+correctly), not in the setter body. Real fix: emit `_allocator.create(@TypeOf(t))`
+(or the field's element type) in the union→optional-field boxing codegen. Surfaced
+during the extend_test divergence fix (2026-07-20).
 
 ### BUG-197: SIMD `f32x8` islanded — cannot ingest computed / collection data ✅ FIXED (all 3 tiers, 2026-07-18)
 **RESOLVED for real use** — the data bridge is in (commits `ac48cbe`, `015e8c3`):

@@ -14,18 +14,16 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ## First full run (test/ + examples/, JOBS=3)
 
 ```
-single-module: 286 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
+single-module: 288 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 4 remain: 15 fixed; see below)
+SELFHOST GAPS: 19  (→ 3 remain: 16 fixed; see below)
 BOOTSTRAP GAPS: 14  (unchanged)
 ```
 
-Update 2026-07-20: closed 7 more (nil_tracking, forgot_parens, string_methods,
-selfhost_probe6, file_io, method_chain_throws, fuzzy_selfhost) — 15 of 19 fixed,
-**4 selfhost gaps remain**. The 286-agree count was the full re-run after the first
-six; fuzzy_selfhost was gated (round-trip/smoke/compile_check + its per-file
-divergence) but its full re-run is pending (host was memory-constrained). 14 bootstrap
-gaps unchanged (bootstrap binary untouched).
+Update 2026-07-20: closed 8 more (nil_tracking, forgot_parens, string_methods,
+selfhost_probe6, file_io, method_chain_throws, fuzzy_selfhost, extend) — 16 of 19
+fixed, **3 selfhost gaps remain** (expressiveness, json, throws_autoprop). Full
+re-run: 288 agree-pass, 14 bootstrap gaps unchanged (bootstrap binary untouched).
 
 The headline is reassuring: **286 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
@@ -94,19 +92,25 @@ targets, not open design questions.
   `unresolved` so the local was never typed `list_`. Added standalone `typeArgToType(Expr)`
   (bare name / nested List/HashMap/Chan → Type_), used for the List element in inferExpr.
 
-**REMAINING (4) — diagnosed roots** (deeper than the return-type/handler class above; each
+- `extend_test` (`ccf0c44`) — three layers: (1) call `s.shout()` wasn't rewritten to the
+  emitted free function `_ext_String_shout(s)` (added ext_method_keys registry + genCall
+  rewrite); (2) inside the `extend` body `this.upper().concat("!")` emitted `_mc.concat(…)`
+  because `this` wasn't typed str (added InferCtx.self_type_override, seeded in genExtMethod);
+  (3) `print(s.shout())` used `{any}` (byte output) not `{s}` (added ext_method_ret registry +
+  printFmtSpec ext-call path). Surfaced BUG-198 (union→optional-field boxing drops the type arg).
+
+**REMAINING (3) — diagnosed roots** (deeper than the return-type/handler class above; each
 still has a known-good bootstrap emit to diff):
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
   §28b throws-propagation interaction.
 - `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
   param isn't filled (§27b default-arg).
-- `extend_test` — extension-method dispatch (`s.shout()` on a `str`).
 - `json_test` (PARTIAL) — getObj→json_value FIXED; getList returns a `[]Value` slice yet
   the selfhost types it `list_` so for-in emits `.items` (bootstrap iterates the slice
   directly). Needs a slice-of-T type or for-in handling.
 
-All 4 remaining gaps are now diagnosed (roots above); none is a shared root.
+All 3 remaining gaps are now diagnosed (roots above); none is a shared root.
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
