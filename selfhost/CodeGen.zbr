@@ -896,6 +896,22 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             g.throws_methods.add(makeDottedKey(s.name, dm.name))
                         if dm.name == "toString"
                             g.toString_types.add(s.name)
+            on Decl.extend_ as ext
+                # Register `extend TypeName` methods so a call `obj.m()` on a value
+                # of TypeName rewrites to the emitted free function `_ext_TypeName_m(obj)`.
+                var ext_tn0: str = ""
+                branch ext.target
+                    on TypeRef.named as etn0
+                        ext_tn0 = etn0.name
+                    else
+                        pass
+                if ext_tn0.len > 0
+                    for emem0 in ext.members
+                        if emem0 is Decl.method as emth0
+                            var ekey0 = makeDottedKey(ext_tn0, emth0.name)
+                            g.ext_method_keys.add(ekey0)
+                            if emth0.return_type != nil
+                                g.registerExtMethodRet(ekey0, emth0.return_type!)
             else
                 pass
     # Closure-factory pre-pass: top-level fns that `return` a capture closure AND
@@ -1819,6 +1835,8 @@ struct Generator
     var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
+    var ext_method_keys      : StrSet  # "TypeName.method" for `extend TypeName` methods → rewrite obj.m() to _ext_TypeName_m(obj)
+    var ext_method_ret       : HashMap(str, TypeRef)  # "TypeName.method" → return TypeRef (print-format inference can't see the _ext_ rewrite)
     var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
     var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
     # Phase 7b additions
@@ -1920,6 +1938,8 @@ struct Generator
         .boxed_variants        = StrSet()
         .ref_fields            = StrSet()
         .opt_ref_fields        = StrSet()
+        .ext_method_keys       = StrSet()
+        .ext_method_ret        = HashMap()
         .unwrapped_imports     = StrSet()
         .exposed_module_vars   = HashMap(str, str)()
         # Phase 7b field initializations
@@ -4320,6 +4340,38 @@ struct Generator
         if mth.stmts as mstmts
             w.emit(" {\n")
             var ig = indented()
+            # Seed inference so `this`/`self` resolves to the extend target type, so
+            # stdlib method chains on `this` (e.g. `this.upper().concat("!")`) dispatch
+            # to string codegen instead of a raw `_mc.concat(...)` method call.
+            var ext_self_t: Type_ = Type_.named(tname)
+            if tname == "str" or tname == "String"
+                ext_self_t = Type_.string_
+            else if tname == "int"
+                ext_self_t = Type_.int_
+            else if tname == "uint"
+                ext_self_t = Type_.uint_
+            else if tname == "float"
+                ext_self_t = Type_.float_
+            else if tname == "bool"
+                ext_self_t = Type_.bool_
+            else if tname == "char"
+                ext_self_t = Type_.char_
+            var ext_ctx = InferCtx(.module_types, "")
+            ext_ctx.withDepTypes(.dep_types)
+            ext_ctx.withSelfType(ext_self_t)
+            if mth.return_type != nil
+                ext_ctx.withReturnType(typeFromRef(mth.return_type!))
+            for pp in mth.params
+                if pp.type_ != nil
+                    ext_ctx.bind(pp.name, typeFromRef(pp.type_!))
+                else
+                    ext_ctx.bind(pp.name, Type_.unknown_)
+            walkStmts(mstmts, ext_ctx)
+            ig = ig.withInferCtx(ext_ctx)
+            # `self` is emitted for a str target as `[]const u8` → seed str_params so a
+            # bare `self` reference dispatches str methods.
+            if isString(ext_self_t)
+                ig.str_params.add("self")
             ig.genStmts(mstmts)
             writeIndent()
             w.emit("}\n")
@@ -7443,9 +7495,72 @@ struct Generator
     # Returns the Zig format specifier for a print argument, matching
     # src/CodeGen.zig::printFmt. Uses inferExpr when available; falls back to
     # the heuristic. Zig 0.15 requires {s} for slices and {any} for optionals.
+    # Canonical `extend`-target name for a receiver type — matches how extension
+    # functions are named (_ext_<name>_<method>) and keyed in ext_method_keys/_ret.
+    # "" if the type is not an extend target.
+    def extTypeName(t: Type_): str
+        branch t
+            on Type_.string_
+                return "String"
+            on Type_.int_
+                return "int"
+            on Type_.uint_
+                return "uint"
+            on Type_.float_
+                return "float"
+            on Type_.bool_
+                return "bool"
+            on Type_.char_
+                return "char"
+            on Type_.string_builder
+                return "StringBuilder"
+            on Type_.named as nm
+                return nm
+            else
+                return ""
+
+    # If `e` is a registered extension-method call `obj.m(...)`, return m's declared
+    # return type; else nil.  Used for print-format inference, which sees the original
+    # `obj.m()` (the _ext_ rewrite is in genCall) and can't resolve it via inferExpr.
+    def extCallReturnType(e: Expr): Type_?
+        if e is Expr.call as ec
+            if ec.callee is Expr.member as em
+                if .infer_ctx != nil
+                    var tn: str = extTypeName(inferExpr(em.object, .infer_ctx!))
+                    if tn.len > 0
+                        var k = makeDottedKey(tn, em.member)
+                        if ext_method_ret.contains(k)
+                            return typeFromRef(ext_method_ret.fetch(k))
+        return nil
+
     def printFmtSpec(e: Expr): str
         if isStringLitArg(e)
             return "{s}"
+        # Extension-method call: use the registered return type (see extCallReturnType).
+        if extCallReturnType(e) as _ext_rt
+            branch _ext_rt
+                on Type_.string_
+                    return "{s}"
+                on Type_.str_slice
+                    return "{s}"
+                on Type_.int_
+                    return "{}"
+                on Type_.uint_
+                    return "{}"
+                on Type_.bool_
+                    return "{}"
+                on Type_.float_
+                    return "{d}"
+                on Type_.char_
+                    return "{u}"
+                on Type_.int_n as _
+                    return "{}"
+                on Type_.uint_n as _
+                    return "{}"
+                on Type_.float_n as _
+                    return "{d}"
+                else
+                    return "{any}"
         if .infer_ctx != nil
             var t: Type_ = inferExpr(e, .infer_ctx!)
             # Unwrap one optional layer: inside nil-check bodies the value is
@@ -8921,6 +9036,13 @@ struct Generator
     def addExposedModuleVar(name: str, alias: str)
         .exposed_module_vars.put(name, alias)
 
+    # Register an extension method's return type. Wrapped in a method so the
+    # HashMap.put uses a bare self-field — an explicit `g.ext_method_ret.put(...)`
+    # from the setup pass mis-resolves in the bootstrap and drops the `catch`
+    # (the documented g.<hashmapfield> trap).
+    def registerExtMethodRet(key: str, rt: TypeRef)
+        .ext_method_ret.put(key, rt)
+
     # ── genIdent ──────────────────────────────────────────────────────────────
 
     # BUG-187: nil-narrowing.  Inside `if x != nil` (where x is a plain local not
@@ -9891,6 +10013,23 @@ struct Generator
                     w.emit("{}")
                 w.emit(" }")
                 return
+        # Extension-method call: obj.method(args) where "TypeName.method" is a
+        # registered `extend TypeName` method. Rewrite to the emitted free function
+        # `_ext_TypeName_method(obj, args)`. Mirrors src/CodeGen.zig. Must run before
+        # the generic member dispatch, which would emit `obj.method()` (no such method
+        # on a []const u8 / primitive). Divergence audit: extend_test.
+        if c.callee is Expr.member as extm
+            if .infer_ctx != nil
+                var ext_tn: str = extTypeName(inferExpr(extm.object, .infer_ctx!))
+                if ext_tn.len > 0
+                    if ext_method_keys.contains_(makeDottedKey(ext_tn, extm.member))
+                        w.emit("_ext_" + ext_tn + "_" + extm.member + "(")
+                        genExpr(extm.object)
+                        for ea in c.args
+                            w.emit(", ")
+                            genExpr(ea.value)
+                        w.emit(")")
+                        return
         # Member call dispatch
         if c.callee is Expr.member as m
             genMemberCall(m, c.args)

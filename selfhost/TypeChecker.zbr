@@ -1019,6 +1019,10 @@ class InferCtx
     var warn_non_exhaustive: bool
     var file: str  # source file path for error reporting in inferExpr
     var source: str  # full source text, for source-line/caret rendering in errorMessages()
+    # Non-nil inside an `extend T` method body where T is a primitive (str/int/…):
+    # `this`/`self` is that primitive type, not a named class. inferExpr's this_ branch
+    # returns this override when set, so stdlib method chains on `this` dispatch.
+    var self_type_override: Type_?
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1032,6 +1036,7 @@ class InferCtx
         .warn_non_exhaustive = false
         .file = ""
         .source = ""
+        .self_type_override = nil
 
     def withFile(f: str)
         .file = f
@@ -1050,6 +1055,14 @@ class InferCtx
     # standalone callers (tests) don't need to build a dep table.
     def withDepTypes(dt: ModuleTypes)
         .dep_types = dt
+
+    # Seed `this`/`self` as a specific type — used for `extend T` method bodies
+    # where T is a primitive (str/int/…) so this_ does not resolve to a named class.
+    # Param is Type_? (like withReturnType) so the optional wrap happens at the call
+    # boundary; assigning a bare Type_ to the optional field here hit a boxing codegen
+    # bug (`_allocator.create()` emitted without its type arg).
+    def withSelfType(t: Type_?)
+        .self_type_override = t
 
     def enableStrict()
         .strict = true
@@ -1490,6 +1503,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             var inner_unk: Type_ = Type_.context_dependent
             return Type_.optional(inner_unk)
         on Expr.this_ as _
+            # `extend T` on a primitive: `this` is that primitive (str/int/…),
+            # not a named class — see self_type_override.
+            if ctx.self_type_override as _sto
+                return _sto
             if ctx.current_class == ""
                 return Type_.unknown_
             return Type_.named(ctx.current_class)
