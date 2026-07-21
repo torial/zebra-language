@@ -614,6 +614,28 @@ def typeFromName(n: str): Type_
 # Maps a parsed Ast.TypeRef into the Type_ domain. Phase 16b handles
 # primitive named, nilable, ref_to, void; 17+ extend to generics and tuples.
 
+# Convert a type-argument EXPRESSION (as written in a value ctor like `List(X)` or
+# `HashMap(K,V)`) into a Type_. The parser hands these as call/ident exprs, not
+# TypeRefs, so typeFromRef can't consume them. Handles a bare type name plus the
+# nested generic applications List(T) / HashMap(K,V) / Chan(T); falls back to unknown_
+# for anything more exotic — enough for `.len`→`.items.len` on a nested-generic List
+# local (e.g. `List(HashMap(str,int))`).
+def typeArgToType(e: Expr): Type_
+    branch e
+        on Expr.ident as tn
+            return typeFromName(tn.name)
+        on Expr.call as gc
+            if gc.callee is Expr.ident as gid
+                if gid.name == "HashMap" and gc.args.len == 2
+                    return Type_.hashmap_(HashMapType_(typeArgToType(gc.args.at(0).value), typeArgToType(gc.args.at(1).value)))
+                if gid.name == "List" and gc.args.len == 1
+                    return Type_.list_(typeArgToType(gc.args.at(0).value))
+                if gid.name == "Chan" and gc.args.len == 1
+                    return Type_.chan_(typeArgToType(gc.args.at(0).value))
+            return Type_.unknown_
+        else
+            return Type_.unknown_
+
 def typeFromRef(tr: TypeRef): Type_
     branch tr
         on TypeRef.named as n
@@ -1902,8 +1924,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 if gc.args.at(1).value is Expr.ident as vn
                                     return Type_.hashmap_(HashMapType_(typeFromName(kn.name), typeFromName(vn.name)))
                         if gcname == "List" and gc.args.len == 1
-                            if gc.args.at(0).value is Expr.ident as tn
-                                return Type_.list_(typeFromName(tn.name))
+                            # Element may be a bare name OR a nested generic
+                            # (List(HashMap(K,V)) etc.) — typeArgToType handles both.
+                            return Type_.list_(typeArgToType(gc.args.at(0).value))
                         # Generic function call: identity(str)("hi") — the outer call's callee is
                         # identity(str), a call of a generic fn with a type arg. Return type is the
                         # function's declared return type with the type param substituted.
