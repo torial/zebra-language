@@ -96,11 +96,11 @@ pub fn main(init: std.process.Init) void {
     var gui_backend: CodeGen.GuiBackend = .stub;
     var release: bool = false;
     var turbo: bool = false;
-    // §28c: exhaustiveness warnings are ON by default pre-1.0 (a same-module
-    // union `branch` with an `else` that doesn't explicitly handle every
-    // variant warns).  `--no-warn-non-exhaustive` silences it; the legacy
-    // `--warn-non-exhaustive` is kept as an accepted no-op.
-    var warn_non_exhaustive: bool = true;
+    // §28c (revised 2026-07-21): the else-catches-unnamed-variants warning is now
+    // OFF by default (it was noisy — N warnings per else branch); opt in with
+    // `--warn-non-exhaustive`.  `--no-warn-non-exhaustive` is an accepted no-op.
+    // The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
+    var warn_non_exhaustive: bool = false;
     var test_mode: bool = false;
     var build_mode: bool = false;
     var list_targets_mode: bool = false;
@@ -173,9 +173,9 @@ pub fn main(init: std.process.Init) void {
             // working.  GameEngine script-binding layer uses this.
             library_mode = true;
         } else if (std.mem.eql(u8, arg, "--warn-non-exhaustive")) {
-            warn_non_exhaustive = true; // §28c: now the default; kept as a no-op.
+            warn_non_exhaustive = true; // §28c (revised): opt IN to the warning.
         } else if (std.mem.eql(u8, arg, "--no-warn-non-exhaustive")) {
-            warn_non_exhaustive = false; // §28c: opt out of the default-on warning.
+            warn_non_exhaustive = false; // accepted no-op (already the default).
         } else if (std.mem.eql(u8, arg, "--warn-implicit-try")) {
             // §28b step 1 (explicit-`?` migration): print IMPLICIT_TRY lines
             // for every auto-inserted `try`.  Global so dep compilation

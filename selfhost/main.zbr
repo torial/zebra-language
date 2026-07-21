@@ -2042,9 +2042,11 @@ def main()
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
     var lib_mode             = args.contains("--library-mode")
-    # §28c: exhaustiveness warnings are ON by default pre-1.0; opt out with
-    # --no-warn-non-exhaustive.  (--warn-non-exhaustive kept as an accepted no-op.)
-    var warn_ne              = not args.contains("--no-warn-non-exhaustive")
+    # §28c (revised 2026-07-21): the else-catches-unnamed-variants WARNING is now
+    # OFF by default (it was noisy — N warnings per else branch); opt in with
+    # --warn-non-exhaustive.  --no-warn-non-exhaustive is kept as an accepted no-op.
+    # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
+    var warn_ne              = args.contains("--warn-non-exhaustive")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
     var has_gui              = gui_backend != ""
