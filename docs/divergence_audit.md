@@ -14,16 +14,16 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ## First full run (test/ + examples/, JOBS=3)
 
 ```
-single-module: 288 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
+single-module: 289 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 3 remain: 16 fixed; see below)
+SELFHOST GAPS: 19  (→ 2 remain: 17 fixed; see below)
 BOOTSTRAP GAPS: 14  (unchanged)
 ```
 
-Update 2026-07-20: closed 8 more (nil_tracking, forgot_parens, string_methods,
-selfhost_probe6, file_io, method_chain_throws, fuzzy_selfhost, extend) — 16 of 19
-fixed, **3 selfhost gaps remain** (expressiveness, json, throws_autoprop). Full
-re-run: 288 agree-pass, 14 bootstrap gaps unchanged (bootstrap binary untouched).
+Update 2026-07-20: closed 9 more (nil_tracking, forgot_parens, string_methods,
+selfhost_probe6, file_io, method_chain_throws, fuzzy_selfhost, extend, json) — 17 of
+19 fixed, **2 selfhost gaps remain** (expressiveness §27b, throws_autoprop §28b — the
+two deepest). Full re-run: 289 agree-pass, 14 bootstrap gaps unchanged.
 
 The headline is reassuring: **286 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
@@ -99,18 +99,19 @@ targets, not open design questions.
   (3) `print(s.shout())` used `{any}` (byte output) not `{s}` (added ext_method_ret registry +
   printFmtSpec ext-call path). Surfaced BUG-198 (union→optional-field boxing drops the type arg).
 
-**REMAINING (3) — diagnosed roots** (deeper than the return-type/handler class above; each
-still has a known-good bootstrap emit to diff):
+- `json_test` (`9f8740e`) — getObj→json_value fixed earlier; this closed the getList layer:
+  getList returns a `[]Value` SLICE but was typed list_ so for-in emitted `.items`. Added
+  isJsonArrayIter (list_(json_value), which only getList produces) + a for-in slice case,
+  and bound the loop var to json_value so `tag.isNull()` dispatches.
+
+**REMAINING (2) — the two deepest, diagnosed roots**:
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
   §28b throws-propagation interaction.
 - `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
   param isn't filled (§27b default-arg).
-- `json_test` (PARTIAL) — getObj→json_value FIXED; getList returns a `[]Value` slice yet
-  the selfhost types it `list_` so for-in emits `.items` (bootstrap iterates the slice
-  directly). Needs a slice-of-T type or for-in handling.
 
-All 3 remaining gaps are now diagnosed (roots above); none is a shared root.
+Both remaining gaps are diagnosed; neither is a shared root.
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
