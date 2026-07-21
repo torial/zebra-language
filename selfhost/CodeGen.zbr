@@ -6574,6 +6574,31 @@ struct Generator
                 w.emit("}\n")
             else if isSqliteQueryIter(fi.iter)
                 genForInSqliteQuery(fi)
+            else if isJsonArrayIter(fi.iter)
+                # getList() → []Value slice: iterate directly, no `.items`.
+                writeIndent()
+                w.emit("for (")
+                if fi.iter is Expr.try_
+                    w.emit("(")
+                    genExpr(fi.iter)
+                    w.emit(")")
+                else
+                    genExpr(fi.iter)
+                w.emit(") |" + vname + "| {\n")
+                for_loop_vars.add(vname)
+                # The element is a JSON Value → bind the loop var so `tag.isNull()` etc.
+                # dispatch to the json_value method handlers.
+                if ig.infer_ctx != nil
+                    ig.infer_ctx!.bind(vname, Type_.json_value)
+                ig.discardUnusedLoopVars(fi)
+                ig.emitForGuard(fi)
+                ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_!)
+                writeIndent()
+                w.emit("}\n")
             else
                 writeIndent()
                 w.emit("for (")
@@ -6851,6 +6876,17 @@ struct Generator
                     if m.object is Expr.ident as oid
                         if oid.name == "Net"
                             return true
+        return false
+
+    # A getList("…") result is a `[]Value` SLICE (not an ArrayList), so for-in must
+    # iterate it directly — no `.items`. The selfhost types it list_(json_value), and
+    # that element type arises ONLY from getList (there is no List(JsonValue) ctor), so
+    # it uniquely marks a JSON-array slice. Mirrors the bootstrap's json_array type.
+    def isJsonArrayIter(e: Expr): bool
+        if .infer_ctx != nil
+            var jt: Type_ = inferExpr(e, .infer_ctx!)
+            if jt is Type_.list_ as jelem
+                return jelem is Type_.json_value
         return false
 
     # Emit just the object part of a split call: str.split(sep) → str
