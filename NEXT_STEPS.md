@@ -137,6 +137,19 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
+- [ ] **Single-file emission — codegen architecture** [SPIKE DONE 2026-07-21, impl not started].
+  Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
+  **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
+  full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced
+  user decls leave file scope, so preamble internals can't shadow them), emits the preamble once
+  (the ~9-module selfhost compiles ~9 copies today), and **deletes** the cross-module
+  `_initAllocator`/`_initIo`/`_zbr_error_msg` fan-out (`main.zig` hand-wires it for 8 modules).
+  **Justification is architecture + F5-closure + simplification, NOT speed** — the spike measured
+  the compile-time win as modest (~12 ms/preamble-copy frontend; Sema win real but unmeasurable in
+  noise). Prototype compiled + ran; cross-module `use`, bare outward preamble resolution, and F5
+  dissolution all verified. Real project: both emitters kept equivalent, round-trip goes
+  single-artifact, phased behind a temporary `--single-file` flag. **Supervised, careful, gated.**
+  → *Design + phased plan: `docs/single_file_emit_design.md`.* Supersedes the bespoke F5 fix.
 
 ## Dogfood programs (IO + net + threads — surface stdlib/runtime gaps; each self-verifies)
 

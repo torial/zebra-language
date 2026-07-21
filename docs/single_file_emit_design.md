@@ -1,0 +1,215 @@
+# Single-file emission — design note
+
+**Status:** design / spike complete, implementation not started (2026-07-21).
+**Origin:** F5 (preamble-internal names leak into the user namespace) from the
+CherryCobbler dogfood; escalated to an architecture change on Sean's suggestion.
+**Scope:** codegen only — changes what the Zebra compiler *emits*, in both
+`src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr`, kept equivalent.
+
+---
+
+## 1. Motivation
+
+Today the compiler emits **one `.zig` file per Zebra module**, and each file
+**inlines the entire ~3712-line runtime preamble** (`selfhost/stdlib_preamble.zig`)
+at file scope, followed by the user's top-level declarations *in the same scope*.
+
+Three problems fall out of that shape:
+
+1. **F5 — name collisions.** A preamble helper's internal binding (`var h`,
+   `const handle`, a parameter `handle`, a capture `|item|`, …) shares file scope
+   with the user's top-level declarations. Zig forbids a function-local/param/capture
+   from shadowing *any* enclosing-scope declaration, so a user `def h` collides with
+   the preamble's `comptime var h` inside `_zbr_hash` (and 9 other `h` bindings), and
+   `def handle` collides with the process helper's `const handle`. The collision
+   surface is the preamble's *entire* identifier set — measured at **412 distinct
+   non-`_` binding names** (locals + params + captures). There is no narrow rename
+   that closes the class.
+
+2. **Preamble duplication.** A multi-module program emits N copies of the preamble.
+   Verified: a trivial 2-module program emits `app.zig` (183 KB) + `helper.zig`
+   (183 KB), each a full preamble copy. The **selfhost compiler itself is ~9 core
+   modules** (Parser, Resolver, AstBuilder, Ast, CodeGen, CgHelpers, TypeChecker,
+   Checker, main) → ~9 preamble copies compiled on every `zig build` / round-trip.
+
+3. **Cross-module runtime boilerplate.** Each module carries its *own*
+   `_io`/`_allocator`/`_arena`/`_error_ctx`, so `selfhost/main.zig` hand-wires
+   `@import("Parser.zig")._initAllocator(a)`, `._initIo(io)`, and a
+   `_zbr_error_msg()` fan-out across all 8 dependency modules.
+
+**Single-file emission** — merge all modules into one `.zig` file, each wrapped in a
+namespace `struct`, with **one** shared preamble at file scope — resolves all three:
+the preamble's internals no longer share scope with user top-level names (F5 gone),
+the preamble appears once, and the per-module runtime state unifies into one set of
+file-scope globals (the init fan-out is deleted).
+
+---
+
+## 2. Why the alternatives were rejected
+
+| Approach | Verdict |
+|---|---|
+| **Prefix all preamble bindings** (`h`→`_h`, …) | Rejected. 412 sites incl. params/captures — a risky mass-rename of the most critical shared file, disproportionate to a low-sev bug. |
+| **Separate imported preamble module** (`@import("_rt.zig")`) | Rejected on Zig 0.16: `usingnamespace` is **removed** (no cheap re-export), and mutable globals **cannot be `const`-aliased** across files (`const _allocator = _rt._allocator` → "must be comptime-known"). Forces qualifying every `_rt._allocator`/`_rt._str_concat` reference in both emitters. |
+| **Wrap the preamble in a `struct`** (same file) | Rejected — *verified* that file-scope user decls still shadow into a file-scope struct's methods. Does not help. |
+| **Wrap the user code in a struct** (bespoke) | This is essentially single-file for one module. Single-file generalizes it and adds the dedup + simplification wins, so it subsumes this. |
+
+Single-file is the **only** design that closes F5 *without* reference qualification,
+because everything shares one file scope and bare references to preamble
+symbols/globals resolve outward for free.
+
+---
+
+## 3. Spike results (2026-07-21) — what is proven
+
+A hand-built prototype (`app` + `helper` merged into one file, one preamble)
+**compiled and ran** (`hi world 42 42`). Established:
+
+- ✅ **F5 dissolves.** `pub fn h` / `pub fn handle` — matching the preamble's
+  internal `h`/`handle` bindings — compile with **zero** shadow errors once
+  namespaced inside a module struct (off file scope).
+- ✅ **Bare outward resolution works.** A module struct's method referencing
+  file-scope `_str_concat`/`_allocator` compiles — no qualification needed.
+- ✅ **Cross-module `use ... exposing` works.** A second module referencing
+  `model.Value` / `model.make` via `const Value = model.Value;` mirrors today's
+  `const Value = @import("model.zig").Value;` — same reference model, `@import`
+  becomes a nested struct name.
+
+### Wiring problems found (by hitting them) and their fixes
+
+1. **The main module must also be namespaced.** Leaving it at file scope makes a
+   name declared in *both* a module struct and file scope an "ambiguous reference"
+   from inside the struct. → Every module (incl. main) becomes `const M = struct{…}`;
+   a thin file-scope `pub fn main(_zinit)` shim calls `mainmod.run()`.
+
+2. **Module-var init must be restructured.** The preamble's `_initIo` calls a
+   file-scope `_initModuleVars()`, but single-file has N modules each with their own.
+   → One file-scope `_initModuleVars()` dispatcher fans out to
+   `helper._initModuleVars()`, `app._initModuleVars()`, … (each idempotent).
+
+3. **Runtime state unifies.** One file-scope `_io`/`_allocator`/`_arena`/`_error_ctx`
+   shared by all module structs; the per-module `_initAllocator`/`_initIo`/
+   `_zbr_error_msg` fan-out is deleted.
+
+### Compile-time: the original motivation did NOT pan out
+
+Honest finding: the speedup that motivated the idea is **modest and largely
+unmeasurable on this host.**
+
+- Frontend (`zig ast-check`, parse+AstGen) cost is **~12 ms per preamble copy**
+  (72 ms with preamble vs a 60 ms floor). For the 9-module selfhost that is ~100 ms
+  of parse saved. Real, small.
+- Sema (semantic analysis of the *used* preamble subset ×N) is where a larger win
+  could hide, but Zig analyzes lazily (unused preamble is DCE'd, never Sema'd), the
+  2-module toy is too small to exercise it, and full-build timing was pure noise
+  (variance 4 s–34 s as the shared machine contended). No trustworthy figure.
+
+**Therefore the justification for this change is architecture + F5-closure +
+emit-simplification, NOT compile speed.** The "single file is faster" folklore
+most likely refers to avoiding redundant reparse across a large project; Zig
+already dedups `@import`s and analyzes lazily, so our shape sees only a modest win.
+
+---
+
+## 4. Target emitted shape
+
+```zig
+// ── one shared preamble at file scope (globals + ~375 helpers) ──
+const std = @import("std"); const builtin = @import("builtin");
+var _io: std.Io = undefined; var _allocator: std.mem.Allocator = …;
+// … the whole preamble once …
+
+// ── each module → a namespace struct (dependency order) ──
+const helper = struct {
+    pub fn greet(name: []const u8) []const u8 { return _str_concat("hi ", name, _allocator); }
+    var _vars_inited = false;
+    pub fn _initModuleVars() void { if (_vars_inited) return; _vars_inited = true; }
+};
+const app = struct {
+    const greet = helper.greet;               // `use helper exposing greet`
+    pub fn h(x: i64) i64 { return x + 1; }     // user `def h` — no longer collides
+    pub fn run() void { … }
+    var _vars_inited = false;
+    pub fn _initModuleVars() void { … }
+};
+
+// ── one file-scope init dispatcher + entry shim ──
+pub fn _initModuleVars() void { helper._initModuleVars(); app._initModuleVars(); }
+pub fn main(_zinit: std.process.Init) void {
+    _io = _zinit.io; _allocator = _arena.allocator(); defer _arena.deinit();
+    _initModuleVars(); app.run();
+}
+```
+
+---
+
+## 5. Integration cost
+
+Smaller than first feared:
+
+- **`build.zig`** already builds `zebra.exe` with `selfhost/main.zig` as the root
+  (Zig discovers dependencies via `@import`). Single-file makes `main.zig`
+  self-contained → the build barely changes; the per-module install artifacts retire.
+- **`tools/bootstrap_check.sh`** regenerates + byte-diffs **one** artifact instead of
+  9 — a *simplification* of the round-trip, not a complication.
+- **The checked-in `selfhost/*.zig` per-module artifacts** are replaced by a single
+  generated `selfhost/main.zig`. (Repo change: retire 8 files, one grows.)
+- **Both emitters** gain the namespacing / init-dispatch / entry-shim / export-hoist
+  logic and must stay equivalent through the round-trip.
+
+---
+
+## 6. Phased, de-risked plan
+
+**Isolation tactic:** a *temporary* `--single-file` codegen mode flag (default off).
+The new emit path develops alongside the trusted multi-file path; nothing flips until
+each phase's gates are green. Once single-file is the default and multi-file is
+retired, the flag is removed (no permanent dual-mode maintenance tax). Gates after
+every phase: `selfhost_smoke.sh`, `bootstrap_check.sh`, `JOBS=3 compile_check.sh`.
+
+- **Phase 1 — scaffold.** Add the `--single-file` flag + a parallel emit entry point
+  that, for a *single-module* program, produces the namespaced shape (one module
+  struct + shim). No multi-module merge yet. Prove parity on single-module fixtures.
+- **Phase 2 — module namespacing + cross-module rebind.** Emit dependency modules as
+  `const M = struct{…}` in topological order; `@import("X.zig").Y` → `X.Y`. Handle the
+  `use ... exposing` rebindings. Prove on the 2-module fixtures.
+- **Phase 3 — unify runtime + init dispatch.** One preamble, one shared runtime state,
+  the file-scope `_initModuleVars` dispatcher; delete the cross-module init fan-out.
+- **Phase 4 — edge cases.** `export fn` hoisting (lib mode), GUI preamble section,
+  napi preamble, circular `use`, generics referenced across modules, and the selfhost
+  compiling *itself* (`main.zbr` → one file).
+- **Phase 5 — round-trip/build infra.** `build.zig` self-contained root;
+  `bootstrap_check.sh` single-artifact regen+diff; update `compile_check.sh` /
+  `divergence_check.sh` expectations; retire per-module `selfhost/*.zig`.
+- **Phase 6 — flip default, remove the multi-file path and the flag.**
+
+Keep bootstrap ↔ selfhost convergence at every step (this is gated, supervised work).
+
+---
+
+## 7. Open questions / risks
+
+- **Circular `use`.** Two modules that `use` each other become mutually-referential
+  structs in one file — Zig allows forward references within a file, but the init
+  order and any comptime cross-refs need checking.
+- **Generics across modules.** A generic type from module A instantiated in module B
+  must resolve as `A.Stack(int)`; confirm the `_ttag_*` type-tag constants (emitted
+  per class in the *user* region) land in the right namespace.
+- **`export fn` / `--target node-addon`.** Exports must stay at file scope; they need
+  hoisting out of the module struct with a file-scope wrapper.
+- **Emitted-file size.** One `selfhost/main.zig` will be large (~all modules + one
+  preamble). Diffable and buildable, but review tooling should expect it.
+- **Whether single-file becomes the *default* or stays a mode.** Default = F5 fixed
+  everywhere + simplification, but changes all emitted output and the round-trip. A
+  permanent mode is a maintenance tax and would only fix F5 in that mode. Plan assumes
+  **default**, multi-file retired.
+
+---
+
+## 8. Interim (until this lands)
+
+F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after
+a common short preamble-internal identifier (`h`, `handle`). No preamble stopgap was
+applied — a partial rename (`h` has 10 binding sites incl. GUI `w,h` params) is itself
+the whack-a-mole this change exists to avoid, and would be obsoleted by single-file.
+See `zebra/FINDINGS.md` (CherryCobbler) F5 for the original report.

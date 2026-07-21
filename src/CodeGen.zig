@@ -101,6 +101,15 @@ pub var allow_implicit_try: bool = false;
 /// before the guesses become Zebra-level "cannot infer; annotate" diagnostics.
 pub var warn_inference_guess: bool = false;
 
+/// Single-file emission mode (`--single-file`).  When set, the compiler emits ALL
+/// modules of a program into one `.zig` file — each module wrapped in a namespace
+/// `struct`, sharing one runtime preamble at file scope — instead of one file per
+/// module.  This dissolves the F5 name-collision class (namespaced user decls leave
+/// file scope, so preamble internals can't shadow them) and emits the preamble once.
+/// Off by default; developed phase-by-phase (see docs/single_file_emit_design.md).
+/// Phase 1 (scaffold): flag is recognized and threaded but not yet acted upon.
+pub var single_file: bool = false;
+
 // ── Compile-time hash (FNV-1a 32-bit) ────────────────────────────────────────
 // Used internally by CodeGen to compute class-name hash components for
 // `_ttag_ClassName` constants.  The algorithm must stay bitwise-identical to

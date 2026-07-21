@@ -165,6 +165,12 @@ pub fn main(init: std.process.Init) void {
             release = true;
         } else if (std.mem.eql(u8, arg, "--turbo")) {
             turbo = true;
+        } else if (std.mem.eql(u8, arg, "--single-file")) {
+            // Emit all modules into one .zig (namespaced structs + one shared
+            // preamble) instead of one file per module.  Phase 1: recognized and
+            // set, but the emitter does not yet act on it.  See CodeGen.single_file
+            // and docs/single_file_emit_design.md.
+            CodeGen.single_file = true;
         } else if (std.mem.eql(u8, arg, "--library-mode")) {
             // Omit `defer _arena.deinit()` from the generated main().  Use when
             // the .zig output will be linked into a host program that calls
