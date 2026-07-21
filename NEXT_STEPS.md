@@ -404,6 +404,17 @@ call (keyword? `shared` block? `sys.sharedAlloc()`?). Add a threaded *lifetime* 
 to the gate set, not just the alloc-race probe. Unblocks correct shared-state servers
 (the BUG-153/154 territory). **Not for unsupervised work.**
 
+**Prior art — xsync.zig** (assessed 2026-07-21; MIT, single-file, Zig 0.16+master):
+cross-`std.Io` **cancellation-safe** sync primitives (Mutex/Condition/Event/Semaphore/
+RwLock/`Queue(T)` w/ timeout+close). Strong fit for Zebra's concurrency layer:
+reimplement `Chan(T)` on `xsync.Queue`, close **BUG-154** (Tcp.serve no-lock) with
+`xsync.Mutex`. **VENDOR** it (not a live dep — binary-size/control) and **read its 3
+stdlib-Condition bug reports** (Zebra may share those latent bugs). Value scales with
+one decision: **near-essential IF Zebra adds an evented `std.Io` runtime** (green
+threads, no OS-thread-per-connection — servers are thread-per-conn today, won't reach
+C10k); nice-to-have if threaded-only. Full assessment: memory `project_xsync_concurrency`.
+github.com/lalinsky/xsync.zig
+
 ## §19.5d — bootstrap-check feedback latency
 
 `tools/bootstrap_check.sh` is the integration safety net but slow under CPU throttle
