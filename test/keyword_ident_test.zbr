@@ -1,0 +1,11 @@
+# F4: a Zebra identifier that is also a Zig keyword (fn, align, …) must be emitted
+# as the escaped spelling @"name", or the generated Zig fails to parse.
+def twice(fn: int): int
+    return fn * 2                 # `fn` as a param and in a reference
+
+def main()
+    var fn = 21                   # `fn` as a local
+    assert twice(fn) == 42
+    var align = "x"               # `align` (Zig keyword) as a local
+    assert align == "x"
+    print("keyword_ident OK")

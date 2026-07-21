@@ -4596,12 +4596,8 @@ struct Generator
     # the prefix already makes those collision-free, and `_p_@"i8"` would be
     # invalid Zig.  Mirrors src/CodeGen.zig emitName.
     def emitName(name: str)
-        if isZigPrimitiveName(name)
-            w.emit("@\"")
-            w.emit(name)
-            w.emit("\"")
-        else
-            w.emit(name)
+        # F4: escape Zig primitives AND Zig keywords (fn, error, …) as @"name".
+        w.emit(zigSafeName(name))
 
     def genStmts(stmts: List(Stmt))
         # Per-block mutation scope: save caller's mut_set, install block-scoped one,

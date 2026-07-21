@@ -2077,6 +2077,24 @@ fn isZigPrimitiveName(name: []const u8) bool {
     return prims.get(name) != null;
 }
 
+// True iff `name` is a Zig keyword.  A user identifier that is a legal Zebra name
+// but a Zig keyword (`fn`, `error`, `align`, `test`, …) must be emitted as `@"name"`
+// (the SAME identifier) or `zig` fails to parse it.  (F4)  Zebra-only keywords are
+// harmless to include — they can't be user identifiers.
+fn isZigKeyword(name: []const u8) bool {
+    const kws = std.StaticStringMap(void).initComptime(&.{
+        .{ "fn", {} }, .{ "pub", {} }, .{ "const", {} }, .{ "var", {} }, .{ "comptime", {} },
+        .{ "error", {} }, .{ "align", {} }, .{ "allowzero", {} }, .{ "test", {} }, .{ "asm", {} },
+        .{ "export", {} }, .{ "extern", {} }, .{ "inline", {} }, .{ "noalias", {} }, .{ "noinline", {} },
+        .{ "nosuspend", {} }, .{ "opaque", {} }, .{ "packed", {} }, .{ "linksection", {} },
+        .{ "callconv", {} }, .{ "threadlocal", {} }, .{ "volatile", {} }, .{ "addrspace", {} },
+        .{ "usingnamespace", {} }, .{ "unreachable", {} }, .{ "errdefer", {} }, .{ "suspend", {} },
+        .{ "resume", {} }, .{ "await", {} }, .{ "async", {} }, .{ "anyframe", {} }, .{ "anytype", {} },
+        .{ "switch", {} }, .{ "defer", {} }, .{ "struct", {} }, .{ "union", {} }, .{ "enum", {} },
+    });
+    return kws.get(name) != null;
+}
+
 fn mightUseName(name: []const u8, stmts: []const Ast.Stmt) bool {
     for (stmts) |s| if (mightUseNameStmt(name, s)) return true;
     return false;
@@ -6552,7 +6570,8 @@ const Generator = struct {
     }
 
     fn emitName(g: Generator, name: []const u8) anyerror!void {
-        if (isZigPrimitiveName(name)) {
+        // F4: escape Zig primitives AND Zig keywords (fn, error, …) as @"name".
+        if (isZigPrimitiveName(name) or isZigKeyword(name)) {
             try g.w.print("@\"{s}\"", .{name});
         } else {
             try g.w.writeAll(name);

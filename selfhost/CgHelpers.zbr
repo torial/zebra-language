@@ -798,8 +798,15 @@ def isZigPrimitiveName(name: str): bool
 # of a legal name stays consistent.  Never apply to prefix-concatenated names
 # (_p_*, _zbr_mv_*, _ttag_*, …) — the prefix already avoids the collision and
 # `_p_@"i8"` would be invalid Zig.
+# True iff `name` is a Zig keyword.  A user identifier that is a legal Zebra name
+# but a Zig keyword (`fn`, `error`, `align`, `test`, …) must be emitted as the
+# escaped spelling `@"name"` (the SAME identifier) or `zig` fails to parse it.
+# (F4)  Zebra-only keywords are harmless to include — they can't be user idents.
+def isZigKeyword(name: str): bool
+    return name == "fn" or name == "pub" or name == "const" or name == "var" or name == "comptime" or name == "error" or name == "align" or name == "allowzero" or name == "test" or name == "asm" or name == "export" or name == "extern" or name == "inline" or name == "noalias" or name == "noinline" or name == "nosuspend" or name == "opaque" or name == "packed" or name == "linksection" or name == "callconv" or name == "threadlocal" or name == "volatile" or name == "addrspace" or name == "usingnamespace" or name == "unreachable" or name == "errdefer" or name == "suspend" or name == "resume" or name == "await" or name == "async" or name == "anyframe" or name == "anytype" or name == "switch" or name == "defer" or name == "struct" or name == "union" or name == "enum"
+
 def zigSafeName(name: str): str
-    if isZigPrimitiveName(name)
+    if isZigPrimitiveName(name) or isZigKeyword(name)
         return "@\"" + name + "\""
     return name
 
