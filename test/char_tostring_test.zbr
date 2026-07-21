@@ -23,3 +23,11 @@ def main()
     # codePointCount returns int (usable in arithmetic)
     var n = word.codePointCount()
     print(n - 2)    # 1
+
+    # F1: `${ch:c}` interpolation renders a char (u21) as its character.  Must emit
+    # Zig `{u}` (unicode), not `{c}` (printAsciiChar/u8) — the latter fails to compile
+    # for any char value, ASCII or not.  Non-ASCII exercises the u21 path.
+    var sb = StringBuilder()
+    for c in greek.chars()
+        sb.append("${c:c}")
+    print(sb.build())    # λόγος

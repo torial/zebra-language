@@ -17389,7 +17389,9 @@ fn writeZigFmtSpec(
     if (type_ch) |tc| {
         switch (tc) {
             's'                => try w.writeByte('s'),
-            'c'                => try w.writeByte('c'),
+            // F1: Zebra `char` is u21; Zig `{c}` (printAsciiChar) takes u8, so a
+            // codepoint must render as `{u}`. `:c` on a non-char int stays `{c}`.
+            'c'                => try w.writeByte(if (tc_type == .char) 'u' else 'c'),
             'u'                => try w.writeByte('u'),
             'd', 'i', 'n'      => try w.writeByte('d'),
             'f', 'g', 'G', '%' => try w.writeByte('d'), // Zig uses 'd' for decimal float

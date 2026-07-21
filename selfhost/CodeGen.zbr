@@ -118,7 +118,12 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     if type_s == "s"
         out = "s"
     else if type_s == "c"
-        out = "c"
+        # F1: Zebra `char` is u21; Zig `{c}` (printAsciiChar) takes u8, so a codepoint
+        # must render as `{u}`.  `:c` on a non-char int stays `{c}` (ASCII byte).
+        if ex_type is Type_.char_
+            out = "u"
+        else
+            out = "c"
     else if type_s == "u"
         out = "u"
     else if type_s == "d" or type_s == "i" or type_s == "n"
