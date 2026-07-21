@@ -16,13 +16,16 @@ known-good target; once the bootstrap is gone, a selfhost gap is just a permanen
 ```
 single-module: 286 agree-pass · 46 agree-fail · 18 library(no-main)   (2026-07-20 re-run)
 multi-module (selfhost-only, bootstrap N/A): 30
-SELFHOST GAPS: 19  (→ 5 remain: 14 fixed; see below)
+SELFHOST GAPS: 19  (→ 4 remain: 15 fixed; see below)
 BOOTSTRAP GAPS: 14  (unchanged)
 ```
 
-Update 2026-07-20: closed 6 more (nil_tracking, forgot_parens, string_methods,
-selfhost_probe6, file_io, method_chain_throws) — 14 of 19 fixed, **5 selfhost gaps
-remain**, 286 agree-pass, 14 bootstrap gaps unchanged.
+Update 2026-07-20: closed 7 more (nil_tracking, forgot_parens, string_methods,
+selfhost_probe6, file_io, method_chain_throws, fuzzy_selfhost) — 15 of 19 fixed,
+**4 selfhost gaps remain**. The 286-agree count was the full re-run after the first
+six; fuzzy_selfhost was gated (round-trip/smoke/compile_check + its per-file
+divergence) but its full re-run is pending (host was memory-constrained). 14 bootstrap
+gaps unchanged (bootstrap binary untouched).
 
 The headline is reassuring: **286 files agree**, and the divergences are a short,
 enumerated, classified list — not a fog.
@@ -85,7 +88,13 @@ targets, not open design questions.
   early-exit emitted `receiver.method()` directly, bypassing the BUG-027 materialization.
   Skip the early-exit for a call-temporary receiver → falls through to the `var _mc_N` hoist.
 
-**REMAINING (5) — diagnosed roots** (deeper than the return-type/handler class above; each
+- `fuzzy_selfhost` (`b68ad4d`) — `var m = List(HashMap(str,int))()` then `m.len` emitted
+  `m.len` (ArrayList has no `.len`). The List-ctor inference only recognised a bare-name
+  element; a nested-generic element (`HashMap(str,int)`, a call expr) fell through to
+  `unresolved` so the local was never typed `list_`. Added standalone `typeArgToType(Expr)`
+  (bare name / nested List/HashMap/Chan → Type_), used for the List element in inferExpr.
+
+**REMAINING (4) — diagnosed roots** (deeper than the return-type/handler class above; each
 still has a known-good bootstrap emit to diff):
 - `throws_autoprop_test` — a non-throws `run()` calling a `throws` `outer()` emits a bare
   `self.outer();` (error union ignored); bootstrap wraps `self.outer() catch |_e| {…}`.
@@ -93,13 +102,11 @@ still has a known-good bootstrap emit to diff):
 - `expressiveness_test` — `g.greet("Alice")` → "expected 2 args, found 1"; a defaulted
   param isn't filled (§27b default-arg).
 - `extend_test` — extension-method dispatch (`s.shout()` on a `str`).
-- `fuzzy_selfhost` — `.len` on a `List(HashMap)` local not rewritten to `.items.len`
-  (nested-generic inference weakness).
 - `json_test` (PARTIAL) — getObj→json_value FIXED; getList returns a `[]Value` slice yet
   the selfhost types it `list_` so for-in emits `.items` (bootstrap iterates the slice
   directly). Needs a slice-of-T type or for-in handling.
 
-All 5 remaining gaps are now diagnosed (roots above); none is a shared root.
+All 4 remaining gaps are now diagnosed (roots above); none is a shared root.
 
 Pace note: these are NOT one shared root — each is its own careful, gated fix (return-
 type registrations like dns are the cheapest; join/format/preamble/D4 are deeper). Burn
