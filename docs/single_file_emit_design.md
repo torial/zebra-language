@@ -355,6 +355,37 @@ allows forward refs within a file, but init order needs a topological guarantee,
 post-order); generics instantiated across modules (`_ttag_*` land in the right `_mod_` struct);
 `export fn` / node-addon (must hoist to file scope — Phase 4); same-basename collisions.
 
+### 7b.1 — Phase 2 LANDED (selfhost, 2026-07-21)
+
+Implemented in `selfhost/CodeGen.zbr` + `selfhost/main.zbr` exactly as designed:
+- **genUse** routes the import through `sfModStructName(path)` = `_mod_<sanitized>` when
+  `_single_file` (else `@import`). The `.Class` unwrap and `exposing` aliasing are unchanged.
+- **`MultiCompiler`** accumulates each dep's `const _mod_X = struct { <generateModuleWith> }`
+  (via `generateSingleFileDepStruct`) in the existing depth-first post-order instead of writing
+  per-dep files; at the root, `generateSingleFileCombined` emits ONE file: header + preamble
+  once + dep structs + `const _Mod = struct{root}` + a dispatcher over every
+  `_mod_X._initModuleVarsImpl()` (+ `_Mod`'s) + a collapsed `_zbr_error_msg` (one `_error_ctx`).
+- **Fan-out collapse:** the top-level-`main` `@import("X.zig")._initAllocator/_initIo`
+  injection is gated off under `_single_file` (one shared runtime state — the missing gate was
+  the only bug found in bring-up; class-`main` fixtures never hit it, which is why
+  crossmod_arith passed before the fix and the `exposing` fixtures didn't).
+
+**Verification (selfhost):**
+- `compile_check.sh --single-file` = **200 passed, 0 FAILED, 1 skipped — identical to the
+  multi-file baseline (200/0/1)**, now including the multi-module corpus. Zero regressions.
+- Direct crossmod sweep (emit single-file + multi-file, build + run, diff output): 9/9 that
+  compile at all match test-for-test; `crossmod_expose_test` fails identically in BOTH modes
+  (a pre-existing `List(cross-module-type)` codegen gap, not single-file, not in the gate corpus).
+- Non-regression: round-trip byte-identical, `selfhost_smoke` 236/236.
+- **Endgame stress test:** `zebra.exe --single-file selfhost/main.zbr` emits one 2.3 MB
+  combined `main.zig` with all 10 compiler modules (`_mod_Token`…`_mod_Checker`) + root
+  correctly namespaced. It does not yet *build* — but the multi-file self-compile fails the
+  same way (BUG-181: the selfhost can't fully self-compile its own emitted Zig). Phase 2's job
+  — producing the correct single combined file — works; the self-compile gap is orthogonal.
+
+The **bootstrap** stays single-module for `--single-file` (Phase 2 is selfhost-first); the hard
+parity rule holds because the bootstrap compiles the selfhost source in default (multi-file) mode.
+
 ## 8. Interim (until this lands)
 
 F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after

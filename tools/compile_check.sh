@@ -17,10 +17,11 @@
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
 # --single-file mode: appends --single-file to the emit, so it checks the namespaced
-# `const _Mod = struct {…}` shape (docs/single_file_emit_design.md §7a). Phase 1 is
-# SINGLE-MODULE only, so cross-module tests are skipped here (Phase 2 = multi-module
-# merge will lift that). Combine with --bootstrap to check the bootstrap's single-file
-# emit. A clean run should match the multi-file baseline test-for-test (zero regressions).
+# `const _Mod = struct {…}` shape (docs/single_file_emit_design.md §7a/§7b). The selfhost
+# does the full multi-module merge (Phase 2: deps become `const _mod_X = struct {…}` in one
+# file), so cross-module tests ARE checked there. The bootstrap is single-module only for
+# now (Phase 2 is selfhost-first), so `--bootstrap --single-file` still skips multi-module.
+# A clean run matches the multi-file baseline test-for-test (zero regressions).
 #
 # Parallelism: per-test emit+typecheck is independent, so the worklist is fanned out
 # across $JOBS workers (each in its own temp dir — parallel-safe). Measured ~3x at
@@ -43,11 +44,11 @@ SKIP=" c_interop_test zig_interop_test forgot_parens_test "
 # under the selfhost, whose --output-dir emits the deps alongside the root).
 BOOTSTRAP_SKIP=" crossmod_hatopt_test crossmod_optret_test crossmod_struct_pat_test crossmod_types_test crossmod_arith_test crossmod_infer_test crossmod_expose_test val_test test_module_test "
 
-# --single-file mode is single-module only in Phase 1 (the emitter wraps ONE module in
-# `_Mod`; dep modules are still emitted unwrapped, so a multi-module program's cross-module
-# references don't line up yet — Phase 2). Skip every multi-module test here. The `*crossmod*`
-# glob (applied below) covers the crossmod_* family + bug168_crossmod_prim_return_test; these
-# names are the remaining multi-module tests that don't match that glob.
+# The bootstrap's --single-file is single-module only (Phase 2 is selfhost-first): its dep
+# modules are still emitted unwrapped, so multi-module programs don't line up. Skip them
+# under --bootstrap --single-file only. The `*crossmod*` glob (applied below) covers the
+# crossmod_* family + bug168_crossmod_prim_return_test; these are the remaining multi-module
+# tests that don't match that glob. The SELFHOST does the full merge, so it skips nothing here.
 SINGLE_FILE_SKIP=" val_test test_module_test "
 
 zebra_for() { # $1 = mode
@@ -107,8 +108,9 @@ for f in $tests; do
   if [ "$MODE" = bootstrap ]; then
     case "$BOOTSTRAP_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
   fi
-  if [ "$SF" = 1 ]; then
-    # Phase 1 single-file is single-module only: drop the multi-module tests.
+  if [ "$SF" = 1 ] && [ "$MODE" = bootstrap ]; then
+    # Bootstrap single-file is single-module only (Phase 2 is selfhost-first): drop the
+    # multi-module tests. The selfhost merges them, so it checks the full corpus.
     case "$name" in *crossmod*) skip=$((skip+1)); continue;; esac
     case "$SINGLE_FILE_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
   fi
