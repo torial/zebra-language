@@ -149,6 +149,17 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `tools/selfcompile_check.sh`. Revisit post-1.0 (freeze bootstrap) or if the 9-file burden bites
   (then bootstrap Phase 2 is the correct route). **Feature complete for now.**]
 
+- [ ] **Grammar fuzzer (generative)** [idea, Sean 2026-07-22]. Take the Earley `grammar.txt` and
+  use it to *generate* source strings that are valid per the grammar, then feed them through the
+  front-end (tokenizer → parser → resolver → typechecker) as an **exhaustiveness search**. Only
+  exercises the early pipeline (won't reach codegen/runtime), but systematically covers syntactic
+  surface the hand-written + differential fuzzers miss. Complements `fuzz/` (which tests
+  selfhost≡bootstrap equivalence on programs) by attacking the parser/resolver space directly.
+  Sketch: derive productions from the grammar, random/bounded-depth expansion with a size budget,
+  optionally bias toward rare productions; assert no internal-compiler-error and (differentially)
+  that both compilers agree on accept/reject. Reuses the [[concept_zebra-grammar-diff-migration]]
+  grammar-tooling direction.
+
 - [ ] **`indexOf` nil-safe API (principled `int?`)** [deferred 2026-07-22, Sean's call: revisit
   during hands-on language testing]. `str.indexOf`/`lastIndexOf` currently return `int` with a `-1`
   sentinel (matches the reference bootstrap + `main.zbr` usage; the documented `int?` was never
