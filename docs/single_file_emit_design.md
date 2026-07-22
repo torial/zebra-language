@@ -206,6 +206,49 @@ Keep bootstrap ↔ selfhost convergence at every step (this is gated, supervised
 
 ---
 
+## 7a. Implementation handoff — current emit map + next increment
+
+**Status after commit `33996f3` (Phase 1 scaffold):** the `--single-file` flag and
+`CodeGen.single_file` global exist and are inert (byte-identical emit verified). The
+next increment is the **behavioral** single-module namespacing. Anchors below are in
+`src/CodeGen.zig` `pub fn generate(...)` — reference by the quoted marker (line numbers
+drift), and remember the **twin edit** in `selfhost/CodeGen.zbr` for parity.
+
+The top-level emit is one linear sequence writing to `g.w`, in this order:
+1. Header + `const std/builtin`, `_io`, `_args`, `_arena`, `_allocator`, `_str_pool`
+   (search `"const std     = @import"`).
+2. `_initAllocator` / `_initIo` — each loops `module.decls` `.use` nodes emitting
+   `@import("X.zig")._initAllocator(a)` (single-module: loops are empty).
+3. `_initModuleVars` — loops `module.decls` `.var_` with `deferredModuleVarType != null`,
+   emits `{module_var_prefix}{v.name} = <init>` (search `"pub fn _initModuleVars"`).
+   **References user module-globals by bare name → the crux of the wrap.**
+4. `writeAll(build_options.stdlib_preamble_pre_gui)` — the shared preamble (stays file scope).
+5. `_zbr_error_msg` (chains across `.use` deps).
+6. GUI section + `writeAll(build_options.stdlib_preamble_post_gui)`.
+7. `for (module.decls) |decl| try g.genTopDecl(decl);` — **the user decls to namespace.**
+8. `emitInterfaceMembershipFns`, `flushPendingThunks` — may reference user types.
+9. Entry: `node_addon` → `genNodeAddonGlue` + return; `test_mode` → `genTestMain` + return;
+   else the `findMainClass` / `pub fn main` thunk that references the user entry.
+
+**Next-increment plan (Approach A — colocate user-referencing scaffolding in the namespace):**
+- Gate all new shape on `if (single_file)`; the `else` keeps today's emit verbatim.
+- Emit the preamble + purely-runtime helpers (steps 1,2,4,5,6) at file scope unchanged.
+- Wrap step 7 (user decls) **and** the user-referencing scaffolding — `_initModuleVars`'s
+  body (step 3), interface RTTI (step 8), the user entry — inside `const _Mod = struct { … };`.
+- Emit file-scope shims: `pub fn main(...)` → `_Mod.<entry>`; a file-scope `_initModuleVars()`
+  (the preamble's `_initIo` calls it) → dispatches to `_Mod._initModuleVars()`.
+- Start single-module (empty `.use` loops). Multi-module merge is Phase 2.
+
+**Acceptance for the increment:** (a) all existing single-module fixtures emit + run
+identically under `--single-file` (behavior parity); (b) a program with a top-level
+`def h` — which fails to compile today (F5) — compiles + runs under `--single-file`.
+**Gates (behavioral → run all):** `selfhost_smoke.sh`, `bootstrap_check.sh` (round-trip),
+`JOBS=3 compile_check.sh` (independent witness).
+
+**Prototype reference:** the verified hand-built shape is in this session's scratch
+(`multimod/merged.zig`, `xmod.zig`) — module structs + one preamble + init dispatcher +
+`pub fn main` shim; see §3/§4.
+
 ## 8. Interim (until this lands)
 
 F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after
