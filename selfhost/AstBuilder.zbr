@@ -50,34 +50,28 @@ def stripStringQuotes(text: str): str
         return ""
     if text.len < 2
         return text
-    if text.startsWith("\"") or text.startsWith("'")
-        # Slice off first and last character (the surrounding quotes).
-        # Split on the quote char, rejoin interior parts with the quote char.
-        # For "hello" → split gives ["", "hello", ""] → just take middle.
-        # For "say \"hi\"" → split gives ["", "say \\", "hi\\", ""] → rejoin with quote.
-        var quote: str = "\""
-        if text.startsWith("'")
-            quote = "'"
-        var parts: List(str) = List(str)()
-        for p in text.split(quote)
-            parts.add(p)
-        # Skip first (before opening quote) and last (after closing quote),
-        # rejoin interior parts with the original quote char.
-        if parts.len <= 1
-            # No interior content
-            return ""
-        if parts.len == 2
-            # Only one quote in text — string_start token like "hello or bare ".
-            # Return content after the leading quote (parts[1]).
-            return parts.at(1)
-        var out: str = parts.at(1)
-        var i: int = 2
-        while i < parts.len - 1
-            out = out + quote
-            out = out + parts.at(i)
-            i = i + 1
-        return out
-    return text
+    # Strip the surrounding quote(s), preserving embedded ESCAPED quotes (`\"`).
+    # BUG-181: a naive split on the quote char treats an escaped `\"` as a real
+    # boundary and drops trailing content — e.g. an interp start-segment `"a\"b`
+    # (leading quote, NO closing quote) lost `b`, emitting `a\{}c` (invalid escape).
+    # Instead: strip the leading quote, then strip a trailing quote ONLY when it is
+    # a real (unescaped, even backslash count) closing quote — a full-string token
+    # has one; a start-segment does not.
+    var q: char = c'"'
+    if text.startsWith("'")
+        q = c'\''
+    else if not text.startsWith("\"")
+        return text
+    var body: str = text.substring(1, text.len)
+    if body.len > 0 and body[body.len - 1] == q
+        var bs: int = 0
+        var k: int = body.len - 2
+        while k >= 0 and body[k] == c'\\'
+            bs = bs + 1
+            k = k - 1
+        if bs % 2 == 0
+            body = body.substring(0, body.len - 1)
+    return body
 
 # Strip zig literal: zig"Point{}" → Point{}, zig'x' → x
 # Token text includes the "zig" prefix + quote + content + closing quote.
