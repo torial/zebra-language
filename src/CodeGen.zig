@@ -2663,7 +2663,36 @@ const Generator = struct {
         for (path) |c| try w.writeByte(if (c == '\\') '/' else c);
     }
 
+    /// Emit the `_module_vars_inited` guard + `_initModuleVars()` whose body
+    /// assigns each deferred module-global (HashMap/Set/Atomic/user-class-instance
+    /// inits that reference the runtime `_allocator`).  The body references those
+    /// globals by bare (prefixed) name, so under `--single-file` this is emitted
+    /// *inside* the module struct (a file-scope dispatcher forwards to it); under
+    /// the multi-file default it is emitted at file scope.  Factored out so both
+    /// call sites stay identical.
+    fn emitModuleVarsInit(g: Generator, module: Ast.Module, fn_name: []const u8) anyerror!void {
+        try g.w.writeAll("var _module_vars_inited: bool = false;\n");
+        // Under --single-file the caller passes `_initModuleVarsImpl`: the struct's
+        // real body gets a *distinct* name so a bare `_initModuleVars()` reference
+        // from inside _Mod resolves unambiguously to the file-scope dispatcher
+        // (Zig flags an in-struct/file-scope name clash as an "ambiguous reference").
+        try g.w.print("pub fn {s}() void {{\n    if (_module_vars_inited) return;\n    _module_vars_inited = true;\n", .{fn_name});
+        for (module.decls) |decl| {
+            const v = switch (decl) { .var_ => |v| v, else => continue };
+            if (g.deferredModuleVarType(v) == null) continue;
+            try g.w.print("    {s}{s} = ", .{ module_var_prefix, v.name });
+            try g.genExpr(v.init.?);
+            try g.w.writeAll(";\n");
+        }
+        try g.w.writeAll("}\n");
+    }
+
     fn genModule(g: Generator, module: Ast.Module) anyerror!void {
+        // Single-file emission (docs/single_file_emit_design.md §7a): wrap the user
+        // decls + user-referencing scaffolding in `const _Mod = struct {…}` so the
+        // preamble's internal binding names no longer share the user's scope (F5).
+        // node-addon stays unwrapped — its exports must remain at file scope (Phase 4).
+        const wrap = single_file and !g.emit_node_addon;
         // BUG-157: register cross-module *exposed* classes/unions into class_names
         // (and exposed_classes/unions) up front — genUse does this too, but it runs
         // during the main decl loop, AFTER `_initModuleVars` is emitted below.  A
@@ -2745,16 +2774,15 @@ const Generator = struct {
         // _initAllocator/_initIo being reached transitively many times.  Emitted in
         // source order, so a global whose init references another deferred global must
         // be declared after it.
-        try g.w.writeAll("var _module_vars_inited: bool = false;\n");
-        try g.w.writeAll("pub fn _initModuleVars() void {\n    if (_module_vars_inited) return;\n    _module_vars_inited = true;\n");
-        for (module.decls) |decl| {
-            const v = switch (decl) { .var_ => |v| v, else => continue };
-            if (g.deferredModuleVarType(v) == null) continue;
-            try g.w.print("    {s}{s} = ", .{ module_var_prefix, v.name });
-            try g.genExpr(v.init.?);
-            try g.w.writeAll(";\n");
+        if (wrap) {
+            // Single-file: the real _initModuleVars body lives inside `_Mod` (it
+            // references user module-globals by bare name).  Here at file scope we
+            // emit only a forward-referencing dispatcher — the preamble's _initIo
+            // and the entry shims call this bare name, which fans out to _Mod.
+            try g.w.writeAll("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n");
+        } else {
+            try g.emitModuleVarsInit(module, "_initModuleVars");
         }
-        try g.w.writeAll("}\n");
         try g.w.writeAll(build_options.stdlib_preamble_pre_gui);
         // Recursive error-message walker: each module checks its own
         // `_error_ctx`, then falls through to every direct import's helper.
@@ -4648,16 +4676,32 @@ const Generator = struct {
             try g.w.writeAll(build_options.napi_preamble);
             try g.w.writeAll("\n");
         }
-        for (module.decls) |decl| try g.genTopDecl(decl);
+        // ── Single-file: open the module namespace struct.  The user decls plus
+        // everything that references them by bare name (interface RTTI, closure
+        // thunks, the real _initModuleVars body) go inside; the runtime/preamble
+        // above stays at file scope and resolves outward from within the struct.
+        if (wrap) try g.w.writeAll("const _Mod = struct {\n");
+        const body_g = if (wrap) g.indented() else g;
+
+        for (module.decls) |decl| try body_g.genTopDecl(decl);
 
         // Interface RTTI: one `_zbr_implements_<Iface>(tag)` membership fn per
         // interface, so a runtime `is` on an interface-typed value can resolve the
         // concrete type behind the fat pointer.  Dead-stripped by Zig if unused.
-        try emitInterfaceMembershipFns(g, module);
+        try emitInterfaceMembershipFns(body_g, module);
 
         // ── Gap 1: emit module-level thunk infrastructure for any closure
         // arguments collected during genCall (see emitCallWithClosureThunks).
-        try g.flushPendingThunks();
+        try body_g.flushPendingThunks();
+
+        if (wrap) {
+            // The real _initModuleVars body — references user module-globals by
+            // bare name, so it lives here inside _Mod as `_initModuleVarsImpl` (the
+            // file-scope `_initModuleVars` dispatcher fans out to it), then close
+            // the namespace struct.
+            try body_g.emitModuleVarsInit(module, "_initModuleVarsImpl");
+            try g.w.writeAll("};\n");
+        }
 
         // ── node-addon: emit the N-API wrappers + napi_register_module_v1 and
         // STOP — a `.node` shared library has no `main` entry point.
@@ -4708,6 +4752,9 @@ const Generator = struct {
             // main() — useful when the emitted .zig is linked into a host
             // program (script-binding layer).  See GameEngine docs/CONCERNS.md #1.
             const arena_deinit_line = if (g.library_mode) "" else "    defer _arena.deinit();\n";
+            // Single-file: the entry stays at file scope but the user's main class
+            // now lives inside `_Mod`, so qualify the call.
+            const mod_prefix: []const u8 = if (wrap) "_Mod." else "";
             if (main_throws) {
                 try g.w.print(
                     "pub fn main(_zinit: std.process.Init) void {{\n" ++
@@ -4718,7 +4765,7 @@ const Generator = struct {
                     "{s}" ++
                     "{s}" ++
                     "{s}" ++
-                    "    {s}.main() catch |_err| {{\n" ++
+                    "    {s}{s}.main() catch |_err| {{\n" ++
                     "        if (_err == error.ZebraError) {{\n" ++
                     "            std.debug.print(\"Error: {{s}}\\n\", .{{_zbr_error_msg()}});\n" ++
                     "        }} else {{\n" ++
@@ -4728,7 +4775,7 @@ const Generator = struct {
                     "    }};\n" ++
                     "{s}" ++
                     "}}\n",
-                    .{ arena_deinit_line, alloc_init, list_targets_prefix, class_name, auto_run_line },
+                    .{ arena_deinit_line, alloc_init, list_targets_prefix, mod_prefix, class_name, auto_run_line },
                 );
             } else {
                 try g.w.print(
@@ -4740,11 +4787,23 @@ const Generator = struct {
                     "{s}" ++
                     "{s}" ++
                     "{s}" ++
-                    "    {s}.main();\n" ++
+                    "    {s}{s}.main();\n" ++
                     "{s}" ++
                     "}}\n",
-                    .{ arena_deinit_line, alloc_init, list_targets_prefix, class_name, auto_run_line },
+                    .{ arena_deinit_line, alloc_init, list_targets_prefix, mod_prefix, class_name, auto_run_line },
                 );
+            }
+        } else if (wrap) {
+            // Single-file with a top-level free `def main`: genMethod emitted it as
+            // `_Mod.main` (with the `_zinit` param + runtime init injected).  Zig's
+            // startup wants `root.main`, so emit a thin file-scope shim that forwards.
+            if (findTopLevelMain(module.decls)) |mm| {
+                const throws = mm.throws or (mm.body != null and bodyHasRaise(mm.body.?, g.tc));
+                if (throws) {
+                    try g.w.writeAll("pub fn main(_zinit: std.process.Init) anyerror!void {\n    return _Mod.main(_zinit);\n}\n");
+                } else {
+                    try g.w.writeAll("pub fn main(_zinit: std.process.Init) void {\n    _Mod.main(_zinit);\n}\n");
+                }
             }
         }
     }
@@ -13124,7 +13183,9 @@ const Generator = struct {
                 };
                 if (!matched) continue;
             }
-            try test_calls.append(g.alloc, m.name);
+            // Single-file: test fns live inside `_Mod`; the entry stays at file scope.
+            const call = if (single_file) try std.fmt.allocPrint(g.alloc, "_Mod.{s}", .{m.name}) else m.name;
+            try test_calls.append(g.alloc, call);
             try test_labels.append(g.alloc, m.name);
         }
 
@@ -13153,9 +13214,11 @@ const Generator = struct {
                     };
                     if (!matched) continue;
                 }
-                const call_expr = try std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ container_name, m.name });
+                const prefix: []const u8 = if (single_file) "_Mod." else "";
+                const call_expr  = try std.fmt.allocPrint(g.alloc, "{s}{s}.{s}", .{ prefix, container_name, m.name });
+                const label_expr = try std.fmt.allocPrint(g.alloc, "{s}.{s}", .{ container_name, m.name });
                 try test_calls.append(g.alloc, call_expr);
-                try test_labels.append(g.alloc, call_expr);
+                try test_labels.append(g.alloc, label_expr);
             }
         }
 
@@ -17504,6 +17567,17 @@ fn castTypeForBitSpec(spec: []const u8, tc_type: TypeChecker.Type) ?[]const u8 {
 /// `alloc`) if found, else null.  Caller must free the returned slice.
 /// Find the `shared def main` method in any class/namespace in the module.
 /// Returns a pointer to the method declaration (in the arena-owned AST).
+/// The top-level free `def main()` method (a module-level `.method` named "main"),
+/// or null.  Distinct from `findMainMethod`, which looks for a class's static main.
+/// Used by single-file emission to decide whether to emit a file-scope entry shim
+/// forwarding to `_Mod.main`.
+fn findTopLevelMain(decls: []const Ast.Decl) ?*Ast.DeclMethod {
+    for (decls) |decl| {
+        if (decl == .method and std.mem.eql(u8, decl.method.name, "main")) return decl.method;
+    }
+    return null;
+}
+
 fn findMainMethod(decls: []const Ast.Decl) ?*Ast.DeclMethod {
     for (decls) |decl| {
         switch (decl) {

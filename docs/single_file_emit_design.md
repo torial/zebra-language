@@ -249,6 +249,40 @@ identically under `--single-file` (behavior parity); (b) a program with a top-le
 (`multimod/merged.zig`, `xmod.zig`) — module structs + one preamble + init dispatcher +
 `pub fn main` shim; see §3/§4.
 
+### 7a.1 — increment landed: single-module namespacing (bootstrap side, 2026-07-21)
+
+`src/CodeGen.zig` now implements Approach A behind `--single-file` (default off). The
+selfhost twin (`selfhost/CodeGen.zbr`) is the immediate next step — until it lands,
+`--single-file` is behavioral on the bootstrap only (the selfhost still emits multi-file).
+
+What was emitted (single-module):
+- `const _Mod = struct { <user decls> <interface RTTI> <closure thunks>
+  <_initModuleVarsImpl> };` — the user region and everything referencing it by bare name.
+- A file-scope dispatcher `pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }`.
+  The preamble's `_initIo` and the entry shims call the bare name; it fans out inward.
+- Entry stays at file scope, qualified: class `shared def main` → `_Mod.<Class>.main()`;
+  a top-level free `def main` (the dominant corpus shape, 296/388 fixtures) becomes
+  `_Mod.main` with a thin file-scope `pub fn main(_zinit) { _Mod.main(_zinit); }` shim;
+  the test runner calls `_Mod.test_*`.
+- node-addon is left unwrapped (exports must stay at file scope — Phase 4).
+
+**Wiring finding (beyond the spike's §3 list): the real `_initModuleVars` body must be
+renamed inside the struct.** The inline top-level `main` injects a bare `_initModuleVars()`
+call; with a struct member *and* a file-scope decl of that same name both visible from
+inside `_Mod`, Zig raises `error: ambiguous reference` (it does not prefer the inner one).
+Fix: the struct's real body is emitted as `_initModuleVarsImpl`, so the only `_initModuleVars`
+visible from inside `_Mod` is the file-scope dispatcher — unambiguous.
+
+Verification (bootstrap):
+- Round-trip (`bootstrap_check.sh`) byte-identical → default multi-file emit unchanged.
+- Single-file `compile_check`-style sweep (emit `--single-file` + `zig build-exe`
+  semantic analysis) over the positive corpus: **187 pass / 4 fail**, and the multi-file
+  `compile_check.sh --bootstrap` baseline fails the **same 4** (two multi-module dep
+  `FileNotFound` — Phase 2; `sqlite_test` and `bug177_178_index_tostring_test` are
+  pre-existing bootstrap-emit gaps, not single-file). → **zero single-file regressions.**
+- F5 acceptance: a `def h` / `def handle` program fails `zig build-exe` under multi-file
+  (`local variable shadows declaration of 'h'`) and compiles + runs under `--single-file`.
+
 ## 8. Interim (until this lands)
 
 F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after
