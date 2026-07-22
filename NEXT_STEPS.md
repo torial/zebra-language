@@ -149,6 +149,29 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `tools/selfcompile_check.sh`. Revisit post-1.0 (freeze bootstrap) or if the 9-file burden bites
   (then bootstrap Phase 2 is the correct route). **Feature complete for now.**]
 
+- [ ] **Convergence sweep: 2 remaining selfhost gaps** [triaged 2026-07-22; both inference/context-
+  blocked, deeper than emit-level]. The full `divergence_check.sh` (post-BUG-181) found 3 selfhost
+  gaps; `indexOf`/string_methods fixed (`37873e8`). The other 2 are NOT the name-heuristic class —
+  they're feature-completeness gaps that bottom out on inference:
+  - **`expressiveness_test` — named args + default params in METHOD calls.** `g.greet(name: "Alice")`
+    (default `greeting`) emits `g.greet("Alice")` (1 arg, no default); reordered
+    `g.greet(greeting: "Hi", name: "Carol")` emits source-order `g.greet("Hi", "Carol")`. Root: in
+    genMemberCall, `mc_params` is nil because `inferExpr(g)` doesn't resolve an EXPLICITLY-typed local
+    (`var g: Greeter = Greeter()`) to `named("Greeter")` (or `lookupFnParams("Greeter.greet")` is
+    empty) — so neither the legacy reorder path NOR a `genArgListFull` delegation can fire. FIX =
+    make the receiver's class resolve (bind explicitly-typed locals in infer_ctx / register method
+    params) THEN delegate the has-named/needs-fill case to `genArgListFull` (the correct algo the
+    constructor path already uses; a guarded delegation was drafted + reverted pending the inference
+    fix). The bootstrap handles all of this. Connects to §28a inference.
+  - **`throws_autoprop_test` — a bare `throws` call in a try-block.** `.outer()` (throws, no `?`) inside
+    a method-level `catch` emits bare `self.outer();` → "error union is ignored". `.inner()?` (explicit)
+    works, so throws DETECTION is fine; the try-block CATCH-wiring at genMemberCall ~12950
+    (`callee_throws2 and try_block_label != nil`) doesn't fire for `.outer()` despite both conditions
+    appearing set — a context bug (couldn't pin statically; needs instrumentation). The bootstrap does
+    this at the STATEMENT level (src/CodeGen.zig genStmt ~6843: `e is call and try_block_label and
+    exprCallIsThrows`) — mirroring that (statement-level catch) is the likely clean convergence, but
+    verify it doesn't double-emit with the existing 12950 path.
+
 - [ ] **Grammar fuzzer (generative)** [idea, Sean 2026-07-22]. Take the Earley `grammar.txt` and
   use it to *generate* source strings that are valid per the grammar, then feed them through the
   front-end (tokenizer → parser → resolver → typechecker) as an **exhaustiveness search**. Only
