@@ -980,7 +980,7 @@ var lo = s.lower()
 var trimmed = s.trim()
 var b   = s.startsWith("hel")        # bool
 var b2  = s.endsWith("lo")           # bool
-var idx = s.indexOf("ll")            # int? (nil if not found)
+var idx = s.indexOf("ll")            # int (-1 if not found)
 var parts  = s.split(",")            # List(str)
 var joined = items.join(", ")        # str
 
@@ -1046,8 +1046,8 @@ var result = sb.build()              # str (drains the builder)
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `len` | (field) | Byte length |
-| `indexOf(sub)` | `(str): int?` | First occurrence index; `nil` if not found |
-| `lastIndexOf(sub)` | `(str): int?` | Last occurrence index |
+| `indexOf(sub)` | `(str): int` | First occurrence index; `-1` if not found |
+| `lastIndexOf(sub)` | `(str): int` | Last occurrence index; `-1` if not found |
 | `indexOfFrom(sub, from)` | `(str, int): int?` | Search starting at `from` |
 | `indexOfIgnoreCase(sub)` | `(str): int?` | Case-insensitive `indexOf` |
 | `count(sub)` | `(str): int` | Number of non-overlapping occurrences |

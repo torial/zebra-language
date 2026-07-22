@@ -148,6 +148,15 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   bootstrap now. Single-file stays a shipped feature (default-off), gated by
   `tools/selfcompile_check.sh`. Revisit post-1.0 (freeze bootstrap) or if the 9-file burden bites
   (then bootstrap Phase 2 is the correct route). **Feature complete for now.**]
+
+- [ ] **`indexOf` nil-safe API (principled `int?`)** [deferred 2026-07-22, Sean's call: revisit
+  during hands-on language testing]. `str.indexOf`/`lastIndexOf` currently return `int` with a `-1`
+  sentinel (matches the reference bootstrap + `main.zbr` usage; the documented `int?` was never
+  implemented — the codegen always emitted `i64`). The nil-safe `int?` (nil-not-found) fits the
+  language's Eiffel-style **nil-tracking** pillar and is the preferred long-term shape. Doing it is
+  a deliberate cross-compiler change: type `int?` + emit `?i64` in BOTH compilers, and fix
+  `main.zbr`'s `indexOf(" ") + 1` (→ `!`/guard). `indexOfFrom`/`indexOfIgnoreCase` already return
+  `int?` (do them too for consistency). Not incidental convergence work — its own small task.
   Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
   **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
   full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced

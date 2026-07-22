@@ -1332,10 +1332,17 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "count" or name == "len"
         return Type_.int_
-    # F2: all index-search methods return int? (nil when not found), consistent with
-    # indexOf.  Previously indexOfFrom/indexOfIgnoreCase returned a non-optional int
-    # with a -1 sentinel — inconsistent with indexOf and the docs.
-    if name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase"
+    # indexOf/lastIndexOf return int with a -1 not-found sentinel — matches the reference
+    # bootstrap (str_int), the codegen's i64 emission, and main.zbr's `indexOf(...) + 1`
+    # usage.  (The nil-safe int? API is documented but was never actually implemented; the
+    # selfhost TC wrongly typed these as int? while the codegen emitted i64, which surfaced
+    # a `.?`-on-i64 bug in string_methods.  Making indexOf a proper int? is tracked as a
+    # deliberate future change — see the indexOf-optional note.)  indexOfFrom/indexOfIgnoreCase
+    # DO emit ?i64 (their codegen returns null on not-found), so they stay int?, matching
+    # the bootstrap's F2 typing.
+    if name == "indexOf" or name == "lastIndexOf"
+        return Type_.int_
+    if name == "indexOfFrom" or name == "indexOfIgnoreCase"
         return Type_.optional(Type_.int_)
     if name == "codePointCount" or name == "toInt"
         return Type_.int_
