@@ -198,7 +198,11 @@ class MultiCompiler
                     if zig_src.contains("_sqlite_open")
                         uses_sqlite = true
                 else
-                    if singleFile()
+                    # node-addon emits the root unwrapped (exports must stay at file scope —
+                    # Phase 4), so its deps must remain separate @import'd files too; single-file
+                    # assembly is disabled for a node-addon build to avoid accumulating dep
+                    # structs the N-API root would never emit.
+                    if singleFile() and not node_addon
                         # Phase 2: accumulate this dep's namespace struct (topological order);
                         # do NOT write a per-dep file — the root emits one combined .zig.
                         sf_dep_bodies.add(generateSingleFileDepStruct(module, zbr_path, .moduleNameOf(zbr_path), dep_class_names, dep_types, strip_contracts))
@@ -207,7 +211,7 @@ class MultiCompiler
                         zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
 
                 # Step 6: Write .zig file (single-file deps are accumulated, not written)
-                if not (singleFile() and not is_root)
+                if not (singleFile() and not node_addon and not is_root)
                     var zig_path: str = .zbrToZig(zbr_path)
                     File.write(zig_path, zig_src)
                     sys.errln("wrote " + zig_path)

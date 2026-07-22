@@ -386,6 +386,34 @@ Implemented in `selfhost/CodeGen.zbr` + `selfhost/main.zbr` exactly as designed:
 The **bootstrap** stays single-module for `--single-file` (Phase 2 is selfhost-first); the hard
 parity rule holds because the bootstrap compiles the selfhost source in default (multi-file) mode.
 
+### 7b.2 — Phase 4 (edge cases) — mostly PARITY, one hardening (selfhost, 2026-07-21)
+
+The §7 edge-case risks were largely dissolved by Phase 2's robustness. Probed empirically
+(each emitted single-file + multi-file, built, run, diffed):
+- **Cross-module generics** (`Box(int)` from another module): ✅ works, both modes identical.
+- **Circular `use`** (A↔B mutually referential): ✅ works — Zig allows forward refs within a
+  file, and the post-order accumulation gives a valid init order.
+- **Cross-module interface `is`** (`s is Circle` where Circle is imported): fails in BOTH modes
+  (`use of undeclared identifier '_ttag_Circle'` — the `is` site references the bare type tag,
+  which lives in the class's own module). A **pre-existing cross-module RTTI bug, not
+  single-file-specific**; also the root cause of `crossmod_expose_test`'s `List(cross-module-type)`
+  failure. Out of single-file scope (single-file is at parity — no worse than multi-file).
+- **The real 10-module compiler**: building the combined `selfhost/main.zig` yields the
+  **exact same 6-error set** as the multi-file self-build (normalizing away the `_mod_` type
+  qualifier) — **zero single-file-specific errors**. All 6 are BUG-181 (the selfhost can't yet
+  fully self-compile its own emitted Zig; blocks both modes).
+
+**Hardening applied:** node-addon disables single-file assembly (`singleFile() and not
+node_addon` in the dep branch). node-addon emits its root unwrapped (N-API exports must stay at
+file scope), so its deps must stay separate `@import` files; without the guard a *multi-module*
+node-addon under `--single-file` would accumulate dep structs the N-API root never emits —
+silently dropping them. Single-module node-addon was already fine (no deps).
+
+**Net:** single-file is at full behavioral parity with multi-file across the corpus (200/0/1)
+and the compiler itself. The remaining blockers to a single-file *default* are orthogonal:
+BUG-181 (self-compile) and Phase 5 build-infra. Same-basename module collision (two modules with
+the same sanitized name) is still unguarded — rare, and a clear compile error is a cheap future add.
+
 ## 8. Interim (until this lands)
 
 F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after
