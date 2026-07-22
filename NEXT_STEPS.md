@@ -138,14 +138,15 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
 - [ ] **Single-file emission — codegen architecture** [Phase 1 (single-module, both compilers)
-  + §7b Phase 2 (multi-module merge, **selfhost**) LANDED 2026-07-21, behind default-off
-  `--single-file`. **F5 closed**; `compile_check.sh --single-file` = 200/0/1 == multi-file
-  baseline (now covers multi-module); round-trip byte-identical; smoke 236/236. `zebra.exe
-  --single-file selfhost/main.zbr` emits the 10-module compiler as one 2.3MB file (endgame
-  shape; self-*build* blocked by orthogonal BUG-181). **NEXT:** Phase 3 (bootstrap Phase-2
-  parity, optional — it's being retired) / Phase 4 (edge cases: node-addon export hoisting,
-  cross-module generics/interface-RTTI, circular `use`) / Phase 5 (flip build.zig +
-  bootstrap_check to single-artifact) / Phase 6 (default + retire flag).]
+  + §7b Phase 2 (multi-module merge, **selfhost**) + Phase 4 (edge-case parity + node-addon
+  hardening) LANDED 2026-07-21, behind default-off `--single-file`. **F5 closed**;
+  `compile_check.sh --single-file` = 200/0/1 == multi-file baseline; round-trip byte-identical;
+  smoke 236/236. **BUG-181 RESOLVED 2026-07-22 → Phase 5 UNBLOCKED** (the combined selfhost/main.zig
+  now COMPILES). **NEXT:** Phase 5 (build.zig self-contained single root + bootstrap_check
+  single-artifact regen/diff + retire per-module selfhost/*.zig — needs the BOOTSTRAP to emit
+  single-file, i.e. bootstrap Phase 2, OR switch regen authority to the now-self-compiling selfhost)
+  / Phase 6 (flip default + retire multi-file/flag). Bootstrap Phase-2 parity is now the likely
+  Phase-5 prerequisite (revisit the earlier "skip it" call).]
   Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
   **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
   full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced
@@ -345,10 +346,10 @@ NON-main compiler source IS essentially cleared (0/9/18 on those files) and a re
 was fixed — but the flip (step 3) is NOT close corpus-wide; the lambda-param feature is the
 largest remaining lever. Re-assess scope with Sean.
 
-**BUG-181 update:** `main.zbr` self-compile was >120s (slow, real) pre-session; step-2 fixes cut
-it to ~6s but it now fails on 3 pre-existing selfhost EMIT bugs (`.len`-lvalue `@intCast`,
-`invalid escape '{'`, never-mutated) — see BUG-181. Those block self-compilation of the driver
-independent of §28a.
+**BUG-181 RESOLVED (2026-07-22):** `main.zbr` now self-compiles cleanly (emit rc=0, emitted Zig
+builds; proven end-to-end — the self-made 2.3MB compiler compiles a program that runs). 8 emit
+divergences fixed, gated by `tools/selfcompile_check.sh`. The §28a-step-4 CONSTRAINT below (main.zbr
+can't be in the both-compilers-reject probe) is now LIFTED. See BUGS.md BUG-181.
 
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
