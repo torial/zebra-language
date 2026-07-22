@@ -142,11 +142,12 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   hardening) LANDED 2026-07-21, behind default-off `--single-file`. **F5 closed**;
   `compile_check.sh --single-file` = 200/0/1 == multi-file baseline; round-trip byte-identical;
   smoke 236/236. **BUG-181 RESOLVED 2026-07-22 → Phase 5 UNBLOCKED** (the combined selfhost/main.zig
-  now COMPILES). **NEXT:** Phase 5 (build.zig self-contained single root + bootstrap_check
-  single-artifact regen/diff + retire per-module selfhost/*.zig — needs the BOOTSTRAP to emit
-  single-file, i.e. bootstrap Phase 2, OR switch regen authority to the now-self-compiling selfhost)
-  / Phase 6 (flip default + retire multi-file/flag). Bootstrap Phase-2 parity is now the likely
-  Phase-5 prerequisite (revisit the earlier "skip it" call).]
+  now COMPILES). **Phase 5/6 DE-SCOPED (2026-07-22, `docs/regen_authority_decision.md`):** keep
+  the bootstrap as the independent multi-file regen authority (the trusting-trust witness that
+  caught BUG-181); do NOT make the selfhost sole authority, do NOT add single-file to the
+  bootstrap now. Single-file stays a shipped feature (default-off), gated by
+  `tools/selfcompile_check.sh`. Revisit post-1.0 (freeze bootstrap) or if the 9-file burden bites
+  (then bootstrap Phase 2 is the correct route). **Feature complete for now.**]
   Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
   **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
   full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced
