@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -2042,6 +2042,11 @@ def main()
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
     var lib_mode             = args.contains("--library-mode")
+    # --single-file: emit the user region inside one `const _Mod = struct {…}` with a
+    # single file-scope preamble (closes F5).  Currently single-module only (Phase 2 =
+    # multi-module merge).  See docs/single_file_emit_design.md §7a.
+    if args.contains("--single-file")
+        setSingleFile(true)
     # §28c (revised 2026-07-21): the else-catches-unnamed-variants WARNING is now
     # OFF by default (it was noisy — N warnings per else branch); opt in with
     # --warn-non-exhaustive.  --no-warn-non-exhaustive is kept as an accepted no-op.

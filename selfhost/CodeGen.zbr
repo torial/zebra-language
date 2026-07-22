@@ -1002,7 +1002,15 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     # the entry thunk's root call and _initIo's per-dep call always resolve.  The
     # once guard tolerates being reached transitively more than once.
     w.emit("var _module_vars_inited: bool = false;\n")
-    w.emit("pub fn _initModuleVars() void {\n")
+    # Single-file: the real body gets a distinct name (`_initModuleVarsImpl`) so a
+    # bare `_initModuleVars()` reference from inside _Mod (the inline top-level main
+    # injects one) resolves unambiguously to the file-scope dispatcher — a same-name
+    # struct member + file-scope decl both visible inside _Mod is an ambiguous
+    # reference in Zig.  See docs/single_file_emit_design.md §7a.1.
+    if _single_file
+        w.emit("pub fn _initModuleVarsImpl() void {\n")
+    else
+        w.emit("pub fn _initModuleVars() void {\n")
     w.emit("    if (_module_vars_inited) return;\n")
     w.emit("    _module_vars_inited = true;\n")
     for mvd in m.decls
@@ -1047,7 +1055,24 @@ def generateEntryPoint(m: Module, library_mode: bool): str
             else
                 pass
     if main_class == ""
+        # Single-file: a top-level free `def main` was emitted as `_Mod.main` (with
+        # the _zinit param + runtime init injected); Zig's startup wants root.main,
+        # so emit a thin file-scope shim forwarding to it.  Return type must match
+        # genMethod's `auto_throws` (throws_ or a raise in the body).
+        if _single_file
+            for decl in m.decls
+                if decl is Decl.method as tm
+                    if tm.name == "main" and not tm.mods.is_static and tm.params.len == 0
+                        var tm_throws: bool = tm.throws_ or (tm.stmts != nil and bodyHasRaise(tm.stmts!))
+                        if tm_throws
+                            return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    return _Mod.main(_zinit);\n}\n"
+                        return "pub fn main(_zinit: std.process.Init) void {\n    _Mod.main(_zinit);\n}\n"
         return ""
+    # Single-file: the entry stays at file scope but the user's main class now
+    # lives inside `_Mod`, so qualify the call.
+    var mod_prefix: str = ""
+    if _single_file
+        mod_prefix = "_Mod."
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
     sb.append("    _io = _zinit.io;\n")
@@ -1058,6 +1083,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    defer _arena.deinit();\n")
     if main_throws
         sb.append("    ")
+        sb.append(mod_prefix)
         sb.append(main_class)
         sb.append(".main() catch |_err| {\n")
         sb.append("        if (_err == error.ZebraError) {\n")
@@ -1069,6 +1095,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    };\n")
     else
         sb.append("    ")
+        sb.append(mod_prefix)
         sb.append(main_class)
         sb.append(".main();\n")
     sb.append("}\n")
@@ -1093,7 +1120,11 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                                 matched = true
                     included = matched
                 if included
-                    test_calls.add(mth.name)
+                    # Single-file: test fns live inside `_Mod`; label stays the plain name.
+                    var tcall: str = mth.name
+                    if _single_file
+                        tcall = "_Mod.${mth.name}"
+                    test_calls.add(tcall)
                     test_labels.add(mth.name)
 
     # Class/struct-contained static def test_*() methods.
@@ -1120,7 +1151,10 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                             included = matched
                         if included
                             var entry: str = "${class_name}.${mth.name}"
-                            test_calls.add(entry)
+                            var ecall: str = entry
+                            if _single_file
+                                ecall = "_Mod.${entry}"
+                            test_calls.add(ecall)
                             test_labels.add(entry)
 
     var sb: StringBuilder = StringBuilder()
@@ -1235,7 +1269,14 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
     sb.append("\n\n")
     sb.append(preamble)
     sb.append("\n")
+    # Single-file: file-scope dispatcher (the preamble's _initIo + entry shims call
+    # the bare name) fans into _Mod; then wrap the user region in the namespace struct.
+    if _single_file
+        sb.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
+        sb.append("const _Mod = struct {\n")
     sb.append(decls)
+    if _single_file
+        sb.append("};\n")
     if error_helper != ""
         sb.append("\n")
         sb.append(error_helper)
@@ -1558,7 +1599,13 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
     sb.append("\n\n")
     sb.append(preamble)
     sb.append("\n")
+    # Single-file: file-scope dispatcher + namespace-struct wrap (see generateFullWithDeps).
+    if _single_file
+        sb.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
+        sb.append("const _Mod = struct {\n")
     sb.append(decls)
+    if _single_file
+        sb.append("};\n")
     if error_helper != ""
         sb.append("\n")
         sb.append(error_helper)
@@ -1778,6 +1825,19 @@ def recordInferenceGuess(site: str)
 
 def inferenceGuessSites(): List(str)
     return _inference_guess_sites
+
+# Single-file emission mode (--single-file).  Mirror of src/CodeGen.zig
+# `CodeGen.single_file`.  File-scope (like the flags above) so every generate*
+# path reads it without threading a bool through every overload.  When set, a
+# single-module program emits its user region inside `const _Mod = struct {…}`
+# with one file-scope preamble — closing F5.  See docs/single_file_emit_design.md §7a.
+var _single_file: bool = false
+
+def setSingleFile(v: bool)
+    _single_file = v
+
+def singleFile(): bool
+    return _single_file
 
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.

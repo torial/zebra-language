@@ -249,11 +249,16 @@ identically under `--single-file` (behavior parity); (b) a program with a top-le
 (`multimod/merged.zig`, `xmod.zig`) — module structs + one preamble + init dispatcher +
 `pub fn main` shim; see §3/§4.
 
-### 7a.1 — increment landed: single-module namespacing (bootstrap side, 2026-07-21)
+### 7a.1 — increment landed: single-module namespacing (both compilers, 2026-07-21)
 
-`src/CodeGen.zig` now implements Approach A behind `--single-file` (default off). The
-selfhost twin (`selfhost/CodeGen.zbr`) is the immediate next step — until it lands,
-`--single-file` is behavioral on the bootstrap only (the selfhost still emits multi-file).
+Both `src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr` implement Approach A behind
+`--single-file` (default off), kept equivalent through the round-trip. The selfhost carries
+a file-scope `var _single_file` + `setSingleFile()` (mirror of the bootstrap's
+`pub var single_file`), wired from `selfhost/main.zbr`; `generateFullWithDeps` /
+`generateFullWithDepsTest` emit the dispatcher + `_Mod` wrap, `generateModuleWith` renames
+the body to `_initModuleVarsImpl`, and `generateEntryPoint` / `generateTestEntryPoint` do
+the `_Mod.` qualification + top-level-main shim. Multi-module merge is still Phase 2 (the
+selfhost's `generateDep*` dep files stay unwrapped).
 
 What was emitted (single-module):
 - `const _Mod = struct { <user decls> <interface RTTI> <closure thunks>
@@ -282,6 +287,15 @@ Verification (bootstrap):
   pre-existing bootstrap-emit gaps, not single-file). → **zero single-file regressions.**
 - F5 acceptance: a `def h` / `def handle` program fails `zig build-exe` under multi-file
   (`local variable shadows declaration of 'h'`) and compiles + runs under `--single-file`.
+
+Verification (selfhost, after regenerating `selfhost/*.zig` via `bootstrap_check.sh --update`
+— note the full round-trip leaves `main.zig` stale because it emits root files to stdout, so
+a `main.zbr` change needs `--update`):
+- `selfhost_smoke.sh` 236/236; `compile_check.sh` (default) 200 pass / 0 fail (baseline).
+- Selfhost single-file sweep (`zebra.exe --single-file --output-dir` + `zig build-exe`):
+  190 pass / 0 fail (+2 large stragglers separately confirmed to compile) — the 10 skips are
+  7 cross-module (Phase 2) + library/no-main. Zero single-file regressions.
+- `plain`→42, `f5`→42/42 under `zebra.exe --single-file`.
 
 ## 8. Interim (until this lands)
 
