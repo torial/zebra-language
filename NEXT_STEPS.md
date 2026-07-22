@@ -137,7 +137,10 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
-- [ ] **Single-file emission — codegen architecture** [SPIKE DONE 2026-07-21, impl not started].
+- [ ] **Single-file emission — codegen architecture** [Phase 1 scaffold + §7a.1 single-MODULE
+  namespacing LANDED both compilers 2026-07-21 (bootstrap `f7076ac`, selfhost `27e615f`), behind
+  default-off `--single-file`; **F5 closed under the flag**; round-trip byte-identical, SF sweep
+  190/0 == multi-file baseline. **NEXT = Phase 2 (multi-module merge).**]
   Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
   **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
   full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced
