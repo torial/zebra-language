@@ -137,10 +137,15 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] **§24e — single method-descriptor table** (stdlib method registration touches
   4 places). Deferred post-1.0, but §28a raised its priority (it converts four
   heuristic dispatch surfaces into one spec). → *Post-1.0 §24e.*
-- [ ] **Single-file emission — codegen architecture** [Phase 1 scaffold + §7a.1 single-MODULE
-  namespacing LANDED both compilers 2026-07-21 (bootstrap `f7076ac`, selfhost `27e615f`), behind
-  default-off `--single-file`; **F5 closed under the flag**; round-trip byte-identical, SF sweep
-  190/0 == multi-file baseline. **NEXT = Phase 2 (multi-module merge).**]
+- [ ] **Single-file emission — codegen architecture** [Phase 1 (single-module, both compilers)
+  + §7b Phase 2 (multi-module merge, **selfhost**) LANDED 2026-07-21, behind default-off
+  `--single-file`. **F5 closed**; `compile_check.sh --single-file` = 200/0/1 == multi-file
+  baseline (now covers multi-module); round-trip byte-identical; smoke 236/236. `zebra.exe
+  --single-file selfhost/main.zbr` emits the 10-module compiler as one 2.3MB file (endgame
+  shape; self-*build* blocked by orthogonal BUG-181). **NEXT:** Phase 3 (bootstrap Phase-2
+  parity, optional — it's being retired) / Phase 4 (edge cases: node-addon export hoisting,
+  cross-module generics/interface-RTTI, circular `use`) / Phase 5 (flip build.zig +
+  bootstrap_check to single-artifact) / Phase 6 (default + retire flag).]
   Emit all Zebra modules into **one** `.zig` file, each wrapped in a namespace `struct`, with
   **one** shared runtime preamble at file scope (today: one file *per module*, each inlining the
   full ~3712-line preamble). Wins: dissolves the **F5** name-collision class for free (namespaced
