@@ -11238,12 +11238,15 @@ struct Generator
                         w.emit(")")
                         return
                     if mname == "indexOf"
-                        w.emit("blk: { const _idx = std.mem.indexOf(u8, ")
+                        # BUG-181: str.indexOf returns i64 with a -1 not-found convention
+                        # (mirror src/CodeGen.zig) — NOT ?i64.  The optional form broke
+                        # arithmetic use (`indexOf(" ") + 1` → `?i64 + comptime_int`).
+                        w.emit("(if (std.mem.indexOf(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
                         if args.len > 0
                             genExpr(args.at(0).value)
-                        w.emit("); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }")
+                        w.emit(")) |_i| @as(i64, @intCast(_i)) else @as(i64, -1))")
                         return
                     if mname == "split"
                         w.emit("std.mem.splitSequence(u8, ")
@@ -12183,12 +12186,14 @@ struct Generator
             w.emit(")")
             return
         if mname == "indexOf"
-            w.emit("blk: { const _idx = std.mem.indexOf(u8, ")
+            # BUG-181: str.indexOf returns i64 with a -1 not-found convention (mirror
+            # src/CodeGen.zig) — NOT ?i64.  The optional form broke arithmetic use.
+            w.emit("(if (std.mem.indexOf(u8, ")
             genExpr(m.object)
             w.emit(", ")
             if args.len > 0
                 genExpr(args.at(0).value)
-            w.emit("); break :blk if (_idx) |_i| @as(i64, @intCast(_i)) else null; }")
+            w.emit(")) |_i| @as(i64, @intCast(_i)) else @as(i64, -1))")
             return
         if mname == "split"
             # Returns a splitSequence iterator (use in for-in via isSplitIter/genForIn)
