@@ -455,7 +455,35 @@ type to the bootstrap if it is kept longer.
 
 ---
 
-## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` ⚠️ OPEN (2 of ~6 emit divergences fixed 2026-07-21) — SLOWNESS FIXED by §28a step 2
+## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` — RESOLVED 2026-07-22
+
+**RESOLVED.** `zebra.exe` cleanly self-compiles its own driver: `--emit-zig` returns 0 and
+the emitted `main.zig` passes `zig build-exe` (semantic analysis) with zero errors. Gated by
+`tools/selfcompile_check.sh`. Eight emit divergences fixed across commits `43673d6`,
+`fc9d322`, `eee950e`, `e8a0652`, `7cfeb84`.
+
+**Dominant pattern (most of the 8): name-based type detection ignoring the proven type.** The
+selfhost guessed List/HashMap/StrSet from an identifier NAME via reverse-index heuristics
+(`fieldIsList`/`isKnownListField`/`fieldIsStrSet`) that false-positive when a param/local NAME
+shadows such a field elsewhere; the bootstrap uses the TypeChecker type and gates its List
+fallback on `obj_tc == .unknown`. Convergent fix: trust inference when it proves a type; fall
+to the name heuristics only when the type is genuinely unknown.
+- `StrSet.len`→`.items.len`: gated on `typeIsUnknown(receiver)`, restricted to BARE IDENT
+  receivers (a member access `obj.field` keeps the heuristic — `fieldIsList("values")` on
+  `c.values` is authoritative; a first cut regressed that, fixed in `fc9d322`).
+- `StrSet.contains_`→`.contains`: nil-narrowed `StrSet?` via `if x as nn`. ROOT: the `if x as
+  n` optional-unwrap never bound the capture's type into infer_ctx; fixed by binding it.
+- `.len`/`.count` assignment TARGET emitted the read-form `@as(i64,@intCast(x.len)) = …`;
+  genAssign now emits a plain `obj.len = v` field store.
+- `int.toString()`/`Value.getObj()` on a method-chain temp emitted the terminal call RAW; new
+  `isValueTypeExpr` skips BUG-079 materialization for value/json receivers.
+- `str.indexOf` emitted `?i64`; converged to the bootstrap's `i64` with `-1` not-found.
+- `stripStringQuotes` (AstBuilder) dropped an interp start-segment's trailing content when it
+  had an escaped quote (`"a\"b`→`a\`, `\{` invalid escape); rewrote to strip without splitting.
+
+Each fix gated (`compile_check` 200/0/1 + byte-identical round-trip). Historical detail below.
+
+<details><summary>Original 2026-07-21 progress note (2-of-6 snapshot)</summary>
 
 **Progress (2026-07-21, commit `43673d6`): 2 emit divergences fixed.** Both were
 name-based container detection ignoring the receiver's proven type (the general pattern:
