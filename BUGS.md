@@ -455,7 +455,40 @@ type to the bootstrap if it is kept longer.
 
 ---
 
-## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` ⚠️ OPEN (pre-existing; self-hosting gap) — SLOWNESS FIXED by §28a step 2; now blocked by emit bugs
+## BUG-181: selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` ⚠️ OPEN (2 of ~6 emit divergences fixed 2026-07-21) — SLOWNESS FIXED by §28a step 2
+
+**Progress (2026-07-21, commit `43673d6`): 2 emit divergences fixed.** Both were
+name-based container detection ignoring the receiver's proven type (the general pattern:
+the selfhost guesses List/HashMap/StrSet from an identifier NAME via reverse-index
+heuristics that false-positive; the bootstrap uses the TypeChecker type and gates its
+List fallback on `obj_tc == .unknown`). The convergent fix is to trust inference when it
+proves a type and only fall to the name heuristics when the type is genuinely unknown.
+- ✅ `StrSet.len` → `.items.len`: `out.len` on a `StrSet` param (name `out` collided with
+  a List field elsewhere). Gated the name heuristics on `typeIsUnknown(receiver)`.
+- ✅ `StrSet.contains_` → `.contains`: a nil-narrowed `StrSet?` via `if x as nn` dropped
+  the `_`. Root cause: the `if x as n` optional-unwrap never bound the capture's type into
+  infer_ctx (so `nn` was `unknown`). Fixed by binding the unwrapped capture to the
+  optional's inner type — a broad fix (every `if x as n`), verified 200/0 + round-trip.
+
+**Cross-check with single-file (Phase 2):** the combined `selfhost/main.zig` produced by
+`zebra.exe --single-file selfhost/main.zbr` has the EXACT SAME emit-bug set as the
+multi-file self-build (zero single-file-specific errors), so single-file emission is ready
+for the endgame the moment BUG-181 clears — it is not itself a blocker.
+
+**Remaining divergences (from a fresh self-compile, before Zig's early-stop hides more):**
+- `int.toString()` on a method-chain temp: `var _mc = self.w.nextUid(); _mc.toString()` —
+  the materialization temp's int type isn't tracked, so `.toString()` isn't lowered to the
+  int→string helper. (2 sites.) Likely fix: bind the chain-temp's type (the call's return
+  type) into infer_ctx at materialization.
+- `invalid escape character: '{'` (an emitted string literal — genString/interp escaping).
+- `Value.getObj` on `json.dynamic.Value` (stdlib API name mismatch).
+- `invalid left-hand side to assignment` (a `.len` **lvalue** — an assignment TARGET
+  wrapped in the read-side `@as(i64,@intCast(x.len))` form; see the older note below).
+
+Fix the remaining, re-emit (more errors likely surface behind Zig's early-stop), then add a
+gate that self-compiles `main.zbr`. Historical detail below.
+
+### Earlier analysis (2026-07-16) — slowness fixed, original 3-bug snapshot
 
 The self-hosted `zebra.exe` cannot compile its own entry file `selfhost/main.zbr`.
 Smaller selfhost modules (`CodeGen.zbr`, `TypeChecker.zbr`, `CgHelpers.zbr`, …)
