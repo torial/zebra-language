@@ -5054,7 +5054,7 @@ struct Generator
                 # string chain directly.  Materialization (BUG-079) is only needed for
                 # STRUCT temporaries needing a stable address; string slices pass by
                 # value.  Fixes chained `s.concat(a).concat(b)` (BUG-185).
-                if not isStringExpr(chain.recv) and not isDateTimeExpr(chain.recv)
+                if not isStringExpr(chain.recv) and not isDateTimeExpr(chain.recv) and not isValueTypeExpr(chain.recv)
                     mc_recv = hoistCallChain(chain.recv)
                     mc_field = chain.method
                     if .infer_ctx != nil
@@ -5532,6 +5532,32 @@ struct Generator
     # Returns true if the expression produces a _DateTime value.
     # Used to route field access (.year/.month/.day/.hour/.minute/.second/.weekday)
     # through _dt_to_gregorian / _dt_weekday instead of direct struct access.
+    # BUG-181: a numeric/bool/char primitive is pass-by-value; a method chain on one
+    # (e.g. `w.nextUid().toString()`) lowers to a value helper, never a `*self` method, so
+    # it must NOT be materialized into `var _mc = n; _mc.method()` (BUG-079 is for STRUCT
+    # temporaries needing a stable address).  Materializing erases the type and emits the
+    # terminal call RAW (bypassing the type-directed rewrite → `i64.toString()`).
+    def isValueTypeExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t = inferExpr(e, .infer_ctx!)
+        if t is Type_.int_
+            return true
+        if t is Type_.uint_
+            return true
+        if t is Type_.float_
+            return true
+        if t is Type_.bool_
+            return true
+        if t is Type_.char_
+            return true
+        # A json Value's methods (getObj/getStr/…) are also helper-dispatched
+        # (`_json_get_obj(recv, key)`), not `*self` methods, so a chain on one must reach
+        # genMemberCall's json_value arm rather than being materialized + emitted raw.
+        if t is Type_.json_value
+            return true
+        return false
+
     def isDateTimeExpr(e: Expr): bool
         if e is Expr.ident as id
             return .datetime_vars.contains_(id.name)
@@ -5726,7 +5752,7 @@ struct Generator
         # handles the string chain.  (Mirrors the var-init and return paths.)
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
-            if ch != nil and not isStringExpr((ch!).recv) and not isDateTimeExpr((ch!).recv)
+            if ch != nil and not isStringExpr((ch!).recv) and not isDateTimeExpr((ch!).recv) and not isValueTypeExpr((ch!).recv)
                 var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
