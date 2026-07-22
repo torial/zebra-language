@@ -297,6 +297,64 @@ a `main.zbr` change needs `--update`):
   7 cross-module (Phase 2) + library/no-main. Zero single-file regressions.
 - `plain`→42, `f5`→42/42 under `zebra.exe --single-file`.
 
+## 7b. Phase 2 design — multi-module merge (grounded in the drivers, 2026-07-21)
+
+Phase 1 wraps ONE module; a program with `use` deps still emits each dep as its own `.zig`
+file (full preamble each) and the wrapped root `@import`s them — a hybrid, not yet one file.
+Phase 2 merges all transitive modules into a single `.zig`: one preamble at file scope, each
+module a namespaced struct, cross-module refs rewritten, one init dispatcher + one entry.
+
+**Target shape (multi-module):**
+```zig
+// one preamble at file scope (globals + helpers + ONE _error_ctx)
+const _mod_Token  = struct { … };          // deps first (topological order)
+const _mod_Lexer  = struct { const Token = _mod_Token; … };   // `use Token` → struct ref
+const _mod_main   = struct { const Lexer = _mod_Lexer.Lexer;  // `use Lexer exposing Lexer`
+                              … _initModuleVarsImpl … };
+pub fn _initModuleVars() void { _mod_Token._initModuleVarsImpl(); _mod_Lexer…; _mod_main…; }
+pub fn main(_zinit) void { … _initModuleVars(); _mod_main.run(); }
+```
+
+**Three code changes per compiler (`src/CodeGen.zig` + `selfhost/CodeGen.zbr`):**
+
+1. **genUse rewrite.** Replace `@import("<path>.zig")` with the module struct name
+   `_mod_<sanitized path>` (dots/slashes → `_`). So `use Mod` → `const Mod = _mod_Mod;`
+   (or, for a sole same-named class, `const Mod = _mod_Mod.Mod;`); `use Mod exposing A` →
+   `const A = _mod_Mod.A;`. The **`_mod_` prefix is load-bearing**: it keeps the module
+   struct's name distinct from a same-named class the module exports (today's `Lexer` alias
+   means the *class*; the struct must not also be bare `Lexer`).
+
+2. **Driver assembly.** Both drivers already compile deps depth-first and write one `.zig`
+   per module (`MultiCompiler.compileDep` → `generateDepWith`; `src/main.zig` →
+   `compileZbrToZig`). Under `--single-file`, instead of writing per-module files, accumulate
+   each module's `generateModuleWith` output (decls only, no preamble/entry) wrapped in
+   `const _mod_<name> = struct { … };`, in the existing post-order (deps before root); after
+   the root, emit ONE file: header + preamble once + all module structs + a file-scope
+   `_initModuleVars()` fanning out to every `_mod_<name>._initModuleVarsImpl()` + the entry.
+
+3. **Fan-out collapse.** The per-module `_initAllocator`/`_initIo`/`_zbr_error_msg`
+   `@import` fan-out is deleted: one shared runtime state (already file scope), one dispatcher,
+   and — because there is now ONE `_error_ctx` (one preamble) — `_zbr_error_msg` collapses to
+   `return _error_ctx.message`. This is the emit-simplification win §1 promised.
+
+**Decisions (mine, per the drop-bootstrap-parity latitude — surfaced):**
+- **Module-struct naming = `_mod_<path with non-ident chars → _>`.** Collisions (two modules,
+  same sanitized name) are rare and get a clear compile-time error, not silent mangling. The
+  selfhost's own modules (Token, Lexer, Parser, …) are collision-free, so the endgame works.
+- **Root unification.** In multi-module, the root is `_mod_<rootname>` like any module; Phase
+  1's single-module `_Mod` name stays for the no-deps case (or is unified to `_mod_<root>` —
+  decide during impl; unifying is cleaner but re-verifies the single-module shape).
+- **Sequencing = selfhost-first.** Phase 2 lands in the selfhost (the primary compiler; it
+  alone needs to compile *itself* as one file — the endgame). The bootstrap's multi-module
+  single-file follows later or not at all: the bootstrap is being phased out, `--single-file`
+  is default-off, and the bootstrap still compiles the selfhost source in default mode (the
+  hard parity rule holds). `compile_check --bootstrap --single-file` already skips multi-module.
+
+**Open risks (from §7, now concrete):** circular `use` (mutually-referential structs — Zig
+allows forward refs within a file, but init order needs a topological guarantee, not just
+post-order); generics instantiated across modules (`_ttag_*` land in the right `_mod_` struct);
+`export fn` / node-addon (must hoist to file scope — Phase 4); same-basename collisions.
+
 ## 8. Interim (until this lands)
 
 F5 is **low-severity** with a trivial workaround: do not name a top-level `def` after
