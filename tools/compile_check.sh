@@ -12,8 +12,15 @@
 # Usage:
 #   bash tools/compile_check.sh                 # selfhost (zebra.exe), all tests
 #   bash tools/compile_check.sh --bootstrap     # bootstrap (zebra-bootstrap.exe)
+#   bash tools/compile_check.sh --single-file   # emit each test with --single-file, then check
 #   bash tools/compile_check.sh --only hashmap   # only tests whose name contains 'hashmap'
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
+#
+# --single-file mode: appends --single-file to the emit, so it checks the namespaced
+# `const _Mod = struct {…}` shape (docs/single_file_emit_design.md §7a). Phase 1 is
+# SINGLE-MODULE only, so cross-module tests are skipped here (Phase 2 = multi-module
+# merge will lift that). Combine with --bootstrap to check the bootstrap's single-file
+# emit. A clean run should match the multi-file baseline test-for-test (zero regressions).
 #
 # Parallelism: per-test emit+typecheck is independent, so the worklist is fanned out
 # across $JOBS workers (each in its own temp dir — parallel-safe). Measured ~3x at
@@ -36,6 +43,13 @@ SKIP=" c_interop_test zig_interop_test forgot_parens_test "
 # under the selfhost, whose --output-dir emits the deps alongside the root).
 BOOTSTRAP_SKIP=" crossmod_hatopt_test crossmod_optret_test crossmod_struct_pat_test crossmod_types_test crossmod_arith_test crossmod_infer_test crossmod_expose_test val_test test_module_test "
 
+# --single-file mode is single-module only in Phase 1 (the emitter wraps ONE module in
+# `_Mod`; dep modules are still emitted unwrapped, so a multi-module program's cross-module
+# references don't line up yet — Phase 2). Skip every multi-module test here. The `*crossmod*`
+# glob (applied below) covers the crossmod_* family + bug168_crossmod_prim_return_test; these
+# names are the remaining multi-module tests that don't match that glob.
+SINGLE_FILE_SKIP=" val_test test_module_test "
+
 zebra_for() { # $1 = mode
   if [ "$1" = bootstrap ]; then echo "$REPO/zig-out/bin/zebra-bootstrap.exe"
   else echo "$REPO/zig-out/bin/zebra.exe"; fi
@@ -46,12 +60,14 @@ if [ "${1:-}" = "--worker" ]; then
   mode="$2"; rel="$3"
   name=$(basename "$rel" .zbr)
   zebra=$(zebra_for "$mode")
+  # CC_SINGLE_FILE is exported by the main process; append --single-file to the emit.
+  sf_flag=""; [ "${CC_SINGLE_FILE:-0}" = 1 ] && sf_flag="--single-file"
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
   if [ "$mode" = bootstrap ]; then
-    "$zebra" --emit-zig "$REPO/$rel" > "$main" 2>/dev/null || { echo "SKIP $name"; exit 0; }
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>/dev/null || { echo "SKIP $name"; exit 0; }
   else
-    "$zebra" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1 || { echo "SKIP $name"; exit 0; }
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1 || { echo "SKIP $name"; exit 0; }
   fi
   [ -f "$main" ] || { echo "SKIP $name"; exit 0; }          # library module (no main)
   grep -q "pub fn main" "$main" || { echo "SKIP $name"; exit 0; }
@@ -65,16 +81,18 @@ if [ "${1:-}" = "--worker" ]; then
 fi
 
 # ── Main: parse flags, build worklist, fan out ──────────────────────────────────
-MODE=selfhost; ONLY=""
+MODE=selfhost; ONLY=""; SF=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --bootstrap) MODE=bootstrap; shift;;
-    --only) ONLY="${2:-}"; shift 2;;
+    --bootstrap)   MODE=bootstrap; shift;;
+    --single-file) SF=1; shift;;
+    --only)        ONLY="${2:-}"; shift 2;;
     *) shift;;
   esac
 done
 JOBS="${JOBS:-4}"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # ensure zig is reachable when run standalone
+export CC_SINGLE_FILE="$SF"                   # picked up by --worker
 mkdir -p "$OUT"
 
 tests=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
@@ -89,6 +107,11 @@ for f in $tests; do
   if [ "$MODE" = bootstrap ]; then
     case "$BOOTSTRAP_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
   fi
+  if [ "$SF" = 1 ]; then
+    # Phase 1 single-file is single-module only: drop the multi-module tests.
+    case "$name" in *crossmod*) skip=$((skip+1)); continue;; esac
+    case "$SINGLE_FILE_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
+  fi
   worklist="$worklist$f"$'\n'
 done
 
@@ -101,6 +124,6 @@ wskip=$(printf '%s\n' "$results" | grep -c '^SKIP ' || true)
 skip=$((skip + wskip))
 failed=$(printf '%s\n' "$results" | awk '/^FAIL /{printf " %s", $2}')
 
-echo "compile-check: $pass passed, $fail FAILED, $skip skipped (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE})"
+echo "compile-check: $pass passed, $fail FAILED, $skip skipped (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
 [ -n "$failed" ] && echo "FAILED:$failed"
 [ "$fail" -eq 0 ]
