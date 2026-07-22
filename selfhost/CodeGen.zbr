@@ -6356,6 +6356,16 @@ struct Generator
                 w.emit(cap)
                 w.emit("| {\n")
                 var ig2 = indented()
+                # BUG-181: bind the unwrapped capture's type so method dispatch inside the
+                # block sees the proven inner type (e.g. StrSet.contains_ keeping its `_`)
+                # instead of `unknown`.  The narrowed type is the optional's inner type.
+                if ig2.infer_ctx != nil
+                    var _nt_b = inferExpr(cond_expr, ig2.infer_ctx!)
+                    branch _nt_b
+                        on Type_.optional as _nt_inner
+                            ig2.infer_ctx!.bind(cap, _nt_inner)
+                        else
+                            ig2.infer_ctx!.bind(cap, _nt_b)
                 # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
                 if cap != "_" and not mightUseName(cap, stmts)
                     ig2.writeIndent()
@@ -8688,6 +8698,16 @@ struct Generator
                     var fname = getMemberFieldName(m.object)
                     var is_list_obj = false
                     var is_hm_obj = false
+                    # BUG-181 (bootstrap parity): only guess the receiver's container-ness
+                    # from its NAME when the type is genuinely unprovable.  fieldIsList /
+                    # isKnownListField / fieldAwareIsHashMap are name→type reverse indexes
+                    # that false-positive when a param/local NAME collides with a List/HashMap
+                    # field of the same name elsewhere in the program (e.g. a `StrSet` param
+                    # named `out` vs some class's `out: List(...)` → `out.items.len` on a
+                    # StrSet).  A proven receiver is classified by the infer_ctx check below
+                    # (List/HashMap) or falls to the `.len` field access.  Mirrors
+                    # src/CodeGen.zig, whose List `.len` fallback is gated on obj_tc==.unknown.
+                    var _len_unknown = typeIsUnknown(m.object)
                     if fname != nil
                         var fn2 = fname!
                         # str_params takes priority — string variables are never lists
@@ -8701,9 +8721,10 @@ struct Generator
                                 # `source: str` vs another's `source: List(PNode)` →
                                 # `self.source.items.len` on a `[]const u8`).
                                 is_list_obj = isListField(fn2)
-                            else
+                            else if _len_unknown
                                 is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
-                        is_hm_obj = fieldAwareIsHashMap(fn2)
+                        if _len_unknown
+                            is_hm_obj = fieldAwareIsHashMap(fn2)
                     if is_list_obj
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
@@ -11922,6 +11943,13 @@ struct Generator
             if cont_obj_name != nil
                 var cont_nm = cont_obj_name!
                 is_strset_obj = strset_locals.contains_(cont_nm) or fieldIsStrSet(.module_types, .dep_types, cont_nm)
+            # BUG-181: the name-based checks above miss a StrSet reached other than by a
+            # registered local/field name — e.g. a nil-narrowed StrSet? bound via
+            # `if x as nn` (nn is a fresh narrowing local, not in strset_locals). Trust
+            # inference when it proves str_set so the user method keeps its `_`.
+            if not is_strset_obj and .infer_ctx != nil
+                if inferExpr(m.object, .infer_ctx!) is Type_.str_set
+                    is_strset_obj = true
             if is_strset_obj
                 w.emit(".contains_(")
             else
