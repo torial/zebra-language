@@ -5736,6 +5736,20 @@ struct Generator
                 w.emit(");\n")
                 return
         writeIndent()
+        # BUG-181: a `.len`/`.count` member used as an assignment TARGET is a plain int
+        # field store (only fields are assignable — StrSet/TupleType_ carry a `len` field).
+        # Emit `obj.len = v`, NOT the read-form `@as(i64, @intCast(obj.len))` that the .len
+        # member codegen produces, which is an invalid assignment LHS in Zig.
+        if a.op == AssignOp.assign
+            if a.target is Expr.member as _lvt
+                if _lvt.member == "len" or _lvt.member == "count"
+                    genExpr(_lvt.object)
+                    w.emit(".")
+                    w.emit(_lvt.member)
+                    w.emit(" = ")
+                    genExpr(a.value)
+                    w.emit(";\n")
+                    return
         if a.op == AssignOp.slashslash_eq
             genExpr(a.target)
             w.emit(" = @divTrunc(")
@@ -8698,16 +8712,17 @@ struct Generator
                     var fname = getMemberFieldName(m.object)
                     var is_list_obj = false
                     var is_hm_obj = false
-                    # BUG-181 (bootstrap parity): only guess the receiver's container-ness
-                    # from its NAME when the type is genuinely unprovable.  fieldIsList /
-                    # isKnownListField / fieldAwareIsHashMap are name→type reverse indexes
-                    # that false-positive when a param/local NAME collides with a List/HashMap
-                    # field of the same name elsewhere in the program (e.g. a `StrSet` param
-                    # named `out` vs some class's `out: List(...)` → `out.items.len` on a
-                    # StrSet).  A proven receiver is classified by the infer_ctx check below
-                    # (List/HashMap) or falls to the `.len` field access.  Mirrors
-                    # src/CodeGen.zig, whose List `.len` fallback is gated on obj_tc==.unknown.
-                    var _len_unknown = typeIsUnknown(m.object)
+                    # BUG-181 (bootstrap parity): the name→type reverse indexes (fieldIsList /
+                    # isKnownListField / fieldAwareIsHashMap) false-positive when a BARE IDENT
+                    # (param/local) NAME shadows a List/HashMap field of the same name elsewhere
+                    # (e.g. a `StrSet` param `out` vs some class's `out: List(...)`).  For a bare
+                    # ident, trust its proven type instead — mirror src/CodeGen.zig, whose List
+                    # `.len` fallback is gated on obj_tc==.unknown.  A MEMBER access (`obj.field`)
+                    # keeps the heuristic: there the name IS the field, so fieldIsList("values")
+                    # on `c.values` is AUTHORITATIVE (do not skip it — that regresses List fields).
+                    var _len_unknown = true
+                    if m.object is Expr.ident
+                        _len_unknown = typeIsUnknown(m.object)
                     if fname != nil
                         var fn2 = fname!
                         # str_params takes priority — string variables are never lists
