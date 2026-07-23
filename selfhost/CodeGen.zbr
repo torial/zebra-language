@@ -11670,6 +11670,8 @@ struct Generator
                     if um_needs_fill and um_params != nil
                         genArgListFull(args, um_params, um_body)
                         w.emit(")")
+                        if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
+                            emitTryBlockCatch()
                         return
                     var um_ai: int = 0
                     while um_ai < args.len
@@ -11695,6 +11697,13 @@ struct Generator
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
                     w.emit(")")
+                    # Throws call inside a try-block: capture the error into the block's
+                    # tracker (mirror the default path's emitTryBlockCatch).  This early-exit
+                    # previously handled only `try` (propagate), not the catch — so a bare
+                    # `.outer()` in a method-level `catch` emitted a bare call → "error union
+                    # is ignored" (throws_autoprop_test).
+                    if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
+                        emitTryBlockCatch()
                     return
         # §28a step 1 (measure): reaching the name-based heuristic below means no
         # typed arm matched — the receiver type was not proven.  If the method name
