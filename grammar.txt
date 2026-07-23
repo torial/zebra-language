@@ -141,8 +141,12 @@ CatchClause          → kw_catch eol Block
                      |  kw_catch vertical_bar id vertical_bar eol Block
                      |  kw_catch vertical_bar id colon TypeRef vertical_bar eol Block
 
+# Type annotations use `colon` (`def f(): int`, `var x: int`, `x: int`) — NOT `as`.
+# (`as` binds a name in nil-narrowing `if x as y`, a different construct.) Corrected
+# 2026-07-23: the grammar had drifted to `kw_as` here, VarTypeOpt, and Param; both
+# compilers reject `as` in these positions and accept `colon`.
 ReturnAnnotOpt       → ε
-                     |  kw_as TypeRef
+                     |  colon TypeRef
 
 PropDecl             → ModList kw_get id ReturnAnnotOpt IsClauseOpt HasOpt eol
                      |  ModList kw_get id ReturnAnnotOpt IsClauseOpt HasOpt eol Block
@@ -172,7 +176,7 @@ VarMemberDecl        → ModList kw_var id VarTypeOpt VarInitOpt eol
                      |  ModList kw_const id VarTypeOpt assign Expr eol
 
 VarTypeOpt           → ε
-                     |  kw_as TypeRef
+                     |  colon TypeRef
 
 VarInitOpt           → ε
                      |  assign Expr
@@ -203,9 +207,9 @@ ParamListNE          → Param
                      |  ParamListNE comma Param
 
 Param                → ParamModeOpt id
-                     |  ParamModeOpt id kw_as TypeRef
+                     |  ParamModeOpt id colon TypeRef
                      |  ParamModeOpt id assign Expr
-                     |  ParamModeOpt id kw_as TypeRef assign Expr
+                     |  ParamModeOpt id colon TypeRef assign Expr
 
 ParamModeOpt         → ε
                      |  kw_vari
