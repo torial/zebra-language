@@ -440,17 +440,25 @@ bootstrap-lag as it sunsets; the selfhost is the reference. Codified in `grammar
 `test/marker_struct_test.zbr` (smoke_run). The fuzzer's remaining "empty struct/class"
 PARSE-DIVERGENCE findings are now EXPECTED (bootstrap-lag), not bugs.
 
-**Scoped deliberately to struct+class.** The selfhost's parser *also* accepts empty
-`interface`/`mixin`/`extend`/`enum`, but those are NOT blessed: empty `interface`
-miscompiles (emits a broken `pub fn check(comptime T)` conformance stub → zig rejects);
-empty `mixin`/`extend` are no-ops; a zero-variant `enum` is degenerate. Grammar keeps
-mandatory bodies for those. **Two follow-ups surfaced (low priority):**
-- selfhost parser is too lenient on empty `interface`/`mixin`/`extend`/`enum` (accepts
-  what the grammar now forbids); empty `interface` additionally miscompiles.
-- **Member-var `as`-type drift:** `var x as int` as a *class/struct member* is rejected
-  by BOTH compilers (`unexpected member: 'as'`) despite `VarMemberDecl → … VarTypeOpt →
-  kw_as TypeRef` in the grammar. A grammar↔parser mismatch (both agree, so not a
-  divergence) — filed here as a note.
+**Scoped deliberately to struct+class.** `interface`/`mixin`/`extend`/`enum` keep
+mandatory bodies (empty `interface` miscompiles a `pub fn check(comptime T)` conformance
+stub; empty `mixin`/`extend` are no-ops; a zero-variant `enum` is degenerate).
+
+**Both follow-ups RESOLVED (2026-07-23):**
+- ✅ **FU1 — selfhost parser leniency.** The selfhost accepted empty `interface`/`mixin`/
+  `extend`/`enum` (the grammar + bootstrap reject them). Fixed in `selfhost/Parser.zbr`:
+  each now `raise .errorAt(…)` on an empty body — `"interface 'I' must have a body"`,
+  `"enum 'E' must have at least one variant"`, etc. Regressions:
+  `test/empty_interface_rejected_test.zbr`, `test/empty_enum_rejected_test.zbr`
+  (smoke_tc_fail). Convergence fix (selfhost → bootstrap); no corpus file had an empty
+  one of these.
+- ✅ **FU2 — member/local/param/return `as`-type drift was a STALE GRAMMAR, not a bug.**
+  Verified empirically: `:` (colon) works everywhere in BOTH compilers; `as` is rejected
+  everywhere in both. So type annotations are `colon TypeRef`, not `kw_as TypeRef` — the
+  grammar had drifted (a Cobra-era `as` that the impl replaced with `:`). Corrected
+  `ReturnAnnotOpt`/`VarTypeOpt`/`Param` in `grammar.txt`. (Bonus: gramgen reads the
+  grammar, so it now generates valid `x: int` annotations instead of the rejected
+  `x as int` — less both-reject noise.) The `if x as y` capture form keeps `as`.
 
 ## G3 — size-type name as type-alias RHS: bootstrap resolver gap  ⛔ OPEN (low, bootstrap-lags)
 

@@ -1523,6 +1523,8 @@ class Parser
                 .skipEol()
             if .isDedent()
                 .advance()
+        if variants.len == 0
+            raise .errorAt("enum '" + name + "' must have at least one variant")
         return PNode.enum_(PEnum(name, variants, base, values, _dl, _dc))
 
     def parseStructDecl(is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false): PNode throws
@@ -1576,6 +1578,10 @@ class Parser
             if .isDedent()
                 .advance()
         var type_params = List(str)()
+        # Empty bodies are legal only for struct/class (marker types). interface/
+        # mixin/extend/enum require a body — matches the grammar and the bootstrap.
+        if members.len == 0
+            raise .errorAt("interface '" + name + "' must have a body")
         return PNode.interface_(PClass(name, type_params, ifaces, List(str)(), members, List(PNode)(), false, false, false, false, nil, _dl, _dc))
 
     def parseMixinDecl(): PNode throws
@@ -1595,6 +1601,8 @@ class Parser
             if .isDedent()
                 .advance()
         var empty_str_list = List(str)()
+        if members.len == 0
+            raise .errorAt("mixin '" + name + "' must have a body")
         return PNode.mixin_(PClass(name, empty_str_list, empty_str_list, empty_str_list, members, List(PNode)(), false, false, false, false, nil, _dl, _dc))
 
     def parseExtendDecl(): PNode throws
@@ -1611,6 +1619,8 @@ class Parser
                 members.add(.parseMemberDecl(false)?)
             if .isDedent()
                 .advance()
+        if members.len == 0
+            raise .errorAt("extend '" + target_name + "' must have a body")
         return PNode.extend_(PExtend(target_name, members))
 
     def parseUnionDecl(): PNode throws

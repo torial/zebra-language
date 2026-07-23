@@ -1,0 +1,3 @@
+# FU1 (2026-07-23): a zero-variant enum is rejected (degenerate). Only struct/class may
+# be empty. See fuzz/FINDINGS.md G2.
+enum Color

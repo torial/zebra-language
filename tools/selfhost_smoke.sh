@@ -450,6 +450,11 @@ smoke_tc_fail test/print_stmt_removed_test.zbr "expected '('"
 # selfhost parser (error-recovery no-progress loop). Must reject fast, not hang.
 smoke_tc_fail test/bug199_recovery_hang_test.zbr "unexpected top-level token"
 
+# G2 FU1: only struct/class may be body-less (marker types). interface/mixin/extend/enum
+# require a body; a zero-variant enum is degenerate. See grammar.txt MemberBlockOpt.
+smoke_tc_fail test/empty_interface_rejected_test.zbr "must have a body"
+smoke_tc_fail test/empty_enum_rejected_test.zbr "must have at least one variant"
+
 # Size unified on `.len` (#219): List.len, HashMap.len, maintained `len` field on
 # a user class; `str.count(sub)` substring method preserved.
 smoke_test test/len_size_test.zbr

@@ -1,0 +1,3 @@
+# FU1 (2026-07-23): empty interface/mixin/extend/enum are rejected (only struct/class
+# may be body-less marker types). See grammar.txt MemberBlockOpt + fuzz/FINDINGS.md G2.
+interface Drawable
