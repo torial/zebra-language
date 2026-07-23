@@ -73,6 +73,15 @@ JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every posi
                                 #   Currently a MANUAL tool (not gated) — so its coverage
                                 #   is only real on days it's run. `--only <substr>` for a
                                 #   tight loop; `--bootstrap` to check the bootstrap's emit.
+JOBS=4 bash tools/divergence_check.sh --gate  # THE DRIFT WITNESS: emits the corpus with
+                                #   BOTH compilers and compiles each. --gate exits non-zero
+                                #   if any SELFHOST GAP (bootstrap compiles it, selfhost
+                                #   doesn't) — i.e. the selfhost silently regressed vs the
+                                #   reference. Catches selfhost↔bootstrap drift the others
+                                #   miss (they all emit with ONE compiler). Baselined 0
+                                #   selfhost gaps 2026-07-22. Bootstrap gaps (selfhost LEADS)
+                                #   + agree-fails (negative tests) are informational, not gated.
+                                #   Heavy → per-session/pre-release, like compile_check.
 ```
 
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that

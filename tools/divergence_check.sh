@@ -19,8 +19,9 @@
 # here and reported separately, not as divergences.
 #
 # Usage:
-#   bash tools/divergence_check.sh                # test/ + examples/
+#   bash tools/divergence_check.sh                # test/ + examples/ (report only)
 #   bash tools/divergence_check.sh --only json    # names containing 'json'
+#   bash tools/divergence_check.sh --gate         # exit 1 if any SELFHOST gap (regression)
 #   JOBS=4 bash tools/divergence_check.sh         # parallelism (default 4)
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -58,8 +59,12 @@ if [ "${1:-}" = "--worker" ]; then
   echo "$name|$b|$s"; exit 0
 fi
 
-ONLY=""
-while [ $# -gt 0 ]; do case "$1" in --only) ONLY="${2:-}"; shift 2;; *) shift;; esac; done
+ONLY=""; GATE=0
+while [ $# -gt 0 ]; do case "$1" in
+  --only) ONLY="${2:-}"; shift 2;;
+  --gate) GATE=1; shift;;   # exit non-zero if any SELFHOST gap exists (regression signal)
+  *) shift;;
+esac; done
 JOBS="${JOBS:-4}"; mkdir -p "$OUT"
 
 files=$(ls "$REPO"/test/*.zbr "$REPO"/examples/*.zbr 2>/dev/null | sort -u)
@@ -107,3 +112,27 @@ echo "▶ BOOTSTRAP GAPS ($nbg) — selfhost OK, bootstrap fails (bootstrap lags
 echo
 echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fail"
 [ -n "$multi_selffail" ] && { echo; echo "· multi-module selfhost failures (not A/B-checkable): $multi_selffail"; }
+
+# ── Gate ─────────────────────────────────────────────────────────────────────
+# The gate signal is SELFHOST GAPS == 0: a single-module program the bootstrap
+# (independent witness) compiles but the selfhost does not — i.e. the selfhost
+# silently regressed relative to the reference. Cleaned to 0 on 2026-07-22 after
+# the post-BUG-181 sweep; --gate holds that line.
+#
+# Deliberately NOT gated (informational only): BOOTSTRAP GAPS (selfhost LEADS — a
+# sunsetting-bootstrap lag, see NEXT_STEPS 5-family triage), agree-fail (negative/
+# diagnostic tests that are meant to fail compilation), and multi-module selfhost
+# failures (a separate interop/crossmod WIP baseline, not A/B-checkable here).
+#
+# This is a heavy sweep (both compilers × full corpus × `zig build-exe`), so it is a
+# per-SESSION / pre-release gate like compile_check.sh — not a per-commit hook.
+if [ "$GATE" = 1 ]; then
+  echo
+  if [ "$nsg" -eq 0 ]; then
+    echo "✓ divergence gate PASS — 0 selfhost gaps (selfhost matches the bootstrap witness)."
+  else
+    echo "✗ divergence gate FAIL — $nsg selfhost gap(s): the selfhost regressed vs the bootstrap."
+    echo "   $self_gap"
+    exit 1
+  fi
+fi
