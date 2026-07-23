@@ -82,6 +82,13 @@ JOBS=4 bash tools/divergence_check.sh --gate  # THE DRIFT WITNESS: emits the cor
                                 #   selfhost gaps 2026-07-22. Bootstrap gaps (selfhost LEADS)
                                 #   + agree-fails (negative tests) are informational, not gated.
                                 #   Heavy → per-session/pre-release, like compile_check.
+python fuzz/gramgen.py --gate   # THE PARSER-ROBUSTNESS GATE: derives 960 deterministic
+                                #   grammar-valid programs (fixed seeds) and fails on any
+                                #   HANG or CRASH (accept/reject divergences are expected,
+                                #   don't fail it). Would have caught BUG-199 (an 18-byte
+                                #   parser infinite loop) automatically. Complements the
+                                #   above (which only ever see human-written programs).
+                                #   Optional per-session; ~a few min. Needs both .exe built.
 ```
 
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that

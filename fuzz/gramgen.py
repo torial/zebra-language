@@ -240,7 +240,13 @@ def main():
     ap.add_argument('--dry', action='store_true', help='generate + print, no compiler')
     ap.add_argument('--max-depth', type=int, default=18)
     ap.add_argument('--show', type=int, default=3, help='sample programs to print')
+    ap.add_argument('--gate', action='store_true',
+                    help='deterministic per-session gate: fixed seeds/depths, exit 1 on '
+                         'any HANG or CRASH (accept/reject divergences do NOT fail the gate)')
     args = ap.parse_args()
+
+    if args.gate:
+        return _run_gate()
 
     grammar, order = load_grammar(GRAMMAR)
     rng = random.Random(args.seed)
@@ -367,5 +373,50 @@ def _report_unique(uniq, out_dir):
         print(f'  [{f["kind"]}] x{f["count"]:<4} ({len(f["src"])}b -> {repro.name}): {d1[:88]}')
 
 
+# ── Gate ──────────────────────────────────────────────────────────────────────
+# Deterministic per-session regression gate. Fixed seeds/depths → the SAME programs
+# every run, so it can't flake. Fails (exit 1) ONLY on a HANG or a CRASH — the
+# unambiguous bugs (any input reaching one is a defect regardless of semantics).
+# Accept/reject DIVERGENCEs are expected (grammar-valid ≠ semantically-valid, and the
+# sunsetting bootstrap legitimately lags on some constructs) → they do NOT fail the gate.
+# This is what would have caught BUG-199 (an 18-byte parser infinite loop) automatically.
+GATE_SEEDS  = (1, 2, 3, 4)
+GATE_DEPTHS = (7, 11)          # shallow isolates constructs; deeper stresses recursion
+GATE_N      = 120              # per (seed, depth) → 4×2×120 = 960 programs, ~a few min
+
+def _run_gate():
+    sys.path.insert(0, str(ROOT / 'fuzz'))
+    import harness
+    out_dir = ROOT / 'fuzz' / 'findings' / 'gramgen-gate'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    grammar, _ = load_grammar(GRAMMAR)
+    bugs = {}   # signature -> {kind, detail, src (smallest)}
+    total = 0
+    for seed in GATE_SEEDS:
+        for depth in GATE_DEPTHS:
+            gen = Generator(grammar, random.Random(seed), max_depth=depth)
+            for _ in range(GATE_N):
+                total += 1
+                src = gen.generate()
+                res = harness.check(src, tag='gate', zig_check=False)
+                if _classify(res) in ('HANG', 'CRASH'):
+                    kind = _classify(res)
+                    sig = kind + '|' + _signature(res.detail)
+                    cur = bugs.get(sig)
+                    if cur is None or len(src) < len(cur['src']):
+                        bugs[sig] = {'kind': kind, 'detail': res.detail, 'src': src}
+    print(f'[gramgen gate] {total} deterministic programs '
+          f'(seeds={GATE_SEEDS}, depths={GATE_DEPTHS}, n={GATE_N} each)')
+    if not bugs:
+        print('gramgen gate PASS: 0 hangs, 0 crashes.')
+        return 0
+    print(f'gramgen gate FAIL: {len(bugs)} hang/crash signature(s):')
+    for i, (sig, b) in enumerate(bugs.items()):
+        repro = out_dir / f'{b["kind"]}_{i:02d}.zbr'
+        repro.write_text(b['src'], encoding='utf-8', newline='\n')
+        print(f'  [{b["kind"]}] ({len(b["src"])}b -> {repro}): {_signature(b["detail"])[:90]}')
+    return 1
+
+
 if __name__ == '__main__':
-    main()
+    sys.exit(main() or 0)
