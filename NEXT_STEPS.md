@@ -80,8 +80,9 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     cause). One shared source both consult prevents the whole sub-class.
   - [ ] **Gate it once the 17 close** — then it guarantees the compilers never silently
     diverge again (diagnostic-only until then, like compile_check was pre-clean-corpus).
-  - Note: **14 BOOTSTRAP gaps** (SIMD/generics/functional) = selfhost LEADS; no fix needed
-    (bootstrap sunsets), documented in the audit.
+  - Note: **14 BOOTSTRAP gaps** = selfhost LEADS; no fix needed (bootstrap sunsets).
+    Full 5-family root-cause triage under "Bootstrap-lags-selfhost convergence" below
+    (2026-07-22): pointer/value, `.items`-on-non-list, inference, parser/SIMD, sqlite-binding.
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
   correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,
@@ -92,10 +93,34 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   pressure).
 - [~] **Bootstrap-lags-selfhost convergence** (bootstrap is the regen authority;
   selfhost is ahead — converge only where the round-trip needs it):
+  - **RECOMMENDATION (2026-07-22): do NOT chase these as a batch.** Full triage below shows
+    the 14 span 5 codegen surfaces (not one bug), most triggered by escape-hatch/niche
+    constructs (`zig"…"` raw literals, `f32x8`, generic-fn syntax), and all require porting
+    selfhost codegen *back into the sunsetting bootstrap* — against the roadmap's "don't do
+    sizable ports into the phasing-out bootstrap." Witness value is real but bounded: for all
+    14 the selfhost output is already known-correct (compiles + smoke-passes), so there is no
+    silent blind spot today — only a degraded reference for *future* changes in those (stable)
+    areas. Fix opportunistically if one blocks the round-trip; otherwise leave until/unless
+    the bootstrap's Phase-2 (single-file witness) work reopens it.
+  - **Triage map — 14 bootstrap gaps → 5 root-cause families (divergence_check, 2026-07-22):**
+    - **(A) pointer/value confusion (~6, dominant):** `greet`/`with_test`/`features`/
+      `selfhost_probe5` emit `*T = T{}` (declared `*T`, init value); `pratt_calc`/`lambda_calc`
+      the inverse (`T` vs `*T`). Trigger: explicit class-type local + `zig"T{}"` raw-literal
+      init. Bootstrap's pointer-vs-value / `^T`-box decision is diffuse (no single guard) —
+      this is the `^T`-boxing class the fuzzer notes flag as hard. Sizable.
+    - **(B) spurious `.items` on non-list (~3):** `list_iter` (`.items` on `[]i64` slice),
+      `hashmap_init_patterns_test` (`.items` on HashMap), `bug177_178_index_tostring_test`
+      (nested `g.items[0][1]` — inner needs `.items`). Container-shape tracking lag.
+    - **(C) inference/TC lag (~2):** `lisp` (`expected float, got Value`), `sort_test`
+      (indexing empty slice).
+    - **(D) parser/feature gaps — EMITFAIL (~2, deepest):** `generic_fn_test` (bootstrap
+      parser: `syntax error near '('` on generic-fn syntax), `simd_test` (`f32x8` not
+      defined — known niche).
+    - **(E) stdlib-binding lag (~1):** `sqlite_test` (`asInt` missing on `_SqliteRow`).
   - [ ] **BUG-180 (new 2026-07-14)** — bootstrap drops omitted ctor defaults on emit
     (`Vector3()` → `Vector3.init()`); selfhost fills them. Workaround: spell ctor
     args out. → `BUGS.md`.
-  - [ ] `for x in <as-bound List>` → `.items` (low value now — bootstrap phasing out).
+  - [ ] `for x in <as-bound List>` → `.items` (low value now — bootstrap phasing out; family B).
   - [ ] `zig"…"` ref-analysis (count idents used inside zig-literals; no spurious `_ = v;`).
   - [ ] Reconcile explicit `: void` parse divergence (bootstrap `.named "void"` vs
     selfhost `.void_`).
