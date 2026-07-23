@@ -2027,6 +2027,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         return lt
                     return rt
                 on BinaryOp.mul
+                    # str * int → string repetition (mirror src/TypeChecker.zig .mul +
+                    # genBinary's _str_repeat emit); else numeric.
+                    if isString(lt)
+                        return Type_.string_
                     if isNumeric(lt)
                         return lt
                     return rt

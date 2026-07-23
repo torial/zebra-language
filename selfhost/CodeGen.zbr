@@ -9429,6 +9429,16 @@ struct Generator
             # bootstrap's `!(lt.isNumeric() and rt.isNumeric())` guard (CodeGen.zig).
             if not (.isPrimType(b.left) and .isPrimType(b.right))
                 recordInferenceGuess("add: " + source_file + ":" + w.cur_line.toString())
+        if b.op == BinaryOp.mul
+            # str * int → string repetition (mirror src/CodeGen.zig .mul); else numeric `*`
+            # falls through to the generic binary emit at the bottom.
+            if .isStringBoth(b.left, "bin_mul_l")
+                w.emit("_str_repeat(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(", _allocator)")
+                return
         if b.op == BinaryOp.mod
             w.emit("@mod(")
             genExpr(b.left)
@@ -11644,6 +11654,23 @@ struct Generator
                     # latent runtime bug.
                     var um_params = lookupFnParams(um_cname + "." + mname)
                     var um_body = lookupFnBody(um_cname + "." + mname)
+                    # Named args and/or omitted defaults → delegate to genArgListFull
+                    # (name→param matching + declared-default fill), the same path the
+                    # constructor uses.  BUG: this user-method early-exit previously emitted
+                    # args purely POSITIONALLY, so `g.greet(name: "A")` (default `greeting`)
+                    # dropped the default and a reordered named call kept source order
+                    # (expressiveness_test).  Positional-only calls keep the fast loop below.
+                    var um_has_named = false
+                    for um_a in args
+                        if um_a.name != nil
+                            um_has_named = true
+                    var um_needs_fill: bool = um_has_named
+                    if not um_needs_fill and um_params != nil
+                        um_needs_fill = args.len < um_params!.len
+                    if um_needs_fill and um_params != nil
+                        genArgListFull(args, um_params, um_body)
+                        w.emit(")")
+                        return
                     var um_ai: int = 0
                     while um_ai < args.len
                         if um_ai > 0
