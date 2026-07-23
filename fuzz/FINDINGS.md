@@ -429,19 +429,28 @@ no-progress loop (`skipToTopLevelBoundary` re-entering on a col-1 recovery-start
 without advancing). Fixed by mirroring the bootstrap's progress guarantee. Full
 detail + regression fixture in `BUGS.md` BUG-199.
 
-## G2 — empty-body declarations: accept/reject divergence  ⛔ OPEN (design question, not a clear bug)
+## G2 — empty-body declarations  ✅ RESOLVED (design decision, 2026-07-23)
 
-`struct b`, `extend char`, etc. with **no indented body** are accepted by the selfhost
-but rejected by the bootstrap (`syntax error`). **Which is right is a language-design
-question, NOT a clear leniency bug** — checked 2026-07-23: the selfhost emits a *valid
-empty marker struct* (`pub const Marker = struct { pub fn init() Marker {…} }`), and
-there is **no working alternative syntax** — `struct Marker` + `pass` is *rejected* by
-the selfhost too. So "fix by making the selfhost reject" would remove the only way to
-write an empty/marker struct (a useful construct: type tags, phantom types). If empty
-structs are intended to be legal, the selfhost is correct and the bootstrap has a gap
-(sunsetting → low priority); if not, the language needs a sanctioned empty-body form
-(`pass`?). **Deferred to Sean** — do not "converge" blindly. (`extend char` with no
-body is separately pointless and a weaker case; the struct case is the substantive one.)
+**Decision (Sean): empty / marker `struct`s and `class`es are LEGAL.** Verified the
+selfhost emits an instantiable marker type (`pub const Marker = struct { init()… }`;
+`const m: Marker = Marker{}`) that compiles AND runs. So the selfhost is CORRECT here
+and the bootstrap has a parse-time gap (rejects them) — a known low-priority
+bootstrap-lag as it sunsets; the selfhost is the reference. Codified in `grammar.txt`
+(`MemberBlockOpt`, scoped to struct+class), documented in QUICKSTART, regression
+`test/marker_struct_test.zbr` (smoke_run). The fuzzer's remaining "empty struct/class"
+PARSE-DIVERGENCE findings are now EXPECTED (bootstrap-lag), not bugs.
+
+**Scoped deliberately to struct+class.** The selfhost's parser *also* accepts empty
+`interface`/`mixin`/`extend`/`enum`, but those are NOT blessed: empty `interface`
+miscompiles (emits a broken `pub fn check(comptime T)` conformance stub → zig rejects);
+empty `mixin`/`extend` are no-ops; a zero-variant `enum` is degenerate. Grammar keeps
+mandatory bodies for those. **Two follow-ups surfaced (low priority):**
+- selfhost parser is too lenient on empty `interface`/`mixin`/`extend`/`enum` (accepts
+  what the grammar now forbids); empty `interface` additionally miscompiles.
+- **Member-var `as`-type drift:** `var x as int` as a *class/struct member* is rejected
+  by BOTH compilers (`unexpected member: 'as'`) despite `VarMemberDecl → … VarTypeOpt →
+  kw_as TypeRef` in the grammar. A grammar↔parser mismatch (both agree, so not a
+  divergence) — filed here as a note.
 
 ## G3 — size-type name as type-alias RHS: bootstrap resolver gap  ⛔ OPEN (low, bootstrap-lags)
 

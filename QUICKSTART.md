@@ -500,6 +500,16 @@ var p3 = Point(3, 4)              # positional — x=3, y=4
   assignment positions (the compiler auto-materialises the temporary).
   Expression-position chains (call args, compound expressions) still need a
   manual temp — see §27.
+- **Empty / marker types are legal.** A body-less `struct` or `class` is a valid
+  instantiable marker type (type tags, phantom types):
+  ```zebra
+  struct Marker            # no body — a marker struct
+  class Tag                # a marker class
+
+  var m: Marker = Marker()
+  ```
+  Note: this is a self-hosted-compiler feature; the legacy Zig bootstrap does not
+  accept empty bodies. `interface`/`mixin`/`extend`/`enum` still require a body.
 
 ---
 

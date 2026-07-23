@@ -60,7 +60,7 @@ HasAttrItem          → id
                      |  at_id lparen ArgList rparen
                      |  open_call ArgList rparen
 
-ClassDecl            → ModList kw_class id ClassHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
+ClassDecl            → ModList kw_class id ClassHeader IsClauseOpt HasOpt WeavesOpt eol MemberBlockOpt
 
 ClassHeader          → ImplementsClauseOpt AddsClauseOpt
 
@@ -78,7 +78,7 @@ InterfaceDecl        → ModList kw_interface id InterfaceHeader IsClauseOpt Has
 InterfaceHeader      → ε
                      |  kw_implements TypeRefListNE
 
-StructDecl           → ModList kw_struct id StructHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
+StructDecl           → ModList kw_struct id StructHeader IsClauseOpt HasOpt WeavesOpt eol MemberBlockOpt
 
 StructHeader         → ε
                      |  kw_implements TypeRefListNE
@@ -101,6 +101,17 @@ AtDirective          → at_id eol
 
 MemberDeclList       → ε
                      |  MemberDeclList MemberDecl
+
+# A `struct`/`class` declaration body is OPTIONAL: a body-less `struct Marker` is a legal
+# empty *marker* type — it emits an instantiable `struct {}` with an `init()`, verified
+# end-to-end. Decision 2026-07-23 (Sean). Scoped to struct+class (the instance types):
+# `interface`/`mixin`/`extend` keep mandatory bodies (empty interface currently miscompiles
+# its conformance stub; empty mixin/extend are no-ops), and `enum` needs ≥1 variant
+# (a zero-variant enum is degenerate). The Zig-implemented bootstrap does NOT yet accept
+# empty struct/class (rejects at parse) — a known bootstrap-lag, low priority as it sunsets;
+# the self-hosted compiler is the reference for this.
+MemberBlockOpt       → ε
+                     |  indent MemberDeclList dedent
 
 MemberDecl           → MethodDecl
                      |  VarMemberDecl

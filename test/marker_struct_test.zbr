@@ -1,0 +1,15 @@
+# Empty / marker structs and classes are legal (decision 2026-07-23, Sean): a body-less
+# `struct`/`class` is a valid instantiable marker type — emits `struct {}` with `init()`.
+# See grammar.txt MemberBlockOpt and fuzz/FINDINGS.md G2. Scoped to struct+class; the Zig
+# bootstrap does NOT accept these (known low-priority bootstrap-lag as it sunsets) — the
+# self-hosted compiler is the reference.
+struct Marker
+
+class Tag
+
+class Program
+    static
+        def main
+            var m: Marker = Marker()
+            var t: Tag = Tag()
+            print("marker: OK")
