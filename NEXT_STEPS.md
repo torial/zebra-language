@@ -209,16 +209,19 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   (Resolution note: fixed instead in the user-method early-exit, which was the real path both
   gaps flowed through — see the closed entry above.)
 
-- [ ] **Grammar fuzzer (generative)** [idea, Sean 2026-07-22]. Take the Earley `grammar.txt` and
-  use it to *generate* source strings that are valid per the grammar, then feed them through the
-  front-end (tokenizer → parser → resolver → typechecker) as an **exhaustiveness search**. Only
-  exercises the early pipeline (won't reach codegen/runtime), but systematically covers syntactic
-  surface the hand-written + differential fuzzers miss. Complements `fuzz/` (which tests
-  selfhost≡bootstrap equivalence on programs) by attacking the parser/resolver space directly.
-  Sketch: derive productions from the grammar, random/bounded-depth expansion with a size budget,
-  optionally bias toward rare productions; assert no internal-compiler-error and (differentially)
-  that both compilers agree on accept/reject. Reuses the [[concept_zebra-grammar-diff-migration]]
-  grammar-tooling direction.
+- [x] **Grammar fuzzer (generative)** [idea Sean 2026-07-22 → BUILT 2026-07-23]. `fuzz/gramgen.py`:
+  coverage-guided CFG derivation from `grammar.txt` (production choice weighted 1/(1+times_used) →
+  94% production coverage over 200 programs), stateful indent/dedent renderer, plugs into the
+  existing `harness.check(zig_check=False)` oracle. Complements `gen.py` (semantic) by attacking the
+  front-end accept/reject space directly. **First runs paid off immediately:** found **BUG-199** (an
+  18-byte selfhost parser INFINITE LOOP, `readonly struct b` — now FIXED + gated), plus lower-signal
+  divergences (G2 empty-body decl leniency, G3 size-type alias resolution, G4 misc) and a dead
+  grammar rule (`ValueArg*`). Findings in `fuzz/FINDINGS.md` (G-series). Note on "Earley": generation
+  is CFG *derivation* (no parsing algorithm needed); Earley matters only for the inverse.
+  - [ ] **Follow-ups (optional):** address G2 (selfhost accepts body-less `struct`/`extend`);
+    dead-rule cleanup in `grammar.txt`; add a front-end-only oracle mode (parse/`--check` rather
+    than full `--emit-zig`) so resolver/TC divergences aren't swamped by legit "undefined name"
+    rejections; consider gating a fixed-seed gramgen batch (assert no crashes/hangs) per session.
 
 - [ ] **`indexOf` nil-safe API (principled `int?`)** [deferred 2026-07-22, Sean's call: revisit
   during hands-on language testing]. `str.indexOf`/`lastIndexOf` currently return `int` with a `-1`
