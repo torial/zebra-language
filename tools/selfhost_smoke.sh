@@ -446,6 +446,10 @@ smoke_tc_fail test/fail_fixtures/implicit_try_rejected_test.zbr "throws call nee
 # `print X` statement form removed (#220): print is a function `print(X)`.
 smoke_tc_fail test/print_stmt_removed_test.zbr "expected '('"
 
+# BUG-199: a leading non-`static` modifier on a bad top-level decl used to hang the
+# selfhost parser (error-recovery no-progress loop). Must reject fast, not hang.
+smoke_tc_fail test/bug199_recovery_hang_test.zbr "unexpected top-level token"
+
 # Size unified on `.len` (#219): List.len, HashMap.len, maintained `len` field on
 # a user class; `str.count(sub)` substring method preserved.
 smoke_test test/len_size_test.zbr

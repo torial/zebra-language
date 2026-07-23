@@ -847,6 +847,14 @@ class Parser
                 return false
 
     def skipToTopLevelBoundary()
+        # Guarantee forward progress. If we re-enter already sitting on a top-level
+        # boundary — the decl that just FAILED started here (e.g. `readonly struct …`,
+        # a leading non-`static` modifier) — we must step past it, or parseModule's
+        # retry loop re-parses the same token forever (infinite hang). Mirrors the
+        # bootstrap's findRecoveryBoundary(pos + error_pos + 1): recovery always
+        # resumes strictly AFTER the failure point.
+        if not .isEof() and .peek().col == 1 and .isRecoveryStarter(.peek().kind)
+            .advance()
         while not .isEof()
             const t = .peek()
             if t.col == 1 and .isRecoveryStarter(t.kind)

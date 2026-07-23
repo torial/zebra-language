@@ -409,3 +409,52 @@ contracts not stripped — exactly when the hidden read exists);
 Regression: `test/fuzz_f2_unused_local_test.zbr` (all three faces + a
 constrained-alias local that must still *skip* the discard).
 Gates: smoke 192/192, round-trip byte-identical. Assigned **BUG-161**.
+
+---
+
+# Grammar-fuzzer findings (`gramgen.py`)
+
+A distinct instrument from the semantic fuzzer above: `gramgen.py` derives
+*syntactically*-valid programs straight from `grammar.txt` (coverage-guided) and
+feeds them through both compilers' front-ends. Grammar-valid ≠ semantically-valid,
+so the signals are **crashes/hangs** and **accept/reject divergences** (two
+implementations of one grammar must agree), not emit/run comparison. Prefixed `G`.
+
+## G1 — selfhost parser infinite loop on a leading non-`static` modifier  ✅ FIXED — BUG-199 (2026-07-23)
+
+The headline find, on the fuzzer's first runs. A 551-char generated program timed
+out only in the selfhost; minimized to **`readonly struct b`** (18 bytes) — the
+selfhost hung forever, the bootstrap rejected it in 80ms. Root: an error-recovery
+no-progress loop (`skipToTopLevelBoundary` re-entering on a col-1 recovery-starter
+without advancing). Fixed by mirroring the bootstrap's progress guarantee. Full
+detail + regression fixture in `BUGS.md` BUG-199.
+
+## G2 — empty-body declarations: selfhost too permissive  ⛔ OPEN (low)
+
+`struct b`, `extend char`, and similar with **no indented body** are accepted by the
+selfhost (emits) but rejected by the bootstrap (`syntax error`). The grammar makes the
+`indent MemberDeclList dedent` body mandatory, so the selfhost is too lenient (accepts
+a body-less declaration). Low severity — a marker-struct-ish leniency — but a genuine
+parser accept/reject divergence in the primary compiler.
+
+## G3 — size-type name as type-alias RHS: bootstrap resolver gap  ⛔ OPEN (low, bootstrap-lags)
+
+`type b = f64` — the selfhost accepts; the bootstrap's resolver rejects with
+`'f64' is not defined` (it resolves `float` but not the `f64`/`i32` size-type names in
+a type-alias RHS position). `type MyInt = int` works in both. Selfhost LEADS →
+sunsetting-bootstrap class (see NEXT_STEPS 5-family triage); low priority.
+
+## G4 — miscellaneous single-sided rejects  ⛔ OPEN (low)
+
+Assorted resolver/timing divergences the sweep surfaced, all low-signal:
+`use <nonexistent>` (bootstrap fails module resolution during emit; selfhost emits an
+`@import` of a missing module that would fail later at `zig` — different stage, same
+eventual reject); a lone `@result`/unknown `@`-directive at EOF (bootstrap accepts,
+selfhost errors "unexpected end of input").
+
+## Grammar hygiene — dead rule
+
+`ValueArgListNE` / `ValueArg` (grammar.txt lines ~452–461) are **defined but
+unreferenced** by any production — surfaced as permanently-uncovered by the sampler.
+Candidate for removal or wiring-in (they were meant for value-applied aliases in type
+position). Cosmetic; noted, not filed.

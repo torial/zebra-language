@@ -1,0 +1,8 @@
+# BUG-199 regression: a leading non-`static` modifier on a bad top-level decl
+# (`readonly`/`abstract`) used to send the selfhost parser into an INFINITE LOOP —
+# skipToTopLevelBoundary returned without advancing when re-entered on the same
+# col-1 recovery-starter, so parseModule re-parsed it forever. The bootstrap
+# rejects it in <100ms (findRecoveryBoundary resumes strictly after the failure).
+# This fixture must produce a clean parse error QUICKLY; if the loop regresses,
+# the smoke run hangs here. See BUGS.md BUG-199.
+readonly struct b

@@ -1,6 +1,27 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-198. Next new bug: BUG-199.**
+**Last bug number generated: BUG-199. Next new bug: BUG-200.**
+
+---
+
+### BUG-199: selfhost parser INFINITE LOOP on a leading non-`static` modifier ✅ FIXED (2026-07-23, gramgen fuzzer find)
+**18-byte hang.** `readonly struct b` (or any bad top-level decl led by `readonly`/
+`abstract` — a non-`static` `ModList` modifier) sent the selfhost parser into an
+infinite loop: `zebra.exe` hung >40s (killed) while `zebra-bootstrap.exe` rejects it
+in 80ms. **Root:** `Parser.zbr::skipToTopLevelBoundary` returned *without advancing*
+when re-entered already sitting on a col-1 recovery-starter — so `parseModule`'s
+`while not isEof(): tryParseTopDeclInto()` retry loop re-parsed the same failing token
+forever. The bootstrap has no such bug: `parseWithRecovery` resumes at
+`findRecoveryBoundary(pos + error_pos + 1)` — the `+1` guarantees forward progress.
+**Fix (convergent, selfhost-only, error-recovery path only):** if recovery re-enters
+on a col-1 recovery-starter, step past it once before scanning — mirroring the
+bootstrap's `+1`. Cannot affect valid parses (only the post-error path changes).
+Now rejects in <100ms with a clean `unexpected top-level token: 'readonly'`. Gates:
+smoke 236+1, round-trip byte-identical, compile_check, divergence `--gate` (0 selfhost
+gaps). Regression: `test/bug199_recovery_hang_test.zbr`. **Found by the new grammar
+fuzzer `fuzz/gramgen.py` on its first runs** (a 551-char generated program timed out;
+minimized to 18 bytes). Same super-linear-cost family the BUG-181 notes flagged, but
+an actual infinite loop, not just slow.
 
 ---
 
