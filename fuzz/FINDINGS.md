@@ -429,13 +429,19 @@ no-progress loop (`skipToTopLevelBoundary` re-entering on a col-1 recovery-start
 without advancing). Fixed by mirroring the bootstrap's progress guarantee. Full
 detail + regression fixture in `BUGS.md` BUG-199.
 
-## G2 — empty-body declarations: selfhost too permissive  ⛔ OPEN (low)
+## G2 — empty-body declarations: accept/reject divergence  ⛔ OPEN (design question, not a clear bug)
 
-`struct b`, `extend char`, and similar with **no indented body** are accepted by the
-selfhost (emits) but rejected by the bootstrap (`syntax error`). The grammar makes the
-`indent MemberDeclList dedent` body mandatory, so the selfhost is too lenient (accepts
-a body-less declaration). Low severity — a marker-struct-ish leniency — but a genuine
-parser accept/reject divergence in the primary compiler.
+`struct b`, `extend char`, etc. with **no indented body** are accepted by the selfhost
+but rejected by the bootstrap (`syntax error`). **Which is right is a language-design
+question, NOT a clear leniency bug** — checked 2026-07-23: the selfhost emits a *valid
+empty marker struct* (`pub const Marker = struct { pub fn init() Marker {…} }`), and
+there is **no working alternative syntax** — `struct Marker` + `pass` is *rejected* by
+the selfhost too. So "fix by making the selfhost reject" would remove the only way to
+write an empty/marker struct (a useful construct: type tags, phantom types). If empty
+structs are intended to be legal, the selfhost is correct and the bootstrap has a gap
+(sunsetting → low priority); if not, the language needs a sanctioned empty-body form
+(`pass`?). **Deferred to Sean** — do not "converge" blindly. (`extend char` with no
+body is separately pointless and a weaker case; the struct case is the substantive one.)
 
 ## G3 — size-type name as type-alias RHS: bootstrap resolver gap  ⛔ OPEN (low, bootstrap-lags)
 
@@ -458,3 +464,23 @@ selfhost errors "unexpected end of input").
 unreferenced** by any production — surfaced as permanently-uncovered by the sampler.
 Candidate for removal or wiring-in (they were meant for value-applied aliases in type
 position). Cosmetic; noted, not filed.
+
+## Campaign 2026-07-23 (post-BUG-199) — parser robustness confirmed
+
+After BUG-199 was fixed, ran **10,800 grammar-valid programs** (12 seeds × depths
+7/10/13). **0 hangs, 0 crashes** — strong evidence no other parser hang/crash is
+reachable at these depths. All findings were the known accept/reject DIVERGENCE
+classes (G2 empty-body, G3 size-type alias, G4 @-directive/module-resolution); no new
+bug classes. Deep-expression super-linear slowdown (depth ≥16, the BUG-181 inference
+family) is real but out of this campaign's scope (a perf/algorithm issue, not a clean
+bug) — probe separately if that thread is picked up.
+
+**Tooling upgrades this session** (`gramgen.py`): findings dedup by normalized
+signature, smallest reproducer kept per signature and written to
+`fuzz/findings/gramgen/` (gitignored), and a message-stage heuristic that splits
+**PARSE-DIVERGENCE** (one side rejects grammar-valid input at the parse stage — the
+purest front-end signal) from resolve/type DIVERGENCE (expected noise for
+semantically-garbage generated programs). A true differential FE oracle would need a
+`--check`/`--parse` flag with a reliable exit code in BOTH compilers — the selfhost
+has `--check` (but it exits 0 on error) and the bootstrap has none; deferred (touches
+the sunsetting bootstrap).

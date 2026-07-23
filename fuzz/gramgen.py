@@ -269,39 +269,102 @@ def main():
     # differential mode — import the existing oracle
     sys.path.insert(0, str(ROOT / 'fuzz'))
     import harness
+    out_dir = ROOT / 'fuzz' / 'findings' / 'gramgen'   # gitignored (findings/)
+    out_dir.mkdir(parents=True, exist_ok=True)
     buckets = {}
-    findings = []
+    # signature -> {kind, detail, src (smallest), count}
+    uniq = {}
     for k in range(args.n):
         src = gen.generate()
         res = harness.check(src, tag='gg', zig_check=False)
         buckets[res.verdict] = buckets.get(res.verdict, 0) + 1
-        # signal = a single-sided reject (accept/reject divergence) or a crash marker
-        crashy = _is_crash(res.detail)
-        if res.verdict in ('crash-A', 'crash-B') or crashy:
-            findings.append((res.verdict, crashy, src, res.detail))
+        kind = _classify(res)
+        if kind is None:
+            continue
+        sig = kind + '|' + _signature(res.detail)
+        cur = uniq.get(sig)
+        if cur is None:
+            uniq[sig] = {'kind': kind, 'detail': res.detail, 'src': src, 'count': 1}
+        else:
+            cur['count'] += 1
+            if len(src) < len(cur['src']):      # keep the SMALLEST reproducer
+                cur['src'] = src
+        if k and k % 200 == 0:
+            print(f'  … {k}/{args.n} done, {len(uniq)} unique findings so far', flush=True)
     hit, total = gen.coverage()
     print(f'[coverage] {hit}/{total} productions ({100*hit/total:.0f}%)')
     print('[verdicts] ' + '  '.join(f'{v}={c}' for v, c in sorted(buckets.items())))
-    _report_findings(findings)
+    _report_unique(uniq, out_dir)
 
 
+# HANG and CRASH are unambiguous bugs (any input). DIVERGENCE (one side cleanly
+# rejects, the other accepts) is real but needs a which-is-right judgment.
 CRASH_MARKERS = ('internal compiler error', 'panic', 'unreachable',
-                 'UnexpectedCharacter', 'index out of bounds', 'segmentation',
-                 'cast truncated', 'integer overflow')
+                 'index out of bounds', 'segmentation', 'cast truncated',
+                 'integer overflow', 'reached unreachable')
+# UnexpectedCharacter is the tokenizer's crash on a bad char — a crash, but our
+# renderer only emits legal chars, so treat it as a crash marker if it appears.
+CRASH_MARKERS += ('unexpectedcharacter',)
 
-def _is_crash(detail):
+# Message-stage heuristic — a poor-man's front-end oracle. Grammar-valid programs
+# SHOULD all parse (semantics aside), so a PARSE-stage rejection is high-signal
+# (grammar↔parser drift or a parser divergence); resolve/type rejections are the
+# expected noise for semantically-garbage generated programs.
+PARSE_MARKERS   = ('syntax error', 'unexpected top-level', 'unexpected member',
+                   'expected identifier', "expected '", 'unexpected end of input',
+                   'unexpected token', 'expected a declaration')
+RESOLVE_MARKERS = ('is not defined', 'cannot find module', 'unresolved',
+                   'unknown @-directive', 'undeclared', 'no field', 'unknown')
+
+def _stage(detail):
+    """Best-effort: which pipeline stage rejected? 'parse' | 'resolve' | 'other'."""
     d = (detail or '').lower()
-    return any(m.lower() in d for m in CRASH_MARKERS)
+    if any(m in d for m in PARSE_MARKERS):
+        return 'parse'
+    if any(m in d for m in RESOLVE_MARKERS):
+        return 'resolve'
+    return 'other'
 
-def _report_findings(findings):
-    if not findings:
-        print('[findings] none (no crashes, no accept/reject divergences)')
+def _classify(res):
+    """Return 'HANG'|'CRASH'|'PARSE-DIVERGENCE'|'DIVERGENCE'|None (no signal).
+
+    PARSE-DIVERGENCE = one compiler accepted a grammar-valid program the other
+    rejected AT THE PARSE STAGE — the purest front-end signal (two implementations
+    of one grammar disagreeing on acceptance). Split out from resolve/type
+    divergences, which are expected for semantic garbage."""
+    d = (res.detail or '')
+    if 'TIMEOUT' in d:
+        return 'HANG'
+    if any(m in d.lower() for m in CRASH_MARKERS):
+        return 'CRASH'
+    if res.verdict in ('crash-A', 'crash-B'):
+        return 'PARSE-DIVERGENCE' if _stage(d) == 'parse' else 'DIVERGENCE'
+    return None
+
+def _signature(detail):
+    """Normalize a detail string so identical bug shapes dedup: drop temp paths,
+    hashes, line:col numbers."""
+    d = (detail or '')
+    d = re.sub(r'[A-Za-z]:[\\/][^\s]*gg_[0-9a-f]+\.zbr', '<f>', d)
+    d = re.sub(r'\.fuzz_tmp[\\/][^\s]+', '<f>', d)
+    d = re.sub(r':\d+:\d+', ':L:C', d)
+    d = re.sub(r"'[^']*'", "'X'", d)          # collapse quoted tokens/names
+    d = re.sub(r'\s+', ' ', d).strip()
+    return d[:120]
+
+def _report_unique(uniq, out_dir):
+    if not uniq:
+        print('[findings] none (no hangs, crashes, or accept/reject divergences)')
         return
-    # A crash-A/crash-B where the OTHER side accepted = accept/reject divergence.
-    print(f'[findings] {len(findings)} interesting:')
-    for i, (verdict, crashy, src, detail) in enumerate(findings[:20]):
-        kind = 'CRASH' if crashy else 'accept/reject-divergence'
-        print(f'  #{i} [{kind}] {verdict}: {detail[:90]}')
+    order = {'HANG': 0, 'CRASH': 1, 'PARSE-DIVERGENCE': 2, 'DIVERGENCE': 3}
+    items = sorted(uniq.items(), key=lambda kv: (order[kv[1]['kind']], -kv[1]['count']))
+    print(f'[findings] {len(uniq)} UNIQUE (by signature), most-severe first:')
+    for i, (sig, f) in enumerate(items):
+        # persist the smallest reproducer for each unique finding
+        repro = out_dir / f'{f["kind"]}_{i:02d}.zbr'
+        repro.write_text(f['src'], encoding='utf-8', newline='\n')
+        d1 = _signature(f['detail'])
+        print(f'  [{f["kind"]}] x{f["count"]:<4} ({len(f["src"])}b -> {repro.name}): {d1[:88]}')
 
 
 if __name__ == '__main__':
