@@ -149,10 +149,20 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `tools/selfcompile_check.sh`. Revisit post-1.0 (freeze bootstrap) or if the 9-file burden bites
   (then bootstrap Phase 2 is the correct route). **Feature complete for now.**]
 
-- [ ] **Convergence sweep: 2 remaining selfhost gaps** [triaged 2026-07-22; both inference/context-
-  blocked, deeper than emit-level]. The full `divergence_check.sh` (post-BUG-181) found 3 selfhost
-  gaps; `indexOf`/string_methods fixed (`37873e8`). The other 2 are NOT the name-heuristic class —
-  they're feature-completeness gaps that bottom out on inference:
+- [x] **Convergence sweep: 3 selfhost gaps — ALL CLOSED (2026-07-22).** The post-BUG-181
+  `divergence_check.sh` found 3 selfhost-lags-bootstrap gaps; all fixed + gated (200/0/1 +
+  round-trip each): `string_methods` (indexOf→int, `37873e8`); `expressiveness_test`
+  (named-args/defaults in user-method calls + string-repeat codegen + inference, `3fe5630`);
+  `throws_autoprop_test` (try-block catch-wiring in the user-method early-exit). **Two of the three
+  shared ONE root:** genMemberCall's "general user-method early-exit" (~11620) emitted args
+  positionally and returned before the default path's named-arg/default AND try-block-catch handling
+  — so both named-args/defaults and throws-in-try were silently wrong for user-method calls (a
+  high-impact class: any program using default params, named args, or throws-in-try on a user
+  method). Confirmed: `divergence_check.sh` now reports **0 selfhost gaps** (292 agree-pass · 46
+  agree-fail negatives · 18 no-main libraries; 14 bootstrap-lags-selfhost gaps remain — secondary
+  witness-quality item, tracked separately). Original triage below (kept):
+
+  <details><summary>Original 2-gap triage (2026-07-22)</summary>
   - **`expressiveness_test` — named args + default params in METHOD calls.** `g.greet(name: "Alice")`
     (default `greeting`) emits `g.greet("Alice")` (1 arg, no default); reordered
     `g.greet(greeting: "Hi", name: "Carol")` emits source-order `g.greet("Hi", "Carol")`. Root: in
@@ -171,6 +181,9 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     this at the STATEMENT level (src/CodeGen.zig genStmt ~6843: `e is call and try_block_label and
     exprCallIsThrows`) — mirroring that (statement-level catch) is the likely clean convergence, but
     verify it doesn't double-emit with the existing 12950 path.
+  </details>
+  (Resolution note: fixed instead in the user-method early-exit, which was the real path both
+  gaps flowed through — see the closed entry above.)
 
 - [ ] **Grammar fuzzer (generative)** [idea, Sean 2026-07-22]. Take the Earley `grammar.txt` and
   use it to *generate* source strings that are valid per the grammar, then feed them through the
