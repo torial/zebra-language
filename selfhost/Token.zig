@@ -294,14 +294,21 @@ fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: std
 // §28f: HashMap.keys()/values() — snapshot the map's keys/values into a new List.
 // Generic over StringHashMap(V)/AutoHashMap(K,V); the K/V types come from the
 // map's KV entry struct so no explicit type args are needed at the call site.
-fn _zebra_map_keys(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "key")) {
-    var out: std.ArrayList(@FieldType(@TypeOf(map).KV, "key")) = .empty;
+// BUG-195: a HashMap passed as a fn PARAMETER arrives as `*HashMap` (Zebra hashmaps are
+// pointer-typed), and `.KV` is not a decl on the pointer type — so keys()/values()/
+// entries() failed on a map param though they worked on a local. Normalize to the
+// underlying map type (deref if pointer) before reading `.KV`.
+fn _MapKV(comptime T: type) type {
+    return if (@typeInfo(T) == .pointer) @typeInfo(T).pointer.child.KV else T.KV;
+}
+fn _zebra_map_keys(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)), "key")) {
+    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"key")) = .empty;
     var it = map.keyIterator();
     while (it.next()) |k| out.append(_allocator, k.*) catch @panic("OOM");
     return out;
 }
-fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "value")) {
-    var out: std.ArrayList(@FieldType(@TypeOf(map).KV, "value")) = .empty;
+fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) {
+    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) = .empty;
     var it = map.valueIterator();
     while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
     return out;
@@ -311,8 +318,8 @@ fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(@TypeOf(map).KV, "va
 // same anonymous 2-tuple Zebra emits for `(K, V)`.  Because each `struct { K, V }`
 // is a distinct Zig type, the result is meant to be used via inference
 // (`var e = map.entries()`), not an explicit `List((K,V))` annotation.
-fn _zebra_map_entries(map: anytype) std.ArrayList(struct { @FieldType(@TypeOf(map).KV, "key"), @FieldType(@TypeOf(map).KV, "value") }) {
-    var out: std.ArrayList(struct { @FieldType(@TypeOf(map).KV, "key"), @FieldType(@TypeOf(map).KV, "value") }) = .empty;
+fn _zebra_map_entries(map: anytype) std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) {
+    var out: std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) = .empty;
     var it = map.iterator();
     while (it.next()) |e| out.append(_allocator, .{ e.key_ptr.*, e.value_ptr.* }) catch @panic("OOM");
     return out;
