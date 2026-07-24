@@ -140,6 +140,7 @@ zebra hello.zbr World
 | `zebra debug file.zbr` | Launch with LLDB-DAP debugger |
 | `zebra --emit-zig file.zbr` | Emit Zig source without running |
 | `zebra --turbo file.zbr` | Strip contract checks (§24) |
+| `zebra --single-threaded file.zbr` | Commit to no threads → drops the allocator's mutex (faster). Spawning a thread (`ThreadPool`/`sys.go`) then becomes a compile error. |
 | `zebra --gui-backend=libui_ng f.zbr` | GUI with native OS controls (§30) |
 
 ---

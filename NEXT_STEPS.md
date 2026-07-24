@@ -254,6 +254,14 @@ BUG-153 (module-global shared state) is fixed, so shared-state servers are
 unblocked. The two-tier allocator wiring (§28j) is the remaining concurrency
 foundation and needs a supervised session.
 
+- [x] **§28j — thread-safe program allocator DONE (2026-07-24, `b5d1726`).** Shipped the
+  ThreadSafeAllocator-wrapper approach (NOT per-thread arenas — that over-scoped it): a
+  mutex around the shared arena (`_TsAlloc`/`_prog_alloc` in the preamble + bootstrap),
+  `--single-threaded` flag → `-fsingle-threaded` (compiles the wrapper out; thread-spawn
+  becomes a compile error). Validated by `thread_alloc_stress_test`. **Residual (post-1.0):**
+  `allocate Arena()` scopes swap the global `_allocator` and race with workers (77% crash,
+  captured by `arena_concurrency_hazard_test`) → rule: allocate-scopes are single-threaded-
+  only. See `docs/concurrency_allocation_design.md`. Below = the ORIGINAL (superseded) plan.
 - [ ] **§28j step b — two-tier allocator wiring** (per-thread arenas + a shared
   `Smp()` handle). Race is confirmed-in-code but latent-at-runtime; the fix is
   subtle with concurrency-lifetime failure modes the gates can't catch → supervised
