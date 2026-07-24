@@ -127,7 +127,7 @@ Implemented: `UriResult{scheme, host, path, query, port}`; backed by `std.Uri` C
 var compressed = Compress.gzip(data)       # str → str
 var original   = Compress.gunzip(data)     # str → str?
 ```
-Note: `gzip` stubbed (`@panic("TODO")` in Zig 0.15.2 `std.compress.flate.Compress`); `gunzip` fully works via `std.compress.flate.Decompress` + `std.Io.Reader.fixed`. Will unblock on Zig 0.16.
+Note: `gzip` stubbed (`@panic("TODO")` in Zig 0.15.2 `std.compress.flate.Compress`); `gunzip` fully works via `std.compress.flate.Decompress` + `std.Io.Reader.fixed`. **Two paths to unstub** (Sean 2026-07-23): (1) wait for std to implement `flate.Compress` (pure Zig, zero binary-size cost — preferred, but time-gated on a Zig release); (2) vendor a package from `allyourcodebase` (e.g. zlib) — unstubs *now* but adds a **C dependency + binary size**, cutting against the keep-binaries-small preference and the pure-Zig story. Lean: wait for std unless gzip-compression is needed sooner, then (2) is the escape hatch. A stdlib fn that `@panic`s must not silently enter the 1.0 freeze — decide consciously (fix or document as a known 1.0 limitation).
 
 ### 8. `Mime` — MIME type lookup ✅ DONE
 **Zig backing:** static compile-time map
