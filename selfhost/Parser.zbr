@@ -101,6 +101,7 @@ union PNode
     expr_tuple_lit: ^PTupleLit
     expr_array_lit: ^PArrayLit
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
+    expr_set_lit: ^PArrayLit           # {a, b, c} — set literal (third lowering)
     expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
     expr_opt_chain: ^POptChain         # expr?.member / expr?.method(args)
     expr_if_expr: ^PIfExpr             # if cond: val else: other  (inline ternary)
@@ -2963,6 +2964,27 @@ class Parser
                     elems.add(.parseExpr()?)
             .expectText("]")?
             return PNode.expr_list_lit(PArrayLit(elems))
+        else if .textIs("{")
+            # { elem, elem, ... } — set literal.  `{k: v}` (dict) is reserved but
+            # not yet implemented, and bare `{}` is ambiguous (empty set vs empty
+            # dict) — both raise a clear error so the syntax stays unambiguous.
+            # Non-empty, colon-free braces lower (like the list literal) to a
+            # labeled-block that builds a void-valued hash map.
+            .advance()
+            if .textIs("}")
+                raise .errorAt("empty `{}` is ambiguous — use `Set()` for an empty set")
+            var first_se = .parseExpr()?
+            if .textIs(":")
+                raise .errorAt("dict literals `{k: v}` are not yet implemented — use `HashMap()`")
+            var elems = List(PNode)()
+            elems.add(first_se)
+            while .textIs(",")
+                .advance()
+                if .textIs("}")
+                    break
+                elems.add(.parseExpr()?)
+            .expectText("}")?
+            return PNode.expr_set_lit(PArrayLit(elems))
         else if .textIs("(")
             .advance()
             const first = .parseExpr()?

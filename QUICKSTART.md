@@ -718,8 +718,14 @@ for x in seen                        # direct iteration over elements
 if 2 in seen                         # membership operator
     print("has 2")
 seen.clear()
-# Construct either explicitly — `Set(int)()` — or bare with the element type
-# taken from the variable annotation: `var s: Set(int) = Set()`.
+# Construct four ways:
+var a = Set(int)()                   # explicit constructor
+var b: Set(int) = Set()              # bare ctor (element type from annotation)
+var c = {1, 2, 3, 2}                 # set literal → Set(int) (deduped to {1,2,3})
+var d: Set(str) = {"x", "y"}         # typed set literal
+# `{a, b, c}` (comma-separated, no colons) is a set literal. `{}` is a compile
+# error (ambiguous empty set vs dict — use `Set()`); `{k: v}` (dict literal) is
+# reserved and not yet implemented.
 #
 # Element type T must be auto-hashable (int/uint/enum/str/pointer). A struct
 # with slice fields is not auto-hashable and will fail to compile — same

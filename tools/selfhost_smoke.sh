@@ -789,6 +789,8 @@ smoke_run test/set_basic_test.zbr "set_basic: OK"
 # §28f: Set(T) generic-machinery paths — field, param mutation, return, for-in,
 # membership, nesting List(Set(int)).
 smoke_run test/set_advanced_test.zbr "set_advanced: OK"
+# §28f: set literal syntax {a, b, c} — int/str, typed, bare, for-in, membership.
+smoke_run test/set_literal_test.zbr "set_literal: OK"
 # Audit A3: exhaustive union branch + else must compile (else prong omitted).
 smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
 # Audit B1: indexed for-in `for i, v in list` (i = index, v = element).

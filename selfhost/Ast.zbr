@@ -819,6 +819,9 @@ union Expr
     lambda: ^ExprLambda
     list_lit: ^ExprListLit
     dict_lit: ^ExprDictLit
+    # §28f: set literal `{a, b, c}` — element type inferred (or from LHS
+    # annotation). Lowers to a labeled-block building a void-valued hash map.
+    set_lit: ^ExprSetLit
     array_lit: ^ExprArrayLit
     zig_lit: ExprZigLit
     try_: ^ExprTry
@@ -1199,6 +1202,18 @@ struct ExprLambda
 # collection literals
 
 struct ExprListLit
+    var span: Span
+    var elem_type: TypeRef?
+    var elems: List(Expr)
+
+    cue init(span: Span, elem_type: TypeRef?, elems: List(Expr))
+        .span = span
+        .elem_type = elem_type
+        .elems = elems
+
+# §28f: set literal `{a, b, c}`. Same shape as ExprListLit (element type nil →
+# inferred from the first element or a `var s: Set(T) =` annotation).
+struct ExprSetLit
     var span: Span
     var elem_type: TypeRef?
     var elems: List(Expr)

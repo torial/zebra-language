@@ -489,6 +489,11 @@ class DeadCodeChecker
                 while eli < ell.elems.len
                     .walkExpr(ell.elems.at(eli), file, false)
                     eli = eli + 1
+            on Expr.set_lit as esl
+                var sli: int = 0
+                while sli < esl.elems.len
+                    .walkExpr(esl.elems.at(sli), file, false)
+                    sli = sli + 1
             on Expr.dict_lit as edl
                 var dli: int = 0
                 while dli < edl.entries.len

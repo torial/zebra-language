@@ -1,0 +1,36 @@
+# §28f: set literal syntax `{a, b, c}` — lowers to a Set(T).
+
+def main()
+    # int set literal, with a duplicate (deduped).
+    var s = {1, 2, 3, 2}
+    assert s.len == 3, "int literal dedup → 3"
+    assert s.contains(2), "has 2"
+    assert not s.contains(9), "no 9"
+
+    # str set literal.
+    var names = {"alice", "bob", "alice"}
+    assert names.len == 2, "str literal dedup → 2"
+    assert names.contains("bob"), "has bob"
+
+    # assigned to an explicitly-typed Set(int).
+    var t: Set(int) = {10, 20}
+    assert t.len == 2, "typed set literal"
+
+    # single-element literal.
+    var one = {42}
+    assert one.len == 1, "singleton"
+    assert one.contains(42), "has 42"
+
+    # the literal-built set flows through for-in and membership.
+    var total = 0
+    for x in s
+        total += x
+    assert total == 6, "for-in sum 1+2+3 == 6"
+    assert 3 in s, "3 in s"
+    assert not (5 in s), "5 not in s"
+
+    # a literal can seed then be extended.
+    s.add(100)
+    assert s.len == 4, "extend literal-built set"
+
+    print("set_literal: OK")

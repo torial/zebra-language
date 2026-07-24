@@ -1761,6 +1761,8 @@ def exprLine(e: Expr): int
             return x.span.line
         on Expr.dict_lit as x
             return x.span.line
+        on Expr.set_lit as x
+            return x.span.line
         on Expr.array_lit as x
             return x.span.line
         on Expr.try_ as x
@@ -8292,6 +8294,11 @@ struct Generator
                     if containsResultRef(el)
                         return true
                 return false
+            on Expr.set_lit as sl
+                for el in sl.elems
+                    if containsResultRef(el)
+                        return true
+                return false
             on Expr.array_lit as al
                 for el in al.elems
                     if containsResultRef(el)
@@ -8367,6 +8374,9 @@ struct Generator
                     collectAndEmitOldSnapshots(elem)
             on Expr.list_lit as ll
                 for elem in ll.elems
+                    collectAndEmitOldSnapshots(elem)
+            on Expr.set_lit as sl
+                for elem in sl.elems
                     collectAndEmitOldSnapshots(elem)
             on Expr.tuple_lit as tl
                 for elem in tl.elems
@@ -9184,6 +9194,47 @@ struct Generator
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
                 w.emit("break :" + ll_label + " " + ll_var + "; })")
+            on Expr.set_lit as sl
+                # §28f: `{a, b, c}` lowers to a labeled-block building a void-valued
+                # hash map — StringHashMap(void) for str elements (interned on put),
+                # AutoHashMap(T, void) otherwise — with one `.put(elem, {})` per
+                # element. Mirrors the list-literal lowering above. Element type
+                # comes from the annotation or inferExpr on the first element.
+                var sl_uid = w.nextUid()
+                var sl_label: str = "blk_sl_" + sl_uid.toString()
+                var sl_var:   str = "_sl_" + sl_uid.toString()
+                var sl_elem_t: Type_ = Type_.unknown_
+                if sl.elem_type != nil
+                    sl_elem_t = typeFromRef(sl.elem_type!)
+                else if sl.elems.len > 0 and .infer_ctx != nil
+                    sl_elem_t = inferExpr(sl.elems.at(0), .infer_ctx!)
+                var sl_is_str = sl_elem_t is Type_.string_
+                w.emit("(" + sl_label + ": { var " + sl_var + " = ")
+                if sl_is_str
+                    w.emit("std.StringHashMap(void)")
+                else
+                    var sl_elem_zig: str = "i64"
+                    if structNameFromType(sl_elem_t) as sl_snm
+                        if class_names.contains_(sl_snm)
+                            sl_elem_zig = "*" + sl_snm
+                        else
+                            sl_elem_zig = sl_snm
+                    else
+                        sl_elem_zig = zigTypeForListElem(sl_elem_t)
+                    w.emit("std.AutoHashMap(" + sl_elem_zig + ", void)")
+                w.emit(".init(_allocator); ")
+                var sli = 0
+                while sli < sl.elems.len
+                    w.emit(sl_var + ".put(")
+                    if sl_is_str
+                        w.emit("_intern(")
+                        genExpr(sl.elems.at(sli))
+                        w.emit(")")
+                    else
+                        genExpr(sl.elems.at(sli))
+                    w.emit(", {}) catch @panic(\"OOM\"); ")
+                    sli += 1
+                w.emit("break :" + sl_label + " " + sl_var + "; })")
             on Expr.dict_lit as dl
                 w.emit("blk: { var _dl = std.StringHashMap(anytype).init(_allocator); ")
                 for en in dl.entries

@@ -274,6 +274,11 @@ def exprHasTry(expr: Expr): bool
                 if exprHasTry(op)
                     return true
             return false
+        on Expr.set_lit as sl
+            for se in sl.elems
+                if exprHasTry(se)
+                    return true
+            return false
         on Expr.dict_lit as d
             for entry in d.entries
                 if exprHasTry(entry.key)
@@ -521,6 +526,11 @@ def nameUsedInExpr(name: str, expr: Expr): bool
             return nameUsedInExpr(name, c.expr)
         on Expr.type_check as t
             return nameUsedInExpr(name, t.expr)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                if nameUsedInExpr(name, se)
+                    return true
+            return false
         on Expr.dict_lit as d
             for entry in d.entries
                 if nameUsedInExpr(name, entry.key)
@@ -692,6 +702,11 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
                 return true
             for exf in ex.fields
                 if mightUseNameInExpr(name, exf.value)
+                    return true
+            return false
+        on Expr.set_lit as sl
+            for se in sl.elems
+                if mightUseNameInExpr(name, se)
                     return true
             return false
         on Expr.dict_lit as dl
@@ -1100,6 +1115,9 @@ def collectAllIdents(expr: Expr, out: StrSet)
             collectAllIdents(t.expr, out)
         on Expr.type_check as t
             collectAllIdents(t.expr, out)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                collectAllIdents(se, out)
         on Expr.dict_lit as d
             for entry in d.entries
                 collectAllIdents(entry.key, out)
@@ -1464,6 +1482,9 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
         on Expr.catch_ as ca
             scanMutationsInExpr(ca.expr, out, ic)
             scanMutationsInExpr(ca.fallback, out, ic)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                scanMutationsInExpr(se, out, ic)
         on Expr.dict_lit as d
             for entry in d.entries
                 scanMutationsInExpr(entry.key, out, ic)
@@ -1782,6 +1803,11 @@ def exprHasSelfCall(e: Expr): bool
         on Expr.tuple_lit as l
             for el in l.elems
                 if exprHasSelfCall(el)
+                    return true
+            return false
+        on Expr.set_lit as sl
+            for se in sl.elems
+                if exprHasSelfCall(se)
                     return true
             return false
         on Expr.dict_lit as d

@@ -12,6 +12,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## [0.15] — 2026-05 (in progress)
 
+### Set literal syntax `{a, b, c}` (§28f)
+
+- **`{a, b, c}` is a set literal** producing a `Set(T)` (element type inferred, or
+  from a `var s: Set(int) =` annotation). Comma-separated, colon-free braces only:
+  `{}` is a compile error (ambiguous empty set vs dict — use `Set()`), and `{k: v}`
+  (dict literals) are reserved/not-yet-implemented. Works in every position a `Set`
+  value does (var-init, return, call arg, nested). See QUICKSTART §10.
+
 ### `Set(T)` — generic hash set (§28f)
 
 - **New builtin collection `Set(T)`** — a set of unique, hashable elements, backed

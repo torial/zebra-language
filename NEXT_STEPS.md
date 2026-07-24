@@ -59,8 +59,10 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   local/param(by-ptr)/field/return/nested `List(Set(int))`. **Selfhost-only** (bootstrap
   sunsets; the compiler's own source never uses Set, so round-trip holds). Decisions taken:
   str specialized (content-hash), `items()`→`List(T)`, StrSet stays internal. Limits (=HashMap):
-  T must be auto-hashable; no `==`/`print(set)`. Tests: `set_basic_test`, `set_advanced_test`
-  (both smoke-gated). → detail §28f below.
+  T must be auto-hashable; no `==`/`print(set)`. **Set literal `{a, b, c}` also DONE** —
+  new `Expr.set_lit` variant; `{}`→error, `{k:v}` reserved. (Root-caused a nasty TCO
+  fall-through hang en route — see [[project_tco_fallthrough_hazard]].) Tests: `set_basic_test`,
+  `set_advanced_test`, `set_literal_test` (all smoke-gated). → detail §28f below.
 - [ ] **BUG-174 — `str.indexOf` signature design call.** QUICKSTART + selfhost say
   `int?`; bootstrap says `int/-1`; selfhost `int?` codegen is currently broken.
   Recommendation on file: commit to `int?`. → `BUGS.md`.

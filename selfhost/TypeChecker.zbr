@@ -2144,6 +2144,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
                 return Type_.list_(elem_t)
             return Type_.list_(Type_.unknown_)
+        on Expr.set_lit as sl
+            # §28f: {a, b, c} → Set(T); element type from annotation or first elem.
+            if sl.elem_type != nil
+                return Type_.set_(typeFromRef(sl.elem_type!))
+            if sl.elems.len > 0
+                var set_elem_t: Type_ = inferExpr(sl.elems.at(0), ctx)
+                return Type_.set_(set_elem_t)
+            return Type_.set_(Type_.unknown_)
         on Expr.tuple_lit as tl
             var telems: List(Type_) = List()
             for telem in tl.elems
