@@ -83,6 +83,36 @@ out of it:
 3. **Task/request-scoped arenas.** Orthogonal and cheap: give each connection/task its
    own arena, freed at task end (common in Go/Rust servers). Composes with (1).
 
+## Audit result (2026-07-23): share-nothing is NOT already free for reference types
+
+The share-nothing recommendation below rests on "cross-thread data is copied." I audited
+the actual channel path (`_Chan(T).send`, in the emitted preamble):
+
+```zig
+pub fn send(self: *Self, val: T) void {
+    ...
+    self.buf.append(_alloc, val) catch @panic("OOM");   // <- SHALLOW bit-copy of val
+    ...
+}
+```
+
+`val` is bit-copied into the channel buffer (buffer itself on `page_allocator`, so it
+survives — good). But for a reference type — `Chan(str)` (`str` = `[]const u8`, a slice)
+or `Chan(SomeStruct)` with `str`/`^T` fields — the **bit-copy duplicates the
+slice/pointer, not the pointed-to bytes**, which still live in the *sender's* arena.
+Worker sends a `str`, worker's arena is freed on thread exit, receiver reads dangling
+memory. So **share-nothing holds today only for primitive `T`; reference types leak the
+sender's arena across the channel.** (`<<-` copy-out is the one path that *does* deep-copy,
+via `_zbr_deep_copy` — the machinery exists, it's just not wired into `_Chan.send`.)
+
+**Consequence for the estimate:** the share-nothing path is not "already done, just
+audit it" — it needs `_Chan.send` (and `recv`, for the receive-into-my-arena direction)
+to **deep-copy reference payloads** using the existing `_zbr_deep_copy`. That's bounded
+*wiring* (the deep-copy is written, tested by `<<-`), not invention — but it is real work
+that the earlier "scope dropped, mostly an audit" read under-counted. Net: the risky
+*allocator invention* still drops (adopt Zig's std); the share-nothing correctness work
+is a specific, bounded channel-deep-copy task rather than free.
+
 ## Recommendation (for the §28j session, not yet committed)
 
 Lead with **share-nothing (1) + task-scoped arenas (3)** as the default model — it fits
