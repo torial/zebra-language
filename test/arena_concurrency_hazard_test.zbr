@@ -1,0 +1,42 @@
+# §28j HAZARD DEMO — NOT registered in smoke (it intentionally crashes ~77% of runs).
+# Compiles cleanly (so compile_check/divergence are fine); the failure is at RUNTIME.
+#
+# Captures the residual the ThreadSafeAllocator wrapper does NOT fix: an `allocate Arena()`
+# block SWAPS the global `_allocator` to a sub-arena and rewinds it. The mutex guards
+# individual allocations, not the swap — so running an allocate-scope on the main thread
+# WHILE worker threads allocate lets a worker see the swapped/rewound sub-arena →
+# "attempt to use null value" / "@memcpy arguments alias" / segfault (measured 23/30 crash).
+#
+# RULE (documented in docs/concurrency_allocation_design.md): `allocate Arena()` scopes are
+# single-threaded-only — do not interleave them with live ThreadPool/sys.go workers. The
+# thread stress test (thread_alloc_stress_test) covers the SAFE concurrent-allocation path.
+def main()
+    var pool: ThreadPool = ThreadPool(4)
+    var total: Atomic(int) = Atomic(int)(0)
+    var w: int = 0
+    while w < 8
+        pool.submit(def()
+            capture
+                var total: Atomic(int) = total
+            var lst: List(int) = List(int)()
+            var k: int = 0
+            while k < 300
+                lst.add(k)
+                k = k + 1
+            total.add(lst.len)
+        )
+        w = w + 1
+    var saved: List(int) = List(int)()
+    var s: int = 0
+    while s < 50
+        allocate Arena()
+            var inner: List(int) = List(int)()
+            var j: int = 0
+            while j < 100
+                inner.add(j)
+                j = j + 1
+            saved <<- inner
+        s = s + 1
+    pool.wait()
+    total.add(saved.len)
+    print("arena_hazard: " + total.load().toString())

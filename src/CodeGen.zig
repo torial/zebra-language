@@ -2729,11 +2729,28 @@ const Generator = struct {
         // that do many small allocations (string ops, trigram maps, etc.).
         // For leak detection during development, swap to GeneralPurposeAllocator.
         try g.w.writeAll("var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);\n");
-        // `var` (not `const`) so that `arena` blocks can save/restore it.
-        // Pre-initialised from `_arena` so modules are usable without an explicit
-        // `_initAllocator` call — safe because each module owns its own arena.
-        // `_initAllocator` overrides this with a shared allocator when needed.
-        try g.w.writeAll("var _allocator: std.mem.Allocator = _arena.allocator();\n");
+        // §28j: the thread-safe arena wrapper. This hardcoded copy is the bootstrap's
+        // pre-HELPERS preamble; it MUST stay in sync with the pre-`STDLIB_PREAMBLE_HELPERS_START`
+        // section of selfhost/stdlib_preamble.zig (the selfhost reads the whole file, the
+        // bootstrap hardcodes this part). Docs live in that file.
+        try g.w.writeAll(
+            \\const _TsAlloc = struct {
+            \\    child: std.mem.Allocator,
+            \\    mutex: std.Io.Mutex = .init,
+            \\    const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+            \\    fn allocator(self: *_TsAlloc) std.mem.Allocator { return .{ .ptr = self, .vtable = &_vt }; }
+            \\    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.alloc(self.child.ptr, len, al, ra); }
+            \\    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra); }
+            \\    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra); }
+            \\    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.free(self.child.ptr, mem, al, ra); }
+            \\};
+            \\var _ts_alloc: _TsAlloc = .{ .child = _arena.allocator() };
+            \\fn _prog_alloc() std.mem.Allocator { return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator(); }
+            \\
+        );
+        // `var` (not `const`) so that `arena` blocks can save/restore it. The program
+        // allocator: mutex-wrapped by default, bare arena under -fsingle-threaded.
+        try g.w.writeAll("var _allocator: std.mem.Allocator = _prog_alloc();\n");
         // String intern pool — backed by page_allocator so interned strings
         // survive arena_scope rewinds.  _intern() is the only public entry point.
         // Initialized eagerly at declaration so main modules (which never receive
@@ -4760,7 +4777,7 @@ const Generator = struct {
                     "pub fn main(_zinit: std.process.Init) void {{\n" ++
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
-                    "    _allocator = _arena.allocator();\n" ++
+                    "    _allocator = _prog_alloc();\n" ++
                     "    _initModuleVars();\n" ++
                     "{s}" ++
                     "{s}" ++
@@ -4782,7 +4799,7 @@ const Generator = struct {
                     "pub fn main(_zinit: std.process.Init) void {{\n" ++
                     "    _io = _zinit.io;\n" ++
                     "    _args = _zinit.minimal.args;\n" ++
-                    "    _allocator = _arena.allocator();\n" ++
+                    "    _allocator = _prog_alloc();\n" ++
                     "    _initModuleVars();\n" ++
                     "{s}" ++
                     "{s}" ++
@@ -6397,7 +6414,7 @@ const Generator = struct {
                 const _eg = mg.indented();
                 try _eg.writeIndent(); try _eg.w.writeAll("_io = _zinit.io;\n");
                 try _eg.writeIndent(); try _eg.w.writeAll("_args = _zinit.minimal.args;\n");
-                try _eg.writeIndent(); try _eg.w.writeAll("_allocator = _arena.allocator();\n");
+                try _eg.writeIndent(); try _eg.w.writeAll("_allocator = _prog_alloc();\n");
                 if (!g.library_mode) {
                     try _eg.writeIndent(); try _eg.w.writeAll("defer _arena.deinit();\n");
                 }
@@ -13226,7 +13243,7 @@ const Generator = struct {
             "pub fn main(_zinit: std.process.Init) void {\n" ++
             "    _io = _zinit.io;\n" ++
             "    _args = _zinit.minimal.args;\n" ++
-            "    _allocator = _arena.allocator();\n" ++
+            "    _allocator = _prog_alloc();\n" ++
             "    _initModuleVars();\n" ++
             "    defer _arena.deinit();\n" ++
             "    var _test_pass: usize = 0;\n" ++

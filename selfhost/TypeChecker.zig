@@ -7,7 +7,19 @@ var _io: std.Io = undefined;
 var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = _arena.allocator();
+const _TsAlloc = struct {
+    child: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
+    const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    fn allocator(self: *_TsAlloc) std.mem.Allocator { return .{ .ptr = self, .vtable = &_vt }; }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.alloc(self.child.ptr, len, al, ra); }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra); }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra); }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.free(self.child.ptr, mem, al, ra); }
+};
+var _ts_alloc: _TsAlloc = .{ .child = _arena.allocator() };
+fn _prog_alloc() std.mem.Allocator { return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator(); }
+var _allocator: std.mem.Allocator = _prog_alloc();
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
@@ -9310,7 +9322,7 @@ pub fn checkModule(m: Module, file: []const u8, ctx: *InferCtx) *TcResult {
 pub fn main(_zinit: std.process.Init) void {
     _io = _zinit.io;
     _args = _zinit.minimal.args;
-    _allocator = _arena.allocator();
+    _allocator = _prog_alloc();
     defer _arena.deinit();
     @import("Ast.zig")._initAllocator(_allocator);
     @import("Ast.zig")._initIo(_io);

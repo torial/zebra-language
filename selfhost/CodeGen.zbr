@@ -1027,7 +1027,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
 # ── Entry point thunk ─────────────────────────────────────────────────────────
 #
 # Scans decls for a class with `static def main`.  If found, emits:
-#   pub fn main() void { _allocator = _arena.allocator(); defer _arena.deinit(); ClassName.main(); }
+#   pub fn main() void { _allocator = _prog_alloc(); defer _arena.deinit(); ClassName.main(); }
 # For a throws main, wraps in a catch block for clean error display.
 
 def generateEntryPoint(m: Module, library_mode: bool): str
@@ -1077,7 +1077,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
-    sb.append("    _allocator = _arena.allocator();\n")
+    sb.append("    _allocator = _prog_alloc();\n")
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
@@ -1161,7 +1161,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
-    sb.append("    _allocator = _arena.allocator();\n")
+    sb.append("    _allocator = _prog_alloc();\n")
     sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
     sb.append("    var _test_pass: usize = 0;\n")
@@ -3918,7 +3918,7 @@ struct Generator
                 ei.writeIndent()
                 ei.w.emit("_args = _zinit.minimal.args;\n")
                 ei.writeIndent()
-                ei.w.emit("_allocator = _arena.allocator();\n")
+                ei.w.emit("_allocator = _prog_alloc();\n")
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")

@@ -2068,6 +2068,11 @@ def main()
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
     var lib_mode             = args.contains("--library-mode")
+    # §28j: --single-threaded — the program commits to spawning NO threads (no
+    # ThreadPool/sys.go/Chan across threads). Compiles with -fsingle-threaded, which makes
+    # `builtin.single_threaded` true so the program allocator's mutex wrapper compiles out
+    # (bare arena). Using threads under this flag is UB; the default is thread-safe.
+    var single_threaded      = args.contains("--single-threaded")
     # --single-file: emit the user region inside one `const _Mod = struct {…}` with a
     # single file-scope preamble (closes F5).  Currently single-module only (Phase 2 =
     # multi-module merge).  See docs/single_file_emit_design.md §7a.
@@ -2214,6 +2219,8 @@ def main()
             fargv.add("-fno-llvm")
             fargv.add("-fno-lld")
             fargv.add("-femit-bin=" + fast_exe)
+            if single_threaded
+                fargv.add("-fsingle-threaded")
             if cpu_flag != ""
                 fargv.add("-mcpu=" + cpu_flag)
             var fr = sys.run(fargv)
@@ -2239,6 +2246,8 @@ def main()
         else
             argv2.add("run")
             argv2.add(zig_path)
+        if single_threaded
+            argv2.add("-fsingle-threaded")
 
         # Append any C source files discovered during dep walk
         var csi: int = 0

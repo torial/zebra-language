@@ -7,7 +7,19 @@ var _io: std.Io = undefined;
 var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = _arena.allocator();
+const _TsAlloc = struct {
+    child: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
+    const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    fn allocator(self: *_TsAlloc) std.mem.Allocator { return .{ .ptr = self, .vtable = &_vt }; }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.alloc(self.child.ptr, len, al, ra); }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra); }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra); }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.free(self.child.ptr, mem, al, ra); }
+};
+var _ts_alloc: _TsAlloc = .{ .child = _arena.allocator() };
+fn _prog_alloc() std.mem.Allocator { return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator(); }
+var _allocator: std.mem.Allocator = _prog_alloc();
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
@@ -5875,7 +5887,7 @@ pub fn generateEntryPoint(m: Module, library_mode: bool) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1079
     sb.appendSlice(_allocator, "    _args = _zinit.minimal.args;\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1080
-    sb.appendSlice(_allocator, "    _allocator = _arena.allocator();\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _allocator = _prog_alloc();\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1081
     sb.appendSlice(_allocator, "    _initModuleVars();\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1082
@@ -6056,7 +6068,7 @@ pub fn generateTestEntryPoint(m: Module, file_stem: []const u8, tag_filter: ?[]c
 // zbr:selfhost/CodeGen.zbr:1163
     sb.appendSlice(_allocator, "    _args = _zinit.minimal.args;\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1164
-    sb.appendSlice(_allocator, "    _allocator = _arena.allocator();\n") catch @panic("OOM");
+    sb.appendSlice(_allocator, "    _allocator = _prog_alloc();\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1165
     sb.appendSlice(_allocator, "    _initModuleVars();\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1166
@@ -11335,7 +11347,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3920
                 ei.writeIndent();
 // zbr:selfhost/CodeGen.zbr:3921
-                ei.w.emit("_allocator = _arena.allocator();\n");
+                ei.w.emit("_allocator = _prog_alloc();\n");
 // zbr:selfhost/CodeGen.zbr:3922
                 if ((!self.library_mode)) {
 // zbr:selfhost/CodeGen.zbr:3923

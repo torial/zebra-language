@@ -1,0 +1,26 @@
+# §28j: concurrent-allocation stress test. 8 workers each build a 500-element List from
+# the SHARED program arena. Before the ThreadSafeAllocator wrapper this raced the
+# non-thread-safe arena (corruption/crash); the wrapper must make the sum exact & stable.
+def main()
+    var pool: ThreadPool = ThreadPool(4)
+    var total: Atomic(int) = Atomic(int)(0)
+    var w: int = 0
+    while w < 8
+        pool.submit(def()
+            capture
+                var total: Atomic(int) = total
+            var lst: List(int) = List(int)()
+            var k: int = 0
+            while k < 500
+                lst.add(k * 2)
+                k = k + 1
+            var s: int = 0
+            for x in lst
+                s = s + x
+            total.add(s)
+        )
+        w = w + 1
+    pool.wait()
+    # each worker: sum(0,2,...,998) = 2*sum(0..499) = 249500 ; 8 workers = 1996000
+    assert total.load() == 1996000
+    print("thread_alloc_stress: OK")

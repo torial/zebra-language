@@ -869,6 +869,12 @@ smoke_run test/bug195_map_param_test.zbr "bug195: 62"
 # the reported create()-drops-type bug no longer reproduces — see BUGS.md).
 smoke_run test/bug198_union_optional_field_test.zbr "bug198: OK"
 
+# §28j: concurrent allocation on the shared arena is safe (ThreadSafeAllocator wrapper).
+# 8 workers each build a 500-element List; the sum must be exact and stable. (The unsafe
+# allocate-scope-under-concurrency residual is demonstrated by the unregistered
+# arena_concurrency_hazard_test — see docs/concurrency_allocation_design.md.)
+smoke_run test/thread_alloc_stress_test.zbr "thread_alloc_stress: OK"
+
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
 # valid instantiable marker type. grammar.txt MemberBlockOpt; fuzz/FINDINGS.md G2.
 smoke_run test/marker_struct_test.zbr "marker: OK"

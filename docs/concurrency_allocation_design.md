@@ -144,3 +144,40 @@ GC-owns-lifetime point are from working knowledge, not re-verified against Go so
 here — the architectural claim is safe, but treat specifics as ~90%. The
 share-nothing-fits-Zebra claim is the load-bearing judgment and is checkable against the
 existing `Chan(T)`/`<<-` semantics.
+
+---
+
+## IMPLEMENTED (2026-07-24) — ThreadSafeAllocator wrapper + `--single-threaded`
+
+Per the recommendation above, 1.0 ships the **thread-safe-wrapper** approach (NOT
+per-thread arenas — that was over-scoped; it would introduce a cross-thread-UAF class the
+single-shared-arena model doesn't have).
+
+**What landed:**
+- `selfhost/stdlib_preamble.zig` — a minimal `_TsAlloc` (a `std.Io.Mutex` around the child
+  allocator's vtable; Zig 0.16 dropped `std.heap.ThreadSafeAllocator`). `_prog_alloc()`
+  returns the wrapped arena by default, the bare arena under `-fsingle-threaded`. The
+  bootstrap hardcodes the same globals in `src/CodeGen.zig` (the pre-`HELPERS_START`
+  preamble region is bootstrap-hardcoded; keep the two in sync — dual-maintenance, noted).
+- **`--single-threaded` flag** — the program commits to spawning no threads; the compiler
+  passes `-fsingle-threaded`, so `builtin.single_threaded` is true and the wrapper (and its
+  mutex) compiles out to the bare arena. Bonus safety: Zig turns any thread spawn under
+  `-fsingle-threaded` into a **compile error** ("Cannot spawn thread when building in
+  single-threaded mode"), so the commitment is enforced, not UB.
+- The compiler itself stays wrapped (it uses `sys.go` in LSP/listen mode), paying a small
+  uncontended-mutex cost per alloc — accepted for correctness.
+
+**Validated:** `test/thread_alloc_stress_test.zbr` — 8 workers × 500-element Lists on the
+shared arena, exact stable sum (smoke_run). The wrapper is correct by construction (mutex
+serializes alloc); note the *original* race was latent/rare, so the value is
+correctness-by-construction, not a reliably-catchable regression.
+
+**RESIDUAL the wrapper does NOT fix (captured, documented):** `allocate Arena()` scoped
+blocks **swap the global `_allocator`** to a sub-arena and rewind it. The mutex guards
+individual allocations, not the swap — so running an allocate-scope on one thread while
+workers allocate lets a worker see the swapped/rewound sub-arena. The hazard probe
+`test/arena_concurrency_hazard_test.zbr` (unregistered — it crashes) measured **23/30 runs
+crashing** ("attempt to use null value" / "@memcpy arguments alias" / segfault). **Rule for
+1.0: `allocate Arena()` scopes are single-threaded-only — do not interleave them with live
+ThreadPool/sys.go workers.** A real fix (thread-local `_allocator` swap, or a compile-time
+guard) is a post-1.0 follow-up.

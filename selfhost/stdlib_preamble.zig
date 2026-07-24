@@ -14,8 +14,57 @@ const builtin = @import("builtin");
 var _io: std.Io = undefined;
 var _args: std.process.Args = undefined;
 
+// §28j: a minimal thread-safe allocator wrapper — a std.Io.Mutex around a child
+// allocator's vtable. (Zig 0.16 dropped std.heap.ThreadSafeAllocator; SmpAllocator is a
+// general malloc, wrong fit for our arena's bulk-free-at-end model.) `_allocator` selects
+// the wrapper only when NOT `-fsingle-threaded` — the `--single-threaded` commitment
+// emits `-fsingle-threaded`, so `builtin.single_threaded` is a comptime true there and
+// the wrapper (and its mutex) is compiled out, leaving the bare arena.
+const _TsAlloc = struct {
+    child: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
+    const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    fn allocator(self: *_TsAlloc) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &_vt };
+    }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *_TsAlloc = @ptrCast(@alignCast(ctx));
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        return self.child.vtable.alloc(self.child.ptr, len, al, ra);
+    }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool {
+        const self: *_TsAlloc = @ptrCast(@alignCast(ctx));
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        return self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra);
+    }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+        const self: *_TsAlloc = @ptrCast(@alignCast(ctx));
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        return self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra);
+    }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void {
+        const self: *_TsAlloc = @ptrCast(@alignCast(ctx));
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        return self.child.vtable.free(self.child.ptr, mem, al, ra);
+    }
+};
+// The shared program arena, wrapped so concurrent workers (ThreadPool/sys.go/Chan) can
+// allocate without racing. Lifetime unchanged — ONE arena, freed at program end (no
+// per-thread free → no cross-thread use-after-free). `_allocator` is re-set the same way
+// in main() (see the codegen prologue); this file-scope init keeps the type correct.
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = _arena.allocator();
+var _ts_alloc: _TsAlloc = .{ .child = _arena.allocator() };
+// The program allocator: the mutex-wrapped arena by default; the bare arena under
+// `-fsingle-threaded` (the `--single-threaded` commitment — comptime-selected, so the
+// wrapper compiles out). Used in the file-scope init AND re-set in main() (codegen prologue).
+fn _prog_alloc() std.mem.Allocator {
+    return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator();
+}
+var _allocator: std.mem.Allocator = _prog_alloc();
 // String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
 // Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
