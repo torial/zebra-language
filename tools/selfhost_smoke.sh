@@ -455,6 +455,10 @@ smoke_tc_fail test/bug199_recovery_hang_test.zbr "unexpected top-level token"
 smoke_tc_fail test/empty_interface_rejected_test.zbr "must have a body"
 smoke_tc_fail test/empty_enum_rejected_test.zbr "must have at least one variant"
 
+# BUG-200: a deeply-nested expression must raise a clean diagnostic, not segfault the
+# recursive-descent parser (parseExpr depth guard). Also a hang/crash guard for smoke.
+smoke_tc_fail test/bug200_deep_nesting_test.zbr "nested too deeply"
+
 # Size unified on `.len` (#219): List.len, HashMap.len, maintained `len` field on
 # a user class; `str.count(sub)` substring method preserved.
 smoke_test test/len_size_test.zbr

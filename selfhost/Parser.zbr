@@ -690,6 +690,7 @@ class Parser
     var parse_errors: List(str)
     var collected_decls: List(PNode)
     var source: str
+    var expr_depth: int    # BUG-200: recursion-depth guard for parseExpr
 
     cue init(tokens: List(Token.Token), file_name: str, source: str = "")
         .tokens = tokens
@@ -698,6 +699,7 @@ class Parser
         .parse_errors = List(str)()
         .collected_decls = List(PNode)()
         .source = source
+        .expr_depth = 0
 
     # -- Cursor ----------------------------------------------------------------
 
@@ -862,6 +864,7 @@ class Parser
             .advance()
 
     def tryParseTopDeclInto()
+        .expr_depth = 0    # BUG-200: clear any depth leaked by a prior recovered error
         .collected_decls.add(.parseTopDecl()?)
     catch |e|
         .parse_errors.add(zig"_error_ctx.message")
@@ -2505,7 +2508,23 @@ class Parser
     # or - and - not - comparison - add/sub - mul/div - unary - - postfix - atom
 
     def parseExpr(): PNode throws
-        return .parsePipeline()?
+        # BUG-200: bound expression nesting depth. Every recursively-nested expression
+        # (`((((…))))`, deep call/index args, nested data) re-enters here, so this is
+        # the choke point that stops a runaway recursive descent from overflowing the
+        # stack — the parser's *and* the downstream tree-walks' — with a clean
+        # diagnostic instead of a segfault. Limit 200 is ~4x above any realistic nesting
+        # and leaves a wide stack margin below the observed crash (~450 deep). On the
+        # success path we decrement; the error path leaks by 1 but is cleared by the
+        # per-top-level reset in tryParseTopDeclInto (parse errors recover to a
+        # top-level boundary). NOTE residual: extreme single-operator FLAT chains
+        # (`1+1+…` ~1000 terms) build depth via the iterative binary loops without
+        # re-entering here — a pure fuzzer artifact, not realistic code; unfixed.
+        .expr_depth += 1
+        if .expr_depth > 200
+            raise .errorAt("expression nested too deeply (max nesting depth 200)")
+        var result = .parsePipeline()?
+        .expr_depth -= 1
+        return result
 
     def parsePipeline(): PNode throws
         var left = .parseOr()?

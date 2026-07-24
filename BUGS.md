@@ -4,19 +4,28 @@
 
 ---
 
-### BUG-200: deeply-nested expressions stack-overflow both compilers ⛔ OPEN (low priority, both compilers)
-A single expression with ~1000+ terms/nesting (`1 + 1 + … + 1`, or equivalently deep
-parens/calls) crashes the compiler with a **stack overflow** instead of a clean
-diagnostic: selfhost segfaults at ~N=1000, the Zig bootstrap earlier at ~N=400. Root:
-the AST tree-walk (parse → resolve → typecheck; `zebra --check` alone crashes, so it's
-the front-end, not codegen) recurses on expression-tree depth with **no depth guard**;
-a depth-N expression is a depth-N tree → N stack frames. Not a scaling problem — the
-selfhost is otherwise linear and 2-10x faster than the bootstrap on program size (see
-`tools/scaling_probe.py`, which found this). **Low priority:** no hand-written
-expression is that deep; the risk is machine-generated code. Same reliability family as
-BUG-199 (ungraceful crash on valid input). Fix is a decision (imposes a nesting limit):
-bound expression-nesting depth at parse time and emit "expression too deeply nested
-(max N)", vs. run the parse on a larger-stack thread. Deferred pending that call.
+### BUG-200: deeply-nested expressions stack-overflow ✅ FIXED for recursive nesting (2026-07-23); flat-chain residual documented
+A deeply-nested expression crashed the compiler with a **stack overflow** instead of a
+clean diagnostic — the AST tree-walk (parse → resolve → typecheck; `zebra --check`
+alone crashes, so it's the front-end) recurses on expression-tree depth. Measured
+selfhost crash thresholds: deep **parens/calls** segfault at ~450 (the worst and most
+realistic case — parens re-enter `parseExpr`); flat single-operator **chains**
+(`1+1+…`) overflow the downstream walk at ~1000 (built iteratively, don't re-enter
+parseExpr).
+**FIXED (recursive nesting):** `selfhost/Parser.zbr::parseExpr` now guards recursion
+depth (`expr_depth > 200` → clean `error: expression nested too deeply (max nesting
+depth 200)`), cleared per-top-level-decl in `tryParseTopDeclInto` to survive error
+recovery. 200 is ~4x above any realistic nesting and leaves ~250 stack frames below the
+~450 crash. Deep parens/calls/nested-data (the realistic + lowest-threshold crash) now
+diagnose cleanly. Regression: `test/bug200_deep_nesting_test.zbr` (250 parens →
+smoke_tc_fail). Gates all green.
+**Residual (⛔ open, low priority):** extreme single-operator FLAT chains (~1000+ terms,
+e.g. `1+1+…+1`) build depth via the iterative binary loops without re-entering parseExpr,
+so the guard doesn't catch them — they still crash the tree-walk. A pure fuzzer artifact
+(no hand-written code is a 1000-term flat sum; not gramgen-gate-reachable at depths 7/11).
+Fix would add per-iteration caps to the ~7 binary-operator loops (parseOr/And/Comparison/
+AddSub/MulDiv/pipeline). Deferred — very low value. The Zig bootstrap keeps the whole
+crash (sunsetting; not fixed there).
 
 ---
 
