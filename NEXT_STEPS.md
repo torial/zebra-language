@@ -30,6 +30,10 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   user-class field typing; overlaps §24e), re-measure toward 0, THEN flip. Bootstrap corpus
   stays at 0 (`check_inference_guess.sh`), so the user-facing guarantee already holds. Gated,
   supervised. Also surfaced BUG-181 (selfhost can't self-compile `main.zbr`). → *Open detail §28a.*
+  **Framing (Sean 2026-07-23): NOT a 1.0/1.5 gate — an INCREMENTAL thread.** Each inference
+  root cause is independent and shippable, so §28a rides as a series of post-1.0 point
+  releases (1.0.x), each gated. Doesn't block anything; the bootstrap witness holds the line
+  meanwhile. A thread to pull on for a while, not a milestone.
 - [x] **SIMD data bridge (BUG-197) — `f32x8` usable on real data. Tiers 1+2 DONE 2026-07-18.**
   Found by the 2026-07-17 Greek-NT dogfood. **Tier 1 `.toFloat32()`** (commit `ac48cbe`) and
   **Tier 2 `List(float32)`/`List(f32)`** (commit `015e8c3`) landed, gated. Payoff delivered: the
@@ -496,6 +500,18 @@ lambda-taking list methods (none fuzzed today — would come as one lambda-gener
 capability).
 
 ## §28j — `_allocator` under threads → two-tier model (step b open) [DIRECTION SET — Sean 2026-07-03]
+
+> **Design research (2026-07-23): `docs/concurrency_allocation_design.md`.** Comparing
+> Zig (`ThreadSafeAllocator`, `SmpAllocator` — a GC-free per-thread-cache with
+> thread-exit reclamation, both in std) and Go (per-P `mcache` tiers + GC-owned
+> lifetime) reframes §28j and **shrinks it**: lead with SHARE-NOTHING (per-thread arenas
+> + copy-on-`Chan`/`<<-`, which Zebra already does) so the cross-thread use-after-free
+> class is avoided by construction; provide a thread-safe FALLBACK tier for genuine
+> shared state by *adopting* a std allocator (`ThreadSafeAllocator` → `SmpAllocator`),
+> not inventing one. Residual real work: per-thread arena wiring + audit that
+> cross-thread paths copy + a threaded-lifetime gate + a thin opt-in shared annotation.
+> Still supervised. See the note for the full comparison + recommendation.
+
 
 Arena allocators aren't thread-safe; workers sharing the program arena is a latent
 race. **Measurement done (step a, 2026-07-04):** race CONFIRMED in code (`_allocator`
