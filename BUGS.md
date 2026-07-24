@@ -1,6 +1,6 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-200. Next new bug: BUG-201.**
+**Last bug number generated: BUG-201. Next new bug: BUG-202.**
 
 ---
 
@@ -76,11 +76,36 @@ fn parameter is a `*HashMap`, and `.KV` is not a member of the pointer. Works on
 a local map. `.get`/`.set` on a HashMap param DO work. Fix: preamble should use
 `@TypeOf(map.*)` / deref, or the call site should pass the value.
 
-### BUG-196: container-method dispatch broken on `List(List(T))` ⛔ OPEN
-Two faces of the same nested-generic gap: (a) `.len`/`.at` on a `for` binding over
-`List(List(T))` → "no field 'len' in ArrayList(...)" (rebinding to a typed local
-fixes it); (b) `.add` on a `List(List(float))` local → "no member function named
-'add'". `List(List(str))` fares better than `List(List(float))`/`List(List(int))`.
+### BUG-196: container-method dispatch broken on `List(List(T))` ✅ RESOLVED (2026-07-23)
+Two filed faces: (a) `.len`/`.at` on a `for` binding over `List(List(T))` → "no field
+'len' in ArrayList(...)"; (b) `.add` on a `List(List(float))` local → "no member 'add'".
+**Root of (a):** `genForIn`'s general List-iteration path registered the loop var in
+`for_loop_vars` and special-cased `List(str)`/JSON elements, but never bound the loop
+var's TYPE in `infer_ctx` for a general element — so for a nested `List(List(T))` the
+inner-List loop var was untyped, and `.len` fell through to the string-shaped `.len`
+instead of `.items.len` (and `.at` similarly). **Fix:** in `genForIn`, when the
+iterable's element type is itself a container (`Type_.list_`/`Type_.hashmap_`), bind the
+loop var to that element type (`ic_for.bind(vname, for_elem_t)`), so container-method
+dispatch resolves on the binding. Scoped to container elements so struct/str/primitive
+loops are unchanged (they had no working behavior to regress). Face (b) as filed no
+longer reproduces (`.add` on the outer `List(List(float))` runs). Verified typed AND
+untyped iterables. Regression: `test/bug196_nested_list_test.zbr` (smoke_run "bug196: 43").
+Deeper nested-container facets found while probing are filed separately as BUG-201.
+
+### BUG-201: nested-container dispatch on call-result / mutable-loop receivers ⛔ OPEN (found probing BUG-196)
+Two distinct facets surfaced when probing BUG-196, each its own mechanism:
+- **(b1) `.add`/`.at`/`.len` on a `.at()` CALL-RESULT** — `m.at(0).add(99)` on
+  `List(List(int))` → "no member function named 'add' in ArrayList". genMemberCall's
+  `recv_t = inferExpr(m.object)` dispatch (CodeGen ~10630) *should* fire the `Type_.list_`
+  arm, but `inferExpr(m.at(0))` isn't resolving to `list_` at the codegen call site even
+  though the standalone `.at` inferExpr handler (TypeChecker ~1844 returns the element
+  type) and the outer `inferExpr(m)` both work. Likely a codegen-`infer_ctx` population
+  gap for chained call receivers. A chained-dispatch/inference fix.
+- **(b2) mutating a `for`-binding element** — `for r in m: r.add(5)` now *dispatches*
+  correctly (post-BUG-196) but hits "expected '*T', found '*const T'": Zig loop bindings
+  are `const` (`for (m.items) |r|`), so mutating the element needs the by-pointer form
+  `for (m.items) |*r|` + deref. A separate mutation-aware loop-lowering feature (detect a
+  mutating method on the loop var → emit `|*r|`). Matrix-in-place-build pattern.
 
 ### BUG-198: assigning a union value to an OPTIONAL field drops the box type arg ⛔ OPEN (both compilers)
 Direct assignment of a non-optional union value to an optional heap-boxed field —

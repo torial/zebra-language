@@ -854,6 +854,10 @@ smoke_run test/bug176_split_list_test.zbr "bug176: OK"
 # call result indexed directly — `f()[i]` — emits `.items[i]` (converges selfhost).
 smoke_run test/bug177_178_index_tostring_test.zbr "bug177_178: OK"
 
+# BUG-196: container-method dispatch on a for-binding over List(List(T)) — .len/.at on
+# the inner-List loop var must dispatch as a List (genForIn binds the loop var's element type).
+smoke_run test/bug196_nested_list_test.zbr "bug196: 43"
+
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
 # valid instantiable marker type. grammar.txt MemberBlockOpt; fuzz/FINDINGS.md G2.
 smoke_run test/marker_struct_test.zbr "marker: OK"

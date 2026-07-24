@@ -1,0 +1,21 @@
+# BUG-196 regression: container-method dispatch on a for-binding over List(List(T)).
+# The loop var `r` is the inner List; `.len`/`.at` must dispatch to `.items.len`/index,
+# not the string-shaped `.len`. Fixed by binding the loop var to the iterable's element
+# type in genForIn (selfhost/CodeGen.zbr). See BUGS.md BUG-196.
+class Program
+    static
+        def main
+            var m: List(List(int)) = List(List(int))()
+            var a: List(int) = List(int)()
+            a.add(10)
+            a.add(20)
+            m.add(a)
+            var b: List(int) = List(int)()
+            b.add(30)
+            m.add(b)
+            var total: int = 0
+            for r in m
+                total = total + r.len
+                total = total + r.at(0)
+            # rows: [10,20] len2 at0=10 ; [30] len1 at0=30  -> 2+10+1+30 = 43
+            print("bug196: " + total.toString())

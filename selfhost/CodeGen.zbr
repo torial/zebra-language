@@ -6838,6 +6838,21 @@ struct Generator
                                 if for_orf_e.startsWith(for_st_dot)
                                     ig.opt_ptr_field_bindings.add(makeDottedKey(vname, extractAfterDot(for_orf_e)))
                                 for_oi += 1
+                        # BUG-196: a nested-CONTAINER element (List(List(T)) / List(HashMap))
+                        # — bind the loop var to the element type so `.len`/`.at`/`.add`
+                        # dispatch on the binding. The inner container was previously
+                        # untyped, so `.len` mis-emitted `.len` instead of `.items.len`
+                        # (and `.at`/`.add` missed). Scoped to container elements so
+                        # struct/str/primitive loops (handled by the field/str_params
+                        # paths) are left unchanged; the direct nested-list form fails to
+                        # compile today, so there is no working behavior to regress.
+                        branch for_elem_t
+                            on Type_.list_ as _
+                                ic_for.bind(vname, for_elem_t)
+                            on Type_.hashmap_ as _
+                                ic_for.bind(vname, for_elem_t)
+                            else
+                                pass
                 ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
