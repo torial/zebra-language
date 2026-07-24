@@ -858,6 +858,9 @@ smoke_run test/bug177_178_index_tostring_test.zbr "bug177_178: OK"
 # the inner-List loop var must dispatch as a List (genForIn binds the loop var's element type).
 smoke_run test/bug196_nested_list_test.zbr "bug196: 43"
 
+# BUG-193: File.listDir ported to the selfhost (was @compileError); returns List(str).
+smoke_run test/bug193_listdir_test.zbr "bug193: OK"
+
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
 # valid instantiable marker type. grammar.txt MemberBlockOpt; fuzz/FINDINGS.md G2.
 smoke_run test/marker_struct_test.zbr "marker: OK"

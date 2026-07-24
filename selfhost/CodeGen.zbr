@@ -13799,6 +13799,31 @@ struct Generator
             writeIndent()
             w.emit("})")
             return
+        if mname == "listDir"
+            # BUG-193: File.listDir(path) → List(str) of entry names. Ported from the
+            # bootstrap (src/CodeGen.zig ~7855); mirrors readLines' blk: List(str) form.
+            # entry.name is a slice into the iterator's reused buffer, so dupe each name.
+            w.emit("(blk_fld: {\n")
+            writeIndent()
+            w.emit("    var _ld_dir = std.Io.Dir.cwd().openDir(_io, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\".\"")
+            w.emit(", .{ .iterate = true }) catch @panic(\"File.listDir error\");\n")
+            writeIndent()
+            w.emit("    defer _ld_dir.close(_io);\n")
+            writeIndent()
+            w.emit("    var _ld_list = std.ArrayList([]const u8).empty;\n")
+            writeIndent()
+            w.emit("    var _ld_iter = _ld_dir.iterate();\n")
+            writeIndent()
+            w.emit("    while (_ld_iter.next(_io) catch null) |_ld_entry| { _ld_list.append(_allocator, _allocator.dupe(u8, _ld_entry.name) catch @panic(\"OOM\")) catch @panic(\"OOM\"); }\n")
+            writeIndent()
+            w.emit("    break :blk_fld _ld_list;\n")
+            writeIndent()
+            w.emit("})")
+            return
         if mname == "append"
             # Zig 0.16 removed File.seekFromEnd; append = _file_append (read+concat+write).
             w.emit("_file_append(")

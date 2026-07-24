@@ -30739,456 +30739,450 @@ pub const Generator = struct {
             return;
         }
 // zbr:selfhost/CodeGen.zbr:13802
-        if (std.mem.eql(u8, mname, "append")) {
-// zbr:selfhost/CodeGen.zbr:13804
-            self.w.emit("_file_append(");
-// zbr:selfhost/CodeGen.zbr:13805
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+        if (std.mem.eql(u8, mname, "listDir")) {
 // zbr:selfhost/CodeGen.zbr:13806
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+            self.w.emit("(blk_fld: {\n");
+// zbr:selfhost/CodeGen.zbr:13807
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13808
-                self.w.emit("\"\"");
-            }
+            self.w.emit("    var _ld_dir = std.Io.Dir.cwd().openDir(_io, ");
 // zbr:selfhost/CodeGen.zbr:13809
-            self.w.emit(", ");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:13810
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:13811
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
+// zbr:selfhost/CodeGen.zbr:13812
+                self.w.emit("\".\"");
+            }
 // zbr:selfhost/CodeGen.zbr:13813
-                self.w.emit("\"\"");
-            }
+            self.w.emit(", .{ .iterate = true }) catch @panic(\"File.listDir error\");\n");
 // zbr:selfhost/CodeGen.zbr:13814
-            self.w.emit(")");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13815
-            return;
-        }
+            self.w.emit("    defer _ld_dir.close(_io);\n");
 // zbr:selfhost/CodeGen.zbr:13816
-        if (std.mem.eql(u8, mname, "delete")) {
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13817
-            self.w.emit("(std.Io.Dir.cwd().deleteFile(_io, ");
+            self.w.emit("    var _ld_list = std.ArrayList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:13818
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13819
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+            self.w.emit("    var _ld_iter = _ld_dir.iterate();\n");
+// zbr:selfhost/CodeGen.zbr:13820
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13821
-                self.w.emit("\"\"");
-            }
+            self.w.emit("    while (_ld_iter.next(_io) catch null) |_ld_entry| { _ld_list.append(_allocator, _allocator.dupe(u8, _ld_entry.name) catch @panic(\"OOM\")) catch @panic(\"OOM\"); }\n");
 // zbr:selfhost/CodeGen.zbr:13822
-            self.w.emit(") catch @panic(\"File.delete error\"))");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13823
-            return;
-        }
+            self.w.emit("    break :blk_fld _ld_list;\n");
 // zbr:selfhost/CodeGen.zbr:13824
-        if (std.mem.eql(u8, mname, "size")) {
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13825
-            self.w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ");
+            self.w.emit("})");
 // zbr:selfhost/CodeGen.zbr:13826
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:13827
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+        if (std.mem.eql(u8, mname, "append")) {
 // zbr:selfhost/CodeGen.zbr:13829
-                self.w.emit("\"\"");
-            }
+            self.w.emit("_file_append(");
 // zbr:selfhost/CodeGen.zbr:13830
-            self.w.emit(", .{}) catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:13831
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13832
-        if (std.mem.eql(u8, mname, "isFile")) {
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:13833
-            self.w.emit("(blk_fif: { const _if_stat = std.Io.Dir.cwd().statFile(_io, ");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:13834
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13835
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13837
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:13838
-            self.w.emit(", .{}) catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })");
-// zbr:selfhost/CodeGen.zbr:13839
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13840
-        if (std.mem.eql(u8, mname, "isDir")) {
-// zbr:selfhost/CodeGen.zbr:13841
-            self.w.emit("(blk_fid: { var _fd_dir = std.Io.Dir.cwd().openDir(_io, ");
-// zbr:selfhost/CodeGen.zbr:13842
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13843
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13845
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:13846
-            self.w.emit(", .{}) catch break :blk_fid false; _fd_dir.close(_io); break :blk_fid true; })");
-// zbr:selfhost/CodeGen.zbr:13847
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13848
-        if (std.mem.eql(u8, mname, "writeLines")) {
-// zbr:selfhost/CodeGen.zbr:13849
-            self.w.emit("_file_write_lines(");
-// zbr:selfhost/CodeGen.zbr:13850
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13851
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13853
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:13854
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:13855
+// zbr:selfhost/CodeGen.zbr:13835
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:13856
+// zbr:selfhost/CodeGen.zbr:13836
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
+// zbr:selfhost/CodeGen.zbr:13838
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13839
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:13840
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13841
+        if (std.mem.eql(u8, mname, "delete")) {
+// zbr:selfhost/CodeGen.zbr:13842
+            self.w.emit("(std.Io.Dir.cwd().deleteFile(_io, ");
+// zbr:selfhost/CodeGen.zbr:13843
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13844
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13846
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13847
+            self.w.emit(") catch @panic(\"File.delete error\"))");
+// zbr:selfhost/CodeGen.zbr:13848
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13849
+        if (std.mem.eql(u8, mname, "size")) {
+// zbr:selfhost/CodeGen.zbr:13850
+            self.w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ");
+// zbr:selfhost/CodeGen.zbr:13851
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13852
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13854
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13855
+            self.w.emit(", .{}) catch break :blk_fsz @as(i64, -1); break :blk_fsz @as(i64, @intCast(_sz_stat.size)); })");
+// zbr:selfhost/CodeGen.zbr:13856
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13857
+        if (std.mem.eql(u8, mname, "isFile")) {
 // zbr:selfhost/CodeGen.zbr:13858
+            self.w.emit("(blk_fif: { const _if_stat = std.Io.Dir.cwd().statFile(_io, ");
+// zbr:selfhost/CodeGen.zbr:13859
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13860
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13862
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13863
+            self.w.emit(", .{}) catch break :blk_fif false; break :blk_fif _if_stat.kind == .file; })");
+// zbr:selfhost/CodeGen.zbr:13864
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13865
+        if (std.mem.eql(u8, mname, "isDir")) {
+// zbr:selfhost/CodeGen.zbr:13866
+            self.w.emit("(blk_fid: { var _fd_dir = std.Io.Dir.cwd().openDir(_io, ");
+// zbr:selfhost/CodeGen.zbr:13867
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13868
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13870
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13871
+            self.w.emit(", .{}) catch break :blk_fid false; _fd_dir.close(_io); break :blk_fid true; })");
+// zbr:selfhost/CodeGen.zbr:13872
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13873
+        if (std.mem.eql(u8, mname, "writeLines")) {
+// zbr:selfhost/CodeGen.zbr:13874
+            self.w.emit("_file_write_lines(");
+// zbr:selfhost/CodeGen.zbr:13875
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13876
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13878
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13879
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:13880
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:13881
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13883
                 self.w.emit("undefined");
             }
-// zbr:selfhost/CodeGen.zbr:13859
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:13860
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13861
-        if (std.mem.eql(u8, mname, "modtime")) {
-// zbr:selfhost/CodeGen.zbr:13862
-            self.w.emit("(blk_mt: {\n");
-// zbr:selfhost/CodeGen.zbr:13863
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13864
-            self.w.emit("    const _mt_stat = std.Io.Dir.cwd().statFile(_io, ");
-// zbr:selfhost/CodeGen.zbr:13865
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13866
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13868
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:13869
-            self.w.emit(", .{}) catch break :blk_mt @as(?i64, null);\n");
-// zbr:selfhost/CodeGen.zbr:13870
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13871
-            self.w.emit("    break :blk_mt @as(?i64, _mt_stat.mtime.toMilliseconds());\n");
-// zbr:selfhost/CodeGen.zbr:13872
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13873
-            self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:13874
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13875
-        if (std.mem.eql(u8, mname, "rename")) {
-// zbr:selfhost/CodeGen.zbr:13877
-            self.w.emit("(std.Io.Dir.cwd().rename(");
-// zbr:selfhost/CodeGen.zbr:13878
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13879
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13881
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:13882
-            self.w.emit(", std.Io.Dir.cwd(), ");
-// zbr:selfhost/CodeGen.zbr:13883
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:13884
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:13885
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:13886
-                self.w.emit("\"\"");
-            }
+        if (std.mem.eql(u8, mname, "modtime")) {
 // zbr:selfhost/CodeGen.zbr:13887
-            self.w.emit(", _io) catch @panic(\"File.rename error\"))");
+            self.w.emit("(blk_mt: {\n");
 // zbr:selfhost/CodeGen.zbr:13888
-            return;
-        }
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13889
-        if (std.mem.eql(u8, mname, "copy")) {
-// zbr:selfhost/CodeGen.zbr:13892
-            self.w.emit("(blk_fcp: { const _fc_data = std.Io.Dir.cwd().readFileAlloc(_io, ");
-// zbr:selfhost/CodeGen.zbr:13893
+            self.w.emit("    const _mt_stat = std.Io.Dir.cwd().statFile(_io, ");
+// zbr:selfhost/CodeGen.zbr:13890
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13894
+// zbr:selfhost/CodeGen.zbr:13891
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:13896
+// zbr:selfhost/CodeGen.zbr:13893
                 self.w.emit("\"\"");
             }
+// zbr:selfhost/CodeGen.zbr:13894
+            self.w.emit(", .{}) catch break :blk_mt @as(?i64, null);\n");
+// zbr:selfhost/CodeGen.zbr:13895
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:13896
+            self.w.emit("    break :blk_mt @as(?i64, _mt_stat.mtime.toMilliseconds());\n");
 // zbr:selfhost/CodeGen.zbr:13897
-            self.w.emit(", _allocator, .unlimited) catch @panic(\"File.copy read error\"); const _fc_f = std.Io.Dir.cwd().createFile(_io, ");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13898
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+            self.w.emit("})");
 // zbr:selfhost/CodeGen.zbr:13899
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13900
+        if (std.mem.eql(u8, mname, "rename")) {
+// zbr:selfhost/CodeGen.zbr:13902
+            self.w.emit("(std.Io.Dir.cwd().rename(");
+// zbr:selfhost/CodeGen.zbr:13903
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13904
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13906
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13907
+            self.w.emit(", std.Io.Dir.cwd(), ");
+// zbr:selfhost/CodeGen.zbr:13908
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:13909
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:13901
+// zbr:selfhost/CodeGen.zbr:13911
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:13902
-            self.w.emit(", .{}) catch @panic(\"File.copy write error\"); defer _fc_f.close(_io); _fc_f.writeStreamingAll(_io, _fc_data) catch @panic(\"File.copy write error\"); break :blk_fcp {}; })");
-// zbr:selfhost/CodeGen.zbr:13903
+// zbr:selfhost/CodeGen.zbr:13912
+            self.w.emit(", _io) catch @panic(\"File.rename error\"))");
+// zbr:selfhost/CodeGen.zbr:13913
             return;
         }
-// zbr:selfhost/CodeGen.zbr:13905
-        self.w.emit("@compileError(\"selfhost: unknown File.");
-// zbr:selfhost/CodeGen.zbr:13906
-        self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:13907
-        self.w.emit("\")");
-    }
-
-    pub fn genSysCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
-        defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:13913
-        if (std.mem.eql(u8, mname, "errln")) {
 // zbr:selfhost/CodeGen.zbr:13914
-            self.w.emit("std.debug.print(\"{s}\\n\", .{");
-// zbr:selfhost/CodeGen.zbr:13915
+        if (std.mem.eql(u8, mname, "copy")) {
+// zbr:selfhost/CodeGen.zbr:13917
+            self.w.emit("(blk_fcp: { const _fc_data = std.Io.Dir.cwd().readFileAlloc(_io, ");
+// zbr:selfhost/CodeGen.zbr:13918
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13916
+// zbr:selfhost/CodeGen.zbr:13919
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:13918
+// zbr:selfhost/CodeGen.zbr:13921
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:13919
-            self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:13920
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13921
-        if (std.mem.eql(u8, mname, "err")) {
 // zbr:selfhost/CodeGen.zbr:13922
-            self.w.emit("std.debug.print(\"{s}\", .{");
+            self.w.emit(", _allocator, .unlimited) catch @panic(\"File.copy read error\"); const _fc_f = std.Io.Dir.cwd().createFile(_io, ");
 // zbr:selfhost/CodeGen.zbr:13923
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:13924
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
 // zbr:selfhost/CodeGen.zbr:13926
                 self.w.emit("\"\"");
             }
 // zbr:selfhost/CodeGen.zbr:13927
-            self.w.emit("})");
+            self.w.emit(", .{}) catch @panic(\"File.copy write error\"); defer _fc_f.close(_io); _fc_f.writeStreamingAll(_io, _fc_data) catch @panic(\"File.copy write error\"); break :blk_fcp {}; })");
 // zbr:selfhost/CodeGen.zbr:13928
             return;
         }
-// zbr:selfhost/CodeGen.zbr:13929
-        if (std.mem.eql(u8, mname, "exit")) {
 // zbr:selfhost/CodeGen.zbr:13930
-            self.w.emit("std.process.exit(@intCast(");
+        self.w.emit("@compileError(\"selfhost: unknown File.");
 // zbr:selfhost/CodeGen.zbr:13931
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+        self.w.emit(mname);
 // zbr:selfhost/CodeGen.zbr:13932
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13934
-                self.w.emit("0");
-            }
-// zbr:selfhost/CodeGen.zbr:13935
-            self.w.emit("))");
-// zbr:selfhost/CodeGen.zbr:13936
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13937
-        if (std.mem.eql(u8, mname, "memStats")) {
+        self.w.emit("\")");
+    }
+
+    pub fn genSysCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
+        defer self._check_invariant();
+// zbr:selfhost/CodeGen.zbr:13938
+        if (std.mem.eql(u8, mname, "errln")) {
 // zbr:selfhost/CodeGen.zbr:13939
-            self.w.emit("_mem_stats()");
+            self.w.emit("std.debug.print(\"{s}\\n\", .{");
 // zbr:selfhost/CodeGen.zbr:13940
-            return;
-        }
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:13941
-        if (std.mem.eql(u8, mname, "run")) {
-// zbr:selfhost/CodeGen.zbr:13942
-            self.w.emit("_sys_run(");
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:13943
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13944
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13946
-                self.w.emit("undefined");
-            }
-// zbr:selfhost/CodeGen.zbr:13947
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:13948
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13949
-        if (std.mem.eql(u8, mname, "exec_inherit")) {
-// zbr:selfhost/CodeGen.zbr:13950
-            self.w.emit("_sys_exec_inherit(");
-// zbr:selfhost/CodeGen.zbr:13951
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13952
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13954
-                self.w.emit("undefined");
-            }
-// zbr:selfhost/CodeGen.zbr:13955
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:13956
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13957
-        if (std.mem.eql(u8, mname, "spawn")) {
-// zbr:selfhost/CodeGen.zbr:13958
-            self.w.emit("_sys_spawn(");
-// zbr:selfhost/CodeGen.zbr:13959
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13960
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13962
-                self.w.emit("undefined");
-            }
-// zbr:selfhost/CodeGen.zbr:13963
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:13964
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13965
-        if (std.mem.eql(u8, mname, "args")) {
-// zbr:selfhost/CodeGen.zbr:13966
-            self.w.emit("(blk_sa: {\n");
-// zbr:selfhost/CodeGen.zbr:13967
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13969
-            self.w.emit("    const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n");
-// zbr:selfhost/CodeGen.zbr:13970
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13971
-            self.w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n");
-// zbr:selfhost/CodeGen.zbr:13972
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13973
-            self.w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n");
-// zbr:selfhost/CodeGen.zbr:13974
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13975
-            self.w.emit("    break :blk_sa _sa_list;\n");
-// zbr:selfhost/CodeGen.zbr:13976
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:13977
-            self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:13978
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:13979
-        if (std.mem.eql(u8, mname, "getenv")) {
-// zbr:selfhost/CodeGen.zbr:13980
-            self.w.emit("_sys_getenv(");
-// zbr:selfhost/CodeGen.zbr:13981
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13982
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:13984
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:13985
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:13986
+// zbr:selfhost/CodeGen.zbr:13944
+            self.w.emit("})");
+// zbr:selfhost/CodeGen.zbr:13945
             return;
         }
+// zbr:selfhost/CodeGen.zbr:13946
+        if (std.mem.eql(u8, mname, "err")) {
+// zbr:selfhost/CodeGen.zbr:13947
+            self.w.emit("std.debug.print(\"{s}\", .{");
+// zbr:selfhost/CodeGen.zbr:13948
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13949
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13951
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:13952
+            self.w.emit("})");
+// zbr:selfhost/CodeGen.zbr:13953
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13954
+        if (std.mem.eql(u8, mname, "exit")) {
+// zbr:selfhost/CodeGen.zbr:13955
+            self.w.emit("std.process.exit(@intCast(");
+// zbr:selfhost/CodeGen.zbr:13956
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13957
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13959
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:13960
+            self.w.emit("))");
+// zbr:selfhost/CodeGen.zbr:13961
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13962
+        if (std.mem.eql(u8, mname, "memStats")) {
+// zbr:selfhost/CodeGen.zbr:13964
+            self.w.emit("_mem_stats()");
+// zbr:selfhost/CodeGen.zbr:13965
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13966
+        if (std.mem.eql(u8, mname, "run")) {
+// zbr:selfhost/CodeGen.zbr:13967
+            self.w.emit("_sys_run(");
+// zbr:selfhost/CodeGen.zbr:13968
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13969
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13971
+                self.w.emit("undefined");
+            }
+// zbr:selfhost/CodeGen.zbr:13972
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:13973
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13974
+        if (std.mem.eql(u8, mname, "exec_inherit")) {
+// zbr:selfhost/CodeGen.zbr:13975
+            self.w.emit("_sys_exec_inherit(");
+// zbr:selfhost/CodeGen.zbr:13976
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13977
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:13979
+                self.w.emit("undefined");
+            }
+// zbr:selfhost/CodeGen.zbr:13980
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:13981
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:13982
+        if (std.mem.eql(u8, mname, "spawn")) {
+// zbr:selfhost/CodeGen.zbr:13983
+            self.w.emit("_sys_spawn(");
+// zbr:selfhost/CodeGen.zbr:13984
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:13985
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:13987
-        if (std.mem.eql(u8, mname, "readLine")) {
+                self.w.emit("undefined");
+            }
 // zbr:selfhost/CodeGen.zbr:13988
-            self.w.emit("_sys_readline()");
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:13989
             return;
         }
 // zbr:selfhost/CodeGen.zbr:13990
-        if (std.mem.eql(u8, mname, "readBytes")) {
+        if (std.mem.eql(u8, mname, "args")) {
 // zbr:selfhost/CodeGen.zbr:13991
-            self.w.emit("_sys_read_bytes(");
+            self.w.emit("(blk_sa: {\n");
 // zbr:selfhost/CodeGen.zbr:13992
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:13993
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:13994
+            self.w.emit("    const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n");
 // zbr:selfhost/CodeGen.zbr:13995
-                self.w.emit("0");
-            }
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13996
-            self.w.emit(")");
+            self.w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:13997
-            return;
-        }
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:13998
-        if (std.mem.eql(u8, mname, "go")) {
+            self.w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n");
 // zbr:selfhost/CodeGen.zbr:13999
-            self.w.emit("_sys_go(");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14000
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("    break :blk_sa _sa_list;\n");
 // zbr:selfhost/CodeGen.zbr:14001
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            }
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14002
-            self.w.emit(")");
+            self.w.emit("})");
 // zbr:selfhost/CodeGen.zbr:14003
             return;
         }
 // zbr:selfhost/CodeGen.zbr:14004
-        if (std.mem.eql(u8, mname, "sleep")) {
+        if (std.mem.eql(u8, mname, "getenv")) {
+// zbr:selfhost/CodeGen.zbr:14005
+            self.w.emit("_sys_getenv(");
 // zbr:selfhost/CodeGen.zbr:14006
-            self.w.emit("_sysSleep(@as(i64, @intCast(");
-// zbr:selfhost/CodeGen.zbr:14007
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14008
+// zbr:selfhost/CodeGen.zbr:14007
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
+// zbr:selfhost/CodeGen.zbr:14009
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14010
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14011
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14012
+        if (std.mem.eql(u8, mname, "readLine")) {
+// zbr:selfhost/CodeGen.zbr:14013
+            self.w.emit("_sys_readline()");
+// zbr:selfhost/CodeGen.zbr:14014
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14015
+        if (std.mem.eql(u8, mname, "readBytes")) {
+// zbr:selfhost/CodeGen.zbr:14016
+            self.w.emit("_sys_read_bytes(");
+// zbr:selfhost/CodeGen.zbr:14017
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14018
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14020
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14011
-            self.w.emit(")))");
-// zbr:selfhost/CodeGen.zbr:14012
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14013
-        if (std.mem.eql(u8, mname, "cwd")) {
-// zbr:selfhost/CodeGen.zbr:14014
-            self.w.emit("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))");
-// zbr:selfhost/CodeGen.zbr:14015
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14016
-        if (std.mem.eql(u8, mname, "setenv")) {
-// zbr:selfhost/CodeGen.zbr:14017
-            self.w.emit("_sys_setenv(");
-// zbr:selfhost/CodeGen.zbr:14018
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14019
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
 // zbr:selfhost/CodeGen.zbr:14021
-                self.w.emit("\"\"");
-            }
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14022
-            self.w.emit(", ");
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14023
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+        if (std.mem.eql(u8, mname, "go")) {
 // zbr:selfhost/CodeGen.zbr:14024
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
+            self.w.emit("_sys_go(");
+// zbr:selfhost/CodeGen.zbr:14025
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14026
-                self.w.emit("\"\"");
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
 // zbr:selfhost/CodeGen.zbr:14027
             self.w.emit(")");
@@ -31196,1900 +31190,1900 @@ pub const Generator = struct {
             return;
         }
 // zbr:selfhost/CodeGen.zbr:14029
-        if (std.mem.eql(u8, mname, "selfExe")) {
-// zbr:selfhost/CodeGen.zbr:14030
-            self.w.emit("_sys_self_exe()");
+        if (std.mem.eql(u8, mname, "sleep")) {
 // zbr:selfhost/CodeGen.zbr:14031
+            self.w.emit("_sysSleep(@as(i64, @intCast(");
+// zbr:selfhost/CodeGen.zbr:14032
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14033
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14035
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:14036
+            self.w.emit(")))");
+// zbr:selfhost/CodeGen.zbr:14037
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14033
+// zbr:selfhost/CodeGen.zbr:14038
+        if (std.mem.eql(u8, mname, "cwd")) {
+// zbr:selfhost/CodeGen.zbr:14039
+            self.w.emit("(std.process.currentPathAlloc(_io, _allocator) catch @panic(\"sys.cwd error\"))");
+// zbr:selfhost/CodeGen.zbr:14040
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14041
+        if (std.mem.eql(u8, mname, "setenv")) {
+// zbr:selfhost/CodeGen.zbr:14042
+            self.w.emit("_sys_setenv(");
+// zbr:selfhost/CodeGen.zbr:14043
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14044
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14046
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14047
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14048
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14049
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14051
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14052
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14053
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14054
+        if (std.mem.eql(u8, mname, "selfExe")) {
+// zbr:selfhost/CodeGen.zbr:14055
+            self.w.emit("_sys_self_exe()");
+// zbr:selfhost/CodeGen.zbr:14056
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14058
         self.w.emit("@compileError(\"selfhost: unknown sys.");
-// zbr:selfhost/CodeGen.zbr:14034
+// zbr:selfhost/CodeGen.zbr:14059
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14035
+// zbr:selfhost/CodeGen.zbr:14060
         self.w.emit("\")");
     }
 
     pub fn genArgCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
         _ = args;
-// zbr:selfhost/CodeGen.zbr:14038
+// zbr:selfhost/CodeGen.zbr:14063
         if (std.mem.eql(u8, mname, "parse")) {
-// zbr:selfhost/CodeGen.zbr:14039
+// zbr:selfhost/CodeGen.zbr:14064
             self.w.emit("_arg_parse()");
-// zbr:selfhost/CodeGen.zbr:14040
+// zbr:selfhost/CodeGen.zbr:14065
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14042
+// zbr:selfhost/CodeGen.zbr:14067
         self.w.emit("@compileError(\"selfhost: unknown Arg.");
-// zbr:selfhost/CodeGen.zbr:14043
+// zbr:selfhost/CodeGen.zbr:14068
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14044
+// zbr:selfhost/CodeGen.zbr:14069
         self.w.emit("\")");
     }
 
     pub fn genBuildStaticCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
         _ = args;
-// zbr:selfhost/CodeGen.zbr:14048
+// zbr:selfhost/CodeGen.zbr:14073
         if (std.mem.eql(u8, mname, "new")) {
-// zbr:selfhost/CodeGen.zbr:14049
+// zbr:selfhost/CodeGen.zbr:14074
             self.w.emit("_build_new(_allocator)");
-// zbr:selfhost/CodeGen.zbr:14050
+// zbr:selfhost/CodeGen.zbr:14075
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14051
+// zbr:selfhost/CodeGen.zbr:14076
         self.w.emit("@compileError(\"selfhost: unknown Build.");
-// zbr:selfhost/CodeGen.zbr:14052
+// zbr:selfhost/CodeGen.zbr:14077
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14053
+// zbr:selfhost/CodeGen.zbr:14078
         self.w.emit("\")");
     }
 
     pub fn genBuildInstanceCall(self: *Generator, obj: Expr, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14057
-        if (((std.mem.eql(u8, mname, "exe") or std.mem.eql(u8, mname, "lib")) or std.mem.eql(u8, mname, "test_"))) {
-// zbr:selfhost/CodeGen.zbr:14058
-            self.w.emit("_build_add(");
-// zbr:selfhost/CodeGen.zbr:14059
-            self.genExpr(obj);
-// zbr:selfhost/CodeGen.zbr:14060
-            self.w.emit(", _Build_Kind.");
-// zbr:selfhost/CodeGen.zbr:14061
-            self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14062
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14063
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14064
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14066
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14067
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14068
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14069
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14071
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14072
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14073
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14074
-        if (std.mem.eql(u8, mname, "target")) {
-// zbr:selfhost/CodeGen.zbr:14075
-            self.w.emit("_build_target_by_name(");
-// zbr:selfhost/CodeGen.zbr:14076
-            self.genExpr(obj);
-// zbr:selfhost/CodeGen.zbr:14077
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14078
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14079
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14081
-                self.w.emit("\"\"");
-            }
 // zbr:selfhost/CodeGen.zbr:14082
-            self.w.emit(")");
+        if (((std.mem.eql(u8, mname, "exe") or std.mem.eql(u8, mname, "lib")) or std.mem.eql(u8, mname, "test_"))) {
 // zbr:selfhost/CodeGen.zbr:14083
-            return;
-        }
+            self.w.emit("_build_add(");
 // zbr:selfhost/CodeGen.zbr:14084
-        if (std.mem.eql(u8, mname, "run")) {
-// zbr:selfhost/CodeGen.zbr:14085
-            self.w.emit("_build_run(");
-// zbr:selfhost/CodeGen.zbr:14086
             self.genExpr(obj);
+// zbr:selfhost/CodeGen.zbr:14085
+            self.w.emit(", _Build_Kind.");
+// zbr:selfhost/CodeGen.zbr:14086
+            self.w.emit(mname);
 // zbr:selfhost/CodeGen.zbr:14087
-            self.w.emit(")");
+            self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:14088
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14089
-        if (std.mem.eql(u8, mname, "dependency")) {
-// zbr:selfhost/CodeGen.zbr:14090
-            self.w.emit("_build_dep_stub(");
-// zbr:selfhost/CodeGen.zbr:14091
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14092
+// zbr:selfhost/CodeGen.zbr:14089
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14094
+// zbr:selfhost/CodeGen.zbr:14091
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14095
+// zbr:selfhost/CodeGen.zbr:14092
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14096
+// zbr:selfhost/CodeGen.zbr:14093
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14097
+// zbr:selfhost/CodeGen.zbr:14094
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14099
+// zbr:selfhost/CodeGen.zbr:14096
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14100
+// zbr:selfhost/CodeGen.zbr:14097
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14101
+// zbr:selfhost/CodeGen.zbr:14098
             return;
         }
+// zbr:selfhost/CodeGen.zbr:14099
+        if (std.mem.eql(u8, mname, "target")) {
+// zbr:selfhost/CodeGen.zbr:14100
+            self.w.emit("_build_target_by_name(");
+// zbr:selfhost/CodeGen.zbr:14101
+            self.genExpr(obj);
 // zbr:selfhost/CodeGen.zbr:14102
-        self.w.emit("@compileError(\"selfhost: unknown Build instance method ");
+            self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:14103
-        self.w.emit(mname);
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:14104
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14106
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14107
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14108
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14109
+        if (std.mem.eql(u8, mname, "run")) {
+// zbr:selfhost/CodeGen.zbr:14110
+            self.w.emit("_build_run(");
+// zbr:selfhost/CodeGen.zbr:14111
+            self.genExpr(obj);
+// zbr:selfhost/CodeGen.zbr:14112
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14113
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14114
+        if (std.mem.eql(u8, mname, "dependency")) {
+// zbr:selfhost/CodeGen.zbr:14115
+            self.w.emit("_build_dep_stub(");
+// zbr:selfhost/CodeGen.zbr:14116
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:14117
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14119
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14120
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14121
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14122
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14124
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14125
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14126
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14127
+        self.w.emit("@compileError(\"selfhost: unknown Build instance method ");
+// zbr:selfhost/CodeGen.zbr:14128
+        self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:14129
         self.w.emit("\")");
     }
 
     pub fn genBuildTargetInstanceCall(self: *Generator, obj: Expr, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14108
-        if (std.mem.eql(u8, mname, "linkLib")) {
-// zbr:selfhost/CodeGen.zbr:14109
-            self.w.emit("_build_target_link_lib(");
-// zbr:selfhost/CodeGen.zbr:14110
-            self.genExpr(obj);
-// zbr:selfhost/CodeGen.zbr:14111
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14112
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14113
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14115
-                self.w.emit("undefined");
-            }
-// zbr:selfhost/CodeGen.zbr:14116
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14117
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14118
-        if (std.mem.eql(u8, mname, "platform")) {
-// zbr:selfhost/CodeGen.zbr:14119
-            self.w.emit("_build_target_platform(");
-// zbr:selfhost/CodeGen.zbr:14120
-            self.genExpr(obj);
-// zbr:selfhost/CodeGen.zbr:14121
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14122
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14123
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14125
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14126
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14127
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14128
-        if (std.mem.eql(u8, mname, "option")) {
-// zbr:selfhost/CodeGen.zbr:14129
-            self.w.emit("_build_target_option(");
-// zbr:selfhost/CodeGen.zbr:14130
-            self.genExpr(obj);
-// zbr:selfhost/CodeGen.zbr:14131
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14132
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:14133
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+        if (std.mem.eql(u8, mname, "linkLib")) {
+// zbr:selfhost/CodeGen.zbr:14134
+            self.w.emit("_build_target_link_lib(");
 // zbr:selfhost/CodeGen.zbr:14135
-                self.w.emit("\"\"");
-            }
+            self.genExpr(obj);
 // zbr:selfhost/CodeGen.zbr:14136
             self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:14137
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:14138
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
 // zbr:selfhost/CodeGen.zbr:14140
-                self.w.emit("\"\"");
+                self.w.emit("undefined");
             }
 // zbr:selfhost/CodeGen.zbr:14141
             self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14142
             return;
         }
+// zbr:selfhost/CodeGen.zbr:14143
+        if (std.mem.eql(u8, mname, "platform")) {
 // zbr:selfhost/CodeGen.zbr:14144
+            self.w.emit("_build_target_platform(");
+// zbr:selfhost/CodeGen.zbr:14145
+            self.genExpr(obj);
+// zbr:selfhost/CodeGen.zbr:14146
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14147
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:14148
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14150
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14151
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14152
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14153
+        if (std.mem.eql(u8, mname, "option")) {
+// zbr:selfhost/CodeGen.zbr:14154
+            self.w.emit("_build_target_option(");
+// zbr:selfhost/CodeGen.zbr:14155
+            self.genExpr(obj);
+// zbr:selfhost/CodeGen.zbr:14156
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14157
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:14158
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14160
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14161
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14162
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14163
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14165
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14166
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14167
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14169
         self.genExpr(obj);
     }
 
     pub fn genJsonCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14148
+// zbr:selfhost/CodeGen.zbr:14173
         if (std.mem.eql(u8, mname, "parse")) {
-// zbr:selfhost/CodeGen.zbr:14150
+// zbr:selfhost/CodeGen.zbr:14175
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14151
+// zbr:selfhost/CodeGen.zbr:14176
                 const first_arg = args.items[@as(usize, @intCast(0))].value;
-// zbr:selfhost/CodeGen.zbr:14152
+// zbr:selfhost/CodeGen.zbr:14177
                 if (first_arg == .ident) {
                     const id_ref = first_arg.ident;
-// zbr:selfhost/CodeGen.zbr:14153
+// zbr:selfhost/CodeGen.zbr:14178
                     const class_name2: []const u8 = id_ref.name;
-// zbr:selfhost/CodeGen.zbr:14154
+// zbr:selfhost/CodeGen.zbr:14179
                     var found2: bool = false;
-// zbr:selfhost/CodeGen.zbr:14155
+// zbr:selfhost/CodeGen.zbr:14180
                     var refl2: bool = false;
-// zbr:selfhost/CodeGen.zbr:14156
+// zbr:selfhost/CodeGen.zbr:14181
                     for (self.module_decls.items) |d2| {
-// zbr:selfhost/CodeGen.zbr:14157
+// zbr:selfhost/CodeGen.zbr:14182
                         if (d2 == .class_) {
                             const cls2_ptr = d2.class_;
                             const cls2 = cls2_ptr.*;
-// zbr:selfhost/CodeGen.zbr:14158
+// zbr:selfhost/CodeGen.zbr:14183
                             if (std.mem.eql(u8, cls2.name, class_name2)) {
-// zbr:selfhost/CodeGen.zbr:14159
+// zbr:selfhost/CodeGen.zbr:14184
                                 found2 = true;
-// zbr:selfhost/CodeGen.zbr:14160
+// zbr:selfhost/CodeGen.zbr:14185
                                 if (cls2.mods.is_reflectable) {
-// zbr:selfhost/CodeGen.zbr:14161
+// zbr:selfhost/CodeGen.zbr:14186
                                     refl2 = true;
                                 }
                             }
                         }
                     }
-// zbr:selfhost/CodeGen.zbr:14162
+// zbr:selfhost/CodeGen.zbr:14187
                     if (found2) {
-// zbr:selfhost/CodeGen.zbr:14163
+// zbr:selfhost/CodeGen.zbr:14188
                         if ((!refl2)) {
-// zbr:selfhost/CodeGen.zbr:14164
+// zbr:selfhost/CodeGen.zbr:14189
                             self.w.emit("@compileError(\"Json.parse(");
-// zbr:selfhost/CodeGen.zbr:14165
+// zbr:selfhost/CodeGen.zbr:14190
                             self.w.emit(class_name2);
-// zbr:selfhost/CodeGen.zbr:14166
+// zbr:selfhost/CodeGen.zbr:14191
                             self.w.emit(", …) requires '@reflectable class ");
-// zbr:selfhost/CodeGen.zbr:14167
+// zbr:selfhost/CodeGen.zbr:14192
                             self.w.emit(class_name2);
-// zbr:selfhost/CodeGen.zbr:14168
+// zbr:selfhost/CodeGen.zbr:14193
                             self.w.emit("'\")");
-// zbr:selfhost/CodeGen.zbr:14169
+// zbr:selfhost/CodeGen.zbr:14194
                             return;
                         }
-// zbr:selfhost/CodeGen.zbr:14170
+// zbr:selfhost/CodeGen.zbr:14195
                         self.w.emit("_json_parse_strict_");
-// zbr:selfhost/CodeGen.zbr:14171
+// zbr:selfhost/CodeGen.zbr:14196
                         self.w.emit(class_name2);
-// zbr:selfhost/CodeGen.zbr:14172
+// zbr:selfhost/CodeGen.zbr:14197
                         self.w.emit("(");
-// zbr:selfhost/CodeGen.zbr:14173
+// zbr:selfhost/CodeGen.zbr:14198
                         self.genExpr(args.items[@as(usize, @intCast(1))].value);
-// zbr:selfhost/CodeGen.zbr:14174
+// zbr:selfhost/CodeGen.zbr:14199
                         self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14175
+// zbr:selfhost/CodeGen.zbr:14200
                         return;
                     }
                 }
             }
-// zbr:selfhost/CodeGen.zbr:14176
+// zbr:selfhost/CodeGen.zbr:14201
             self.w.emit("_json_parse(");
-// zbr:selfhost/CodeGen.zbr:14177
+// zbr:selfhost/CodeGen.zbr:14202
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14178
+// zbr:selfhost/CodeGen.zbr:14203
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14180
+// zbr:selfhost/CodeGen.zbr:14205
                 self.w.emit("\"{}\"");
             }
-// zbr:selfhost/CodeGen.zbr:14181
+// zbr:selfhost/CodeGen.zbr:14206
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14182
+// zbr:selfhost/CodeGen.zbr:14207
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14183
+// zbr:selfhost/CodeGen.zbr:14208
         if (std.mem.eql(u8, mname, "parseStrict")) {
-// zbr:selfhost/CodeGen.zbr:14185
+// zbr:selfhost/CodeGen.zbr:14210
             if (_zebra_lt(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14186
+// zbr:selfhost/CodeGen.zbr:14211
                 self.w.emit("@compileError(\"Json.parseStrict requires (T, src)\")");
-// zbr:selfhost/CodeGen.zbr:14187
+// zbr:selfhost/CodeGen.zbr:14212
                 return;
             }
-// zbr:selfhost/CodeGen.zbr:14188
+// zbr:selfhost/CodeGen.zbr:14213
             const first = args.items[@as(usize, @intCast(0))].value;
-// zbr:selfhost/CodeGen.zbr:14189
+// zbr:selfhost/CodeGen.zbr:14214
             var class_name: []const u8 = "";
-// zbr:selfhost/CodeGen.zbr:14190
+// zbr:selfhost/CodeGen.zbr:14215
             if (first == .ident) {
                 const id_ref = first.ident;
-// zbr:selfhost/CodeGen.zbr:14191
+// zbr:selfhost/CodeGen.zbr:14216
                 class_name = id_ref.name;
             } else {
-// zbr:selfhost/CodeGen.zbr:14193
+// zbr:selfhost/CodeGen.zbr:14218
                 self.w.emit("@compileError(\"Json.parseStrict requires (T, src) where T is a class name\")");
-// zbr:selfhost/CodeGen.zbr:14194
+// zbr:selfhost/CodeGen.zbr:14219
                 return;
             }
-// zbr:selfhost/CodeGen.zbr:14195
+// zbr:selfhost/CodeGen.zbr:14220
             var found: bool = false;
-// zbr:selfhost/CodeGen.zbr:14196
+// zbr:selfhost/CodeGen.zbr:14221
             var reflectable: bool = false;
-// zbr:selfhost/CodeGen.zbr:14197
+// zbr:selfhost/CodeGen.zbr:14222
             for (self.module_decls.items) |d| {
-// zbr:selfhost/CodeGen.zbr:14198
+// zbr:selfhost/CodeGen.zbr:14223
                 if (d == .class_) {
                     const cls_ptr = d.class_;
                     const cls = cls_ptr.*;
-// zbr:selfhost/CodeGen.zbr:14199
+// zbr:selfhost/CodeGen.zbr:14224
                     if (std.mem.eql(u8, cls.name, class_name)) {
-// zbr:selfhost/CodeGen.zbr:14200
+// zbr:selfhost/CodeGen.zbr:14225
                         found = true;
-// zbr:selfhost/CodeGen.zbr:14201
+// zbr:selfhost/CodeGen.zbr:14226
                         if (cls.mods.is_reflectable) {
-// zbr:selfhost/CodeGen.zbr:14202
+// zbr:selfhost/CodeGen.zbr:14227
                             reflectable = true;
                         }
                     }
                 }
             }
-// zbr:selfhost/CodeGen.zbr:14203
+// zbr:selfhost/CodeGen.zbr:14228
             if ((!found)) {
-// zbr:selfhost/CodeGen.zbr:14204
+// zbr:selfhost/CodeGen.zbr:14229
                 self.w.emit("@compileError(\"Json.parseStrict: '");
-// zbr:selfhost/CodeGen.zbr:14205
+// zbr:selfhost/CodeGen.zbr:14230
                 self.w.emit(class_name);
-// zbr:selfhost/CodeGen.zbr:14206
+// zbr:selfhost/CodeGen.zbr:14231
                 self.w.emit("' is not a class declared in this module\")");
-// zbr:selfhost/CodeGen.zbr:14207
+// zbr:selfhost/CodeGen.zbr:14232
                 return;
             }
-// zbr:selfhost/CodeGen.zbr:14208
+// zbr:selfhost/CodeGen.zbr:14233
             if ((!reflectable)) {
-// zbr:selfhost/CodeGen.zbr:14209
+// zbr:selfhost/CodeGen.zbr:14234
                 self.w.emit("@compileError(\"Json.parseStrict requires '@reflectable class ");
-// zbr:selfhost/CodeGen.zbr:14210
+// zbr:selfhost/CodeGen.zbr:14235
                 self.w.emit(class_name);
-// zbr:selfhost/CodeGen.zbr:14211
+// zbr:selfhost/CodeGen.zbr:14236
                 self.w.emit("' — add the annotation to ");
-// zbr:selfhost/CodeGen.zbr:14212
+// zbr:selfhost/CodeGen.zbr:14237
                 self.w.emit(class_name);
-// zbr:selfhost/CodeGen.zbr:14213
+// zbr:selfhost/CodeGen.zbr:14238
                 self.w.emit("'s declaration.\")");
-// zbr:selfhost/CodeGen.zbr:14214
+// zbr:selfhost/CodeGen.zbr:14239
                 return;
             }
-// zbr:selfhost/CodeGen.zbr:14215
+// zbr:selfhost/CodeGen.zbr:14240
             self.w.emit("_json_parse_strict_");
-// zbr:selfhost/CodeGen.zbr:14216
+// zbr:selfhost/CodeGen.zbr:14241
             self.w.emit(class_name);
-// zbr:selfhost/CodeGen.zbr:14217
+// zbr:selfhost/CodeGen.zbr:14242
             self.w.emit("(");
-// zbr:selfhost/CodeGen.zbr:14218
+// zbr:selfhost/CodeGen.zbr:14243
             self.genExpr(args.items[@as(usize, @intCast(1))].value);
-// zbr:selfhost/CodeGen.zbr:14219
+// zbr:selfhost/CodeGen.zbr:14244
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14220
+// zbr:selfhost/CodeGen.zbr:14245
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14221
+// zbr:selfhost/CodeGen.zbr:14246
         if (std.mem.eql(u8, mname, "stringify")) {
-// zbr:selfhost/CodeGen.zbr:14222
+// zbr:selfhost/CodeGen.zbr:14247
             self.w.emit("_json_stringify(");
-// zbr:selfhost/CodeGen.zbr:14223
+// zbr:selfhost/CodeGen.zbr:14248
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14224
+// zbr:selfhost/CodeGen.zbr:14249
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14226
+// zbr:selfhost/CodeGen.zbr:14251
                 self.w.emit("_json_object()");
             }
-// zbr:selfhost/CodeGen.zbr:14227
+// zbr:selfhost/CodeGen.zbr:14252
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14228
+// zbr:selfhost/CodeGen.zbr:14253
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14229
+// zbr:selfhost/CodeGen.zbr:14254
         if (std.mem.eql(u8, mname, "object")) {
-// zbr:selfhost/CodeGen.zbr:14230
+// zbr:selfhost/CodeGen.zbr:14255
             self.w.emit("_json_object()");
-// zbr:selfhost/CodeGen.zbr:14231
+// zbr:selfhost/CodeGen.zbr:14256
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14232
+// zbr:selfhost/CodeGen.zbr:14257
         if (std.mem.eql(u8, mname, "array")) {
-// zbr:selfhost/CodeGen.zbr:14233
+// zbr:selfhost/CodeGen.zbr:14258
             self.w.emit("_json_array()");
-// zbr:selfhost/CodeGen.zbr:14234
+// zbr:selfhost/CodeGen.zbr:14259
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14235
+// zbr:selfhost/CodeGen.zbr:14260
         self.w.emit("@compileError(\"selfhost: unknown Json.");
-// zbr:selfhost/CodeGen.zbr:14236
+// zbr:selfhost/CodeGen.zbr:14261
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14237
+// zbr:selfhost/CodeGen.zbr:14262
         self.w.emit("\")");
     }
 
     pub fn genHttpCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14241
+// zbr:selfhost/CodeGen.zbr:14266
         if (std.mem.eql(u8, mname, "get")) {
-// zbr:selfhost/CodeGen.zbr:14242
+// zbr:selfhost/CodeGen.zbr:14267
             self.w.emit("_http_get(");
-// zbr:selfhost/CodeGen.zbr:14243
+// zbr:selfhost/CodeGen.zbr:14268
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14244
+// zbr:selfhost/CodeGen.zbr:14269
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14246
+// zbr:selfhost/CodeGen.zbr:14271
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14247
+// zbr:selfhost/CodeGen.zbr:14272
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14248
+// zbr:selfhost/CodeGen.zbr:14273
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14249
+// zbr:selfhost/CodeGen.zbr:14274
         if (std.mem.eql(u8, mname, "post")) {
-// zbr:selfhost/CodeGen.zbr:14250
+// zbr:selfhost/CodeGen.zbr:14275
             self.w.emit("_http_post(");
-// zbr:selfhost/CodeGen.zbr:14251
+// zbr:selfhost/CodeGen.zbr:14276
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14252
+// zbr:selfhost/CodeGen.zbr:14277
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14254
+// zbr:selfhost/CodeGen.zbr:14279
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14255
+// zbr:selfhost/CodeGen.zbr:14280
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14256
+// zbr:selfhost/CodeGen.zbr:14281
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14257
+// zbr:selfhost/CodeGen.zbr:14282
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14259
+// zbr:selfhost/CodeGen.zbr:14284
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14260
+// zbr:selfhost/CodeGen.zbr:14285
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14261
+// zbr:selfhost/CodeGen.zbr:14286
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14262
+// zbr:selfhost/CodeGen.zbr:14287
         if (std.mem.eql(u8, mname, "serve")) {
-// zbr:selfhost/CodeGen.zbr:14263
+// zbr:selfhost/CodeGen.zbr:14288
             self.w.emit("_http_serve(");
-// zbr:selfhost/CodeGen.zbr:14264
+// zbr:selfhost/CodeGen.zbr:14289
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14265
+// zbr:selfhost/CodeGen.zbr:14290
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14267
+// zbr:selfhost/CodeGen.zbr:14292
                 self.w.emit("8080");
             }
-// zbr:selfhost/CodeGen.zbr:14268
+// zbr:selfhost/CodeGen.zbr:14293
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14269
+// zbr:selfhost/CodeGen.zbr:14294
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14270
+// zbr:selfhost/CodeGen.zbr:14295
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14272
+// zbr:selfhost/CodeGen.zbr:14297
                 self.w.emit("undefined");
             }
-// zbr:selfhost/CodeGen.zbr:14273
+// zbr:selfhost/CodeGen.zbr:14298
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14274
+// zbr:selfhost/CodeGen.zbr:14299
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14275
+// zbr:selfhost/CodeGen.zbr:14300
         if (std.mem.eql(u8, mname, "json")) {
-// zbr:selfhost/CodeGen.zbr:14276
+// zbr:selfhost/CodeGen.zbr:14301
             self.w.emit("_http_json_get(");
-// zbr:selfhost/CodeGen.zbr:14277
+// zbr:selfhost/CodeGen.zbr:14302
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14278
+// zbr:selfhost/CodeGen.zbr:14303
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14280
+// zbr:selfhost/CodeGen.zbr:14305
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14281
+// zbr:selfhost/CodeGen.zbr:14306
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14282
+// zbr:selfhost/CodeGen.zbr:14307
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14283
+// zbr:selfhost/CodeGen.zbr:14308
         if (std.mem.eql(u8, mname, "postJson")) {
-// zbr:selfhost/CodeGen.zbr:14284
+// zbr:selfhost/CodeGen.zbr:14309
             self.w.emit("_http_json_post(");
-// zbr:selfhost/CodeGen.zbr:14285
+// zbr:selfhost/CodeGen.zbr:14310
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14286
+// zbr:selfhost/CodeGen.zbr:14311
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14288
+// zbr:selfhost/CodeGen.zbr:14313
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14289
+// zbr:selfhost/CodeGen.zbr:14314
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14290
+// zbr:selfhost/CodeGen.zbr:14315
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14291
+// zbr:selfhost/CodeGen.zbr:14316
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14293
+// zbr:selfhost/CodeGen.zbr:14318
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14294
+// zbr:selfhost/CodeGen.zbr:14319
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14295
+// zbr:selfhost/CodeGen.zbr:14320
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14296
+// zbr:selfhost/CodeGen.zbr:14321
         self.w.emit("@compileError(\"selfhost: unknown Http.");
-// zbr:selfhost/CodeGen.zbr:14297
+// zbr:selfhost/CodeGen.zbr:14322
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14298
+// zbr:selfhost/CodeGen.zbr:14323
         self.w.emit("\")");
     }
 
     pub fn genHttpResponseFactory(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14302
+// zbr:selfhost/CodeGen.zbr:14327
         if (std.mem.eql(u8, mname, "ok")) {
-// zbr:selfhost/CodeGen.zbr:14303
+// zbr:selfhost/CodeGen.zbr:14328
             self.w.emit("HttpResponse{ .status = 200, .text = ");
-// zbr:selfhost/CodeGen.zbr:14304
+// zbr:selfhost/CodeGen.zbr:14329
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14305
+// zbr:selfhost/CodeGen.zbr:14330
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14307
+// zbr:selfhost/CodeGen.zbr:14332
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14308
+// zbr:selfhost/CodeGen.zbr:14333
             self.w.emit(" }");
-// zbr:selfhost/CodeGen.zbr:14309
+// zbr:selfhost/CodeGen.zbr:14334
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14310
+// zbr:selfhost/CodeGen.zbr:14335
         if (std.mem.eql(u8, mname, "notFound")) {
-// zbr:selfhost/CodeGen.zbr:14311
+// zbr:selfhost/CodeGen.zbr:14336
             self.w.emit("HttpResponse{ .status = 404, .text = ");
-// zbr:selfhost/CodeGen.zbr:14312
+// zbr:selfhost/CodeGen.zbr:14337
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14313
+// zbr:selfhost/CodeGen.zbr:14338
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14315
+// zbr:selfhost/CodeGen.zbr:14340
                 self.w.emit("\"Not Found\"");
             }
-// zbr:selfhost/CodeGen.zbr:14316
+// zbr:selfhost/CodeGen.zbr:14341
             self.w.emit(" }");
-// zbr:selfhost/CodeGen.zbr:14317
+// zbr:selfhost/CodeGen.zbr:14342
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14318
+// zbr:selfhost/CodeGen.zbr:14343
         if (std.mem.eql(u8, mname, "err")) {
-// zbr:selfhost/CodeGen.zbr:14319
+// zbr:selfhost/CodeGen.zbr:14344
             self.w.emit("HttpResponse{ .status = 500, .text = ");
-// zbr:selfhost/CodeGen.zbr:14320
+// zbr:selfhost/CodeGen.zbr:14345
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14321
+// zbr:selfhost/CodeGen.zbr:14346
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14323
+// zbr:selfhost/CodeGen.zbr:14348
                 self.w.emit("\"Internal Server Error\"");
             }
-// zbr:selfhost/CodeGen.zbr:14324
+// zbr:selfhost/CodeGen.zbr:14349
             self.w.emit(" }");
-// zbr:selfhost/CodeGen.zbr:14325
+// zbr:selfhost/CodeGen.zbr:14350
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14326
+// zbr:selfhost/CodeGen.zbr:14351
         if (std.mem.eql(u8, mname, "new")) {
-// zbr:selfhost/CodeGen.zbr:14327
+// zbr:selfhost/CodeGen.zbr:14352
             self.w.emit("HttpResponse{ .status = @intCast(");
-// zbr:selfhost/CodeGen.zbr:14328
+// zbr:selfhost/CodeGen.zbr:14353
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14329
+// zbr:selfhost/CodeGen.zbr:14354
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14331
+// zbr:selfhost/CodeGen.zbr:14356
                 self.w.emit("200");
             }
-// zbr:selfhost/CodeGen.zbr:14332
+// zbr:selfhost/CodeGen.zbr:14357
             self.w.emit("), .text = ");
-// zbr:selfhost/CodeGen.zbr:14333
+// zbr:selfhost/CodeGen.zbr:14358
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14334
+// zbr:selfhost/CodeGen.zbr:14359
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14336
+// zbr:selfhost/CodeGen.zbr:14361
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14337
+// zbr:selfhost/CodeGen.zbr:14362
             self.w.emit(" }");
-// zbr:selfhost/CodeGen.zbr:14338
+// zbr:selfhost/CodeGen.zbr:14363
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14339
+// zbr:selfhost/CodeGen.zbr:14364
         self.w.emit("@compileError(\"selfhost: unknown HttpResponse.");
-// zbr:selfhost/CodeGen.zbr:14340
+// zbr:selfhost/CodeGen.zbr:14365
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14341
+// zbr:selfhost/CodeGen.zbr:14366
         self.w.emit("\")");
     }
 
     pub fn genWsCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14345
+// zbr:selfhost/CodeGen.zbr:14370
         if (std.mem.eql(u8, mname, "connect")) {
-// zbr:selfhost/CodeGen.zbr:14346
+// zbr:selfhost/CodeGen.zbr:14371
             self.w.emit("_ws_connect(");
-// zbr:selfhost/CodeGen.zbr:14347
+// zbr:selfhost/CodeGen.zbr:14372
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14348
+// zbr:selfhost/CodeGen.zbr:14373
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14350
+// zbr:selfhost/CodeGen.zbr:14375
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14351
+// zbr:selfhost/CodeGen.zbr:14376
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14352
+// zbr:selfhost/CodeGen.zbr:14377
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14353
+// zbr:selfhost/CodeGen.zbr:14378
         if (std.mem.eql(u8, mname, "serve")) {
-// zbr:selfhost/CodeGen.zbr:14354
+// zbr:selfhost/CodeGen.zbr:14379
             self.w.emit("_ws_serve(");
-// zbr:selfhost/CodeGen.zbr:14355
+// zbr:selfhost/CodeGen.zbr:14380
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14356
+// zbr:selfhost/CodeGen.zbr:14381
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14358
+// zbr:selfhost/CodeGen.zbr:14383
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14359
+// zbr:selfhost/CodeGen.zbr:14384
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14360
+// zbr:selfhost/CodeGen.zbr:14385
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14361
+// zbr:selfhost/CodeGen.zbr:14386
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14363
+// zbr:selfhost/CodeGen.zbr:14388
                 self.w.emit("undefined");
             }
-// zbr:selfhost/CodeGen.zbr:14364
+// zbr:selfhost/CodeGen.zbr:14389
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14365
+// zbr:selfhost/CodeGen.zbr:14390
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14366
+// zbr:selfhost/CodeGen.zbr:14391
         self.w.emit("@compileError(\"selfhost: unknown Ws.");
-// zbr:selfhost/CodeGen.zbr:14367
+// zbr:selfhost/CodeGen.zbr:14392
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14368
+// zbr:selfhost/CodeGen.zbr:14393
         self.w.emit("\")");
     }
 
     pub fn genRegexCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14372
+// zbr:selfhost/CodeGen.zbr:14397
         if (std.mem.eql(u8, mname, "compile")) {
-// zbr:selfhost/CodeGen.zbr:14373
+// zbr:selfhost/CodeGen.zbr:14398
             self.w.emit("_regex_compile(");
-// zbr:selfhost/CodeGen.zbr:14374
+// zbr:selfhost/CodeGen.zbr:14399
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14375
+// zbr:selfhost/CodeGen.zbr:14400
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14377
+// zbr:selfhost/CodeGen.zbr:14402
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14378
+// zbr:selfhost/CodeGen.zbr:14403
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14379
+// zbr:selfhost/CodeGen.zbr:14404
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14380
+// zbr:selfhost/CodeGen.zbr:14405
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14382
+// zbr:selfhost/CodeGen.zbr:14407
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14383
+// zbr:selfhost/CodeGen.zbr:14408
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14384
+// zbr:selfhost/CodeGen.zbr:14409
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14385
+// zbr:selfhost/CodeGen.zbr:14410
         self.w.emit("@compileError(\"selfhost: unknown Regex.");
-// zbr:selfhost/CodeGen.zbr:14386
+// zbr:selfhost/CodeGen.zbr:14411
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14387
+// zbr:selfhost/CodeGen.zbr:14412
         self.w.emit("\")");
     }
 
     pub fn genDateTimeCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14391
+// zbr:selfhost/CodeGen.zbr:14416
         if (std.mem.eql(u8, mname, "now")) {
-// zbr:selfhost/CodeGen.zbr:14392
+// zbr:selfhost/CodeGen.zbr:14417
             self.w.emit("_dt_now()");
-// zbr:selfhost/CodeGen.zbr:14393
+// zbr:selfhost/CodeGen.zbr:14418
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14394
+// zbr:selfhost/CodeGen.zbr:14419
         if (std.mem.eql(u8, mname, "fromEpoch")) {
-// zbr:selfhost/CodeGen.zbr:14395
+// zbr:selfhost/CodeGen.zbr:14420
             self.w.emit("_DateTime{ .epoch_ms = ");
-// zbr:selfhost/CodeGen.zbr:14396
+// zbr:selfhost/CodeGen.zbr:14421
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14397
+// zbr:selfhost/CodeGen.zbr:14422
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14399
+// zbr:selfhost/CodeGen.zbr:14424
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14400
+// zbr:selfhost/CodeGen.zbr:14425
             self.w.emit(" }");
-// zbr:selfhost/CodeGen.zbr:14401
+// zbr:selfhost/CodeGen.zbr:14426
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14402
+// zbr:selfhost/CodeGen.zbr:14427
         if (std.mem.eql(u8, mname, "of")) {
-// zbr:selfhost/CodeGen.zbr:14403
+// zbr:selfhost/CodeGen.zbr:14428
             self.w.emit("_dt_from_gregorian(");
-// zbr:selfhost/CodeGen.zbr:14404
+// zbr:selfhost/CodeGen.zbr:14429
             self.genArgList(args);
-// zbr:selfhost/CodeGen.zbr:14406
+// zbr:selfhost/CodeGen.zbr:14431
             const provided = @as(i64, @intCast(args.items.len));
-// zbr:selfhost/CodeGen.zbr:14407
+// zbr:selfhost/CodeGen.zbr:14432
             if (_zebra_lt(provided, 4)) {
-// zbr:selfhost/CodeGen.zbr:14408
+// zbr:selfhost/CodeGen.zbr:14433
                 self.w.emit(", 0");
             }
-// zbr:selfhost/CodeGen.zbr:14409
+// zbr:selfhost/CodeGen.zbr:14434
             if (_zebra_lt(provided, 5)) {
-// zbr:selfhost/CodeGen.zbr:14410
+// zbr:selfhost/CodeGen.zbr:14435
                 self.w.emit(", 0");
             }
-// zbr:selfhost/CodeGen.zbr:14411
+// zbr:selfhost/CodeGen.zbr:14436
             if (_zebra_lt(provided, 6)) {
-// zbr:selfhost/CodeGen.zbr:14412
+// zbr:selfhost/CodeGen.zbr:14437
                 self.w.emit(", 0");
             }
-// zbr:selfhost/CodeGen.zbr:14413
+// zbr:selfhost/CodeGen.zbr:14438
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14414
+// zbr:selfhost/CodeGen.zbr:14439
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14415
+// zbr:selfhost/CodeGen.zbr:14440
         self.w.emit("@compileError(\"selfhost: unknown DateTime.");
-// zbr:selfhost/CodeGen.zbr:14416
+// zbr:selfhost/CodeGen.zbr:14441
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14417
+// zbr:selfhost/CodeGen.zbr:14442
         self.w.emit("\")");
     }
 
     pub fn genHashCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14421
-        if (std.mem.eql(u8, mname, "sha256")) {
-// zbr:selfhost/CodeGen.zbr:14422
-            self.w.emit("_hash_sha256(");
-// zbr:selfhost/CodeGen.zbr:14423
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14424
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14426
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14427
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14428
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14429
-        if (std.mem.eql(u8, mname, "sha512")) {
-// zbr:selfhost/CodeGen.zbr:14430
-            self.w.emit("_hash_sha512(");
-// zbr:selfhost/CodeGen.zbr:14431
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14432
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14434
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14435
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14436
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14437
-        if (std.mem.eql(u8, mname, "md5")) {
-// zbr:selfhost/CodeGen.zbr:14438
-            self.w.emit("_hash_md5(");
-// zbr:selfhost/CodeGen.zbr:14439
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14440
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14442
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14443
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14444
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14445
-        if (std.mem.eql(u8, mname, "blake3")) {
 // zbr:selfhost/CodeGen.zbr:14446
-            self.w.emit("_hash_blake3(");
+        if (std.mem.eql(u8, mname, "sha256")) {
 // zbr:selfhost/CodeGen.zbr:14447
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("_hash_sha256(");
 // zbr:selfhost/CodeGen.zbr:14448
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14449
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14450
-                self.w.emit("\"\"");
-            }
 // zbr:selfhost/CodeGen.zbr:14451
-            self.w.emit(")");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14452
-            return;
-        }
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14453
-        if (std.mem.eql(u8, mname, "hmac256")) {
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14454
-            self.w.emit("_hash_hmac256(");
+        if (std.mem.eql(u8, mname, "sha512")) {
 // zbr:selfhost/CodeGen.zbr:14455
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("_hash_sha512(");
 // zbr:selfhost/CodeGen.zbr:14456
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14457
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14458
-                self.w.emit("\"\"");
-            }
 // zbr:selfhost/CodeGen.zbr:14459
-            self.w.emit(", ");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14460
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14461
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14462
+        if (std.mem.eql(u8, mname, "md5")) {
 // zbr:selfhost/CodeGen.zbr:14463
-                self.w.emit("\"\"");
-            }
+            self.w.emit("_hash_md5(");
 // zbr:selfhost/CodeGen.zbr:14464
-            self.w.emit(")");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14465
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14466
-        if (std.mem.eql(u8, mname, "crc32")) {
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:14467
-            self.w.emit("_hash_crc32(");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14468
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14469
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14470
+        if (std.mem.eql(u8, mname, "blake3")) {
 // zbr:selfhost/CodeGen.zbr:14471
-                self.w.emit("\"\"");
-            }
+            self.w.emit("_hash_blake3(");
 // zbr:selfhost/CodeGen.zbr:14472
-            self.w.emit(")");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14473
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14474
-        if (std.mem.eql(u8, mname, "fnv64")) {
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:14475
-            self.w.emit("_hash_fnv64(");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14476
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14477
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14478
+        if (std.mem.eql(u8, mname, "hmac256")) {
 // zbr:selfhost/CodeGen.zbr:14479
-                self.w.emit("\"\"");
-            }
+            self.w.emit("_hash_hmac256(");
 // zbr:selfhost/CodeGen.zbr:14480
-            self.w.emit(")");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14481
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14482
-        if (std.mem.eql(u8, mname, "xxHash64")) {
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:14483
-            self.w.emit("_hash_xxhash64(");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14484
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14485
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14487
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14488
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14489
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14490
-        if (std.mem.eql(u8, mname, "hmac512")) {
-// zbr:selfhost/CodeGen.zbr:14491
-            self.w.emit("_hash_hmac512(");
-// zbr:selfhost/CodeGen.zbr:14492
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14493
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14495
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14496
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14497
+// zbr:selfhost/CodeGen.zbr:14485
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14498
+// zbr:selfhost/CodeGen.zbr:14486
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14500
+// zbr:selfhost/CodeGen.zbr:14488
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14501
+// zbr:selfhost/CodeGen.zbr:14489
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14502
+// zbr:selfhost/CodeGen.zbr:14490
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14503
-        self.w.emit("@compileError(\"selfhost: unknown Hash.");
+// zbr:selfhost/CodeGen.zbr:14491
+        if (std.mem.eql(u8, mname, "crc32")) {
+// zbr:selfhost/CodeGen.zbr:14492
+            self.w.emit("_hash_crc32(");
+// zbr:selfhost/CodeGen.zbr:14493
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14494
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14496
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14497
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14498
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14499
+        if (std.mem.eql(u8, mname, "fnv64")) {
+// zbr:selfhost/CodeGen.zbr:14500
+            self.w.emit("_hash_fnv64(");
+// zbr:selfhost/CodeGen.zbr:14501
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14502
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:14504
-        self.w.emit(mname);
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14505
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14506
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14507
+        if (std.mem.eql(u8, mname, "xxHash64")) {
+// zbr:selfhost/CodeGen.zbr:14508
+            self.w.emit("_hash_xxhash64(");
+// zbr:selfhost/CodeGen.zbr:14509
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14510
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14512
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14513
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14514
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14515
+        if (std.mem.eql(u8, mname, "hmac512")) {
+// zbr:selfhost/CodeGen.zbr:14516
+            self.w.emit("_hash_hmac512(");
+// zbr:selfhost/CodeGen.zbr:14517
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14518
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14520
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14521
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14522
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14523
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14525
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14526
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14527
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14528
+        self.w.emit("@compileError(\"selfhost: unknown Hash.");
+// zbr:selfhost/CodeGen.zbr:14529
+        self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:14530
         self.w.emit("\")");
     }
 
     pub fn genCryptoCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14509
-        if (std.mem.eql(u8, mname, "encrypt")) {
-// zbr:selfhost/CodeGen.zbr:14510
-            self.w.emit("_crypto_encrypt(");
-// zbr:selfhost/CodeGen.zbr:14511
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14512
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14514
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14515
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14516
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14517
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14519
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14520
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14521
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14522
-        if (std.mem.eql(u8, mname, "decrypt")) {
-// zbr:selfhost/CodeGen.zbr:14523
-            self.w.emit("_crypto_decrypt(");
-// zbr:selfhost/CodeGen.zbr:14524
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14525
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14527
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14528
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14529
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14530
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14532
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14533
-            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14534
+        if (std.mem.eql(u8, mname, "encrypt")) {
+// zbr:selfhost/CodeGen.zbr:14535
+            self.w.emit("_crypto_encrypt(");
+// zbr:selfhost/CodeGen.zbr:14536
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:14537
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14539
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14540
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14541
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14542
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14544
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14545
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14546
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14535
+// zbr:selfhost/CodeGen.zbr:14547
+        if (std.mem.eql(u8, mname, "decrypt")) {
+// zbr:selfhost/CodeGen.zbr:14548
+            self.w.emit("_crypto_decrypt(");
+// zbr:selfhost/CodeGen.zbr:14549
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:14550
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14552
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14553
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14554
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14555
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14557
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14558
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14559
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14560
         self.w.emit("@compileError(\"selfhost: unknown Crypto.");
-// zbr:selfhost/CodeGen.zbr:14536
+// zbr:selfhost/CodeGen.zbr:14561
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14537
+// zbr:selfhost/CodeGen.zbr:14562
         self.w.emit("\")");
     }
 
     pub fn genRandomCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14541
+// zbr:selfhost/CodeGen.zbr:14566
         if (std.mem.eql(u8, mname, "new")) {
-// zbr:selfhost/CodeGen.zbr:14543
+// zbr:selfhost/CodeGen.zbr:14568
             self.w.emit("_Random.init(");
-// zbr:selfhost/CodeGen.zbr:14544
+// zbr:selfhost/CodeGen.zbr:14569
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14545
+// zbr:selfhost/CodeGen.zbr:14570
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14547
+// zbr:selfhost/CodeGen.zbr:14572
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14548
+// zbr:selfhost/CodeGen.zbr:14573
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14549
+// zbr:selfhost/CodeGen.zbr:14574
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14550
+// zbr:selfhost/CodeGen.zbr:14575
         if (std.mem.eql(u8, mname, "randInt")) {
-// zbr:selfhost/CodeGen.zbr:14551
+// zbr:selfhost/CodeGen.zbr:14576
             self.w.emit("_random_int(");
-// zbr:selfhost/CodeGen.zbr:14552
+// zbr:selfhost/CodeGen.zbr:14577
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14553
+// zbr:selfhost/CodeGen.zbr:14578
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14555
+// zbr:selfhost/CodeGen.zbr:14580
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14556
+// zbr:selfhost/CodeGen.zbr:14581
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14557
+// zbr:selfhost/CodeGen.zbr:14582
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14558
+// zbr:selfhost/CodeGen.zbr:14583
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14560
+// zbr:selfhost/CodeGen.zbr:14585
                 self.w.emit("100");
             }
-// zbr:selfhost/CodeGen.zbr:14561
+// zbr:selfhost/CodeGen.zbr:14586
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14562
+// zbr:selfhost/CodeGen.zbr:14587
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14563
+// zbr:selfhost/CodeGen.zbr:14588
         if (std.mem.eql(u8, mname, "randFloat")) {
-// zbr:selfhost/CodeGen.zbr:14564
+// zbr:selfhost/CodeGen.zbr:14589
             self.w.emit("_random_float()");
-// zbr:selfhost/CodeGen.zbr:14565
+// zbr:selfhost/CodeGen.zbr:14590
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14566
+// zbr:selfhost/CodeGen.zbr:14591
         if (std.mem.eql(u8, mname, "randBool")) {
-// zbr:selfhost/CodeGen.zbr:14567
+// zbr:selfhost/CodeGen.zbr:14592
             self.w.emit("_random_bool()");
-// zbr:selfhost/CodeGen.zbr:14568
+// zbr:selfhost/CodeGen.zbr:14593
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14569
+// zbr:selfhost/CodeGen.zbr:14594
         if (std.mem.eql(u8, mname, "bytes")) {
-// zbr:selfhost/CodeGen.zbr:14570
+// zbr:selfhost/CodeGen.zbr:14595
             self.w.emit("_random_bytes(");
-// zbr:selfhost/CodeGen.zbr:14571
+// zbr:selfhost/CodeGen.zbr:14596
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14572
+// zbr:selfhost/CodeGen.zbr:14597
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14574
+// zbr:selfhost/CodeGen.zbr:14599
                 self.w.emit("16");
             }
-// zbr:selfhost/CodeGen.zbr:14575
+// zbr:selfhost/CodeGen.zbr:14600
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14576
+// zbr:selfhost/CodeGen.zbr:14601
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14577
+// zbr:selfhost/CodeGen.zbr:14602
         if (std.mem.eql(u8, mname, "seed")) {
-// zbr:selfhost/CodeGen.zbr:14578
+// zbr:selfhost/CodeGen.zbr:14603
             self.w.emit("_random_seed(");
-// zbr:selfhost/CodeGen.zbr:14579
+// zbr:selfhost/CodeGen.zbr:14604
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14580
+// zbr:selfhost/CodeGen.zbr:14605
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14582
+// zbr:selfhost/CodeGen.zbr:14607
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14583
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14584
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14585
-        if (std.mem.eql(u8, mname, "choice")) {
-// zbr:selfhost/CodeGen.zbr:14586
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14587
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:14588
-                self.w.emit(".items[_rng().uintLessThan(usize, ");
-// zbr:selfhost/CodeGen.zbr:14589
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:14590
-                self.w.emit(".items.len)]");
-            }
-// zbr:selfhost/CodeGen.zbr:14591
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14592
-        if (std.mem.eql(u8, mname, "gaussian")) {
-// zbr:selfhost/CodeGen.zbr:14593
-            self.w.emit("_random_gaussian(");
-// zbr:selfhost/CodeGen.zbr:14594
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14595
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14597
-                self.w.emit("0.0");
-            }
-// zbr:selfhost/CodeGen.zbr:14598
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14599
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14600
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14602
-                self.w.emit("1.0");
-            }
-// zbr:selfhost/CodeGen.zbr:14603
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14604
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14605
-        if (std.mem.eql(u8, mname, "shuffle")) {
-// zbr:selfhost/CodeGen.zbr:14606
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14607
-                self.w.emit("(if (");
 // zbr:selfhost/CodeGen.zbr:14608
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14609
-                self.w.emit(".items.len > 0) _rng().shuffle(@TypeOf(");
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14610
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+        if (std.mem.eql(u8, mname, "choice")) {
 // zbr:selfhost/CodeGen.zbr:14611
-                self.w.emit(".items[0]), ");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14612
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:14613
+                self.w.emit(".items[_rng().uintLessThan(usize, ");
+// zbr:selfhost/CodeGen.zbr:14614
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:14615
+                self.w.emit(".items.len)]");
+            }
+// zbr:selfhost/CodeGen.zbr:14616
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14617
+        if (std.mem.eql(u8, mname, "gaussian")) {
+// zbr:selfhost/CodeGen.zbr:14618
+            self.w.emit("_random_gaussian(");
+// zbr:selfhost/CodeGen.zbr:14619
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14620
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14622
+                self.w.emit("0.0");
+            }
+// zbr:selfhost/CodeGen.zbr:14623
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14624
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14625
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14627
+                self.w.emit("1.0");
+            }
+// zbr:selfhost/CodeGen.zbr:14628
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14629
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14630
+        if (std.mem.eql(u8, mname, "shuffle")) {
+// zbr:selfhost/CodeGen.zbr:14631
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14632
+                self.w.emit("(if (");
+// zbr:selfhost/CodeGen.zbr:14633
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:14634
+                self.w.emit(".items.len > 0) _rng().shuffle(@TypeOf(");
+// zbr:selfhost/CodeGen.zbr:14635
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:14636
+                self.w.emit(".items[0]), ");
+// zbr:selfhost/CodeGen.zbr:14637
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:14638
                 self.w.emit(".items))");
             }
-// zbr:selfhost/CodeGen.zbr:14614
+// zbr:selfhost/CodeGen.zbr:14639
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14615
+// zbr:selfhost/CodeGen.zbr:14640
         if (std.mem.eql(u8, mname, "weighted")) {
-// zbr:selfhost/CodeGen.zbr:14616
+// zbr:selfhost/CodeGen.zbr:14641
             self.w.emit("_random_weighted(");
-// zbr:selfhost/CodeGen.zbr:14617
+// zbr:selfhost/CodeGen.zbr:14642
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14618
+// zbr:selfhost/CodeGen.zbr:14643
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
-// zbr:selfhost/CodeGen.zbr:14619
+// zbr:selfhost/CodeGen.zbr:14644
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14620
+// zbr:selfhost/CodeGen.zbr:14645
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14621
+// zbr:selfhost/CodeGen.zbr:14646
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             }
-// zbr:selfhost/CodeGen.zbr:14622
+// zbr:selfhost/CodeGen.zbr:14647
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14623
+// zbr:selfhost/CodeGen.zbr:14648
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14624
+// zbr:selfhost/CodeGen.zbr:14649
         self.w.emit("@compileError(\"selfhost: unknown Random.");
-// zbr:selfhost/CodeGen.zbr:14625
+// zbr:selfhost/CodeGen.zbr:14650
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14626
+// zbr:selfhost/CodeGen.zbr:14651
         self.w.emit("\")");
     }
 
     pub fn genTerminalCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14630
-        if (std.mem.eql(u8, mname, "isTty")) {
-// zbr:selfhost/CodeGen.zbr:14631
-            self.w.emit("_term_is_tty()");
-// zbr:selfhost/CodeGen.zbr:14632
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14633
-        if (std.mem.eql(u8, mname, "width")) {
-// zbr:selfhost/CodeGen.zbr:14634
-            self.w.emit("_term_width()");
-// zbr:selfhost/CodeGen.zbr:14635
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14636
-        if (std.mem.eql(u8, mname, "height")) {
-// zbr:selfhost/CodeGen.zbr:14637
-            self.w.emit("_term_height()");
-// zbr:selfhost/CodeGen.zbr:14638
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14639
-        if ((std.mem.eql(u8, mname, "writeln") or std.mem.eql(u8, mname, "write"))) {
-// zbr:selfhost/CodeGen.zbr:14640
-            const is_println = std.mem.eql(u8, mname, "writeln");
-// zbr:selfhost/CodeGen.zbr:14641
-            self.w.emit("_term_print(");
-// zbr:selfhost/CodeGen.zbr:14642
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14643
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14645
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14646
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14647
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14648
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14650
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14651
-            if (is_println) {
-// zbr:selfhost/CodeGen.zbr:14652
-                self.w.emit(", true)");
-            } else {
-// zbr:selfhost/CodeGen.zbr:14654
-                self.w.emit(", false)");
-            }
 // zbr:selfhost/CodeGen.zbr:14655
+        if (std.mem.eql(u8, mname, "isTty")) {
+// zbr:selfhost/CodeGen.zbr:14656
+            self.w.emit("_term_is_tty()");
+// zbr:selfhost/CodeGen.zbr:14657
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14656
-        self.w.emit("@compileError(\"selfhost: unknown Terminal.");
-// zbr:selfhost/CodeGen.zbr:14657
-        self.w.emit(mname);
 // zbr:selfhost/CodeGen.zbr:14658
-        self.w.emit("\")");
-    }
-
-    pub fn genLogCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
-        defer self._check_invariant();
+        if (std.mem.eql(u8, mname, "width")) {
+// zbr:selfhost/CodeGen.zbr:14659
+            self.w.emit("_term_width()");
+// zbr:selfhost/CodeGen.zbr:14660
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14661
+        if (std.mem.eql(u8, mname, "height")) {
 // zbr:selfhost/CodeGen.zbr:14662
-        if (std.mem.eql(u8, mname, "debug")) {
+            self.w.emit("_term_height()");
 // zbr:selfhost/CodeGen.zbr:14663
-            self.w.emit("_log_debug(");
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14664
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+        if ((std.mem.eql(u8, mname, "writeln") or std.mem.eql(u8, mname, "write"))) {
 // zbr:selfhost/CodeGen.zbr:14665
+            const is_println = std.mem.eql(u8, mname, "writeln");
+// zbr:selfhost/CodeGen.zbr:14666
+            self.w.emit("_term_print(");
+// zbr:selfhost/CodeGen.zbr:14667
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14668
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14667
+// zbr:selfhost/CodeGen.zbr:14670
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14668
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14669
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14670
-        if (std.mem.eql(u8, mname, "info")) {
 // zbr:selfhost/CodeGen.zbr:14671
-            self.w.emit("_log_info(");
+            self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:14672
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:14673
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
 // zbr:selfhost/CodeGen.zbr:14675
                 self.w.emit("\"\"");
             }
 // zbr:selfhost/CodeGen.zbr:14676
-            self.w.emit(")");
+            if (is_println) {
 // zbr:selfhost/CodeGen.zbr:14677
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14678
-        if (std.mem.eql(u8, mname, "warn")) {
+                self.w.emit(", true)");
+            } else {
 // zbr:selfhost/CodeGen.zbr:14679
-            self.w.emit("_log_warn(");
+                self.w.emit(", false)");
+            }
 // zbr:selfhost/CodeGen.zbr:14680
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14681
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
+        self.w.emit("@compileError(\"selfhost: unknown Terminal.");
+// zbr:selfhost/CodeGen.zbr:14682
+        self.w.emit(mname);
 // zbr:selfhost/CodeGen.zbr:14683
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14684
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14685
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14686
-        if (std.mem.eql(u8, mname, "err")) {
+        self.w.emit("\")");
+    }
+
+    pub fn genLogCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
+        defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:14687
-            self.w.emit("_log_err(");
+        if (std.mem.eql(u8, mname, "debug")) {
 // zbr:selfhost/CodeGen.zbr:14688
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("_log_debug(");
 // zbr:selfhost/CodeGen.zbr:14689
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14690
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14691
+// zbr:selfhost/CodeGen.zbr:14692
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14692
-            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14693
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14694
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14694
-        if (std.mem.eql(u8, mname, "setLevel")) {
-// zbr:selfhost/CodeGen.zbr:14699
-            self.w.emit("_log_set_level(");
-// zbr:selfhost/CodeGen.zbr:14700
+// zbr:selfhost/CodeGen.zbr:14695
+        if (std.mem.eql(u8, mname, "info")) {
+// zbr:selfhost/CodeGen.zbr:14696
+            self.w.emit("_log_info(");
+// zbr:selfhost/CodeGen.zbr:14697
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14698
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14700
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:14701
-                const lvarg = args.items[@as(usize, @intCast(0))].value;
+            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14702
-                var mapped: bool = false;
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:14703
+        if (std.mem.eql(u8, mname, "warn")) {
+// zbr:selfhost/CodeGen.zbr:14704
+            self.w.emit("_log_warn(");
+// zbr:selfhost/CodeGen.zbr:14705
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14706
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14708
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14709
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14710
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14711
+        if (std.mem.eql(u8, mname, "err")) {
+// zbr:selfhost/CodeGen.zbr:14712
+            self.w.emit("_log_err(");
+// zbr:selfhost/CodeGen.zbr:14713
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14714
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14716
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14717
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14718
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14719
+        if (std.mem.eql(u8, mname, "setLevel")) {
+// zbr:selfhost/CodeGen.zbr:14724
+            self.w.emit("_log_set_level(");
+// zbr:selfhost/CodeGen.zbr:14725
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14726
+                const lvarg = args.items[@as(usize, @intCast(0))].value;
+// zbr:selfhost/CodeGen.zbr:14727
+                var mapped: bool = false;
+// zbr:selfhost/CodeGen.zbr:14728
                 if (lvarg == .string_lit) {
                     const slv = lvarg.string_lit;
-// zbr:selfhost/CodeGen.zbr:14704
+// zbr:selfhost/CodeGen.zbr:14729
                     const lv = slv.text;
-// zbr:selfhost/CodeGen.zbr:14705
+// zbr:selfhost/CodeGen.zbr:14730
                     if (std.mem.eql(u8, lv, "debug")) {
-// zbr:selfhost/CodeGen.zbr:14706
+// zbr:selfhost/CodeGen.zbr:14731
                         self.w.emit("0");
-// zbr:selfhost/CodeGen.zbr:14707
+// zbr:selfhost/CodeGen.zbr:14732
                         mapped = true;
                     } else if (std.mem.eql(u8, lv, "info")) {
-// zbr:selfhost/CodeGen.zbr:14709
+// zbr:selfhost/CodeGen.zbr:14734
                         self.w.emit("1");
-// zbr:selfhost/CodeGen.zbr:14710
+// zbr:selfhost/CodeGen.zbr:14735
                         mapped = true;
                     } else if (std.mem.eql(u8, lv, "warn")) {
-// zbr:selfhost/CodeGen.zbr:14712
+// zbr:selfhost/CodeGen.zbr:14737
                         self.w.emit("2");
-// zbr:selfhost/CodeGen.zbr:14713
+// zbr:selfhost/CodeGen.zbr:14738
                         mapped = true;
                     } else if (std.mem.eql(u8, lv, "err")) {
-// zbr:selfhost/CodeGen.zbr:14715
+// zbr:selfhost/CodeGen.zbr:14740
                         self.w.emit("3");
-// zbr:selfhost/CodeGen.zbr:14716
+// zbr:selfhost/CodeGen.zbr:14741
                         mapped = true;
                     }
                 }
-// zbr:selfhost/CodeGen.zbr:14717
+// zbr:selfhost/CodeGen.zbr:14742
                 if ((!mapped)) {
-// zbr:selfhost/CodeGen.zbr:14718
+// zbr:selfhost/CodeGen.zbr:14743
                     self.genExpr(lvarg);
                 }
             } else {
-// zbr:selfhost/CodeGen.zbr:14720
+// zbr:selfhost/CodeGen.zbr:14745
                 self.w.emit("1");
             }
-// zbr:selfhost/CodeGen.zbr:14721
+// zbr:selfhost/CodeGen.zbr:14746
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14722
+// zbr:selfhost/CodeGen.zbr:14747
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14723
+// zbr:selfhost/CodeGen.zbr:14748
         if (std.mem.eql(u8, mname, "setOutput")) {
-// zbr:selfhost/CodeGen.zbr:14727
+// zbr:selfhost/CodeGen.zbr:14752
             self.w.emit("_log_set_output_stderr(");
-// zbr:selfhost/CodeGen.zbr:14728
+// zbr:selfhost/CodeGen.zbr:14753
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14729
+// zbr:selfhost/CodeGen.zbr:14754
                 const oarg = args.items[@as(usize, @intCast(0))].value;
-// zbr:selfhost/CodeGen.zbr:14730
+// zbr:selfhost/CodeGen.zbr:14755
                 if (oarg == .string_lit) {
                     const osl = oarg.string_lit;
-// zbr:selfhost/CodeGen.zbr:14731
+// zbr:selfhost/CodeGen.zbr:14756
                     if (std.mem.eql(u8, osl.text, "stdout")) {
-// zbr:selfhost/CodeGen.zbr:14732
+// zbr:selfhost/CodeGen.zbr:14757
                         self.w.emit("false");
                     } else {
-// zbr:selfhost/CodeGen.zbr:14734
+// zbr:selfhost/CodeGen.zbr:14759
                         self.w.emit("true");
                     }
                 } else {
-// zbr:selfhost/CodeGen.zbr:14736
+// zbr:selfhost/CodeGen.zbr:14761
                     self.w.emit("true");
                 }
             } else {
-// zbr:selfhost/CodeGen.zbr:14738
+// zbr:selfhost/CodeGen.zbr:14763
                 self.w.emit("true");
             }
-// zbr:selfhost/CodeGen.zbr:14739
+// zbr:selfhost/CodeGen.zbr:14764
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14740
+// zbr:selfhost/CodeGen.zbr:14765
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14741
+// zbr:selfhost/CodeGen.zbr:14766
         if (std.mem.eql(u8, mname, "timestamp")) {
-// zbr:selfhost/CodeGen.zbr:14742
+// zbr:selfhost/CodeGen.zbr:14767
             self.w.emit("_log_timestamp(");
-// zbr:selfhost/CodeGen.zbr:14743
+// zbr:selfhost/CodeGen.zbr:14768
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14744
+// zbr:selfhost/CodeGen.zbr:14769
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14746
+// zbr:selfhost/CodeGen.zbr:14771
                 self.w.emit("true");
             }
-// zbr:selfhost/CodeGen.zbr:14747
+// zbr:selfhost/CodeGen.zbr:14772
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14748
+// zbr:selfhost/CodeGen.zbr:14773
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14749
+// zbr:selfhost/CodeGen.zbr:14774
         if (std.mem.eql(u8, mname, "setFile")) {
-// zbr:selfhost/CodeGen.zbr:14750
+// zbr:selfhost/CodeGen.zbr:14775
             self.w.emit("_log_set_file(");
-// zbr:selfhost/CodeGen.zbr:14751
+// zbr:selfhost/CodeGen.zbr:14776
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14752
+// zbr:selfhost/CodeGen.zbr:14777
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14754
+// zbr:selfhost/CodeGen.zbr:14779
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14755
+// zbr:selfhost/CodeGen.zbr:14780
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14756
+// zbr:selfhost/CodeGen.zbr:14781
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14757
+// zbr:selfhost/CodeGen.zbr:14782
         if (std.mem.eql(u8, mname, "json")) {
-// zbr:selfhost/CodeGen.zbr:14758
+// zbr:selfhost/CodeGen.zbr:14783
             self.w.emit("_log_json(");
-// zbr:selfhost/CodeGen.zbr:14759
+// zbr:selfhost/CodeGen.zbr:14784
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14760
+// zbr:selfhost/CodeGen.zbr:14785
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14762
+// zbr:selfhost/CodeGen.zbr:14787
                 self.w.emit("\"info\"");
             }
-// zbr:selfhost/CodeGen.zbr:14763
+// zbr:selfhost/CodeGen.zbr:14788
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14764
+// zbr:selfhost/CodeGen.zbr:14789
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14765
+// zbr:selfhost/CodeGen.zbr:14790
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14767
+// zbr:selfhost/CodeGen.zbr:14792
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14768
+// zbr:selfhost/CodeGen.zbr:14793
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14769
+// zbr:selfhost/CodeGen.zbr:14794
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
-// zbr:selfhost/CodeGen.zbr:14770
+// zbr:selfhost/CodeGen.zbr:14795
                 self.genExpr(args.items[@as(usize, @intCast(2))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14772
+// zbr:selfhost/CodeGen.zbr:14797
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14773
+// zbr:selfhost/CodeGen.zbr:14798
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14774
+// zbr:selfhost/CodeGen.zbr:14799
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14775
+// zbr:selfhost/CodeGen.zbr:14800
         self.w.emit("@compileError(\"selfhost: unknown Log.");
-// zbr:selfhost/CodeGen.zbr:14776
+// zbr:selfhost/CodeGen.zbr:14801
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14777
+// zbr:selfhost/CodeGen.zbr:14802
         self.w.emit("\")");
     }
 
     pub fn genCsvCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14781
+// zbr:selfhost/CodeGen.zbr:14806
         if (std.mem.eql(u8, mname, "parse")) {
-// zbr:selfhost/CodeGen.zbr:14782
+// zbr:selfhost/CodeGen.zbr:14807
             self.w.emit("_csv_parse(");
-// zbr:selfhost/CodeGen.zbr:14783
+// zbr:selfhost/CodeGen.zbr:14808
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14784
+// zbr:selfhost/CodeGen.zbr:14809
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14786
+// zbr:selfhost/CodeGen.zbr:14811
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14787
+// zbr:selfhost/CodeGen.zbr:14812
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14788
+// zbr:selfhost/CodeGen.zbr:14813
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14789
+// zbr:selfhost/CodeGen.zbr:14814
         if (std.mem.eql(u8, mname, "parseFile")) {
-// zbr:selfhost/CodeGen.zbr:14790
+// zbr:selfhost/CodeGen.zbr:14815
             self.w.emit("_csv_parse_file(");
-// zbr:selfhost/CodeGen.zbr:14791
+// zbr:selfhost/CodeGen.zbr:14816
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14792
+// zbr:selfhost/CodeGen.zbr:14817
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14794
+// zbr:selfhost/CodeGen.zbr:14819
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14795
+// zbr:selfhost/CodeGen.zbr:14820
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14796
+// zbr:selfhost/CodeGen.zbr:14821
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14797
+// zbr:selfhost/CodeGen.zbr:14822
         self.w.emit("@compileError(\"selfhost: unknown Csv.");
-// zbr:selfhost/CodeGen.zbr:14798
+// zbr:selfhost/CodeGen.zbr:14823
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14799
+// zbr:selfhost/CodeGen.zbr:14824
         self.w.emit("\")");
     }
 
     pub fn genTimerCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
         _ = args;
-// zbr:selfhost/CodeGen.zbr:14803
+// zbr:selfhost/CodeGen.zbr:14828
         if (std.mem.eql(u8, mname, "start")) {
-// zbr:selfhost/CodeGen.zbr:14804
+// zbr:selfhost/CodeGen.zbr:14829
             self.w.emit("_timer_start()");
-// zbr:selfhost/CodeGen.zbr:14805
+// zbr:selfhost/CodeGen.zbr:14830
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14806
+// zbr:selfhost/CodeGen.zbr:14831
         self.w.emit("@compileError(\"selfhost: unknown Timer.");
-// zbr:selfhost/CodeGen.zbr:14807
+// zbr:selfhost/CodeGen.zbr:14832
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14808
+// zbr:selfhost/CodeGen.zbr:14833
         self.w.emit("\")");
     }
 
     pub fn genProgressCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14812
+// zbr:selfhost/CodeGen.zbr:14837
         if (std.mem.eql(u8, mname, "bar")) {
-// zbr:selfhost/CodeGen.zbr:14813
+// zbr:selfhost/CodeGen.zbr:14838
             self.w.emit("_progress_bar(");
-// zbr:selfhost/CodeGen.zbr:14814
+// zbr:selfhost/CodeGen.zbr:14839
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14815
+// zbr:selfhost/CodeGen.zbr:14840
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14817
+// zbr:selfhost/CodeGen.zbr:14842
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14818
+// zbr:selfhost/CodeGen.zbr:14843
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14819
+// zbr:selfhost/CodeGen.zbr:14844
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:14820
+// zbr:selfhost/CodeGen.zbr:14845
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14822
+// zbr:selfhost/CodeGen.zbr:14847
                 self.w.emit("\"progress\"");
             }
-// zbr:selfhost/CodeGen.zbr:14823
+// zbr:selfhost/CodeGen.zbr:14848
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14824
+// zbr:selfhost/CodeGen.zbr:14849
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14825
+// zbr:selfhost/CodeGen.zbr:14850
         self.w.emit("@compileError(\"selfhost: unknown Progress.");
-// zbr:selfhost/CodeGen.zbr:14826
+// zbr:selfhost/CodeGen.zbr:14851
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14827
+// zbr:selfhost/CodeGen.zbr:14852
         self.w.emit("\")");
     }
 
     pub fn genProfileCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14831
+// zbr:selfhost/CodeGen.zbr:14856
         if (std.mem.eql(u8, mname, "start")) {
-// zbr:selfhost/CodeGen.zbr:14832
+// zbr:selfhost/CodeGen.zbr:14857
             self.w.emit("_profile_start(");
-// zbr:selfhost/CodeGen.zbr:14833
+// zbr:selfhost/CodeGen.zbr:14858
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14834
+// zbr:selfhost/CodeGen.zbr:14859
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14836
+// zbr:selfhost/CodeGen.zbr:14861
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14837
+// zbr:selfhost/CodeGen.zbr:14862
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14838
+// zbr:selfhost/CodeGen.zbr:14863
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14839
+// zbr:selfhost/CodeGen.zbr:14864
         if (std.mem.eql(u8, mname, "end")) {
-// zbr:selfhost/CodeGen.zbr:14840
+// zbr:selfhost/CodeGen.zbr:14865
             self.w.emit("_profile_end()");
-// zbr:selfhost/CodeGen.zbr:14841
+// zbr:selfhost/CodeGen.zbr:14866
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14842
+// zbr:selfhost/CodeGen.zbr:14867
         if (std.mem.eql(u8, mname, "report")) {
-// zbr:selfhost/CodeGen.zbr:14843
+// zbr:selfhost/CodeGen.zbr:14868
             self.w.emit("_profile_report()");
-// zbr:selfhost/CodeGen.zbr:14844
+// zbr:selfhost/CodeGen.zbr:14869
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14845
+// zbr:selfhost/CodeGen.zbr:14870
         if (std.mem.eql(u8, mname, "dump_folded")) {
-// zbr:selfhost/CodeGen.zbr:14846
+// zbr:selfhost/CodeGen.zbr:14871
             self.w.emit("_profile_dump_folded()");
-// zbr:selfhost/CodeGen.zbr:14847
+// zbr:selfhost/CodeGen.zbr:14872
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14848
+// zbr:selfhost/CodeGen.zbr:14873
         if (std.mem.eql(u8, mname, "reset")) {
-// zbr:selfhost/CodeGen.zbr:14849
+// zbr:selfhost/CodeGen.zbr:14874
             self.w.emit("_profile_reset()");
-// zbr:selfhost/CodeGen.zbr:14850
+// zbr:selfhost/CodeGen.zbr:14875
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14851
+// zbr:selfhost/CodeGen.zbr:14876
         self.w.emit("@compileError(\"selfhost: unknown Profile.");
-// zbr:selfhost/CodeGen.zbr:14852
+// zbr:selfhost/CodeGen.zbr:14877
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14853
+// zbr:selfhost/CodeGen.zbr:14878
         self.w.emit("\")");
     }
 
     pub fn genBase64Call(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14857
-        if (std.mem.eql(u8, mname, "encode")) {
-// zbr:selfhost/CodeGen.zbr:14858
-            self.w.emit("_base64_encode(");
-// zbr:selfhost/CodeGen.zbr:14859
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14860
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14862
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14863
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14864
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14865
-        if (std.mem.eql(u8, mname, "decode")) {
-// zbr:selfhost/CodeGen.zbr:14866
-            self.w.emit("_base64_decode(");
-// zbr:selfhost/CodeGen.zbr:14867
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14868
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14870
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14871
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14872
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14873
-        if (std.mem.eql(u8, mname, "encodeUrl")) {
-// zbr:selfhost/CodeGen.zbr:14874
-            self.w.emit("_base64_encode_url(");
-// zbr:selfhost/CodeGen.zbr:14875
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14876
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14878
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14879
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14880
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14881
-        if (std.mem.eql(u8, mname, "decodeUrl")) {
 // zbr:selfhost/CodeGen.zbr:14882
-            self.w.emit("_base64_decode_url(");
+        if (std.mem.eql(u8, mname, "encode")) {
 // zbr:selfhost/CodeGen.zbr:14883
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("_base64_encode(");
 // zbr:selfhost/CodeGen.zbr:14884
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14885
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14886
+// zbr:selfhost/CodeGen.zbr:14887
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14887
-            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:14888
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14889
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14889
-        self.w.emit("@compileError(\"selfhost: unknown Base64.");
 // zbr:selfhost/CodeGen.zbr:14890
-        self.w.emit(mname);
+        if (std.mem.eql(u8, mname, "decode")) {
 // zbr:selfhost/CodeGen.zbr:14891
+            self.w.emit("_base64_decode(");
+// zbr:selfhost/CodeGen.zbr:14892
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14893
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14895
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14896
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14897
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14898
+        if (std.mem.eql(u8, mname, "encodeUrl")) {
+// zbr:selfhost/CodeGen.zbr:14899
+            self.w.emit("_base64_encode_url(");
+// zbr:selfhost/CodeGen.zbr:14900
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14901
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14903
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14904
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14905
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14906
+        if (std.mem.eql(u8, mname, "decodeUrl")) {
+// zbr:selfhost/CodeGen.zbr:14907
+            self.w.emit("_base64_decode_url(");
+// zbr:selfhost/CodeGen.zbr:14908
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14909
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14911
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14912
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14913
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14914
+        self.w.emit("@compileError(\"selfhost: unknown Base64.");
+// zbr:selfhost/CodeGen.zbr:14915
+        self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:14916
         self.w.emit("\")");
     }
 
     pub fn genUriCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14895
+// zbr:selfhost/CodeGen.zbr:14920
         if (std.mem.eql(u8, mname, "parse")) {
-// zbr:selfhost/CodeGen.zbr:14896
+// zbr:selfhost/CodeGen.zbr:14921
             self.w.emit("_uri_parse(");
-// zbr:selfhost/CodeGen.zbr:14897
+// zbr:selfhost/CodeGen.zbr:14922
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14898
+// zbr:selfhost/CodeGen.zbr:14923
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
-// zbr:selfhost/CodeGen.zbr:14899
+// zbr:selfhost/CodeGen.zbr:14924
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14900
+// zbr:selfhost/CodeGen.zbr:14925
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14901
+// zbr:selfhost/CodeGen.zbr:14926
         self.w.emit("@compileError(\"selfhost: unknown Uri.");
-// zbr:selfhost/CodeGen.zbr:14902
+// zbr:selfhost/CodeGen.zbr:14927
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14903
+// zbr:selfhost/CodeGen.zbr:14928
         self.w.emit("\")");
     }
 
     pub fn genCompressCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14907
+// zbr:selfhost/CodeGen.zbr:14932
         if (std.mem.eql(u8, mname, "gzip")) {
-// zbr:selfhost/CodeGen.zbr:14908
+// zbr:selfhost/CodeGen.zbr:14933
             self.w.emit("_compress_gzip(");
-// zbr:selfhost/CodeGen.zbr:14909
+// zbr:selfhost/CodeGen.zbr:14934
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14910
+// zbr:selfhost/CodeGen.zbr:14935
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
-// zbr:selfhost/CodeGen.zbr:14911
+// zbr:selfhost/CodeGen.zbr:14936
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14912
+// zbr:selfhost/CodeGen.zbr:14937
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14913
+// zbr:selfhost/CodeGen.zbr:14938
         if (std.mem.eql(u8, mname, "gunzip")) {
-// zbr:selfhost/CodeGen.zbr:14914
+// zbr:selfhost/CodeGen.zbr:14939
             self.w.emit("_compress_gunzip(");
-// zbr:selfhost/CodeGen.zbr:14915
+// zbr:selfhost/CodeGen.zbr:14940
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14916
+// zbr:selfhost/CodeGen.zbr:14941
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
-// zbr:selfhost/CodeGen.zbr:14917
+// zbr:selfhost/CodeGen.zbr:14942
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14918
+// zbr:selfhost/CodeGen.zbr:14943
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14919
+// zbr:selfhost/CodeGen.zbr:14944
         self.w.emit("@compileError(\"selfhost: unknown Compress.");
-// zbr:selfhost/CodeGen.zbr:14920
+// zbr:selfhost/CodeGen.zbr:14945
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14921
+// zbr:selfhost/CodeGen.zbr:14946
         self.w.emit("\")");
     }
 
     pub fn genMimeCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14925
-        if (std.mem.eql(u8, mname, "fromExt")) {
-// zbr:selfhost/CodeGen.zbr:14926
-            self.w.emit("_mime_from_ext(");
-// zbr:selfhost/CodeGen.zbr:14927
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14928
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            }
-// zbr:selfhost/CodeGen.zbr:14929
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14930
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14931
-        if (std.mem.eql(u8, mname, "toExt")) {
-// zbr:selfhost/CodeGen.zbr:14932
-            self.w.emit("_mime_to_ext(");
-// zbr:selfhost/CodeGen.zbr:14933
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14934
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            }
-// zbr:selfhost/CodeGen.zbr:14935
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14936
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:14937
-        self.w.emit("@compileError(\"selfhost: unknown Mime.");
-// zbr:selfhost/CodeGen.zbr:14938
-        self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14939
-        self.w.emit("\")");
-    }
-
-    pub fn genTcpCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
-        defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14943
-        if (std.mem.eql(u8, mname, "connect")) {
-// zbr:selfhost/CodeGen.zbr:14944
-            self.w.emit("_tcp_connect(");
-// zbr:selfhost/CodeGen.zbr:14945
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14946
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14948
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:14949
-            self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:14950
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+        if (std.mem.eql(u8, mname, "fromExt")) {
 // zbr:selfhost/CodeGen.zbr:14951
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
+            self.w.emit("_mime_from_ext(");
+// zbr:selfhost/CodeGen.zbr:14952
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14953
-                self.w.emit("0");
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
             }
 // zbr:selfhost/CodeGen.zbr:14954
             self.w.emit(")");
@@ -33097,1135 +33091,1186 @@ pub const Generator = struct {
             return;
         }
 // zbr:selfhost/CodeGen.zbr:14956
-        if (std.mem.eql(u8, mname, "serve")) {
+        if (std.mem.eql(u8, mname, "toExt")) {
 // zbr:selfhost/CodeGen.zbr:14957
-            self.w.emit("_tcp_serve(");
+            self.w.emit("_mime_to_ext(");
 // zbr:selfhost/CodeGen.zbr:14958
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14959
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14961
-                self.w.emit("8080");
             }
-// zbr:selfhost/CodeGen.zbr:14962
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:14963
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:14964
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:14966
-                self.w.emit("undefined");
-            }
-// zbr:selfhost/CodeGen.zbr:14967
+// zbr:selfhost/CodeGen.zbr:14960
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14968
+// zbr:selfhost/CodeGen.zbr:14961
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14969
-        self.w.emit("@compileError(\"selfhost: unknown Tcp.");
-// zbr:selfhost/CodeGen.zbr:14970
+// zbr:selfhost/CodeGen.zbr:14962
+        self.w.emit("@compileError(\"selfhost: unknown Mime.");
+// zbr:selfhost/CodeGen.zbr:14963
         self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:14964
+        self.w.emit("\")");
+    }
+
+    pub fn genTcpCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
+        defer self._check_invariant();
+// zbr:selfhost/CodeGen.zbr:14968
+        if (std.mem.eql(u8, mname, "connect")) {
+// zbr:selfhost/CodeGen.zbr:14969
+            self.w.emit("_tcp_connect(");
+// zbr:selfhost/CodeGen.zbr:14970
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:14971
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14973
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:14974
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14975
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14976
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14978
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:14979
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14980
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14981
+        if (std.mem.eql(u8, mname, "serve")) {
+// zbr:selfhost/CodeGen.zbr:14982
+            self.w.emit("_tcp_serve(");
+// zbr:selfhost/CodeGen.zbr:14983
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:14984
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14986
+                self.w.emit("8080");
+            }
+// zbr:selfhost/CodeGen.zbr:14987
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:14988
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:14989
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:14991
+                self.w.emit("undefined");
+            }
+// zbr:selfhost/CodeGen.zbr:14992
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:14993
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:14994
+        self.w.emit("@compileError(\"selfhost: unknown Tcp.");
+// zbr:selfhost/CodeGen.zbr:14995
+        self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:14996
         self.w.emit("\")");
     }
 
     pub fn genUdpCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14975
+// zbr:selfhost/CodeGen.zbr:15000
         if (std.mem.eql(u8, mname, "socket")) {
-// zbr:selfhost/CodeGen.zbr:14976
+// zbr:selfhost/CodeGen.zbr:15001
             self.w.emit("_udp_socket()");
-// zbr:selfhost/CodeGen.zbr:14977
+// zbr:selfhost/CodeGen.zbr:15002
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14978
+// zbr:selfhost/CodeGen.zbr:15003
         if (std.mem.eql(u8, mname, "bind")) {
-// zbr:selfhost/CodeGen.zbr:14979
+// zbr:selfhost/CodeGen.zbr:15004
             self.w.emit("_udp_bind(");
-// zbr:selfhost/CodeGen.zbr:14980
+// zbr:selfhost/CodeGen.zbr:15005
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14981
+// zbr:selfhost/CodeGen.zbr:15006
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14983
+// zbr:selfhost/CodeGen.zbr:15008
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:14984
+// zbr:selfhost/CodeGen.zbr:15009
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14985
+// zbr:selfhost/CodeGen.zbr:15010
             return;
         }
-// zbr:selfhost/CodeGen.zbr:14986
+// zbr:selfhost/CodeGen.zbr:15011
         self.w.emit("@compileError(\"selfhost: unknown Udp.");
-// zbr:selfhost/CodeGen.zbr:14987
+// zbr:selfhost/CodeGen.zbr:15012
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:14988
+// zbr:selfhost/CodeGen.zbr:15013
         self.w.emit("\")");
     }
 
     pub fn genSqliteCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:14992
+// zbr:selfhost/CodeGen.zbr:15017
         if (std.mem.eql(u8, mname, "open")) {
-// zbr:selfhost/CodeGen.zbr:14993
+// zbr:selfhost/CodeGen.zbr:15018
             self.w.emit("_sqlite_open(");
-// zbr:selfhost/CodeGen.zbr:14994
+// zbr:selfhost/CodeGen.zbr:15019
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:14995
+// zbr:selfhost/CodeGen.zbr:15020
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:14997
+// zbr:selfhost/CodeGen.zbr:15022
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:14998
+// zbr:selfhost/CodeGen.zbr:15023
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:14999
+// zbr:selfhost/CodeGen.zbr:15024
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15000
+// zbr:selfhost/CodeGen.zbr:15025
         self.w.emit("@compileError(\"selfhost: unknown Sqlite.");
-// zbr:selfhost/CodeGen.zbr:15001
+// zbr:selfhost/CodeGen.zbr:15026
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15002
+// zbr:selfhost/CodeGen.zbr:15027
         self.w.emit("\")");
     }
 
     pub fn genSqliteParams(self: *Generator, params_expr: Expr) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15008
+// zbr:selfhost/CodeGen.zbr:15033
         if (params_expr == .list_lit) {
             const lit_ptr = params_expr.list_lit;
             const lit = lit_ptr.*;
-// zbr:selfhost/CodeGen.zbr:15009
+// zbr:selfhost/CodeGen.zbr:15034
             self.w.emit("&[_]_SqliteParam{");
-// zbr:selfhost/CodeGen.zbr:15010
+// zbr:selfhost/CodeGen.zbr:15035
             var first: bool = true;
-// zbr:selfhost/CodeGen.zbr:15011
+// zbr:selfhost/CodeGen.zbr:15036
             for (lit.elems.items) |elem| {
-// zbr:selfhost/CodeGen.zbr:15012
+// zbr:selfhost/CodeGen.zbr:15037
                 if ((!first)) {
-// zbr:selfhost/CodeGen.zbr:15013
+// zbr:selfhost/CodeGen.zbr:15038
                     self.w.emit(", ");
                 }
-// zbr:selfhost/CodeGen.zbr:15014
+// zbr:selfhost/CodeGen.zbr:15039
                 first = false;
-// zbr:selfhost/CodeGen.zbr:15015
+// zbr:selfhost/CodeGen.zbr:15040
                 var et: Type_ = Type_.unknown_;
-// zbr:selfhost/CodeGen.zbr:15016
+// zbr:selfhost/CodeGen.zbr:15041
                 if ((self.infer_ctx != null)) {
-// zbr:selfhost/CodeGen.zbr:15017
+// zbr:selfhost/CodeGen.zbr:15042
                     et = inferExpr(elem, self.infer_ctx.?);
                 }
-// zbr:selfhost/CodeGen.zbr:15018
+// zbr:selfhost/CodeGen.zbr:15043
                 if (((et == .int_) or (elem == .int_lit))) {
-// zbr:selfhost/CodeGen.zbr:15019
+// zbr:selfhost/CodeGen.zbr:15044
                     self.w.emit(".{ .int = @as(i64, @intCast(");
-// zbr:selfhost/CodeGen.zbr:15020
+// zbr:selfhost/CodeGen.zbr:15045
                     self.genExpr(elem);
-// zbr:selfhost/CodeGen.zbr:15021
+// zbr:selfhost/CodeGen.zbr:15046
                     self.w.emit(")) }");
                 } else if (((et == .float_) or (elem == .float_lit))) {
-// zbr:selfhost/CodeGen.zbr:15023
+// zbr:selfhost/CodeGen.zbr:15048
                     self.w.emit(".{ .float = @as(f64, ");
-// zbr:selfhost/CodeGen.zbr:15024
+// zbr:selfhost/CodeGen.zbr:15049
                     self.genExpr(elem);
-// zbr:selfhost/CodeGen.zbr:15025
+// zbr:selfhost/CodeGen.zbr:15050
                     self.w.emit(") }");
                 } else {
-// zbr:selfhost/CodeGen.zbr:15027
+// zbr:selfhost/CodeGen.zbr:15052
                     self.w.emit(".{ .text = ");
-// zbr:selfhost/CodeGen.zbr:15028
+// zbr:selfhost/CodeGen.zbr:15053
                     self.genExpr(elem);
-// zbr:selfhost/CodeGen.zbr:15029
+// zbr:selfhost/CodeGen.zbr:15054
                     self.w.emit(" }");
                 }
             }
-// zbr:selfhost/CodeGen.zbr:15030
+// zbr:selfhost/CodeGen.zbr:15055
             self.w.emit("}");
         } else {
-// zbr:selfhost/CodeGen.zbr:15032
+// zbr:selfhost/CodeGen.zbr:15057
             self.w.emit("&.{}");
         }
     }
 
     pub fn genNetCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15036
+// zbr:selfhost/CodeGen.zbr:15061
         if (std.mem.eql(u8, mname, "resolve")) {
-// zbr:selfhost/CodeGen.zbr:15037
+// zbr:selfhost/CodeGen.zbr:15062
             self.w.emit("_net_resolve(");
-// zbr:selfhost/CodeGen.zbr:15038
+// zbr:selfhost/CodeGen.zbr:15063
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15039
+// zbr:selfhost/CodeGen.zbr:15064
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15041
+// zbr:selfhost/CodeGen.zbr:15066
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:15042
+// zbr:selfhost/CodeGen.zbr:15067
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:15043
+// zbr:selfhost/CodeGen.zbr:15068
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15044
+// zbr:selfhost/CodeGen.zbr:15069
         self.w.emit("@compileError(\"selfhost: unknown Net.");
-// zbr:selfhost/CodeGen.zbr:15045
+// zbr:selfhost/CodeGen.zbr:15070
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15046
+// zbr:selfhost/CodeGen.zbr:15071
         self.w.emit("\")");
     }
 
     pub fn genGuiCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15050
-        if (std.mem.eql(u8, mname, "run")) {
-// zbr:selfhost/CodeGen.zbr:15051
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 6)) {
-// zbr:selfhost/CodeGen.zbr:15052
-                self.w.emit("_gui_mvu_run(");
-// zbr:selfhost/CodeGen.zbr:15053
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:15054
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15055
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-// zbr:selfhost/CodeGen.zbr:15056
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15057
-                self.genExpr(args.items[@as(usize, @intCast(2))].value);
-// zbr:selfhost/CodeGen.zbr:15058
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15059
-                self.genExpr(args.items[@as(usize, @intCast(3))].value);
-// zbr:selfhost/CodeGen.zbr:15060
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15061
-                self.genExpr(args.items[@as(usize, @intCast(4))].value);
-// zbr:selfhost/CodeGen.zbr:15062
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15063
-                self.genExpr(args.items[@as(usize, @intCast(5))].value);
-// zbr:selfhost/CodeGen.zbr:15064
-                self.w.emit(")");
-            } else {
-// zbr:selfhost/CodeGen.zbr:15066
-                self.w.emit("_gui_run(");
-// zbr:selfhost/CodeGen.zbr:15067
-                if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15068
-                    self.genExpr(args.items[@as(usize, @intCast(0))].value);
-                } else {
-// zbr:selfhost/CodeGen.zbr:15070
-                    self.w.emit("\"App\"");
-                }
-// zbr:selfhost/CodeGen.zbr:15071
-                self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15072
-                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:15073
-                    self.genExpr(args.items[@as(usize, @intCast(1))].value);
-                } else {
 // zbr:selfhost/CodeGen.zbr:15075
-                    self.w.emit("800");
-                }
+        if (std.mem.eql(u8, mname, "run")) {
 // zbr:selfhost/CodeGen.zbr:15076
-                self.w.emit(", ");
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 6)) {
 // zbr:selfhost/CodeGen.zbr:15077
-                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
+                self.w.emit("_gui_mvu_run(");
 // zbr:selfhost/CodeGen.zbr:15078
-                    self.genExpr(args.items[@as(usize, @intCast(2))].value);
-                } else {
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:15079
+                self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:15080
-                    self.w.emit("600");
-                }
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
 // zbr:selfhost/CodeGen.zbr:15081
                 self.w.emit(", ");
 // zbr:selfhost/CodeGen.zbr:15082
-                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 4)) {
+                self.genExpr(args.items[@as(usize, @intCast(2))].value);
 // zbr:selfhost/CodeGen.zbr:15083
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15084
+                self.genExpr(args.items[@as(usize, @intCast(3))].value);
+// zbr:selfhost/CodeGen.zbr:15085
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15086
+                self.genExpr(args.items[@as(usize, @intCast(4))].value);
+// zbr:selfhost/CodeGen.zbr:15087
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15088
+                self.genExpr(args.items[@as(usize, @intCast(5))].value);
+// zbr:selfhost/CodeGen.zbr:15089
+                self.w.emit(")");
+            } else {
+// zbr:selfhost/CodeGen.zbr:15091
+                self.w.emit("_gui_run(");
+// zbr:selfhost/CodeGen.zbr:15092
+                if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15093
+                    self.genExpr(args.items[@as(usize, @intCast(0))].value);
+                } else {
+// zbr:selfhost/CodeGen.zbr:15095
+                    self.w.emit("\"App\"");
+                }
+// zbr:selfhost/CodeGen.zbr:15096
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15097
+                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:15098
+                    self.genExpr(args.items[@as(usize, @intCast(1))].value);
+                } else {
+// zbr:selfhost/CodeGen.zbr:15100
+                    self.w.emit("800");
+                }
+// zbr:selfhost/CodeGen.zbr:15101
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15102
+                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
+// zbr:selfhost/CodeGen.zbr:15103
+                    self.genExpr(args.items[@as(usize, @intCast(2))].value);
+                } else {
+// zbr:selfhost/CodeGen.zbr:15105
+                    self.w.emit("600");
+                }
+// zbr:selfhost/CodeGen.zbr:15106
+                self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15107
+                if (_zebra_ge(@as(i64, @intCast(args.items.len)), 4)) {
+// zbr:selfhost/CodeGen.zbr:15108
                     self.genExpr(args.items[@as(usize, @intCast(3))].value);
                 } else {
-// zbr:selfhost/CodeGen.zbr:15085
+// zbr:selfhost/CodeGen.zbr:15110
                     self.w.emit("undefined");
                 }
-// zbr:selfhost/CodeGen.zbr:15086
+// zbr:selfhost/CodeGen.zbr:15111
                 self.w.emit(")");
             }
-// zbr:selfhost/CodeGen.zbr:15087
+// zbr:selfhost/CodeGen.zbr:15112
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15088
+// zbr:selfhost/CodeGen.zbr:15113
         if (std.mem.eql(u8, mname, "setColor")) {
-// zbr:selfhost/CodeGen.zbr:15089
+// zbr:selfhost/CodeGen.zbr:15114
             self.w.emit("_gui_active_backend.setColorFn(");
-// zbr:selfhost/CodeGen.zbr:15090
+// zbr:selfhost/CodeGen.zbr:15115
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:15091
+// zbr:selfhost/CodeGen.zbr:15116
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15093
+// zbr:selfhost/CodeGen.zbr:15118
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:15094
+// zbr:selfhost/CodeGen.zbr:15119
             self.w.emit(", @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15095
+// zbr:selfhost/CodeGen.zbr:15120
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:15096
+// zbr:selfhost/CodeGen.zbr:15121
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15098
+// zbr:selfhost/CodeGen.zbr:15123
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15099
+// zbr:selfhost/CodeGen.zbr:15124
             self.w.emit(")), @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15100
+// zbr:selfhost/CodeGen.zbr:15125
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
-// zbr:selfhost/CodeGen.zbr:15101
+// zbr:selfhost/CodeGen.zbr:15126
                 self.genExpr(args.items[@as(usize, @intCast(2))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15103
+// zbr:selfhost/CodeGen.zbr:15128
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15104
+// zbr:selfhost/CodeGen.zbr:15129
             self.w.emit(")), @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15105
+// zbr:selfhost/CodeGen.zbr:15130
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 4)) {
-// zbr:selfhost/CodeGen.zbr:15106
+// zbr:selfhost/CodeGen.zbr:15131
                 self.genExpr(args.items[@as(usize, @intCast(3))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15108
+// zbr:selfhost/CodeGen.zbr:15133
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15109
+// zbr:selfhost/CodeGen.zbr:15134
             self.w.emit(")), @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15110
+// zbr:selfhost/CodeGen.zbr:15135
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 5)) {
-// zbr:selfhost/CodeGen.zbr:15111
+// zbr:selfhost/CodeGen.zbr:15136
                 self.genExpr(args.items[@as(usize, @intCast(4))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15113
+// zbr:selfhost/CodeGen.zbr:15138
                 self.w.emit("1");
             }
-// zbr:selfhost/CodeGen.zbr:15114
-            self.w.emit(")))");
-// zbr:selfhost/CodeGen.zbr:15115
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15116
-        if (std.mem.eql(u8, mname, "setColorsDark")) {
-// zbr:selfhost/CodeGen.zbr:15117
-            self.w.emit("_gui_active_backend.setColorsDarkFn()");
-// zbr:selfhost/CodeGen.zbr:15118
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15119
-        if (std.mem.eql(u8, mname, "setStyleFloat")) {
-// zbr:selfhost/CodeGen.zbr:15120
-            self.w.emit("_gui_active_backend.setStyleFloatFn(");
-// zbr:selfhost/CodeGen.zbr:15121
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:15122
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15124
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15125
-            self.w.emit(", @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15126
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:15127
-                self.genExpr(args.items[@as(usize, @intCast(1))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15129
-                self.w.emit("0");
-            }
-// zbr:selfhost/CodeGen.zbr:15130
-            self.w.emit(")))");
-// zbr:selfhost/CodeGen.zbr:15131
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15132
-        if (std.mem.eql(u8, mname, "setVec2")) {
-// zbr:selfhost/CodeGen.zbr:15133
-            self.w.emit("_gui_active_backend.setVec2Fn(");
-// zbr:selfhost/CodeGen.zbr:15134
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:15135
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15137
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15138
-            self.w.emit(", @as(f32, @floatCast(");
 // zbr:selfhost/CodeGen.zbr:15139
-            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+            self.w.emit(")))");
 // zbr:selfhost/CodeGen.zbr:15140
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15141
+        if (std.mem.eql(u8, mname, "setColorsDark")) {
+// zbr:selfhost/CodeGen.zbr:15142
+            self.w.emit("_gui_active_backend.setColorsDarkFn()");
+// zbr:selfhost/CodeGen.zbr:15143
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15144
+        if (std.mem.eql(u8, mname, "setStyleFloat")) {
+// zbr:selfhost/CodeGen.zbr:15145
+            self.w.emit("_gui_active_backend.setStyleFloatFn(");
+// zbr:selfhost/CodeGen.zbr:15146
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:15147
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15149
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15150
+            self.w.emit(", @as(f32, @floatCast(");
+// zbr:selfhost/CodeGen.zbr:15151
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:15152
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15142
+// zbr:selfhost/CodeGen.zbr:15154
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15143
+// zbr:selfhost/CodeGen.zbr:15155
+            self.w.emit(")))");
+// zbr:selfhost/CodeGen.zbr:15156
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15157
+        if (std.mem.eql(u8, mname, "setVec2")) {
+// zbr:selfhost/CodeGen.zbr:15158
+            self.w.emit("_gui_active_backend.setVec2Fn(");
+// zbr:selfhost/CodeGen.zbr:15159
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
+// zbr:selfhost/CodeGen.zbr:15160
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15162
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15163
+            self.w.emit(", @as(f32, @floatCast(");
+// zbr:selfhost/CodeGen.zbr:15164
+            if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
+// zbr:selfhost/CodeGen.zbr:15165
+                self.genExpr(args.items[@as(usize, @intCast(1))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15167
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:15168
             self.w.emit(")), @as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15144
+// zbr:selfhost/CodeGen.zbr:15169
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
-// zbr:selfhost/CodeGen.zbr:15145
+// zbr:selfhost/CodeGen.zbr:15170
                 self.genExpr(args.items[@as(usize, @intCast(2))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15147
+// zbr:selfhost/CodeGen.zbr:15172
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15148
+// zbr:selfhost/CodeGen.zbr:15173
             self.w.emit(")))");
-// zbr:selfhost/CodeGen.zbr:15149
+// zbr:selfhost/CodeGen.zbr:15174
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15150
+// zbr:selfhost/CodeGen.zbr:15175
         if (std.mem.eql(u8, mname, "scaleAllSizes")) {
-// zbr:selfhost/CodeGen.zbr:15151
+// zbr:selfhost/CodeGen.zbr:15176
             self.w.emit("_gui_active_backend.scaleAllSizesFn(@as(f32, @floatCast(");
-// zbr:selfhost/CodeGen.zbr:15152
+// zbr:selfhost/CodeGen.zbr:15177
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:15153
+// zbr:selfhost/CodeGen.zbr:15178
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15155
+// zbr:selfhost/CodeGen.zbr:15180
                 self.w.emit("1");
             }
-// zbr:selfhost/CodeGen.zbr:15156
+// zbr:selfhost/CodeGen.zbr:15181
             self.w.emit(")))");
-// zbr:selfhost/CodeGen.zbr:15157
+// zbr:selfhost/CodeGen.zbr:15182
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15158
+// zbr:selfhost/CodeGen.zbr:15183
         if (std.mem.eql(u8, mname, "getDpi")) {
-// zbr:selfhost/CodeGen.zbr:15159
+// zbr:selfhost/CodeGen.zbr:15184
             self.w.emit("@as(f64, @floatCast(_gui_active_backend.getDpiFn()))");
-// zbr:selfhost/CodeGen.zbr:15160
+// zbr:selfhost/CodeGen.zbr:15185
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15161
+// zbr:selfhost/CodeGen.zbr:15186
         self.w.emit("@compileError(\"selfhost: unknown Gui.");
-// zbr:selfhost/CodeGen.zbr:15162
+// zbr:selfhost/CodeGen.zbr:15187
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15163
+// zbr:selfhost/CodeGen.zbr:15188
         self.w.emit("\")");
     }
 
     pub fn genShellCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15167
-        if (std.mem.eql(u8, mname, "run")) {
-// zbr:selfhost/CodeGen.zbr:15168
-            self.w.emit("(blk_sh: {\n");
-// zbr:selfhost/CodeGen.zbr:15169
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15170
-            self.w.emit("    const _sh_cmd = ");
-// zbr:selfhost/CodeGen.zbr:15171
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15172
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15174
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15175
-            self.w.emit(";\n");
-// zbr:selfhost/CodeGen.zbr:15176
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15177
-            self.w.emit("    const _sh_argv = if (comptime builtin.os.tag == .windows)\n");
-// zbr:selfhost/CodeGen.zbr:15178
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15179
-            self.w.emit("        @as([]const []const u8, &[_][]const u8{ \"cmd\", \"/c\", _sh_cmd })\n");
-// zbr:selfhost/CodeGen.zbr:15180
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15181
-            self.w.emit("    else\n");
-// zbr:selfhost/CodeGen.zbr:15182
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15183
-            self.w.emit("        @as([]const []const u8, &[_][]const u8{ \"sh\", \"-c\", _sh_cmd });\n");
-// zbr:selfhost/CodeGen.zbr:15184
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15185
-            self.w.emit("    const _sh_res = std.process.Child.run(.{\n");
-// zbr:selfhost/CodeGen.zbr:15186
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15187
-            self.w.emit("        .allocator = _allocator,\n");
-// zbr:selfhost/CodeGen.zbr:15188
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15189
-            self.w.emit("        .argv = _sh_argv,\n");
-// zbr:selfhost/CodeGen.zbr:15190
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15191
-            self.w.emit("        .max_output_bytes = 1024 * 1024,\n");
 // zbr:selfhost/CodeGen.zbr:15192
-            self.writeIndent();
+        if (std.mem.eql(u8, mname, "run")) {
 // zbr:selfhost/CodeGen.zbr:15193
-            self.w.emit("    }) catch @panic(\"Shell.run error\");\n");
+            self.w.emit("(blk_sh: {\n");
 // zbr:selfhost/CodeGen.zbr:15194
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15195
-            self.w.emit("    break :blk_sh std.mem.concat(_allocator, u8, &[_][]const u8{ _sh_res.stdout, _sh_res.stderr }) catch @panic(\"OOM\");\n");
+            self.w.emit("    const _sh_cmd = ");
 // zbr:selfhost/CodeGen.zbr:15196
-            self.writeIndent();
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:15197
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15199
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15200
+            self.w.emit(";\n");
+// zbr:selfhost/CodeGen.zbr:15201
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15202
+            self.w.emit("    const _sh_argv = if (comptime builtin.os.tag == .windows)\n");
+// zbr:selfhost/CodeGen.zbr:15203
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15204
+            self.w.emit("        @as([]const []const u8, &[_][]const u8{ \"cmd\", \"/c\", _sh_cmd })\n");
+// zbr:selfhost/CodeGen.zbr:15205
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15206
+            self.w.emit("    else\n");
+// zbr:selfhost/CodeGen.zbr:15207
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15208
+            self.w.emit("        @as([]const []const u8, &[_][]const u8{ \"sh\", \"-c\", _sh_cmd });\n");
+// zbr:selfhost/CodeGen.zbr:15209
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15210
+            self.w.emit("    const _sh_res = std.process.Child.run(.{\n");
+// zbr:selfhost/CodeGen.zbr:15211
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15212
+            self.w.emit("        .allocator = _allocator,\n");
+// zbr:selfhost/CodeGen.zbr:15213
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15214
+            self.w.emit("        .argv = _sh_argv,\n");
+// zbr:selfhost/CodeGen.zbr:15215
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15216
+            self.w.emit("        .max_output_bytes = 1024 * 1024,\n");
+// zbr:selfhost/CodeGen.zbr:15217
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15218
+            self.w.emit("    }) catch @panic(\"Shell.run error\");\n");
+// zbr:selfhost/CodeGen.zbr:15219
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15220
+            self.w.emit("    break :blk_sh std.mem.concat(_allocator, u8, &[_][]const u8{ _sh_res.stdout, _sh_res.stderr }) catch @panic(\"OOM\");\n");
+// zbr:selfhost/CodeGen.zbr:15221
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15222
             self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:15198
+// zbr:selfhost/CodeGen.zbr:15223
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15199
+// zbr:selfhost/CodeGen.zbr:15224
         self.w.emit("@compileError(\"selfhost: unknown Shell.");
-// zbr:selfhost/CodeGen.zbr:15200
+// zbr:selfhost/CodeGen.zbr:15225
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15201
+// zbr:selfhost/CodeGen.zbr:15226
         self.w.emit("\")");
     }
 
     pub fn genDirCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15205
-        if (std.mem.eql(u8, mname, "create")) {
-// zbr:selfhost/CodeGen.zbr:15206
-            self.w.emit("(std.Io.Dir.cwd().createDirPath(_io, ");
-// zbr:selfhost/CodeGen.zbr:15207
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15208
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15210
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15211
-            self.w.emit(") catch @panic(\"Dir.create error\"))");
-// zbr:selfhost/CodeGen.zbr:15212
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15213
-        if (std.mem.eql(u8, mname, "createAll")) {
-// zbr:selfhost/CodeGen.zbr:15214
-            self.w.emit("(std.Io.Dir.cwd().createDirPath(_io, ");
-// zbr:selfhost/CodeGen.zbr:15215
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15216
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15218
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15219
-            self.w.emit(") catch @panic(\"Dir.createAll error\"))");
-// zbr:selfhost/CodeGen.zbr:15220
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15221
-        if (std.mem.eql(u8, mname, "delete")) {
-// zbr:selfhost/CodeGen.zbr:15222
-            self.w.emit("(std.Io.Dir.cwd().deleteDir(_io, ");
-// zbr:selfhost/CodeGen.zbr:15223
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15224
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15226
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15227
-            self.w.emit(") catch |_dd_err| { if (_dd_err != error.FileNotFound) @panic(\"Dir.delete error\"); })");
-// zbr:selfhost/CodeGen.zbr:15228
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15229
-        if (std.mem.eql(u8, mname, "deleteAll")) {
 // zbr:selfhost/CodeGen.zbr:15230
-            self.w.emit("(std.Io.Dir.cwd().deleteTree(_io, ");
+        if (std.mem.eql(u8, mname, "create")) {
 // zbr:selfhost/CodeGen.zbr:15231
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+            self.w.emit("(std.Io.Dir.cwd().createDirPath(_io, ");
 // zbr:selfhost/CodeGen.zbr:15232
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15233
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15234
-                self.w.emit("\"\"");
-            }
 // zbr:selfhost/CodeGen.zbr:15235
-            self.w.emit(") catch @panic(\"Dir.deleteAll error\"))");
-// zbr:selfhost/CodeGen.zbr:15236
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15237
-        if (std.mem.eql(u8, mname, "exists")) {
-// zbr:selfhost/CodeGen.zbr:15238
-            self.w.emit("(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_io, ");
-// zbr:selfhost/CodeGen.zbr:15239
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15240
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15242
                 self.w.emit("\"\"");
             }
+// zbr:selfhost/CodeGen.zbr:15236
+            self.w.emit(") catch @panic(\"Dir.create error\"))");
+// zbr:selfhost/CodeGen.zbr:15237
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15238
+        if (std.mem.eql(u8, mname, "createAll")) {
+// zbr:selfhost/CodeGen.zbr:15239
+            self.w.emit("(std.Io.Dir.cwd().createDirPath(_io, ");
+// zbr:selfhost/CodeGen.zbr:15240
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15241
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:15243
-            self.w.emit(", .{}) catch break :blk_de false; _de_d.close(_io); break :blk_de true; })");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:15244
-            return;
-        }
+            self.w.emit(") catch @panic(\"Dir.createAll error\"))");
 // zbr:selfhost/CodeGen.zbr:15245
-        if (std.mem.eql(u8, mname, "list")) {
-// zbr:selfhost/CodeGen.zbr:15246
-            self.w.emit("(blk_dl: {\n");
-// zbr:selfhost/CodeGen.zbr:15247
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15248
-            self.w.emit("    var _dl_dir = std.Io.Dir.cwd().openDir(_io, ");
-// zbr:selfhost/CodeGen.zbr:15249
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15250
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15252
-                self.w.emit("\".\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15253
-            self.w.emit(", .{ .iterate = true }) catch @panic(\"Dir.list error\");\n");
-// zbr:selfhost/CodeGen.zbr:15254
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15255
-            self.w.emit("    defer _dl_dir.close(_io);\n");
-// zbr:selfhost/CodeGen.zbr:15256
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15257
-            self.w.emit("    var _dl_list = std.ArrayList([]const u8).empty;\n");
-// zbr:selfhost/CodeGen.zbr:15258
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15259
-            self.w.emit("    var _dl_iter = _dl_dir.iterate();\n");
-// zbr:selfhost/CodeGen.zbr:15260
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15261
-            self.w.emit("    while (_dl_iter.next(_io) catch null) |_dl_entry| {\n");
-// zbr:selfhost/CodeGen.zbr:15262
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15263
-            self.w.emit("        _dl_list.append(_allocator, _allocator.dupe(u8, _dl_entry.name) catch @panic(\"OOM\")) catch @panic(\"OOM\");\n");
-// zbr:selfhost/CodeGen.zbr:15264
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15265
-            self.w.emit("    }\n");
-// zbr:selfhost/CodeGen.zbr:15266
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15267
-            self.w.emit("    break :blk_dl _dl_list;\n");
-// zbr:selfhost/CodeGen.zbr:15268
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15269
-            self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:15270
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15271
-        if (std.mem.eql(u8, mname, "walk")) {
-// zbr:selfhost/CodeGen.zbr:15272
-            self.w.emit("(blk_dw: {\n");
-// zbr:selfhost/CodeGen.zbr:15273
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15274
-            self.w.emit("    const _dw_root = ");
-// zbr:selfhost/CodeGen.zbr:15275
+// zbr:selfhost/CodeGen.zbr:15246
+        if (std.mem.eql(u8, mname, "delete")) {
+// zbr:selfhost/CodeGen.zbr:15247
+            self.w.emit("(std.Io.Dir.cwd().deleteDir(_io, ");
+// zbr:selfhost/CodeGen.zbr:15248
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15276
+// zbr:selfhost/CodeGen.zbr:15249
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15278
+// zbr:selfhost/CodeGen.zbr:15251
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15252
+            self.w.emit(") catch |_dd_err| { if (_dd_err != error.FileNotFound) @panic(\"Dir.delete error\"); })");
+// zbr:selfhost/CodeGen.zbr:15253
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15254
+        if (std.mem.eql(u8, mname, "deleteAll")) {
+// zbr:selfhost/CodeGen.zbr:15255
+            self.w.emit("(std.Io.Dir.cwd().deleteTree(_io, ");
+// zbr:selfhost/CodeGen.zbr:15256
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15257
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15259
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15260
+            self.w.emit(") catch @panic(\"Dir.deleteAll error\"))");
+// zbr:selfhost/CodeGen.zbr:15261
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15262
+        if (std.mem.eql(u8, mname, "exists")) {
+// zbr:selfhost/CodeGen.zbr:15263
+            self.w.emit("(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_io, ");
+// zbr:selfhost/CodeGen.zbr:15264
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15265
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15267
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15268
+            self.w.emit(", .{}) catch break :blk_de false; _de_d.close(_io); break :blk_de true; })");
+// zbr:selfhost/CodeGen.zbr:15269
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15270
+        if (std.mem.eql(u8, mname, "list")) {
+// zbr:selfhost/CodeGen.zbr:15271
+            self.w.emit("(blk_dl: {\n");
+// zbr:selfhost/CodeGen.zbr:15272
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15273
+            self.w.emit("    var _dl_dir = std.Io.Dir.cwd().openDir(_io, ");
+// zbr:selfhost/CodeGen.zbr:15274
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15275
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15277
                 self.w.emit("\".\"");
             }
+// zbr:selfhost/CodeGen.zbr:15278
+            self.w.emit(", .{ .iterate = true }) catch @panic(\"Dir.list error\");\n");
 // zbr:selfhost/CodeGen.zbr:15279
-            self.w.emit(";\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15280
-            self.writeIndent();
+            self.w.emit("    defer _dl_dir.close(_io);\n");
 // zbr:selfhost/CodeGen.zbr:15281
-            self.w.emit("    var _dw_dir = std.Io.Dir.cwd().openDir(_io, _dw_root, .{ .iterate = true }) catch @panic(\"Dir.walk error\");\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15282
-            self.writeIndent();
+            self.w.emit("    var _dl_list = std.ArrayList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:15283
-            self.w.emit("    defer _dw_dir.close(_io);\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15284
-            self.writeIndent();
+            self.w.emit("    var _dl_iter = _dl_dir.iterate();\n");
 // zbr:selfhost/CodeGen.zbr:15285
-            self.w.emit("    var _dw_walker = _dw_dir.walk(_allocator) catch @panic(\"Dir.walk alloc error\");\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15286
-            self.writeIndent();
+            self.w.emit("    while (_dl_iter.next(_io) catch null) |_dl_entry| {\n");
 // zbr:selfhost/CodeGen.zbr:15287
-            self.w.emit("    defer _dw_walker.deinit();\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15288
-            self.writeIndent();
+            self.w.emit("        _dl_list.append(_allocator, _allocator.dupe(u8, _dl_entry.name) catch @panic(\"OOM\")) catch @panic(\"OOM\");\n");
 // zbr:selfhost/CodeGen.zbr:15289
-            self.w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15290
-            self.writeIndent();
+            self.w.emit("    }\n");
 // zbr:selfhost/CodeGen.zbr:15291
-            self.w.emit("    while (_dw_walker.next(_io) catch null) |_dw_entry| {\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15292
-            self.writeIndent();
+            self.w.emit("    break :blk_dl _dl_list;\n");
 // zbr:selfhost/CodeGen.zbr:15293
-            self.w.emit("        if (_dw_entry.kind != .file) continue;\n");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15294
-            self.writeIndent();
+            self.w.emit("})");
 // zbr:selfhost/CodeGen.zbr:15295
-            self.w.emit("        const _dw_raw = std.fmt.allocPrint(_allocator, \"{s}/{s}\", .{ _dw_root, _dw_entry.path }) catch @panic(\"OOM\");\n");
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:15296
-            self.writeIndent();
+        if (std.mem.eql(u8, mname, "walk")) {
 // zbr:selfhost/CodeGen.zbr:15297
-            self.w.emit("        for (_dw_raw) |*_dw_c| if (_dw_c.* == '\\\\') { _dw_c.* = '/'; };\n");
+            self.w.emit("(blk_dw: {\n");
 // zbr:selfhost/CodeGen.zbr:15298
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15299
-            self.w.emit("        _dw_list.append(_allocator, _dw_raw) catch @panic(\"OOM\");\n");
+            self.w.emit("    const _dw_root = ");
 // zbr:selfhost/CodeGen.zbr:15300
-            self.writeIndent();
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:15301
-            self.w.emit("    }\n");
-// zbr:selfhost/CodeGen.zbr:15302
-            self.writeIndent();
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:15303
-            self.w.emit("    break :blk_dw _dw_list;\n");
+                self.w.emit("\".\"");
+            }
 // zbr:selfhost/CodeGen.zbr:15304
-            self.writeIndent();
+            self.w.emit(";\n");
 // zbr:selfhost/CodeGen.zbr:15305
-            self.w.emit("})");
+            self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:15306
+            self.w.emit("    var _dw_dir = std.Io.Dir.cwd().openDir(_io, _dw_root, .{ .iterate = true }) catch @panic(\"Dir.walk error\");\n");
+// zbr:selfhost/CodeGen.zbr:15307
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15308
+            self.w.emit("    defer _dw_dir.close(_io);\n");
+// zbr:selfhost/CodeGen.zbr:15309
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15310
+            self.w.emit("    var _dw_walker = _dw_dir.walk(_allocator) catch @panic(\"Dir.walk alloc error\");\n");
+// zbr:selfhost/CodeGen.zbr:15311
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15312
+            self.w.emit("    defer _dw_walker.deinit();\n");
+// zbr:selfhost/CodeGen.zbr:15313
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15314
+            self.w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n");
+// zbr:selfhost/CodeGen.zbr:15315
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15316
+            self.w.emit("    while (_dw_walker.next(_io) catch null) |_dw_entry| {\n");
+// zbr:selfhost/CodeGen.zbr:15317
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15318
+            self.w.emit("        if (_dw_entry.kind != .file) continue;\n");
+// zbr:selfhost/CodeGen.zbr:15319
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15320
+            self.w.emit("        const _dw_raw = std.fmt.allocPrint(_allocator, \"{s}/{s}\", .{ _dw_root, _dw_entry.path }) catch @panic(\"OOM\");\n");
+// zbr:selfhost/CodeGen.zbr:15321
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15322
+            self.w.emit("        for (_dw_raw) |*_dw_c| if (_dw_c.* == '\\\\') { _dw_c.* = '/'; };\n");
+// zbr:selfhost/CodeGen.zbr:15323
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15324
+            self.w.emit("        _dw_list.append(_allocator, _dw_raw) catch @panic(\"OOM\");\n");
+// zbr:selfhost/CodeGen.zbr:15325
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15326
+            self.w.emit("    }\n");
+// zbr:selfhost/CodeGen.zbr:15327
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15328
+            self.w.emit("    break :blk_dw _dw_list;\n");
+// zbr:selfhost/CodeGen.zbr:15329
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15330
+            self.w.emit("})");
+// zbr:selfhost/CodeGen.zbr:15331
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15307
+// zbr:selfhost/CodeGen.zbr:15332
         self.w.emit("@compileError(\"selfhost: unknown Dir.");
-// zbr:selfhost/CodeGen.zbr:15308
+// zbr:selfhost/CodeGen.zbr:15333
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15309
+// zbr:selfhost/CodeGen.zbr:15334
         self.w.emit("\")");
     }
 
     pub fn genPathCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15313
+// zbr:selfhost/CodeGen.zbr:15338
         if (std.mem.eql(u8, mname, "join")) {
-// zbr:selfhost/CodeGen.zbr:15314
+// zbr:selfhost/CodeGen.zbr:15339
             self.w.emit("(std.fs.path.join(_allocator, &.{");
-// zbr:selfhost/CodeGen.zbr:15315
+// zbr:selfhost/CodeGen.zbr:15340
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15316
+// zbr:selfhost/CodeGen.zbr:15341
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15318
+// zbr:selfhost/CodeGen.zbr:15343
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:15319
+// zbr:selfhost/CodeGen.zbr:15344
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:15320
+// zbr:selfhost/CodeGen.zbr:15345
                 self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15321
+// zbr:selfhost/CodeGen.zbr:15346
                 self.genExpr(args.items[@as(usize, @intCast(1))].value);
             }
-// zbr:selfhost/CodeGen.zbr:15322
+// zbr:selfhost/CodeGen.zbr:15347
             if (_zebra_ge(@as(i64, @intCast(args.items.len)), 3)) {
-// zbr:selfhost/CodeGen.zbr:15323
+// zbr:selfhost/CodeGen.zbr:15348
                 self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15324
+// zbr:selfhost/CodeGen.zbr:15349
                 self.genExpr(args.items[@as(usize, @intCast(2))].value);
             }
-// zbr:selfhost/CodeGen.zbr:15325
-            self.w.emit("}) catch @panic(\"Path.join error\"))");
-// zbr:selfhost/CodeGen.zbr:15326
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15327
-        if (std.mem.eql(u8, mname, "basename")) {
-// zbr:selfhost/CodeGen.zbr:15328
-            self.w.emit("(std.fs.path.basename(");
-// zbr:selfhost/CodeGen.zbr:15329
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15330
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15332
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15333
-            self.w.emit("))");
-// zbr:selfhost/CodeGen.zbr:15334
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15335
-        if (std.mem.eql(u8, mname, "dirname")) {
-// zbr:selfhost/CodeGen.zbr:15336
-            self.w.emit("(std.fs.path.dirname(");
-// zbr:selfhost/CodeGen.zbr:15337
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15338
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15340
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15341
-            self.w.emit(") orelse \"\")");
-// zbr:selfhost/CodeGen.zbr:15342
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15343
-        if ((std.mem.eql(u8, mname, "ext") or std.mem.eql(u8, mname, "extension"))) {
-// zbr:selfhost/CodeGen.zbr:15344
-            self.w.emit("(std.fs.path.extension(");
-// zbr:selfhost/CodeGen.zbr:15345
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15346
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15348
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15349
-            self.w.emit("))");
 // zbr:selfhost/CodeGen.zbr:15350
-            return;
-        }
+            self.w.emit("}) catch @panic(\"Path.join error\"))");
 // zbr:selfhost/CodeGen.zbr:15351
-        if (std.mem.eql(u8, mname, "stem")) {
+            return;
+        }
 // zbr:selfhost/CodeGen.zbr:15352
-            self.w.emit("(blk_ps: {\n");
+        if (std.mem.eql(u8, mname, "basename")) {
 // zbr:selfhost/CodeGen.zbr:15353
-            self.writeIndent();
+            self.w.emit("(std.fs.path.basename(");
 // zbr:selfhost/CodeGen.zbr:15354
-            self.w.emit("    const _ps_base = std.fs.path.basename(");
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:15355
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15356
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
+// zbr:selfhost/CodeGen.zbr:15357
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:15358
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15359
-            self.w.emit(");\n");
-// zbr:selfhost/CodeGen.zbr:15360
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15361
-            self.w.emit("    const _ps_ext = std.fs.path.extension(_ps_base);\n");
-// zbr:selfhost/CodeGen.zbr:15362
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15363
-            self.w.emit("    break :blk_ps _ps_base[0 .. _ps_base.len - _ps_ext.len];\n");
-// zbr:selfhost/CodeGen.zbr:15364
-            self.writeIndent();
-// zbr:selfhost/CodeGen.zbr:15365
-            self.w.emit("})");
-// zbr:selfhost/CodeGen.zbr:15366
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15367
-        if (std.mem.eql(u8, mname, "isAbsolute")) {
-// zbr:selfhost/CodeGen.zbr:15368
-            self.w.emit("(std.fs.path.isAbsolute(");
-// zbr:selfhost/CodeGen.zbr:15369
-            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15370
-                self.genExpr(args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15372
-                self.w.emit("\"\"");
-            }
-// zbr:selfhost/CodeGen.zbr:15373
             self.w.emit("))");
-// zbr:selfhost/CodeGen.zbr:15374
+// zbr:selfhost/CodeGen.zbr:15359
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15375
-        if (std.mem.eql(u8, mname, "absolute")) {
-// zbr:selfhost/CodeGen.zbr:15376
-            self.w.emit("(blk_pa: { const _pp = ");
-// zbr:selfhost/CodeGen.zbr:15377
+// zbr:selfhost/CodeGen.zbr:15360
+        if (std.mem.eql(u8, mname, "dirname")) {
+// zbr:selfhost/CodeGen.zbr:15361
+            self.w.emit("(std.fs.path.dirname(");
+// zbr:selfhost/CodeGen.zbr:15362
             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15378
+// zbr:selfhost/CodeGen.zbr:15363
                 self.genExpr(args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15380
+// zbr:selfhost/CodeGen.zbr:15365
                 self.w.emit("\"\"");
             }
-// zbr:selfhost/CodeGen.zbr:15381
-            self.w.emit("; break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })");
-// zbr:selfhost/CodeGen.zbr:15382
+// zbr:selfhost/CodeGen.zbr:15366
+            self.w.emit(") orelse \"\")");
+// zbr:selfhost/CodeGen.zbr:15367
             return;
         }
+// zbr:selfhost/CodeGen.zbr:15368
+        if ((std.mem.eql(u8, mname, "ext") or std.mem.eql(u8, mname, "extension"))) {
+// zbr:selfhost/CodeGen.zbr:15369
+            self.w.emit("(std.fs.path.extension(");
+// zbr:selfhost/CodeGen.zbr:15370
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15371
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15373
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15374
+            self.w.emit("))");
+// zbr:selfhost/CodeGen.zbr:15375
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15376
+        if (std.mem.eql(u8, mname, "stem")) {
+// zbr:selfhost/CodeGen.zbr:15377
+            self.w.emit("(blk_ps: {\n");
+// zbr:selfhost/CodeGen.zbr:15378
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15379
+            self.w.emit("    const _ps_base = std.fs.path.basename(");
+// zbr:selfhost/CodeGen.zbr:15380
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15381
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
 // zbr:selfhost/CodeGen.zbr:15383
-        self.w.emit("@compileError(\"selfhost: unknown Path.");
+                self.w.emit("\"\"");
+            }
 // zbr:selfhost/CodeGen.zbr:15384
-        self.w.emit(mname);
+            self.w.emit(");\n");
 // zbr:selfhost/CodeGen.zbr:15385
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15386
+            self.w.emit("    const _ps_ext = std.fs.path.extension(_ps_base);\n");
+// zbr:selfhost/CodeGen.zbr:15387
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15388
+            self.w.emit("    break :blk_ps _ps_base[0 .. _ps_base.len - _ps_ext.len];\n");
+// zbr:selfhost/CodeGen.zbr:15389
+            self.writeIndent();
+// zbr:selfhost/CodeGen.zbr:15390
+            self.w.emit("})");
+// zbr:selfhost/CodeGen.zbr:15391
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15392
+        if (std.mem.eql(u8, mname, "isAbsolute")) {
+// zbr:selfhost/CodeGen.zbr:15393
+            self.w.emit("(std.fs.path.isAbsolute(");
+// zbr:selfhost/CodeGen.zbr:15394
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15395
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15397
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15398
+            self.w.emit("))");
+// zbr:selfhost/CodeGen.zbr:15399
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15400
+        if (std.mem.eql(u8, mname, "absolute")) {
+// zbr:selfhost/CodeGen.zbr:15401
+            self.w.emit("(blk_pa: { const _pp = ");
+// zbr:selfhost/CodeGen.zbr:15402
+            if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15403
+                self.genExpr(args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15405
+                self.w.emit("\"\"");
+            }
+// zbr:selfhost/CodeGen.zbr:15406
+            self.w.emit("; break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })");
+// zbr:selfhost/CodeGen.zbr:15407
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15408
+        self.w.emit("@compileError(\"selfhost: unknown Path.");
+// zbr:selfhost/CodeGen.zbr:15409
+        self.w.emit(mname);
+// zbr:selfhost/CodeGen.zbr:15410
         self.w.emit("\")");
     }
 
     pub fn genReflectCall(self: *Generator, mname: []const u8, args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15389
-        if (_zebra_lt(@as(i64, @intCast(args.items.len)), 1)) {
-// zbr:selfhost/CodeGen.zbr:15390
-            self.w.emit("@compileError(\"Reflect requires 1 argument\")");
-// zbr:selfhost/CodeGen.zbr:15391
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15396
-        if (std.mem.eql(u8, mname, "hostKind")) {
-// zbr:selfhost/CodeGen.zbr:15397
-            self.w.emit("switch (@typeInfo(@TypeOf(");
-// zbr:selfhost/CodeGen.zbr:15398
-            self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:15399
-            self.w.emit("))) { .bool => \"bool\", .int, .comptime_int => \"int\", .float, .comptime_float => \"float\", .pointer => |_p| _sw: { const _ci = @typeInfo(_p.child); break :_sw if (_p.child == u8 or (_ci == .array and _ci.array.child == u8)) \"string\" else \"ref\"; }, .@\"fn\" => \"function\", .optional, .null => \"nil\", else => \"ref\" }");
-// zbr:selfhost/CodeGen.zbr:15400
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15401
-        if (std.mem.eql(u8, mname, "className")) {
-// zbr:selfhost/CodeGen.zbr:15402
-            self.w.emit("_reflect_lookup_name(");
-// zbr:selfhost/CodeGen.zbr:15403
-            self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:15404
-            self.w.emit("._type_tag)");
-// zbr:selfhost/CodeGen.zbr:15405
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15406
-        if (std.mem.eql(u8, mname, "fieldNames")) {
-// zbr:selfhost/CodeGen.zbr:15407
-            self.w.emit("_reflect_lookup_fields(");
-// zbr:selfhost/CodeGen.zbr:15408
-            self.genExpr(args.items[@as(usize, @intCast(0))].value);
-// zbr:selfhost/CodeGen.zbr:15409
-            self.w.emit("._type_tag)");
-// zbr:selfhost/CodeGen.zbr:15410
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15411
-        if (std.mem.eql(u8, mname, "fieldTypes")) {
-// zbr:selfhost/CodeGen.zbr:15412
-            self.w.emit("_reflect_lookup_field_types(");
-// zbr:selfhost/CodeGen.zbr:15413
-            self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:15414
-            self.w.emit("._type_tag)");
+        if (_zebra_lt(@as(i64, @intCast(args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:15415
+            self.w.emit("@compileError(\"Reflect requires 1 argument\")");
+// zbr:selfhost/CodeGen.zbr:15416
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15416
+// zbr:selfhost/CodeGen.zbr:15421
+        if (std.mem.eql(u8, mname, "hostKind")) {
+// zbr:selfhost/CodeGen.zbr:15422
+            self.w.emit("switch (@typeInfo(@TypeOf(");
+// zbr:selfhost/CodeGen.zbr:15423
+            self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:15424
+            self.w.emit("))) { .bool => \"bool\", .int, .comptime_int => \"int\", .float, .comptime_float => \"float\", .pointer => |_p| _sw: { const _ci = @typeInfo(_p.child); break :_sw if (_p.child == u8 or (_ci == .array and _ci.array.child == u8)) \"string\" else \"ref\"; }, .@\"fn\" => \"function\", .optional, .null => \"nil\", else => \"ref\" }");
+// zbr:selfhost/CodeGen.zbr:15425
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15426
+        if (std.mem.eql(u8, mname, "className")) {
+// zbr:selfhost/CodeGen.zbr:15427
+            self.w.emit("_reflect_lookup_name(");
+// zbr:selfhost/CodeGen.zbr:15428
+            self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:15429
+            self.w.emit("._type_tag)");
+// zbr:selfhost/CodeGen.zbr:15430
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15431
+        if (std.mem.eql(u8, mname, "fieldNames")) {
+// zbr:selfhost/CodeGen.zbr:15432
+            self.w.emit("_reflect_lookup_fields(");
+// zbr:selfhost/CodeGen.zbr:15433
+            self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:15434
+            self.w.emit("._type_tag)");
+// zbr:selfhost/CodeGen.zbr:15435
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15436
+        if (std.mem.eql(u8, mname, "fieldTypes")) {
+// zbr:selfhost/CodeGen.zbr:15437
+            self.w.emit("_reflect_lookup_field_types(");
+// zbr:selfhost/CodeGen.zbr:15438
+            self.genExpr(args.items[@as(usize, @intCast(0))].value);
+// zbr:selfhost/CodeGen.zbr:15439
+            self.w.emit("._type_tag)");
+// zbr:selfhost/CodeGen.zbr:15440
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15441
         self.w.emit("@compileError(\"selfhost: unknown Reflect.");
-// zbr:selfhost/CodeGen.zbr:15417
+// zbr:selfhost/CodeGen.zbr:15442
         self.w.emit(mname);
-// zbr:selfhost/CodeGen.zbr:15418
+// zbr:selfhost/CodeGen.zbr:15443
         self.w.emit("\")");
     }
 
     pub fn genGenericCtorCall(self: *Generator, name: []const u8, type_args: std.ArrayList(Arg), val_args: std.ArrayList(Arg)) void {
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:15421
-        if (std.mem.eql(u8, name, "Chan")) {
-// zbr:selfhost/CodeGen.zbr:15422
-            self.w.emit("_chan_create(");
-// zbr:selfhost/CodeGen.zbr:15423
-            if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15424
-                self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15426
-                self.w.emit("anytype");
-            }
-// zbr:selfhost/CodeGen.zbr:15427
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15428
-            if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15429
-                self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15431
-                self.w.emit("0");
-            }
-// zbr:selfhost/CodeGen.zbr:15432
-            self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:15433
-            return;
-        }
-// zbr:selfhost/CodeGen.zbr:15434
-        if (std.mem.eql(u8, name, "ObjectPool")) {
-// zbr:selfhost/CodeGen.zbr:15435
-            self.w.emit("_objpool_create(");
-// zbr:selfhost/CodeGen.zbr:15436
-            if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15437
-                self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15439
-                self.w.emit("anytype");
-            }
-// zbr:selfhost/CodeGen.zbr:15440
-            self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15441
-            if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15442
-                self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
-            } else {
-// zbr:selfhost/CodeGen.zbr:15444
-                self.w.emit("0");
-            }
-// zbr:selfhost/CodeGen.zbr:15445
-            self.w.emit(")");
 // zbr:selfhost/CodeGen.zbr:15446
-            return;
-        }
+        if (std.mem.eql(u8, name, "Chan")) {
 // zbr:selfhost/CodeGen.zbr:15447
-        if (std.mem.eql(u8, name, "Atomic")) {
+            self.w.emit("_chan_create(");
 // zbr:selfhost/CodeGen.zbr:15448
-            self.w.emit("_atomic_create(");
-// zbr:selfhost/CodeGen.zbr:15449
             if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15450
+// zbr:selfhost/CodeGen.zbr:15449
                 self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15452
+// zbr:selfhost/CodeGen.zbr:15451
                 self.w.emit("anytype");
             }
-// zbr:selfhost/CodeGen.zbr:15453
+// zbr:selfhost/CodeGen.zbr:15452
             self.w.emit(", ");
-// zbr:selfhost/CodeGen.zbr:15454
+// zbr:selfhost/CodeGen.zbr:15453
             if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15455
+// zbr:selfhost/CodeGen.zbr:15454
                 self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15457
+// zbr:selfhost/CodeGen.zbr:15456
                 self.w.emit("0");
             }
-// zbr:selfhost/CodeGen.zbr:15458
+// zbr:selfhost/CodeGen.zbr:15457
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:15459
+// zbr:selfhost/CodeGen.zbr:15458
             return;
         }
+// zbr:selfhost/CodeGen.zbr:15459
+        if (std.mem.eql(u8, name, "ObjectPool")) {
 // zbr:selfhost/CodeGen.zbr:15460
-        if (std.mem.eql(u8, name, "ThreadPool")) {
+            self.w.emit("_objpool_create(");
 // zbr:selfhost/CodeGen.zbr:15461
-            self.w.emit("_thread_pool_create(");
+            if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:15462
+                self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15464
+                self.w.emit("anytype");
+            }
+// zbr:selfhost/CodeGen.zbr:15465
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15466
             if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15463
+// zbr:selfhost/CodeGen.zbr:15467
+                self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15469
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:15470
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:15471
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15472
+        if (std.mem.eql(u8, name, "Atomic")) {
+// zbr:selfhost/CodeGen.zbr:15473
+            self.w.emit("_atomic_create(");
+// zbr:selfhost/CodeGen.zbr:15474
+            if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15475
+                self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15477
+                self.w.emit("anytype");
+            }
+// zbr:selfhost/CodeGen.zbr:15478
+            self.w.emit(", ");
+// zbr:selfhost/CodeGen.zbr:15479
+            if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15480
+                self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
+            } else {
+// zbr:selfhost/CodeGen.zbr:15482
+                self.w.emit("0");
+            }
+// zbr:selfhost/CodeGen.zbr:15483
+            self.w.emit(")");
+// zbr:selfhost/CodeGen.zbr:15484
+            return;
+        }
+// zbr:selfhost/CodeGen.zbr:15485
+        if (std.mem.eql(u8, name, "ThreadPool")) {
+// zbr:selfhost/CodeGen.zbr:15486
+            self.w.emit("_thread_pool_create(");
+// zbr:selfhost/CodeGen.zbr:15487
+            if (_zebra_gt(@as(i64, @intCast(val_args.items.len)), 0)) {
+// zbr:selfhost/CodeGen.zbr:15488
                 self.genExpr(val_args.items[@as(usize, @intCast(0))].value);
             } else if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15465
+// zbr:selfhost/CodeGen.zbr:15490
                 self.genExpr(type_args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15467
+// zbr:selfhost/CodeGen.zbr:15492
                 self.w.emit("4");
             }
-// zbr:selfhost/CodeGen.zbr:15468
+// zbr:selfhost/CodeGen.zbr:15493
             self.w.emit(")");
-// zbr:selfhost/CodeGen.zbr:15469
+// zbr:selfhost/CodeGen.zbr:15494
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15470
+// zbr:selfhost/CodeGen.zbr:15495
         if (std.mem.eql(u8, name, "List")) {
-// zbr:selfhost/CodeGen.zbr:15471
+// zbr:selfhost/CodeGen.zbr:15496
             self.w.emit("std.ArrayList(");
-// zbr:selfhost/CodeGen.zbr:15472
+// zbr:selfhost/CodeGen.zbr:15497
             if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
-// zbr:selfhost/CodeGen.zbr:15473
+// zbr:selfhost/CodeGen.zbr:15498
                 self.genTypeFromExpr(type_args.items[@as(usize, @intCast(0))].value);
             } else {
-// zbr:selfhost/CodeGen.zbr:15475
+// zbr:selfhost/CodeGen.zbr:15500
                 self.w.emit("anytype");
             }
-// zbr:selfhost/CodeGen.zbr:15476
+// zbr:selfhost/CodeGen.zbr:15501
             self.w.emit(").empty");
-// zbr:selfhost/CodeGen.zbr:15477
+// zbr:selfhost/CodeGen.zbr:15502
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15478
+// zbr:selfhost/CodeGen.zbr:15503
         if (std.mem.eql(u8, name, "HashMap")) {
-// zbr:selfhost/CodeGen.zbr:15479
+// zbr:selfhost/CodeGen.zbr:15504
             const key_is_str = (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0) and self.isStringArgExpr(type_args.items[@as(usize, @intCast(0))].value));
-// zbr:selfhost/CodeGen.zbr:15480
+// zbr:selfhost/CodeGen.zbr:15505
             if (key_is_str) {
-// zbr:selfhost/CodeGen.zbr:15481
+// zbr:selfhost/CodeGen.zbr:15506
                 self.w.emit("std.StringHashMap(");
-// zbr:selfhost/CodeGen.zbr:15482
+// zbr:selfhost/CodeGen.zbr:15507
                 if (_zebra_ge(@as(i64, @intCast(type_args.items.len)), 2)) {
-// zbr:selfhost/CodeGen.zbr:15483
+// zbr:selfhost/CodeGen.zbr:15508
                     self.genTypeFromExpr(type_args.items[@as(usize, @intCast(1))].value);
                 } else {
-// zbr:selfhost/CodeGen.zbr:15485
+// zbr:selfhost/CodeGen.zbr:15510
                     self.w.emit("anytype");
                 }
             } else {
-// zbr:selfhost/CodeGen.zbr:15487
+// zbr:selfhost/CodeGen.zbr:15512
                 self.w.emit("std.AutoHashMap(");
-// zbr:selfhost/CodeGen.zbr:15488
+// zbr:selfhost/CodeGen.zbr:15513
                 var fi: bool = true;
-// zbr:selfhost/CodeGen.zbr:15489
+// zbr:selfhost/CodeGen.zbr:15514
                 for (type_args.items) |ta| {
-// zbr:selfhost/CodeGen.zbr:15490
+// zbr:selfhost/CodeGen.zbr:15515
                     if ((!fi)) {
-// zbr:selfhost/CodeGen.zbr:15491
+// zbr:selfhost/CodeGen.zbr:15516
                         self.w.emit(", ");
                     }
-// zbr:selfhost/CodeGen.zbr:15492
+// zbr:selfhost/CodeGen.zbr:15517
                     fi = false;
-// zbr:selfhost/CodeGen.zbr:15493
+// zbr:selfhost/CodeGen.zbr:15518
                     self.genTypeFromExpr(ta.value);
                 }
             }
-// zbr:selfhost/CodeGen.zbr:15494
+// zbr:selfhost/CodeGen.zbr:15519
             self.w.emit(").init(_allocator)");
-// zbr:selfhost/CodeGen.zbr:15495
+// zbr:selfhost/CodeGen.zbr:15520
             return;
         }
-// zbr:selfhost/CodeGen.zbr:15497
+// zbr:selfhost/CodeGen.zbr:15522
         self.w.emit(name);
-// zbr:selfhost/CodeGen.zbr:15498
+// zbr:selfhost/CodeGen.zbr:15523
         self.w.emit("(");
-// zbr:selfhost/CodeGen.zbr:15499
+// zbr:selfhost/CodeGen.zbr:15524
         var fi2: bool = true;
-// zbr:selfhost/CodeGen.zbr:15500
+// zbr:selfhost/CodeGen.zbr:15525
         for (type_args.items) |ta| {
-// zbr:selfhost/CodeGen.zbr:15501
+// zbr:selfhost/CodeGen.zbr:15526
             if ((!fi2)) {
-// zbr:selfhost/CodeGen.zbr:15502
+// zbr:selfhost/CodeGen.zbr:15527
                 self.w.emit(", ");
             }
-// zbr:selfhost/CodeGen.zbr:15503
+// zbr:selfhost/CodeGen.zbr:15528
             fi2 = false;
-// zbr:selfhost/CodeGen.zbr:15504
+// zbr:selfhost/CodeGen.zbr:15529
             self.genTypeFromExpr(ta.value);
         }
-// zbr:selfhost/CodeGen.zbr:15505
+// zbr:selfhost/CodeGen.zbr:15530
         self.w.emit(").init(");
-// zbr:selfhost/CodeGen.zbr:15506
+// zbr:selfhost/CodeGen.zbr:15531
         var fi3: bool = true;
-// zbr:selfhost/CodeGen.zbr:15507
+// zbr:selfhost/CodeGen.zbr:15532
         for (val_args.items) |va| {
-// zbr:selfhost/CodeGen.zbr:15508
+// zbr:selfhost/CodeGen.zbr:15533
             if ((!fi3)) {
-// zbr:selfhost/CodeGen.zbr:15509
+// zbr:selfhost/CodeGen.zbr:15534
                 self.w.emit(", ");
             }
-// zbr:selfhost/CodeGen.zbr:15510
+// zbr:selfhost/CodeGen.zbr:15535
             fi3 = false;
-// zbr:selfhost/CodeGen.zbr:15511
+// zbr:selfhost/CodeGen.zbr:15536
             self.genExpr(va.value);
         }
-// zbr:selfhost/CodeGen.zbr:15512
+// zbr:selfhost/CodeGen.zbr:15537
         self.w.emit(")");
     }
 

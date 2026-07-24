@@ -1704,6 +1704,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.int_)
                             if mem.member == "readLines"
                                 return Type_.list_(Type_.string_)
+                            if mem.member == "listDir"
+                                return Type_.list_(Type_.string_)
                             return Type_.void_  # write/append/delete/copy/rename
                         if bname == "Crypto"
                             if mem.member == "encrypt"

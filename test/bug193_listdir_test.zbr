@@ -1,0 +1,12 @@
+# BUG-193 regression: File.listDir was missing in the selfhost (emitted @compileError);
+# ported from the bootstrap. Lists the cwd (always exists + listable) and confirms the
+# result types as List(str) — .len/iteration dispatch. See BUGS.md BUG-193.
+class Program
+    static
+        def main
+            var names: List(str) = File.listDir(".")
+            var n: int = names.len
+            var joined: str = ""
+            for entry in names
+                joined = joined + "."
+            print("bug193: OK")

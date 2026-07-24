@@ -58,10 +58,15 @@ programs in that session's scratchpad (`gng/`). Recurring theme across several:
 **nested generics + non-`str` element types are under-supported in the selfhost's
 container-method dispatch and pointer-mutation analysis.**
 
-### BUG-193: `File.listDir` missing in the selfhost ⛔ OPEN (selfhost-lags-bootstrap)
-Documented (QUICKSTART File table) and implemented in the bootstrap
-(`src/CodeGen.zig:7752`), but the selfhost emits
-`@compileError("selfhost: unknown File.listDir")`. Small port from the bootstrap.
+### BUG-193: `File.listDir` missing in the selfhost ✅ RESOLVED (2026-07-24)
+Was: implemented in the bootstrap but the selfhost emitted `@compileError(...)`. Ported
+from the bootstrap (`src/CodeGen.zig:7855`): added `listDir` to the selfhost's
+`genFileCall` (a `blk:` expr opening the dir with `.iterate`, duping each entry name into
+a `List(str)` — names are slices into the iterator's reused buffer, so the dupe is
+required) and its `List(str)` return type to `TypeChecker` File-method inference (beside
+`readLines`). Verified: lists a real dir (3 names, sorted, `.len`/iteration dispatch).
+Regression: `test/bug193_listdir_test.zbr` (smoke_run "bug193: OK"). Gates all green.
+Note: like the bootstrap, `listDir` does NOT path-normalize — pass a native path.
 
 ### BUG-194: `Math.log` missing in the selfhost ✅ FIXED (2026-07-18, divergence burn-down)
 Was: in the bootstrap (`src/CodeGen.zig:8055`) but not selfhost `genMathCall` —
