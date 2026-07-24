@@ -12,6 +12,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## [0.15] — 2026-05 (in progress)
 
+### `Set(T)` — generic hash set (§28f)
+
+- **New builtin collection `Set(T)`** — a set of unique, hashable elements, backed
+  by a void-valued hash map (`std.StringHashMap(void)` for `str`, `std.AutoHashMap(T,
+  void)` otherwise). API: `add(x)`, `contains(x)`, `remove(x)`, `len` / `count()`,
+  `items()` → `List(T)`, `clear()`, plus `for x in set` iteration and the `x in set`
+  membership operator. Works as a local, a by-pointer mutable parameter, a class
+  field, a return value, and nested (`List(Set(int))`). Element type must be
+  auto-hashable (same constraint as `HashMap` keys); `==` and `print(set)` are not
+  supported. See QUICKSTART §10.
+
 ### Error propagation is now always explicit (`?`) — BREAKING
 
 - **An omitted `?` on a `throws` call is a compile error** (§28b step 5). The

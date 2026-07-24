@@ -53,9 +53,14 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 - [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
   the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
   design. → *Open detail §28e.*
-- [ ] **§28f — generic `Set(T)`** (from scratch — HashMap-sized new builtin; the
-  "mirror StrSet" premise was invalid). Design calls listed in detail. Own gated
-  pass. → *Open detail §28f.*
+- [x] **§28f — generic `Set(T)` DONE (2026-07-24).** Distinct `Type_.set_` variant
+  emitting `AutoHashMap(T, void)` / `StringHashMap(void)` (str). API: `add`/`contains`/
+  `remove`/`len`/`count`/`items`→`List(T)`/`clear`, `for x in set`, `x in set`. Works as
+  local/param(by-ptr)/field/return/nested `List(Set(int))`. **Selfhost-only** (bootstrap
+  sunsets; the compiler's own source never uses Set, so round-trip holds). Decisions taken:
+  str specialized (content-hash), `items()`→`List(T)`, StrSet stays internal. Limits (=HashMap):
+  T must be auto-hashable; no `==`/`print(set)`. Tests: `set_basic_test`, `set_advanced_test`
+  (both smoke-gated). → detail §28f below.
 - [ ] **BUG-174 — `str.indexOf` signature design call.** QUICKSTART + selfhost say
   `int?`; bootstrap says `int/-1`; selfhost `int?` codegen is currently broken.
   Recommendation on file: commit to `int?`. → `BUGS.md`.
@@ -494,7 +499,18 @@ return-path detection if the bootstrap is kept longer.
 scopes and threads. Pre-1.0 task = a per-call borrows-vs-owns table in the
 spec/QUICKSTART, so the 1.5 `str_view` design has defined ground.
 
-## §28f — generic `Set(T)` [GREEN-LIT — Sean 2026-07-03], from scratch
+## §28f — generic `Set(T)` [DONE — 2026-07-24], from scratch
+
+**Shipped selfhost-only.** `Type_.set_` variant emitting `AutoHashMap(T, void)` /
+`StringHashMap(void)`; `add`/`contains`/`remove`/`len`/`count`/`items`→`List(T)`/`clear`,
+`for x in set`, `x in set`; local/param(by-ptr)/field/return/nested. Decisions taken:
+str specialized, `items()`→`List(T)`, StrSet stays internal. `add()` interns str keys;
+`items()` and `for-in` reuse `_zebra_map_keys`; `in` reuses `_zebra_in` (`@hasDecl
+"contains"`). Limits (=HashMap keys): T auto-hashable; no `==`/`print(set)`. The
+bootstrap does NOT implement Set (sunsetting) — it shows as an informational
+divergence bootstrap-gap; round-trip holds because the compiler's own source never
+uses Set. Historical scoping notes below.
+
 
 The "mirror the existing StrSet API" premise is **invalid**: `StrSet` is a
 selfhost-internal Zig type, not user-facing. So `Set(T)` is a HashMap-sized new

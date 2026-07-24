@@ -2619,6 +2619,20 @@ struct Generator
                 w.emit("anytype")
             w.emit(")")
             return
+        if gtr.name == "Set"
+            # §28f: Set(T) backs onto a void-valued hash map. str element →
+            # StringHashMap(void) (content-hashed); else AutoHashMap(T, void).
+            var set_key_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args.at(0))
+            if set_key_str
+                w.emit("std.StringHashMap(void)")
+            else
+                w.emit("std.AutoHashMap(")
+                if gtr.args.len >= 1
+                    genType(gtr.args.at(0))
+                else
+                    w.emit("anytype")
+                w.emit(", void)")
+            return
         if gtr.name == "ObjectPool"
             w.emit("*_ObjectPool(")
             if gtr.args.len >= 1
@@ -5739,6 +5753,19 @@ struct Generator
                                     genTypeFromExpr(ta.value)
                             w.emit(")")
                             return
+                        if id.name == "Set"
+                            # §28f: Set(T) type-expr → void-valued hash map backing.
+                            var set_ks = c.args.len > 0 and isStringArgExpr(c.args.at(0).value)
+                            if set_ks
+                                w.emit("std.StringHashMap(void)")
+                            else
+                                w.emit("std.AutoHashMap(")
+                                if c.args.len > 0
+                                    genTypeFromExpr(c.args.at(0).value)
+                                else
+                                    w.emit("anytype")
+                                w.emit(", void)")
+                            return
                         w.emit(id.name)
                     else
                         genExpr(e)
@@ -6793,6 +6820,35 @@ struct Generator
                     ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
+            else if isSetIter(fi.iter)
+                # §28f: `for x in set` → iterate the keys snapshot. The backing map
+                # has no `.items`; _zebra_map_keys(set) materialises List(T) of the
+                # elements, then we iterate its `.items` slice like any List.
+                var set_elem_t: Type_ = setIterElem(fi.iter)
+                writeIndent()
+                w.emit("for (_zebra_map_keys(")
+                if fi.iter is Expr.try_
+                    w.emit("(")
+                    genExpr(fi.iter)
+                    w.emit(")")
+                else
+                    genExpr(fi.iter)
+                w.emit(").items) |" + vname + "| {\n")
+                for_loop_vars.add(vname)
+                # str elements → mark the loop var a string so `.len`/concat dispatch.
+                if set_elem_t is Type_.string_
+                    str_params.add(vname)
+                else if ig.infer_ctx != nil
+                    ig.infer_ctx!.bind(vname, set_elem_t)
+                ig.discardUnusedLoopVars(fi)
+                ig.emitForGuard(fi)
+                ig.genStmts(fi.stmts)
+                if fi.else_ != nil
+                    writeIndent()
+                    w.emit("} else {\n")
+                    ig.genStmts(fi.else_!)
+                writeIndent()
+                w.emit("}\n")
             else
                 writeIndent()
                 w.emit("for (")
@@ -6850,6 +6906,10 @@ struct Generator
                             on Type_.list_ as _
                                 ic_for.bind(vname, for_elem_t)
                             on Type_.hashmap_ as _
+                                ic_for.bind(vname, for_elem_t)
+                            on Type_.set_ as _
+                                # §28f: List(Set(T)) element — bind so .add/.contains/.len
+                                # dispatch on the loop var as a set.
                                 ic_for.bind(vname, for_elem_t)
                             else
                                 pass
@@ -7097,6 +7157,22 @@ struct Generator
             if jt is Type_.list_ as jelem
                 return jelem is Type_.json_value
         return false
+
+    # §28f: true if the iterable's inferred type is a Set(T). `for x in set`
+    # iterates the backing map's keys via the _zebra_map_keys snapshot helper.
+    def isSetIter(e: Expr): bool
+        if .infer_ctx != nil
+            var st: Type_ = inferExpr(e, .infer_ctx!)
+            return st is Type_.set_
+        return false
+
+    # §28f: element type of a Set(T) iterable, or unknown_ if not a set.
+    def setIterElem(e: Expr): Type_
+        if .infer_ctx != nil
+            var st: Type_ = inferExpr(e, .infer_ctx!)
+            if st is Type_.set_ as selem
+                return selem
+        return Type_.unknown_
 
     # Emit just the object part of a split call: str.split(sep) → str
     def genSplitObject(e: Expr)
@@ -8812,6 +8888,12 @@ struct Generator
                                 genExpr(m.object)
                                 w.emit(".count()))")
                                 return
+                            on Type_.set_ as _
+                                # §28f: Set(T).len → backing map .count()
+                                w.emit("@as(i64, @intCast(")
+                                genExpr(m.object)
+                                w.emit(".count()))")
+                                return
                             else
                                 pass
                     # str.len or any other .len — always usize in Zig, cast to i64
@@ -9523,6 +9605,10 @@ struct Generator
                         if rt is Type_.named as nm
                             if nm == "List" or nm == "HashMap"
                                 in_use_zebra_in = true
+                        # §28f: `x in set` — the backing map has `.contains`, which
+                        # _zebra_in dispatches to via @hasDecl(C, "contains").
+                        if rt is Type_.set_
+                            in_use_zebra_in = true
                 else
                     pass
             if in_use_zebra_in
@@ -10305,7 +10391,7 @@ struct Generator
         # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
             if inner.callee is Expr.ident as id
-                if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool" or id.name == "ObjectPool"
+                if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool" or id.name == "ObjectPool" or id.name == "Set"
                     genGenericCtorCall(id.name, inner.args, c.args)
                     return
                 if class_names.contains_(id.name)
@@ -11060,6 +11146,54 @@ struct Generator
                         w.emit("_zebra_map_values(")
                         genExpr(m.object)
                         w.emit(")")
+                        return
+                on Type_.set_ as set_elem_t
+                    # §28f: Set(T) over a void-valued hash map. str element keys are
+                    # interned on add() so the stored key slice outlives the temporary;
+                    # contains/remove look up by content (no intern needed).
+                    var set_elem_is_str = set_elem_t is Type_.string_
+                    if mname == "add"
+                        genExpr(m.object)
+                        w.emit(".put(")
+                        if args.len > 0
+                            if set_elem_is_str
+                                w.emit("_intern(")
+                                genExpr(args.at(0).value)
+                                w.emit(")")
+                            else
+                                genExpr(args.at(0).value)
+                        w.emit(", {}) catch @panic(\"OOM\")")
+                        return
+                    if mname == "contains"
+                        genExpr(m.object)
+                        w.emit(".contains(")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "remove"
+                        w.emit("_ = ")
+                        genExpr(m.object)
+                        w.emit(".remove(")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        w.emit(")")
+                        return
+                    if mname == "count"
+                        w.emit("@as(i64, @intCast(")
+                        genExpr(m.object)
+                        w.emit(".count()))")
+                        return
+                    if mname == "items"
+                        # items() → List(T) snapshot; reuse the map-keys helper (the
+                        # backing map's keys ARE the set's elements).
+                        w.emit("_zebra_map_keys(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "clear"
+                        genExpr(m.object)
+                        w.emit(".clearRetainingCapacity()")
                         return
                 on Type_.list_ as list_elem_t
                     var item_is_str = list_elem_t is Type_.string_
@@ -15517,6 +15651,20 @@ struct Generator
                     fi = false
                     genTypeFromExpr(ta.value)
             w.emit(").init(_allocator)")
+            return
+        if name == "Set"
+            # §28f: Set(T)() → void-valued hash map. str element → StringHashMap(void).
+            var set_key_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
+            if set_key_str
+                w.emit("std.StringHashMap(void)")
+            else
+                w.emit("std.AutoHashMap(")
+                if type_args.len > 0
+                    genTypeFromExpr(type_args.at(0).value)
+                else
+                    w.emit("anytype")
+                w.emit(", void)")
+            w.emit(".init(_allocator)")
             return
         # Generic user type
         w.emit(name)

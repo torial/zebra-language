@@ -784,6 +784,11 @@ smoke_run test/object_pool_test.zbr "object_pool: OK"
 smoke_run test/file_rename_test.zbr "file_rename OK"
 # §28b: HashMap.entries() → List((K,V)) — sortable map snapshot (sort by value).
 smoke_run test/hashmap_entries_test.zbr "hashmap_entries: OK"
+# §28f: generic Set(T) — add/contains/remove/len/count/items/clear (int + str).
+smoke_run test/set_basic_test.zbr "set_basic: OK"
+# §28f: Set(T) generic-machinery paths — field, param mutation, return, for-in,
+# membership, nesting List(Set(int)).
+smoke_run test/set_advanced_test.zbr "set_advanced: OK"
 # Audit A3: exhaustive union branch + else must compile (else prong omitted).
 smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
 # Audit B1: indexed for-in `for i, v in list` (i = index, v = element).

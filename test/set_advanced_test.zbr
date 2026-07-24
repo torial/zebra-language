@@ -1,0 +1,75 @@
+# §28f: generic Set(T) — generic-machinery paths (field, param, return,
+# nesting, direct for-in, membership). These exercise the else-arm fallthrough
+# sites that the basic happy-path test does not.
+
+class Tagged
+    var tags: Set(str)
+
+    cue init()
+        .tags = Set(str)()
+
+    def tag(t: str)
+        .tags.add(t)
+
+    def hasTag(t: str): bool
+        return .tags.contains(t)
+
+    def numTags(): int
+        return .tags.len
+
+# Set as a function parameter (mutated → must pass as *T).
+def addTwo(s: Set(int))
+    s.add(100)
+    s.add(200)
+
+# Set returned from a function.
+def makeEvens(): Set(int)
+    var e = Set(int)()
+    e.add(2)
+    e.add(4)
+    return e
+
+def main()
+    # --- class field ---
+    var t = Tagged()
+    t.tag("red")
+    t.tag("blue")
+    t.tag("red")
+    assert t.numTags() == 2, "field set dedup"
+    assert t.hasTag("blue"), "field contains blue"
+    assert not t.hasTag("green"), "field no green"
+
+    # --- function param mutation ---
+    var p = Set(int)()
+    addTwo(p)
+    assert p.len == 2, "param mutation visible to caller"
+    assert p.contains(100), "param add 100"
+
+    # --- function return ---
+    var ev = makeEvens()
+    assert ev.len == 2, "returned set len"
+    assert ev.contains(4), "returned set contains 4"
+
+    # --- direct for-in over a set (elements) ---
+    var seen = 0
+    for x in ev
+        seen += x
+    assert seen == 6, "for-in over set: 2+4 == 6"
+
+    # --- membership operator ---
+    assert 4 in ev, "4 in ev"
+    assert not (5 in ev), "5 not in ev"
+
+    # --- nesting: List(Set(int)) ---
+    var groups = List(Set(int))()
+    groups.add(makeEvens())
+    assert groups.at(0).contains(2), "nested set access"
+
+    # --- iterating a List(Set(int)): loop var binds as a set ---
+    groups.add(makeEvens())
+    var groupTotal = 0
+    for g in groups
+        groupTotal += g.len
+    assert groupTotal == 4, "sum of set sizes across groups: 2+2 == 4"
+
+    print("set_advanced: OK")

@@ -141,6 +141,9 @@ union Type_
     hashmap_: HashMapType_
     # Thread-safe channel Chan(T) — element type T in payload.
     chan_: ^Type_
+    # Generic hash-set Set(T) — element type T in payload. Emits as
+    # std.AutoHashMap(T, void) / std.StringHashMap(void) (str). §28f.
+    set_: ^Type_
     # Tuple type — ordered sequence of heterogeneous element types.
     tuple_: TupleType_
 
@@ -632,6 +635,8 @@ def typeArgToType(e: Expr): Type_
                     return Type_.list_(typeArgToType(gc.args.at(0).value))
                 if gid.name == "Chan" and gc.args.len == 1
                     return Type_.chan_(typeArgToType(gc.args.at(0).value))
+                if gid.name == "Set" and gc.args.len == 1
+                    return Type_.set_(typeArgToType(gc.args.at(0).value))
             return Type_.unknown_
         else
             return Type_.unknown_
@@ -654,6 +659,8 @@ def typeFromRef(tr: TypeRef): Type_
                 return Type_.hashmap_(HashMapType_(typeFromRef(g.args.at(0)), typeFromRef(g.args.at(1))))
             if gname == "Chan" and g.args.len == 1
                 return Type_.chan_(typeFromRef(g.args.at(0)))
+            if gname == "Set" and g.args.len == 1
+                return Type_.set_(typeFromRef(g.args.at(0)))
             return Type_.unknown_
         on TypeRef.tuple as tt
             var ttelems: List(Type_) = List()
@@ -1402,6 +1409,8 @@ def typeTag(t: Type_): str
             return "hmap(" + typeTag(hm.key_t) + "," + typeTag(hm.val_t) + ")"
         on Type_.chan_ as ce
             return "chan(" + typeTag(ce) + ")"
+        on Type_.set_ as se
+            return "set(" + typeTag(se) + ")"
         on Type_.tuple_ as _
             return "tpl"
         on Type_.string_builder
@@ -1908,6 +1917,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ent_elems.add(hmt.key_t)
                                 ent_elems.add(hmt.val_t)
                                 return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
+                        on Type_.set_ as set_elem
+                            # §28f: generic Set(T). items() → List(T) snapshot
+                            # (reuses the map-keys helper); add/remove → void;
+                            # contains → bool; count → int.
+                            var setmname: str = mem.member
+                            if setmname == "items"
+                                return Type_.list_(set_elem)
+                            if setmname == "contains"
+                                return Type_.bool_
+                            if setmname == "count"
+                                return Type_.int_
+                            if setmname == "add" or setmname == "remove" or setmname == "clear"
+                                return Type_.void_
                         on Type_.str_set
                             # §28a step 2: StrSet is a user class with a dedicated
                             # Type_.str_set variant (typeFromName), so a param/field
@@ -1956,6 +1978,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # Element may be a bare name OR a nested generic
                             # (List(HashMap(K,V)) etc.) — typeArgToType handles both.
                             return Type_.list_(typeArgToType(gc.args.at(0).value))
+                        if gcname == "Set" and gc.args.len == 1
+                            # §28f: Set(T)() ctor infers to set_ (element type T).
+                            return Type_.set_(typeArgToType(gc.args.at(0).value))
                         # Generic function call: identity(str)("hi") — the outer call's callee is
                         # identity(str), a call of a generic fn with a type arg. Return type is the
                         # function's declared return type with the type param substituted.

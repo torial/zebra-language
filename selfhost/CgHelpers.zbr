@@ -1820,7 +1820,9 @@ def exprHasSelfCall(e: Expr): bool
 def isContainerTypeRef(tr: TypeRef): bool
     branch tr
         on TypeRef.generic as g
-            return g.name == "List" or g.name == "HashMap"
+            # §28f: Set(T) is a value-typed hash map like HashMap — a mutated
+            # Set param must be passed as *T with &arg so add()/remove() land.
+            return g.name == "List" or g.name == "HashMap" or g.name == "Set"
         else
             return false
 

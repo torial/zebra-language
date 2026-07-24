@@ -704,9 +704,24 @@ for k, v in e                        # k: str, v: int
 for k, v in m.entries()              # direct iteration also works
     print("${k}=${v}")
 
-# Set(T) — a hashable-element set (add/contains/remove/count) is PLANNED
-# (NEXT_STEPS §28f); not yet implemented. For now, model a set with
-# HashMap(T, bool) or check membership with `x in list`.
+# Set(T) — a hash set of unique, hashable elements. Backed by a void-valued
+# hash map (StringHashMap(void) for str, AutoHashMap(T, void) otherwise).
+var seen = Set(int)()
+seen.add(1)
+seen.add(1)                          # duplicate — no effect
+var has1 = seen.contains(1)          # bool
+seen.remove(1)
+var n = seen.len                     # element count (int); seen.count() also works
+var xs: List(int) = seen.items()     # snapshot of elements as a new List(T)
+for x in seen                        # direct iteration over elements
+    print(x)
+if 2 in seen                         # membership operator
+    print("has 2")
+seen.clear()
+# Element type T must be auto-hashable (int/uint/enum/str/pointer). A struct
+# with slice fields is not auto-hashable and will fail to compile — same
+# constraint HashMap keys have. Set equality (`==`) and print(set) are not
+# supported (mirrors HashMap); iterate items() to compare or display.
 
 # Iteration
 for item in items

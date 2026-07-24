@@ -1,0 +1,40 @@
+# §28f: generic Set(T) — basic happy-path (int and str elements).
+
+def main()
+    # Set(int): add, dedup, contains, len, remove.
+    var s = Set(int)()
+    s.add(1)
+    s.add(2)
+    s.add(2)          # duplicate — no effect
+    s.add(3)
+    assert s.len == 3, "int set len should be 3 after dedup"
+    assert s.contains(2), "should contain 2"
+    assert not s.contains(9), "should not contain 9"
+    s.remove(2)
+    assert not s.contains(2), "2 removed"
+    assert s.len == 2, "len 2 after remove"
+
+    # items() → List(int) snapshot; sum is order-independent.
+    s.add(10)
+    var total = 0
+    for x in s.items()
+        total += x
+    assert total == 14, "items sum 1+3+10 == 14"
+
+    # count() method alias for len.
+    assert s.count() == 3, "count() == 3"
+
+    # Set(str): content-hashed keys.
+    var names = Set(str)()
+    names.add("alice")
+    names.add("bob")
+    names.add("alice")   # duplicate
+    assert names.len == 2, "str set dedup"
+    assert names.contains("bob"), "contains bob"
+    assert not names.contains("carol"), "no carol"
+
+    # clear.
+    names.clear()
+    assert names.len == 0, "cleared"
+
+    print("set_basic: OK")

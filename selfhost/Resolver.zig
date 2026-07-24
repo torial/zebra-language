@@ -4526,7 +4526,7 @@ pub const Resolver = struct {
             return true;
         }
 // zbr:selfhost/Resolver.zbr:435
-        if (((std.mem.eql(u8, name, "Atomic") or std.mem.eql(u8, name, "ThreadPool")) or std.mem.eql(u8, name, "ObjectPool"))) {
+        if ((((std.mem.eql(u8, name, "Atomic") or std.mem.eql(u8, name, "ThreadPool")) or std.mem.eql(u8, name, "ObjectPool")) or std.mem.eql(u8, name, "Set"))) {
 // zbr:selfhost/Resolver.zbr:436
             return true;
         }
